@@ -28,7 +28,10 @@ and the answer says which of the two it is.
 - `planner/app/src/main/resources/openapi/planner.yaml`, OpenAPI 3.1, written first:
   `GET /projects/{project}/workflow`, `GET /projects/{project}/stories?state=`,
   `GET /projects/{project}/stories/{story}`, `GET /projects/{project}/stories/{story}/issues`,
-  `GET /projects/{project}/issues/{issue}`; errors as `application/problem+json` with a typed `type` per refusal
+  `GET /projects/{project}/issues/{issue}`, and `PUT /projects/{project}` with `{"repository": "<clone URL>",
+  "branch": "<optional>"}`, the project's own repository as the window reads it from Porelo; the planner keeps it
+  while it runs, takes the remote's default branch when none is named, and answers `404` for a project it was not
+  given, so the window sends it and retries once; errors as `application/problem+json` with a typed `type` per refusal
   (no such story, no such issue, workflow missing, credential refused, unreachable).
 - `core`: `StoryStates.of(story, issues, workflow)` with no state name in the code, answering `(state, source:
   OWN|DERIVED)`; sub-issues do not count.

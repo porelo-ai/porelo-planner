@@ -43,7 +43,8 @@ only those.
   - an issue's JSON head read with Jackson; the planner reads no `**Status:**` lines, and an issue without a JSON
     head is a fault named in the answer.
   - the revision is the set of the fetched commit ids.
-- **Which repositories:** the project's `project.yml` names them; the clone URLs come from it.
+- **Which repositories:** the window names the project's own repository (its clone URL, a branch only when Porelo
+  reports one, else the remote's default branch); its `project.yml` names the others and their clone URLs.
 - **Safety, taken from stories-git:** paths contained in the clone (no `..`, no links out), a size bound per file,
   `GIT_CONFIG_GLOBAL` and the system config honoured but `core.hooksPath` and `protocol.file.allow` refused for
   the planner's own clones, no credential on any command line, error output scanned so no secret reaches a log.
@@ -63,9 +64,5 @@ only those.
 
 ## To be checked
 
-- That the window starts the planner with its own environment, `SSH_AUTH_SOCK` included, so the person's ssh-agent
-  is reached; agreed with the window.
-- How the planner learns where a project's repository is (its clone URL and branch) for a project name: the
-  window holds the projects the person follows; the way it hands one over is agreed with the window.
 - Which `project.yml` field names each repository's clone URL, and whether a repository's issue index may be split
   into groups (`issues/base/`) in every repository.
