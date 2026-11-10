@@ -29,11 +29,6 @@ under it is Finished. After a save the stories index reads as the project's own 
   saved only with `confirm`. `GitStoreSaveTest` - a push refused because the remote moved changes nothing, locally or
   remotely; the stories index after a save equals the library's output.
 
-## To be checked
-
-- `porelo-stories` is published under LGPL-3.0-or-later before the planner links it; until then it is GPL-3.0-or-later
-  and a linked executable would be a combined work under the GPL.
-
 ## Acceptance
 
 - The red-first tests seen red, then green; a save against the Git HTTP test server visible in a fresh clone.

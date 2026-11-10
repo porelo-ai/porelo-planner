@@ -43,6 +43,5 @@ person's own Git login and never asks for, keeps or logs a credential.
 
 ## To be checked
 
-- `porelo-stories` is published under LGPL-3.0-or-later before the planner links it.
 - Which `project.yml` field names each repository's clone URL, and whether a repository's issue index may be split
   into groups (`issues/base/`) in every repository.
