@@ -10,11 +10,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl01"></a>[PL01](PL01-The-Planner-Builds-As-One-Native-Executable.md) | M | - | One GraalVM native executable for any x86-64 CPU from four modules (`core`, `store/api`, `store/git`, `app`), started and answering in a native test, built by the Build workflow |
-
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
 | <a id="pl02"></a>[PL02](PL02-Only-Its-Owner-Reaches-The-Planner.md) | M | [PL01](README.md#pl01) | Only the account that started it reaches the planner: loopback and an owner-only token on every call, SSE included |
 
 ## Backlog

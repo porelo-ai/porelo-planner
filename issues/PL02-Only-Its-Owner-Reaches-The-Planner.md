@@ -1,6 +1,6 @@
 # PL02 — Only Its Owner Reaches The Planner
 
-**Status:** Implementing; blocked by [PL01](README.md#pl01).
+**Status:** Review; blocked by [PL01](README.md#pl01).
 **Size:** M - a trust boundary: the binding, a token readable only by its owner, its check on every call and SSE,
 and the way the window finds both.
 
@@ -59,6 +59,29 @@ wrong one, or from another account on the same computer is refused before anythi
   runtime directory itself checked, a unique temporary file deleted after the move, a kernel lock instead of a
   process id, the address checked before binding, the filter on every dispatch without `sendError`, the token made
   at run time, and tests apart from each other and from a running planner.
+
+## As built
+
+- `AccessToken`, `AddressFile`, `AccessFilter`, `LoopbackBinding` and their wiring in `AccessConfiguration`, in `app`;
+  `server.port=0` by default. The filter covers every path, so the event stream gets the check when it is added.
+- A refused second start in the same process never opens a channel on the lock file: closing any channel on it lets
+  go of the process's lock, which a test in a second process showed. A dead planner's `planner.json` is deleted as
+  soon as the lock is held, not only when the new one listens.
+- The address-file contract is in `doc/index.md`.
+
+## Code reading
+
+- agy (Gemini, read-only) read the change: three blocking findings and four notes.
+- Fixed, each with a test seen red first: the lock let go by a refused start in the same process; a dead planner's
+  file readable until the server listens; the token's text form (a test now guards that it hides the token).
+- Fixed without a test, since they do no harm: two starts racing to make `porelo-planner/` now both reach the lock
+  instead of one failing with the wrong reason; the lock's channel is closed when its owner check fails.
+- Declined: a check that `planner.lock` is a regular file - only the account itself can place anything in its
+  `0700` directory, and a planner that hangs on its own named pipe harms no one else. Deleting a crashed start's
+  temporary file - it holds the token of a dead planner, which opens nothing, readable by the account alone. A test
+  of the `ASYNC` and `ERROR` dispatches - no call without the token reaches either, since the `REQUEST` dispatch
+  refuses it first; their registration stays as a second line. The test runtime directories deleted before the
+  cached test contexts close - the late close finds nothing to delete and does no harm.
 
 ## Acceptance
 

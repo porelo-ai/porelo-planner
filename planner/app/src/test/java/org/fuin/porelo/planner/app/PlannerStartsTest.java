@@ -14,15 +14,31 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.util.Collections;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PlannerStartsTest {
 
+    private static final Path RUNTIME = create();
+
     @LocalServerPort private int port;
+
+    @DynamicPropertySource
+    static void runtimeDirectory(final DynamicPropertyRegistry registry) {
+        registry.add("planner.runtime-directory", RUNTIME::toString);
+    }
+
+    @AfterAll
+    static void deleteRuntimeDirectory() throws IOException {
+        RuntimeDirectories.delete(RUNTIME);
+    }
 
     @Test
     void thePlannerStartsAndSaysItIsUpOnTheLoopbackAddress() throws Exception {
@@ -32,6 +48,10 @@ class PlannerStartsTest {
                         .send(
                                 HttpRequest.newBuilder(
                                                 URI.create("http://127.0.0.1:" + port + "/health"))
+                                        .header(
+                                                "Authorization",
+                                                "Bearer "
+                                                        + RuntimeDirectories.read(RUNTIME).token())
                                         .build(),
                                 HttpResponse.BodyHandlers.ofString());
         assertThat(answer.statusCode()).as("the health call's status").isEqualTo(200);
@@ -50,6 +70,14 @@ class PlannerStartsTest {
                         })
                 .as("a connection to %s:%d", other.getHostAddress(), port)
                 .isInstanceOf(IOException.class);
+    }
+
+    private static Path create() {
+        try {
+            return RuntimeDirectories.create();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** An address of this computer other than the loopback one; the test fails without one. */
