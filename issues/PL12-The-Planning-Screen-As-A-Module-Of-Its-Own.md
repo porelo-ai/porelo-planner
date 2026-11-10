@@ -7,8 +7,8 @@ from the window as it is.
 
 **What must be true.** The window's planning screen - board, story, issue, the work proposal and the reading choice -
 is a Flutter package in porelo-planner's module `screen/`, which the window embeds by a fixed Git ref and path and
-hands the planner's address and token, a way to start a task through Porelo's `Start`, the task changes it sees, and
-the agents and models a start may choose. The package is tested on its own, against a fake of its REST/SSE client and
+hands a client of the planner (from its address and token), a way to start a task through Porelo's `Start`, the task
+changes it sees, and the agents and models a start may choose. The package is tested on its own, against a fake of its REST/SSE client and
 against the planner started in its mock mode, without Porelo and without the window.
 
 ## Plan
@@ -20,9 +20,18 @@ against the planner started in its mock mode, without Porelo and without the win
 - **Maven drives Flutter** under `all` with `exec-maven-plugin`, as the window's build does: `flutter pub get`,
   `dart format --set-exit-if-changed`, `dart analyze` (never `flutter analyze`), `flutter test`; the tests tagged
   `documents` stay Java's.
-- **The window's hooks**, as the package's public API (`lib/porelo_planning.dart`): `PlanningScreen(baseUrl, token,
-  startTask, taskChanges, agents)`, `PlanningAction` for the window's command menu, a `hasPendingMoves` getter for
-  its leave guard, and a `Listenable` of *Needs you* entries with the widget that shows one.
+- **The window's hooks**, as the package's public API (`lib/porelo_planning.dart`):
+  - `PlanningScreen(client, startTask, taskChanges, agents)`, where `client` is a `PlanningClient`, an interface of
+    the package. `PlanningClient.http(baseUrl, token)` is the planner's REST/SSE client; until it exists the window
+    passes one that answers from today's daemon, and the moved tests use a Dart fake of the interface, so the screen
+    moves before the planner's API exists, with no change in behavior.
+  - The window reports a change of a task it started through the same client,
+    `client.taskEvent(project, task, STARTED|ENDED|STOPPED)`, and speaks no HTTP of the planner's itself;
+    `taskChanges` is only what the screen shows of a run (outcome and why).
+  - `PlanningAction` for the window's command menu, a `hasPendingMoves` getter for its leave guard, and a
+    `Listenable` of *Needs you* entries with the widget that shows one.
+  - `PlanningStyle` and a small `Space` move into the package; colors come from `Theme.of(context)` and the package
+    defines no theme of its own, so the screen looks like the window around it.
 - **The move:** the screen's files and their tests come in from porelo-frontend as they are, against a Dart fake of
   today's models; the REST/SSE client follows with [PL04](README.md#pl04) and [PL06](README.md#pl06). The window's
   agent moves them and hands them over once the window starts with the code from this checkout.
