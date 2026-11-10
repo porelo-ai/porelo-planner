@@ -6,8 +6,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 
 class BindingTest {
@@ -24,10 +23,11 @@ class BindingTest {
         RuntimeDirectories.delete(runtime);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"", "0.0.0.0", "::", "192.0.2.1", "localhost"})
-    void thePlannerRefusesToStartOnAnythingButALoopbackAddress(final String address) {
-        // Listening on another address lets other computers on the network reach the planner.
+    @Test
+    void thePlannerRefusesToStartWithoutALoopbackAddress() {
+        // Without an address the server would listen on every interface, reachable from the
+        // network; the check must run before it binds. Its cases are in LoopbackBindingTest.
+        final String address = "";
         assertThatThrownBy(
                         () ->
                                 new SpringApplicationBuilder(PlannerApplication.class)
