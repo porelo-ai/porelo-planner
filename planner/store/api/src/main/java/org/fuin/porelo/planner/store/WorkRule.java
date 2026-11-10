@@ -52,6 +52,13 @@ public record WorkRule(
         if (models.isEmpty()) {
             throw new IllegalArgumentException("models names no agent");
         }
+        if (modes.stream().anyMatch(String::isBlank)) {
+            throw new IllegalArgumentException("modes names a blank mode");
+        }
+        if (models.entrySet().stream()
+                .anyMatch(entry -> entry.getKey().isBlank() || entry.getValue().isBlank())) {
+            throw new IllegalArgumentException("models names a blank agent or model");
+        }
         if (order.isBlank()) {
             throw new IllegalArgumentException("order is empty");
         }

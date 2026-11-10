@@ -38,6 +38,7 @@ public final class MockStore implements PlanningStore {
      * The mock board as {@code mock/board.json} holds it.
      *
      * @param revision the board's fixed revision
+     * @param repositories the project's repositories, its own first
      * @param workflow the states, phases and closed states
      * @param work the work rule per working state, in the shape of {@code stories/work.yml}
      * @param faults what the store could not read, in words
@@ -46,6 +47,7 @@ public final class MockStore implements PlanningStore {
      */
     record BoardFile(
             String revision,
+            List<String> repositories,
             Workflow workflow,
             Map<String, RuleFile> work,
             List<String> faults,
@@ -127,7 +129,8 @@ public final class MockStore implements PlanningStore {
                 file.workflow(),
                 file.stories(),
                 file.issues(),
-                new Work(rules, file.faults()));
+                new Work(rules, file.faults()),
+                file.repositories());
     }
 
     private static WorkRule rule(final String state, final RuleFile rule) {

@@ -26,3 +26,6 @@ planner/app/src/test/java/org/fuin/porelo/planner/app/EventsStreamTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/HeadEditTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitStoreSaveTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/MovesEndpointTest.java
+planner/core/src/test/java/org/fuin/porelo/planner/core/WorkProposalTest.java
+planner/core/src/test/java/org/fuin/porelo/planner/core/WorkOrderTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/StoryWorkHttpTest.java

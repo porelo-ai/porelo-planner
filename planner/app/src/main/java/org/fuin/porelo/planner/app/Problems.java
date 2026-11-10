@@ -2,8 +2,8 @@ package org.fuin.porelo.planner.app;
 
 import java.net.URI;
 import java.util.Map;
-import java.util.Objects;
 import org.fuin.porelo.planner.core.Moves;
+import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -59,7 +59,7 @@ public class Problems {
     }
 
     /**
-     * Answers a body that is no project source, since the only body the planner takes is one.
+     * Answers an unreadable body without exposing parser text or unchecked path subjects.
      *
      * @param unreadable what Spring could not read
      * @param request the request, whose path names the project
@@ -73,21 +73,44 @@ public class Problems {
                         HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
                         RequestAttributes.SCOPE_REQUEST);
         final Object project = variables instanceof Map<?, ?> map ? map.get("project") : null;
-        if (request.getDescription(false).endsWith("/moves")) {
+        final Map<String, String> parameters;
+        if (project instanceof String name) {
+            try {
+                parameters = Map.of("project", BoardController.name(name));
+            } catch (final Refusal invalid) {
+                return refused(invalid);
+            }
+        } else {
+            parameters = Map.of();
+        }
+        final Object pattern =
+                request.getAttribute(
+                        HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE,
+                        RequestAttributes.SCOPE_REQUEST);
+        if ("/projects/{project}/moves".equals(pattern)) {
             // Fixed words: the parser's text would repeat whatever the body held.
             final String reason = "The body is no batch of moves.";
-            final Map<String, String> parameters = new java.util.LinkedHashMap<>();
-            parameters.put("item", "");
-            parameters.put("from", "");
-            parameters.put("to", "");
-            parameters.put("reason", reason);
-            return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, parameters);
+            final Map<String, String> fields = new java.util.LinkedHashMap<>();
+            fields.put("item", "");
+            fields.put("from", "");
+            fields.put("to", "");
+            fields.put("reason", reason);
+            return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, fields);
+        }
+        if (!"/projects/{project}".equals(pattern)) {
+            return refused(WorkRefusal.invalidSettings());
         }
         return problem(
                 "NotACloneUrl",
                 HttpStatus.BAD_REQUEST,
                 "The body is no project source with a repository and a branch",
-                project == null ? Map.of() : Map.of("project", Objects.toString(project)));
+                parameters);
+    }
+
+    /** Answers a Spring-free work refusal with typed parameters, including task arrays. */
+    @ExceptionHandler(WorkRefusal.class)
+    public ResponseEntity<ProblemDetail> refused(final WorkRefusal refusal) {
+        return refused(Refusal.work(refusal));
     }
 
     /**
@@ -160,10 +183,12 @@ public class Problems {
             final String name,
             final HttpStatus status,
             final String detail,
-            final Map<String, String> parameters) {
+            final Map<String, ?> parameters) {
         final ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setType(URI.create(TYPE + name));
         problem.setTitle(name);
+        // Refused path text must not enter Spring's default instance URI.
+        problem.setInstance(URI.create("/"));
         problem.setProperty("parameters", parameters);
         return ResponseEntity.status(status).body(problem);
     }

@@ -128,7 +128,7 @@ public final class Answers {
      * @param priority its priority
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
-     * @param work its work, always null until the planner starts work
+     * @param work its work, always null until the run records work
      */
     public record Story(
             String id,
@@ -150,7 +150,7 @@ public final class Answers {
      * @param priority its priority
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
-     * @param work its work, always null until the planner starts work
+     * @param work its work, always null until the run records work
      * @param description its body
      */
     public record StoryDetail(

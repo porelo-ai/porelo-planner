@@ -258,6 +258,87 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/stories/{story}/proposal:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    post:
+      operationId: proposeStoryWork
+      summary: Propose the tasks for a story
+      description: >-
+        Computes a proposal from one board and its sound work rule. The first mode and ordered model entry are the
+        defaults. Only open issues and open sub-issues in their parent's repository participate. Each sub-issue has
+        one BUILDER; reading belongs to the later run. Starts nothing and changes neither state nor revision.
+        The JSON body is at most 65536 bytes. An unknown target state is InvalidSettings.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryWorkProposalRequest'
+      responses:
+        '200':
+          description: The proposed tasks and defaults at this revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryWorkProposal'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/stories/{story}/work:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    post:
+      operationId: orderStoryWork
+      summary: Prepare the tasks the window starts
+      description: >-
+        Recomputes the proposal and validates the window's choices against it. Checks revision before recorded active
+        work. Omitted repositories and limits take the proposal's defaults; an omitted comment is empty. Every
+        repository and assignment must occur exactly once. Immutable proposal fields must match, KEEP retains the
+        proposed agent and model, CHANGE selects an offered agent/model pair, and DROP leaves the brief to the main
+        task. CHANGE and DROP need a nonblank comment. OTHER may only be dropped. No prompt comes from the body.
+        Expands order placeholders once per task, with repository text delimited by longer backtick fences.
+        Refuses any brief over 4000 characters or task prompt over 65536 UTF-8 bytes. The JSON body is at most 65536
+        bytes. Answers tasks only: starts nothing, saves no running record, and changes neither state nor revision.
+        Running work is checked only when the run supplies records; no running record exists yet.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryWorkRequest'
+      responses:
+        '200':
+          description: The tasks to pass individually to Porelo's Start, at the unchanged revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryWorkOrder'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/WorkConflict'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/issues/{issue}:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -359,6 +440,25 @@ components:
         $ref: '#/components/schemas/IssueId'
 
   responses:
+    WorkRefused:
+      description: >-
+        InvalidName for an invalid path id (only a checked project may be echoed); InvalidSettings for malformed JSON,
+        an oversized body, path/body disagreement or an unknown target state, with a fixed detail; WorkNotAllowed for
+        a missing or unsound rule, disallowed from or mode, altered proposal facts, invalid choices or limits, or bounds.
+        WorkNotAllowed parameters are from, to and reason; to is always a known workflow state. A changed helper
+        identity or brief has reason 'A helper identity or brief was changed.'. InvalidSettings parameters contain detail.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    WorkConflict:
+      description: >-
+        StaleRevision names the current revision. WorkRunning names the checked story and an array of recorded active
+        task names. Revision is checked first; a story's state alone never means work is running.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: The bearer token is missing or wrong; the body is empty.
       headers:
@@ -928,7 +1028,7 @@ components:
             $ref: '#/components/schemas/Issue'
         work:
           type: 'null'
-          description: The story's work, null until the planner starts work.
+          description: The story's work, null until the run records work.
     StoryDetail:
       description: One story with its description.
       allOf:
@@ -1008,6 +1108,185 @@ components:
               type: string
               description: The issue's What must be true paragraph; absent when the text has none.
 
+    StoryWorkProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [to]
+      properties:
+        to:
+          type: string
+          description: A state named by the workflow.
+    StoryWorkProposal:
+      type: object
+      required: [modes, repositories, coordinator, comment, readingRounds, issueReadingRounds, revision]
+      properties:
+        modes:
+          type: array
+          items:
+            type: string
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanRepositoryWork'
+        coordinator:
+          type: string
+          enum: [START, TELL]
+          description: START until the run supplies an active coordinator record; otherwise TELL.
+        comment:
+          type: string
+          default: ''
+          maxLength: 4000
+        readingRounds:
+          $ref: '#/components/schemas/ReadingRounds'
+        issueReadingRounds:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/IssueReadingRounds'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    PlanRepositoryWork:
+      type: object
+      additionalProperties: false
+      required: [repository, issues, main, subAgents]
+      properties:
+        repository:
+          $ref: '#/components/schemas/Name'
+        issues:
+          type: array
+          description: The proposal's issue identities in order; immutable at acceptance.
+          items:
+            $ref: '#/components/schemas/IssueId'
+        main:
+          $ref: '#/components/schemas/PlanWorker'
+        subAgents:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanAssignment'
+    PlanWorker:
+      type: object
+      additionalProperties: false
+      required: [name, role, agent, model, brief]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          const: MAIN
+        agent:
+          type: string
+          minLength: 1
+        model:
+          type: string
+          minLength: 1
+        brief:
+          type: string
+          maxLength: 4000
+          description: The rule's order, expanded after the operator's final choices.
+    PlanAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, issue, name, kind, agent, model, workingState, brief, choice]
+      properties:
+        id:
+          type: string
+          description: Stable within this repository.
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        name:
+          type: string
+        kind:
+          type: string
+          description: The participant's role; only BUILDER is proposed at start.
+        agent:
+          type: string
+        model:
+          type: string
+        workingState:
+          type: string
+        brief:
+          type: string
+          maxLength: 4000
+        choice:
+          type: string
+          enum: [KEEP, CHANGE, DROP]
+          default: KEEP
+    ReadingRounds:
+      type: integer
+      minimum: 1
+      maximum: 10
+      default: 2
+    IssueReadingRounds:
+      type: object
+      additionalProperties: false
+      required: [issue, rounds]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        rounds:
+          $ref: '#/components/schemas/ReadingRounds'
+    StoryWorkRequest:
+      type: object
+      additionalProperties: false
+      required: [project, story, to, mode, revision]
+      properties:
+        project:
+          $ref: '#/components/schemas/Name'
+        story:
+          $ref: '#/components/schemas/StoryId'
+        to:
+          type: string
+        mode:
+          type: string
+        revision:
+          $ref: '#/components/schemas/Revision'
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanRepositoryWork'
+        comment:
+          type: string
+          maxLength: 4000
+        readingRounds:
+          $ref: '#/components/schemas/ReadingRounds'
+        issueReadingRounds:
+          type: array
+          description: Only proposal issues, each at most once.
+          items:
+            $ref: '#/components/schemas/IssueReadingRounds'
+    StoryWorkOrder:
+      type: object
+      required: [revision, tasks]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanningStartTask'
+    PlanningStartTask:
+      type: object
+      required: [repository, issues, role, agent, model, mode, prompt]
+      properties:
+        repository:
+          $ref: '#/components/schemas/Name'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        role:
+          type: string
+          enum: [MAIN, BUILDER]
+        agent:
+          type: string
+        model:
+          type: string
+        mode:
+          type: string
+        prompt:
+          type: string
+          description: The complete starting prompt, at most 65536 UTF-8 bytes.
+
     Problem:
       description: A refusal; the last part of its type is the refusal's name.
       type: object
@@ -1025,7 +1304,7 @@ components:
           description: The planner's words for the refusal, never a credential or a local path.
         parameters:
           type: object
-          description: What the refusal concerns, each a string.
+          description: Typed subjects and checked words describing the refusal.
           properties:
             project:
               type: string
@@ -1053,3 +1332,9 @@ components:
               description: Comma-joined repositories.
             failed:
               type: string
+            detail:
+              type: string
+            tasks:
+              type: array
+              items:
+                type: string

@@ -188,6 +188,29 @@ class GitStoreTest {
     }
 
     @Test
+    void theBoardKeepsTheOwnRepositoryEvenWhenItsPartHasNoIssues() {
+        // Story work must not pick another repository just because the own checkout has no issues.
+        final PartReader reader =
+                (repository, commit, own) ->
+                        own
+                                ? new Part(WORKFLOW, List.of(), List.of(), null)
+                                : READER.read(repository, commit, false);
+        final GitStore store =
+                new GitStore(
+                        List.of(OWN, OTHER),
+                        remote,
+                        reader,
+                        inProcess(),
+                        clock,
+                        Duration.ofSeconds(10),
+                        4,
+                        queue);
+        assertThat(store.board().repositories())
+                .as("the store's declared repository order")
+                .containsExactly("store", "other");
+    }
+
+    @Test
     void aRetiredStoreTouchesItsClonesNoMoreAndSaysWhy() {
         // A store replaced by a new source would fetch the old one into the new one's clones.
         final GitStore store = store(queue);
@@ -236,6 +259,7 @@ class GitStoreTest {
 
     @Test
     void requestsDuringACheckShareIt() {
+        // Concurrent readers must not multiply remote fetches or race their board updates.
         final GitStore store = store(queue);
         store.board();
         final int before = remote.asked.get();
@@ -250,6 +274,7 @@ class GitStoreTest {
 
     @Test
     void noCheckStartsWithinTheInterval() {
+        // Checking on every request would saturate the repository's remote service.
         final GitStore store = store(queue);
         store.board();
         clock.now = clock.now.plusSeconds(9);
@@ -288,6 +313,7 @@ class GitStoreTest {
 
     @Test
     void aRefusedLoginNamesTheRepositoryAndAFailedCheckKeepsTheBoard() {
+        // A refused login must not erase the board or send credentials to the window.
         final GitStore store = store(queue);
         final Board first = store.board();
         remote.failing = GitFailure.Kind.LOGIN;
@@ -342,6 +368,7 @@ class GitStoreTest {
 
     @Test
     void anUnreachableRemoteAndAFaultyStoreAreToldApart() {
+        // A transport failure must not be mistaken for invalid stored planning data.
         final GitStore store = store(queue);
         remote.failing = GitFailure.Kind.UNREACHABLE;
         assertThatThrownBy(store::board)
@@ -369,6 +396,7 @@ class GitStoreTest {
 
     @Test
     void aListenerIsToldOfAChangedBoardAlone() {
+        // Unchanged boards must not produce duplicate change events for the window.
         final GitStore store = store(queue);
         final List<Board> told = new CopyOnWriteArrayList<>();
         store.listen(told::add);

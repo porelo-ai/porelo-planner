@@ -721,7 +721,8 @@ public final class GitStore implements PlanningStore {
                     workflow,
                     stories,
                     issues,
-                    work != null ? work : WorkReader.read(null));
+                    work != null ? work : WorkReader.read(null),
+                    repositories.stream().map(Repository::name).toList());
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
         }

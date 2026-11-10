@@ -1,5 +1,6 @@
 {
   "revision": "mock@1",
+  "repositories": ["porelo-project", "porelo-forge-clients", "porelo-ai.github.io", "porelo", "porelo-host", "porelo-frontend", "porelo-message-matrix", "porelo-intellij", "porelo-buildtools", "porelo-pi", "porelo-omp", "porelo-claude-code", "porelo-message-sluice", "porelo-adapters"],
   "workflow": {
     "states": [
       "Idea",

@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import java.util.Map;
+import org.fuin.porelo.planner.core.WorkRefusal;
 import org.springframework.http.HttpStatus;
 
 /** A call the planner refuses, with the name the window shows and what it names. */
@@ -12,7 +13,7 @@ public final class Refusal extends RuntimeException {
 
     private final HttpStatus status;
 
-    private final Map<String, String> parameters;
+    private final Map<String, Object> parameters;
 
     /**
      * Makes a refusal.
@@ -26,7 +27,7 @@ public final class Refusal extends RuntimeException {
             final String name,
             final HttpStatus status,
             final String detail,
-            final Map<String, String> parameters) {
+            final Map<String, ?> parameters) {
         super(detail);
         this.name = name;
         this.status = status;
@@ -56,8 +57,20 @@ public final class Refusal extends RuntimeException {
      *
      * @return the parameters
      */
-    public Map<String, String> parameters() {
+    public Map<String, Object> parameters() {
         return parameters;
+    }
+
+    /** Maps core work refusals to their documented HTTP status and typed parameters. */
+    public static Refusal work(final WorkRefusal refusal) {
+        final HttpStatus status =
+                switch (refusal.name()) {
+                    case "NoSuchStory" -> HttpStatus.NOT_FOUND;
+                    case "StaleRevision", "WorkRunning" -> HttpStatus.CONFLICT;
+                    default -> HttpStatus.BAD_REQUEST;
+                };
+        return new Refusal(
+                refusal.name(), status, String.valueOf(refusal.getMessage()), refusal.parameters());
     }
 
     /**

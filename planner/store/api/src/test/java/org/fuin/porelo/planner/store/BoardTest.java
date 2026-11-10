@@ -26,6 +26,80 @@ class BoardTest {
     }
 
     @Test
+    void repositoryIdentityIsExplicitOrderedAndImmutable() {
+        // Story-wide work must start in the own repository even when all issues live elsewhere.
+        final List<String> repositories = new ArrayList<>(List.of("project", "porelo-planner"));
+        final Board board =
+                new Board(
+                        new Revision("r"),
+                        WORKFLOW,
+                        List.of(),
+                        List.of(issue("XY03", "Idea")),
+                        new Work(Map.of(), List.of()),
+                        repositories);
+        repositories.clear();
+        assertThat(board.repositories())
+                .as("own first and copied")
+                .containsExactly("project", "porelo-planner");
+        assertThatThrownBy(() -> board.repositories().clear())
+                .as("repository identity cannot be changed")
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(
+                        () ->
+                                new Board(
+                                        new Revision("r"),
+                                        WORKFLOW,
+                                        List.of(),
+                                        List.of(issue("XY03", "Idea")),
+                                        new Work(Map.of(), List.of()),
+                                        List.of("project")))
+                .as("issues cannot escape the project's repositories")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                new Board(
+                                        new Revision("r"),
+                                        WORKFLOW,
+                                        List.of(),
+                                        List.of(),
+                                        new Work(Map.of(), List.of()),
+                                        List.of("project", "project")))
+                .as("duplicate repositories cannot create duplicate work")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                new Board(
+                                        new Revision("r"),
+                                        WORKFLOW,
+                                        List.of(),
+                                        List.of(),
+                                        new Work(Map.of(), List.of()),
+                                        List.of("../other")))
+                .as("repository names are checked before they reach tasks")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void theCompatibilityConstructorKeepsIssueRepositoriesInOrder() {
+        // Existing fake boards need stable repository identity without a project definition.
+        final Board board =
+                new Board(
+                        new Revision("r"),
+                        WORKFLOW,
+                        List.of(),
+                        List.of(
+                                issue("XY03", "Idea"),
+                                new Issue(
+                                        "AB1", "other", "Other", "Idea", null, List.of(), null,
+                                        null, ""),
+                                issue("XY04", "Idea")),
+                        new Work(Map.of(), List.of()));
+        assertThat(board.repositories())
+                .as("first occurrence of each issue repository")
+                .containsExactly("porelo-planner", "other");
+    }
+
+    @Test
     void aBoardCannotBeChangedThroughTheListsItWasMadeFrom() {
         // One board is the snapshot every request answers from; a caller's list must not change it.
         final List<Story> stories = new ArrayList<>(List.of(story("ST1", "Idea")));
@@ -90,6 +164,7 @@ class BoardTest {
 
     @Test
     void aWorkflowRefusesAStateTwiceAndAPhaseOfAnUnknownState() {
+        // Duplicate or unknown states would make a move's destination ambiguous.
         assertThatThrownBy(() -> new Workflow(List.of("Idea", "Idea"), List.of(), List.of()))
                 .as("a state twice")
                 .isInstanceOf(IllegalArgumentException.class);

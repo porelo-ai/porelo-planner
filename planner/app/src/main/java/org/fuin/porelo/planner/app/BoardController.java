@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.app;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +10,9 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Moves;
+import org.fuin.porelo.planner.core.WorkOrder;
+import org.fuin.porelo.planner.core.WorkProposal;
+import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
@@ -29,6 +33,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Serves a project's board as {@code openapi/planner.yaml} describes it; each answer is read from
@@ -374,6 +379,41 @@ public class BoardController {
                         what.find() ? what.group(1).strip() : null));
     }
 
+    /** Computes the proposal from one board without starting or recording work. */
+    @PostMapping("/projects/{project}/stories/{story}/proposal")
+    public WorkAnswers.Proposal proposeStoryWork(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String id,
+            final HttpServletRequest request) {
+        final String checked = storyId(project, id);
+        final WorkRequests.Proposal body = WorkRequests.proposal(WorkRequests.read(request));
+        final Board board = board(project);
+        return WorkAnswers.proposal(WorkProposal.propose(board, checked, body.to()));
+    }
+
+    /**
+     * Answers the validated arguments the window starts, leaving board state and revision alone.
+     */
+    @PostMapping("/projects/{project}/stories/{story}/work")
+    public WorkAnswers.Order orderStoryWork(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String id,
+            final HttpServletRequest request) {
+        final String checked = storyId(project, id);
+        final JsonNode json = WorkRequests.read(request);
+        final Board board = board(project);
+        final Story story = found(board, checked);
+        final String to = WorkRequests.target(json);
+        if (!board.workflow().states().contains(to)) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final WorkRequests.Request body = WorkRequests.request(json, story.state(), to);
+        if (!project.equals(body.project()) || !checked.equals(body.story())) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return WorkAnswers.order(WorkOrder.accept(board, checked, to, WorkRequests.decision(body)));
+    }
+
     private Board board(final String project) {
         return projects.store(name(project)).board();
     }
@@ -408,8 +448,7 @@ public class BoardController {
         try {
             return check.get();
         } catch (final IllegalArgumentException e) {
-            throw Refusal.invalidName(
-                    "The " + kind + " " + e.getMessage(), Map.of("project", name));
+            throw Refusal.invalidName("The " + kind + " id is invalid.", Map.of("project", name));
         }
     }
 

@@ -8,9 +8,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -48,7 +51,16 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueDetail", Answers.IssueDetail.class),
                     Map.entry("Board", Answers.Board.class),
                     Map.entry("Refreshed", Answers.Refreshed.class),
-                    Map.entry("Moved", Answers.Moved.class));
+                    Map.entry("Moved", Answers.Moved.class),
+                    Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
+                    Map.entry("StoryWorkRequest", WorkRequests.Request.class),
+                    Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),
+                    Map.entry("StoryWorkOrder", WorkAnswers.Order.class),
+                    Map.entry("PlanRepositoryWork", WorkAnswers.Repository.class),
+                    Map.entry("PlanWorker", WorkAnswers.Worker.class),
+                    Map.entry("PlanAssignment", WorkAnswers.Assignment.class),
+                    Map.entry("IssueReadingRounds", WorkAnswers.IssueRounds.class),
+                    Map.entry("PlanningStartTask", WorkAnswers.StartTask.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
@@ -76,6 +88,7 @@ class ApiMatchesDescriptionTest {
 
     @Test
     void everyOperationIsServedAndEveryServedPathIsDescribedWithItsAnswer() throws Exception {
+        // An undocumented or missing operation breaks the window's calls.
         final Map<String, String> described = new TreeMap<>();
         description
                 .get("paths")
@@ -123,12 +136,17 @@ class ApiMatchesDescriptionTest {
         assertThat(described)
                 .as("the description's operations and their answers, against the controllers'")
                 .isNotEmpty()
-                .containsKeys("GET /health", "PUT /projects/{project}")
+                .containsKeys(
+                        "GET /health",
+                        "PUT /projects/{project}",
+                        "POST /projects/{project}/stories/{story}/proposal",
+                        "POST /projects/{project}/stories/{story}/work")
                 .isEqualTo(served);
     }
 
     @Test
     void everyAnswerRecordHasExactlyTheFieldsOfItsSchema() {
+        // Missing or unexpectedly required fields can silently change the window's decisions.
         final JsonNode schemas = description.get("components").get("schemas");
         for (final Map.Entry<String, Class<?>> entry : SCHEMAS.entrySet()) {
             final JsonNode schema = schemas.get(entry.getKey());
@@ -159,6 +177,125 @@ class ApiMatchesDescriptionTest {
                         .isEqualTo(required);
             }
         }
+    }
+
+    @Test
+    void bothWorkOperationsDescribeTheirBodiesAndEveryRefusal() {
+        // A refusal omitted from the contract can be treated as a successful decision by a client.
+        for (final String suffix : List.of("proposal", "work")) {
+            final JsonNode operation =
+                    description
+                            .get("paths")
+                            .get("/projects/{project}/stories/{story}/" + suffix)
+                            .get("post");
+            assertThat(operation.at("/requestBody/required").asBoolean())
+                    .as("both operations need a decision body")
+                    .isTrue();
+            assertThat(operation.at("/requestBody/content/application~1json/schema/$ref").asText())
+                    .as("the body read by %s", suffix)
+                    .isEqualTo(
+                            "#/components/schemas/"
+                                    + (suffix.equals("proposal")
+                                            ? "StoryWorkProposalRequest"
+                                            : "StoryWorkRequest"));
+            final Set<String> statuses = new TreeSet<>();
+            operation.get("responses").fieldNames().forEachRemaining(statuses::add);
+            assertThat(statuses)
+                    .as("documented answers for %s", suffix)
+                    .isEqualTo(
+                            suffix.equals("proposal")
+                                    ? Set.of("200", "400", "401", "404", "502", "504")
+                                    : Set.of("200", "400", "401", "404", "409", "502", "504"));
+        }
+        assertThat(
+                        description
+                                .at(
+                                        "/components/schemas/Problem/properties/parameters/properties/tasks/type")
+                                .asText())
+                .as("running task names are an array rather than a string")
+                .isEqualTo("array");
+        assertThat(
+                        description
+                                .at(
+                                        "/components/schemas/Problem/properties/parameters/properties/tasks/items/type")
+                                .asText())
+                .as("each running task has a string name")
+                .isEqualTo("string");
+    }
+
+    @Test
+    void everyNestedWorkFieldMatchesItsWireType() {
+        // Flat field checks alone miss an array or nested record becoming the wrong wire shape.
+        final JsonNode schemas = description.get("components").get("schemas");
+        final Set<Class<?>> workTypes =
+                Set.of(
+                        WorkRequests.Proposal.class,
+                        WorkRequests.Request.class,
+                        WorkAnswers.Proposal.class,
+                        WorkAnswers.Order.class,
+                        WorkAnswers.Repository.class,
+                        WorkAnswers.Worker.class,
+                        WorkAnswers.Assignment.class,
+                        WorkAnswers.IssueRounds.class,
+                        WorkAnswers.StartTask.class);
+        assertThat(workTypes)
+                .as("every work request, response and nested wire record participates")
+                .hasSize(9)
+                .isSubsetOf(SCHEMAS.values());
+        for (final Class<?> type : workTypes) {
+            final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
+            for (final RecordComponent component : type.getRecordComponents()) {
+                wireType(
+                        schemas,
+                        properties.get(component.getName()),
+                        component.getGenericType(),
+                        type.getSimpleName() + "." + component.getName());
+            }
+        }
+        assertThat(names(WorkRequests.IssueLimit.class.getRecordComponents()))
+                .as("the input issue-limit record shares the answer's complete field set")
+                .isEqualTo(names(WorkAnswers.IssueRounds.class.getRecordComponents()));
+        for (final RecordComponent component :
+                WorkRequests.IssueLimit.class.getRecordComponents()) {
+            wireType(
+                    schemas,
+                    schemas.get("IssueReadingRounds").get("properties").get(component.getName()),
+                    component.getGenericType(),
+                    "IssueLimit." + component.getName());
+        }
+    }
+
+    private static void wireType(
+            final JsonNode schemas, final JsonNode field, final Type type, final String name) {
+        if (type instanceof ParameterizedType parameterized
+                && parameterized.getRawType() == List.class) {
+            assertThat(field.path("type").asText()).as("%s is a list", name).isEqualTo("array");
+            wireType(
+                    schemas,
+                    field.get("items"),
+                    parameterized.getActualTypeArguments()[0],
+                    name + "[]");
+            return;
+        }
+        final Class<?> raw = (Class<?>) type;
+        if (raw.isRecord()) {
+            assertThat(field.path("$ref").asText())
+                    .as("%s refers to its complete nested schema", name)
+                    .isEqualTo(
+                            "#/components/schemas/"
+                                    + (raw == WorkRequests.IssueLimit.class
+                                            ? "IssueReadingRounds"
+                                            : schemaOf(raw)));
+            return;
+        }
+        final JsonNode resolved =
+                field.has("$ref")
+                        ? schemas.get(
+                                field.get("$ref").asText().replace("#/components/schemas/", ""))
+                        : field;
+        assertThat(resolved.path("type").asText())
+                .as("%s has the correct primitive wire type", name)
+                .isEqualTo(raw == int.class || raw == Number.class ? "integer" : "string");
     }
 
     private static String answer(final JsonNode operation) {
