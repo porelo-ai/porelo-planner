@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.fuin.porelo</groupId>
+        <artifactId>porelo-planner-parts</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <artifactId>porelo-planner-app</artifactId>
+    <name>Porelo Planner App</name>
+    <description>The Spring Boot application serving the planner, built into one native executable</description>
+    <packaging>jar</packaging>
+
+    <properties>
+        <!-- The executable's name, as the window starts it. -->
+        <planner.image>porelo-planner</planner.image>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-store-git</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!-- The executable the window starts: -Pnative verify writes target/porelo-planner, checks it asks for exactly
+             x86-64 v1, and starts it once. -->
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <!-- Spring's ahead-of-time step: the bean definitions and hints native-image needs, written as code
+                         at build time instead of found by reflection at run time. -->
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <version>${spring-boot.version}</version>
+                        <executions>
+                            <execution>
+                                <id>process-aot</id>
+                                <goals>
+                                    <goal>process-aot</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>${native-maven-plugin.version}</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-porelo-planner</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <configuration>
+                                    <imageName>${planner.image}</imageName>
+                                    <mainClass>org.fuin.porelo.planner.app.PlannerApplication</mainClass>
+                                    <fallback>false</fallback>
+                                    <buildArgs>
+                                        <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+                                        <!-- x86-64 v1, so it starts on any x86-64 CPU, not only the build host's. -->
+                                        <buildArg>-march=x86-64</buildArg>
+                                    </buildArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- After native-image in the same phase: the image asks for exactly x86-64 v1. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>${exec-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>cpu-check</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>org.fuin.porelo.cpucheck.CpuFloor</mainClass>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <arguments>
+                                        <argument>${project.build.directory}</argument>
+                                        <argument>${planner.image}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-cpu-check</artifactId>
+                                <version>${porelo.buildtools.version}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                    <!-- The built executable started and called, as the window will. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <systemPropertyVariables>
+                                        <planner.executable>${project.build.directory}/${planner.image}</planner.executable>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

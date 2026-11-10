@@ -1,6 +1,6 @@
 # PL01 — The Planner Builds As One Native Executable
 
-**Status:** Implementing.
+**Status:** Review.
 **Size:** M - four modules and their build, a native image with its instruction-set check, the Build workflow and
 its first green run; no function yet.
 
@@ -36,8 +36,26 @@ Measured once, in a throwaway project on this machine (Spring Boot 4.1.2, web an
   `x86-64` and fails on an executable built for the host CPU.
 - The JVM tests pass without `-Pnative`.
 
-## To be checked
+## As built
 
-- Whether the Spring AOT step needs the GraalVM reachability metadata repository at build time, as the measurement
-  did (it downloaded it), and how it is pinned by version and digest like every other download.
-- Peak build memory of 4 GiB against the GitHub runner's.
+- **Modules:** `planner/core`, `planner/store/api`, `planner/store/git` (under the grouping `planner/store`),
+  `planner/app` and `planner/test-support`, all under the grouping `planner`; every main package `@NullMarked` and
+  checked by NullAway, held by `NullMarkedPackagesTest`, seen red on an unmarked package.
+- **JUnit 6 from Spring Boot's BOM**, imported before porelo-parent's JUnit 5 set: Spring Boot's test support fails on
+  JUnit 5 with a `NoSuchMethodError`.
+- **`GET /health`** of the app's own, no Actuator; the app listens on `127.0.0.1` only.
+- **`-Pnative`** in `planner/app`: Spring's AOT step, `native-maven-plugin` with `-march=x86-64`, then
+  `porelo-cpu-check` on `target/porelo-planner`, then `NativeStartIT` through failsafe. Seen red: the CPU check on an
+  executable built with `-march=native`; the start test on a missing executable and on one that exits at once.
+- **The reachability metadata** comes as the Maven artifact `graalvm-reachability-metadata` at the native plugin's
+  version, pinned like every Maven dependency; nothing else is downloaded.
+- **Measured on this machine:** `-Pnative clean verify` 98 s, native-image 75 s, peak build memory 3.96 GiB,
+  executable 65 MiB.
+- **`build.yml`** runs `-Pnative verify` and the pushed commits' messages; it publishes nothing yet.
+- **The loopback binding is tested:** `PlannerStartsTest` fails when the planner can be reached on another IPv4
+  address of the computer (seen red without `server.address`), and fails when the computer has none to try.
+- **The native start test** waits for a `200` and fails when the executable does not stop within five seconds of
+  `SIGTERM` (seen red on a stand-in that answers and ignores it).
+- **The reading** (agy, Gemini, read-only): four notes, no blocking finding. The three on the tests are fixed as
+  above. The fourth - the Build runs on a pull request that changes documents alone - is declined: the trigger is the
+  one every Porelo repository's Build has, and a pull request's documents are checked by the Shared rules check.

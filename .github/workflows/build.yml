@@ -1,0 +1,62 @@
+# Builds the planner on every change to it: compiled, its tests run, its native executable built, held to x86-64 v1
+# and started once. Publishing comes with the packages.
+name: Build
+
+on:
+    push:
+        branches: [main]
+        tags: ['v*']
+        # A change to documents alone is checked locally before the hand-over and by the Shared rules check once a day.
+        # Workflows alone build nothing either: an action's move is checked by its pull request, and the next push with
+        # content builds with it.
+        paths-ignore: ['**.md', 'doc/**', 'issues/**', 'mkdocs.yml', '.github/**', 'porelo.yml']
+    pull_request:
+        # The image a Porelo task builds in changes no build here, and a workflow-only change is the Workflow check's.
+        paths-ignore: ['porelo.yml', '.github/**']
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        name: Build and the native executable
+        runs-on: ubuntu-24.04
+        timeout-minutes: 45
+        steps:
+            # Every commit, so the pushed range can be read.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0
+
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            # Not -DskipTests: the native start test needs the executable.
+            - name: Build, tests, the native executable, its CPU check and its start
+              run: ./mvnw -B -U -s settings.xml -Pnative verify
+
+            # A direct push to main never meets the pull request's check, so the push's own range is read here, by the
+            # rule this commit carries. A tag checks the commit it names. A new branch or a branch pushed over has no start
+            # this checkout holds, so its range starts at main; main itself cannot be pushed over.
+            - name: The pushed commits' messages
+              if: github.event_name == 'push'
+              env:
+                  PUSH_BEFORE: ${{ github.event.before }}
+              run: |
+                  set -eu
+                  case "$PUSH_BEFORE" in
+                      '') echo "::error::the push names no commit it started from"; exit 1 ;;
+                  esac
+                  start=$PUSH_BEFORE
+                  if [ "$GITHUB_REF_TYPE" = tag ]; then
+                      start="$GITHUB_SHA~1"
+                  elif ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+                      if [ "$GITHUB_REF" = refs/heads/main ]; then
+                          echo "::error::main moved from $PUSH_BEFORE, a commit this checkout does not hold"
+                          exit 1
+                      fi
+                      start=origin/main
+                  fi
+                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $start..$GITHUB_SHA"

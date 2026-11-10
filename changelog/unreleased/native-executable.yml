@@ -1,0 +1,2 @@
+title: The planner builds into one native executable for any x86-64 CPU, listening on the loopback address and saying when it is up.
+type: added

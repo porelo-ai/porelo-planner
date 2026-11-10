@@ -43,18 +43,15 @@
         <machines.args></machines.args>
     </properties>
 
+    <modules>
+        <module>planner</module>
+    </modules>
+
     <dependencyManagement>
         <dependencies>
-            <!-- JUnit's first, as porelo-parent says: an import here comes before the parent's, and Spring Boot's BOM
-                 below pins a JUnit of its own. -->
-            <dependency>
-                <groupId>org.junit</groupId>
-                <artifactId>junit-bom</artifactId>
-                <version>${junit.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <!-- Spring Boot's versions next, for everything the app takes from it. -->
+            <!-- Spring Boot's versions first, JUnit's among them: its test support is built against JUnit 6, so the
+                 JUnit 5 set porelo-parent imports would break every Spring test. An import here comes before the
+                 parent's. -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
