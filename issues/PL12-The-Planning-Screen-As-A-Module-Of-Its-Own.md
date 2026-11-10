@@ -39,6 +39,11 @@ against the planner started in its mock mode, without Porelo and without the win
   module, and an integration test (`example/` driven by `flutter test integration_test` under `xvfb-run`) against the
   planner's mock mode built in the same job.
 - `AGENTS.md`'s own part names Flutter and the reason: the window is Flutter, and the screen is part of it.
+- **Alongside, in `app`'s tests:** the access check's variants move down to unit tests - the token cases (no
+  header, a wrong token, one of the right length, `Basic`, a longer one) into a test of `AccessFilter` over a mock
+  request and response, the address cases (empty, `0.0.0.0`, `::`, a documentation address, a name) into a test of
+  `LoopbackBinding`'s parse. One refusal through the running server and one refused start stay as integration tests.
+  Each moved test is seen red by a break. The branch is rebased on `main` once the access check is there.
 - **Red first:** the package's own test of `hasPendingMoves` against a fake with one unsaved move; the integration
   test against a planner that is not started fails naming the address.
 
