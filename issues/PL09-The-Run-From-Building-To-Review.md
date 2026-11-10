@@ -26,25 +26,126 @@ finding. Counts, limits and findings survive a restart of the planner.
 
 ## Plan
 
-- **The window tells the planner of every change of a Porelo task it started** - started, ended, stopped - since the
-  window already watches Porelo and the planner talks to no Porelo. The end is the task's `ended` record (outcome `DONE` or `BLOCKED`, why, the agent's last
-  message; FAILED when the run did not finish). A reader's last message carries one `Findings:` block, one finding a
-  line, `<n>. <blocking|note> | <file or -> | <line or -> | <text>`.
-- `core`: `WorkEnds` (the pure judge and the findings parser), `ReadingCycle` (rounds, limit, ROUND_LIMIT, the
-  three choices), `NextStep` (which state, which tasks to start with which prompt - the window starts them).
-- **The record is local to the computer**, as the tasks it follows run there; only the states go into the Git
-  store, so a lost record leaves every issue in its right state without its counts and findings:
-  `$XDG_STATE_HOME/porelo-planner/<project>/work.json`, replaced atomically, one writer per project:
-  tasks with their container ids, rounds, limits, findings and every reading's raw answer.
-- REST: `POST /projects/{project}/tasks/{task}/events` with `{event: STARTED|ENDED|STOPPED, container, ended}` (the
-  window reports each change; a report repeated is taken once), `GET .../stories/{story}/work`,
-  `POST .../issues/{issue}/reading` with `{round, choice, comment, revision}`; the issue views carry `rounds`,
-  `roundsMost`, `atWork`, `needsYou`, `readingStopped`, `findings`.
-- **Red first:** `WorkEndsTest` (a malformed block needs the operator; a pipe in a finding's text kept);
-  `ReadingCycleTest` (the limit reached with blocking findings stops in Reading; success on the last reading reaches
-  Review; one more round grants `max(roundsMost, rounds + 1)`); `WorkRecordTest` (a restart keeps counts and
-  findings; the same end reported twice counts one reading).
+- **Contract first:** extend `planner/app/src/main/resources/openapi/planner.yaml`; preserve screen fields and
+  envelopes. `P` means `/projects/{project}`. Only the window calls Porelo's `Start` and reports task changes.
+- **Preparing work:** retain `POST P/stories/{story}/proposal`, `{to}` ->
+  `{modes,repositories,coordinator,comment,readingRounds,issueReadingRounds,revision}`, and `POST
+  P/stories/{story}/work`, `{project,story,to,mode,revision,repositories?,comment?,readingRounds?,issueReadingRounds?}`
+  -> `{revision,tasks}`. Keep `WorkProposal`/`WorkOrder` validation and repository choices. Each task is
+  `{repository,issues,role,agent,model,mode,prompt}`, with a new opaque UUID `offer`. Persist these offers and chosen
+  limits before answering, without marking anything running or moving states. Repeated identical decisions reuse
+  unstarted offers; replacements invalidate superseded offers. Feed active records to `WorkProposal.RunningWork`.
+- **Reports:** `POST P/tasks/{task}/events` takes `{offer,event,container,ended?}`, with
+  `event: STARTED|ENDED|STOPPED`; only ENDED requires `ended: {at,outcome: DONE|BLOCKED|FAILED,why,answer}`.
+  Answer `{revision,work,tasks}` with next Start arguments and offers. The saved
+  offer binds project, story, repository, owned issues, role, working rule and run. STARTED binds the actual Porelo
+  task name and container id once; later reports must match both. Scope never comes from a report.
+  Reject unknown, superseded or foreign offers, rebinding, an end before a start and conflicting terminal reports.
+  Deduplicate by offer, event and checked payload: repeats replay the disposition after restart, without another
+  judgment, count or save; return only still-valid next offers, with unchanged identities. The window starts each once.
+- **Reads and stop:** `GET P/stories/{story}/work` has no body and answers `{work}` (`null` without a run).
+  Project story-list, story-detail, story-issues and issue-detail GETs keep `{revision,stories}`, `{revision,story}`,
+  `{revision,issues}` and `{revision,issue}`. Decorate them and the existing board SSE with the same snapshot:
+  `PlanWork` is `{tasks,coordinator,since,atWork,repositories,comment,readingRounds,issueReadingRounds,issues}`;
+  each task has `{task,containerId,repository,issues,state,done,mode,agent,model,role,since,atWork,ended}`.
+  Issue views carry `rounds,roundsMost,atWork,needsYou,readingStopped,findings`; work issues add `issue,reason`
+  (`NONE|ROUND_LIMIT|BLOCKED|FAILED|STOPPED|INVALID_FINDINGS|SAVE_REFUSED`). Findings are
+  `{number,severity: BLOCKING|NOTE,file?,line?,text}`. `POST
+  P/stories/{story}/work/stop`, empty body -> `{work}`, records cancellation, invalidates unstarted offers and
+  suppresses follow-ups. The window stops active tasks and reports STOPPED; only those reports clear their
+  `atWork`. Stop preserves planning states, counts and findings and is repeatable.
+- **Plain core:** add `WorkEnds`, `ReadingCycle`, `NextStep` and `WorkRun` under
+  `planner/core/src/main/java/org/fuin/porelo/planner/core/`. `WorkEnds` judges one accepted terminal report:
+  BLOCKED, FAILED and STOPPED need the operator, never findings or continuation. Parse only a successful
+  READER's answer: exactly one final `Findings:` block, through end of message, empty for no findings; otherwise
+  consecutive numbered lines `<n>. <blocking|note> | <file or -> | <line or -> | <text>`. Split only the first three
+  pipes; preserve text, map `-` to absence. Missing, duplicate or malformed blocks need the operator without advancing
+  or counting a reading; keep the raw answer. Each reader owns one issue; findings cannot name another issue.
+- **Rounds and decisions:** `ReadingCycle` counts a successfully parsed reading once per issue, not an offer or
+  STARTED. Defaults and per-issue overrides come from the accepted order (default 2, initial allowance 1..10).
+  Notes or no findings reach Review, including on the last reading. Blocking findings with allowance left lead to
+  Reworking; at `rounds == roundsMost`, stay in Reading with `atWork:false,needsYou:true,readingStopped:true`,
+  `reason:ROUND_LIMIT`, findings retained and no next task. `POST P/issues/{issue}/reading` takes
+  `{story,round,choice,comment,revision}` and answers `{issue,work,revision,tasks}`. Check revision, membership,
+  stopped status and exact round. `REVIEW_ANYWAY` saves Review, retains findings and offers nothing;
+  `ONE_MORE_ROUND` grants `max(roundsMost,rounds+1)` and offers a reader; `REWORK` needs nonblank operator words,
+  grants that allowance and offers rework using those words. Neither counts a reading before its successful end.
+- **Next work:** `NextStep` uses sound `WorkRules.check` rules: success follows `then`, else `done`; findings follow
+  `blocked` only within allowance. Building/Reworking success offers READER; rework includes findings/operator words.
+  Expand the target order through `WorkOrder`'s fenced briefs, story, task identities and comment; append Findings
+  grammar for readers. Check target `from` on state changes, plus agent/model and mode. Kept BUILDERs own sub-issues; MAIN owns
+  remaining work, including dropped briefs, never a kept builder's issue. Use `PlanningStore.storyState` for aggregate
+  state, removing agreeing overrides; write the story head for stories without issues.
+- **Saving:** `WorkRun` uses record/store interfaces. STARTED and transitions compute
+  `Writes(issues,stories,unstated)` against the board revision for `PlanningStore.save`, preserving parent/closed
+  invariants. `Moves.check` refuses working states; use sound work rules here. `GitStore.save` owns commits, pushes
+  and indexes. Before saving, persist event/judgment and pending `{baseRevision,sourceStates,targetStates,writes,offers}`;
+  release offers only after save and final record replacement. StaleRevision/Busy retain judgment, return refusal,
+  expose Needs you, release nothing. PartlySaved records pushed/failed repositories, refreshes/publishes actual states,
+  never retries or rolls back. After restart, saved revision evidence proves finalization; matching states alone are
+  ambiguous and stop without replay.
+- **Local writer:** add app `WorkRecord` and wire it in `StoreConfiguration`. Versioned JSON at
+  `$XDG_STATE_HOME/porelo-planner/<project>/work.json` (an unset XDG_STATE_HOME uses the XDG default state directory) has
+  `{version,project,generation,runs}`; each run contains story/identity, decisions/rules/limits, offers/ownership,
+  task/container bindings, lifecycle/deduplication results, issue rounds/findings, raw readings, cancellation and pending saves.
+  One project writer holds a mutex and stable sibling `work.lock` across record/save/finalization; acquisition is
+  bounded by 30 s. Flush an owner-only temporary sibling, atomically replace and sync its directory before publishing;
+  refuse unsupported replacement or unreadable records. A lost record leaves store states intact: omit unknown
+  counts/findings, return no run, and never infer zero rounds, running tasks or permission to continue.
+- **Bounds and refusals:** strict JSON rejects duplicate/unknown fields and trailing input. Bodies are at most
+  64 KiB, reports 128 KiB; prompts and raw answers 64 KiB UTF-8 each; comments, reasons and finding text 4,000
+  Unicode code points; at most 100 findings, relative file labels 512 characters, lines 1..2,147,483,647, no line
+  without a file; file labels are display-only. Reuse `Ids`; task/container labels match
+  `[A-Za-z0-9][A-Za-z0-9_.-]{0,127}`, offers are UUIDs, timestamps RFC 3339, other scalar labels at most 128
+  characters, round counters 0..2,147,483,647. Preflight pending/final records and JSON answers
+  against 16 MiB before saving; never truncate history or release work on overflow/disk failure.
+  Problems retain `urn:porelo-planner:<name>` and typed parameters: 400 `InvalidName(project?)`,
+  `InvalidSettings(detail)`, `WorkNotAllowed(from,to,reason)`; 404 `NoSuchProject(project)`, `NoSuchStory(story)`,
+  `NoSuchIssue(issue)`, new `TaskNotAnswered(task,offer)`; 409 `StaleRevision(revision)`, `WorkRunning(story,tasks[])`,
+  `ReadingNotStopped(issue)`, `ReadingRoundChanged(issue,rounds)`, new `TaskEventConflict(task,event,reason)`;
+  422 `MoveNotAllowed(item,from,to,reason)` for unsavable/invalid state writes; 501 `NotOffered(project)`;
+  502 `WorkflowMissing(repository)`, `CredentialRefused(repository)`, `Unreadable(repository)`,
+  `PartlySaved(pushed,failed)` (pushed comma-joined); 503 `Busy(repository)`, new
+  `WorkRecordUnavailable(project,reason)` for record IO/capacity; 504 `Unreachable(repository)`.
+  Invalid input gets fixed words, never echoed raw messages or parser errors; task outcomes needing attention are
+  accepted reports, not HTTP refusals.
+- **Wiring and red first:** extend app `BoardController`, `WorkRequests`, `WorkAnswers`, `Answers`, `Problems`,
+  `Refusal`, core `WorkRefusal`, and `Changes`/`ChangesRegistry`/`EventsController`: publish record generations at
+  unchanged store revisions; register SSE/record native bindings. First core unit tests over fakes: `WorkEndsTest`
+  prevents BLOCKED text becoming findings or malformed readings reaching Review (also pipes/empty blocks);
+  `ReadingCycleTest` prevents double counts and work past the limit, covering three choices/last-round success;
+  `NextStepTest` prevents MAIN completing another owner's issue; `WorkRunTest` prevents forged cross-story reports,
+  duplicate follow-ups and continuation after save refusals. App `WorkRecordTest` disk integration prevents lost
+  counts/findings, reset allowance or state corruption after restart/record loss, and competing writers losing updates.
+  Extend `ApiMatchesDescriptionTest`; add `WorkRunHttpTest` for envelopes, refusals, bounds and same-revision SSE
+  (harm: wrong starts or hidden Needs you); exercise native bindings in `NativeStartIT`. See each guard fail first;
+  the complete cycle uses fakes, without Porelo or a VM.
 
 ## Acceptance
 
 - The red-first tests seen red, then green; a whole cycle run over fakes in seconds.
+
+## To be checked
+
+- The window's report of a task's change carries today only the event. The plan needs with every report the offer
+  the work answer gave, the Porelo task's name and its container, and with an end Porelo's ended record; that change
+  of the screen package's interface waits on agreement with the window's agent.
+- `screen/lib/src/models.dart` makes `StoryWorkStarted.started` require `{work}` with `atWork:true` and tasks;
+  `fake/story_work.dart` changes story/issue states and returns that running work from StartStoryWork. The settled
+  work call instead returns `{revision,tasks}` and starts/moves nothing. The screen's own work must follow that
+  answer, carry offers through Porelo starts and handle tasks returned from reports and reading decisions.
+- The fake proposes BUILDER and READER together, carries readers as chosen start participants, and its reading
+  decision sets `atWork` itself without answering a task to start. Readers instead belong to the run after building
+  success; only STARTED reports establish activity. The fake's StopStoryWork likewise clears activity before any
+  STOPPED report. Keep those differences in the screen work rather than reproducing them in the planner.
+- The fake increments `rounds` on ONE_MORE_ROUND before a reader ends and accepts initial limits above 10; the
+  implemented work contract bounds initial limits to 1..10. Verify the screen's round display against completed
+  readings and retain operator-granted extensions beyond that initial bound.
+- `client.dart` exposes `taskEvent(project,task,event)` as `Future<void>` with an enum alone: no offer, container,
+  ended record or next-task answer. The HTTP source marks work, stop and reading calls unsupported. Verify the
+  window adapter's actual Porelo ended payload and task/container names against the planned report and parser.
+- The fake returns reading resolutions as `{issue,work,revision}` without tasks. Its Needs you list recognizes
+  non-DONE task ends or `readingStopped`, whereas malformed DONE readings and save refusals also need attention
+  without being round-limit stops. Check that the screen exposes these reasons and preserves their raw reports.
+- `WorkOrder` allows story work without issues, but reading decisions and round-limit controls in the screen are
+  issue-scoped. Check how that case exposes a stopped reading before extending either contract.
