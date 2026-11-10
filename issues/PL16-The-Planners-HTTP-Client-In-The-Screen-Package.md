@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL16",
   "title": "The Planner's HTTP Client In The Screen Package",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -30,11 +30,18 @@ in a log or a URL. Calls the planner does not offer yet (moves, work, reading ro
 - `screen/lib/src/http/planner_source.dart`: `HttpPlanningSource implements PlanningSource`, built from the
   address file and the project's own repository as Porelo names it; the snapshot of `stories(project)` and
   `planningWorkflow(project)` from `GET .../workflow` and `GET .../stories`, the others from their reads.
-- A small `PlanningClient` over one or more sources, if the window's use asks for it; no class named
-  `EmbeddedPlanning`, which is the window's.
+- No `PlanningClient`: one needs a connection state and task events the planner has no call for, so the window keeps
+  its own client around the source; no class named `EmbeddedPlanning`, which is the window's.
+- The refusals the source makes itself, besides the planner's: `PlannerUnreachable` (the planner does not run, unlike
+  the planner's `Unreachable`, a Git remote), `TimedOut`, `AnswerTooLarge`, `BadAnswer`, `RevisionMoved`,
+  `NoAddress`, `BadAddress` and `InvalidName`, the last before any call.
 - **Red first:** `planner_source_test.dart` against a local `HttpServer`: the PUT before the first read and once
   more after a 404 `NoSuchProject`; each read mapped to the records the screen already reads; each refusal named;
   the token in the `Authorization` header and nowhere else.
+
+- **Code reading:** read by another model; every finding is fixed with a test seen red, but one. Declined: fields the
+  screen's models leave out (an issue's text and sub-issues, a parent, a story's `stateGiven`, a rule's models) - the
+  source hands over every field the planner answers, and what the screen shows is the screen's choice.
 
 ## Acceptance
 

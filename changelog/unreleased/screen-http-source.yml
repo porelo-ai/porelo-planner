@@ -1,0 +1,2 @@
+title: The planning screen package reads the planner's board over HTTP, found through the planner's address file, with each refusal named as the planner names it.
+type: added

@@ -27,7 +27,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl16"></a>[PL16](PL16-The-Planners-HTTP-Client-In-The-Screen-Package.md) | M | [PL04](README.md#pl04) | A PlanningSource over HTTP in the screen package: planner.json read, the project PUT, the board reads, problem+json as PlanningRefusal; the window wraps it and hands it in |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
 ## Review
@@ -40,3 +39,4 @@ left out.
 | <a id="pl03"></a>[PL03](PL03-The-Store-Read-From-Git.md) | L | [PL01](README.md#pl01) | The store's interface and its Git implementation: workflow, stories, issue indexes and sub-issues read with Jackson (JSON heads only) and the stories library, with the person's own Git login |
 | <a id="pl07"></a>[PL07](PL07-The-Work-Rules-Read-From-The-Workflow.md) | S | [PL03](README.md#pl03) | Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow |
 | <a id="pl04"></a>[PL04](PL04-The-Board-Read-Over-REST.md) | M | [PL03](README.md#pl03) | The board's reads in the OpenAPI description and served over REST; a story's own state over its issues' derived one |
+| <a id="pl16"></a>[PL16](PL16-The-Planners-HTTP-Client-In-The-Screen-Package.md) | M | [PL04](README.md#pl04) | A PlanningSource over HTTP in the screen package: planner.json read, the project PUT, the board reads, problem+json as PlanningRefusal; the window wraps it and hands it in |
