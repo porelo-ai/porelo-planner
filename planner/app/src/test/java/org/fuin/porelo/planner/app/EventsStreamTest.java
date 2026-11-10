@@ -25,7 +25,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /** A project's boards streamed to a window as the project's remote changes. */
 class EventsStreamTest {
 
-    private static final Pattern BOARD = Pattern.compile("event:board\\nid:([^\\n]+)\\ndata:");
+    // Counted once its blank line is written: the emitter writes an event's fields one by one.
+    private static final Pattern BOARD =
+            Pattern.compile("event:board\\nid:([^\\n]+)\\ndata:[^\\n]+\\n\\n");
 
     @TempDir Path dir;
 
