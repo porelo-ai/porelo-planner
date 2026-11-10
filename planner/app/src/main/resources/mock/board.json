@@ -1,0 +1,1361 @@
+{
+  "revision": "mock@1",
+  "workflow": {
+    "states": [
+      "Idea",
+      "Accepted",
+      "In analysis",
+      "Analyzed",
+      "Under estimation",
+      "Estimated",
+      "Backlog",
+      "Implementing",
+      "Reading",
+      "Review",
+      "Rework",
+      "Reworking",
+      "Finishing",
+      "Finished",
+      "Rejected"
+    ],
+    "phases": [
+      {
+        "name": "Ideas",
+        "states": [
+          "Idea",
+          "Accepted"
+        ]
+      },
+      {
+        "name": "Analysis",
+        "states": [
+          "In analysis",
+          "Analyzed"
+        ]
+      },
+      {
+        "name": "Estimation",
+        "states": [
+          "Under estimation",
+          "Estimated"
+        ]
+      },
+      {
+        "name": "Backlog",
+        "states": [
+          "Backlog"
+        ]
+      },
+      {
+        "name": "Build",
+        "states": [
+          "Implementing",
+          "Reworking",
+          "Reading",
+          "Review",
+          "Rework"
+        ]
+      },
+      {
+        "name": "Done",
+        "states": [
+          "Finishing",
+          "Finished",
+          "Rejected"
+        ]
+      }
+    ],
+    "closed": [
+      "Finished",
+      "Rejected"
+    ]
+  },
+  "work": {
+    "In analysis": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    },
+    "Under estimation": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    },
+    "Implementing": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    },
+    "Reading": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    },
+    "Reworking": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    },
+    "Finishing": {
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "repository",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
+    }
+  },
+  "faults": [],
+  "stories": [
+    {
+      "id": "ST294",
+      "title": "Plan the stories on a board in the window",
+      "state": "In analysis",
+      "stateGiven": false,
+      "priority": "High",
+      "issues": [],
+      "description": "The operator sees every story by state, the most important first, opens a story or an issue, and changes a story’s state by drag and drop, read from and written through a story API whose states are configured, not built in; a state change calls an action API.\n\nOpen Planning, find each story in its state’s column sorted by priority, open a story and one of its issues, drag a story to another state and save; the change is in porelo-project’s checkout. Rename a state in the configuration and the board shows it.",
+      "link": "https://example.org/stories/ST294"
+    },
+    {
+      "id": "ST72",
+      "title": "A forge’s calls in a client that knows nothing of Porelo",
+      "state": "Under estimation",
+      "stateGiven": false,
+      "priority": "Medium",
+      "issues": [
+        "PJ74",
+        "FC03",
+        "FC09",
+        "FC10",
+        "FC11",
+        "FC13"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST72"
+    },
+    {
+      "id": "ST21",
+      "title": "No channel file and no hand-over directory any more",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST21"
+    },
+    {
+      "id": "ST11",
+      "title": "porelo-adapters and porelo-ai.github.io each in its own task",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST11"
+    },
+    {
+      "id": "ST13",
+      "title": "porelo and porelo-host each in its task, with a way back",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST13"
+    },
+    {
+      "id": "ST28",
+      "title": "The setup, move and recovery proven together",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST28"
+    },
+    {
+      "id": "ST87",
+      "title": "Invalid machine inputs refused before renting",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Medium",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST87"
+    },
+    {
+      "id": "ST182",
+      "title": "Review a Bitbucket pull request",
+      "state": "Idea",
+      "stateGiven": false,
+      "priority": "Low",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST182"
+    },
+    {
+      "id": "ST114",
+      "title": "A vulnerability has a way in and is answered",
+      "state": "Accepted",
+      "stateGiven": false,
+      "priority": "Medium",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST114"
+    },
+    {
+      "id": "ST111",
+      "title": "Install from the intended package source",
+      "state": "Accepted",
+      "stateGiven": false,
+      "priority": "Medium",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST111"
+    },
+    {
+      "id": "ST144",
+      "title": "Understand where a binding setting came from",
+      "state": "Accepted",
+      "stateGiven": false,
+      "priority": "Low",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST144"
+    },
+    {
+      "id": "ST14",
+      "title": "The coordinator reads everything and changes only porelo-project",
+      "state": "Analyzed",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "PJ58"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST14"
+    },
+    {
+      "id": "ST39",
+      "title": "A failed delivery named and kept visible",
+      "state": "Analyzed",
+      "stateGiven": false,
+      "priority": "High",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST39"
+    },
+    {
+      "id": "ST35",
+      "title": "Refuse an incompatible protocol and a meaningless option",
+      "state": "Analyzed",
+      "stateGiven": false,
+      "priority": "High",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST35"
+    },
+    {
+      "id": "ST15",
+      "title": "The website builds in its task",
+      "state": "Estimated",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "SI05"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST15"
+    },
+    {
+      "id": "ST106",
+      "title": "Make security failures hold the release",
+      "state": "Estimated",
+      "stateGiven": false,
+      "priority": "Medium",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST106"
+    },
+    {
+      "id": "ST198",
+      "title": "Reach a remote machine from Windows",
+      "state": "Estimated",
+      "stateGiven": false,
+      "priority": "Low",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST198"
+    },
+    {
+      "id": "ST291",
+      "title": "The host run by a program of its own, built like porelo",
+      "state": "Backlog",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "B540",
+        "B541",
+        "B542",
+        "B543",
+        "B544",
+        "B545",
+        "B546",
+        "B547",
+        "B548",
+        "B549",
+        "B550",
+        "B551",
+        "B552",
+        "HO156",
+        "HO157"
+      ],
+      "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",
+      "link": "https://example.org/stories/ST291"
+    },
+    {
+      "id": "ST292",
+      "title": "A whole move rehearsed by the agents on a rented server",
+      "state": "Backlog",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "B553",
+        "B554",
+        "F444",
+        "F445",
+        "HO158",
+        "MX89",
+        "MX90",
+        "MX91"
+      ],
+      "description": "The agents rehearse a whole move on a rented server before the operator’s own test, so most problems are found earlier.\n\nRent a server and let the agents run the rehearsal; the report names every scenario OK, and the window and the room agree with the host.",
+      "link": "https://example.org/stories/ST292"
+    },
+    {
+      "id": "ST293",
+      "title": "Every agent works in a Porelo task, moved one at a time",
+      "state": "Backlog",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST293"
+    },
+    {
+      "id": "ST23",
+      "title": "The room and the usage records outlive the host",
+      "state": "Backlog",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "MX24",
+        "MX36",
+        "MX39",
+        "HO07",
+        "B231"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST23"
+    },
+    {
+      "id": "ST6",
+      "title": "porelo-agy and porelo-codex each in its own task",
+      "state": "Backlog",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST6"
+    },
+    {
+      "id": "ST27",
+      "title": "Every workflow runs on the local forge as on the central one",
+      "state": "Implementing",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "IJ14"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST27"
+    },
+    {
+      "id": "ST12",
+      "title": "The release and pipeline tools the move rests on",
+      "state": "Implementing",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "BT35",
+        "BT36",
+        "BT38",
+        "BT43",
+        "BT44",
+        "BT45",
+        "BT46"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST12"
+    },
+    {
+      "id": "ST5",
+      "title": "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
+      "state": "Implementing",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "PI43",
+        "OM44",
+        "CC45",
+        "PI39",
+        "OM36",
+        "CC39"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST5"
+    },
+    {
+      "id": "ST193",
+      "title": "Choose drive areas for each host",
+      "state": "Implementing",
+      "stateGiven": false,
+      "priority": "Low",
+      "issues": [
+        "PJ106"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST193"
+    },
+    {
+      "id": "ST127",
+      "title": "Keep container limits on large hosts",
+      "state": "Implementing",
+      "stateGiven": false,
+      "priority": "Low",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST127"
+    },
+    {
+      "id": "ST1",
+      "title": "Builds on the host’s forge resolve snapshots with a read-only token",
+      "state": "Review",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "BT42",
+        "BT39",
+        "HO52",
+        "SL36",
+        "BT40",
+        "BT41",
+        "HO53"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST1"
+    },
+    {
+      "id": "ST2",
+      "title": "porelo-message-sluice works wholly in its task",
+      "state": "Review",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "SL35"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST2"
+    },
+    {
+      "id": "ST3",
+      "title": "porelo’s Build on the host’s Forgejo",
+      "state": "Review",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "B306"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST3"
+    },
+    {
+      "id": "ST10",
+      "title": "Test machines by kind from the VM pool",
+      "state": "Review",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "HO12",
+        "BT24",
+        "BT25"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST10"
+    },
+    {
+      "id": "ST264",
+      "title": "A host prepared with no project or person",
+      "state": "Finished",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST264"
+    },
+    {
+      "id": "ST268",
+      "title": "Each person’s one key and card, kept in the registry",
+      "state": "Finished",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [],
+      "description": "",
+      "link": "https://example.org/stories/ST268"
+    },
+    {
+      "id": "ST243",
+      "title": "Both adapters pass one contract suite",
+      "state": "Finished",
+      "stateGiven": false,
+      "priority": "Highest",
+      "issues": [
+        "PJ62",
+        "GH18"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST243"
+    }
+  ],
+  "issues": [
+    {
+      "id": "PJ74",
+      "repository": "porelo-project",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PJ74",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "FC03",
+      "repository": "porelo-forge-clients",
+      "title": "Planning work",
+      "state": "Under estimation",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/FC03",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "FC09",
+      "repository": "porelo-forge-clients",
+      "title": "Planning work",
+      "state": "Under estimation",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/FC09",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "FC10",
+      "repository": "porelo-forge-clients",
+      "title": "Planning work",
+      "state": "Under estimation",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/FC10",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "FC11",
+      "repository": "porelo-forge-clients",
+      "title": "Planning work",
+      "state": "Under estimation",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/FC11",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "FC13",
+      "repository": "porelo-forge-clients",
+      "title": "Planning work",
+      "state": "Under estimation",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/FC13",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "PJ58",
+      "repository": "porelo-project",
+      "title": "Planning work",
+      "state": "Analyzed",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PJ58",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "SI05",
+      "repository": "porelo-ai.github.io",
+      "title": "Planning work",
+      "state": "Estimated",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/SI05",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B540",
+      "repository": "porelo",
+      "title": "The host tool as a module of porelo",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B540",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B541",
+      "repository": "porelo",
+      "title": "The host tool reads the organization and a task by its signature",
+      "state": "Implementing",
+      "size": "L",
+      "blockedBy": [
+        "B540"
+      ],
+      "parent": null,
+      "link": "https://example.org/issues/B541",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B542",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B542",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B543",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B543",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B544",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B544",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B545",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B545",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B546",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B546",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B547",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B547",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B548",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B548",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B549",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B549",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B550",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B550",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B551",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B551",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B552",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B552",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO156",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO156",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO157",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO157",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B553",
+      "repository": "porelo",
+      "title": "A move runs without a terminal for a rehearsal",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B553",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B554",
+      "repository": "porelo",
+      "title": "A forge token’s reach checked against what a move needs",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B554",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "F444",
+      "repository": "porelo-frontend",
+      "title": "A move driven through the window against a rented host",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/F444",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "F445",
+      "repository": "porelo-frontend",
+      "title": "What a rehearsal cannot drive in the window, stood in for",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [
+        "F444"
+      ],
+      "parent": null,
+      "link": "https://example.org/issues/F445",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO158",
+      "repository": "porelo-host",
+      "title": "A move rehearsed on a rented server",
+      "state": "Backlog",
+      "size": "L",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO158",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX89",
+      "repository": "porelo-message-matrix",
+      "title": "A test person signs in through the gate unattended",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/MX89",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX90",
+      "repository": "porelo-message-matrix",
+      "title": "The room’s scenarios are rehearsed on a host",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [
+        "MX89"
+      ],
+      "parent": null,
+      "link": "https://example.org/issues/MX90",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX91",
+      "repository": "porelo-message-matrix",
+      "title": "The rehearsal says a wake was answered",
+      "state": "Backlog",
+      "size": "XS",
+      "blockedBy": [
+        "MX89"
+      ],
+      "parent": null,
+      "link": "https://example.org/issues/MX91",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX24",
+      "repository": "porelo-message-matrix",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/MX24",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX36",
+      "repository": "porelo-message-matrix",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/MX36",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "MX39",
+      "repository": "porelo-message-matrix",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/MX39",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO07",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO07",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B231",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B231",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "IJ14",
+      "repository": "porelo-intellij",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/IJ14",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT35",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT35",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT36",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT36",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT38",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT38",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT43",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT43",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT44",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT44",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT45",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT45",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT46",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT46",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "PI43",
+      "repository": "porelo-pi",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PI43",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "OM44",
+      "repository": "porelo-omp",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/OM44",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "CC45",
+      "repository": "porelo-claude-code",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/CC45",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "PI39",
+      "repository": "porelo-pi",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PI39",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "OM36",
+      "repository": "porelo-omp",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/OM36",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "CC39",
+      "repository": "porelo-claude-code",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/CC39",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "PJ106",
+      "repository": "porelo-project",
+      "title": "Planning work",
+      "state": "Implementing",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PJ106",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT42",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT42",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT39",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT39",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO52",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO52",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "SL36",
+      "repository": "porelo-message-sluice",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/SL36",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT40",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT40",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT41",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT41",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO53",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO53",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "SL35",
+      "repository": "porelo-message-sluice",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/SL35",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "B306",
+      "repository": "porelo",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B306",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "HO12",
+      "repository": "porelo-host",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/HO12",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT24",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT24",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "BT25",
+      "repository": "porelo-buildtools",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/BT25",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "PJ62",
+      "repository": "porelo-project",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/PJ62",
+      "text": "**What must be true.** The work meets the story description.\n"
+    },
+    {
+      "id": "GH18",
+      "repository": "porelo-adapters",
+      "title": "Planning work",
+      "state": "Finished",
+      "size": "M",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/GH18",
+      "text": "**What must be true.** The work meets the story description.\n"
+    }
+  ]
+}

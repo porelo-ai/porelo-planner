@@ -27,6 +27,23 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /mock/reset:
+    post:
+      operationId: resetMock
+      summary: Restore the mock board
+      description: >-
+        Only in the mock mode (`porelo-planner --mock`), for the window's tests: restores the mock board every project
+        is served from and forgets every project given, so each test starts alike. Outside the mock mode a POST here
+        answers 404, as for a path that does not exist.
+      tags: [mock]
+      responses:
+        '204':
+          description: The mock board is as it was at the start.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The planner does not run in the mock mode.
+
   /projects/{project}:
     parameters:
       - $ref: '#/components/parameters/Project'

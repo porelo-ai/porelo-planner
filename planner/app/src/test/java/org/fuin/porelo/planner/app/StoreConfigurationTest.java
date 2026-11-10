@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class StoreConfigurationTest {
 
     private final Projects projects =
-            new StoreConfiguration().projects(StoreConfiguration.gitProjects(Map.of()));
+            StoreConfiguration.fromGit(StoreConfiguration.gitProjects(Map.of()));
 
     @Test
     void aSourceThatIsNoCloneUrlIsRefusedByName() {

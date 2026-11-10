@@ -92,12 +92,17 @@ public final class Projects {
         }
     }
 
+    /** Forgets every project, retiring its store; the mock mode's reset. */
+    public synchronized void forgetAll() {
+        projects.values().forEach(entry -> entry.store().retire());
+        projects.clear();
+    }
+
     /**
-     * Answers a project's store.
+     * Answers a known project's store.
      *
-     * @param project the project's name, already checked
+     * @param project the project's name
      * @return its store
-     * @throws Refusal {@code NoSuchProject} if the planner was not given it
      */
     public PlanningStore store(final String project) {
         final Entry entry = projects.get(project);

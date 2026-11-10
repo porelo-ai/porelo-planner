@@ -1,6 +1,9 @@
 package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.DispatcherType;
+import java.nio.file.Path;
+import org.fuin.porelo.planner.app.mock.MockMode;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -27,12 +30,18 @@ public class AccessConfiguration {
      * The address file, its lock taken at once, so a second planner stops before it listens.
      *
      * @param runtimeDirectory The account's runtime directory.
+     * @param mode Present only in the mock mode, which never writes where the person's window
+     *     looks.
      * @return The address file, written once the server listens and deleted when the planner stops.
      */
     @Bean(destroyMethod = "close")
     public AddressFile addressFile(
             @Value("${planner.runtime-directory:${XDG_RUNTIME_DIR:}}")
-                    final String runtimeDirectory) {
+                    final String runtimeDirectory,
+            final ObjectProvider<MockMode> mode) {
+        if (mode.getIfAvailable() != null) {
+            AddressFile.requireApartFromTheAccount(runtimeDirectory, Path.of("/run/user"));
+        }
         return AddressFile.open(runtimeDirectory);
     }
 

@@ -1,0 +1,2 @@
+title: Started with --mock and a runtime directory of its own, the planner serves the window's stand-in board through its REST API, with no Git and no network, for the window's tests.
+type: added

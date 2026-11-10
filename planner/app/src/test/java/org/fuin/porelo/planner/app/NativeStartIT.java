@@ -89,6 +89,49 @@ class NativeStartIT {
         }
     }
 
+    @Test
+    void theNativeExecutableServesTheMockBoardWithMock() throws Exception {
+        // The mock board is a resource and its records are read by reflection; a native image
+        // told of neither starts and leaves the window's tests without a board.
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        final Path runtime = RuntimeDirectories.create();
+        final Path output = Files.createTempFile("porelo-planner-mock", ".log");
+        try {
+            final ProcessBuilder builder =
+                    new ProcessBuilder(executable.toString(), "--mock")
+                            .redirectErrorStream(true)
+                            .redirectOutput(output.toFile());
+            builder.environment().clear();
+            builder.environment().put("PATH", "/usr/bin:/bin");
+            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            final Process planner = builder.start();
+            try {
+                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final String log = "; the planner wrote:%n" + Files.readString(output);
+                assertThat(
+                                call(
+                                        address,
+                                        "PUT",
+                                        "/projects/any",
+                                        "{\"repository\": \"https://example.org/porelo/porelo.git\"}"))
+                        .as("a project given in the mock mode" + log)
+                        .startsWith("204 ");
+                assertThat(call(address, "GET", "/projects/any/stories", null))
+                        .as("the mock board's stories" + log)
+                        .startsWith("200 ")
+                        .contains("\"revision\":\"mock@1\"");
+                assertThat(call(address, "POST", "/mock/reset", null))
+                        .as("a reset" + log)
+                        .startsWith("204 ");
+            } finally {
+                stop(planner);
+            }
+        } finally {
+            Files.deleteIfExists(output);
+            RuntimeDirectories.delete(runtime);
+        }
+    }
+
     /** The status and body of a call with the token. */
     private static String call(
             final RuntimeDirectories.Address address,

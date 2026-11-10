@@ -85,6 +85,31 @@ public final class AddressFile implements AutoCloseable {
     }
 
     /**
+     * Refuses the account's own runtime directory, so a planner started for tests is never found by
+     * the person's own window.
+     *
+     * @param runtimeDirectory The runtime directory given; may be empty when it is not set.
+     * @param runUser Where the system makes each account's runtime directory, named by its uid.
+     * @throws IllegalStateException when none is given or it is the account's own
+     */
+    static void requireApartFromTheAccount(final String runtimeDirectory, final Path runUser) {
+        final Path own;
+        try {
+            own = runUser.resolve(String.valueOf(ownUid()));
+        } catch (IOException e) {
+            throw new IllegalStateException("this account's uid cannot be read: " + e, e);
+        }
+        if (runtimeDirectory.isBlank()
+                || Path.of(runtimeDirectory).toAbsolutePath().normalize().equals(own)) {
+            throw new IllegalStateException(
+                    "--mock needs a runtime directory of its own: XDG_RUNTIME_DIR is '"
+                            + runtimeDirectory
+                            + "', not one apart from "
+                            + own);
+        }
+    }
+
+    /**
      * Checks the runtime directory and takes the lock, falling back to the account's own directory
      * under {@code runUser} when none is set.
      *

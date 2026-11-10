@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class AddressFileTest {
 
@@ -306,5 +307,22 @@ class AddressFileTest {
 
     private static java.util.List<String> names(final Path directory) throws IOException {
         return namesStream(directory).toList();
+    }
+
+    @Test
+    void theMockModeRefusesTheAccountsOwnRuntimeDirectory(@TempDir final Path runUser)
+            throws Exception {
+        // A mock found there would show its stand-in board in the person's own window.
+        final Path own =
+                runUser.resolve(
+                        String.valueOf(Files.getAttribute(Path.of("/proc/self"), "unix:uid")));
+        assertThatThrownBy(() -> AddressFile.requireApartFromTheAccount("", runUser))
+                .as("no runtime directory, which falls back to the account's own")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("--mock needs a runtime directory of its own");
+        assertThatThrownBy(() -> AddressFile.requireApartFromTheAccount(own + "/./", runUser))
+                .as("the account's own, written another way")
+                .isInstanceOf(IllegalStateException.class);
+        AddressFile.requireApartFromTheAccount(runUser.resolve("test").toString(), runUser);
     }
 }

@@ -10,14 +10,21 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import org.fuin.porelo.planner.app.mock.MockController;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /** The window builds against openapi/planner.yaml; the planner must serve exactly what it says. */
 class ApiMatchesDescriptionTest {
@@ -38,8 +45,18 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Issue", Answers.Issue.class),
                     Map.entry("IssueDetail", Answers.IssueDetail.class));
 
-    private static final Set<Class<?>> CONTROLLERS =
-            Set.of(BoardController.class, HealthController.class);
+    /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
+    private static Set<Class<?>> controllers() throws ClassNotFoundException {
+        final ClassPathScanningCandidateComponentProvider scanner =
+                new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+        final Set<Class<?>> found = new HashSet<>();
+        for (final BeanDefinition bean :
+                scanner.findCandidateComponents(PlannerApplication.class.getPackageName())) {
+            found.add(Class.forName(bean.getBeanClassName()));
+        }
+        return found;
+    }
 
     private static JsonNode description;
 
@@ -53,7 +70,7 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
-    void everyOperationIsServedAndEveryServedPathIsDescribedWithItsAnswer() {
+    void everyOperationIsServedAndEveryServedPathIsDescribedWithItsAnswer() throws Exception {
         final Map<String, String> described = new TreeMap<>();
         description
                 .get("paths")
@@ -74,15 +91,23 @@ class ApiMatchesDescriptionTest {
                                                     }
                                                 }));
         final Map<String, String> served = new TreeMap<>();
-        for (final Class<?> controller : CONTROLLERS) {
+        final Set<Class<?>> controllers = controllers();
+        assertThat(controllers)
+                .as("the controllers found")
+                .contains(BoardController.class, HealthController.class, MockController.class);
+        for (final Class<?> controller : controllers) {
             for (final Method method : controller.getDeclaredMethods()) {
                 final GetMapping get = method.getAnnotation(GetMapping.class);
                 final PutMapping put = method.getAnnotation(PutMapping.class);
+                final PostMapping post = method.getAnnotation(PostMapping.class);
                 if (get != null) {
                     served.put("GET " + get.value()[0], schemaOf(method.getReturnType()));
                 }
                 if (put != null) {
                     served.put("PUT " + put.value()[0], "");
+                }
+                if (post != null) {
+                    served.put("POST " + post.value()[0], "");
                 }
             }
         }

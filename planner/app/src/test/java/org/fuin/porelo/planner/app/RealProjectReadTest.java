@@ -26,10 +26,9 @@ class RealProjectReadTest {
             final MockMvc mvc =
                     MockMvcBuilders.standaloneSetup(
                                     new BoardController(
-                                            new StoreConfiguration()
-                                                    .projects(
-                                                            StoreConfiguration.gitProjects(
-                                                                    project.environment()))))
+                                            StoreConfiguration.fromGit(
+                                                    StoreConfiguration.gitProjects(
+                                                            project.environment()))))
                             .setControllerAdvice(new Problems())
                             .build();
             final MockHttpServletResponse given =
