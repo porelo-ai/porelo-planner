@@ -1,6 +1,6 @@
 # PL02 — Only Its Owner Reaches The Planner
 
-**Status:** Backlog; blocked by [PL01](README.md#pl01).
+**Status:** Implementing; blocked by [PL01](README.md#pl01).
 **Size:** M - a trust boundary: the binding, a token readable only by its owner, its check on every call and SSE,
 and the way the window finds both.
 
