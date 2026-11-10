@@ -17,7 +17,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl18"></a>[PL18](PL18-Moves-And-Story-Work-In-The-Screen-Package.md) | - | [PL05](README.md#pl05), [PL08](README.md#pl08), [PL09](README.md#pl09) | The screen package's HTTP calls for saving moves, proposing, reading and stopping story work, an issue's findings and a reading round's decision, so the window can start a story's work |
+| <a id="pl24"></a>[PL24](PL24-Following-And-Stopping-Story-Work-In-The-Screen.md) | M | [PL09](README.md#pl09) | The screen package's calls for a story's run: following and stopping work, the window's task reports, an issue's findings and a reading round's decision, each follow-up task handed to the window's Start once |
 | <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | - | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |
 | <a id="pl22"></a>[PL22](PL22-The-Planner-Records-The-Stage-Of-An-Issue-It-Moves.md) | - | [PL05](README.md#pl05) | The planner writes the stage line of an issue it moves, in the record's own format, where a repository records issue stats, instead of refusing the move |
 | <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | - | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |
@@ -26,6 +26,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl18"></a>[PL18](PL18-Moves-And-Story-Work-In-The-Screen-Package.md) | L | [PL05](README.md#pl05), [PL08](README.md#pl08) | The screen package's HTTP calls for saving moves, proposing story work and ordering it, and the window's Start hook taking each checked task once, so the window can start a story's work |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl09"></a>[PL09](PL09-The-Run-From-Building-To-Review.md) | L | [PL08](README.md#pl08) | The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window |
