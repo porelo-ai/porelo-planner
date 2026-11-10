@@ -1,7 +1,20 @@
 # PL08 — The Work Proposal
 
-**Status:** Backlog; blocked by [PL07](README.md#pl07).
-**Size:** M - the proposal per repository from the work rules and the sub-issues, the operator's choices, and the
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL08",
+  "title": "The Work Proposal",
+  "state": "Backlog",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 7,
+  "blockedBy": ["PL07"],
+  "covers": "The work proposal: main agent per repository, each sub-issue a task of its own, the operator's choices, comment and reading limit, and the prompts the window starts each task with"
+}
+```
+
+**Why this size.** the proposal per repository from the work rules and the sub-issues, the operator's choices, and the
 prompts the window starts each task with.
 
 **What must be true.** For a story about to enter a working state, the planner proposes what to start: per

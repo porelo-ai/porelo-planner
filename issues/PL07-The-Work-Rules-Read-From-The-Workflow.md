@@ -1,7 +1,20 @@
 # PL07 — The Work Rules Read From The Workflow
 
-**Status:** Backlog; blocked by [PL03](README.md#pl03).
-**Size:** S - the work part of the workflow file read and checked, and answered with the workflow.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL07",
+  "title": "The Work Rules Read From The Workflow",
+  "state": "Backlog",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 6,
+  "blockedBy": ["PL03"],
+  "covers": "Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow"
+}
+```
+
+**Why this size.** the work part of the workflow file read and checked, and answered with the workflow.
 
 **What must be true.** Which state starts which work - its agent and model, its modes, its order, the state success
 leads to, the next working state and the one blocking findings lead to, one task per story or per repository - is

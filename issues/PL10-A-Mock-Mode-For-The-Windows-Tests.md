@@ -1,7 +1,20 @@
 # PL10 — A Mock Mode For The Window's Tests
 
-**Status:** Backlog; blocked by [PL04](README.md#pl04).
-**Size:** M - the window's mock board as data, a store that serves it and takes moves in memory, and the start
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL10",
+  "title": "A Mock Mode For The Window's Tests",
+  "state": "Backlog",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 3,
+  "blockedBy": ["PL04"],
+  "covers": "`--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests"
+}
+```
+
+**Why this size.** the window's mock board as data, a store that serves it and takes moves in memory, and the start
 switch.
 
 **What must be true.** `porelo-planner --mock` serves the window's mock board through the same REST API and SSE,

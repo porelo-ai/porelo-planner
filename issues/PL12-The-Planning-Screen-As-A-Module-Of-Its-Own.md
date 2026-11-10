@@ -1,7 +1,20 @@
 # PL12 — The Planning Screen As A Module Of Its Own
 
-**Status:** Implementing.
-**Size:** M - a Flutter package in a Maven module of its own, built and tested by Maven only in a full build, with its
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL12",
+  "title": "The Planning Screen As A Module Of Its Own",
+  "state": "Implementing",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": [],
+  "covers": "The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref"
+}
+```
+
+**Why this size.** a Flutter package in a Maven module of its own, built and tested by Maven only in a full build, with its
 own CI job beside the Java build and a test against the planner's mock mode; the screen's code itself is moved in
 from the window as it is.
 

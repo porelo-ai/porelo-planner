@@ -1,7 +1,20 @@
 # PL05 — Moves Saved All Or None
 
-**Status:** Backlog; blocked by [PL04](README.md#pl04).
-**Size:** L - checked moves, one commit and push per save against the board's revision, the stories index rewritten
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL05",
+  "title": "Moves Saved All Or None",
+  "state": "Backlog",
+  "size": "L",
+  "priority": "Medium",
+  "rank": 4,
+  "blockedBy": ["PL04"],
+  "covers": "Moves saved all or none against the revision, committed and pushed, the stories index rewritten; working states only by work; a mismatching story state saved on confirmation; a parent Finished only after its sub-issues"
+}
+```
+
+**Why this size.** checked moves, one commit and push per save against the board's revision, the stories index rewritten
 with the stories library, and the confirmation of a story state its issues do not fit.
 
 **What must be true.** The window saves all pending story and issue moves together against the revision it shows:

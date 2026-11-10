@@ -1,7 +1,20 @@
 # PL11 — The Planner Packaged For The Window
 
-**Status:** Implementing; blocked by [PL01](README.md#pl01).
-**Size:** M - a .deb and an .rpm with the native executable, held to their C library floor, and published from the
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL11",
+  "title": "The Planner Packaged For The Window",
+  "state": "Implementing",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 2,
+  "blockedBy": ["PL01"],
+  "covers": "A .deb and an .rpm with the native executable, published from the Build like the other Porelo packages"
+}
+```
+
+**Why this size.** a .deb and an .rpm with the native executable, held to their C library floor, and published from the
 Build like the other Porelo packages.
 
 **What must be true.** A person installs porelo-planner from the same package repositories as Porelo, and the window

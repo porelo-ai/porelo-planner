@@ -1,7 +1,20 @@
 # PL09 — The Run From Building To Review
 
-**Status:** Backlog; blocked by [PL08](README.md#pl08).
-**Size:** L - the flow build -> Reading -> Reworking or Review, the reading limit, the operator's choice when it is
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL09",
+  "title": "The Run From Building To Review",
+  "state": "Backlog",
+  "size": "L",
+  "priority": "Medium",
+  "rank": 8,
+  "blockedBy": ["PL08"],
+  "covers": "The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window"
+}
+```
+
+**Why this size.** the flow build -> Reading -> Reworking or Review, the reading limit, the operator's choice when it is
 reached, the findings and a record that survives a restart.
 
 **What must be true.** When a task of a story's work ends, the planner judges its end once: success leads to the

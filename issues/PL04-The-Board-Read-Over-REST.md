@@ -1,7 +1,20 @@
 # PL04 — The Board Read Over REST
 
-**Status:** Backlog; blocked by [PL03](README.md#pl03).
-**Size:** M - the OpenAPI description of the reads, its controllers, and the story-state rule with a story's own
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL04",
+  "title": "The Board Read Over REST",
+  "state": "Backlog",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 2,
+  "blockedBy": ["PL03"],
+  "covers": "The board's reads in the OpenAPI description and served over REST; a story's own state over its issues' derived one"
+}
+```
+
+**Why this size.** the OpenAPI description of the reads, its controllers, and the story-state rule with a story's own
 state.
 
 **What must be true.** The window reads the board over REST, as the OpenAPI description says: the workflow, the

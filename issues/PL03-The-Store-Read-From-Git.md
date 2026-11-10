@@ -1,13 +1,29 @@
 # PL03 — The Store Read From Git
 
-**Status:** Backlog; blocked by [PL01](README.md#pl01), and until every repository's issues carry a JSON head.
-**Size:** L - the store's interface, the Git implementation reading stories, issue indexes, sub-issues and the
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL03",
+  "title": "The Store Read From Git",
+  "state": "Backlog",
+  "size": "L",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": ["PL01"],
+  "covers": "The store's interface and its Git implementation: workflow, stories, issue indexes and sub-issues read with Jackson (JSON heads only) and the stories library, with the person's own Git login"
+}
+```
+
+**Why this size.** the store's interface, the Git implementation reading stories, issue indexes, sub-issues and the
 workflow with Jackson, the person's own Git login, and its safety tests.
 
 **What must be true.** The planner reads a project's whole board from Git through one interface: the workflow's
 states and phases, every story with its head (state, priority, issues), every issue of each repository's index with
 its sub-issues, and an issue's text, each at a revision that names exactly the commits it was read from. It uses the
 person's own Git login and never asks for, keeps or logs a credential.
+
+**How it stands.** It also waits until every repository's issues carry a JSON head, since the store reads
+only those.
 
 ## Plan
 

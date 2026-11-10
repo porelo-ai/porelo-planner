@@ -1,7 +1,20 @@
 # PL01 — The Planner Builds As One Native Executable
 
-**Status:** Review.
-**Size:** M - four modules and their build, a native image with its instruction-set check, the Build workflow and
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL01",
+  "title": "The Planner Builds As One Native Executable",
+  "state": "Review",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": [],
+  "covers": "One GraalVM native executable for any x86-64 CPU from four modules (`core`, `store/api`, `store/git`, `app`), started and answering in a native test, built by the Build workflow"
+}
+```
+
+**Why this size.** four modules and their build, a native image with its instruction-set check, the Build workflow and
 its first green run; no function yet.
 
 **What must be true.** `./mvnw -B -s settings.xml -Pnative verify` builds porelo-planner into one GraalVM native

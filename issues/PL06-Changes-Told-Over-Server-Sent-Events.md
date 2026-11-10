@@ -1,7 +1,20 @@
 # PL06 — Changes Told Over Server-Sent Events
 
-**Status:** Backlog; blocked by [PL04](README.md#pl04).
-**Size:** M - a fetch loop per project with a read-now call, an SSE stream per window and its tests, including a
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL06",
+  "title": "Changes Told Over Server-Sent Events",
+  "state": "Backlog",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 5,
+  "blockedBy": ["PL04"],
+  "covers": "Changes told over SSE: polling, read now, the planner's own saves, a dropped connection"
+}
+```
+
+**Why this size.** a fetch loop per project with a read-now call, an SSE stream per window and its tests, including a
 broken connection.
 
 **What must be true.** A window subscribed to a project's changes gets the whole board first and then a new board

@@ -1,7 +1,20 @@
 # PL02 — Only Its Owner Reaches The Planner
 
-**Status:** Review; blocked by [PL01](README.md#pl01).
-**Size:** M - a trust boundary: the binding, a token readable only by its owner, its check on every call and SSE,
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "PL02",
+  "title": "Only Its Owner Reaches The Planner",
+  "state": "Review",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 2,
+  "blockedBy": ["PL01"],
+  "covers": "Only the account that started it reaches the planner: loopback and an owner-only token on every call, SSE included"
+}
+```
+
+**Why this size.** a trust boundary: the binding, a token readable only by its owner, its check on every call and SSE,
 and the way the window finds both.
 
 **What must be true.** The planner answers only the account that started it: it listens on the loopback address
