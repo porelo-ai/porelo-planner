@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL21",
   "title": "A Streamed Board Kept Over A Slower Read",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Medium",
   "rank": 11,
@@ -23,13 +23,26 @@ before a streamed board but answered after it gets the higher number and the str
 
 ## Plan
 
-- **`PlanningBoard`** (`screen/lib/src/planning_board.dart`): a reply's number is taken when its read starts, not when
-  it answers. `_read` numbers its reply before it reads; `save` numbers the saved board before `saveMoves` and the
-  board read again after it before `stories`. A streamed board that arrives during a reload or a save is deferred
-  with its number as today and shown once the call ends, unless a read started after it has been shown.
-- **Red first** (`screen/test/planning_moves_test.dart`, unit tests over the fake source): a reload whose
-  `stories` answers r2 after the stream told r3 keeps r3; a save whose read after it answers an older board than
-  the one streamed during it keeps the streamed one.
+- **`PlanningBoard`** (`screen/lib/src/planning_board.dart`): a read is numbered when it starts, not when it
+  answers; the stream tells every revision in order and never an older one after a newer one, so a board streamed
+  while a read waits wins over that read's answer, and a newer answer is told next. The saved board is numbered after
+  `saveMoves`, since a board streamed while the save waits was read before the save was made. After a reload, a stale
+  save or the read after a save, only the newer of the read's board and the deferred streamed board is shown, so
+  pending moves and the notice are worked out against the board that stays. A deferred board is replaced only by one
+  numbered higher, since a board that reads its workflow first may come after a newer one.
+- **Red first** (`screen/test/planning_moves_test.dart`, unit tests over the fake source): a board streamed while a
+  reload, the read after a stale save or the read after a save waits wins over what that read answers; a board
+  streamed while a save waits loses to the saved board, whether the read after it answers or fails; one streamed
+  while a stale save waits loses to the read after the refusal; an earlier streamed board still reading its workflow
+  never replaces a later one; pending moves are reconciled, and a stale save's notice given, against the board that
+  stays. The old test that a read in flight wins over a board streamed meanwhile is turned around.
+- **The code reading's findings**, each fixed with a test seen red first: the saved board was numbered before the
+  save; a deferred board was replaced by an earlier one; the discarded read's board reconciled pending moves first. A
+  check in `_finishOperation` that `_accept` already makes is removed. Declined: a read numbered before its workflow
+  read, or a stream event already queued when a read starts, can show an older board for a moment, which the stream
+  replaces with the next revision it tells; a mock source's stories-only stream keeps the workflow it had, which the
+  mock never changes; a refusal's words replaced by the reconciliation of a move made elsewhere state what is now
+  true.
 
 ## Acceptance
 

@@ -388,27 +388,116 @@ void main() {
     expect(board.pending['StoryTwo']!.problem, 'Work is still running');
   });
 
-  // Harm: an earlier buffered watch replaces a later read with obsolete planning.
-  for (final staleSave in [false, true]) {
-    test('a later read wins over a buffered watch during ${staleSave ? 'stale save' : 'reload'}', () async {
+  // Harm: a read in flight answers a board older than the one streamed meanwhile and holds the board on it for good,
+  // since the stream tells every revision in order and never an older one again.
+  for (final call in ['reload', 'stale save', 'read after a save']) {
+    test('a board streamed during a $call wins over the read that was in flight', () async {
       backend.listing = Completer<PlanningSnapshot>();
       backend.listingStarted = Completer<void>();
-      if (staleSave) {
-        board.move('StoryOne', 'Done');
+      if (call != 'reload') board.move('StoryOne', 'Done');
+      if (call == 'stale save') {
         backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
       }
-      final operation = staleSave ? board.save() : board.reload();
+      final operation = call == 'reload' ? board.reload() : board.save();
       await backend.listingStarted!.future;
-      final intermediate = _fixture()..['revision'] = 'zz-earlier';
-      (intermediate['stories'] as List<dynamic>).first['state'] = 'Elsewhere';
-      backend.changes.add(PlanningSnapshot.from(intermediate));
-      final latest = _fixture()..['revision'] = 'aa-later';
-      backend.listing!.complete(PlanningSnapshot.from(latest));
+      final streamed = _fixture()..['revision'] = 'streamed';
+      (streamed['stories'] as List<dynamic>).first['state'] = 'Elsewhere';
+      backend.changes.add(PlanningSnapshot.from(streamed));
+      backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
       await operation;
-      expect(board.snapshot!.revision, 'aa-later');
-      expect(board.stories.first.state, 'Ready');
+      expect(board.snapshot!.revision, 'streamed');
+      expect(board.snapshot!.stories.first.state, 'Elsewhere');
     });
   }
+
+  // Harm: a board streamed before the save reached the planner shows the saved moves undone, with nothing left to save.
+  for (final reread in ['answers', 'fails']) {
+    test('a board streamed while a save waits loses to the saved board when the read after it $reread', () async {
+      board.move('StoryTwo', 'Done');
+      backend.gate = Completer<void>();
+      final operation = board.save();
+      backend.changes.add(PlanningSnapshot.from(_fixture()..['revision'] = 'before the save'));
+      if (reread == 'fails') {
+        backend.readFailure = const PlanningRefusal('PlannerUnreachable', {}, 'the planner cannot be reached');
+      }
+      backend.gate!.complete();
+      await operation;
+      expect(board.snapshot!.revision, isNot('before the save'));
+      expect(
+        board.snapshot!.stories.firstWhere((story) => story.id == 'StoryTwo').state,
+        'Done',
+        reason: 'the saved move',
+      );
+    });
+  }
+
+  // Harm: after a stale save the board shows one streamed before the save over the newer one read for it.
+  test('a board streamed while a stale save waits loses to the read after the refusal', () async {
+    board.move('StoryOne', 'Done');
+    backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+    backend.gate = Completer<void>();
+    final operation = board.save();
+    backend.changes.add(PlanningSnapshot.from(_fixture()..['revision'] = 'before the save'));
+    backend.gate!.complete();
+    await operation;
+    expect(board.snapshot!.revision, 'initial');
+  });
+
+  // Harm: a board streamed earlier but slower to read its workflow replaces a newer one, which the stream never tells
+  // again.
+  test('a board streamed during a reload is not replaced by an earlier one still reading its workflow', () async {
+    backend.listing = Completer<PlanningSnapshot>();
+    backend.listingStarted = Completer<void>();
+    final operation = board.reload();
+    await backend.listingStarted!.future;
+    (backend.data['states'] as List<dynamic>).add({'name': 'New', 'kind': 'WAITING'});
+    final earlier = _fixture()
+      ..['revision'] = 'earlier'
+      ..['states'] = <Object>[]
+      ..['phases'] = <Object>[];
+    (earlier['stories'] as List<dynamic>).first['state'] = 'New';
+    backend.changes.add(PlanningSnapshot.from(earlier));
+    backend.changes.add(PlanningSnapshot.from(_fixture()..['revision'] = 'later'));
+    await Future<void>.delayed(Duration.zero);
+    backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
+    await operation;
+    expect(board.snapshot!.revision, 'later');
+  });
+
+  // Harm: a pending move is dropped as made elsewhere by a read's board that a newer streamed board replaces.
+  test('pending moves are reconciled only against the board that stays after a reload', () async {
+    board.move('StoryOne', 'Done');
+    backend.listing = Completer<PlanningSnapshot>();
+    backend.listingStarted = Completer<void>();
+    final operation = board.reload();
+    await backend.listingStarted!.future;
+    final streamed = _fixture()..['revision'] = 'streamed';
+    (streamed['stories'] as List<dynamic>).first['state'] = 'Elsewhere';
+    backend.changes.add(PlanningSnapshot.from(streamed));
+    final read = _fixture()..['revision'] = 'read';
+    (read['stories'] as List<dynamic>).first['state'] = 'Done';
+    backend.listing!.complete(PlanningSnapshot.from(read));
+    await operation;
+    expect(board.pending.keys, ['StoryOne'], reason: 'the move still waits to be saved');
+    expect(board.moveProblem, isNull);
+  });
+
+  // Harm: after a stale save the board tells the person to save again although the moves were made elsewhere.
+  test('a stale save tells what the board that stays shows', () async {
+    board.move('StoryOne', 'Done');
+    backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+    backend.listing = Completer<PlanningSnapshot>();
+    backend.listingStarted = Completer<void>();
+    final operation = board.save();
+    await backend.listingStarted!.future;
+    final streamed = _fixture()..['revision'] = 'streamed';
+    (streamed['stories'] as List<dynamic>).first['state'] = 'Done';
+    backend.changes.add(PlanningSnapshot.from(streamed));
+    backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
+    await operation;
+    expect(board.pending, isEmpty);
+    expect(board.moveNotice, 'The pending moves were made elsewhere.');
+  });
 
   // Harm: missing watch fields erase the complete board returned by a successful save.
   test('incomplete and unversioned buffered watches cannot replace a saved reply', () async {

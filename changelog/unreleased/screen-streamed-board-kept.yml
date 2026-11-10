@@ -1,0 +1,2 @@
+title: The planning screen keeps a board streamed while it reloads or saves, instead of the older board that call reads.
+type: fixed

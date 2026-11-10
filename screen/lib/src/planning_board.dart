@@ -164,7 +164,8 @@ class PlanningBoard extends ChangeNotifier {
                 if (!current()) return;
                 final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
                 if (saving) {
-                  _deferredSnapshot = (combined, order);
+                  // A board that read its workflow first may come after a newer one.
+                  if (order > (_deferredSnapshot?.$2 ?? 0)) _deferredSnapshot = (combined, order);
                 } else {
                   _accept(combined, order: order);
                 }
@@ -495,11 +496,27 @@ class PlanningBoard extends ChangeNotifier {
   }
 
   Future<(PlanningSnapshot, int)> _read() async {
+    final order = _readStarts();
     final workflow = await backend.planningWorkflow(project);
     if (_disposed) throw StateError('The planning board was closed.');
     final reply = await backend.stories(project);
-    final order = ++_replyOrder;
     return (_checked(PlanningSnapshot.fromParts(workflow, reply)), order);
+  }
+
+  /// Numbers a read when it starts: a board streamed while it waits is newer than its answer may be, and the stream
+  /// tells every revision in order, so it is never held on an older one.
+  int _readStarts() => ++_replyOrder;
+
+  /// Shows the newer of a read's board and one streamed while the read waited, so pending moves are reconciled only
+  /// against the board that stays.
+  void _acceptNewest(PlanningSnapshot reply, int order) {
+    final deferred = _deferredSnapshot;
+    _deferredSnapshot = null;
+    if (deferred != null && deferred.$2 > order) {
+      _accept(deferred.$1, order: deferred.$2);
+    } else {
+      _accept(reply, order: order);
+    }
   }
 
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
@@ -539,9 +556,7 @@ class PlanningBoard extends ChangeNotifier {
     saving = false;
     final deferred = _deferredSnapshot;
     _deferredSnapshot = null;
-    if (deferred != null && deferred.$1.complete && deferred.$1.revision.isNotEmpty && deferred.$2 > _snapshotOrder) {
-      _accept(deferred.$1, order: deferred.$2);
-    }
+    if (deferred != null) _accept(deferred.$1, order: deferred.$2);
     _changed();
     final queued = _queuedProject;
     _queuedProject = null;
@@ -558,7 +573,7 @@ class PlanningBoard extends ChangeNotifier {
       final reply = await _read();
       if (_disposed || generation != _generation) return;
       moveProblem = null;
-      _accept(reply.$1, order: reply.$2);
+      _acceptNewest(reply.$1, reply.$2);
     } catch (error) {
       if (!_disposed && generation == _generation) moveProblem = planningFailureWords(error);
     } finally {
@@ -620,7 +635,8 @@ class PlanningBoard extends ChangeNotifier {
       }
       _accept(
         PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations),
-        order: ++_replyOrder,
+        // Numbered after the save: a board streamed while it waited was read before the save was made.
+        order: _readStarts(),
         reconcile: false,
       );
       if (_pending.isEmpty) {
@@ -628,6 +644,7 @@ class PlanningBoard extends ChangeNotifier {
       }
       _changed();
       // SaveMoves does not return computed story states; read them from the store.
+      final latestOrder = _readStarts();
       final PlanningSnapshot latest;
       try {
         latest = _checked(PlanningSnapshot.fromParts(snapshot!, await backend.stories(project)));
@@ -638,7 +655,7 @@ class PlanningBoard extends ChangeNotifier {
         return;
       }
       if (_disposed || generation != _generation) return;
-      _accept(latest, order: ++_replyOrder);
+      _acceptNewest(latest, latestOrder);
     } on PlanningRefusal catch (error) {
       if (_disposed || generation != _generation) return;
       final detail = planningFailureWords(error);
@@ -665,7 +682,7 @@ class PlanningBoard extends ChangeNotifier {
               move.problem = null;
             }
             moveProblem = null;
-            _accept(reply.$1, order: reply.$2);
+            _acceptNewest(reply.$1, reply.$2);
             moveNotice = _pending.isEmpty
                 ? 'The pending moves were made elsewhere.'
                 : 'Planning changed. Review the pending moves and save again.';
