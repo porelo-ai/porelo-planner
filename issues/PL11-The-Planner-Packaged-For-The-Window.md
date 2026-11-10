@@ -11,13 +11,10 @@ finds and starts it; a push to main publishes a snapshot, a tag a release.
 
 - `-Pdist` in `app` as porelo-adapters packs its readers: `jdeb` and the rpm plugin, the executable at
   `/usr/libexec/porelo/planner`, the C library floor measured with `readelf` and checked.
+- **The window starts the planner as it needs it**; no user service is installed.
 - The Build's publish steps as porelo-adapters' (curl alone, the token on standard input, indexed before believed).
 - **Red first:** the linkage check against an executable needing a newer C library than the floor.
 
 ## Acceptance
 
 - The packages install on the local Ubuntu and Fedora VMs, and the installed executable starts.
-
-## Open questions
-
-- Does the window start the planner as it needs it (planned), or does it run as a user service started at login?

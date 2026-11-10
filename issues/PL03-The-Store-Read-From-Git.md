@@ -1,6 +1,6 @@
 # PL03 — The Store Read From Git
 
-**Status:** Analyzed; blocked by [PL01](README.md#pl01).
+**Status:** Analyzed; blocked by [PL01](README.md#pl01), and until every repository's issues carry a JSON head.
 **Size:** L - the store's interface, the Git implementation reading stories, issue indexes, sub-issues and the
 workflow with Jackson, the person's own Git login, and its safety tests.
 
@@ -24,7 +24,8 @@ person's own Git login and never asks for, keeps or logs a credential.
     `IssueIndexes` and an `IssueSource` over the planner's clones, the same reading that writes the stories index, so
     there is no second parser; a sub-issue `<parent>.<n>` read with
     its parent, its role from its head.
-  - an issue's head read as JSON with Jackson where it has one, else from its `**Status:**` lines.
+  - an issue's JSON head read with Jackson; the planner reads no `**Status:**` lines, and an issue without a JSON
+    head is a fault named in the answer.
   - the revision is the set of the fetched commit ids.
 - **Which repositories:** the project's `project.yml` names them; the clone URLs come from it.
 - **Safety, taken from stories-git:** paths contained in the clone (no `..`, no links out), a size bound per file,
@@ -40,14 +41,8 @@ person's own Git login and never asks for, keeps or logs a credential.
 - The red-first tests seen red, then green; the board of a copy of the real stories and indexes read in full.
 - No test needs the network.
 
-## Open questions
-
-- Each repository's issues carry a JSON head read with Jackson; until that is the format everywhere, the planner reads
-  the `**Status:**` lines too. Is reading both acceptable for a while, or does the planner wait for the JSON head?
-
 ## To be checked
 
 - `porelo-stories` is published under LGPL-3.0-or-later before the planner links it.
-
 - Which `project.yml` field names each repository's clone URL, and whether a repository's issue index may be split
   into groups (`issues/base/`) in every repository.

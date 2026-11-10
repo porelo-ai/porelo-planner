@@ -18,6 +18,8 @@ the main agent's prompt as its own work. The planner starts nothing itself.
 - `POST /projects/{project}/stories/{story}/work` with the choices `KEEP|CHANGE|DROP` per sub-issue, comment and
   limits, against the revision -> the final tasks and their prompts; refused with `work-not-allowed(from, to, reason)`
   when the story's state is not a `from` of the rule, and `work-running` when the story's work is recorded running.
+- **The story enters the working state when the window reports its tasks started** (the task events of the run),
+  never when the proposal is accepted; a start that fails leaves it where it was.
 - `core`: `WorkProposal` and `WorkOrder` (main prompt: order, issues, comment, dropped briefs; sub-issue prompt:
   order, brief, comment).
 - **Red first:** `WorkProposalTest` - two repositories give two main tasks and one task per sub-issue; a dropped
@@ -26,8 +28,3 @@ the main agent's prompt as its own work. The planner starts nothing itself.
 ## Acceptance
 
 - The red-first test seen red, then green.
-
-## Open questions
-
-- Is the story moved into the working state by the planner when the window reports the tasks started, or when the
-  proposal is accepted?

@@ -10,7 +10,8 @@ rule) is answered in words beside the workflow and never hides the board.
 
 ## Plan
 
-- `work:` beside `states:` and `phases:` in `stories/workflow.yml`: per working state `from`, `done`, `then`,
+- `stories/work.yml` in the project repository, a file of its own beside `stories/workflow.yml` (which every
+  repository copies byte for byte, so the work rules stay out of it): per working state `from`, `done`, `then`,
   `blocked`, `per` (`story` or `repository`), `modes`, `order` (with `{story}`, `{issues}`, `{tasks}`), `model` by
   provider. The rules porelo's project file was to carry are the model.
 - `core`: `WorkRules.check(workflow, rules)` - every key, `from`, `done`, `then` and `blocked` a state of the
@@ -22,9 +23,3 @@ rule) is answered in words beside the workflow and never hides the board.
 ## Acceptance
 
 - The red-first test seen red, then green.
-
-## Open questions
-
-- The work rules sit in `stories/workflow.yml`, which every repository copies byte for byte as
-  `issues/workflow.yml`. Should they go there, or into a file of their own in the project repository
-  (`stories/work.yml`)?

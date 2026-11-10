@@ -21,8 +21,9 @@ under it is Finished. After a save the stories index reads as the project's own 
 - `store/api`: `save(revision, changes)`; `store/git`: under a lock per project, fetch, refuse when the revision
   moved, rewrite each changed issue's status line and index row and each story's head, rewrite the stories index with
   the `porelo-stories` library over the clones, commit per repository and push; a refused push rolls the local
-  commits back and answers `stale-revision`. A push to several repositories that fails half way is reported naming
-  what was pushed, never retried silently. The writing in the unpushed stories-git state-setting branch is the model.
+  commits back and answers `stale-revision`. Each repository's push is all or none; a save over several
+  repositories whose later push fails is reported naming the repositories already pushed, never retried silently.
+  The writing in the unpushed stories-git state-setting branch is the model.
 - **Red first:** `MovesTest` - a story in Backlog with issues in Backlog and Review, moved to Rejected, moves the
   Backlog issue alone; a move into a working state is refused; a story moved where its issues do not fit warns and is
   saved only with `confirm`. `GitStoreSaveTest` - a push refused because the remote moved changes nothing, locally or
@@ -36,9 +37,3 @@ under it is Finished. After a save the stories index reads as the project's own 
 ## Acceptance
 
 - The red-first tests seen red, then green; a save against the Git HTTP test server visible in a fresh clone.
-
-## Open questions
-
-- A save touching several repositories cannot be atomic across them in Git. Planned: each repository's push is all or
-  none, and a later failing push is reported naming the ones already pushed. Is that acceptable, or must a save be
-  limited to one repository at a time?
