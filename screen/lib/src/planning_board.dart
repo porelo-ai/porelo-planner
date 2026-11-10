@@ -155,7 +155,12 @@ class PlanningBoard extends ChangeNotifier {
                 final unknown = reply.stories.any(
                   (story) => !names.contains(story.state) || story.issues.any((issue) => !names.contains(issue.state)),
                 );
-                final workflow = prior == null || unknown ? await backend.planningWorkflow(project) : prior;
+                // A whole board brings its own workflow, which a push elsewhere may have changed.
+                final workflow = reply.complete && (reply.states.isNotEmpty || reply.faults.isNotEmpty)
+                    ? reply
+                    : prior == null || unknown
+                    ? await backend.planningWorkflow(project)
+                    : prior;
                 if (!current()) return;
                 final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
                 if (saving) {

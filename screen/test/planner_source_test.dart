@@ -97,7 +97,7 @@ class _Reply {
 }
 
 /// One call the fake planner received.
-typedef _Call = ({String method, String target, String? authorization, String body});
+typedef _Call = ({String method, String target, String? authorization, String body, String? lastEventId});
 
 /// A planner on 127.0.0.1 that answers the board as the REST description gives it and records every call.
 class _Planner {
@@ -119,11 +119,14 @@ class _Planner {
         target: target,
         authorization: request.headers.value(HttpHeaders.authorizationHeader),
         body: body,
+        lastEventId: request.headers.value('last-event-id'),
       ));
       final route = '${request.method} ${request.uri.path}';
       final reply = await (routes[route] ?? () => answer(route))();
       request.response.statusCode = reply.status;
       if (reply.raw case final raw?) {
+        // Each chunk sent at once, as the planner flushes each event.
+        request.response.bufferOutput = false;
         reply.headers.forEach(request.response.headers.set);
         try {
           request.response.add(raw);
@@ -180,6 +183,9 @@ Future<(_Planner, HttpPlanningSource)> _started({
   Duration timeout = const Duration(seconds: 30),
   int? maxBody,
   PlannerProjects? projects,
+  Duration silence = const Duration(seconds: 45),
+  Duration backoff = const Duration(seconds: 1),
+  Duration backoffMost = const Duration(seconds: 30),
 }) async {
   final planner = _Planner();
   await planner.start();
@@ -190,9 +196,61 @@ Future<(_Planner, HttpPlanningSource)> _started({
     projects ?? (project) => PlannerProject('https://example.org/$project.git', 'main'),
     timeout: timeout,
     maxBody: maxBody ?? 16 * 1024 * 1024,
+    silence: silence,
+    backoff: backoff,
+    backoffMost: backoffMost,
   );
   addTearDown(source.close);
   return (planner, source);
+}
+
+/// One `board` event as the planner sends it: the workflow's and the stories' fields in one object.
+List<int> _event(String revision) => utf8.encode(
+  'event:board\nid:$revision\ndata:${jsonEncode({..._workflow(revision), 'stories': _stories(revision)['stories']})}\n\n',
+);
+
+/// The planner's event streams, one per connection the source opened, each fed by the test.
+class _Streams {
+  _Streams(this.planner, {this.first = true}) {
+    planner.routes['GET /projects/demo/events'] = () {
+      final stream = StreamController<List<int>>();
+      opened.add(stream);
+      at.add(DateTime.now());
+      return _Reply.raw(
+        200,
+        first ? _event(planner.storiesRevision) : const [],
+        headers: {'content-type': 'text/event-stream'},
+        more: stream.stream,
+      );
+    };
+  }
+
+  final _Planner planner;
+  final bool first;
+  final opened = <StreamController<List<int>>>[];
+  final at = <DateTime>[];
+
+  /// Sends [revision] on the newest connection; the planner's board is at it from then on.
+  void send(String revision) {
+    planner.storiesRevision = revision;
+    opened.last.add(_event(revision));
+  }
+
+  /// Ends the newest connection as a planner that stops would.
+  Future<void> end() => opened.last.close();
+
+  List<String?> get lastEventIds => [
+    for (final call in planner.calls)
+      if (call.target == '/projects/demo/events') call.lastEventId,
+  ];
+}
+
+Future<void> _until(bool Function() done, [String what = 'the condition']) async {
+  for (var wait = 0; wait < 200; wait++) {
+    if (done()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+  }
+  fail('$what did not come within 5 s');
 }
 
 /// A runtime directory with its `porelo-planner` directory, both owner-only as the planner makes them.
@@ -296,13 +354,300 @@ void main() {
     );
   });
 
-  // Harm: the board's watch never gives the first board, or hangs open with nothing behind it.
-  test('the watch answers the board once and ends', () async {
-    final (_, source) = await _started();
+  // Harm: a push made elsewhere never reaches the window's board, or one board is drawn twice.
+  test('the watch answers the board at once and each new revision once', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner);
+    final revisions = <String>[];
+    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
 
-    final replies = await source.watchStories('demo').toList();
+    await _until(() => revisions.isNotEmpty, 'the first board');
+    streams
+      ..send('r2')
+      ..send('r2')
+      ..send('r3');
+    await _until(() => revisions.length >= 3, 'the later boards');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    expect(replies.single.stories.length, 2, reason: 'one whole board, then the end of the stream');
+    expect(revisions, ['r1', 'r2', 'r3'], reason: 'the first board, then each new revision once');
+    expect(planner.targets.where((target) => target == 'PUT /projects/demo'), hasLength(1));
+  });
+
+  // Harm: a connection that died without a word leaves the board frozen while it looks live.
+  test('a stream that falls silent is opened again with the last revision', () async {
+    final (planner, source) = await _started(silence: const Duration(milliseconds: 300), backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final revisions = <String>[];
+    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
+
+    await _until(() => revisions.isNotEmpty, 'the first board');
+    streams.send('r2');
+    await _until(() => streams.opened.length == 2, 'a second connection');
+    streams.send('r3');
+    await _until(() => revisions.length == 3, 'the board after the reconnect');
+
+    expect(streams.lastEventIds, [null, 'r2'], reason: 'the reconnect names the last revision it saw');
+    expect(revisions, ['r1', 'r2', 'r3']);
+  });
+
+  // Harm: a planner that restarts or fails for a while is called in a tight loop, or the window waits for minutes.
+  test(
+    'a lost stream is opened again after a wait that doubles up to its bound and starts over after a board',
+    () async {
+      final (planner, source) = await _started(
+        backoff: const Duration(milliseconds: 100),
+        backoffMost: const Duration(milliseconds: 200),
+      );
+      final streams = _Streams(planner);
+      var failures = 4;
+      final events = planner.routes['GET /projects/demo/events']!;
+      planner.routes['GET /projects/demo/events'] = () {
+        if (streams.opened.isNotEmpty && failures > 0) {
+          failures--;
+          streams.at.add(DateTime.now());
+          return _Reply(503, 'restarting', 'text/plain');
+        }
+        return events();
+      };
+      final revisions = <String>[];
+      final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+      addTearDown(watching.cancel);
+
+      await _until(() => revisions.isNotEmpty, 'the first board');
+      planner.storiesRevision = 'r2';
+      await streams.end();
+      await _until(() => streams.opened.length == 2, 'the stream after four failures');
+      await streams.end();
+      await _until(() => streams.opened.length == 3, 'the stream after the next loss');
+
+      final gaps = [
+        for (var i = 1; i < streams.at.length; i++) streams.at[i].difference(streams.at[i - 1]).inMilliseconds,
+      ];
+      expect(gaps, hasLength(6));
+      expect(gaps[0], greaterThanOrEqualTo(90), reason: 'the first wait');
+      expect(gaps[1], greaterThanOrEqualTo(190), reason: 'twice as long');
+      expect(gaps.sublist(2, 5).every((gap) => gap >= 190), isTrue, reason: 'the bound holds the later waits: $gaps');
+      expect(
+        gaps.sublist(0, 5).fold<int>(0, (all, gap) => all + gap),
+        lessThan(1500),
+        reason: 'never past the bound: $gaps',
+      );
+      expect(gaps[5], inInclusiveRange(90, 189), reason: 'a board starts the waits over at the first wait: $gaps');
+    },
+  );
+
+  // Harm: a planner that restarted forgets the project, and the board never gets a stream again.
+  test('a stream refused for an unknown project names the project again once and opens again', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    var forgotten = true;
+    final events = planner.routes['GET /projects/demo/events']!;
+    final revisions = <String>[];
+    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
+    await _until(() => revisions.isNotEmpty, 'the first board');
+    planner.routes['GET /projects/demo/events'] = () {
+      if (forgotten) {
+        forgotten = false;
+        return _Reply.problem('NoSuchProject', {'project': 'demo'}, 'no project demo', 404);
+      }
+      return events();
+    };
+    planner.storiesRevision = 'r2';
+
+    await streams.end();
+    await _until(() => revisions.length == 2, 'the board after the project was named again');
+
+    expect(planner.targets.where((target) => target == 'PUT /projects/demo'), hasLength(2));
+  });
+
+  // Harm: a refusal the window must show is retried for ever behind a board that looks live.
+  test('a refusal or a planner gone before the first board ends the watch with its words', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    planner.routes['GET /projects/demo/events'] = () =>
+        _Reply.problem('CredentialRefused', {'repository': 'porelo-store'}, 'refused', 403);
+
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect((errors.single as PlanningRefusal).name, 'CredentialRefused');
+
+    await planner.stop();
+    final refusal = await _refusal(source.watchStories('demo').first);
+    expect(refusal.name, 'PlannerUnreachable', reason: 'a planner gone before any board is said at once');
+  });
+
+  // Harm: a planner gone for good leaves a board that looks live and current for ever.
+  test('a lost stream not restored within the silence bound ends the watch', () async {
+    final (planner, source) = await _started(
+      silence: const Duration(milliseconds: 300),
+      backoff: const Duration(milliseconds: 50),
+      backoffMost: const Duration(milliseconds: 100),
+    );
+    final streams = _Streams(planner);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    planner.routes['GET /projects/demo/events'] = () => _Reply(503, 'stopping', 'text/plain');
+
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect((errors.single as PlanningRefusal).name, 'Http503', reason: 'the last failure, for the board to show');
+  });
+
+  // Harm: a redirect takes the token to another address.
+  test('a stream answered with a redirect is not followed', () async {
+    final (planner, source) = await _started();
+    planner.routes['GET /projects/demo/events'] = () =>
+        _Reply.raw(302, const [], headers: {'location': 'http://192.0.2.1/projects/demo/events'});
+
+    final refusal = await _refusal(source.watchStories('demo').first);
+
+    expect(refusal.name, 'Http302');
+    expect(planner.targets.where((target) => target.contains('events')), hasLength(1));
+  });
+
+  // Harm: a window that ran for a while loses its live board on the first short drop.
+  test('a connection lost long after the last loss is opened again', () async {
+    final (planner, source) = await _started(silence: const Duration(milliseconds: 300), backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final errors = <Object>[];
+    source.watchStories('demo').listen((_) {}, onError: errors.add);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    await streams.end();
+    await _until(() => streams.opened.length == 2, 'the second connection');
+    for (var beat = 0; beat < 5; beat++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      streams.opened.last.add(utf8.encode(': keep-alive\n\n'));
+    }
+    await streams.end();
+
+    await _until(() => streams.opened.length == 3, 'a third connection');
+    expect(errors, isEmpty, reason: 'the watch goes on');
+  });
+
+  // Harm: a connection that trickles bytes without ever ending a line holds a board that looks live.
+  test('a stream that sends no whole line within the silence bound is opened again', () async {
+    final (planner, source) = await _started(silence: const Duration(milliseconds: 300), backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final watching = source.watchStories('demo').listen((_) {});
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    final trickle = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (streams.opened.length == 1) streams.opened.first.add(utf8.encode('x'));
+    });
+    addTearDown(trickle.cancel);
+
+    await _until(() => streams.opened.length == 2, 'a second connection');
+  });
+
+  // Harm: a planner that answers the stream and ends it at once is called again for ever, the board looking live.
+  test('a stream that ends before its board ends the watch, after the first board too', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    planner.routes['GET /projects/demo/events'] = () =>
+        _Reply.raw(200, utf8.encode(': keep-alive\n\n'), headers: {'content-type': 'text/event-stream'});
+
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect((errors.single as PlanningRefusal).name, 'BadAnswer');
+  });
+
+  // Harm: an id past its bound would go back to the planner as an endless header.
+  test('an event id longer than 200 characters ends the watch', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final watched = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    streams.opened.last.add(utf8.encode('id:${'r' * 201}\n'));
+
+    expect((await _refusal(watched)).name, 'BadAnswer');
+  });
+
+  // Harm: a refusal too large to read is retried for ever instead of being said.
+  test('a 503 answer past the bound ends the watch', () async {
+    final (planner, source) = await _started(maxBody: 4096, backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    planner.routes['GET /projects/demo/events'] = () => _Reply(503, 'x' * 5000, 'text/plain');
+
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect((errors.single as PlanningRefusal).name, 'AnswerTooLarge');
+  });
+
+  // Harm: the window learns its planner is gone long after the bound it was promised.
+  test('the wait before the last attempt never runs past the silence bound', () async {
+    final (planner, source) = await _started(
+      silence: const Duration(milliseconds: 300),
+      backoff: const Duration(milliseconds: 250),
+      backoffMost: const Duration(seconds: 2),
+    );
+    final streams = _Streams(planner);
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: (_) {}, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    planner.routes['GET /projects/demo/events'] = () => _Reply(503, 'stopping', 'text/plain');
+
+    final lost = DateTime.now();
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect(DateTime.now().difference(lost).inMilliseconds, lessThan(600), reason: 'the 300 ms bound and one attempt');
+  });
+
+  // Harm: one endless event fills the window's memory.
+  test('an event past the bound ends the watch', () async {
+    final (planner, source) = await _started(maxBody: 4096);
+    final streams = _Streams(planner, first: false);
+    final watched = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    streams.opened.last.add(utf8.encode('event:board\ndata:'));
+    for (var chunk = 0; chunk < 8; chunk++) {
+      streams.opened.last.add(List.filled(1024, 120));
+    }
+
+    expect((await _refusal(watched)).name, 'AnswerTooLarge');
+  });
+
+  // Harm: a board the window closed keeps a connection and calls the planner for ever.
+  test('a watch cancelled closes its connection and calls no more', () async {
+    // A short silence bound, so a watch left running would open the stream again within the wait below.
+    final (planner, source) = await _started(silence: const Duration(milliseconds: 100), backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final revisions = <String>[];
+    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    await _until(() => revisions.isNotEmpty, 'the first board');
+
+    await watching.cancel();
+    // The server notices a closed connection when it writes, as the planner's keep-alive does.
+    streams.opened.last.add(utf8.encode(': keep-alive\n\n'));
+    await _until(() => planner.connections == 0, 'the connection closed');
+    final calls = planner.calls.length;
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    expect(planner.calls.length, calls, reason: 'no reconnect after the cancel');
+    expect(streams.opened, hasLength(1));
   });
 
   // Harm: a story, its issues or an issue reach the screen without their text, state or criteria.

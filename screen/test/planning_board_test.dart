@@ -7,8 +7,13 @@ import 'package:porelo_planning/porelo_planning.dart';
 import 'support/fake_planning.dart';
 
 class _Backend extends Fake implements PlanningSource {
+  int workflowReads = 0;
   @override
-  Future<PlanningSnapshot> planningWorkflow(String project) async => _snapshot('workflow');
+  Future<PlanningSnapshot> planningWorkflow(String project) async {
+    workflowReads++;
+    return _snapshot('workflow');
+  }
+
   final controllers = <String, StreamController<PlanningSnapshot>>{};
   final canceled = <String>[];
   @override
@@ -56,10 +61,47 @@ class _Faulty extends Fake implements PlanningSource {
   Stream<PlanningSnapshot> watchStories(String project) {
     watches++;
     final replies = StreamController<PlanningSnapshot>();
-    replies.add(_snapshot('ST1'));
+    // A whole board brings its own workflow, and with it its faults.
+    replies.add(
+      PlanningSnapshot.from({
+        'revision': 'r1',
+        'states': [
+          {'name': 'Building', 'kind': 'WORKING'},
+        ],
+        'phases': [
+          {
+            'name': 'Build',
+            'states': ['Building'],
+          },
+        ],
+        'faults': ['a fault'],
+        'stories': [
+          {'id': 'ST1', 'state': 'Building', 'title': 'A story', 'priority': 'High'},
+        ],
+      }),
+    );
     return replies.stream;
   }
 }
+
+/// A whole board as the planner streams it: its revision, one state in one phase, and one story in that state.
+PlanningSnapshot _complete(String revision, String state, {String phase = 'Build'}) => PlanningSnapshot.from({
+  'revision': revision,
+  'states': [
+    {'name': state, 'kind': 'WORKING'},
+  ],
+  'phases': [
+    {
+      'name': phase,
+      'states': [state],
+    },
+  ],
+  'work': <Object>[],
+  'faults': <String>[],
+  'stories': [
+    {'id': 'ST1', 'state': state, 'title': 'A story', 'priority': 'High'},
+  ],
+});
 
 PlanningSnapshot _snapshot(String id) => PlanningSnapshot.from({
   'states': [
@@ -184,6 +226,45 @@ void main() {
     expect(source.watches, 2, reason: 'the board watched again');
     expect(boards.selected!.problem, isNull, reason: 'and holds the board now');
     expect(boards.selected!.snapshot, isNotNull);
+  });
+
+  // Harm: a workflow changed by a push elsewhere never reaches the board, which keeps the old columns.
+  test('a streamed board that is complete is shown with its own workflow, without another read', () async {
+    final backend = _Backend();
+    final board = PlanningBoard(backend, 'project');
+    addTearDown(board.dispose);
+    final reads = backend.workflowReads;
+    backend.controllers['project']!.add(_complete('r1', 'Building'));
+    await pumpEventQueue();
+    backend.controllers['project']!.add(_complete('r2', 'Building', phase: 'Ship'));
+    await pumpEventQueue();
+
+    expect(board.snapshot!.phases.map((phase) => phase.name), ['Ship'], reason: 'the new workflow, same states');
+    expect(backend.workflowReads, reads, reason: 'no workflow read beside the stream');
+  });
+
+  // Harm: a workflow broken by a push elsewhere goes unsaid, the board showing the old columns as sound.
+  test('a streamed board whose workflow has only faults shows them, without another read', () async {
+    final backend = _Backend();
+    final board = PlanningBoard(backend, 'project');
+    addTearDown(board.dispose);
+    backend.controllers['project']!.add(_complete('r1', 'Building'));
+    await pumpEventQueue();
+    final reads = backend.workflowReads;
+    backend.controllers['project']!.add(
+      PlanningSnapshot.from({
+        'revision': 'r2',
+        'states': <Object>[],
+        'phases': <Object>[],
+        'work': <Object>[],
+        'faults': ['the workflow cannot be read'],
+        'stories': <Object>[],
+      }),
+    );
+    await pumpEventQueue();
+
+    expect(board.problem, 'the workflow cannot be read');
+    expect(backend.workflowReads, reads, reason: 'no workflow read beside the stream');
   });
 
   // Harm: a silent subscription keeps a project or a disposed window alive indefinitely.
