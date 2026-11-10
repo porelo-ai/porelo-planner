@@ -12,6 +12,16 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 - **It tells the window of changes** over Server-Sent Events, whether the planner made them or someone else pushed
   them.
 
+## How it is installed
+
+- **From the same package repositories as Porelo**, as `porelo-planner`, a `.deb` and an `.rpm` for x86-64. The
+  executable is `/usr/libexec/porelo/planner`; the window starts it as it needs it, and no service of its own is
+  installed. It needs glibc 2.34 or newer and zlib.
+- **The licenses of what it compiles in** stand in full in `THIRD-PARTY-NOTICES`, under
+  `/usr/share/doc/porelo-planner/` from the `.deb` and as a `%license` file from the `.rpm`: every library's own
+  license and notice texts, those of what it embeds, the standard text of each license its POM names, and the Java
+  runtime's.
+
 ## How the window reaches it
 
 - **Only its owner reaches it.** It listens on the loopback address alone, on a port the system chooses, and refuses
@@ -22,8 +32,9 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 
       {"port":<port>,"token":"<43 base64url characters>"}
 
-  The file is readable by the account alone, in a directory of mode `0700`; the planner refuses to start when the
-  runtime directory is unset, is a link, or can be read by another account.
+  With `XDG_RUNTIME_DIR` unset, the runtime directory is `/run/user/<uid>`, as the window reads it. The file is
+  readable by the account alone, in a directory of mode `0700`; the planner refuses to start when the runtime
+  directory is missing, is a link, or can be read by another account.
 - **Every call carries the token** as `Authorization: Bearer <token>`, on every path. A call without it, or with
   another, gets `401` with `WWW-Authenticate: Bearer` and an empty body, and no CORS header is ever sent. The token
   is new on every start.

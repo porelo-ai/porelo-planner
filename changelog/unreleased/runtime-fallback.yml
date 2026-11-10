@@ -1,0 +1,2 @@
+title: With XDG_RUNTIME_DIR unset, the planner writes its address file under /run/user/<uid>, where the window reads it.
+type: changed

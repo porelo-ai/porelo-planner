@@ -147,6 +147,38 @@ class AddressFileTest {
     }
 
     @Test
+    void aRuntimeDirectoryReachedThroughALinkIsRefusedInEveryForm() throws Exception {
+        // A link anywhere on the way can be turned, between the check and the write, to a
+        // directory another account reads.
+        final Path real = Files.createDirectory(runtime.resolve("real"), ownerOnly());
+        final Path link = Files.createSymbolicLink(runtime.resolve("link"), real);
+        Files.createDirectory(real.resolve("inner"), ownerOnly());
+        for (final String given :
+                new String[] {link + "/.", link + "/inner", real + "/../real", real + "/."}) {
+            assertThatThrownBy(() -> AddressFile.open(given))
+                    .as("the runtime directory given as %s", given)
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    @Test
+    void aRuntimeDirectoryUnderOneOthersCanWriteIsRefused() throws Exception {
+        // Another account that can write the directory above can rename this one aside and put its
+        // own in its place between the check and the write.
+        final Path shared = Files.createDirectory(runtime.resolve("shared"));
+        Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwxrwxrwx"));
+        final Path inner = Files.createDirectory(shared.resolve("runtime"), ownerOnly());
+        try {
+            assertThatThrownBy(() -> AddressFile.open(inner.toString()))
+                    .as("a runtime directory under one of mode rwxrwxrwx without the sticky bit")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("others can write");
+        } finally {
+            Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwx------"));
+        }
+    }
+
+    @Test
     void aRuntimeDirectoryThatIsALinkIsRefused() throws Exception {
         // A link can point the file into a directory another account controls.
         final Path link = Files.createSymbolicLink(runtime.resolve("link"), runtime);
@@ -166,12 +198,31 @@ class AddressFileTest {
     }
 
     @Test
-    void anUnsetOrRelativeRuntimeDirectoryIsRefused() {
+    void anUnsetRuntimeDirectoryFallsBackToTheAccountsOwnUnderRunUser() throws Exception {
+        // The window reads the address file at /run/user/<uid> when XDG_RUNTIME_DIR is unset;
+        // written
+        // anywhere else, the window would not find the planner and start a second one.
+        final Path account =
+                Files.createDirectory(runtime.resolve(String.valueOf(ownUid())), ownerOnly());
+        try (AddressFile file = AddressFile.open("", runtime)) {
+            assertThat(file.path())
+                    .as("the address file with XDG_RUNTIME_DIR unset")
+                    .isEqualTo(account.resolve("porelo-planner").resolve("planner.json"));
+        }
+    }
+
+    @Test
+    void anUnsetRuntimeDirectoryWithoutTheAccountsOwnIsRefused() {
         // Without it there is no place only this account can read.
-        assertThatThrownBy(() -> AddressFile.open(""))
-                .as("an unset runtime directory")
+        assertThatThrownBy(() -> AddressFile.open("", runtime))
+                .as("an unset runtime directory and no /run/user/<uid>")
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("not set");
+                .hasMessageContaining("not a directory");
+    }
+
+    @Test
+    void aRelativeRuntimeDirectoryIsRefused() {
+        // A relative path depends on where the planner was started.
         assertThatThrownBy(() -> AddressFile.open("relative"))
                 .as("a relative runtime directory")
                 .isInstanceOf(IllegalStateException.class)
@@ -232,6 +283,10 @@ class AddressFileTest {
             process.destroyForcibly();
         }
         return output;
+    }
+
+    private static int ownUid() throws IOException {
+        return (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:uid");
     }
 
     private static java.nio.file.attribute.FileAttribute<?> ownerOnly() {

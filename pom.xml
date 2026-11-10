@@ -20,6 +20,16 @@
     <name>Porelo Planner</name>
     <description>Serves a project's stories and issues to the Porelo window over REST</description>
 
+    <!-- The planner is LGPL, not the parent's GPL; every module inherits this. -->
+    <licenses>
+        <license>
+            <name>LGPL-3.0-or-later</name>
+            <url>https://www.gnu.org/licenses/lgpl-3.0.html</url>
+            <distribution>repo</distribution>
+            <comments>GNU Lesser General Public License v3.0 or later</comments>
+        </license>
+    </licenses>
+
     <!-- Without the inherit.append.path attributes Maven appends each child's artifactId to these. -->
     <url>https://github.com/porelo-ai/porelo-planner/</url>
 

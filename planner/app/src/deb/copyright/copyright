@@ -1,0 +1,81 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: porelo-planner
+Source: https://github.com/porelo-ai/porelo-planner
+
+Files: *
+Copyright: 2026 Michael Schnell <michael@fuin.org>
+License: LGPL-3.0-or-later
+
+Files: usr/libexec/porelo/planner
+Copyright: 2026 Michael Schnell <michael@fuin.org>
+License: LGPL-3.0-or-later and Apache-2.0 and MIT and EPL-2.0 and GPL-2.0-with-classpath-exception
+Comment: This executable is compiled whole from the planner and the libraries it
+ runs on. The planner is under LGPL-3.0-or-later. Spring Framework, Spring Boot,
+ Apache Tomcat, Apache Commons Logging, the Log4j API, Jackson, SnakeYAML,
+ Micrometer and JSpecify are under Apache-2.0; SLF4J is
+ under MIT; Logback is used under EPL-2.0, one of its two licenses, and its
+ source is at https://github.com/qos-ch/logback; the Jakarta Annotations API and
+ the Java runtime that GraalVM Community compiles in are under
+ GPL-2.0-with-classpath-exception. The complete license and notice texts of each
+ library and of the runtime are in
+ /usr/share/doc/porelo-planner/THIRD-PARTY-NOTICES.
+
+License: LGPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify it under
+ the terms of the GNU Lesser General Public License as published by the Free
+ Software Foundation, either version 3 of the License, or (at your option) any
+ later version.
+ .
+ This program is distributed in the hope that it will be useful, but WITHOUT ANY
+ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+ .
+ On Debian systems the complete texts of the GNU Lesser General Public License
+ version 3 and of the GNU General Public License version 3 it extends can be
+ found in "/usr/share/common-licenses/LGPL-3" and "/usr/share/common-licenses/GPL-3".
+
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+ this file except in compliance with the License. You may obtain a copy of the
+ License at
+ .
+ https://www.apache.org/licenses/LICENSE-2.0
+ .
+ Unless required by applicable law or agreed to in writing, software distributed
+ under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ specific language governing permissions and limitations under the License.
+ .
+ On Debian systems the complete text of the Apache License, Version 2.0 can be
+ found in "/usr/share/common-licenses/Apache-2.0".
+
+License: MIT
+ Copyright (c) 2004-2022 QOS.ch Sarl (Switzerland)
+ All rights reserved.
+ .
+ Permission is hereby granted, free of charge, to any person obtaining a copy of
+ this software and associated documentation files (the "Software"), to deal in
+ the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+ AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: EPL-2.0
+ The complete text of the Eclipse Public License 2.0 is at
+ https://www.eclipse.org/legal/epl-2.0/.
+
+License: GPL-2.0-with-classpath-exception
+ The GNU General Public License version 2 with the Classpath Exception. On Debian
+ systems the complete text of the GNU General Public License version 2 can be
+ found in "/usr/share/common-licenses/GPL-2"; the exception is at
+ https://openjdk.org/legal/gplv2+ce.html.

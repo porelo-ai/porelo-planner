@@ -16,6 +16,14 @@
     <properties>
         <!-- The executable's name, as the window starts it. -->
         <planner.image>porelo-planner</planner.image>
+        <!-- The C library and zlib the executable needs, measured with readelf, which both packages declare by hand:
+             jdeb and the rpm plugin do not read a binary. check-linkage holds the executable to them, and the floor to
+             the oldest system supported, Debian 13's glibc. -->
+        <package.glibc.floor>2.34</package.glibc.floor>
+        <package.zlib.floor>1.2.2</package.zlib.floor>
+        <package.glibc.ceiling>2.41</package.glibc.ceiling>
+        <!-- The Build's run number makes each snapshot package newer than the last; 0 for a local build. -->
+        <planner.snapshot.run>0</planner.snapshot.run>
     </properties>
 
     <dependencies>
@@ -139,6 +147,286 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The .deb and the .rpm, with -Pnative: the executable at /usr/libexec/porelo/planner, where the window
+             finds it, held to the C library floor both packages declare. -->
+        <profile>
+            <id>dist</id>
+            <properties>
+                <package.name>porelo-planner</package.name>
+                <package.install.dir>/usr/libexec/porelo</package.install.dir>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>package-version</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>regex-property</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- '~' sorts below everything in dpkg and rpm, so 0.1.0~snapshot.N is older than
+                                         0.1.0, and the run number makes each snapshot newer than the last. -->
+                                    <name>planner.package.version</name>
+                                    <value>${project.version}</value>
+                                    <regex>-SNAPSHOT$</regex>
+                                    <replacement>~snapshot.${planner.snapshot.run}</replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- The third-party notices: the runtime classpath and the bill it is held to, both before the
+                         package phase, and the notices from them by porelo-release, declared below. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>notices-classpath</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>build-classpath</goal>
+                                </goals>
+                                <configuration>
+                                    <includeScope>runtime</includeScope>
+                                    <outputFile>${project.build.directory}/notices/classpath.txt</outputFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>notices-bill</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>makeBom</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- The app is never deployed, and the plugin skips such a module by default. -->
+                                    <skipNotDeployed>false</skipNotDeployed>
+                                    <includeTestScope>false</includeTestScope>
+                                    <outputFormat>json</outputFormat>
+                                    <outputName>bom</outputName>
+                                    <outputDirectory>${project.build.directory}/notices</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.vafer</groupId>
+                        <artifactId>jdeb</artifactId>
+                        <executions>
+                            <execution>
+                                <id>deb</id>
+                                <!-- Not 'package': native-image binds there too. -->
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>jdeb</goal>
+                                </goals>
+                                <configuration>
+                                    <name>${package.name}</name>
+                                    <deb>${project.build.directory}/${package.name}_${planner.package.version}_amd64.deb</deb>
+                                    <controlDir>${project.basedir}/src/deb/control</controlDir>
+                                    <dataSet>
+                                        <data>
+                                            <src>${project.build.directory}/${planner.image}</src>
+                                            <type>file</type>
+                                            <dst>planner</dst>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.install.dir}</prefix>
+                                                <filemode>755</filemode>
+                                                <user>root</user>
+                                                <group>root</group>
+                                            </mapper>
+                                        </data>
+                                        <data>
+                                            <src>${project.build.directory}/notices/THIRD-PARTY-NOTICES</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>/usr/share/doc/${package.name}</prefix>
+                                                <filemode>644</filemode>
+                                                <user>root</user>
+                                                <group>root</group>
+                                            </mapper>
+                                        </data>
+                                        <!-- Debian Policy 12.5: every binary package ships one. -->
+                                        <data>
+                                            <src>${project.basedir}/src/deb/copyright/copyright</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>/usr/share/doc/${package.name}</prefix>
+                                                <filemode>644</filemode>
+                                                <user>root</user>
+                                                <group>root</group>
+                                            </mapper>
+                                        </data>
+                                    </dataSet>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>de.dentrassi.maven</groupId>
+                        <artifactId>rpm</artifactId>
+                        <executions>
+                            <execution>
+                                <id>rpm</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>rpm</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <packageName>${package.name}</packageName>
+                            <version>${planner.package.version}</version>
+                            <snapshotVersion>${planner.package.version}</snapshotVersion>
+                            <release>1</release>
+                            <summary>Porelo's planner: a project's stories and issues for the Porelo window</summary>
+                            <description>Serves a project's stories and issues to the Porelo window over a REST API on the loopback address. Installs into /usr/libexec/porelo as 'planner', where the window finds it and starts it as it needs it.</description>
+                            <!-- Without this a snapshot gets a timestamp release, and the rpm and the deb disagree. -->
+                            <forceRelease>true</forceRelease>
+                            <architecture>x86_64</architecture>
+                            <group>Applications/System</group>
+                            <license>LGPL-3.0-or-later AND Apache-2.0 AND MIT AND EPL-2.0 AND GPL-2.0-only WITH Classpath-exception-2.0</license>
+                            <packager>Michael Schnell &lt;michael@fuin.org&gt;</packager>
+                            <requires>
+                                <!-- The names rpmbuild itself generates for these libraries. -->
+                                <require>libc.so.6(GLIBC_${package.glibc.floor})(64bit)</require>
+                                <require>libz.so.1(ZLIB_${package.zlib.floor})(64bit)</require>
+                            </requires>
+                            <signature>
+                                <skip>true</skip>
+                            </signature>
+                            <entries>
+                                <entry>
+                                    <name>${package.install.dir}/planner</name>
+                                    <file>${project.build.directory}/${planner.image}</file>
+                                    <mode>0755</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                </entry>
+                                <!-- 'license' marks each %license, so 'rpm -qL' answers. -->
+                                <entry>
+                                    <name>/usr/share/licenses/${package.name}/LICENSE</name>
+                                    <file>${maven.multiModuleProjectDirectory}/LICENSE</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                                <entry>
+                                    <name>/usr/share/licenses/${package.name}/LICENSE-GPL-3.0</name>
+                                    <file>${maven.multiModuleProjectDirectory}/LICENSE-GPL-3.0</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                                <entry>
+                                    <name>/usr/share/licenses/${package.name}/THIRD-PARTY-NOTICES</name>
+                                    <file>${project.build.directory}/notices/THIRD-PARTY-NOTICES</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                                <!-- The libraries compiled into the executable, and their licenses. -->
+                                <entry>
+                                    <name>/usr/share/licenses/${package.name}/copyright</name>
+                                    <file>${project.basedir}/src/deb/copyright/copyright</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                            </entries>
+                        </configuration>
+                    </plugin>
+
+                    <!-- Declared after both packages, since all bind to verify and run in this order: the executable
+                         against what the packages declare, then what the packages say their version is. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>third-party-notices</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main third-party-notices ${project.build.directory}/notices/classpath.txt ${project.build.directory}/notices/bom.json ${java.home} ${project.build.directory}/notices/THIRD-PARTY-NOTICES --own org\.fuin\.porelo:porelo-planner-.*</commandlineArgs>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>check-linkage</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-linkage --declare libc.so.6=GLIBC:${package.glibc.floor} --declare libz.so.1=ZLIB:${package.zlib.floor} --ceiling GLIBC=${package.glibc.ceiling} ${project.build.directory}/${planner.image}</commandlineArgs>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>check-package-version</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-package-version ${package.name} ${project.version} ${planner.snapshot.run} ${project.build.directory}</commandlineArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                                <version>${porelo.buildtools.version}</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>

@@ -1,0 +1,16 @@
+Package: [[package.name]]
+# Not [[version]]: that is the raw Maven version, and apt compares on this line. This is the planner's version with
+# -SNAPSHOT rewritten to ~snapshot.<run>, which sorts below the release rather than above it.
+Version: [[planner.package.version]]
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Michael Schnell <michael@fuin.org>
+Homepage: https://github.com/porelo-ai/porelo-planner
+# The native executable links against both; jdeb does not read it to find out. check-linkage holds these floors to it.
+Depends: libc6 (>= [[package.glibc.floor]]), zlib1g (>= 1:[[package.zlib.floor]])
+Description: Porelo's planner: a project's stories and issues for the Porelo window
+ Serves a project's stories and issues to the Porelo window over a REST API on
+ the loopback address, and writes their state changes to the planning store in
+ Git with the person's own login. Installs into /usr/libexec/porelo as
+ 'planner', where the window finds it and starts it as it needs it.

@@ -1,0 +1,2 @@
+title: The planner is published as a .deb and an .rpm that install it at /usr/libexec/porelo/planner, where the window starts it, with the full license texts of everything it compiles in.
+type: added

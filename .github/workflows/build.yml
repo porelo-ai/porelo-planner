@@ -1,5 +1,6 @@
-# Builds the planner on every change to it: compiled, its tests run, its native executable built, held to x86-64 v1
-# and started once. Publishing comes with the packages.
+# Builds the planner on every change to it: compiled, its tests run, its native executable built, held to x86-64 v1,
+# started once and packed as a .deb and an .rpm, which put it where the window finds it. A push to main publishes them
+# to the snapshots channel, a tag v<version> to the releases channel; a release depends only on releases.
 name: Build
 
 on:
@@ -20,7 +21,8 @@ permissions:
 
 jobs:
     build:
-        name: Build and the native executable
+        name: Build, packages and publish
+        # Pinned, not ubuntu-latest: the packages' C library floor is measured on what this builds.
         runs-on: ubuntu-24.04
         timeout-minutes: 45
         steps:
@@ -33,9 +35,14 @@ jobs:
             - name: The pinned GraalVM
               uses: ./.github/actions/pinned-jdk
 
-            # Not -DskipTests: the native start test needs the executable.
-            - name: Build, tests, the native executable, its CPU check and its start
-              run: ./mvnw -B -U -s settings.xml -Pnative verify
+            # check-package-version reads the built .rpm with rpm, which the runner is not promised to have.
+            - name: rpm, to read the built package
+              run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+
+            # Not -DskipTests: the native start test needs the executable, and the dist profile's checks need it and
+            # the packages it is packed into - the C library and zlib both declare, and the version both carry.
+            - name: Build, tests, the native executable, its checks and its packages
+              run: ./mvnw -B -U -s settings.xml -Pnative,dist verify -Dplanner.snapshot.run=${{ github.run_number }}
 
             # A direct push to main never meets the pull request's check, so the push's own range is read here, by the
             # rule this commit carries. A tag checks the commit it names. A new branch or a branch pushed over has no start
@@ -60,6 +67,184 @@ jobs:
                       start=origin/main
                   fi
                   ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $start..$GITHUB_SHA"
+
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: packages
+                  path: |
+                      planner/app/target/*.deb
+                      planner/app/target/*.rpm
+                  if-no-files-found: error
+
+            - name: Not publishing
+              if: "!(github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))"
+              run: |
+                  echo "Not publishing. This run is '${{ github.event_name }}' on '${{ github.ref }}', and only a push to main"
+                  echo "or a tag v<version> publishes. The packages were built and checked here and are attached to this run."
+
+            # A tag publishes a release, main a snapshot. A release is refused unless the tag is exactly 'v' plus the version
+            # it carries, and a version is never both at once.
+            - name: Which channel
+              id: channel
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              run: |
+                  set -eu
+                  VERSION="$(./mvnw -B -q -s settings.xml -N help:evaluate -Dexpression=project.version -DforceStdout)"
+                  [ -n "$VERSION" ] || { echo "::error::no version in pom.xml"; exit 1; }
+                  if [ "$GITHUB_REF_TYPE" = tag ]; then
+                      [ "$GITHUB_REF_NAME" = "v$VERSION" ] \
+                          || { echo "::error::the tag $GITHUB_REF_NAME is not v$VERSION, the version this commit carries"; exit 1; }
+                      case "$VERSION" in
+                          *-SNAPSHOT) echo "::error::$VERSION is a snapshot; a release carries its own version"; exit 1 ;;
+                      esac
+                      echo "channel=releases" >> "$GITHUB_OUTPUT"
+                  else
+                      case "$VERSION" in
+                          *-SNAPSHOT) ;;
+                          *) echo "::error::$VERSION on a branch would publish a release as a snapshot"; exit 1 ;;
+                      esac
+                      echo "channel=snapshots" >> "$GITHUB_OUTPUT"
+                  fi
+                  echo "  $VERSION -> $(tail -1 "$GITHUB_OUTPUT")"
+
+            # Every -SNAPSHOT in the effective pom - dependencies, the imported BOM, plugins and their dependencies such as
+            # porelo-release, inactive profiles too - refuses the tag.
+            - name: A release depends only on releases
+              if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+              run: |
+                  # -Pall: check-releases refuses an effective pom that leaves out a profile's module, here screen.
+                  ./mvnw -B -s settings.xml -Pall help:effective-pom -Doutput=target/effective-pom.xml
+                  ./mvnw -B -s settings.xml -N exec:exec@check-releases
+
+            # Curl alone, so no downloaded tool runs beside the token; the token reaches it as config on standard input,
+            # so neither a file nor a command line holds it. A .deb without its properties is stored and never indexed.
+            - name: Publish the packages
+              timeout-minutes: 5
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+                  CHANNEL: ${{ steps.channel.outputs.channel }}
+              run: |
+                  set -euo pipefail
+                  case "$JF_URL" in
+                      https://?*) ;;
+                      *) echo "::error::variable JF_URL is '$JF_URL', not an https:// address the token may go to"; exit 1 ;;
+                  esac
+                  base="${JF_URL%/}/artifactory"
+                  # A glob that matches several files would shift put's arguments and upload the wrong thing.
+                  only() {
+                      [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one package, matched: $*" >&2; exit 1; }
+                      echo "$1"
+                  }
+                  deb="$(only planner/app/target/*.deb)"
+                  rpm="$(only planner/app/target/*.rpm)"
+                  # A published release is never replaced, as on Central: each file is asked for where it would be
+                  # stored, so one uploaded by a run that failed before its index was written counts too. Anything
+                  # but a 404 stops the release, since whether it is published is then unknown.
+                  absent() {
+                      local status
+                      # Anonymous, so the redirect Artifactory answers a stored file with may be followed.
+                      status="$(curl -sSL -o /dev/null -w '%{http_code}' --retry 5 --proto =https --proto-redir =https --max-time 60 "$base/$1")"
+                      case "$status" in
+                          404) ;;
+                          200) echo "::error::$1 is published already"; exit 1 ;;
+                          *) echo "::error::asking for $1 answered $status, so whether it is published is unknown"; exit 1 ;;
+                      esac
+                  }
+                  if [ "$CHANNEL" = releases ]; then
+                      absent "porelo-dist-deb/pool/main/p/porelo-planner/$(basename "$deb")"
+                      absent "porelo-dist-rpm/releases/$(basename "$rpm")"
+                  fi
+                  [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
+                  # Assigned first, so a checksum that cannot be computed stops here instead of sending an empty header,
+                  # which curl drops; Artifactory checks the bytes against both. Only a 2xx is an upload, and a redirect
+                  # is not followed, so the token stays with this host. No -f: a refusal such as 401 is reported with
+                  # its status at once, and only a timeout or a 408, 429 or 5xx is tried again.
+                  put() {
+                      local sha1 sha256 status
+                      sha1="$(sha1sum "$1" | cut -d' ' -f1)"
+                      sha256="$(sha256sum "$1" | cut -d' ' -f1)"
+                      echo "  put   $2$(basename "$1")"
+                      status="$(printf 'header = "Authorization: Bearer %s"\n' "$JF_ACCESS_TOKEN" \
+                          | curl -sS --retry 5 --proto =https --max-time 120 -K - -o /dev/null -w '%{http_code}' -T "$1" \
+                              -H "X-Checksum-Sha1: $sha1" -H "X-Checksum-Sha256: $sha256" \
+                              "$base/$2$(basename "$1")${3:+;$3}")"
+                      case "$status" in
+                          2??) ;;
+                          *) echo "::error::Artifactory answered $status to the upload of $(basename "$1"), not a 2xx"; exit 1 ;;
+                      esac
+                  }
+                  put "$deb" "porelo-dist-deb/pool/main/p/porelo-planner/" \
+                      "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
+                  put "$rpm" "porelo-dist-rpm/${CHANNEL}/"
+
+            # Uploaded is not installable. Read anonymously, as an installer sees it, into a variable before grep: grep
+            # leaving a pipe early would fail curl under pipefail on a large index.
+            - name: The packages are indexed, not merely stored
+              timeout-minutes: 12
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  CHANNEL: ${{ steps.channel.outputs.channel }}
+              run: |
+                  set -euo pipefail
+                  index="${JF_URL%/}/artifactory/porelo-dist-deb/dists/${CHANNEL}/main/binary-amd64/Packages"
+                  set -- planner/app/target/*.deb
+                  [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one package, matched: $*"; exit 1; }
+                  DEB="$(basename "$1")"
+                  tries=0
+                  indexed=false
+                  while [ "$tries" -lt 20 ]; do
+                      if packages="$(curl -sSfL --proto =https --proto-redir =https --max-time 10 "$index" 2>"$RUNNER_TEMP/index-error")"; then
+                          if grep -qxF "Filename: pool/main/p/porelo-planner/$DEB" <<< "$packages"; then
+                              echo "  OK    the Debian index lists $DEB"
+                              indexed=true
+                              break
+                          fi
+                          last="the index does not list it"
+                      else
+                          last="$(cat "$RUNNER_TEMP/index-error")"
+                      fi
+                      tries=$((tries + 1))
+                      sleep 6
+                  done
+                  if [ "$indexed" != true ]; then
+                      echo "::error::$DEB is not in $index after $tries reads; the last: $last"
+                      exit 1
+                  fi
+                  # The RPM index names its primary list in repomd.xml, under a new name for each calculation.
+                  rpmrepo="${JF_URL%/}/artifactory/porelo-dist-rpm/${CHANNEL}"
+                  set -- planner/app/target/*.rpm
+                  [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one rpm, matched: $*"; exit 1; }
+                  RPM="$(basename "$1")"
+                  tries=0
+                  indexed=false
+                  while [ "$tries" -lt 20 ]; do
+                      if repomd="$(curl -sSfL --proto =https --proto-redir =https --max-time 10 "$rpmrepo/repodata/repomd.xml" 2>"$RUNNER_TEMP/index-error")"; then
+                          primary="$(grep -o 'repodata/[^"]*primary\.xml\.gz' <<< "$repomd" | head -1)"
+                          if [ -z "$primary" ]; then
+                              last="repomd.xml names no primary list"
+                          elif curl -sSfL --proto =https --proto-redir =https --max-time 30 -o "$RUNNER_TEMP/primary.xml.gz" "$rpmrepo/$primary" 2>"$RUNNER_TEMP/index-error"; then
+                              if gunzip -c "$RUNNER_TEMP/primary.xml.gz" | grep -qF "<location href=\"$RPM\""; then
+                                  echo "  OK    the RPM index lists $RPM"
+                                  indexed=true
+                                  break
+                              fi
+                              last="the index does not list it"
+                          else
+                              last="$(cat "$RUNNER_TEMP/index-error")"
+                          fi
+                      else
+                          last="$(cat "$RUNNER_TEMP/index-error")"
+                      fi
+                      tries=$((tries + 1))
+                      sleep 6
+                  done
+                  if [ "$indexed" != true ]; then
+                      echo "::error::$RPM is not in $rpmrepo after $tries reads; the last: $last"
+                      exit 1
+                  fi
 
     # The window's planning screen, a Flutter package: analysed and tested as the window's build does it, with the
     # Flutter its pubspec pins. Only the screen's module: the Java build is the job above.

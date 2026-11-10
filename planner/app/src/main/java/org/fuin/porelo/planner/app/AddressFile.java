@@ -1,8 +1,10 @@
 package org.fuin.porelo.planner.app;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -13,6 +15,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jspecify.annotations.Nullable;
 
@@ -39,6 +42,12 @@ public final class AddressFile implements AutoCloseable {
 
     private static final Set<PosixFilePermission> OWNER_ONLY_FILE =
             PosixFilePermissions.fromString("rw-------");
+
+    /** Group or others may write. */
+    private static final int OTHERS_WRITE = 0022;
+
+    /** Only an entry's owner may rename or remove it. */
+    private static final int STICKY = 01000;
 
     /** The lock files this process holds. */
     private static final Set<Path> HELD = ConcurrentHashMap.newKeySet();
@@ -72,18 +81,37 @@ public final class AddressFile implements AutoCloseable {
      *     already runs.
      */
     public static AddressFile open(final String runtimeDirectory) {
-        if (runtimeDirectory.isBlank()) {
-            throw new IllegalStateException(
-                    "XDG_RUNTIME_DIR is not set, so there is no place only this account can read");
+        return open(runtimeDirectory, Path.of("/run/user"));
+    }
+
+    /**
+     * Checks the runtime directory and takes the lock, falling back to the account's own directory
+     * under {@code runUser} when none is set.
+     *
+     * @param runtimeDirectory The account's runtime directory; may be empty when it is not set.
+     * @param runUser Where the system makes each account's runtime directory, named by its uid.
+     * @return The address file, not yet written.
+     */
+    static AddressFile open(final String runtimeDirectory, final Path runUser) {
+        final int uid;
+        try {
+            uid = ownUid();
+        } catch (IOException e) {
+            throw new IllegalStateException("this account's uid cannot be read: " + e, e);
         }
-        final Path runtime = Path.of(runtimeDirectory);
+        // The window reads the same place when XDG_RUNTIME_DIR is unset; the checks below still
+        // hold for it.
+        final Path runtime =
+                runtimeDirectory.isBlank()
+                        ? runUser.resolve(String.valueOf(uid))
+                        : Path.of(runtimeDirectory);
         if (!runtime.isAbsolute()) {
             throw new IllegalStateException(
                     "XDG_RUNTIME_DIR is '" + runtimeDirectory + "', not an absolute path");
         }
         try {
-            final int uid = ownUid();
             requireOwnersAlone(runtime, uid);
+            requireNoWayRound(runtime, uid);
             final Path directory = runtime.resolve(DIRECTORY);
             createOwnerOnlyDirectory(directory);
             requireOwnersAlone(directory, uid);
@@ -122,13 +150,21 @@ public final class AddressFile implements AutoCloseable {
         final String json = "{\"port\":" + port + ",\"token\":\"" + token.text() + "\"}\n";
         Path temporary = null;
         try {
-            temporary =
-                    Files.createTempFile(
-                            directory,
-                            "planner-",
-                            ".tmp",
-                            PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE));
-            Files.writeString(temporary, json, StandardCharsets.UTF_8);
+            temporary = directory.resolve("planner-" + UUID.randomUUID() + ".tmp");
+            // Written through the channel that made it, never opened again by its name.
+            try (SeekableByteChannel out =
+                    Files.newByteChannel(
+                            temporary,
+                            Set.of(
+                                    StandardOpenOption.CREATE_NEW,
+                                    StandardOpenOption.WRITE,
+                                    LinkOption.NOFOLLOW_LINKS),
+                            PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE))) {
+                final ByteBuffer bytes = ByteBuffer.wrap(json.getBytes(StandardCharsets.UTF_8));
+                while (bytes.hasRemaining()) {
+                    out.write(bytes);
+                }
+            }
             Files.move(
                     temporary,
                     directory.resolve(FILE),
@@ -185,6 +221,35 @@ public final class AddressFile implements AutoCloseable {
         if (!mode.equals(OWNER_ONLY_DIRECTORY)) {
             throw new IllegalStateException(
                     path + " has mode " + PosixFilePermissions.toString(mode) + ", not rwx------");
+        }
+    }
+
+    /**
+     * Refuses a runtime directory that is not in its plain form, is reached through a link anywhere
+     * on its way, or lies under a directory another account could rename it out of: each lets the
+     * place be swapped between the check and the write.
+     */
+    private static void requireNoWayRound(final Path runtime, final int uid) throws IOException {
+        if (!runtime.equals(runtime.normalize())) {
+            throw new IllegalStateException(runtime + " is not in its plain form");
+        }
+        final Path real = runtime.toRealPath();
+        if (!real.equals(runtime)) {
+            throw new IllegalStateException(runtime + " is reached through a link, as " + real);
+        }
+        for (Path above = runtime.getParent(); above != null; above = above.getParent()) {
+            final int owner =
+                    (Integer) Files.getAttribute(above, "unix:uid", LinkOption.NOFOLLOW_LINKS);
+            final int mode =
+                    (Integer) Files.getAttribute(above, "unix:mode", LinkOption.NOFOLLOW_LINKS);
+            if (owner != 0 && owner != uid) {
+                throw new IllegalStateException(
+                        above + " belongs to account " + owner + ", neither root nor this one");
+            }
+            if ((mode & OTHERS_WRITE) != 0 && (mode & STICKY) == 0) {
+                throw new IllegalStateException(
+                        above + " is a directory others can write, without the sticky bit");
+            }
         }
     }
 

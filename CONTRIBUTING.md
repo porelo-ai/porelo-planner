@@ -8,7 +8,8 @@ reviewed, and what a commit carries. It is one page for every Porelo repository:
 
 - **Building and testing:** JDK 25, the pinned GraalVM. `./mvnw -B -s settings.xml verify` runs the tests, and
   `-Pnative verify` also builds `planner/app/target/porelo-planner`, checks it asks for exactly x86-64 v1 and starts
-  it once.
+  it once. `-Pnative,dist verify` packs it as a `.deb` and an `.rpm` beside it and holds it to the C library floor
+  both declare; the Build publishes them from a push to main (snapshots) or a tag `v<version>` (releases).
 - **The contract** with the window is the planner's OpenAPI description, so a change to what it answers is made
   together with the window.
 - **Requirements** are in [issues/README.md](issues/README.md).
