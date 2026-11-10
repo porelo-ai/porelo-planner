@@ -1,0 +1,11 @@
+site_name: Porelo Planner
+docs_dir: doc
+strict: true
+nav:
+    - Overview: index.md
+    - Decisions: decisions.md
+validation:
+    links:
+        anchors: warn
+        unrecognized_links: warn
+        absolute_links: warn

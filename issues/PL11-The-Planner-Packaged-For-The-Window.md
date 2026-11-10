@@ -1,0 +1,23 @@
+# PL11 — The Planner Packaged For The Window
+
+**Status:** Analyzed; blocked by [PL01](README.md#pl01).
+**Size:** M - a .deb and an .rpm with the native executable, held to their C library floor, and published from the
+Build like the other Porelo packages.
+
+**What must be true.** A person installs porelo-planner from the same package repositories as Porelo, and the window
+finds and starts it; a push to main publishes a snapshot, a tag a release.
+
+## Plan
+
+- `-Pdist` in `app` as porelo-adapters packs its readers: `jdeb` and the rpm plugin, the executable at
+  `/usr/libexec/porelo/planner`, the C library floor measured with `readelf` and checked.
+- The Build's publish steps as porelo-adapters' (curl alone, the token on standard input, indexed before believed).
+- **Red first:** the linkage check against an executable needing a newer C library than the floor.
+
+## Acceptance
+
+- The packages install on the local Ubuntu and Fedora VMs, and the installed executable starts.
+
+## Open questions
+
+- Does the window start the planner as it needs it (planned), or does it run as a user service started at login?
