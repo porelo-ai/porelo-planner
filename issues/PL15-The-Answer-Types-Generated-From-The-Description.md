@@ -18,8 +18,13 @@
 change of the description changes the code with it and the compiler, not only a test, holds the controllers to it;
 they stay records with `@Nullable` where the description allows null, and run in the native executable.
 
+## Plan
+
+- The record templates come as `org.fuin.porelo:porelo-forge-client-openapi-templates`, a dependency of
+  `openapi-generator-maven-plugin` 7.27.0 with `templateResourcePath` `org/fuin/porelo/forge/openapi/templates` (no
+  leading or trailing slash), `useRecords` and `useSpringBoot4=true`; the generator's other options as that
+  artifact's documentation gives them.
+
 ## To be checked
 
-- openapi-generator 7.27.0 writes records (`useRecords`); the overridden templates that make them null-safe come as
-  a published Maven artifact of the repository that already keeps them, never as a copy. Its coordinates, once
-  published.
+- The templates artifact is published, not only installed locally, before a build here depends on it.
