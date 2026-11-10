@@ -99,7 +99,7 @@ public final class StoreReader implements PartReader {
             }
         }
         if (!own) {
-            return new Part(null, List.of(), read);
+            return new Part(null, List.of(), read, null);
         }
         final Workflow board = Workflow.read(storiesWorkflow.orElseThrow());
         final List<Story> stories = new ArrayList<>();
@@ -108,7 +108,11 @@ public final class StoreReader implements PartReader {
                 stories.add(Story.read(text(name, commit, file), board));
             }
         }
-        return new Part(board, stories, read);
+        return new Part(
+                board,
+                stories,
+                read,
+                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)));
     }
 
     private static Map<String, IssueIndex> rows(

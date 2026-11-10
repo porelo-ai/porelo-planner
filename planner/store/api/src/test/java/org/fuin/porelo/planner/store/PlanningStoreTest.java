@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class PlanningStoreTest {
@@ -23,7 +24,8 @@ class PlanningStoreTest {
                                     List.of(),
                                     null,
                                     null,
-                                    "")));
+                                    "")),
+                    new Work(Map.of(), List.of()));
 
     private static final PlanningStore STORE =
             new PlanningStore() {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class BoardTest {
@@ -28,7 +29,13 @@ class BoardTest {
         // One board is the snapshot every request answers from; a caller's list must not change it.
         final List<Story> stories = new ArrayList<>(List.of(story("ST1", "Idea")));
         final List<Issue> issues = new ArrayList<>(List.of(issue("XY03", "Backlog")));
-        final Board board = new Board(new Revision("r"), WORKFLOW, stories, issues);
+        final Board board =
+                new Board(
+                        new Revision("r"),
+                        WORKFLOW,
+                        stories,
+                        issues,
+                        new Work(Map.of(), List.of()));
 
         stories.clear();
         issues.add(issue("XY04", "Idea"));
@@ -49,7 +56,8 @@ class BoardTest {
                                         new Revision("r"),
                                         WORKFLOW,
                                         List.of(story("ST1", "Idea"), story("ST1", "Backlog")),
-                                        List.of()))
+                                        List.of(),
+                                        new Work(Map.of(), List.of())))
                 .as("a story twice")
                 .hasMessage("Story ST1 is on the board twice");
         assertThatThrownBy(
@@ -58,7 +66,8 @@ class BoardTest {
                                         new Revision("r"),
                                         WORKFLOW,
                                         List.of(),
-                                        List.of(issue("XY03", "Idea"), issue("XY03", "Idea"))))
+                                        List.of(issue("XY03", "Idea"), issue("XY03", "Idea")),
+                                        new Work(Map.of(), List.of())))
                 .as("an issue twice")
                 .hasMessage("Issue XY03 is on the board twice");
     }
@@ -72,7 +81,8 @@ class BoardTest {
                                         new Revision("r"),
                                         WORKFLOW,
                                         List.of(),
-                                        List.of(issue("XY03", "Done"))))
+                                        List.of(issue("XY03", "Done")),
+                                        new Work(Map.of(), List.of())))
                 .as("an issue in an unknown state")
                 .hasMessage("XY03 has the unknown state 'Done'");
     }

@@ -13,8 +13,10 @@ import java.util.Optional;
  * @param workflow the states and phases
  * @param stories every story
  * @param issues every issue of every repository
+ * @param work the work rules and what could not be read of them
  */
-public record Board(Revision revision, Workflow workflow, List<Story> stories, List<Issue> issues) {
+public record Board(
+        Revision revision, Workflow workflow, List<Story> stories, List<Issue> issues, Work work) {
 
     /** Copies the lists and refuses an id twice or a state the workflow does not know. */
     public Board {

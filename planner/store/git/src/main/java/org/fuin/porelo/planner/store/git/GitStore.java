@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 
@@ -275,7 +276,13 @@ public final class GitStore implements PlanningStore {
             for (final org.fuin.porelo.stories.Story story : ownPart.stories()) {
                 stories.add(story(story, byId, read));
             }
-            return new Board(revision, workflow, stories, issues);
+            final Work work = ownPart.work();
+            return new Board(
+                    revision,
+                    workflow,
+                    stories,
+                    issues,
+                    work != null ? work : WorkReader.read(null));
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
         }

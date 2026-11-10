@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL07",
   "title": "The Work Rules Read From The Workflow",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Medium",
   "rank": 6,
@@ -29,7 +29,15 @@ rule) is answered in words beside the workflow and never hides the board.
   provider. The rules porelo's project file was to carry are the model.
 - `core`: `WorkRules.check(workflow, rules)` - every key, `from`, `done`, `then` and `blocked` a state of the
   workflow; every working state a key; `done` not a working state.
-- `GET /projects/{project}/workflow` answers `work` and `faults`.
+- `store/api`: `WorkRule` and `Work(rules, faults)` on the board; `store/git`: `WorkReader` reads
+  `stories/work.yml` of the project's own repository (a mapping `work:` by working state), each broken rule dropped
+  with its fault in words and the others kept, a missing file one fault; a key named twice and nesting deeper than
+  16 levels refuse the file as YAML. The window reads `work` and `faults` with the workflow, served by the board
+  reads ([PL04](README.md#pl04)).
+- **The code reading** (another model, against `java-code-review`, `spring-boot-patterns`, `graal`, `test-quality`):
+  a rule named twice silently replaced the first, fixed with a test seen red; nesting bounded likewise. Declined: a
+  YAML alias bomb - Jackson's YAML reader does not expand aliases (measured: `b: *a` reads as the text `a`); a file
+  of any size - the store reads no file above its byte bound.
 - **Red first:** `WorkRulesTest` - a `done` that is a working state, a key the workflow lacks and a working state
   without a rule are each named.
 

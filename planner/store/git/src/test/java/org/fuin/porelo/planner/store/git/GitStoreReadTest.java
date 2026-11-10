@@ -152,6 +152,34 @@ class GitStoreReadTest {
     }
 
     @Test
+    void theWorkRulesAreReadFromTheOwnRepositoryAndTheirAbsenceIsAFault() throws Exception {
+        // Without its rules the board is still read; with them, work starts by the project's own.
+        final GitStore store = store(null);
+        assertThat(store.board().work().faults())
+                .as("no stories/work.yml")
+                .containsExactly("stories/work.yml is missing, so no work can be started");
+        repository(
+                "porelo-store",
+                Map.of(
+                        "stories/work.yml",
+                        """
+                        work:
+                          Review:
+                            from: [Idea]
+                            done: Idea
+                            per: story
+                            modes: [UNATTENDED]
+                            order: "Look at {story}."
+                            models: {codex: gpt-6.1-sol}
+                        """));
+        final Board board = store.refresh();
+        assertThat(board.work().faults()).as("the rules read").isEmpty();
+        assertThat(board.work().rules().keySet())
+                .as("the rule of the own repository")
+                .containsExactly("Review");
+    }
+
+    @Test
     void anIssueWithoutAJsonHeadIsAFaultNamingItsFile() throws Exception {
         // A board that skipped it would show a project with an issue missing.
         repository(

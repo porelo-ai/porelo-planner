@@ -26,14 +26,14 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl03"></a>[PL03](PL03-The-Store-Read-From-Git.md) | L | [PL01](README.md#pl01) | The store's interface and its Git implementation: workflow, stories, issue indexes and sub-issues read with Jackson (JSON heads only) and the stories library, with the person's own Git login |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
-| <a id="pl07"></a>[PL07](PL07-The-Work-Rules-Read-From-The-Workflow.md) | S | [PL03](README.md#pl03) | Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow |
 
 ## Review
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl01"></a>[PL01](PL01-The-Planner-Builds-As-One-Native-Executable.md) | M | - | One GraalVM native executable for any x86-64 CPU from four modules (`core`, `store/api`, `store/git`, `app`), started and answering in a native test, built by the Build workflow |
-| <a id="pl03"></a>[PL03](PL03-The-Store-Read-From-Git.md) | L | [PL01](README.md#pl01) | The store's interface and its Git implementation: workflow, stories, issue indexes and sub-issues read with Jackson (JSON heads only) and the stories library, with the person's own Git login |
 | <a id="pl02"></a>[PL02](PL02-Only-Its-Owner-Reaches-The-Planner.md) | M | [PL01](README.md#pl01) | Only the account that started it reaches the planner: loopback and an owner-only token on every call, SSE included |
 | <a id="pl11"></a>[PL11](PL11-The-Planner-Packaged-For-The-Window.md) | M | [PL01](README.md#pl01) | A .deb and an .rpm with the native executable, published from the Build like the other Porelo packages |
+| <a id="pl07"></a>[PL07](PL07-The-Work-Rules-Read-From-The-Workflow.md) | S | [PL03](README.md#pl03) | Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow |

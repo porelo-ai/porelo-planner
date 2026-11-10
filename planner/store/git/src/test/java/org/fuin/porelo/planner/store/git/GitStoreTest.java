@@ -120,7 +120,8 @@ class GitStoreTest {
                                             List.of(),
                                             null,
                                             null,
-                                            "")));
+                                            "")),
+                            null);
 
     private static final class ManualClock extends Clock {
         volatile Instant now = Instant.parse("2026-01-01T00:00:00Z");

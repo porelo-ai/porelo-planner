@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL03",
   "title": "The Store Read From Git",
-  "state": "Review",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 1,
@@ -95,15 +95,11 @@ nothing moved in under a second.
   sub-issue reads with the right states; a link out of the clone is refused; a refused login, and one that would
   prompt, read as `CredentialRefused` at once, with no credential in its text.
 
-- **The code reading** (another model, against `security-audit`, `concurrency-review`, `java-code-review`, `graal`,
-  `test-quality`, `spring-boot-patterns`): an unforeseen failure of a background check escaped without being told,
-  fixed with a test seen red. Declined: Git's error text echoing a token in a form the scrub does not know - Git 2.53
-  removes the login from a URL in its own messages (measured with a token put in by `insteadOf`), and the scrub
-  removes any URL's user info and an `Authorization` header whatever the token's form; a refusal when a directory on
-  the cache's path cannot be checked - failing closed is meant; many `git` processes at once - each check runs at
-  most `parallel` of them over a bounded number of repositories.
-
 ## Acceptance
 
 - The red-first tests seen red, then green; the board of a copy of the real stories and indexes read in full.
 - No test needs the network.
+
+## To be checked
+
+- The code reading by another model.
