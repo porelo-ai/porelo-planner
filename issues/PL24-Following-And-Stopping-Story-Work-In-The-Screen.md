@@ -31,8 +31,10 @@ planner answers to the window's Start hook once.
   `{issue,work,revision,tasks}`. Absent or malformed findings stay unreported. `ReadingResolution`, `ReadingDecision`
   and the window's handoff take the returned tasks through the Start hook; no start follows a refusal.
 - **Task reports, as agreed with the window:** `PlanningClient.taskEvent(project, task, event, {required offer,
-  required container, PlanningTaskEnded? ended})` calls `POST /projects/{project}/tasks/{task}/events` with
-  `{offer,event,container,ended?}`; `container` is the container's name, `PlanningTaskEnded` Porelo's record of the
+  required container, required machine, PlanningTaskEnded? ended})` calls `POST /projects/{project}/tasks/{task}/events`
+  with `{offer,event,container,machine,ended?}`; `container` is the container's name; `machine` is the machine's name as
+  the person sees it, 1 to 128 characters without control characters or line breaks, kept and answered back verbatim
+  and never put into a path, a file name or a URL; `PlanningTaskEnded` Porelo's record of the
   agent's end unmapped, `{at,finished,why,answer,unpushed}`. The answer `{revision,work,tasks}` is checked whole, and
   its still-valid offers go to the Start hook once, bound to the provider, project and story they came from, never to
   the board shown now. A stop voids pending starts; `PlanningTaskChanges` lets the window stop the active tasks and
