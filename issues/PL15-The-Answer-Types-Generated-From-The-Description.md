@@ -18,8 +18,8 @@
 change of the description changes the code with it and the compiler, not only a test, holds the controllers to it;
 they stay records with `@Nullable` where the description allows null, and run in the native executable.
 
-## Open questions
+## To be checked
 
-- Whether to generate at all while the only generator that writes records (openapi-generator's `useRecords`) is
-  unreleased, and whether the overridden templates that make its records null-safe come as a published artifact of
-  the repository that already keeps them, since a copy is not allowed.
+- openapi-generator 7.27.0 writes records (`useRecords`); the overridden templates that make them null-safe come as
+  a published Maven artifact of the repository that already keeps them, never as a copy. Its coordinates, once
+  published.
