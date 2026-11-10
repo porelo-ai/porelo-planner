@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL03",
   "title": "The Store Read From Git",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 1,
@@ -22,8 +22,8 @@ states and phases, every story with its head (state, priority, issues), every is
 its sub-issues, and an issue's text, each at a revision that names exactly the commits it was read from. It uses the
 person's own Git login and never asks for, keeps or logs a credential.
 
-**How it stands.** It also waits until every repository's issues carry a JSON head, since the store reads
-only those.
+**How it stands.** Every repository's issues carry JSON heads. Reading `project.yml` and a story's head waits for
+public readers in `porelo-stories`; the rest is built meanwhile.
 
 ## Plan
 
