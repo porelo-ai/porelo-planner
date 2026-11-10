@@ -12,6 +12,7 @@ left out.
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | - | - | Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | - | - | The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand |
+| <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | - | - | Moves staged for one repository of a project are dropped when the project is rebound to another; every agent's or repository's text the screen shows is stripped of control and bidirectional characters |
 
 ## Backlog
 
