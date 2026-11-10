@@ -1,0 +1,1991 @@
+import 'dart:convert';
+
+/// A fresh board for the interactive mock and scenarios to change independently.
+Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
+{
+  "states": [
+    {
+      "name": "Idea",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Accepted",
+      "kind": "WAITING"
+    },
+    {
+      "name": "In analysis",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Analyzed",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Under estimation",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Estimated",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Backlog",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Implementing",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Reading",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Review",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Rework",
+      "kind": "WAITING"
+    },
+    {
+      "name": "Reworking",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Finishing",
+      "kind": "WORKING"
+    },
+    {
+      "name": "Finished",
+      "kind": "CLOSED"
+    },
+    {
+      "name": "Rejected",
+      "kind": "CLOSED"
+    }
+  ],
+  "phases": [
+    {
+      "name": "Ideas",
+      "states": [
+        "Idea",
+        "Accepted"
+      ]
+    },
+    {
+      "name": "Analysis",
+      "states": [
+        "In analysis",
+        "Analyzed"
+      ]
+    },
+    {
+      "name": "Estimation",
+      "states": [
+        "Under estimation",
+        "Estimated"
+      ]
+    },
+    {
+      "name": "Backlog",
+      "states": [
+        "Backlog"
+      ]
+    },
+    {
+      "name": "Build",
+      "states": [
+        "Implementing",
+        "Reworking",
+        "Reading",
+        "Review",
+        "Rework"
+      ]
+    },
+    {
+      "name": "Done",
+      "states": [
+        "Finishing",
+        "Finished",
+        "Rejected"
+      ]
+    }
+  ],
+  "stories": [
+    {
+      "id": "ST294",
+      "title": "Plan the stories on a board in the window",
+      "state": "In analysis",
+      "priority": "High",
+      "link": "https://example.org/stories/ST294",
+      "issues": [],
+      "work": {
+        "tasks": [],
+        "atWork": true,
+        "since": "11:02",
+        "coordinator": null,
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": "The operator sees every story by state, the most important first, opens a story or an issue, and changes a story’s state by drag and drop, read from and written through a story API whose states are configured, not built in; a state change calls an action API.\n\nOpen Planning, find each story in its state’s column sorted by priority, open a story and one of its issues, drag a story to another state and save; the change is in porelo-project’s checkout. Rename a state in the configuration and the board shows it."
+    },
+    {
+      "id": "ST72",
+      "title": "A forge’s calls in a client that knows nothing of Porelo",
+      "state": "Under estimation",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST72",
+      "issues": [
+        {
+          "id": "PJ74",
+          "repository": "porelo-project",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PJ74",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "FC03",
+          "repository": "porelo-forge-clients",
+          "state": "Under estimation",
+          "blockedBy": [],
+          "link": "https://example.org/issues/FC03",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "FC09",
+          "repository": "porelo-forge-clients",
+          "state": "Under estimation",
+          "blockedBy": [],
+          "link": "https://example.org/issues/FC09",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "FC10",
+          "repository": "porelo-forge-clients",
+          "state": "Under estimation",
+          "blockedBy": [],
+          "link": "https://example.org/issues/FC10",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "FC11",
+          "repository": "porelo-forge-clients",
+          "state": "Under estimation",
+          "blockedBy": [],
+          "link": "https://example.org/issues/FC11",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "FC13",
+          "repository": "porelo-forge-clients",
+          "state": "Under estimation",
+          "blockedBy": [],
+          "link": "https://example.org/issues/FC13",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "work": {
+        "tasks": [],
+        "atWork": true,
+        "coordinator": null,
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST21",
+      "title": "No channel file and no hand-over directory any more",
+      "state": "Idea",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST21",
+      "issues": [],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST11",
+      "title": "porelo-adapters and porelo-ai.github.io each in its own task",
+      "state": "Idea",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST11",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST13",
+      "title": "porelo and porelo-host each in its task, with a way back",
+      "state": "Idea",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST13",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST28",
+      "title": "The setup, move and recovery proven together",
+      "state": "Idea",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST28",
+      "issues": [],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST87",
+      "title": "Invalid machine inputs refused before renting",
+      "state": "Idea",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST87",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST182",
+      "title": "Review a Bitbucket pull request",
+      "state": "Idea",
+      "priority": "Low",
+      "link": "https://example.org/stories/ST182",
+      "issues": [],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST114",
+      "title": "A vulnerability has a way in and is answered",
+      "state": "Accepted",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST114",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST111",
+      "title": "Install from the intended package source",
+      "state": "Accepted",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST111",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST144",
+      "title": "Understand where a binding setting came from",
+      "state": "Accepted",
+      "priority": "Low",
+      "link": "https://example.org/stories/ST144",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST14",
+      "title": "The coordinator reads everything and changes only porelo-project",
+      "state": "Analyzed",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST14",
+      "issues": [
+        {
+          "id": "PJ58",
+          "repository": "porelo-project",
+          "state": "Analyzed",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PJ58",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST39",
+      "title": "A failed delivery named and kept visible",
+      "state": "Analyzed",
+      "priority": "High",
+      "link": "https://example.org/stories/ST39",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST35",
+      "title": "Refuse an incompatible protocol and a meaningless option",
+      "state": "Analyzed",
+      "priority": "High",
+      "link": "https://example.org/stories/ST35",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST15",
+      "title": "The website builds in its task",
+      "state": "Estimated",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST15",
+      "issues": [
+        {
+          "id": "SI05",
+          "repository": "porelo-ai.github.io",
+          "state": "Estimated",
+          "blockedBy": [],
+          "link": "https://example.org/issues/SI05",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST106",
+      "title": "Make security failures hold the release",
+      "state": "Estimated",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST106",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST198",
+      "title": "Reach a remote machine from Windows",
+      "state": "Estimated",
+      "priority": "Low",
+      "link": "https://example.org/stories/ST198",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST291",
+      "title": "The host run by a program of its own, built like porelo",
+      "state": "Backlog",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST291",
+      "issues": [
+        {
+          "id": "B540",
+          "repository": "porelo",
+          "state": "Implementing",
+          "title": "The host tool as a module of porelo",
+          "size": "M",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B540",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B541",
+          "whatMustBeTrue": "The work meets the story description.",
+          "findings": [
+            {
+              "number": 1,
+              "severity": "BLOCKING",
+              "text": "Check the signature before using the record.",
+              "file": "src/records.dart",
+              "line": 42
+            },
+            {
+              "number": 2,
+              "severity": "NOTE",
+              "text": "Keep the explanation beside the result."
+            }
+          ],
+          "subAgents": [],
+          "repository": "porelo",
+          "state": "Implementing",
+          "title": "The host tool reads the organization and a task by its signature",
+          "size": "L",
+          "blockedBy": [
+            "B540"
+          ],
+          "link": "https://example.org/issues/B541",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false
+        },
+        {
+          "id": "B542",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B542",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B543",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B543",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B544",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B544",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B545",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B545",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B546",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B546",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B547",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B547",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B548",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B548",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B549",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B549",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B550",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B550",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B551",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B551",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B552",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B552",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO156",
+          "repository": "porelo-host",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO156",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO157",
+          "repository": "porelo-host",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO157",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",
+      "work": null
+    },
+    {
+      "id": "ST292",
+      "title": "A whole move rehearsed by the agents on a rented server",
+      "state": "Backlog",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST292",
+      "issues": [
+        {
+          "id": "B553",
+          "repository": "porelo",
+          "state": "Backlog",
+          "title": "A move runs without a terminal for a rehearsal",
+          "size": "M",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B553",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B554",
+          "repository": "porelo",
+          "state": "Backlog",
+          "title": "A forge token’s reach checked against what a move needs",
+          "size": "S",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B554",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "F444",
+          "repository": "porelo-frontend",
+          "state": "Backlog",
+          "title": "A move driven through the window against a rented host",
+          "size": "M",
+          "blockedBy": [],
+          "link": "https://example.org/issues/F444",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "F445",
+          "repository": "porelo-frontend",
+          "state": "Backlog",
+          "title": "What a rehearsal cannot drive in the window, stood in for",
+          "size": "S",
+          "blockedBy": [
+            "F444"
+          ],
+          "link": "https://example.org/issues/F445",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO158",
+          "repository": "porelo-host",
+          "state": "Backlog",
+          "title": "A move rehearsed on a rented server",
+          "size": "L",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO158",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "MX89",
+          "repository": "porelo-message-matrix",
+          "state": "Backlog",
+          "title": "A test person signs in through the gate unattended",
+          "size": "S",
+          "blockedBy": [],
+          "link": "https://example.org/issues/MX89",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "MX90",
+          "repository": "porelo-message-matrix",
+          "state": "Backlog",
+          "title": "The room’s scenarios are rehearsed on a host",
+          "size": "S",
+          "blockedBy": [
+            "MX89"
+          ],
+          "link": "https://example.org/issues/MX90",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "MX91",
+          "repository": "porelo-message-matrix",
+          "state": "Backlog",
+          "title": "The rehearsal says a wake was answered",
+          "size": "XS",
+          "blockedBy": [
+            "MX89"
+          ],
+          "link": "https://example.org/issues/MX91",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "The agents rehearse a whole move on a rented server before the operator’s own test, so most problems are found earlier.\n\nRent a server and let the agents run the rehearsal; the report names every scenario OK, and the window and the room agree with the host.",
+      "work": null
+    },
+    {
+      "id": "ST293",
+      "title": "Every agent works in a Porelo task, moved one at a time",
+      "state": "Backlog",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST293",
+      "issues": [],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST23",
+      "title": "The room and the usage records outlive the host",
+      "state": "Backlog",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST23",
+      "issues": [
+        {
+          "id": "MX24",
+          "repository": "porelo-message-matrix",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/MX24",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "MX36",
+          "repository": "porelo-message-matrix",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/MX36",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "MX39",
+          "repository": "porelo-message-matrix",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/MX39",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO07",
+          "repository": "porelo-host",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO07",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "B231",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B231",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST6",
+      "title": "porelo-agy and porelo-codex each in its own task",
+      "state": "Backlog",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST6",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST27",
+      "title": "Every workflow runs on the local forge as on the central one",
+      "state": "Implementing",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST27",
+      "issues": [
+        {
+          "id": "IJ14",
+          "repository": "porelo-intellij",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/IJ14",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "work": {
+        "tasks": [
+          {
+            "task": "build-one",
+            "containerId": "mock-build-one",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          },
+          {
+            "task": "build-two",
+            "containerId": "mock-build-two",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          }
+        ],
+        "atWork": true,
+        "coordinator": null,
+        "since": "09:10",
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST12",
+      "title": "The release and pipeline tools the move rests on",
+      "state": "Implementing",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST12",
+      "issues": [
+        {
+          "id": "BT35",
+          "repository": "porelo-buildtools",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT35",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT36",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT36",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT38",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT38",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT43",
+          "repository": "porelo-buildtools",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT43",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT44",
+          "repository": "porelo-buildtools",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT44",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT45",
+          "repository": "porelo-buildtools",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT45",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT46",
+          "repository": "porelo-buildtools",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT46",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "work": {
+        "tasks": [
+          {
+            "task": "build-one",
+            "containerId": "mock-build-one",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          },
+          {
+            "task": "build-two",
+            "containerId": "mock-build-two",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          }
+        ],
+        "atWork": true,
+        "coordinator": null,
+        "since": "09:10",
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST5",
+      "title": "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
+      "state": "Implementing",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST5",
+      "issues": [
+        {
+          "id": "PI43",
+          "repository": "porelo-pi",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PI43",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "OM44",
+          "repository": "porelo-omp",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/OM44",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "CC45",
+          "repository": "porelo-claude-code",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/CC45",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "PI39",
+          "repository": "porelo-pi",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PI39",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "OM36",
+          "repository": "porelo-omp",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/OM36",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "CC39",
+          "repository": "porelo-claude-code",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/CC39",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "work": {
+        "tasks": [
+          {
+            "task": "build-one",
+            "containerId": "mock-build-one",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          },
+          {
+            "task": "build-two",
+            "containerId": "mock-build-two",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          }
+        ],
+        "atWork": true,
+        "coordinator": null,
+        "since": "09:10",
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST193",
+      "title": "Choose drive areas for each host",
+      "state": "Implementing",
+      "priority": "Low",
+      "link": "https://example.org/stories/ST193",
+      "issues": [
+        {
+          "id": "PJ106",
+          "repository": "porelo-project",
+          "state": "Implementing",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PJ106",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "work": {
+        "tasks": [
+          {
+            "task": "build-one",
+            "containerId": "mock-build-one",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          },
+          {
+            "task": "build-two",
+            "containerId": "mock-build-two",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          }
+        ],
+        "atWork": true,
+        "coordinator": null,
+        "since": "09:10",
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST127",
+      "title": "Keep container limits on large hosts",
+      "state": "Implementing",
+      "priority": "Low",
+      "link": "https://example.org/stories/ST127",
+      "issues": [],
+      "work": {
+        "tasks": [
+          {
+            "task": "build-one",
+            "containerId": "mock-build-one",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          },
+          {
+            "task": "build-two",
+            "containerId": "mock-build-two",
+            "repository": "",
+            "issues": [],
+            "state": "Implementing",
+            "done": "Review",
+            "mode": "UNATTENDED",
+            "agent": "",
+            "model": "",
+            "role": "MAIN",
+            "since": "09:10",
+            "atWork": true,
+            "ended": null
+          }
+        ],
+        "atWork": true,
+        "coordinator": null,
+        "since": "09:10",
+        "repositories": [],
+        "comment": "",
+        "readingRounds": 2,
+        "issueReadingRounds": [],
+        "issues": []
+      },
+      "description": ""
+    },
+    {
+      "id": "ST1",
+      "title": "Builds on the host’s forge resolve snapshots with a read-only token",
+      "state": "Review",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST1",
+      "issues": [
+        {
+          "id": "BT42",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT42",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT39",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT39",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO52",
+          "repository": "porelo-host",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO52",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "SL36",
+          "repository": "porelo-message-sluice",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/SL36",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT40",
+          "repository": "porelo-buildtools",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT40",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT41",
+          "repository": "porelo-buildtools",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT41",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "HO53",
+          "repository": "porelo-host",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO53",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST2",
+      "title": "porelo-message-sluice works wholly in its task",
+      "state": "Review",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST2",
+      "issues": [
+        {
+          "id": "SL35",
+          "repository": "porelo-message-sluice",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/SL35",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST3",
+      "title": "porelo’s Build on the host’s Forgejo",
+      "state": "Review",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST3",
+      "issues": [
+        {
+          "id": "B306",
+          "repository": "porelo",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B306",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST10",
+      "title": "Test machines by kind from the VM pool",
+      "state": "Review",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST10",
+      "issues": [
+        {
+          "id": "HO12",
+          "repository": "porelo-host",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/HO12",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT24",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT24",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "BT25",
+          "repository": "porelo-buildtools",
+          "state": "Review",
+          "blockedBy": [],
+          "link": "https://example.org/issues/BT25",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    },
+    {
+      "id": "ST264",
+      "title": "A host prepared with no project or person",
+      "state": "Finished",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST264",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST268",
+      "title": "Each person’s one key and card, kept in the registry",
+      "state": "Finished",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST268",
+      "description": "",
+      "issues": [],
+      "work": null
+    },
+    {
+      "id": "ST243",
+      "title": "Both adapters pass one contract suite",
+      "state": "Finished",
+      "priority": "Highest",
+      "link": "https://example.org/stories/ST243",
+      "issues": [
+        {
+          "id": "PJ62",
+          "repository": "porelo-project",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/PJ62",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        },
+        {
+          "id": "GH18",
+          "repository": "porelo-adapters",
+          "state": "Finished",
+          "blockedBy": [],
+          "link": "https://example.org/issues/GH18",
+          "title": "Planning work",
+          "size": "M",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
+        }
+      ],
+      "description": "",
+      "work": null
+    }
+  ],
+  "revision": "design-1",
+  "work": [
+    {
+      "state": "In analysis",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    },
+    {
+      "state": "Under estimation",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    },
+    {
+      "state": "Implementing",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    },
+    {
+      "state": "Reading",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    },
+    {
+      "state": "Reworking",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    },
+    {
+      "state": "Finishing",
+      "from": [
+        "Idea",
+        "Accepted",
+        "Analyzed",
+        "Estimated",
+        "Backlog",
+        "Review",
+        "Rework"
+      ],
+      "done": "Review",
+      "then": null,
+      "blocked": "Reworking",
+      "per": "REPOSITORY",
+      "modes": [
+        "UNATTENDED",
+        "AGENT"
+      ],
+      "order": "Read the story and complete its work."
+    }
+  ],
+  "faults": []
+}
+''') as Map<String, dynamic>;
+
+/// Finds exactly one reported story for stand-in detail reads.
+Map<String, dynamic>? mockPlanningStory(Map<String, dynamic> board, Object? id) {
+  final stories = board['stories'];
+  if (id is! String || id.isEmpty || stories is! List) return null;
+  return stories.whereType<Map<String, dynamic>>().where((story) => story['id'] == id).firstOrNull;
+}
+
+/// Finds an issue and supplies its owning story from the stand-in store.
+Map<String, dynamic>? mockPlanningIssue(Map<String, dynamic> board, Object? id) {
+  final stories = board['stories'];
+  if (id is! String || id.isEmpty || stories is! List) return null;
+  for (final story in stories.whereType<Map<String, dynamic>>()) {
+    final issues = story['issues'];
+    if (issues is! List) continue;
+    final issue = issues.whereType<Map<String, dynamic>>().where((issue) => issue['id'] == id).firstOrNull;
+    if (issue != null) return Map<String, dynamic>.of(issue);
+  }
+  return null;
+}
+
+/// Compact summaries omit the two optional full-detail fields.
+Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
+  'stories': [
+    for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
+      {
+        ...story,
+        'description': '',
+        'issues': [
+          for (final issue in (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>())
+            {...issue}
+              ..remove('whatMustBeTrue')
+              ..remove('subAgents'),
+        ],
+      },
+  ],
+  'revision': board['revision'],
+};

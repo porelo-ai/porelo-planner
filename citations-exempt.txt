@@ -1,0 +1,10 @@
+# Files that hold issue-number shapes on purpose: the planning screen's stand-in board and the tests that read its
+# made-up stories, moved in from the window.
+screen/lib/src/fake/planning_data.dart
+screen/test/mock_planning_test.dart
+screen/test/planning_contract_regressions_test.dart
+screen/test/planning_detail_test.dart
+screen/test/planning_moves_test.dart
+screen/test/reading_decision_test.dart
+screen/test/story_work_lifecycle_test.dart
+screen/test/story_work_test.dart

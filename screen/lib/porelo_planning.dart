@@ -1,9 +1,22 @@
-/// The Porelo window's planning screen, embedded by the window: the board, a story, an issue, starting a story's
-/// work and the reading choice, served by the planner.
+/// The planning screen: a project's stories and issues by state, their unsaved moves, and the start of their work.
+///
+/// The window gives it a `PlanningClient` to read and write through, and takes part through a few hooks: how a
+/// start reaches it (`PlanningStartTask`), what the screen shows of a run (`PlanningTaskChanges`), the agents a start
+/// may choose (`PlanningAgents`), and where the screen stands (`PlanningHost`). The package imports nothing of the
+/// window; its colors come from the window's theme.
 library;
 
-/// The package as the window names it.
-abstract final class PlanningPackage {
-  /// The package's name, as the window's `pubspec.yaml` takes it.
-  static const String name = 'porelo_planning';
-}
+export 'src/client.dart';
+export 'src/hooks.dart';
+export 'src/models.dart';
+export 'src/planning_board.dart';
+export 'src/planning_detail.dart';
+export 'src/story_work.dart';
+export 'src/ui/actions.dart';
+export 'src/ui/planning_detail_widgets.dart';
+export 'src/ui/planning_issue_view.dart';
+export 'src/ui/planning_story_view.dart';
+export 'src/ui/planning_view.dart';
+export 'src/ui/story_work_attention.dart';
+export 'src/ui/story_work_dialog.dart';
+export 'src/ui/style.dart';
