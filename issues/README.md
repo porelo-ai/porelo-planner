@@ -17,6 +17,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
+| <a id="pl11"></a>[PL11](PL11-The-Planner-Packaged-For-The-Window.md) | M | [PL01](README.md#pl01) | A .deb and an .rpm with the native executable, published from the Build like the other Porelo packages |
 
 ## Backlog
 
@@ -30,4 +31,3 @@ left out.
 | <a id="pl07"></a>[PL07](PL07-The-Work-Rules-Read-From-The-Workflow.md) | S | [PL03](README.md#pl03) | Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow |
 | <a id="pl08"></a>[PL08](PL08-The-Work-Proposal.md) | M | [PL07](README.md#pl07) | The work proposal: main agent per repository, each sub-issue a task of its own, the operator's choices, comment and reading limit, and the prompts the window starts each task with |
 | <a id="pl09"></a>[PL09](PL09-The-Run-From-Building-To-Review.md) | L | [PL08](README.md#pl08) | The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window |
-| <a id="pl11"></a>[PL11](PL11-The-Planner-Packaged-For-The-Window.md) | M | [PL01](README.md#pl01) | A .deb and an .rpm with the native executable, published from the Build like the other Porelo packages |
