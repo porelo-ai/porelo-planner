@@ -26,26 +26,41 @@ revision as `Last-Event-ID`, backing off from 1 to 30 s, until the window stops 
 
 - **The planner's stream, as described in `openapi/planner.yaml`:** `GET /projects/{project}/events` with
   `Accept: text/event-stream` answers event `board`, `id:` the revision, `data:` one JSON object with the workflow's
-  and the stories' fields, first at once and then on every change, and a comment `: keep-alive` every 15 s; a
-  refusal before the stream starts answers `application/problem+json`.
+  and the stories' fields, first at once (on a reconnect too) and then on every change, and a comment `: keep-alive`
+  every 15 s; a refusal before the stream starts answers `application/problem+json`.
 - **`HttpPlanningSource.watchStories`** (`screen/lib/src/http/planner_source.dart`) opens that stream after telling
-  the planner the project, as the reads do, and answers each `board` event as `PlanningSnapshot.from(data)`, never a
-  revision it answered last. Lines are read with a bound: an event's data longer than `maxBody` ends the watch with
-  `AnswerTooLarge`. The watch's subscription cancelled closes the connection and stops every retry.
-- **Losing the connection:** 45 s without a line (`silence`), the connection closed or reset, or a `5xx` answer is a
-  lost connection once the first board has arrived: the source reconnects with `Last-Event-ID` set to the last
-  revision, waiting 1 s, then twice as long each time up to 30 s (`backoff`), back to 1 s after a board arrives.
-  `NoSuchProject` tells the planner the project again and reconnects at once, as a read does. Before the first board,
-  and for any `4xx` refusal, the failure ends the watch as an error, as the reads' refusals do today, so the board
-  shows it. `silence` and `backoff` are constructor parameters so tests run in milliseconds.
-- **Red first** (`screen/test/planner_source_test.dart`, against the fake planner on 127.0.0.1): the first board
-  and a second one sent later arrive as two snapshots, and the same revision sent again does not; a stream that
-  falls silent is reconnected with the last revision as `Last-Event-ID`; a stream the planner closes is reconnected
-  after the backoff, which grows and resets after a board; `NoSuchProject` on reconnect makes one new PUT; a `4xx`
-  refusal and a failure before the first board end the watch as errors; an event larger than the bound is refused;
-  cancelling the watch closes the connection and makes no further call. The old test that the watch ends after one
-  board is deleted. The package's test against `porelo-planner --mock` reads one board through the stream.
+  the planner the project, checked against `projects(project)` before each connection as the reads do: another
+  repository or branch is told anew and the last revision forgotten. The request sets `followRedirects = false`, the
+  token in the `Authorization` header alone; the answer's headers, a refusal's body and the first board each come
+  within `timeout`. Each `board` event is answered as `PlanningSnapshot.from(data)`, never the revision answered
+  last; data that is no complete board is `BadAnswer`.
+- **Bounds, before decoding:** the bytes of the unfinished line and the undispatched event together stay within
+  `maxBody`, else `AnswerTooLarge`; an `id:` longer than 200 characters is `BadAnswer`, so `Last-Event-ID` stays a
+  short header.
+- **Losing the connection** after the first board: 45 s without a line (`silence`), the connection closed or reset,
+  the planner unreachable or not answering in time, or `503`/`504`. The source reconnects with `Last-Event-ID`,
+  waiting 1 s, then twice as long each time up to 30 s (`backoff`, `backoffMost`), back to 1 s once a connection
+  brought a new revision or stayed open for `backoffMost`. `NoSuchProject` tells the planner the project again and
+  reconnects at once, once per attempt; a second one ends the watch. A connection not restored within `silence` of
+  its loss ends the watch with the last failure, so the board says its planner is gone; the board loads again when
+  its provider changes, as it does for any failure.
+- **What ends the watch at once,** as an error the board shows: any failure before the first board, the end of a
+  stream before its first board, `4xx` refusals, `502` (`WorkflowMissing`, `CredentialRefused`, `Unreadable`),
+  `BadAnswer` and `AnswerTooLarge`.
+- **Cancel** aborts a request in flight, cancels the answer's subscription and the silence and backoff timers (both
+  `Timer`s, never `Future.delayed`), and makes no further call.
+- **The board** (`screen/lib/src/planning_board.dart`, `_listen`) takes a reply that is a complete board as it is,
+  with its workflow, instead of keeping the prior workflow or reading the workflow again.
+- `silence`, `backoff` and `backoffMost` are constructor parameters, so tests run in milliseconds.
+- **Red first** (`screen/test/planner_source_test.dart`, against the fake planner on 127.0.0.1): two boards and no
+  repeat; a silent stream reopened with the last revision as `Last-Event-ID`; the backoff doubling to its bound and
+  starting over; `NoSuchProject` naming the project again once; a refusal and a failure before the first board ending
+  the watch; a lost connection not restored within `silence` ending it; an event past the bound refused; a cancel
+  closing the connection with no further call; a redirect not followed. `planning_board_test.dart`: a streamed board
+  whose workflow changed shows the new workflow without another read. The old test that the watch ends after one
+  board is deleted.
 
 ## Acceptance
 
-- The red-first tests seen red, then green; `./mvnw -B -s settings.xml -Pall -pl screen verify` green.
+- The red-first tests seen red, then green; `./mvnw -B -s settings.xml -Pall -pl screen verify` green; a watch run
+  by hand against a JVM `porelo-planner --mock`, which answers one board, then a reconnect after the planner restarts.
