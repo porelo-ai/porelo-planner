@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL06",
   "title": "Changes Told Over Server-Sent Events",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 5,
