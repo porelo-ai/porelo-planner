@@ -1,9 +1,12 @@
 package org.fuin.porelo.planner.app;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -36,6 +39,8 @@ public final class Projects {
     private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
     private final Set<String> opening = ConcurrentHashMap.newKeySet();
+
+    private final List<Consumer<String>> retired = new CopyOnWriteArrayList<>();
 
     private final Opener opener;
 
@@ -72,6 +77,7 @@ public final class Projects {
                 if (known != null) {
                     projects.remove(project);
                     known.store().retire();
+                    retired.forEach(listener -> listener.accept(project));
                 }
                 if (projects.size() + opening.size() >= most) {
                     throw new Refusal(
@@ -94,8 +100,19 @@ public final class Projects {
 
     /** Forgets every project, retiring its store; the mock mode's reset. */
     public synchronized void forgetAll() {
+        final List<String> names = List.copyOf(projects.keySet());
         projects.values().forEach(entry -> entry.store().retire());
         projects.clear();
+        names.forEach(name -> retired.forEach(listener -> listener.accept(name)));
+    }
+
+    /**
+     * Tells a listener each project whose store is retired, given anew or forgotten.
+     *
+     * @param listener takes the project's name
+     */
+    public void onRetired(final Consumer<String> listener) {
+        retired.add(listener);
     }
 
     /**

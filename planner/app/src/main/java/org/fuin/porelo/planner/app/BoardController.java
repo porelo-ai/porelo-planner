@@ -88,7 +88,16 @@ public class BoardController {
      */
     @GetMapping("/projects/{project}/workflow")
     public Answers.Workflow workflow(@PathVariable("project") final String project) {
-        final Board board = board(project);
+        return workflowOf(board(project));
+    }
+
+    /**
+     * Maps a board's workflow, with its states' kinds and its sound work rules.
+     *
+     * @param board the board
+     * @return the workflow's answer
+     */
+    static Answers.Workflow workflowOf(final Board board) {
         final Workflow workflow = board.workflow();
         final WorkRules.Checked checked = WorkRules.check(workflow, board.work());
         final List<Answers.WorkRule> work = new ArrayList<>();
@@ -103,6 +112,23 @@ public class BoardController {
                         .toList(),
                 work,
                 checked.faults());
+    }
+
+    /**
+     * Maps the whole board as an event of the changes stream carries it.
+     *
+     * @param board the board
+     * @return the workflow's answer and every story in one
+     */
+    static Answers.Board boardOf(final Board board) {
+        final Answers.Workflow workflow = workflowOf(board);
+        return new Answers.Board(
+                workflow.revision(),
+                workflow.states(),
+                workflow.phases(),
+                workflow.work(),
+                workflow.faults(),
+                board.stories().stream().map(story -> story(board, story)).toList());
     }
 
     /**
@@ -210,7 +236,14 @@ public class BoardController {
         return projects.store(name(project)).board();
     }
 
-    private static String name(final String project) {
+    /**
+     * Checks a project's name.
+     *
+     * @param project the name as given
+     * @return the name
+     * @throws Refusal {@code InvalidName} for a name the planner does not take
+     */
+    static String name(final String project) {
         try {
             return Ids.name(project);
         } catch (final IllegalArgumentException e) {

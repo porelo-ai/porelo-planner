@@ -30,6 +30,31 @@ public final class Answers {
             List<String> faults) {}
 
     /**
+     * The whole board, as an event of the changes stream carries it.
+     *
+     * @param revision the board's revision
+     * @param states each state and its kind
+     * @param phases the board's columns
+     * @param work the sound work rules
+     * @param faults why rules were dropped or could not be read
+     * @param stories every story, without its description
+     */
+    public record Board(
+            String revision,
+            List<State> states,
+            List<Phase> phases,
+            List<WorkRule> work,
+            List<String> faults,
+            List<Story> stories) {}
+
+    /**
+     * The revision after a fetch.
+     *
+     * @param revision the board's revision
+     */
+    public record Refreshed(String revision) {}
+
+    /**
      * A state.
      *
      * @param name its name

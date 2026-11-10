@@ -101,6 +101,72 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/events:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: getEvents
+      summary: Follow the board's changes
+      description: >-
+        Streams the project's board as Server-Sent Events: event `board`, its `id` the revision and its `data` one
+        `Board` object, first at once and then whenever the revision changes - by the planner's own save, by a poll of
+        the repositories, or after `refresh`. A comment line `: keep-alive` comes every 15 s while nothing changes; a
+        reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
+        current board first. An unknown project is refused before the stream starts.
+      tags: [board]
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: The last revision the window saw; the current board comes first in any case.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The stream of the project's boards; each event's data is a `Board`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/refresh:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: refreshProject
+      summary: Read the repositories now
+      description: >-
+        Fetches the project's repositories at once instead of waiting for the next poll; a new revision reaches every
+        stream of the project before this call answers.
+      tags: [board]
+      responses:
+        '200':
+          description: The revision after the fetch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refreshed'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/stories:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -545,6 +611,47 @@ components:
           description: The model for each agent, in order of preference.
           additionalProperties:
             type: string
+
+    Board:
+      description: The whole board at one revision, as an event of the stream carries it - the workflow and the stories.
+      type: object
+      required: [revision, states, phases, work, faults, stories]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        states:
+          type: array
+          description: The states in workflow order.
+          items:
+            $ref: '#/components/schemas/State'
+        phases:
+          type: array
+          description: The board's columns in order.
+          items:
+            $ref: '#/components/schemas/Phase'
+        work:
+          type: array
+          description: The sound work rules.
+          items:
+            $ref: '#/components/schemas/WorkRule'
+        faults:
+          type: array
+          description: What was found wrong reading the workflow, in the planner's words.
+          items:
+            type: string
+        stories:
+          type: array
+          description: Every story, without its description.
+          items:
+            $ref: '#/components/schemas/Story'
+
+    Refreshed:
+      description: The revision after a fetch.
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
 
     StoryList:
       description: Stories at one revision.

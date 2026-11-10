@@ -132,6 +132,78 @@ class NativeStartIT {
         }
     }
 
+    @Test
+    void theNativeExecutableStreamsAPushMadeElsewhere(@TempDir final Path dir) throws Exception {
+        // The board goes out through the event stream, which no return type names; a native image
+        // told nothing of it would end the stream at its first event.
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        final Path runtime = RuntimeDirectories.create();
+        final Path output = Files.createTempFile("porelo-planner-events", ".log");
+        try (FixtureProject project = FixtureProject.serve(dir)) {
+            final ProcessBuilder builder =
+                    new ProcessBuilder(executable.toString())
+                            .redirectErrorStream(true)
+                            .redirectOutput(output.toFile());
+            builder.environment().clear();
+            builder.environment().putAll(project.environment());
+            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            final Process planner = builder.start();
+            try {
+                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final String log = "; the planner wrote:%n" + Files.readString(output);
+                assertThat(call(address, "PUT", "/projects/alpha", project.source()))
+                        .as("the project given" + log)
+                        .startsWith("204 ");
+                final HttpRequest request =
+                        HttpRequest.newBuilder(
+                                        URI.create(
+                                                "http://127.0.0.1:"
+                                                        + address.port()
+                                                        + "/projects/alpha/events"))
+                                .header("Authorization", "Bearer " + address.token())
+                                .build();
+                final HttpResponse<java.util.stream.Stream<String>> stream =
+                        HttpClient.newHttpClient()
+                                .send(request, HttpResponse.BodyHandlers.ofLines());
+                assertThat(stream.statusCode()).as("the stream's status" + log).isEqualTo(200);
+                final java.util.Iterator<String> lines = stream.body().iterator();
+                final String first = nextBoard(lines);
+                project.pushElsewhere();
+                assertThat(call(address, "POST", "/projects/alpha/refresh", null))
+                        .as("the refresh" + log)
+                        .startsWith("200 ");
+                final String second = nextBoard(lines);
+                assertThat(second).as("a second board after the push").isNotEqualTo(first);
+                stream.body().close();
+            } finally {
+                stop(planner);
+            }
+        } finally {
+            Files.deleteIfExists(output);
+            RuntimeDirectories.delete(runtime);
+        }
+    }
+
+    /** The data line of the next board event, read on with a bound, so a silent stream fails. */
+    private static String nextBoard(final java.util.Iterator<String> lines) throws Exception {
+        final java.util.concurrent.FutureTask<String> read =
+                new java.util.concurrent.FutureTask<>(
+                        () -> {
+                            boolean board = false;
+                            while (lines.hasNext()) {
+                                final String line = lines.next();
+                                if (line.equals("event:board")) {
+                                    board = true;
+                                } else if (board && line.startsWith("data:")) {
+                                    return line;
+                                }
+                            }
+                            throw new AssertionError("the stream ended without a board");
+                        });
+        Thread.ofVirtual().start(read);
+        return read.get(30, TimeUnit.SECONDS);
+    }
+
     /** The status and body of a call with the token. */
     private static String call(
             final RuntimeDirectories.Address address,

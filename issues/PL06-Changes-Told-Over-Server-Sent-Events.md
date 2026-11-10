@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL06",
   "title": "Changes Told Over Server-Sent Events",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 5,
@@ -31,18 +31,21 @@ with the last revision it saw gets the current board.
   `Last-Event-ID`, backing off 1 to 30 s; a reconnect always gets the current board first. `POST
   /projects/{project}/refresh` fetches now and answers `200 {revision}`. No bound on streams per token; a slow
   reader gets only the newest board. Both described in `openapi/planner.yaml`, schemas `Board` and `Refreshed`.
-- **`core`: `Changes`**, plain Java over a `Supplier<Board>` that refreshes (the app hands it
-  `projects.store(name).refresh()`, so a project given anew is read from its new store). `subscribe()` answers a
-  `Subscription` holding the current board; `Subscription.next(Duration)` waits for a newer board and keeps only the
+- **`core`: `Changes`**, plain Java over one project's store. `subscribe()` answers a `Subscription` holding the
+  store's current board (`board()`, never a fetch); `Subscription.next(Duration)` waits for a newer board and keeps only the
   newest (one slot, replaced, never a queue), answering empty after the wait, so the caller sends a keep-alive.
   `poll()` refreshes and hands a board with a new revision to every subscription; `saved(Board)` does the same for the
-  planner's own saves, which the moves will call. A closed subscription is dropped; a failed refresh is logged with
-  its scrubbed words and polling goes on.
+  planner's own saves, which the moves will call; both one at a time, so an older board never follows a newer one.
+  A closed subscription is dropped; `closeAll()` ends every one and wakes its wait.
 - **`app`: `ChangesRegistry`** keeps one `Changes` per project while it has a subscriber and schedules its `poll()`
-  every `planner.poll-interval` (default 3 min) on one scheduler, cancelled with the last subscriber. **`EventsController`**
-  answers an unknown project before the stream starts (`NoSuchProject`, problem+json), then sends from a virtual
-  thread through `SseEmitter` without a timeout; a failed send closes the subscription. **`BoardAnswers`**: the
-  mapping from a `Board` to the workflow's and the stories' answers, moved out of `BoardController` and used by both.
+  every `planner.poll-interval` (default 3 min) on one scheduler, cancelled with the last subscriber; a failed poll
+  is logged with the store's scrubbed words and the next one tries again. A project given anew or forgotten
+  (`Projects.onRetired`) ends its streams, so the windows reconnect to its new store or learn it is gone; the first
+  board is read before the project is followed, so one that cannot be read leaves no polling; `refresh` with no
+  stream fetches without following. **`EventsController`** checks the name and reads the first board before the
+  stream starts, so `InvalidName`, `NoSuchProject` and the store's refusals answer as problem+json, then sends from a
+  virtual thread through `SseEmitter` without a timeout; the emitter's end or error closes the subscription at once.
+  `BoardController.boardOf` maps a `Board` for both; `Answers.Board` is registered for the native image.
 - **Red first:** `ChangesTest` over a fake store - a revision changed outside reaches every subscriber, the same
   revision does not; a save reaches each once; a slow subscriber gets only the newest; a closed one is dropped and the
   last one gone stops the polling; a refresh that fails reaches no one and the next one does. `EventsStreamTest` over
@@ -50,6 +53,25 @@ with the last revision it saw gets the current board.
   the stream closed by the client ends its subscription. `NativeStartIT` - a change made in the test server's remote
   streamed by the native executable.
 
+- **Plan reading:** read by another model; its findings are in this plan. Declined: a bound on streams per project or
+  token (the window's contract has none, and only the person holds the token); coalescing refresh calls in a loop
+  (the person's own calls, serialized by the store's lock); one timer for the board reads' 30 s check and the
+  stream's poll (the check runs only when a read asks for it, and the stream catches up at its next poll).
+
 ## Acceptance
 
 - The red-first tests seen red, then green; the native executable streams a change made in the test server's remote.
+
+- **Code reading:** read by another model. Fixed, each with a test seen red first: a save told after a newer poll
+  told the older board (`saved()` now reads the store's board under the fetching lock); a subscriber whose first
+  board was newer than the others' was told it again (each subscription keeps the revision it holds and is never
+  told it twice); a slow first read of one project held every other project's stream (the first read runs outside
+  the registry's lock); the planner's stop waited for open streams (they end before the web server stops). Tests
+  added for the polling itself and its end. Declined: a refusal on the stream asked with `Accept: text/event-stream`
+  answers `application/problem+json` already, measured, and the test now asks that way; a refresh answering while
+  a stream opens tells that stream at the next poll, since the window opens its stream before it asks to read now;
+  one scheduler thread for every project's polls, since polls are minutes apart and each Git call is bounded; the
+  mock reset racing a project given anew, since the reset runs only between the window's tests.
+- **A reader that stops reading without closing its connection** keeps its stream's thread and its project's polling
+  until its socket closes, which the window's process does when it ends; only the person holds the token, so it
+  costs the person's own planner and nothing else.

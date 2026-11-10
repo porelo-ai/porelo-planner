@@ -16,11 +16,17 @@ final class FixtureProject implements AutoCloseable {
     /** The project's name, as the window gives it. */
     static final String NAME = "alpha";
 
+    private final ServedRepositories repositories;
+
     private final GitHttpsServer server;
 
     private final Map<String, String> environment;
 
-    private FixtureProject(final GitHttpsServer server, final Map<String, String> environment) {
+    private FixtureProject(
+            final ServedRepositories repositories,
+            final GitHttpsServer server,
+            final Map<String, String> environment) {
+        this.repositories = repositories;
         this.server = server;
         this.environment = environment;
     }
@@ -94,7 +100,7 @@ final class FixtureProject implements AutoCloseable {
         environment.put("GIT_CONFIG_NOSYSTEM", "1");
         environment.put("GIT_CONFIG_GLOBAL", config.toString());
         environment.put("XDG_CACHE_HOME", Files.createDirectories(dir.resolve("cache")).toString());
-        return new FixtureProject(server, environment);
+        return new FixtureProject(repositories, server, environment);
     }
 
     /**
@@ -104,6 +110,24 @@ final class FixtureProject implements AutoCloseable {
      */
     String source() {
         return "{\"repository\": \"" + server.url("porelo-store.git") + "\"}";
+    }
+
+    /**
+     * Pushes a change from elsewhere: the issue XY07 moves to Review in the served remote.
+     *
+     * @throws Exception when it cannot be committed
+     */
+    void pushElsewhere() throws Exception {
+        repositories.repository(
+                "porelo-store",
+                Map.of(
+                        "issues/XY07-Served.md",
+                        "# XY07 — Served\n\n```json\n{\n  \"$schema\": \"issue-1.json\",\n"
+                                + "  \"id\": \"XY07\",\n  \"title\": \"Served\",\n"
+                                + "  \"state\": \"Review\",\n  \"size\": \"S\",\n"
+                                + "  \"priority\": \"Medium\",\n  \"rank\": 1,\n"
+                                + "  \"blockedBy\": [],\n  \"covers\": \"Something.\"\n}\n```\n\n"
+                                + "**What must be true.** It is served.\n"));
     }
 
     /**

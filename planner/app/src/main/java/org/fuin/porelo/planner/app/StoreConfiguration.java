@@ -10,6 +10,8 @@ import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.GitProjects;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -56,6 +58,54 @@ public class StoreConfiguration {
                         4),
                 Clock.systemUTC(),
                 Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    /**
+     * The projects followed by windows, each polled while one follows it.
+     *
+     * @param projects the projects the window has given
+     * @param interval how often a followed project's repositories are fetched
+     * @return the registry
+     */
+    @Bean(destroyMethod = "close")
+    public ChangesRegistry changesRegistry(
+            final Projects projects,
+            @Value("${planner.poll-interval:3m}") final Duration interval) {
+        return new ChangesRegistry(
+                projects,
+                interval,
+                Executors.newSingleThreadScheduledExecutor(
+                        Thread.ofVirtual().name("poll-", 0).factory()));
+    }
+
+    /**
+     * Ends the windows' streams before the web server stops, which waits for open requests.
+     *
+     * @param changes the projects followed
+     * @return the lifecycle that ends them
+     */
+    @Bean
+    public SmartLifecycle streamsEndFirst(final ChangesRegistry changes) {
+        return new SmartLifecycle() {
+
+            private volatile boolean running;
+
+            @Override
+            public void start() {
+                running = true;
+            }
+
+            @Override
+            public void stop() {
+                running = false;
+                changes.close();
+            }
+
+            @Override
+            public boolean isRunning() {
+                return running;
+            }
+        };
     }
 
     /**

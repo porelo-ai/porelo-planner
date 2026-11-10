@@ -156,6 +156,36 @@ class MockModeTest {
         }
     }
 
+    @Test
+    void aPlannerWithAWindowFollowingItStopsAtOnce() throws Exception {
+        // A stream that holds the stop keeps the planner running after its window asked it to end.
+        final Path own = RuntimeDirectories.create();
+        try {
+            final ConfigurableApplicationContext planner = start(own, "--mock");
+            call(own, "PUT", "/projects/any", SOURCE);
+            final RuntimeDirectories.Address address = RuntimeDirectories.read(own);
+            final HttpRequest request =
+                    HttpRequest.newBuilder(
+                                    URI.create(
+                                            "http://127.0.0.1:"
+                                                    + address.port()
+                                                    + "/projects/any/events"))
+                            .header("Authorization", "Bearer " + address.token())
+                            .build();
+            final HttpResponse<java.util.stream.Stream<String>> stream =
+                    HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofLines());
+            assertThat(stream.statusCode()).as("the stream's status").isEqualTo(200);
+            final long start = System.nanoTime();
+            planner.close();
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
+                    .as("the stop with a stream open")
+                    .isLessThan(java.time.Duration.ofSeconds(5));
+            stream.body().close();
+        } finally {
+            RuntimeDirectories.delete(own);
+        }
+    }
+
     private static ConfigurableApplicationContext start(final Path runtime, final String... more) {
         final List<String> args =
                 new ArrayList<>(List.of("--planner.runtime-directory=" + runtime));

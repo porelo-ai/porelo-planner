@@ -21,10 +21,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** The window builds against openapi/planner.yaml; the planner must serve exactly what it says. */
 class ApiMatchesDescriptionTest {
@@ -43,7 +45,9 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueList", Answers.IssueList.class),
                     Map.entry("IssueReply", Answers.IssueReply.class),
                     Map.entry("Issue", Answers.Issue.class),
-                    Map.entry("IssueDetail", Answers.IssueDetail.class));
+                    Map.entry("IssueDetail", Answers.IssueDetail.class),
+                    Map.entry("Board", Answers.Board.class),
+                    Map.entry("Refreshed", Answers.Refreshed.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
@@ -101,13 +105,17 @@ class ApiMatchesDescriptionTest {
                 final PutMapping put = method.getAnnotation(PutMapping.class);
                 final PostMapping post = method.getAnnotation(PostMapping.class);
                 if (get != null) {
-                    served.put("GET " + get.value()[0], schemaOf(method.getReturnType()));
+                    served.put(
+                            "GET " + path(get.value(), get.path()),
+                            schemaOf(method.getReturnType()));
                 }
                 if (put != null) {
-                    served.put("PUT " + put.value()[0], "");
+                    served.put("PUT " + path(put.value(), put.path()), "");
                 }
                 if (post != null) {
-                    served.put("POST " + post.value()[0], "");
+                    served.put(
+                            "POST " + path(post.value(), post.path()),
+                            schemaOf(method.getReturnType()));
                 }
             }
         }
@@ -157,7 +165,14 @@ class ApiMatchesDescriptionTest {
         return ok.isMissingNode() ? "" : ok.asText().replace("#/components/schemas/", "");
     }
 
+    private static String path(final String[] value, final String[] path) {
+        return value.length > 0 ? value[0] : path[0];
+    }
+
     private static String schemaOf(final Class<?> type) {
+        if (type == ResponseEntity.class || type == SseEmitter.class) {
+            return "";
+        }
         return SCHEMAS.entrySet().stream()
                 .filter(entry -> entry.getValue().equals(type))
                 .map(Map.Entry::getKey)

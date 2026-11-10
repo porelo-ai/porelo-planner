@@ -1,0 +1,2 @@
+title: A window following a project gets its board at once and again whenever it changes, by a push made elsewhere or on asking to read now, over Server-Sent Events.
+type: added
