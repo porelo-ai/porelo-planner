@@ -1,6 +1,6 @@
 # PL09 — The Run From Building To Review
 
-**Status:** Analyzed; blocked by [PL08](README.md#pl08).
+**Status:** Backlog; blocked by [PL08](README.md#pl08).
 **Size:** L - the flow build -> Reading -> Reworking or Review, the reading limit, the operator's choice when it is
 reached, the findings and a record that survives a restart.
 

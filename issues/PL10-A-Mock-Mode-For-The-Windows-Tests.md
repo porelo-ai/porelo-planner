@@ -1,6 +1,6 @@
 # PL10 — A Mock Mode For The Window's Tests
 
-**Status:** Analyzed; blocked by [PL04](README.md#pl04).
+**Status:** Backlog; blocked by [PL04](README.md#pl04).
 **Size:** M - the window's mock board as data, a store that serves it and takes moves in memory, and the start
 switch.
 

@@ -1,6 +1,6 @@
 # PL04 — The Board Read Over REST
 
-**Status:** Analyzed; blocked by [PL03](README.md#pl03).
+**Status:** Backlog; blocked by [PL03](README.md#pl03).
 **Size:** M - the OpenAPI description of the reads, its controllers, and the story-state rule with a story's own
 state.
 

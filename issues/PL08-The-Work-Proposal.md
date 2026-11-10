@@ -1,6 +1,6 @@
 # PL08 — The Work Proposal
 
-**Status:** Analyzed; blocked by [PL07](README.md#pl07).
+**Status:** Backlog; blocked by [PL07](README.md#pl07).
 **Size:** M - the proposal per repository from the work rules and the sub-issues, the operator's choices, and the
 prompts the window starts each task with.
 

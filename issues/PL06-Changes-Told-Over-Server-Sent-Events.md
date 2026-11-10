@@ -1,6 +1,6 @@
 # PL06 — Changes Told Over Server-Sent Events
 
-**Status:** Analyzed; blocked by [PL04](README.md#pl04).
+**Status:** Backlog; blocked by [PL04](README.md#pl04).
 **Size:** M - a fetch loop per project with a read-now call, an SSE stream per window and its tests, including a
 broken connection.
 

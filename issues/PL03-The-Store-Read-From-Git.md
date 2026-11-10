@@ -1,6 +1,6 @@
 # PL03 — The Store Read From Git
 
-**Status:** Analyzed; blocked by [PL01](README.md#pl01), and until every repository's issues carry a JSON head.
+**Status:** Backlog; blocked by [PL01](README.md#pl01), and until every repository's issues carry a JSON head.
 **Size:** L - the store's interface, the Git implementation reading stories, issue indexes, sub-issues and the
 workflow with Jackson, the person's own Git login, and its safety tests.
 

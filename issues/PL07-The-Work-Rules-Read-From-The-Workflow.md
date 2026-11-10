@@ -1,6 +1,6 @@
 # PL07 — The Work Rules Read From The Workflow
 
-**Status:** Analyzed; blocked by [PL03](README.md#pl03).
+**Status:** Backlog; blocked by [PL03](README.md#pl03).
 **Size:** S - the work part of the workflow file read and checked, and answered with the workflow.
 
 **What must be true.** Which state starts which work - its agent and model, its modes, its order, the state success

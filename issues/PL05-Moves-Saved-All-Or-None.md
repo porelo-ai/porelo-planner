@@ -1,6 +1,6 @@
 # PL05 — Moves Saved All Or None
 
-**Status:** Analyzed; blocked by [PL04](README.md#pl04).
+**Status:** Backlog; blocked by [PL04](README.md#pl04).
 **Size:** L - checked moves, one commit and push per save against the board's revision, the stories index rewritten
 with the stories library, and the confirmation of a story state its issues do not fit.
 

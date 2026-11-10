@@ -1,6 +1,6 @@
 # PL01 — The Planner Builds As One Native Executable
 
-**Status:** Analyzed.
+**Status:** Backlog.
 **Size:** M - four modules and their build, a native image with its instruction-set check, the Build workflow and
 its first green run; no function yet.
 

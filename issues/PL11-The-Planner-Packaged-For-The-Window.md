@@ -1,6 +1,6 @@
 # PL11 — The Planner Packaged For The Window
 
-**Status:** Analyzed; blocked by [PL01](README.md#pl01).
+**Status:** Backlog; blocked by [PL01](README.md#pl01).
 **Size:** M - a .deb and an .rpm with the native executable, held to their C library floor, and published from the
 Build like the other Porelo packages.
 
