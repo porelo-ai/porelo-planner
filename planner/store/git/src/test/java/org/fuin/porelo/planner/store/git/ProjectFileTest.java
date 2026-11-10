@@ -143,4 +143,21 @@ class ProjectFileTest {
                 .isInstanceOf(StoreException.Unreadable.class)
                 .hasMessageContaining("project.yml names 3 repositories, more than 2");
     }
+
+    @Test
+    void aUrlWhoseLastPartIsNoRepositoryNameIsRefusedBeforeAnythingIsFetched() {
+        // A fetch would run with the person's login for a name the store cannot even report.
+        final Files remote = with(PROJECT);
+        assertThatThrownBy(
+                        () ->
+                                ProjectFile.repositories(
+                                        remote,
+                                        new CloneUrl("https://github.com/porelo-ai/MyRepo.git"),
+                                        null,
+                                        10))
+                .as("an upper-case repository name")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no repository name");
+        assertThat(remote.fetched).as("nothing fetched").isEmpty();
+    }
 }

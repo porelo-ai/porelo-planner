@@ -221,6 +221,16 @@ public final class GitRemote implements Remote {
         return id;
     }
 
+    /**
+     * Answers whether a text is a branch name the planner takes.
+     *
+     * @param branch the text
+     * @return whether it is one
+     */
+    static boolean isBranch(final String branch) {
+        return Branch.ok(branch);
+    }
+
     private static String branch(final String branch) {
         if (!Branch.ok(branch)) {
             throw new IllegalArgumentException("Not a branch name the planner takes");

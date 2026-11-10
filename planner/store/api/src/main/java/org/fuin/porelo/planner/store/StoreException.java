@@ -13,8 +13,20 @@ public abstract sealed class StoreException extends RuntimeException
 
     private static final long serialVersionUID = 1L;
 
-    private StoreException(final String message) {
+    private final String subject;
+
+    private StoreException(final String subject, final String message) {
         super(message);
+        this.subject = subject;
+    }
+
+    /**
+     * Answers what the refusal is about.
+     *
+     * @return the story's or the issue's id, or the repository's name
+     */
+    public String subject() {
+        return subject;
     }
 
     /** The board has no story of that id. */
@@ -27,7 +39,7 @@ public abstract sealed class StoreException extends RuntimeException
          * @param id the id asked for
          */
         public NoSuchStory(final String id) {
-            super("No story " + Ids.story(id));
+            super(Ids.story(id), "No story " + id);
         }
     }
 
@@ -41,7 +53,7 @@ public abstract sealed class StoreException extends RuntimeException
          * @param id the id asked for
          */
         public NoSuchIssue(final String id) {
-            super("No issue " + Ids.issue(id));
+            super(Ids.issue(id), "No issue " + id);
         }
     }
 
@@ -55,7 +67,9 @@ public abstract sealed class StoreException extends RuntimeException
          * @param repository the name of the project's repository
          */
         public WorkflowMissing(final String repository) {
-            super("Repository " + Ids.name(repository) + " has no stories/workflow.yml");
+            super(
+                    Ids.name(repository),
+                    "Repository " + repository + " has no stories/workflow.yml");
         }
     }
 
@@ -70,9 +84,8 @@ public abstract sealed class StoreException extends RuntimeException
          */
         public CredentialRefused(final String repository) {
             super(
-                    "Repository "
-                            + Ids.name(repository)
-                            + " needs a Git login that works without a prompt");
+                    Ids.name(repository),
+                    "Repository " + repository + " needs a Git login that works without a prompt");
         }
     }
 
@@ -87,7 +100,9 @@ public abstract sealed class StoreException extends RuntimeException
          * @param reason why it could not be reached
          */
         public Unreachable(final String repository, final String reason) {
-            super("Repository " + Ids.name(repository) + " could not be reached: " + reason);
+            super(
+                    Ids.name(repository),
+                    "Repository " + repository + " could not be reached: " + reason);
         }
     }
 
@@ -102,7 +117,9 @@ public abstract sealed class StoreException extends RuntimeException
          * @param fault what could not be read
          */
         public Unreadable(final String repository, final String fault) {
-            super("Repository " + Ids.name(repository) + " could not be read: " + fault);
+            super(
+                    Ids.name(repository),
+                    "Repository " + repository + " could not be read: " + fault);
         }
     }
 }

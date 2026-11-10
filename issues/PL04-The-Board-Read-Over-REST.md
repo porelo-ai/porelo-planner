@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL04",
   "title": "The Board Read Over REST",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 2,
@@ -77,6 +77,10 @@ and the answer says which of the two it is.
   project name equals `{project}` (the library does not read the name, and a new body clears the cache, so nothing
   mixes); restricting the own URL's host before the fetch (every caller holds the access token, so a caller is the
   person, fetching with the person's own login).
+- **Code reading:** read by another model; every finding is fixed with a test seen red, but two. Declined: a check
+  of the repository names `project.yml` lists (the library refuses every name outside the forge's own name pattern
+  before the planner sees it); a bound on the cache directories failed `PUT`s leave behind (only the person, who
+  holds the access token, can make them, in their own cache).
 
 ## Acceptance
 

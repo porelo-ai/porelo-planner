@@ -3,13 +3,10 @@ package org.fuin.porelo.planner.store.git;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,14 +40,14 @@ class GitStoreReadTest {
 
     private GitHttpsServer server;
 
-    private Path served;
+    private ServedRepositories repositories;
 
     private Map<String, String> person;
 
     @BeforeEach
     void serve() throws Exception {
-        served = Files.createDirectories(dir.resolve("served"));
-        repository(
+        repositories = new ServedRepositories(dir);
+        repositories.repository(
                 "porelo-store",
                 Map.of(
                         "stories/workflow.yml", WORKFLOW,
@@ -71,7 +68,7 @@ class GitStoreReadTest {
                         "issues/AB01-Parent.md", issue("AB01", "Parent", "Backlog", ""),
                         "issues/AB01.1-Child.md",
                                 issue("AB01.1", "Child", "Review", "\"parent\": \"AB01\",")));
-        repository(
+        repositories.repository(
                 "porelo-other",
                 Map.of(
                         "issues/workflow.yml",
@@ -93,7 +90,7 @@ class GitStoreReadTest {
     }
 
     private GitStore store(final String login) throws Exception {
-        server = GitHttpsServer.start(served, dir, login);
+        server = GitHttpsServer.start(repositories.served(), dir, login);
         final Path config = dir.resolve("gitconfig");
         Files.writeString(config, "[http]\n\tsslCAInfo = " + server.ca() + "\n");
         person.put("GIT_CONFIG_GLOBAL", config.toString());
@@ -128,6 +125,9 @@ class GitStoreReadTest {
         assertThat(board.workflow().states())
                 .as("the workflow's states in its order")
                 .containsExactly("Idea", "Backlog", "Review", "Finished", "Rejected");
+        assertThat(board.workflow().closed())
+                .as("the closed states, which no work may start in")
+                .containsExactly("Finished", "Rejected");
         assertThat(board.issues())
                 .as("each repository's issues, groups and sub-issues among them")
                 .extracting(Issue::id, Issue::repository, Issue::state)
@@ -141,11 +141,11 @@ class GitStoreReadTest {
         assertThat(board.stories())
                 .as(
                         "a stated state is the story's; otherwise the earliest open state of its issues")
-                .extracting(Story::id, Story::state, Story::issues)
+                .extracting(Story::id, Story::state, Story::stateGiven, Story::issues)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("ST1", "Idea", List.of("AB01")),
+                        org.assertj.core.groups.Tuple.tuple("ST1", "Idea", true, List.of("AB01")),
                         org.assertj.core.groups.Tuple.tuple(
-                                "ST2", "Backlog", List.of("AB01", "CD01")));
+                                "ST2", "Backlog", false, List.of("AB01", "CD01")));
         assertThat(board.revision().value())
                 .as("the revision names both repositories")
                 .contains("porelo-store@", " porelo-other@");
@@ -158,7 +158,7 @@ class GitStoreReadTest {
         assertThat(store.board().work().faults())
                 .as("no stories/work.yml")
                 .containsExactly("stories/work.yml is missing, so no work can be started");
-        repository(
+        repositories.repository(
                 "porelo-store",
                 Map.of(
                         "stories/work.yml",
@@ -182,7 +182,7 @@ class GitStoreReadTest {
     @Test
     void anIssueWithoutAJsonHeadIsAFaultNamingItsFile() throws Exception {
         // A board that skipped it would show a project with an issue missing.
-        repository(
+        repositories.repository(
                 "porelo-other",
                 Map.of("issues/CD02-Headless.md", "# CD02 — Headless\n\n**Status:** Idea\n"));
         assertThatThrownBy(() -> store(null).board())
@@ -195,7 +195,7 @@ class GitStoreReadTest {
     @Test
     void aStoryNamingAnIssueUnderAnotherRepositoryIsAFault() throws Exception {
         // Read by its number alone, the story would show another repository's issue as its own.
-        repository(
+        repositories.repository(
                 "porelo-store",
                 Map.of("stories/ST3-Wrong.md", story("ST3", "Wrong", "", "\"porelo-other#AB01\"")));
         assertThatThrownBy(() -> store(null).board())
@@ -208,9 +208,10 @@ class GitStoreReadTest {
     @Test
     void anIssueThatIsALinkIsRefused() throws Exception {
         // A link in someone's repository would read a file of the person's into the board.
-        final Path work = dir.resolve("work-porelo-other");
-        Files.createSymbolicLink(work.resolve("issues/CD03-Link.md"), Path.of("/etc/hostname"));
-        commit(work, "porelo-other");
+        Files.createSymbolicLink(
+                repositories.work("porelo-other").resolve("issues/CD03-Link.md"),
+                Path.of("/etc/hostname"));
+        repositories.commit("porelo-other");
         assertThatThrownBy(() -> store(null).board())
                 .as("a link among the issues")
                 .isInstanceOf(StoreException.Unreadable.class)
@@ -263,56 +264,5 @@ class GitStoreReadTest {
                 + "\",\n  \"size\": \"S\",\n  \"priority\": \"Medium\",\n  \"rank\": 1,\n  \"blockedBy\": [],\n  "
                 + parent
                 + "\n  \"covers\": \"Something.\"\n}\n```\n\n**What must be true.** Something.\n";
-    }
-
-    /** Writes a repository's files, commits them and serves the commit as {@code <name>.git}. */
-    private void repository(final String name, final Map<String, String> files) throws Exception {
-        final Path work = dir.resolve("work-" + name);
-        if (!Files.exists(work)) {
-            Files.createDirectories(work);
-            git(work, "init", "--quiet", "--initial-branch=main");
-        }
-        for (final Map.Entry<String, String> file : files.entrySet()) {
-            final Path path = work.resolve(file.getKey());
-            Files.createDirectories(path.getParent());
-            Files.writeString(path, file.getValue());
-        }
-        commit(work, name);
-    }
-
-    private void commit(final Path work, final String name) throws Exception {
-        git(work, "add", "-A");
-        git(
-                work,
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.org",
-                "commit",
-                "--quiet",
-                "-m",
-                "porelo-store");
-        final Path bare = served.resolve(name + ".git");
-        if (Files.exists(bare)) {
-            git(work, "push", "--quiet", "--force", bare.toString(), "main");
-        } else {
-            git(dir, "clone", "--quiet", "--bare", work.toString(), bare.toString());
-        }
-    }
-
-    private static String git(final Path where, final String... arguments) throws Exception {
-        final List<String> line = new ArrayList<>(List.of("git"));
-        line.addAll(List.of(arguments));
-        final ProcessBuilder builder =
-                new ProcessBuilder(line).directory(where.toFile()).redirectErrorStream(true);
-        builder.environment().put("GIT_CONFIG_GLOBAL", "/dev/null");
-        builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
-        final Process process = builder.start();
-        final String out =
-                new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (process.waitFor() != 0) {
-            throw new IOException("git " + String.join(" ", arguments) + ": " + out);
-        }
-        return out;
     }
 }

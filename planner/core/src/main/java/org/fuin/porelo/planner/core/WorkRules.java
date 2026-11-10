@@ -31,9 +31,9 @@ public final class WorkRules {
     private WorkRules() {}
 
     /**
-     * Checks the rules: each working state, {@code from}, {@code done}, {@code then} and {@code
-     * blocked} a state of the workflow; {@code then} and {@code blocked} working states with a rule
-     * of their own; {@code done} no working state.
+     * Checks the rules: each working state an open state of the workflow, {@code from}, {@code
+     * done}, {@code then} and {@code blocked} a state of the workflow; {@code then} and {@code
+     * blocked} working states with a rule of their own; {@code done} no working state.
      *
      * @param workflow the board's workflow
      * @param work the rules as the store read them
@@ -43,48 +43,92 @@ public final class WorkRules {
         final List<String> faults = new ArrayList<>(work.faults());
         final Map<String, WorkRule> sound = new LinkedHashMap<>();
         for (final Map.Entry<String, WorkRule> entry : work.rules().entrySet()) {
-            final List<String> own = faults(workflow, work, entry.getKey(), entry.getValue());
+            final List<String> own = own(workflow, entry.getKey(), entry.getValue());
             if (own.isEmpty()) {
                 sound.put(entry.getKey(), entry.getValue());
             } else {
                 faults.addAll(own);
             }
         }
+        // A dropped rule can leave another leading into it, so drop until nothing changes.
+        boolean dropped = true;
+        while (dropped) {
+            dropped = false;
+            final Map<String, List<String>> leading = new LinkedHashMap<>();
+            for (final Map.Entry<String, WorkRule> entry : sound.entrySet()) {
+                final List<String> found = leading(work, sound, entry.getKey(), entry.getValue());
+                if (!found.isEmpty()) {
+                    leading.put(entry.getKey(), found);
+                }
+            }
+            for (final Map.Entry<String, List<String>> entry : leading.entrySet()) {
+                sound.remove(entry.getKey());
+                faults.addAll(entry.getValue());
+                dropped = true;
+            }
+        }
         return new Checked(sound, faults);
     }
 
-    private static List<String> faults(
-            final Workflow workflow, final Work work, final String state, final WorkRule rule) {
+    /** The faults a rule has on its own: its states unknown, or its working state closed. */
+    private static List<String> own(
+            final Workflow workflow, final String state, final WorkRule rule) {
         final String at = "stories/work.yml: " + state + ": ";
         if (!workflow.states().contains(state)) {
             return List.of(at + "no state of the workflow");
+        }
+        if (workflow.closed().contains(state)) {
+            return List.of(at + "a closed state");
         }
         final List<String> faults = new ArrayList<>();
         for (final String from : rule.from()) {
             known(workflow, at, "from", from, faults);
         }
-        if (known(workflow, at, "done", rule.done(), faults)
-                && work.rules().containsKey(rule.done())) {
+        known(workflow, at, "done", rule.done(), faults);
+        if (rule.then() != null) {
+            known(workflow, at, "then", rule.then(), faults);
+        }
+        if (rule.blocked() != null) {
+            known(workflow, at, "blocked", rule.blocked(), faults);
+        }
+        return faults;
+    }
+
+    /** The faults of where a rule leads, against the rules still sound. */
+    private static List<String> leading(
+            final Work work,
+            final Map<String, WorkRule> sound,
+            final String state,
+            final WorkRule rule) {
+        final String at = "stories/work.yml: " + state + ": ";
+        final List<String> faults = new ArrayList<>();
+        if (sound.containsKey(rule.done())) {
             faults.add(at + "done '" + rule.done() + "' is a working state");
         }
-        working(workflow, work, at, "then", rule.then(), faults);
-        working(workflow, work, at, "blocked", rule.blocked(), faults);
+        working(work, sound, at, "then", rule.then(), faults);
+        working(work, sound, at, "blocked", rule.blocked(), faults);
         return faults;
     }
 
     /** A next state of work must be work the rules know how to start. */
     private static void working(
-            final Workflow workflow,
             final Work work,
+            final Map<String, WorkRule> sound,
             final String at,
             final String key,
             final @Nullable String state,
             final List<String> faults) {
-        if (state != null
-                && known(workflow, at, key, state, faults)
-                && !work.rules().containsKey(state)) {
-            faults.add(at + key + " '" + state + "' is a working state without a rule");
+        if (state == null || sound.containsKey(state)) {
+            return;
         }
+        faults.add(
+                at
+                        + key
+                        + " '"
+                        + state
+                        + (work.rules().containsKey(state)
+                                ? "' has no rule work can start by"
+                                : "' is a working state without a rule"));
     }
 
     private static boolean known(

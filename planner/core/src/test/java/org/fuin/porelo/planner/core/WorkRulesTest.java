@@ -23,7 +23,8 @@ class WorkRulesTest {
                             "Review",
                             "Rework",
                             "Finished"),
-                    List.of());
+                    List.of(),
+                    List.of("Finished"));
 
     private static WorkRule rule(
             final List<String> from,
@@ -65,9 +66,11 @@ class WorkRulesTest {
         rules.put("Reworking", rule(List.of("Reading"), "Reading", null, null));
         final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
         assertThat(checked.faults())
-                .as("the fault named")
-                .containsExactly("stories/work.yml: Reworking: done 'Reading' is a working state");
-        assertThat(checked.rules()).as("the rule dropped").doesNotContainKey("Reworking");
+                .as("the fault named first")
+                .startsWith("stories/work.yml: Reworking: done 'Reading' is a working state");
+        assertThat(checked.rules())
+                .as("the rule dropped, and with it those leading into it")
+                .isEmpty();
     }
 
     @Test
@@ -105,13 +108,59 @@ class WorkRulesTest {
         rules.remove("Reworking");
         final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
         assertThat(checked.faults())
-                .as("the fault named")
+                .as("the fault named, then the drop it causes")
                 .containsExactly(
                         "stories/work.yml: Reading: blocked 'Reworking' is a working state without"
-                                + " a rule");
+                                + " a rule",
+                        "stories/work.yml: Implementing: then 'Reading' has no rule work can start"
+                                + " by");
+        assertThat(checked.rules())
+                .as("the rule that leads nowhere dropped, and the one leading into it")
+                .isEmpty();
+    }
+
+    @Test
+    void aRuleOnAClosedStateIsNamedAndDropped() {
+        // Work in a closed state would show a finished story as one still being worked on.
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Finished", rule(List.of("Review"), "Review", null, null));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.faults())
+                .as("the fault named")
+                .containsExactly("stories/work.yml: Finished: a closed state");
+        assertThat(checked.rules()).as("the rule dropped").doesNotContainKey("Finished");
+    }
+
+    @Test
+    void aRuleLeadingIntoADroppedRuleIsDroppedToo() {
+        // Work would end in a state the board shows as waiting, which no one starts.
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Reworking", rule(List.of("Reading"), "Review", "Testing", null));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.rules())
+                .as(
+                        "Reworking dropped for its unknown state, Reading for leading into it,"
+                                + " Implementing for leading into Reading")
+                .isEmpty();
+        assertThat(checked.faults())
+                .as("each drop named")
+                .contains(
+                        "stories/work.yml: Reading: blocked 'Reworking' has no rule work can"
+                                + " start by",
+                        "stories/work.yml: Implementing: then 'Reading' has no rule work can"
+                                + " start by");
+    }
+
+    @Test
+    void aDoneInAClosedStateWithADroppedRuleIsNoWorkingState() {
+        // The closed state's rule is dropped, so ending work there is sound.
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Finished", rule(List.of("Review"), "Review", null, null));
+        rules.put("Implementing", rule(List.of("Backlog"), "Finished", "Reading", null));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
         assertThat(checked.rules().keySet())
-                .as("only the rule that leads nowhere dropped")
-                .containsExactly("Implementing");
+                .as("Implementing kept")
+                .containsExactly("Implementing", "Reading", "Reworking");
     }
 
     @Test

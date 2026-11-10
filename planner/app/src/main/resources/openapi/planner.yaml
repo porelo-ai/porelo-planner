@@ -1,0 +1,684 @@
+openapi: 3.1.0
+info:
+  title: Porelo Planner
+  version: 1.0.0
+  description: >-
+    Serves a project's planning board - its workflow, stories and issues kept in Git - to the Porelo window on the
+    same computer. Every call needs a bearer token; a missing or wrong token answers 401 with an empty body.
+servers:
+  - url: http://127.0.0.1
+security:
+  - bearer: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health
+      description: Answers UP while the planner serves calls.
+      tags: [health]
+      responses:
+        '200':
+          description: The planner serves calls.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /projects/{project}:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    put:
+      operationId: putProject
+      summary: Name a project's repository
+      description: >-
+        Makes the project known with its own repository and branch; the same body again changes nothing. Another body
+        retires the project first and drops its clones as the new one opens, so a failed call leaves the project
+        unknown.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectSource'
+      responses:
+        '204':
+          description: The project is known with this repository and branch.
+        '400':
+          $ref: '#/components/responses/ProjectRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/TooManyProjects'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/workflow:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: getWorkflow
+      summary: Read the workflow
+      description: Answers the project's states, phases, sound work rules and the faults found reading its workflow.
+      tags: [board]
+      responses:
+        '200':
+          description: The project's workflow at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/stories:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: listStories
+      summary: List the stories
+      description: Answers the project's stories with their issues, all of them or only those in the named states.
+      tags: [board]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: A state whose stories are answered; repeated for several, and absent for all stories.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: The stories at the given revision, without their descriptions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryList'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/stories/{story}:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    get:
+      operationId: getStory
+      summary: Read one story
+      description: Answers one story with its issues and its description.
+      tags: [board]
+      responses:
+        '200':
+          description: The story at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryReply'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/stories/{story}/issues:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    get:
+      operationId: listStoryIssues
+      summary: List a story's issues
+      description: Answers exactly the issues of one story.
+      tags: [board]
+      responses:
+        '200':
+          description: The story's issues at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueList'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    get:
+      operationId: getIssue
+      summary: Read one issue
+      description: Answers one issue with its text, its sub-issues and its What must be true paragraph when it has one.
+      tags: [board]
+      responses:
+        '200':
+          description: The issue at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueReply'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The token the planner was started with; a missing or wrong one answers 401.
+
+  parameters:
+    Project:
+      name: project
+      in: path
+      required: true
+      description: The project's name.
+      schema:
+        $ref: '#/components/schemas/Name'
+    Story:
+      name: story
+      in: path
+      required: true
+      description: The story's identifier.
+      schema:
+        $ref: '#/components/schemas/StoryId'
+    Issue:
+      name: issue
+      in: path
+      required: true
+      description: The issue's identifier.
+      schema:
+        $ref: '#/components/schemas/IssueId'
+
+  responses:
+    Unauthorized:
+      description: The bearer token is missing or wrong; the body is empty.
+      headers:
+        WWW-Authenticate:
+          description: Names the scheme the planner expects.
+          schema:
+            type: string
+            const: Bearer
+    InvalidName:
+      description: >-
+        A project name, story id or issue id was refused (InvalidName); its parameters name the project, unless the
+        project's own name is the one refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:InvalidName
+            title: InvalidName
+            status: 400
+            detail: The story id is not a valid id.
+            parameters:
+              project: example
+    ProjectRefused:
+      description: >-
+        The project, its branch or its repository was refused: InvalidName for a project or branch name, NotACloneUrl
+        for a repository that is not a clone URL.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            InvalidName:
+              value:
+                type: urn:porelo-planner:InvalidName
+                title: InvalidName
+                status: 400
+                detail: The branch name is not a valid name.
+                parameters:
+                  project: example
+            NotACloneUrl:
+              value:
+                type: urn:porelo-planner:NotACloneUrl
+                title: NotACloneUrl
+                status: 400
+                detail: The repository is not a clone URL.
+                parameters:
+                  project: example
+    TooManyProjects:
+      description: The planner already serves as many projects as it may (TooManyProjects).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:TooManyProjects
+            title: TooManyProjects
+            status: 409
+            detail: The planner serves at most 8 projects.
+            parameters:
+              project: example
+    NoSuchProject:
+      description: The project was never made known with a PUT (NoSuchProject).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:NoSuchProject
+            title: NoSuchProject
+            status: 404
+            detail: The project is not known.
+            parameters:
+              project: example
+    NoSuchStory:
+      description: The project is not known (NoSuchProject) or has no such story (NoSuchStory).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            NoSuchProject:
+              value:
+                type: urn:porelo-planner:NoSuchProject
+                title: NoSuchProject
+                status: 404
+                detail: The project is not known.
+                parameters:
+                  project: example
+            NoSuchStory:
+              value:
+                type: urn:porelo-planner:NoSuchStory
+                title: NoSuchStory
+                status: 404
+                detail: The project has no such story.
+                parameters:
+                  story: ST7
+    NoSuchIssue:
+      description: The project is not known (NoSuchProject) or has no such issue (NoSuchIssue).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            NoSuchProject:
+              value:
+                type: urn:porelo-planner:NoSuchProject
+                title: NoSuchProject
+                status: 404
+                detail: The project is not known.
+                parameters:
+                  project: example
+            NoSuchIssue:
+              value:
+                type: urn:porelo-planner:NoSuchIssue
+                title: NoSuchIssue
+                status: 404
+                detail: The project has no such issue.
+                parameters:
+                  issue: PL4
+    StoreRefused:
+      description: >-
+        The store could not be read: the workflow is missing (WorkflowMissing), the Git login was refused
+        (CredentialRefused), or a repository could not be read (Unreadable).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            WorkflowMissing:
+              value:
+                type: urn:porelo-planner:WorkflowMissing
+                title: WorkflowMissing
+                status: 502
+                detail: The project's repository holds no workflow.
+                parameters:
+                  repository: example
+            CredentialRefused:
+              value:
+                type: urn:porelo-planner:CredentialRefused
+                title: CredentialRefused
+                status: 502
+                detail: The Git login was refused for the repository.
+                parameters:
+                  repository: example
+            Unreadable:
+              value:
+                type: urn:porelo-planner:Unreadable
+                title: Unreadable
+                status: 502
+                detail: The repository could not be read.
+                parameters:
+                  repository: example
+    Unreachable:
+      description: A repository could not be reached (Unreachable).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:Unreachable
+            title: Unreachable
+            status: 504
+            detail: The repository could not be reached.
+            parameters:
+              repository: example
+
+  schemas:
+    Name:
+      description: The name of a project or a repository.
+      type: string
+      pattern: '^[a-z0-9][a-z0-9._-]{0,99}$'
+    StoryId:
+      description: A story's identifier.
+      type: string
+      pattern: '^ST[0-9]{1,5}$'
+    IssueId:
+      description: An issue's identifier, a prefix and a number, with a sub-issue's number after a dot.
+      type: string
+      pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$'
+    Revision:
+      description: The store's revision the answer was read at; opaque to the window.
+      type: string
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: UP
+
+    ProjectSource:
+      description: Where a project's planning is kept.
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: string
+          description: >-
+            The project's own repository's clone URL, as https://host/path, ssh://[user@]host/path or user@host:path.
+        branch:
+          type: string
+          description: The branch to read and write; the repository's default branch when absent.
+
+    Workflow:
+      description: A project's workflow.
+      type: object
+      required: [revision, states, phases, work, faults]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        states:
+          type: array
+          description: The states in workflow order.
+          items:
+            $ref: '#/components/schemas/State'
+        phases:
+          type: array
+          description: The board's columns in order.
+          items:
+            $ref: '#/components/schemas/Phase'
+        work:
+          type: array
+          description: The sound work rules.
+          items:
+            $ref: '#/components/schemas/WorkRule'
+        faults:
+          type: array
+          description: What was found wrong reading the workflow, in the planner's words.
+          items:
+            type: string
+    State:
+      description: One state of the workflow.
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          description: >-
+            CLOSED when the workflow closes the state, WORKING when a sound work rule exists for it, else WAITING.
+          enum: [WAITING, WORKING, CLOSED]
+    Phase:
+      description: One column of the board and its states.
+      type: object
+      required: [name, states]
+      properties:
+        name:
+          type: string
+        states:
+          type: array
+          description: The names of the column's states, in order.
+          items:
+            type: string
+    WorkRule:
+      description: How work is done in a working state.
+      type: object
+      required: [state, from, done, then, blocked, per, modes, order, models]
+      properties:
+        state:
+          type: string
+          description: The working state.
+        from:
+          type: array
+          description: The states work may start from.
+          items:
+            type: string
+        done:
+          type: string
+          description: The state a story or issue reaches when the work is done.
+        then:
+          type: [string, 'null']
+          description: The state that follows the done state, or null when none does.
+        blocked:
+          type: [string, 'null']
+          description: The state a blocked work goes to, or null when none is named.
+        per:
+          type: string
+          description: Whether one task works the whole story or one each repository.
+          enum: [story, repository]
+        modes:
+          type: array
+          description: The ways the work may run, such as SHELL, AGENT or UNATTENDED.
+          items:
+            type: string
+        order:
+          type: string
+          description: The work order given to the task.
+        models:
+          type: object
+          description: The model for each agent, in order of preference.
+          additionalProperties:
+            type: string
+
+    StoryList:
+      description: Stories at one revision.
+      type: object
+      required: [revision, stories]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        stories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Story'
+    StoryReply:
+      description: One story at one revision.
+      type: object
+      required: [revision, story]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        story:
+          $ref: '#/components/schemas/StoryDetail'
+    Story:
+      description: One story as the board shows it.
+      type: object
+      required: [id, title, state, stateGiven, priority, link, issues, work]
+      properties:
+        id:
+          $ref: '#/components/schemas/StoryId'
+        title:
+          type: string
+        state:
+          type: string
+        stateGiven:
+          type: boolean
+          description: True when the story's head states its state, false when its issues give it.
+        priority:
+          type: string
+        link:
+          type: [string, 'null']
+          format: uri
+          description: The story's web page, or null when it has none.
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        work:
+          type: 'null'
+          description: The story's work, null until the planner starts work.
+    StoryDetail:
+      description: One story with its description.
+      allOf:
+        - $ref: '#/components/schemas/Story'
+        - type: object
+          required: [description]
+          properties:
+            description:
+              type: string
+              description: The story's text.
+
+    IssueList:
+      description: A story's issues at one revision.
+      type: object
+      required: [revision, issues]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+    IssueReply:
+      description: One issue at one revision.
+      type: object
+      required: [revision, issue]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        issue:
+          $ref: '#/components/schemas/IssueDetail'
+    Issue:
+      description: One issue of a story.
+      type: object
+      required: [id, repository, title, state, size, blockedBy, parent, link]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+        state:
+          type: string
+        size:
+          type: [string, 'null']
+          description: The issue's size, or null when it has none.
+        blockedBy:
+          type: array
+          description: The issues blocking it.
+          items:
+            $ref: '#/components/schemas/IssueId'
+        parent:
+          description: The issue this one is a sub-issue of, or null.
+          oneOf:
+            - $ref: '#/components/schemas/IssueId'
+            - type: 'null'
+        link:
+          type: [string, 'null']
+          format: uri
+          description: The issue's web page, or null when it has none.
+    IssueDetail:
+      description: One issue with its text and sub-issues.
+      allOf:
+        - $ref: '#/components/schemas/Issue'
+        - type: object
+          required: [text, subIssues]
+          properties:
+            text:
+              type: string
+              description: The issue's text.
+            subIssues:
+              type: array
+              items:
+                $ref: '#/components/schemas/IssueId'
+            whatMustBeTrue:
+              type: string
+              description: The issue's What must be true paragraph; absent when the text has none.
+
+    Problem:
+      description: A refusal; the last part of its type is the refusal's name.
+      type: object
+      required: [type, title, status, detail, parameters]
+      properties:
+        type:
+          type: string
+          pattern: '^urn:porelo-planner:[A-Z][A-Za-z]+$'
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+          description: The planner's words for the refusal, never a credential or a local path.
+        parameters:
+          type: object
+          description: What the refusal concerns, by one of project, story, issue or repository.
+          properties:
+            project:
+              type: string
+            story:
+              type: string
+            issue:
+              type: string
+            repository:
+              type: string

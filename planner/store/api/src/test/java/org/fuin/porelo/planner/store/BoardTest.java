@@ -13,10 +13,11 @@ class BoardTest {
     private static final Workflow WORKFLOW =
             new Workflow(
                     List.of("Idea", "Backlog", "Finished"),
-                    List.of(new Workflow.Phase("Open", List.of("Idea", "Backlog"))));
+                    List.of(new Workflow.Phase("Open", List.of("Idea", "Backlog"))),
+                    List.of("Finished"));
 
     private static Story story(final String id, final String state) {
-        return new Story(id, "A story", state, "High", List.of("XY03"), "Text", null);
+        return new Story(id, "A story", state, true, "High", List.of("XY03"), "Text", null);
     }
 
     private static Issue issue(final String id, final String state) {
@@ -89,14 +90,15 @@ class BoardTest {
 
     @Test
     void aWorkflowRefusesAStateTwiceAndAPhaseOfAnUnknownState() {
-        assertThatThrownBy(() -> new Workflow(List.of("Idea", "Idea"), List.of()))
+        assertThatThrownBy(() -> new Workflow(List.of("Idea", "Idea"), List.of(), List.of()))
                 .as("a state twice")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new Workflow(
                                         List.of("Idea"),
-                                        List.of(new Workflow.Phase("Open", List.of("Done")))))
+                                        List.of(new Workflow.Phase("Open", List.of("Done"))),
+                                        List.of()))
                 .as("a phase naming an unknown state")
                 .hasMessage("Phase 'Open' names an unknown state 'Done'");
     }

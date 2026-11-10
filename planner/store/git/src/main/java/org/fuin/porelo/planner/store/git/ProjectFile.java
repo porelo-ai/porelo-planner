@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.stories.Project;
 import org.jspecify.annotations.Nullable;
@@ -24,13 +25,14 @@ public final class ProjectFile {
      * @param branch the own repository's branch, or null for the remote's default
      * @param most the most repositories a project may have, its own included
      * @return the project's repositories, its own first, the others in the file's order
+     * @throws IllegalArgumentException if the URL's last part is no repository name
      */
     public static List<Repository> repositories(
             final Remote remote,
             final CloneUrl own,
             final @Nullable String branch,
             final int most) {
-        final String name = name(own);
+        final String name = checkedName(own);
         final String text;
         try {
             final String commit = remote.fetch(name, own, branch);
@@ -80,6 +82,23 @@ public final class ProjectFile {
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(
                     own, FILE + ": repository " + name + ": " + GitRunner.scrubbed(e.getMessage()));
+        }
+    }
+
+    /**
+     * Answers the own repository's name, its URL's last part, checked before anything is fetched.
+     *
+     * @param own the own repository's clone URL
+     * @return its name
+     * @throws IllegalArgumentException if the last part is no repository name
+     */
+    static String checkedName(final CloneUrl own) {
+        final String name = name(own);
+        try {
+            return Ids.name(name);
+        } catch (final IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "The clone URL's last part is no repository name (" + e.getMessage() + ")", e);
         }
     }
 

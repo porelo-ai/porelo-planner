@@ -30,11 +30,18 @@ public final class GitRunner {
                             + "|permission denied \\(publickey|host key verification failed"
                             + "|invalid username or password|requested url returned error: 40[13]");
 
-    /** User info in a URL, and the token forms forges hand out, which Git may echo in an error. */
+    /**
+     * User info in a URL, a slash in it too, and the token forms forges hand out, which Git may
+     * echo in an error.
+     */
     private static final Pattern SECRET =
             Pattern.compile(
-                    "(?<=://)[^/@\\s']+@|\\b(gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_-]+"
+                    "(?<=://)[^@\\s'\"]+@|\\b(gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_-]+"
                             + "|(?i)(authorization:\\s*\\S+\\s+)\\S+");
+
+    /** A local path, absolute, home-relative or a file URL; never a URL's path after its host. */
+    private static final Pattern LOCAL_PATH =
+            Pattern.compile("file://[^\\s'\"]*|(?<![\\w/.~-])~?/(?!/)[^\\s'\"]+");
 
     private static final File NO_INPUT = new File("/dev/null");
 
@@ -108,21 +115,25 @@ public final class GitRunner {
     }
 
     /**
-     * Takes every secret form Git may echo out of a text.
+     * Takes every secret form and every local path Git may echo out of a text.
      *
      * @param text the text, if any
-     * @return the text with each secret replaced by {@code ***}
+     * @return the text with each secret replaced by {@code ***} and each local path by {@code
+     *     <path>}
      */
     static String scrubbed(final @Nullable String text) {
         if (text == null) {
             return "";
         }
-        return SECRET.matcher(text.strip())
-                .replaceAll(
-                        match ->
-                                match.group(2) != null
-                                        ? Matcher.quoteReplacement(match.group(2)) + "***"
-                                        : "***");
+        // Secrets first: a path taken out of a URL could take its '@' and leave its password.
+        final String noSecrets =
+                SECRET.matcher(text.strip())
+                        .replaceAll(
+                                match ->
+                                        match.group(2) != null
+                                                ? Matcher.quoteReplacement(match.group(2)) + "***"
+                                                : "***");
+        return LOCAL_PATH.matcher(noSecrets).replaceAll("<path>");
     }
 
     private static FutureTask<byte[]> read(

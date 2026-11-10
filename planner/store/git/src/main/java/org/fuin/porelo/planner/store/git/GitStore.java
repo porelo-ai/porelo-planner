@@ -62,6 +62,8 @@ public final class GitStore implements PlanningStore {
 
     private final AtomicBoolean checking = new AtomicBoolean();
 
+    private final AtomicBoolean retired = new AtomicBoolean();
+
     private final AtomicReference<@Nullable StoreException> lastFailure = new AtomicReference<>();
 
     private final List<Consumer<Board>> listeners = new CopyOnWriteArrayList<>();
@@ -143,6 +145,7 @@ public final class GitStore implements PlanningStore {
     @Override
     public Board refresh() {
         try (ProjectLock.Held held = lock.acquire()) {
+            requireActive();
             final Snapshot old = current.get();
             final Map<String, String> heads =
                     each(
@@ -176,6 +179,20 @@ public final class GitStore implements PlanningStore {
         }
     }
 
+    @Override
+    public void retire() {
+        retired.set(true);
+    }
+
+    /** Refuses a store retired while a read waited on the project's lock. */
+    private void requireActive() {
+        if (retired.get()) {
+            throw new StoreException.Unreadable(
+                    repositories.get(0).name(),
+                    "the project was given anew while this read waited");
+        }
+    }
+
     /**
      * Registers a listener told of every new board, on the thread that made it.
      *
@@ -205,6 +222,7 @@ public final class GitStore implements PlanningStore {
 
     private Optional<Snapshot> fromClones() {
         try (ProjectLock.Held held = lock.acquire()) {
+            requireActive();
             final Snapshot raced = current.get();
             if (raced != null) {
                 return Optional.of(raced);
@@ -269,7 +287,8 @@ public final class GitStore implements PlanningStore {
                             read.states(),
                             read.phases().stream()
                                     .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
-                                    .toList());
+                                    .toList(),
+                            read.states().stream().filter(read::closed).toList());
             final Map<String, Issue> byId = new LinkedHashMap<>();
             issues.forEach(issue -> byId.put(issue.id(), issue));
             final List<Story> stories = new ArrayList<>();
@@ -318,7 +337,14 @@ public final class GitStore implements PlanningStore {
         // With issues the rule reads only their states, never the stated one.
         final String state = stated != null ? stated : workflow.storyState("", states);
         return new Story(
-                story.id(), story.title(), state, story.priority(), ids, story.body(), null);
+                story.id(),
+                story.title(),
+                state,
+                stated != null,
+                story.priority(),
+                ids,
+                story.body(),
+                null);
     }
 
     private static <T> T of(final Map<String, T> map, final String repository) {

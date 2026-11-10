@@ -9,13 +9,22 @@ import java.util.List;
  *
  * @param states every state, in the workflow's order
  * @param phases the phases, each naming states of {@code states}
+ * @param closed the states that close a story or an issue, in the workflow's order
  */
-public record Workflow(List<String> states, List<Phase> phases) {
+public record Workflow(List<String> states, List<Phase> phases, List<String> closed) {
 
-    /** Copies the lists and refuses a state named twice or a phase naming an unknown state. */
+    /**
+     * Copies the lists and refuses a state named twice, a phase naming an unknown state or an
+     * unknown closed state.
+     */
     public Workflow {
         states = List.copyOf(states);
         phases = List.copyOf(phases);
+        closed = List.copyOf(closed);
+        if (!states.containsAll(closed)) {
+            throw new IllegalArgumentException(
+                    "A workflow closes states it does not name: " + closed);
+        }
         if (states.isEmpty()) {
             throw new IllegalArgumentException("A workflow must name at least one state");
         }

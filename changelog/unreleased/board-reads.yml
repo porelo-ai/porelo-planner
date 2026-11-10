@@ -1,0 +1,2 @@
+title: The planner serves a project's workflow, stories and issues over a REST API its OpenAPI description states, read from the project's Git repositories with the person's own login.
+type: added

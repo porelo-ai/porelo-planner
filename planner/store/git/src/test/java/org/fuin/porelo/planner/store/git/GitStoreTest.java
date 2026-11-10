@@ -188,6 +188,20 @@ class GitStoreTest {
     }
 
     @Test
+    void aRetiredStoreTouchesItsClonesNoMoreAndSaysWhy() {
+        // A store replaced by a new source would fetch the old one into the new one's clones.
+        final GitStore store = store(queue);
+        store.board();
+        store.retire();
+        remote.heads.put("other", "c".repeat(40));
+        assertThatThrownBy(store::refresh)
+                .as("a refresh after the store was retired")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("given anew");
+        assertThat(remote.fetched(OTHER)).as("nothing fetched after retiring").isEqualTo(1);
+    }
+
+    @Test
     void anUnmovedRemoteIsNotFetchedAgainAndAMovedOneIs() {
         // Fetching every repository on every check is what makes a large project slow.
         final GitStore store = store(queue);

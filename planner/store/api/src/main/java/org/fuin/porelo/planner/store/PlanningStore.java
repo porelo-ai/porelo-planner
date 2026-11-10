@@ -45,4 +45,10 @@ public interface PlanningStore {
      * @throws StoreException.Unreachable if a repository could not be reached
      */
     Board refresh();
+
+    /**
+     * Retires the store when its project was given anew: it touches its data no more, and a read
+     * that waited for it is refused.
+     */
+    default void retire() {}
 }

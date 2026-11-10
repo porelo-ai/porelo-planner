@@ -137,4 +137,47 @@ class GitRunnerTest {
                 .hasMessageNotContaining("abc.def")
                 .hasMessageContaining("https://***git.example.org");
     }
+
+    @Test
+    void aLocalPathGitEchoesNeverReachesTheFailure() {
+        // The failure's text goes to the window, which has no business with the person's files.
+        assertThatThrownBy(
+                        () ->
+                                RUNNER.run(
+                                        shell(
+                                                "echo \"fatal: '/home/person/.cache/porelo-planner/p/r.git'"
+                                                        + " does not appear to be a git repository;"
+                                                        + " see https://git.example.org/a/b and"
+                                                        + " stories/README.md\" >&2; exit 128"),
+                                        null))
+                .as("a failure quoting a clone's directory")
+                .hasMessageNotContaining("/home/person")
+                .hasMessageNotContaining("porelo-planner/p")
+                .hasMessageContaining("'<path>'")
+                .hasMessageContaining("https://git.example.org/a/b")
+                .hasMessageContaining("stories/README.md");
+    }
+
+    @Test
+    void aPasswordWithASlashAndPathsAfterAColonOrATildeNeverReachTheFailure() {
+        // Git echoes what an insteadOf or a helper gave it, password and home directory included.
+        assertThatThrownBy(
+                        () ->
+                                RUNNER.run(
+                                        shell(
+                                                "echo \"fatal: unable to access"
+                                                        + " 'https://alice:s3cr3t+/more@git.example.org/a.git/';"
+                                                        + " fatal:/home/person/.gitconfig;"
+                                                        + " file:///home/person/repo;"
+                                                        + " ~/.ssh/id_ed25519;"
+                                                        + " git@github.com:porelo-ai/porelo.git\" >&2;"
+                                                        + " exit 128"),
+                                        null))
+                .as("a failure quoting a URL whose password holds a slash, and three local paths")
+                .hasMessageNotContaining("s3cr3t")
+                .hasMessageNotContaining("alice")
+                .hasMessageNotContaining("/home/person")
+                .hasMessageNotContaining("id_ed25519")
+                .hasMessageContaining("git@github.com:porelo-ai/porelo.git");
+    }
 }

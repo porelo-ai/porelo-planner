@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * Serves the bare repositories of one directory over HTTPS through {@code git http-backend}, with a
  * certificate made for this run alone, and asks for a login when one is set.
  */
-final class GitHttpsServer implements AutoCloseable {
+public final class GitHttpsServer implements AutoCloseable {
 
     private static final String PASS = "test-keystore-of-this-run";
 
@@ -45,8 +45,8 @@ final class GitHttpsServer implements AutoCloseable {
      * @return the server
      * @throws Exception when it cannot start
      */
-    static GitHttpsServer start(final Path root, final Path work, final @Nullable String login)
-            throws Exception {
+    public static GitHttpsServer start(
+            final Path root, final Path work, final @Nullable String login) throws Exception {
         final Path keystore = work.resolve("server.p12");
         final Path ca = work.resolve("ca.pem");
         final String keytool =
@@ -110,7 +110,7 @@ final class GitHttpsServer implements AutoCloseable {
      * @param name the bare repository's directory name
      * @return its URL
      */
-    String url(final String name) {
+    public String url(final String name) {
         return "https://localhost:" + server.getAddress().getPort() + "/" + name;
     }
 
@@ -119,7 +119,7 @@ final class GitHttpsServer implements AutoCloseable {
      *
      * @return the PEM file
      */
-    Path ca() {
+    public Path ca() {
         return caFile;
     }
 

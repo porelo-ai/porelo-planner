@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
  * @param id the story's id, {@code ST} and a number
  * @param title its title
  * @param state its state, one of the workflow's
+ * @param stateGiven whether its head states the state, rather than its issues giving it
  * @param priority its priority
  * @param issues the ids of the issues it needs, in its order
  * @param description its body, the text below the head
@@ -19,6 +20,7 @@ public record Story(
         String id,
         String title,
         String state,
+        boolean stateGiven,
         String priority,
         List<String> issues,
         String description,
