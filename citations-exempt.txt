@@ -1,5 +1,5 @@
 # Files that hold issue-number shapes on purpose: the planning screen's stand-in board and the tests that read its
-# made-up stories, moved in from the window.
+# made-up stories, moved in from the window, and the store's tests, whose made-up issues need ids of that shape.
 screen/lib/src/fake/planning_data.dart
 screen/test/mock_planning_test.dart
 screen/test/planning_contract_regressions_test.dart
@@ -8,3 +8,10 @@ screen/test/planning_moves_test.dart
 screen/test/reading_decision_test.dart
 screen/test/story_work_lifecycle_test.dart
 screen/test/story_work_test.dart
+planner/store/api/src/test/java/org/fuin/porelo/planner/store/BoardTest.java
+planner/store/api/src/test/java/org/fuin/porelo/planner/store/IdsTest.java
+planner/store/api/src/test/java/org/fuin/porelo/planner/store/PlanningStoreTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitRemoteTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitStoreTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitStoreReadTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/StoreReaderTest.java

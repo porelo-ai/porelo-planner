@@ -1,0 +1,108 @@
+package org.fuin.porelo.planner.store;
+
+/**
+ * Why the store could not answer; each kind is its own subclass, so the window can say what to do.
+ */
+public abstract sealed class StoreException extends RuntimeException
+        permits StoreException.NoSuchStory,
+                StoreException.NoSuchIssue,
+                StoreException.WorkflowMissing,
+                StoreException.CredentialRefused,
+                StoreException.Unreachable,
+                StoreException.Unreadable {
+
+    private static final long serialVersionUID = 1L;
+
+    private StoreException(final String message) {
+        super(message);
+    }
+
+    /** The board has no story of that id. */
+    public static final class NoSuchStory extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the story.
+         *
+         * @param id the id asked for
+         */
+        public NoSuchStory(final String id) {
+            super("No story " + Ids.story(id));
+        }
+    }
+
+    /** The board has no issue of that id. */
+    public static final class NoSuchIssue extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the issue.
+         *
+         * @param id the id asked for
+         */
+        public NoSuchIssue(final String id) {
+            super("No issue " + Ids.issue(id));
+        }
+    }
+
+    /** The project's repository has no workflow. */
+    public static final class WorkflowMissing extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the repository.
+         *
+         * @param repository the name of the project's repository
+         */
+        public WorkflowMissing(final String repository) {
+            super("Repository " + Ids.name(repository) + " has no stories/workflow.yml");
+        }
+    }
+
+    /** A repository refused the person's Git login, or would have asked for one. */
+    public static final class CredentialRefused extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the repository, never the credential.
+         *
+         * @param repository the name of the repository that needs a login
+         */
+        public CredentialRefused(final String repository) {
+            super(
+                    "Repository "
+                            + Ids.name(repository)
+                            + " needs a Git login that works without a prompt");
+        }
+    }
+
+    /** A repository could not be reached in time. */
+    public static final class Unreachable extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the repository and why, the reason already free of any secret.
+         *
+         * @param repository the name of the repository
+         * @param reason why it could not be reached
+         */
+        public Unreachable(final String repository, final String reason) {
+            super("Repository " + Ids.name(repository) + " could not be reached: " + reason);
+        }
+    }
+
+    /** A repository was reached, but what it holds could not be read as a store. */
+    public static final class Unreadable extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the repository and the fault, the fault already free of any secret.
+         *
+         * @param repository the name of the repository
+         * @param fault what could not be read
+         */
+        public Unreadable(final String repository, final String fault) {
+            super("Repository " + Ids.name(repository) + " could not be read: " + fault);
+        }
+    }
+}

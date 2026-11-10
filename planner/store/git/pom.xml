@@ -29,6 +29,11 @@
         </dependency>
         <dependency>
             <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-stories</artifactId>
+            <version>${porelo.buildtools.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.fuin.porelo</groupId>
             <artifactId>porelo-planner-store-api</artifactId>
             <version>${project.version}</version>
         </dependency>
