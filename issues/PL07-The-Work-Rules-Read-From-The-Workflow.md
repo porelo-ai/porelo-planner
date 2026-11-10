@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL07",
   "title": "The Work Rules Read From The Workflow",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Medium",
   "rank": 6,
