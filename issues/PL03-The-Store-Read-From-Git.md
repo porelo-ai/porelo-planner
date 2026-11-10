@@ -59,5 +59,7 @@ only those.
 
 ## To be checked
 
+- How the planner learns where a project's repository is (its clone URL and branch) for a project name: the
+  window holds the projects the person follows; the way it hands one over is agreed with the window.
 - Which `project.yml` field names each repository's clone URL, and whether a repository's issue index may be split
   into groups (`issues/base/`) in every repository.
