@@ -43,10 +43,10 @@ void main() {
     expect(backend.work.calls.where((call) => call.$1 == 'StartStoryWork').single.$2['mode'], 'UNATTENDED');
   });
 
-  // Harm: dropping a reader silently removes review of outgoing work.
+  // Harm: dropping a builder silently discards its assigned work.
   test('drop requires a comment and sends no replacement agent', () async {
     final repo = work.proposal!.repositories.first;
-    final reader = repo.subAgents.firstWhere((sub) => sub.role == 'READER');
+    final reader = repo.subAgents.firstWhere((sub) => sub.role == 'BUILDER');
     work.choose(repo.repository, reader, 'DROP');
     expect(work.canStart, isFalse);
     expect(await work.start(), isFalse);
@@ -68,9 +68,9 @@ void main() {
   });
 
   // Harm: a changed participant or limit is ignored by the actual start request.
-  test('changed reader and per issue rounds reach start exactly', () async {
+  test('a changed builder and per issue rounds reach start exactly', () async {
     final repo = work.proposal!.repositories.first;
-    final sub = repo.subAgents.firstWhere((sub) => sub.role == 'READER');
+    final sub = repo.subAgents.firstWhere((sub) => sub.role == 'BUILDER');
     final issue = work.proposal!.issues.first.id;
     work.choose(repo.repository, sub, 'CHANGE', agent: 'claude-code', model: 'chosen-model');
     work.setComment('Use a different participant.');
@@ -96,7 +96,7 @@ void main() {
 
   // Harm: invalid limits disable reading or send a different value from the one entered.
   test('invalid reading limits prevent any start', () async {
-    for (final value in ['', '0', '-1', '1.5', 'many']) {
+    for (final value in ['', '0', '-1', '1.5', '11', 'many']) {
       work.setRounds(value);
       expect(work.canStart, isFalse, reason: value);
       expect(await work.start(), isFalse, reason: value);

@@ -13,6 +13,7 @@ export 'src/models.dart';
 export 'src/planning_board.dart';
 export 'src/planning_detail.dart';
 export 'src/story_work.dart';
+export 'src/story_work_order.dart';
 export 'src/ui/actions.dart';
 export 'src/ui/planning_detail_widgets.dart';
 export 'src/ui/planning_issue_view.dart';

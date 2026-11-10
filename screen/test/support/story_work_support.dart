@@ -32,11 +32,12 @@ StoryWork planningStoryWork(
   Map<PlanningBoard, String>? machines,
   List<String> unavailableMachines = const [],
   PlanningAgents? agents,
+  PlanningStartTask? startTask,
 }) => StoryWork(
   board,
   story,
   to,
-  startTask: mockStartTask,
+  startTask: startTask ?? mockStartTask,
   agentChoices: agents ?? FakeAgents(),
   machines: machines,
   unavailableMachines: unavailableMachines,
@@ -88,7 +89,12 @@ class NoTasks implements PlanningTaskChanges {
   void open(PlanningBoard board, String task) {}
 
   @override
-  Future<void> started(StoryWork work) async {}
+  Future<void> started(
+    PlanningSource source,
+    String project,
+    String story,
+    List<(PlanningTaskOrder, PlanningTaskStarted)> tasks,
+  ) async {}
 }
 
 /// The planning screen over [boards], starting on the stand-in and choosing from [agents].

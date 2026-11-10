@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../client.dart';
+import '../hooks.dart';
 import '../models.dart';
+import '../story_work_order.dart';
 import 'planning_data.dart';
 import 'planning_moves.dart';
 import 'refusal.dart';
@@ -90,11 +92,17 @@ class MockPlanningSource implements PlanningSource {
   /// Whether the watches have ended.
   bool get ended => _changes.isClosed;
 
-  /// Starts story work as the daemon decides it, telling [onStarted] what started.
-  Future<StoryWorkStarted> startStoryWork(StoryWorkRequest request) async {
-    final result = work.call('StartStoryWork', request.toMap());
-    if (result['work'] case final Map<String, dynamic> started) onStarted?.call(request.project, started);
-    return StoryWorkStarted.from(result);
+  @override
+  Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async {
+    final proposal = await proposeStoryWork(request.project, request.story, request.to);
+    return StoryWorkOrder.from(work.call('StartStoryWork', request.toMap()), request: request, proposal: proposal);
+  }
+
+  /// Simulates the window's confirmed starts separately from preparing a planner order.
+  Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) async {
+    final result = work.startTask(project, story, task);
+    onStarted?.call(project, result['work'] as Map<String, dynamic>);
+    return PlanningTaskStarted(task: result['task'] as String, container: result['container'] as String);
   }
 
   @override
@@ -225,9 +233,13 @@ class MockPlanningSource implements PlanningSource {
   );
 }
 
-/// Starts story work on a [MockPlanningSource], as a window would start it on the provider the person chose.
-Future<StoryWorkStarted> mockStartTask(PlanningSource source, StoryWorkRequest request) =>
-    (source as MockPlanningSource).startStoryWork(request);
+/// Keeps mock runtime answers separate from the planner's prepared orders.
+Future<PlanningTaskStarted> mockStartTask(
+  PlanningSource source,
+  String project,
+  String story,
+  PlanningTaskOrder task,
+) => (source as MockPlanningSource).simulateStart(project, story, task);
 
 /// A planning client whose providers a test supplies, recording what the window tells them.
 class MockPlanningClient extends ChangeNotifier implements PlanningClient {

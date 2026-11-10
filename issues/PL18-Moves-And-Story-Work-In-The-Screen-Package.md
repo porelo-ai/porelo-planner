@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL18",
   "title": "Moves And Story Work In The Screen Package",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 9,
@@ -100,6 +100,23 @@ These hold over the points above where they differ.
   none. A refused Start throws `PlanningRefusal` with Porelo's words: nothing further of that order starts, and the
   screen shows the refusal on that task, not the order as failed, since earlier tasks may already run.
   `StoryWorkStarted` and its `terminalName` go.
+
+### Taken from the code reading
+
+- **Fixed:**
+  - An order with the proposal's defaults refuses a helper that is not a builder but is kept or changed.
+  - A story's start lock ends on the first board after its order ends. While runs are not recorded, nothing else could
+    end it, and once they are, the planner refuses an order while a recorded run is active.
+  - The window is told of the tasks that reached Start as the order ends, also when a later Start was refused and the
+    form stays open.
+  - An order answered for a board that moved on is not shown, so the form stays usable.
+  - A PartlySaved refusal names the repositories pushed and the one not pushed.
+- **Declined:**
+  - An order checked against the proposal the request carries: that proposal is the one the person saw, and the
+    planner refuses an order at another revision, so a rebound repository cannot take it.
+  - Starts going on after the window rebinds the project or stops the story's work while an order starts: a rebind is
+    the window's own act, and stopping a run, with a stop voiding pending starts, is built in [PL24](README.md#pl24).
+- Findings in code older than this issue went to [PL25](README.md#pl25).
 
 ## Acceptance
 

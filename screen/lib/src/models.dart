@@ -885,7 +885,7 @@ class StoryWorkRequest {
     final choice = subAgents.where((each) => each.repository == repository && each.name == sub.id).firstOrNull;
     return {
       ...sub.toMap(),
-      'choice': sub.role == 'OTHER' ? 'DROP' : choice?.choice ?? sub.choice,
+      'choice': sub.role != 'BUILDER' ? 'DROP' : choice?.choice ?? sub.choice,
       if (choice?.choice == 'CHANGE') 'agent': choice!.agent,
       if (choice?.choice == 'CHANGE') 'model': choice!.model,
     };
@@ -907,31 +907,6 @@ class StoryWorkRequest {
         for (final each in issueReadingRounds.entries) {'issue': each.key, 'rounds': each.value},
       ],
   };
-}
-
-/// Whether the machine accepted the start, and its resulting revision.
-class StoryWorkStarted {
-  /// Reads the fields reported by the daemon.
-  StoryWorkStarted.from(Map<String, dynamic> map)
-    : work = map['work'] is Map<String, dynamic> ? PlanWork.from(map['work'] as Map<String, dynamic>) : null,
-      revision = _planText(map, 'revision');
-
-  /// The work record returned by the daemon.
-  final PlanWork? work;
-
-  /// The revision reported by the daemon.
-  final String revision;
-
-  /// The reported value presented to the window.
-  bool get started => work?.atWork == true && work?.tasksReported == true && revision.isNotEmpty;
-
-  /// The recorded coordinator for several repositories, or the main task.
-  String? get terminalName {
-    final name = (work?.repositories.length ?? 0) > 1
-        ? work?.coordinator
-        : work?.tasks.where((task) => task.role == 'MAIN').firstOrNull?.task;
-    return name != null && name.trim().isNotEmpty ? name : null;
-  }
 }
 
 /// The work and any ended outcome returned by GetStoryWork.

@@ -48,18 +48,6 @@ void main() {
     expect(detail.blockingFirst.last.severity, 'NOTE');
   });
 
-  // Harm: a missing start flag is taken as work having started.
-  test('a start requires recorded running work and preserves its revision', () {
-    expect(StoryWorkStarted.from({}).started, isFalse);
-    expect(StoryWorkStarted.from({'started': 'true'}).started, isFalse);
-    final started = StoryWorkStarted.from({
-      'work': {'atWork': true, 'tasks': <Map<String, dynamic>>[]},
-      'revision': 'opaque',
-    });
-    expect(started.started, isTrue);
-    expect(started.revision, 'opaque');
-  });
-
   // Harm: optional overrides erase daemon defaults or changed choices never reach the wire.
   test('start serializes changed choices and omits unspecified overrides', () {
     const request = StoryWorkRequest(

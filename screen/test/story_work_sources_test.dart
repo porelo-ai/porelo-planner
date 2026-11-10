@@ -58,10 +58,10 @@ class _Source extends MockPlanningSource {
   int workReads = 0;
   Object? workError;
   Completer<StoryWorkStatus>? heldWork;
-  Completer<StoryWorkStarted>? heldStart;
+  Completer<PlanningTaskStarted>? heldStart;
   @override
-  Future<StoryWorkStarted> startStoryWork(StoryWorkRequest request) =>
-      heldStart?.future ?? super.startStoryWork(request);
+  Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) =>
+      heldStart?.future ?? super.simulateStart(project, story, task);
   @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) async {
     workReads++;
@@ -118,33 +118,21 @@ void main() {
     final first = _Source()..boards['demo'] = _board('first');
     final second = _Source()..boards['demo'] = _board('second');
     first.work.proposals['story'] = _proposal('model');
-    first.heldStart = Completer<StoryWorkStarted>();
+    first.heldStart = Completer<PlanningTaskStarted>();
     final a = PlanningBoard(first, 'demo');
     final b = PlanningBoard(second, 'demo');
     await Future<void>.delayed(Duration.zero);
     final work = planningStoryWork(a, a.stories.single, 'Building', machines: {a: 'first', b: 'second'});
     await work.load();
     final pending = work.start();
+    await pumpEventQueue();
     expect(work.starting, isTrue);
     work.changeMachine(b);
     expect(identical(work.board, a), isTrue);
-    first.heldStart!.complete(
-      StoryWorkStarted.from({
-        'revision': 'first',
-        'work': {
-          'atWork': true,
-          'repositories': [
-            {'repository': 'repo'},
-          ],
-          'tasks': [
-            {'task': 'first-task', 'role': 'MAIN', 'atWork': true},
-          ],
-        },
-      }),
-    );
+    first.heldStart!.complete(const PlanningTaskStarted(task: 'first-task', container: 'first-container'));
     expect(await pending, isTrue);
     expect(work.starting, isFalse);
-    expect(work.result!.terminalName, 'first-task');
+    expect(work.startedTasks.single.$2.task, 'first-task');
     expect(identical(work.backend, first), isTrue);
     work.dispose();
     a.dispose();
@@ -274,7 +262,7 @@ void main() {
             {
               'id': 'reader',
               'issue': 'item',
-              'kind': 'READER',
+              'kind': 'BUILDER',
               'workingState': 'Reading',
               'brief': 'Read',
               'choice': 'KEEP',
@@ -363,27 +351,27 @@ void main() {
     await missing.end();
   });
 
-  // Harm: KEEP silently accepts missing reader metadata while DROP incorrectly requires it.
-  test('a kept sub-agent needs its proposal fields but a dropped one does not', () async {
+  // Harm: an invalid replacement prevents dropping the builder and starting only the main task.
+  test('a dropped builder needs no replacement agent or model', () async {
     final backend = _Source()..boards['demo'] = _board('revision');
     backend.work.proposals['story'] = {
       ..._proposal('model'),
       'repositories': [
         {
           'repository': 'repo',
-          'issues': <String>[],
+          'issues': ['PR1'],
           'main': {'name': 'main', 'role': 'MAIN', 'agent': 'agent', 'model': 'model', 'brief': 'Work'},
           'subAgents': [
             {
               'id': 'reader',
-              'issue': 'item',
-              'kind': 'READER',
+              'issue': 'PR1',
+              'kind': 'BUILDER',
               'workingState': 'Reading',
               'brief': 'Read',
               'choice': 'KEEP',
               'name': 'reader',
               'agent': 'reader-agent',
-              'model': '',
+              'model': 'builder-model',
             },
           ],
         },
@@ -393,6 +381,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     final work = planningStoryWork(board, board.stories.single, 'Building');
     await work.load();
+    work.choose('repo', work.proposal!.repositories.single.subAgents.single, 'CHANGE', model: '');
     expect(await work.start(), isFalse);
     expect(backend.work.calls.where((call) => call.$1 == 'StartStoryWork'), isEmpty);
     work.choose('repo', work.proposal!.repositories.single.subAgents.single, 'DROP');

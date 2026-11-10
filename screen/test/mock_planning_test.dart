@@ -1,8 +1,36 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
 void main() {
+  // Harm: preparing a mock order reports running work or mutates a board before Start confirms anything.
+  test('a mock order starts nothing and changes no planning state or revision', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final before = jsonEncode(source.board('demo'));
+    final starts = <String>[];
+    source.onStarted = (project, work) => starts.add(project);
+    final proposal = await source.proposeStoryWork('demo', 'ST291', 'Implementing');
+    final order = await source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: 'ST291',
+        to: 'Implementing',
+        mode: 'AGENT',
+        revision: proposal.revision,
+        subAgents: const [],
+        proposedRepositories: proposal.repositories,
+      ),
+    );
+    expect(order.tasks, isNotEmpty);
+    expect(order.tasks.map((task) => task.role), everyElement(isIn(['MAIN', 'BUILDER'])));
+    expect(order.tasks.every((task) => task.prompt.isNotEmpty), isTrue);
+    expect(order.revision, proposal.revision);
+    expect(jsonEncode(source.board('demo')), before);
+    expect(starts, isEmpty);
+  });
   // Harm: the stand-in names a refusal differently from the daemon, so the screen's words differ in tests alone.
   test('a stand-in refusal is worded as the daemon words it', () {
     final refusal = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'revision': 'r2'});
@@ -67,8 +95,7 @@ void main() {
       (state) => state['kind'] == 'WORKING',
     );
 
-    final started = await mockStartTask(
-      source,
+    final order = await source.startStoryWork(
       StoryWorkRequest(
         project: 'demo',
         story: story['id'] as String,
@@ -78,11 +105,15 @@ void main() {
         subAgents: const [],
       ),
     );
+    final started = await mockStartTask(source, 'demo', story['id'] as String, order.tasks.first);
 
     expect(told.single.$1, 'demo');
     expect(told.single.$2['atWork'], isTrue);
-    expect(started.started, isTrue);
-    expect(source.work.calls.first.$1, 'StartStoryWork');
+    final task = (told.single.$2['tasks'] as List).single as Map;
+    expect(started.task, task['task']);
+    expect(started.container, task['containerId']);
+    expect(told.single.$2['tasks'], hasLength(1));
+    expect(source.work.calls.where((call) => call.$1 == 'StartStoryWork'), hasLength(1));
   });
 
   // Harm: the window's own choices of provider and project are lost on the way to the screen.

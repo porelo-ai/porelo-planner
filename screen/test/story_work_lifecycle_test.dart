@@ -9,7 +9,7 @@ import 'support/story_work_support.dart';
 class _Delayed extends MockPlanningSource {
   _Delayed();
   final proposal = Completer<StoryWorkProposal>();
-  final started = Completer<StoryWorkStarted>();
+  final started = Completer<PlanningTaskStarted>();
   var findings = Completer<PlanningIssueDetail>();
   bool delayProposal = true;
   int storyStarts = 0;
@@ -17,7 +17,7 @@ class _Delayed extends MockPlanningSource {
   Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) =>
       delayProposal ? proposal.future : super.proposeStoryWork(project, story, to);
   @override
-  Future<StoryWorkStarted> startStoryWork(StoryWorkRequest request) {
+  Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) {
     storyStarts++;
     return started.future;
   }
@@ -61,11 +61,12 @@ void main() {
     var notifications = 0;
     work.addListener(() => notifications++);
     final starting = work.start();
+    await pumpEventQueue();
     expect(await work.start(), isFalse);
     expect(backend.storyStarts, 1);
     final before = notifications;
     work.dispose();
-    backend.started.complete(StoryWorkStarted.from({'started': true, 'revision': 'r2'}));
+    backend.started.complete(const PlanningTaskStarted(task: 'late-task', container: 'late-container'));
     expect(await starting, isFalse);
     expect(notifications, before);
     board.dispose();

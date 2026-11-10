@@ -43,7 +43,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
   @override
   Widget build(BuildContext context) {
     final proposal = work.proposal;
-    final enabled = work.current && !work.busy;
+    final enabled = work.current && !work.busy && work.tasks.isEmpty;
     return PopScope(
       canPop: !work.busy || proposal == null,
       child: AlertDialog(
@@ -84,7 +84,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                         child: Text('$machine — project planning not reported'),
                       ),
                   ],
-                  onChanged: work.starting || work.result != null
+                  onChanged: work.starting || work.tasks.isNotEmpty
                       ? null
                       : (source) {
                           if (source != null) work.changeMachine(source);
@@ -101,7 +101,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                     for (final state in work.board.states.where((state) => state.kind == 'WORKING'))
                       DropdownMenuItem(value: state.name, child: Text(state.name)),
                   ],
-                  onChanged: !work.sourceCurrent || work.busy
+                  onChanged: !work.sourceCurrent || work.busy || work.tasks.isNotEmpty
                       ? null
                       : (value) {
                           if (value != null) work.changeTarget(value);
@@ -117,6 +117,13 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                     onPressed: work.busy ? null : () => unawaited(work.load()),
                     child: const Text('Retry proposal'),
                   ),
+                ],
+                for (final task in work.tasks) ...[
+                  Text('${task.order.repository} · ${task.order.role} · ${task.order.issues.join(', ')}'),
+                  if (task.started case final started?) Text('Started ${started.task} in ${started.container}'),
+                  if (task.problem case final problem?) Text(problem),
+                  if (task.started == null && task.problem == null)
+                    Text(work.starting ? 'Waiting for Start' : 'Not started'),
                 ],
                 if (proposal != null)
                   KeyedSubtree(key: ObjectKey(proposal), child: _proposal(context, proposal, enabled)),
@@ -190,8 +197,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
             enabled: enabled,
             onChanged: (value) => work.chooseMain(repo.repository, model: value),
           ),
-          for (final sub in repo.subAgents)
-            _sub(repo.repository, sub, enabled && {'BUILDER', 'TESTER', 'READER'}.contains(sub.role)),
+          for (final sub in repo.subAgents) _sub(repo.repository, sub, enabled && sub.role == 'BUILDER'),
           ExpansionTile(
             title: Text('The work order for ${repo.task}'),
             children: [SelectableText(_said(repo.workOrder), key: Key('story-work-order ${repo.repository}'))],

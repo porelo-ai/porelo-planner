@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/served_story_work.dart';
+
 const _token = 'tOkEn-0123456789_abcdefghijklmnopqrstuvwxyz';
 
 Map<String, dynamic> _workflow(String revision) => {
@@ -277,6 +279,272 @@ Future<PlanningRefusal> _refusal(Future<Object?> call) async {
 }
 
 void main() {
+  // Harm: an old proposal is rebound to another repository that happens to share its revision.
+  test('a known proposal cannot be submitted against a newly read project binding', () async {
+    var repository = const PlannerProject('https://example.org/first.git');
+    final (planner, source) = await _started(projects: (_) => repository);
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, servedOrder());
+    await source.proposeStoryWork('demo', 'ST1', 'Building');
+    repository = const PlannerProject('https://example.org/second.git');
+    await source.stories('demo');
+    final before = planner.calls.length;
+    expect((await _refusal(source.startStoryWork(servedRequest()))).name, 'ProjectChanged');
+    expect(planner.calls, hasLength(before));
+    await source.proposeStoryWork('demo', 'ST1', 'Building');
+    expect((await source.startStoryWork(servedRequest())).tasks, hasLength(2));
+  });
+
+  // Harm: a late order from a former project binding is accepted as tasks for the current project.
+  test('an order answering after the project binding changes is refused whole', () async {
+    var repository = const PlannerProject('https://example.org/first.git');
+    final (planner, source) = await _started(projects: (_) => repository);
+    final received = Completer<void>();
+    final answer = Completer<_Reply>();
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () {
+      received.complete();
+      return answer.future;
+    };
+    final result = _refusal(source.startStoryWork(servedRequest()));
+    await received.future;
+    repository = const PlannerProject('https://example.org/second.git');
+    answer.complete(_Reply(200, servedOrder()));
+    expect((await result).name, 'ProjectChanged');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/stories/ST1/work']);
+  });
+
+  // Harm: a proposal is requested for another target or malformed participants silently disappear.
+  test('a proposal posts only its target and refuses malformed proposals whole', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    final proposal = await source.proposeStoryWork('demo', 'ST1', 'Building');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/stories/ST1/proposal']);
+    expect(jsonDecode(planner.calls.last.body), {'to': 'Building'});
+    expect(proposal.repositories.single.subAgents.single.role, 'BUILDER');
+    for (final bad in [
+      servedProposal()..remove('readingRounds'),
+      servedProposal()..['repositories'] = [false],
+      servedProposal()..['readingRounds'] = 11,
+      servedProposal()..['modes'] = ['UNKNOWN'],
+      servedProposal()
+        ..['issueReadingRounds'] = [
+          {'issue': 'PR9', 'rounds': 2},
+        ],
+    ]) {
+      planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, bad);
+      expect((await _refusal(source.proposeStoryWork('demo', 'ST1', 'Building'))).name, 'BadAnswer');
+    }
+  });
+
+  // Harm: an order accepts an altered task or starts with a rewritten prompt or scope.
+  test('an order posts the exact choices and accepts only the complete matching answer', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, servedOrder());
+    await source.proposeStoryWork('demo', 'ST1', 'Building');
+    final request = servedRequest();
+    final order = await source.startStoryWork(request);
+    expect(jsonDecode(planner.calls.last.body), request.toMap());
+    expect(planner.targets.last, 'POST /projects/demo/stories/ST1/work');
+    expect(order.revision, 'r1');
+    expect(order.tasks.map((task) => task.role), ['MAIN', 'BUILDER']);
+    expect(order.tasks.first.prompt, (servedOrder()['tasks'] as List).first['prompt']);
+    final bad = servedOrder();
+    ((bad['tasks'] as List).last as Map)['model'] = 'another-model';
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, bad);
+    expect((await _refusal(source.startStoryWork(request))).name, 'BadAnswer');
+  });
+
+  // Harm: default choices accept tasks that differ from the proposal the person reviewed.
+  test('an order with omitted repositories still checks the proposed defaults', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, servedOrder());
+    expect((await source.startStoryWork(servedRequest(defaults: true))).tasks, hasLength(2));
+    expect(jsonDecode(planner.calls.last.body), servedRequest(defaults: true).toMap());
+  });
+
+  // Harm: a rejected proposal or order is retried or treated as tasks ready to start.
+  test('proposal and order refusals retain their name and never replay the call', () async {
+    final (planner, source) = await _started();
+    for (final action in ['proposal', 'work']) {
+      planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+      await source.proposeStoryWork('demo', 'ST1', 'Building');
+      planner.routes['POST /projects/demo/stories/ST1/$action'] = () => _Reply.problem(
+        'WorkRunning',
+        {
+          'tasks': ['active'],
+        },
+        'Work is running.',
+        409,
+      );
+      final count = planner.calls.length;
+      final refusal = await _refusal(
+        action == 'proposal'
+            ? source.proposeStoryWork('demo', 'ST1', 'Building')
+            : source.startStoryWork(servedRequest()),
+      );
+      expect(refusal.name, 'WorkRunning');
+      expect(refusal.parameters['tasks'], ['active']);
+      expect(planner.calls, hasLength(count + 1));
+    }
+  });
+
+  // Harm: changing the project's repository redirects a write made against the former board.
+  test('writes refuse a changed project binding until its board has been read again', () async {
+    var repository = const PlannerProject('https://example.org/first.git');
+    final (planner, source) = await _started(projects: (_) => repository);
+    await source.stories('demo');
+    final before = planner.calls.length;
+    repository = const PlannerProject('https://example.org/second.git');
+    for (final call in <Future<Object?> Function()>[
+      () => source.saveMoves('demo', const [], 'r1'),
+      () => source.proposeStoryWork('demo', 'ST1', 'Building'),
+      () => source.startStoryWork(servedRequest()),
+    ]) {
+      expect((await _refusal(call())).name, 'ProjectChanged');
+    }
+    expect(planner.calls, hasLength(before));
+    await source.getStory('demo', 'ST1');
+    final afterDetail = planner.calls.length;
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'ProjectChanged');
+    expect(planner.calls, hasLength(afterDetail), reason: 'a detail read does not replace the board binding');
+  });
+
+  // Harm: a server restart either loses a safe write or causes an unbounded retry loop.
+  test('only an explicit NoSuchProject retells and retries a move save once', () async {
+    final (planner, source) = await _started();
+    var attempts = 0;
+    planner.routes['POST /projects/demo/moves'] = () => ++attempts == 1
+        ? _Reply.problem('NoSuchProject', {'project': 'demo'}, 'No project.', 404)
+        : _Reply(200, {'revision': 'r2', 'moved': <String>[]});
+    await source.saveMoves('demo', const [], 'r1');
+    expect(planner.targets, [
+      'PUT /projects/demo',
+      'POST /projects/demo/moves',
+      'PUT /projects/demo',
+      'POST /projects/demo/moves',
+    ]);
+    planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NoSuchProject', {}, 'Still unknown.', 404);
+    final count = planner.calls.length;
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'NoSuchProject');
+    expect(planner.calls, hasLength(count + 3));
+  });
+
+  // Harm: losing a write's answer sends the same move to the store twice.
+  test('a lost connection after a move save never replays the write', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves'] = () =>
+        _Reply.raw(200, [123], headers: {'content-type': 'application/json', 'content-length': 100});
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'PlannerUnreachable');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
+  });
+  // Harm: a reviewed mixed batch is saved with different destinations or a different revision.
+  test('a move save sends the exact ordered batch and reads the saved envelope', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves'] = () => _Reply(200, {
+      'revision': 'r2',
+      'moved': ['PR1', 'PR2'],
+    });
+    final saved = await source.saveMoves('demo', const [
+      PlanningStoryMove('ST1', 'Finished'),
+      PlanningIssueMove('PR2', 'Backlog'),
+    ], 'r1');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
+    expect(jsonDecode(planner.calls.last.body), {
+      'revision': 'r1',
+      'moves': [
+        {'story': 'ST1', 'to': 'Finished'},
+        {'issue': 'PR2', 'to': 'Backlog'},
+      ],
+    });
+    expect(planner.calls.last.authorization, 'Bearer $_token');
+    expect(saved.revision, 'r2');
+    expect(saved.moved, ['PR1', 'PR2']);
+  });
+
+  // Harm: an uncertain or refused write is replayed and saves the same move twice.
+  test('a move save is never replayed after a timeout or a refusal', () async {
+    final (planner, source) = await _started(timeout: const Duration(milliseconds: 300));
+    final held = Completer<_Reply>();
+    addTearDown(() => held.complete(_Reply(204)));
+    for (final name in ['Busy', 'PartlySaved', 'TimedOut']) {
+      planner.routes['POST /projects/demo/moves'] = () => name == 'TimedOut'
+          ? held.future
+          : _Reply.problem(name, {'pushed': 'repo', 'failed': 'other'}, 'Save refused.', 409);
+      final before = planner.calls.where((call) => call.method == 'POST').length;
+      expect((await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'))).name, name);
+      expect(planner.calls.where((call) => call.method == 'POST'), hasLength(before + 1));
+    }
+  });
+
+  // Harm: an incomplete or disguised refusal is accepted as a successful save.
+  test('a move save refuses every malformed success envelope', () async {
+    final (planner, source) = await _started();
+    for (final answer in [
+      {'revision': 'r2'},
+      {'revision': '', 'moved': <String>[]},
+      {
+        'revision': 'r2',
+        'moved': ['PR1', 3],
+      },
+      {
+        'revision': 'r2',
+        'moved': ['wrong'],
+      },
+      {..._problem('Busy', {}, 'No.', 409), 'revision': 'r2', 'moved': <String>[]},
+    ]) {
+      planner.routes['POST /projects/demo/moves'] = () => _Reply(200, answer);
+      expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'BadAnswer');
+    }
+  });
+
+  // Harm: a refusal loses the task identities or counts needed to explain why work was refused.
+  test('a refusal retains bounded typed parameters and recognizes only bounded names', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves'] = () => _Reply.problem(
+      'PartlySaved',
+      {
+        'tasks': ['one', 'two'],
+        'round': 0,
+        'rounds': 2147483647,
+        'negative': -1,
+        'large': 2147483648,
+        'fraction': 1.5,
+        'nested': {'x': 'y'},
+        'pushed': 'repo',
+        'failed': 'other',
+        'longList': List.filled(500, 'task'),
+      },
+      'Some saves failed.',
+      502,
+    );
+    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1'));
+    expect(refusal.parameters['tasks'], ['one', 'two']);
+    expect(refusal.parameters['round'], 0);
+    expect(refusal.parameters['rounds'], 2147483647);
+    expect(
+      refusal.parameters.keys,
+      isNot(anyOf(contains('negative'), contains('large'), contains('fraction'), contains('nested'))),
+    );
+    expect((refusal.parameters['longList'] as List).length, lessThanOrEqualTo(200));
+    expect(refusal.description, 'Some saves failed.');
+    for (final name in ['A', 'A' * 65, 'Bad9']) {
+      planner.routes['POST /projects/demo/moves'] = () => _Reply.problem(name, {}, 'No.', 409);
+      expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'Http409');
+    }
+  });
+
+  // Harm: an unavailable move action disables planning reads or unrelated story work.
+  test('a served NotOffered answer remains a named action refusal', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NotOffered', {}, 'Moves are unavailable.', 400);
+    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1'));
+    expect(refusal.name, 'NotOffered');
+    expect(refusal.notOffered, isTrue);
+    expect((await source.stories('demo')).revision, 'r1');
+  });
+
   // Harm: a read reaches a planner that does not know the project yet, and the board stays empty.
   test('the project is named before the first read and once more after the planner forgets it', () async {
     final (planner, source) = await _started();
@@ -746,8 +1014,6 @@ void main() {
     final (planner, source) = await _started();
 
     final calls = <Future<Object?> Function()>[
-      () => source.saveMoves('demo', const [], 'r1'),
-      () => source.proposeStoryWork('demo', 'ST1', 'Building'),
       () => source.getStoryWork('demo', 'ST1'),
       () => source.stopStoryWork('demo', 'ST1'),
       () => source.getPlanningIssue('demo', 'PR1'),

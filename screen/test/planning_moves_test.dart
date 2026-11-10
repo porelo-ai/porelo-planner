@@ -105,6 +105,57 @@ void main() {
     await backend.changes.close();
   });
 
+  // Harm: a refused batch appears moved or saved while its unaccepted drafts are lost.
+  test('every refused save keeps the batch and sets the move problem', () async {
+    for (final name in ['WorkNotAllowed', 'Busy', 'NotOffered']) {
+      board.move('StoryOne', 'Done');
+      board.move('StoryTwo', 'Done');
+      backend.failure = PlanningRefusal(name, {'story': 'StoryOne'}, 'Refused.');
+      await board.save();
+      expect(board.pending, hasLength(2), reason: name);
+      expect(board.moveProblem, contains('Refused.'), reason: name);
+      expect(board.cards('Done'), isEmpty, reason: name);
+      expect(board.unavailableActions.keys, name == 'NotOffered' ? ['SaveMoves'] : isEmpty);
+      board.undoAll();
+      board.unavailableActions.clear();
+    }
+  });
+
+  // Harm: a partly pushed save hides the store's actual states or loses which repositories failed.
+  test('a partly saved batch reloads the board and retains its typed refusal', () async {
+    board.move('StoryOne', 'Done');
+    board.move('StoryTwo', 'Done');
+    backend.data = applyPlanningMove(backend.data, {
+      'revision': 'initial',
+      'moves': [
+        {'story': 'StoryTwo', 'to': 'Done'},
+      ],
+    });
+    backend.failure = const PlanningRefusal('PartlySaved', {'pushed': 'repo', 'failed': 'other'}, 'Partly saved.');
+    await board.save();
+    expect(backend.calls, hasLength(1));
+    expect(backend.storyReads, 1);
+    expect(board.stories.last.state, 'Done');
+    expect(board.pending.keys, ['StoryOne', 'StoryTwo']);
+    expect(board.moveProblem, contains('Partly saved.'));
+    expect(board.moveRefusal?.parameters, {'pushed': 'repo', 'failed': 'other'});
+  });
+
+  // Harm: refusal text can conceal or reorder the destination and reason shown to the person.
+  test('every refusal word shown strips controls and bidirectional formatting', () {
+    for (final error in [
+      const PlanningRefusal('Busy', {'detail': 'Wait\u202e\u0000\n\t\u0085here'}),
+      const PlanningRefusal('Busy', {}, 'Wait\u202e\u0000\n\t\u0085here'),
+      const PlanningRefusal('EnteredOnlyByWork', {'to': 'Wait\u202e\u0000\n\t\u0085here'}),
+      const PlanningRefusal('NotYetBuilt', {'method': 'Wait\u202e\u0000\n\t\u0085here'}),
+      const PlanningRefusal('Busy\u202e', {
+        'tasks': ['Wait\u202e\u0000\n\t\u0085here'],
+      }),
+    ]) {
+      expect(planningFailureWords(error), isNot(matches(RegExp(r'[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]'))));
+    }
+  });
+
   // Harm: staging or undo writes unreviewed changes or loses unrelated pending moves.
   test('staging and individual or complete undo never write', () {
     board.move('StoryOne', 'Done');
@@ -178,7 +229,7 @@ void main() {
     await board.save();
     expect(backend.calls, hasLength(1));
     expect(board.pending, hasLength(2));
-    expect(board.pending['StoryOne']!.problem, isNull);
+    expect(board.pending['StoryOne']!.problem, 'Policy refuses');
     expect(board.pendingIssues['IssueTwo']!.problem, 'Policy refuses');
     expect(board.stories.first.state, 'Ready');
     expect(board.stories.first.issues.map((issue) => issue.state), ['Ready', 'Elsewhere']);
@@ -313,17 +364,17 @@ void main() {
     expect(board.stories.first.state, 'Ready');
   });
 
-  // Harm: one refused move blocks unrelated saves or erases another card's refusal.
-  test('refusals belong only to their move and undo allows the remaining atomic save', () async {
+  // Harm: a refused batch loses its explanation or erases a destination that still needs saving.
+  test('a refused batch keeps its explanation and undo allows the remaining atomic save', () async {
     backend.refusedStory = 'StoryOne';
     board.move('StoryOne', 'Done');
     board.move('StoryTwo', 'Done');
     await board.save();
     expect(board.pending.keys, ['StoryOne', 'StoryTwo']);
     expect(board.pending['StoryOne']!.problem, 'Work is still running');
-    expect(board.pending['StoryTwo']!.problem, isNull);
-    expect(board.moveProblem, isNull);
-    expect(board.cards('Ready').single.id, 'StoryOne');
+    expect(board.pending['StoryTwo']!.problem, 'Work is still running');
+    expect(board.moveProblem, 'Work is still running');
+    expect(board.cards('Ready').map((story) => story.id), ['StoryOne', 'StoryTwo']);
     board.move('StoryTwo', 'Elsewhere');
     expect(board.pending['StoryOne']!.problem, 'Work is still running');
     await board.reload();
@@ -364,16 +415,16 @@ void main() {
         });
         await board.save();
         expect(board.pending['StoryOne']!.problem, 'The daemon refused this save');
-        expect(board.pending['StoryTwo']!.problem, named ? null : 'The daemon refused this save');
-        expect(board.cards('Ready').map((story) => story.id), named ? ['StoryOne'] : ['StoryOne', 'StoryTwo']);
-        expect(board.moveProblem, isNull);
+        expect(board.pending['StoryTwo']!.problem, 'The daemon refused this save');
+        expect(board.cards('Ready').map((story) => story.id), ['StoryOne', 'StoryTwo']);
+        expect(board.moveProblem, 'The daemon refused this save');
         board.undoAll();
       }
     }
   });
 
-  // Harm: retrying leaves an earlier save's reason on a card the new refusal did not name.
-  test('retry clears every old problem before waiting and attaches only the new refusal', () async {
+  // Harm: a retried batch loses its current refusal or retains an obsolete one while the save waits.
+  test('retry clears old problems before waiting and retains a new refusal for the whole batch', () async {
     board.move('StoryOne', 'Done');
     board.move('StoryTwo', 'Done');
     backend.refusedStory = 'StoryOne';
@@ -384,7 +435,7 @@ void main() {
     expect(board.pending.values.map((move) => move.problem), [null, null]);
     backend.gate!.complete();
     await saved;
-    expect(board.pending['StoryOne']!.problem, isNull);
+    expect(board.pending['StoryOne']!.problem, 'Work is still running');
     expect(board.pending['StoryTwo']!.problem, 'Work is still running');
   });
 
@@ -880,22 +931,23 @@ void main() {
     await saving;
   });
 
-  // Harm: starting work or deciding a reading in the mock publishes a story where the daemon never puts it.
-  test('the stand-in keeps a story in the earliest open state of its issues after a start or a reading decision', () {
+  // Harm: a prepared order changes planning state or a reading decision publishes an incorrect story state.
+  test('the stand-in leaves an order unstarted and computes a reading decision from issue states', () {
     final board = mockPlanningBoard();
     final published = <String, Map<String, dynamic>>{};
     final work = MockStoryWork((project) => board, (project, changed) => published[project] = changed);
     Map<String, dynamic> story(Map<String, dynamic> board, String id) =>
         (board['stories'] as List<dynamic>).cast<Map<String, dynamic>>().firstWhere((story) => story['id'] == id);
-    work('StartStoryWork', {
+    final order = work('StartStoryWork', {
       'project': 'demo',
       'story': 'ST291',
       'to': 'Reading',
       'mode': 'UNATTENDED',
       'revision': board['revision'],
     });
-    // B540 and B541 stay in Implementing, earlier than Reading.
-    expect(story(published['demo']!, 'ST291')['state'], 'Implementing');
+    expect(order['tasks'], isNotEmpty);
+    expect(published, isEmpty);
+    expect(story(board, 'ST291')['state'], 'Backlog');
     final reading = story(board, 'ST1');
     reading['state'] = 'Reading';
     final stopped = (reading['issues'] as List<dynamic>).first as Map<String, dynamic>;

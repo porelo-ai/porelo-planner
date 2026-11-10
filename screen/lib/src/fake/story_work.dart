@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../story_work_order.dart';
 import 'planning_moves.dart';
 import 'refusal.dart';
 
@@ -32,6 +33,7 @@ class MockStoryWork {
   /// Whether a scenario holds back the watch publication.
   bool deferEcho = false;
   int _revision = 0;
+  final _orders = <(String, String), Map<String, dynamic>>{};
 
   /// Applies one action to a copy and publishes only after validation.
   Map<String, dynamic> call(String method, Map<String, dynamic> parameters) {
@@ -178,7 +180,7 @@ class MockStoryWork {
               },
               'subAgents': [
                 for (final issue in issues.where((issue) => issue['repository'] == repo))
-                  for (final kind in ['BUILDER', 'READER'])
+                  for (final kind in ['BUILDER'])
                     {
                       'id': '$repo/${issue['id']}/$kind',
                       'issue': issue['id'],
@@ -249,7 +251,8 @@ class MockStoryWork {
             ['issue', 'name', 'kind', 'workingState', 'brief'].any((key) => source[key] != sub[key])) {
           invalid('A helper identity or brief was changed.');
         }
-        if (!['KEEP', 'CHANGE', 'DROP'].contains(sub['choice']) || sub['kind'] == 'OTHER' && sub['choice'] != 'DROP') {
+        if (!['KEEP', 'CHANGE', 'DROP'].contains(sub['choice']) ||
+            sub['kind'] != 'BUILDER' && sub['choice'] != 'DROP') {
           invalid('Unknown helpers cannot start.');
         }
         if (sub['choice'] != 'KEEP' && (parameters['comment'] as String? ?? '').trim().isEmpty) {
@@ -258,69 +261,92 @@ class MockStoryWork {
       }
     }
     final rounds = parameters['readingRounds'] ?? proposal['readingRounds'];
-    if (rounds is! int || rounds < 1) invalid('Reading rounds must be positive.');
+    if (rounds is! int || rounds < 1 || rounds > 10) invalid('Initial reading rounds must be between 1 and 10.');
     final overrides = parameters['issueReadingRounds'] as List? ?? proposal['issueReadingRounds'] as List;
     for (final value in overrides.cast<Map<String, dynamic>>()) {
-      if (value['rounds'] is! int || (value['rounds'] as int) < 1) invalid('Reading rounds must be positive.');
+      if (value['rounds'] is! int || (value['rounds'] as int) < 1 || (value['rounds'] as int) > 10) {
+        invalid('Initial reading rounds must be between 1 and 10.');
+      }
     }
-    final work = <String, dynamic>{
+    _orders[(project, story['id'] as String)] = {
+      ...parameters,
       'repositories': repos,
-      'comment': parameters['comment'] ?? '',
       'readingRounds': rounds,
       'issueReadingRounds': overrides,
-      'coordinator': repos.length > 1 ? 'coordinator' : null,
-      'since': 'mock-start',
-      'atWork': true,
+    };
+    return {
+      'revision': board['revision'],
       'tasks': [
-        for (final repo in repos)
+        for (final repo in repos) ...[
           {
-            'task': repos.length == 1
-                ? (story['id'] as String).toLowerCase()
-                : '${(story['id'] as String).toLowerCase()}-${repo['repository']}',
-            'containerId': 'mock-${story['id']}-${repo['repository']}',
             'repository': repo['repository'],
             'issues': repo['issues'],
-            'state': parameters['to'],
-            'done': 'Review',
-            'mode': parameters['mode'],
+            'role': 'MAIN',
             'agent': (repo['main'] as Map)['agent'],
             'model': (repo['main'] as Map)['model'],
-            'role': 'MAIN',
-            'since': 'mock-start',
-            'atWork': true,
-            'ended': null,
+            'mode': parameters['mode'],
+            'prompt': (repo['main'] as Map)['brief'],
           },
-        for (final repo in repos)
           for (final sub in (repo['subAgents'] as List).cast<Map<String, dynamic>>())
-            if (sub['choice'] != 'DROP' &&
-                sub['kind'] != 'READER' &&
-                sub['kind'] != 'OTHER' &&
-                sub['workingState'] == parameters['to'])
+            if (sub['kind'] == 'BUILDER' && sub['choice'] != 'DROP')
               {
-                'task': '${(story['id'] as String).toLowerCase()}-${repo['repository']}-${sub['issue']}-${sub['name']}',
-                'containerId': 'mock-${sub['id']}',
                 'repository': repo['repository'],
                 'issues': [sub['issue']],
-                'state': parameters['to'],
-                'done': 'Review',
-                'mode': parameters['mode'],
+                'role': 'BUILDER',
                 'agent': sub['agent'],
                 'model': sub['model'],
-                'role': sub['kind'],
-                'since': 'mock-start',
-                'atWork': true,
-                'ended': null,
+                'mode': parameters['mode'],
+                'prompt': sub['brief'],
               },
+        ],
       ],
-      'issues': <Map<String, dynamic>>[],
     };
-    final before = story['state'];
-    story['state'] = parameters['to'];
+  }
+
+  /// Runtime activity is published only for the individual task the window actually started.
+  Map<String, dynamic> startTask(String project, String id, PlanningTaskOrder task) {
+    final board = jsonDecode(jsonEncode(boardFor(project))) as Map<String, dynamic>;
+    final story = (board['stories'] as List).cast<Map<String, dynamic>>().singleWhere((story) => story['id'] == id);
+    final parameters = _orders[(project, id)]!;
+    final rounds = parameters['readingRounds'] as int;
+    final overrides = (parameters['issueReadingRounds'] as List).cast<Map<String, dynamic>>();
+    final name =
+        '${id.toLowerCase()}-${task.repository}-${task.role.toLowerCase()}-${task.issues.join('-').toLowerCase()}';
+    final container = 'mock-$name';
+    final work =
+        story['work'] as Map<String, dynamic>? ??
+        <String, dynamic>{
+          'repositories': parameters['repositories'],
+          'comment': parameters['comment'] ?? '',
+          'readingRounds': rounds,
+          'issueReadingRounds': overrides,
+          'coordinator': null,
+          'since': 'mock-start',
+          'atWork': true,
+          'tasks': <Map<String, dynamic>>[],
+          'issues': <Map<String, dynamic>>[],
+        };
+    work['atWork'] = true;
+    work['tasks'] = [
+      ...work['tasks'] as List? ?? <dynamic>[],
+      {
+        'task': name,
+        'containerId': container,
+        'repository': task.repository,
+        'issues': task.issues,
+        'state': parameters['to'],
+        'done': 'Review',
+        'mode': task.mode,
+        'agent': task.agent,
+        'model': task.model,
+        'role': task.role,
+        'since': 'mock-start',
+        'atWork': true,
+        'ended': null,
+      },
+    ];
     for (final item in (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
-      if (item['state'] == before) {
-        item['state'] = parameters['to'];
-        item['atWork'] = true;
-      }
+      if (task.issues.contains(item['id'])) item['atWork'] = true;
     }
     work['issues'] = [
       for (final item in (story['issues'] as List).cast<Map<String, dynamic>>())
@@ -349,7 +375,8 @@ class MockStoryWork {
           rounds;
     }
     story['work'] = work;
-    publish();
-    return {'work': work, 'revision': board['revision']};
+    boardFor(project)['stories'] = board['stories'];
+    if (!deferEcho) changed(project, board);
+    return {'task': name, 'container': container, 'work': work};
   }
 }

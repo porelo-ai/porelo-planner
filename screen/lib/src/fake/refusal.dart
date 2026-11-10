@@ -6,5 +6,5 @@ PlanningRefusal mockRefusal(String name, [Map<String, dynamic> parameters = cons
   name.substring(name.lastIndexOf('.') + 1),
   parameters,
   parameters.isEmpty ? name : '$name $parameters',
-  name == 'org.varlink.service.MethodNotFound',
+  name == 'org.varlink.service.MethodNotFound' || name.split('.').last == 'NotOffered',
 );

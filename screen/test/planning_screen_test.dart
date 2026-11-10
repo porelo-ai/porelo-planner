@@ -33,7 +33,12 @@ class _Tasks implements PlanningTaskChanges {
   void open(PlanningBoard board, String task) {}
 
   @override
-  Future<void> started(StoryWork work) async {}
+  Future<void> started(
+    PlanningSource source,
+    String project,
+    String story,
+    List<(PlanningTaskOrder, PlanningTaskStarted)> tasks,
+  ) async {}
 }
 
 class _Agents implements PlanningAgents {
@@ -57,7 +62,8 @@ void main() {
           body: PlanningScreen(
             boards: boards,
             host: host,
-            startTask: (source, request) async => StoryWorkStarted.from({}),
+            startTask: (source, project, story, task) async =>
+                const PlanningTaskStarted(task: 'task', container: 'container'),
             taskChanges: _Tasks(),
             agents: _Agents(),
           ),

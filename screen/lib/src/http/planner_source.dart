@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import '../client.dart';
 import '../models.dart';
+import '../story_work_order.dart';
 
 /// Where a project's planning is kept, as the planner is told it before its first read.
 class PlannerProject {
@@ -219,7 +220,7 @@ class PlannerAddress {
 /// Before its first read of a project it tells the planner the project's repository (`PUT /projects/{project}`),
 /// and again once when a read answers `NoSuchProject`, such as after the planner restarted. An
 /// `application/problem+json` answer arrives as a [PlanningRefusal] named after `urn:porelo-planner:`; what the
-/// planner does not offer yet - moves, work, reading rounds and an event stream - as [PlanningUnsupported].
+/// planner does not offer yet - run reads, stops and reading decisions - as [PlanningUnsupported].
 class HttpPlanningSource implements PlanningSource {
   /// Calls the planner at [base], a loopback `http` address, with [token]; [projects] names each project's repository.
   HttpPlanningSource(
@@ -290,9 +291,11 @@ class HttpPlanningSource implements PlanningSource {
   final String _authorization;
   final HttpClient _client = HttpClient();
   final Map<String, _Given> _given = {};
+  final Map<String, PlannerProject> _readSources = {};
+  final Map<(String, String, String), (PlannerProject, StoryWorkProposal)> _proposals = {};
 
   static const _prefix = 'urn:porelo-planner:';
-  static final _refusalName = RegExp(r'^[A-Z][A-Za-z]+$');
+  static final _refusalName = RegExp(r'^[A-Z][A-Za-z]{1,63}$');
   static const _echo = 200;
   static const _parameters = 16;
   static const _key = 64;
@@ -332,12 +335,84 @@ class HttpPlanningSource implements PlanningSource {
       PlanIssueDetail.from(await _read(project, ['issues', _checked('issue', issue, _issueId)]));
 
   @override
-  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) =>
-      _unsupported('saving moves');
+  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
+    final answer = await _write(
+      project,
+      ['moves'],
+      {
+        'revision': revision,
+        'moves': [for (final move in moves) move.toMap()],
+      },
+    );
+    final moved = answer['moved'];
+    if ((answer['revision'] as String).trim().isEmpty ||
+        moved is! List ||
+        moved.any((item) => item is! String || !_issueId.hasMatch(item)) ||
+        moved.toSet().length != moved.length) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not confirm the saved revision and moved issues.');
+    }
+    return PlanningMoveResult.from(answer);
+  }
 
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) =>
-      _unsupported('proposing story work');
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async {
+    final answer = await _write(project, ['stories', _checked('story', story, _storyId), 'proposal'], {'to': to});
+    try {
+      final proposal = StoryWorkOrder.readProposal(answer);
+      _proposals[(project, story, to)] = (_given[project]!.source, proposal);
+      // The expected defaults must not be changeable through a proposal handed to a caller.
+      return StoryWorkOrder.readProposal(answer);
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    }
+  }
+
+  @override
+  Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async {
+    // Capture the decision before yielding, since a dialog may keep mutable choice collections.
+    final body = jsonDecode(jsonEncode(request.toMap())) as Map<String, dynamic>;
+    final supplied = StoryWorkProposal.from(
+      jsonDecode(
+        jsonEncode({
+          'revision': request.revision,
+          'modes': [request.mode],
+          'repositories': [for (final repo in request.proposedRepositories) repo.toMap()],
+        }),
+      ) as Map<String, dynamic>,
+    );
+    final project = request.project;
+    _checked('story', request.story, _storyId);
+    final given = await _bound(project);
+    var saved = _proposals[(project, request.story, request.to)];
+    if (saved != null && saved.$1 != given.source) {
+      throw const PlanningRefusal('ProjectChanged', {}, 'The proposal belongs to a different project repository.');
+    }
+    if (saved == null || saved.$2.revision != request.revision) {
+      if (supplied.repositories.isNotEmpty) {
+        saved = (given.source, supplied);
+      } else {
+        await proposeStoryWork(project, request.story, request.to);
+        saved = _proposals[(project, request.story, request.to)]!;
+      }
+    }
+    final captured = StoryWorkRequest(
+      project: project,
+      story: request.story,
+      to: request.to,
+      mode: request.mode,
+      revision: request.revision,
+      subAgents: const [],
+      proposedRepositories: body['repositories'] == null
+          ? const []
+          : (body['repositories'] as List).cast<Map<String, dynamic>>().map(PlanRepositoryWork.from).toList(),
+    );
+    final answer = await _write(project, ['stories', request.story, 'work'], body);
+    try {
+      return StoryWorkOrder.from(answer, request: captured, proposal: saved.$2);
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    }
+  }
 
   @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) => _unsupported('reading story work');
@@ -364,6 +439,7 @@ class HttpPlanningSource implements PlanningSource {
 
   /// The workflow and the stories read at one revision, read once more when the store moved between the two.
   Future<PlanningSnapshot> _snapshot(String project) async {
+    final given = await _told(project);
     var workflow = await _read(project, ['workflow']);
     var board = await _read(project, ['stories']);
     if (workflow['revision'] != board['revision']) {
@@ -373,6 +449,8 @@ class HttpPlanningSource implements PlanningSource {
         throw const PlanningRefusal('RevisionMoved', {}, 'the board changed while it was read; read it again');
       }
     }
+    await _stillBound(project, given);
+    _readSources[project] = given.source;
     return PlanningSnapshot.from({...workflow, 'stories': board['stories']});
   }
 
@@ -388,6 +466,44 @@ class HttpPlanningSource implements PlanningSource {
       await _retell(project, given);
       return _call('GET', uri);
     }
+  }
+
+  Future<_Given> _bound(String project) async {
+    _checked('project', project, _name);
+    final given = _given[project] ?? await _told(project);
+    final wanted = await projects(project);
+    if (wanted != given.source || _readSources[project] != null && wanted != _readSources[project]) {
+      throw const PlanningRefusal('ProjectChanged', {}, 'The project repository changed; reload planning first.');
+    }
+    await given.done;
+    await _stillBound(project, given);
+    return given;
+  }
+
+  Future<void> _stillBound(String project, _Given given) async {
+    if (await projects(project) != given.source || _given[project]?.source != given.source) {
+      throw const PlanningRefusal('ProjectChanged', {}, 'The project repository changed while the call waited.');
+    }
+  }
+
+  Future<Map<String, dynamic>> _write(String project, List<String> path, Map<String, dynamic> body) async {
+    final given = await _bound(project);
+    final uri = _uri(project, path);
+    final Map<String, dynamic> answer;
+    try {
+      answer = await _call('POST', uri, body);
+    } on PlanningRefusal catch (refusal) {
+      // Only this explicit refusal proves the planner did not execute the write.
+      if (refusal.name != 'NoSuchProject') rethrow;
+      await _stillBound(project, given);
+      await _retell(project, given);
+      await _stillBound(project, given);
+      final retried = await _call('POST', uri, body);
+      await _stillBound(project, given);
+      return retried;
+    }
+    await _stillBound(project, given);
+    return answer;
   }
 
   /// Tells the planner the project unless it was told where the window keeps it now; answers what it was told.
@@ -493,7 +609,7 @@ class HttpPlanningSource implements PlanningSource {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner answered HTTP $status to naming a project, not 204');
       }
       final json = type == 'application/json' ? _json(bytes) : null;
-      if (json == null || json['revision'] is! String) {
+      if (json == null || json['revision'] is! String || json['type'] != null || json['error'] != null) {
         throw PlanningRefusal(
           'BadAnswer',
           const {},
@@ -519,17 +635,22 @@ class HttpPlanningSource implements PlanningSource {
     }
     final name = type.substring(_prefix.length);
     if (!_refusalName.hasMatch(name)) return null;
-    final parameters = json['parameters'] is Map<String, dynamic>
-        ? {
-            for (final entry
-                in (json['parameters'] as Map<String, dynamic>).entries
-                    .where((entry) => entry.key.length <= _key && entry.value is String)
-                    .take(_parameters))
-              entry.key: _bounded(entry.value as String),
-          }
-        : <String, dynamic>{};
+    final parameters = <String, dynamic>{};
+    if (json['parameters'] case final Map<String, dynamic> sent) {
+      for (final entry in sent.entries) {
+        if (entry.key.length > _key || parameters.length == _parameters) continue;
+        final value = entry.value;
+        if (value is String) {
+          parameters[entry.key] = _bounded(value);
+        } else if (value is int && value >= 0 && value <= 2147483647) {
+          parameters[entry.key] = value;
+        } else if (value is List && value.every((item) => item is String)) {
+          parameters[entry.key] = List<String>.unmodifiable(value.take(200).cast<String>().map(_bounded));
+        }
+      }
+    }
     final detail = json['detail'] is String ? _bounded(json['detail'] as String) : '';
-    return PlanningRefusal(name, parameters, detail);
+    return PlanningRefusal(name, Map.unmodifiable(parameters), detail, name == 'NotOffered');
   }
 
   static Map<String, dynamic>? _json(List<int> bytes) {
@@ -845,6 +966,7 @@ class _Watch {
       if (revision == _last) return;
       _last = revision;
       renewed = true;
+      source._readSources[project] = _watched!;
       replies.add(snapshot);
     }
 

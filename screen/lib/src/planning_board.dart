@@ -74,6 +74,11 @@ class PendingPlanningMove {
   String? problem;
 }
 
+class _StoryStart {
+  bool pending = true;
+  bool confirmed = false;
+}
+
 /// A project's board, replaced only by whole replies from its machine.
 class PlanningBoard extends ChangeNotifier {
   /// Starts a watch with independently retained view choices.
@@ -113,6 +118,9 @@ class PlanningBoard extends ChangeNotifier {
   /// Save, reload, or drop feedback, using daemon details on failures.
   String? moveProblem;
 
+  /// The refused save, including typed details needed after a partial push.
+  PlanningRefusal? moveRefusal;
+
   /// Confirmation or revision-change feedback from the shared save.
   String? moveNotice;
 
@@ -127,6 +135,51 @@ class PlanningBoard extends ChangeNotifier {
   bool get disposed => _disposed;
 
   int _generation = 0;
+
+  /// Invalidates retained actions even if a watch returns to the same source and project.
+  int get generation => _generation;
+
+  static final _storyStarts = Expando<Map<(String, String), _StoryStart>>();
+  static final _storyOffers = Expando<Set<(String, String, String)>>();
+
+  Map<(String, String), _StoryStart> _startsOn(PlanningSource source) => _storyStarts[source] ??= {};
+
+  /// Prevents separate forms from requesting concurrent orders for the same story.
+  Object? beginStoryStart(PlanStory story) {
+    if (startUnavailable(story) != null) return null;
+    final token = _StoryStart();
+    _startsOn(backend)[(project, story.id)] = token;
+    _changed();
+    return token;
+  }
+
+  /// An old completion must not release a newer form's reservation.
+  void endStoryStart(PlanningSource source, String project, String story, Object token, {required bool accepted}) {
+    final key = (project, story);
+    final starts = _startsOn(source);
+    final start = starts[key];
+    if (start == null || !identical(start, token)) return;
+    start.pending = false;
+    if (!accepted || start.confirmed) starts.remove(key);
+    _changed();
+  }
+
+  /// A refused or unanswered Start may already have consumed its offer.
+  bool takeStoryOffer(PlanningSource source, String project, String story, String offer) =>
+      (_storyOffers[source] ??= {}).add((project, story, offer));
+
+  void _acknowledgeStoryStart(PlanStory story) {
+    final key = (project, story.id);
+    final starts = _startsOn(backend);
+    final start = starts[key];
+    if (start == null) return;
+    // After the order ended, the planner refuses another while a recorded run is active.
+    if (!start.pending) {
+      starts.remove(key);
+    } else if (workOf(story)?.atWork == true) {
+      start.confirmed = true;
+    }
+  }
 
   /// Whether this source has released its notifier and subscriptions.
   bool get isDisposed => _disposed;
@@ -253,6 +306,10 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Why a story cannot start, preserving unknown work as unknown.
   String? startUnavailable(PlanStory story) {
+    final reported = stories.where((each) => each.id == story.id).firstOrNull;
+    if (reported == null) return 'the story is no longer reported';
+    story = reported;
+    if (_startsOn(backend).containsKey((project, story.id))) return 'a story start is awaiting confirmation';
     if (unavailableActions['StartStoryWork'] ?? unavailableActions['ProposeStoryWork'] case final reason?) {
       return reason;
     }
@@ -296,6 +353,7 @@ class PlanningBoard extends ChangeNotifier {
       if (!_needsWorkRead(story)) {
         workProblems.remove(story.id);
         workUnsupported.remove(story.id);
+        _acknowledgeStoryStart(story);
         continue;
       }
       try {
@@ -306,6 +364,7 @@ class PlanningBoard extends ChangeNotifier {
         }
         storyWork[story.id] = answer;
         _workSnapshots[story.id] = reply;
+        _acknowledgeStoryStart(story);
         workProblems.remove(story.id);
         workUnsupported.remove(story.id);
       } catch (error) {
@@ -509,13 +568,13 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Shows the newer of a read's board and one streamed while the read waited, so pending moves are reconciled only
   /// against the board that stays.
-  void _acceptNewest(PlanningSnapshot reply, int order) {
+  void _acceptNewest(PlanningSnapshot reply, int order, {bool reconcile = true}) {
     final deferred = _deferredSnapshot;
     _deferredSnapshot = null;
     if (deferred != null && deferred.$2 > order) {
-      _accept(deferred.$1, order: deferred.$2);
+      _accept(deferred.$1, order: deferred.$2, reconcile: reconcile);
     } else {
-      _accept(reply, order: order);
+      _accept(reply, order: order, reconcile: reconcile);
     }
   }
 
@@ -528,10 +587,14 @@ class PlanningBoard extends ChangeNotifier {
     workProblems.clear();
     workUnsupported.clear();
     unawaited(_readWork(reply, _generation));
-    if (!reconcile || !reply.complete || reply.revision.isEmpty) return;
+    if (!reply.complete || reply.revision.isEmpty) return;
     final reconciled = <String>[];
     for (final entry in _pending.entries.toList()) {
       final reported = _reportedState(reply, entry.key, entry.value);
+      if (!reconcile) {
+        if (reported != null) entry.value.from = reported;
+        continue;
+      }
       if (reported == null && entry.value.isIssue && reply.stories.any((story) => !story.issuesReported)) {
         continue;
       }
@@ -551,12 +614,12 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
-  void _finishOperation() {
+  void _finishOperation({bool reconcile = true}) {
     if (_disposed) return;
     saving = false;
     final deferred = _deferredSnapshot;
     _deferredSnapshot = null;
-    if (deferred != null) _accept(deferred.$1, order: deferred.$2);
+    if (deferred != null) _accept(deferred.$1, order: deferred.$2, reconcile: reconcile);
     _changed();
     final queued = _queuedProject;
     _queuedProject = null;
@@ -596,10 +659,12 @@ class PlanningBoard extends ChangeNotifier {
     ];
     moveProblem = null;
     moveNotice = null;
+    moveRefusal = null;
     for (final move in _pending.values) {
       move.problem = null;
     }
     _changed();
+    var refused = false;
     try {
       _checked(snapshot!);
       final reply = await backend.saveMoves(project, moves, revision);
@@ -658,34 +723,33 @@ class PlanningBoard extends ChangeNotifier {
       _acceptNewest(latest, latestOrder);
     } on PlanningRefusal catch (error) {
       if (_disposed || generation != _generation) return;
+      refused = true;
+      moveRefusal = error;
       final detail = planningFailureWords(error);
-      final item = error.parameters['item'] ?? error.parameters['issue'] ?? error.parameters['story'];
-      final named = item is String && batch.containsKey(item)
-          ? item
-          : item is String
-          ? 'issue $item'
-          : null;
-      final affected = named is String && batch.containsKey(named) ? [named] : batch.keys;
-      if (error.name != 'StaleRevision') {
-        for (final key in affected) {
-          _pending[key]?.problem = detail;
-        }
+      moveProblem = detail;
+      for (final key in batch.keys) {
+        _pending[key]?.problem = detail;
       }
-      if (error.name == 'NotYetBuilt') unavailableActions['SaveMoves'] = detail;
-      if (error.name == 'StaleRevision') {
-        moveProblem = detail;
-        moveNotice = 'Planning changed. Review the pending moves and save again.';
+      if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
+      if (error.name == 'StaleRevision' || error.name == 'PartlySaved') {
+        if (error.name == 'StaleRevision') moveNotice = 'Planning changed. Review the pending moves and save again.';
         try {
           final reply = await _read();
           if (!_disposed && generation == _generation) {
-            for (final move in _pending.values) {
-              move.problem = null;
+            if (error.name == 'StaleRevision') {
+              for (final move in _pending.values) {
+                move.problem = null;
+              }
+              moveProblem = null;
+              moveRefusal = null;
+              refused = false;
+              _acceptNewest(reply.$1, reply.$2);
+              moveNotice = _pending.isEmpty
+                  ? 'The pending moves were made elsewhere.'
+                  : 'Planning changed. Review the pending moves and save again.';
+            } else {
+              _acceptNewest(reply.$1, reply.$2, reconcile: false);
             }
-            moveProblem = null;
-            _acceptNewest(reply.$1, reply.$2);
-            moveNotice = _pending.isEmpty
-                ? 'The pending moves were made elsewhere.'
-                : 'Planning changed. Review the pending moves and save again.';
           }
         } catch (readError) {
           if (!_disposed && generation == _generation) moveProblem = '$detail ${planningFailureWords(readError)}';
@@ -693,13 +757,14 @@ class PlanningBoard extends ChangeNotifier {
       }
     } catch (error) {
       if (!_disposed && generation == _generation) {
+        refused = true;
         moveProblem = planningFailureWords(error);
         for (final key in batch.keys) {
           _pending[key]?.problem = moveProblem;
         }
       }
     } finally {
-      _finishOperation();
+      _finishOperation(reconcile: !refused);
     }
   }
 
@@ -998,12 +1063,16 @@ class PlanningBoards extends ChangeNotifier {
 
 /// [words] without control characters and at most 4096 characters long, for the screen.
 String _shown(String words) {
-  final safe = words.replaceAll(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'), '');
+  final safe = words.replaceAll(RegExp(r'[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]'), '');
   return safe.length > 4096 ? safe.substring(0, 4096) : safe;
 }
 
 /// Preserves a daemon refusal in its own detail words.
 String planningFailureWords(Object error) {
+  return _shown(_failureWords(error));
+}
+
+String _failureWords(Object error) {
   if (error is PlanningRefusal) {
     if (error.name == 'NotYetBuilt') return 'This machine does not offer ${error.parameters['method']} yet.';
     final words = [
@@ -1017,6 +1086,14 @@ String planningFailureWords(Object error) {
       return _shown('${error.parameters['error']}: ${error.parameters['parameters']}');
     }
     if (error.name == 'EnteredOnlyByWork') return '${error.parameters['to']} can be entered only by work.';
+    if (error.name == 'PartlySaved') {
+      final pushed = error.parameters['pushed'];
+      final failed = error.parameters['failed'];
+      return _shown(
+        '${error.description.trim()}${pushed is String ? ' Pushed: $pushed.' : ''}'
+        '${failed is String ? ' Not pushed: $failed.' : ''}',
+      );
+    }
     // The planner's refusals carry their sentence here alone.
     if (error.description.trim().isNotEmpty) return _shown(error.description);
     return '${error.name}: ${error.parameters}';

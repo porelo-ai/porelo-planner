@@ -6,6 +6,19 @@ import 'client.dart';
 import 'hooks.dart';
 import 'models.dart';
 import 'planning_board.dart';
+import 'story_work_order.dart';
+
+/// A partial Start must retain confirmed tasks alongside the task that refused.
+class StoryWorkTask {
+  StoryWorkTask(this.order);
+
+  final PlanningTaskOrder order;
+  PlanningTaskStarted? started;
+  Object? error;
+
+  PlanningRefusal? get refusal => error is PlanningRefusal ? error as PlanningRefusal : null;
+  String? get problem => error == null ? null : planningFailureWords(error!);
+}
 
 /// A proposal and start bound to one watched machine and board revision.
 class StoryWork extends ChangeNotifier {
@@ -18,6 +31,7 @@ class StoryWork extends ChangeNotifier {
     required this.agentChoices,
     Map<PlanningBoard, String>? machines,
     this.unavailableMachines = const [],
+    this.onStarted,
   }) : backend = board.backend,
        project = board.project,
        revision = board.snapshot?.revision ?? '',
@@ -88,8 +102,18 @@ class StoryWork extends ChangeNotifier {
   /// Whether a submitted start has not answered yet; its machine cannot change.
   bool starting = false;
 
-  /// The tasks returned by the successful start itself.
-  StoryWorkStarted? result;
+  /// Keeps the checked arguments even when only part of the order starts.
+  List<StoryWorkTask> tasks = const [];
+
+  /// The window receives only identities actually confirmed by Start.
+  /// Told of the tasks that reached Start once the order ends, even when a later one was refused.
+  final Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>)?
+  onStarted;
+
+  List<(PlanningTaskOrder, PlanningTaskStarted)> get startedTasks => List.unmodifiable([
+    for (final task in tasks)
+      if (task.started case final started?) (task.order, started),
+  ]);
   bool _disposed = false;
   int _generation = 0;
   late VoidCallback _stopFollowing;
@@ -127,11 +151,10 @@ class StoryWork extends ChangeNotifier {
         repo.subAgents.every((sub) {
           final chosen = choices[(repo.repository, sub.id)];
           return switch (chosen?.choice) {
-            'KEEP' =>
-              {'BUILDER', 'TESTER', 'READER'}.contains(sub.role) && sub.agent.isNotEmpty && sub.model.isNotEmpty,
+            'KEEP' => sub.role == 'BUILDER' && sub.agent.isNotEmpty && sub.model.isNotEmpty,
             'DROP' => true,
             'CHANGE' =>
-              {'BUILDER', 'TESTER', 'READER'}.contains(sub.role) &&
+              sub.role == 'BUILDER' &&
                   chosen!.agent?.isNotEmpty == true &&
                   chosen.model?.isNotEmpty == true &&
                   (chosen.agent != sub.agent || chosen.model != sub.model),
@@ -142,7 +165,7 @@ class StoryWork extends ChangeNotifier {
 
   static int? _rounds(String text) {
     final value = int.tryParse(text);
-    return value != null && value >= 1 ? value : null;
+    return value != null && value >= 1 && value <= 10 ? value : null;
   }
 
   /// Whether every required choice and source fact permits a start.
@@ -150,7 +173,7 @@ class StoryWork extends ChangeNotifier {
       current &&
       !busy &&
       problem == null &&
-      result?.started != true &&
+      tasks.isEmpty &&
       proposal != null &&
       proposal!.repositories.isNotEmpty &&
       board.startUnavailable(story) == null &&
@@ -172,7 +195,7 @@ class StoryWork extends ChangeNotifier {
 
   /// Reads the proposal and agent list from the same captured machine.
   Future<void> load() async {
-    if (_disposed || starting) return;
+    if (_disposed || starting || tasks.isNotEmpty) return;
     if (!current) {
       problem = !board.stories.any((each) => each.id == story.id)
           ? 'The selected machine did not report story ${story.id}.'
@@ -188,7 +211,7 @@ class StoryWork extends ChangeNotifier {
     bool valid() => !_disposed && generation == _generation;
     busy = true;
     problem = null;
-    result = null;
+    tasks = const [];
     proposal = null;
     repositories.clear();
     choices.clear();
@@ -221,7 +244,7 @@ class StoryWork extends ChangeNotifier {
           choices[(repo.repository, sub.id)] = StoryWorkChoice(
             repository: repo.repository,
             name: sub.id,
-            choice: !{'BUILDER', 'TESTER', 'READER'}.contains(sub.role) ? 'DROP' : sub.choice,
+            choice: sub.role != 'BUILDER' ? 'DROP' : sub.choice,
           );
         }
       }
@@ -234,7 +257,7 @@ class StoryWork extends ChangeNotifier {
     } catch (error) {
       if (valid()) {
         problem = planningFailureWords(error);
-        if (planningRefused(error, 'NotYetBuilt')) {
+        if (planningRefused(error, 'NotYetBuilt') || planningRefused(error, 'NotOffered')) {
           board.unavailableActions['ProposeStoryWork'] = problem!;
         }
       }
@@ -248,7 +271,7 @@ class StoryWork extends ChangeNotifier {
 
   /// Changes the machine and re-asks its own proposal at its own revision.
   void changeMachine(PlanningBoard next) {
-    if (_disposed || starting || result != null || !machines.containsKey(next) || next.isDisposed) return;
+    if (_disposed || starting || tasks.isNotEmpty || !machines.containsKey(next) || next.isDisposed) return;
     final id = story.id;
     _generation++;
     _stopFollowing();
@@ -282,6 +305,7 @@ class StoryWork extends ChangeNotifier {
   /// Asks a fresh proposal for another working state on this machine.
   void changeTarget(String target) {
     if (busy ||
+        tasks.isNotEmpty ||
         !sourceCurrent ||
         !board.stories.any((each) => each.id == story.id) ||
         board.state(target)?.kind != 'WORKING') {
@@ -333,7 +357,7 @@ class StoryWork extends ChangeNotifier {
 
   /// Selects Keep, Change or Drop; Change requires an explicitly chosen model.
   void choose(String repository, PlanAssignment sub, String choice, {String? agent, String? model}) {
-    if (busy || !current || !{'BUILDER', 'TESTER', 'READER'}.contains(sub.role)) return;
+    if (busy || !current || sub.role != 'BUILDER') return;
     final previous = choices[(repository, sub.id)];
     choices[(repository, sub.id)] = StoryWorkChoice(
       repository: repository,
@@ -345,49 +369,87 @@ class StoryWork extends ChangeNotifier {
     _changed();
   }
 
-  /// Sends all choices once and keeps the actual started tasks for terminal opening.
+  /// A checked order authorizes Start only while its original binding still holds.
   Future<bool> start() async {
     if (!canStart) return false;
+    final origin = board;
+    final source = backend;
+    final name = project;
+    final id = story.id;
     final generation = _generation;
+    final boardGeneration = origin.generation;
+    final request = StoryWorkRequest(
+      project: name,
+      story: id,
+      to: to,
+      mode: mode!,
+      revision: revision,
+      subAgents: choices.values.toList(),
+      repositories: repositories.values.toList(),
+      proposedRepositories: proposal!.repositories,
+      comment: comment.isEmpty ? null : comment,
+      readingRounds: _rounds(rounds),
+      issueReadingRounds: {
+        for (final each in issueRounds.entries)
+          if (each.value.isNotEmpty) each.key: _rounds(each.value)!,
+      },
+    );
+    bool valid() =>
+        !_disposed &&
+        generation == _generation &&
+        identical(board, origin) &&
+        origin.generation == boardGeneration &&
+        identical(backend, source) &&
+        project == name &&
+        story.id == id &&
+        revision == request.revision &&
+        current;
+    final token = origin.beginStoryStart(story);
+    if (token == null) return false;
     busy = true;
     starting = true;
     _changed();
     try {
-      final answer = await startTask(
-        backend,
-        StoryWorkRequest(
-          project: project,
-          story: story.id,
-          to: to,
-          mode: mode!,
-          revision: revision,
-          subAgents: choices.values.toList(),
-          repositories: repositories.values.toList(),
-          proposedRepositories: proposal!.repositories,
-          comment: comment.isEmpty ? null : comment,
-          readingRounds: _rounds(rounds),
-          issueReadingRounds: {
-            for (final each in issueRounds.entries)
-              if (each.value.isNotEmpty) each.key: _rounds(each.value)!,
-          },
-        ),
-      );
-      if (_disposed || generation != _generation) return false;
-      result = answer;
-      if (!answer.started) problem = 'The machine did not start the story work.';
-      if (answer.started) await board.reload();
-      return answer.started;
-    } catch (error) {
-      if (!_disposed && generation == _generation) {
-        problem = planningFailureWords(error);
-        if (planningRefused(error, 'NotYetBuilt')) {
-          board.unavailableActions[(error as PlanningRefusal).parameters['method'] as String? ?? 'StartStoryWork'] =
-              problem!;
+      final order = await source.startStoryWork(request);
+      // An order for a board that moved on is not shown, so the form stays open to choose again.
+      if (!valid()) return false;
+      tasks = List.unmodifiable(order.tasks.map(StoryWorkTask.new));
+      _changed();
+      for (final task in tasks) {
+        if (!valid()) return false;
+        final offer = task.order.offer;
+        if (offer != null && !origin.takeStoryOffer(source, name, id, offer)) {
+          task.error = StateError('This offer has already been handed to Start.');
+          return false;
         }
-        if (planningRefused(error, 'StaleRevision')) unawaited(board.reload());
+        try {
+          task.started = await startTask(source, name, id, task.order);
+        } catch (error) {
+          task.error = error;
+          return false;
+        }
+        _changed();
+      }
+      return valid();
+    } catch (error) {
+      if (valid()) {
+        problem = planningFailureWords(error);
+        if (planningRefused(error, 'NotYetBuilt') || planningRefused(error, 'NotOffered')) {
+          origin.unavailableActions['StartStoryWork'] = problem!;
+        }
+        if (planningRefused(error, 'StaleRevision')) unawaited(origin.reload());
       }
       return false;
     } finally {
+      origin.endStoryStart(source, name, id, token, accepted: startedTasks.isNotEmpty);
+      final started = startedTasks;
+      if (onStarted case final hook? when started.isNotEmpty) {
+        try {
+          await hook(source, name, id, started);
+        } catch (error) {
+          if (!_disposed && generation == _generation) problem = planningFailureWords(error);
+        }
+      }
       if (!_disposed && generation == _generation) {
         starting = false;
         busy = false;

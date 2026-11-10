@@ -151,6 +151,9 @@ class FakePlanningSource implements PlanningSource {
       _notServed('ProposeStoryWork');
 
   @override
+  Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async => _notServed('StartStoryWork');
+
+  @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) async => _notServed('GetStoryWork');
 
   @override

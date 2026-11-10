@@ -1,14 +1,24 @@
 import 'package:flutter/widgets.dart';
 
 import 'client.dart';
-import 'models.dart';
 import 'planning_board.dart';
-import 'story_work.dart';
+import 'story_work_order.dart';
 
-/// How a start of story work reaches the window: [source] is the provider the person chose, [request] every choice.
-///
-/// It answers with the start as the provider confirmed it; a refusal arrives as a [PlanningRefusal].
-typedef PlanningStartTask = Future<StoryWorkStarted> Function(PlanningSource source, StoryWorkRequest request);
+/// Keeps Start on the provider and story that supplied these checked arguments.
+typedef PlanningStartTask = Future<PlanningTaskStarted> Function(
+  PlanningSource source,
+  String project,
+  String story,
+  PlanningTaskOrder task,
+);
+
+/// Runtime identities come from Porelo's Start, never from a prepared order.
+class PlanningTaskStarted {
+  const PlanningTaskStarted({required this.task, required this.container});
+
+  final String task;
+  final String container;
+}
 
 /// What the screen shows of a run, and what the window does with it.
 abstract interface class PlanningTaskChanges {
@@ -18,8 +28,13 @@ abstract interface class PlanningTaskChanges {
   /// Opens [task] of [board]'s project in the window.
   void open(PlanningBoard board, String task);
 
-  /// Takes a start the provider confirmed, to show its run where the window shows runs.
-  Future<void> started(StoryWork work);
+  /// Keeps confirmed starts attached to their originating provider, including partial orders.
+  Future<void> started(
+    PlanningSource source,
+    String project,
+    String story,
+    List<(PlanningTaskOrder, PlanningTaskStarted)> tasks,
+  );
 }
 
 /// An agent a start may choose, with what the window shows for it.

@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../client.dart';
 import '../hooks.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
 import '../story_work.dart';
+import '../story_work_order.dart';
 import 'actions.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
@@ -201,7 +203,7 @@ class _BoardView extends StatefulWidget {
 
   final ValueChanged<String> onStory;
   final void Function(String, String) onIssue;
-  final Future<void> Function(StoryWork) onStarted;
+  final Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>) onStarted;
   final PlanningStartTask startTask;
   final PlanningAgents agents;
   final Map<PlanningBoard, String> machines;
@@ -666,14 +668,10 @@ class _BoardViewState extends State<_BoardView> {
       agentChoices: widget.agents,
       machines: widget.machines,
       unavailableMachines: widget.unavailableMachines,
+      onStarted: widget.onStarted,
     );
     try {
-      final started = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => StoryWorkDialog(work),
-      );
-      if (started == true && mounted) await widget.onStarted(work);
+      await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
     } finally {
       work.dispose();
     }

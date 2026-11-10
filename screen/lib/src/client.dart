@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'models.dart';
+import 'story_work_order.dart';
 
 /// The planning service refused a call, with its own name for the refusal and what it sent with it.
 ///
@@ -122,6 +123,9 @@ abstract interface class PlanningSource {
 
   /// Reads the proposed tasks and participants for a working state.
   Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to);
+
+  /// Prepares a checked order without starting tasks or recording running work.
+  Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request);
 
   /// Reads current work and any ended outcome for a story.
   Future<StoryWorkStatus> getStoryWork(String project, String story);
