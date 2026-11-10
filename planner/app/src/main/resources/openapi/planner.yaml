@@ -285,6 +285,49 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/moves:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: saveMoves
+      summary: Save moves, all or none
+      description: >-
+        Checks a batch of moves against the board at the given revision and saves it all or not at all: each
+        repository it changes gets one commit, pushed under the person's own Git login. A story moves its least
+        advanced issues; a working state is entered only by work.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Moves'
+      responses:
+        '200':
+          description: The moves are saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Moved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/MoveConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
 components:
   securitySchemes:
     bearer:
@@ -483,6 +526,152 @@ components:
             parameters:
               repository: example
 
+    NoSuchItem:
+      description: The project is not known (NoSuchProject), or a move names a story (NoSuchStory) or an issue (NoSuchIssue) it does not have.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            NoSuchStory:
+              value:
+                type: urn:porelo-planner:NoSuchStory
+                title: NoSuchStory
+                status: 404
+                detail: There is no story ST9.
+                parameters:
+                  story: ST9
+            NoSuchIssue:
+              value:
+                type: urn:porelo-planner:NoSuchIssue
+                title: NoSuchIssue
+                status: 404
+                detail: There is no issue PL9.
+                parameters:
+                  issue: PL9
+    MoveConflict:
+      description: >-
+        The board moved since the given revision (StaleRevision, naming the current one), or a story would stand where
+        its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that does not fit
+        with its state).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            StaleRevision:
+              value:
+                type: urn:porelo-planner:StaleRevision
+                title: StaleRevision
+                status: 409
+                detail: The board moved since that revision.
+                parameters:
+                  revision: porelo-project@4f3c2a1
+            StoryStateMismatch:
+              value:
+                type: urn:porelo-planner:StoryStateMismatch
+                title: StoryStateMismatch
+                status: 409
+                detail: ST1 does not fit Rejected while its issues stand in PL2:Review.
+                parameters:
+                  story: ST1
+                  to: Rejected
+                  issues: 'PL2:Review'
+    MoveRefused:
+      description: >-
+        A move is refused: its state is entered only by work (EnteredOnlyByWork), is no waiting or closed state
+        (StateNotAllowed), or the move is not allowed (MoveNotAllowed): it names no item or one twice, closes a parent
+        over an open sub-issue, the work rules have faults, the body cannot be read, or the item cannot be saved in its
+        repository.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            EnteredOnlyByWork:
+              value:
+                type: urn:porelo-planner:EnteredOnlyByWork
+                title: EnteredOnlyByWork
+                status: 422
+                detail: Building is entered only by starting its work.
+                parameters:
+                  item: PL1
+                  to: Building
+            StateNotAllowed:
+              value:
+                type: urn:porelo-planner:StateNotAllowed
+                title: StateNotAllowed
+                status: 422
+                detail: The destination must be a configured waiting or closed state.
+                parameters:
+                  item: PL1
+                  from: Backlog
+                  to: Shipped
+                  reason: The destination must be a configured waiting or closed state.
+            MoveNotAllowed:
+              value:
+                type: urn:porelo-planner:MoveNotAllowed
+                title: MoveNotAllowed
+                status: 422
+                detail: Its sub-issue PL4.1 stands in Backlog, which is not closed.
+                parameters:
+                  item: PL4
+                  from: Review
+                  to: Finished
+                  reason: Its sub-issue PL4.1 stands in Backlog, which is not closed.
+    SaveRefused:
+      description: >-
+        The store could not save: a repository refused after others took the save (PartlySaved, naming those pushed and
+        the one that failed), or the store could not be read (WorkflowMissing, CredentialRefused, Unreadable).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            PartlySaved:
+              value:
+                type: urn:porelo-planner:PartlySaved
+                title: PartlySaved
+                status: 502
+                detail: The repository refused the push.
+                parameters:
+                  pushed: porelo-other
+                  failed: porelo-project
+            CredentialRefused:
+              value:
+                type: urn:porelo-planner:CredentialRefused
+                title: CredentialRefused
+                status: 502
+                detail: The Git login was refused for the repository.
+                parameters:
+                  repository: example
+    NotOffered:
+      description: This planner's store saves no moves, as in mock mode (NotOffered).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:NotOffered
+            title: NotOffered
+            status: 501
+            detail: This planner does not save moves.
+            parameters:
+              project: example
+    Busy:
+      description: Another save or a fetch held the project longer than the planner waits (Busy).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:Busy
+            title: Busy
+            status: 503
+            detail: The project is busy with another save; try again.
+            parameters:
+              repository: porelo-project
+
   schemas:
     Name:
       description: The name of a project or a repository.
@@ -645,6 +834,46 @@ components:
           items:
             $ref: '#/components/schemas/Story'
 
+    Moves:
+      description: A batch of moves against the board at a revision.
+      type: object
+      required: [revision, moves]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        moves:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/Move'
+        confirm:
+          type: boolean
+          default: false
+          description: Whether a story may stand where its issues do not fit.
+    Move:
+      description: One move, naming exactly one story or one issue.
+      type: object
+      required: [to]
+      properties:
+        story:
+          $ref: '#/components/schemas/StoryId'
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        to:
+          type: string
+          description: The state it moves to.
+    Moved:
+      description: The board's revision after the save, and every issue the batch moved, each once.
+      type: object
+      required: [revision, moved]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        moved:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+
     Refreshed:
       description: The revision after a fetch.
       type: object
@@ -796,7 +1025,7 @@ components:
           description: The planner's words for the refusal, never a credential or a local path.
         parameters:
           type: object
-          description: What the refusal concerns, by one of project, story, issue or repository.
+          description: What the refusal concerns, each a string.
           properties:
             project:
               type: string
@@ -805,4 +1034,22 @@ components:
             issue:
               type: string
             repository:
+              type: string
+            revision:
+              type: string
+            item:
+              type: string
+            from:
+              type: string
+            to:
+              type: string
+            reason:
+              type: string
+            issues:
+              type: string
+              description: Comma-joined, each issue with its state.
+            pushed:
+              type: string
+              description: Comma-joined repositories.
+            failed:
               type: string

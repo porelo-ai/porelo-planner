@@ -67,4 +67,64 @@ public interface Remote {
      * @return the subdirectories' paths, sorted
      */
     List<String> directories(String repository, String commit, String directory);
+
+    /**
+     * Makes a commit on a fetched one in the planner's own clone, changing only the files named;
+     * nothing leaves the clone.
+     *
+     * @param repository the repository's name
+     * @param parent the commit it follows
+     * @param root the directory holding the changed files at their paths
+     * @param paths the changed files' paths in the repository
+     * @param subject the commit's subject, its whole message
+     * @return the new commit's id
+     */
+    default String commit(
+            String repository,
+            String parent,
+            java.nio.file.Path root,
+            List<String> paths,
+            String subject) {
+        throw new UnsupportedOperationException("This remote saves nothing");
+    }
+
+    /**
+     * Pushes a commit to a repository's branch, only while the branch still stands where it was
+     * fetched.
+     *
+     * @param repository the repository's name
+     * @param url its clone URL
+     * @param branch its branch, or {@code null} for the remote's default
+     * @param commit the commit pushed
+     * @param expected where the branch must stand
+     * @throws GitFailure of kind {@code REJECTED} when the branch moved
+     */
+    default void push(
+            String repository,
+            CloneUrl url,
+            @Nullable String branch,
+            String commit,
+            String expected) {
+        throw new UnsupportedOperationException("This remote saves nothing");
+    }
+
+    /**
+     * Makes a pushed commit the one last fetched.
+     *
+     * @param repository the repository's name
+     * @param commit the commit
+     */
+    default void advance(String repository, String commit) {
+        throw new UnsupportedOperationException("This remote saves nothing");
+    }
+
+    /**
+     * Makes a new empty directory for one save, inside the project's cache, which the caller
+     * deletes.
+     *
+     * @return the directory
+     */
+    default java.nio.file.Path scratch() {
+        throw new UnsupportedOperationException("This remote saves nothing");
+    }
 }

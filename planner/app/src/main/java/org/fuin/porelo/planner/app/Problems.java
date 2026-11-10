@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import java.net.URI;
 import java.util.Map;
 import java.util.Objects;
+import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.store.StoreException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -40,6 +41,24 @@ public class Problems {
     }
 
     /**
+     * Answers a batch of moves refused by its checks.
+     *
+     * @param refused the refusal
+     * @return the problem
+     */
+    @ExceptionHandler(Moves.Refused.class)
+    public ResponseEntity<ProblemDetail> refused(final Moves.Refused refused) {
+        final HttpStatus status =
+                switch (refused.name()) {
+                    case "NoSuchStory", "NoSuchIssue" -> HttpStatus.NOT_FOUND;
+                    case "StoryStateMismatch" -> HttpStatus.CONFLICT;
+                    default -> HttpStatus.UNPROCESSABLE_CONTENT;
+                };
+        return problem(
+                refused.name(), status, String.valueOf(refused.getMessage()), refused.parameters());
+    }
+
+    /**
      * Answers a body that is no project source, since the only body the planner takes is one.
      *
      * @param unreadable what Spring could not read
@@ -54,6 +73,16 @@ public class Problems {
                         HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
                         RequestAttributes.SCOPE_REQUEST);
         final Object project = variables instanceof Map<?, ?> map ? map.get("project") : null;
+        if (request.getDescription(false).endsWith("/moves")) {
+            // Fixed words: the parser's text would repeat whatever the body held.
+            final String reason = "The body is no batch of moves.";
+            final Map<String, String> parameters = new java.util.LinkedHashMap<>();
+            parameters.put("item", "");
+            parameters.put("from", "");
+            parameters.put("to", "");
+            parameters.put("reason", reason);
+            return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, parameters);
+        }
         return problem(
                 "NotACloneUrl",
                 HttpStatus.BAD_REQUEST,
@@ -100,6 +129,30 @@ public class Problems {
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
+            case StoreException.StaleRevision stale ->
+                    problem(
+                            "StaleRevision",
+                            HttpStatus.CONFLICT,
+                            "The board moved since that revision.",
+                            Map.of("revision", stale.current()));
+            case StoreException.NotSavable any ->
+                    problem(
+                            "MoveNotAllowed",
+                            HttpStatus.UNPROCESSABLE_CONTENT,
+                            detail,
+                            Map.of("item", subject, "from", "", "to", "", "reason", detail));
+            case StoreException.Busy any ->
+                    problem(
+                            "Busy",
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                            "The project is busy with another save; try again.",
+                            Map.of("repository", subject));
+            case StoreException.PartlySaved partly ->
+                    problem(
+                            "PartlySaved",
+                            HttpStatus.BAD_GATEWAY,
+                            detail,
+                            Map.of("pushed", String.join(",", partly.pushed()), "failed", subject));
         };
     }
 

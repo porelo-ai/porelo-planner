@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.MediaType;
@@ -19,13 +21,22 @@ class RealProjectReadTest {
 
     @TempDir Path dir;
 
+    private static BoardController controller(final Projects projects) {
+        return new BoardController(
+                projects,
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor()));
+    }
+
     @Test
     void aProjectGivenByItsOwnRepositoryIsReadFromGitAndServed() throws Exception {
         // The window's only way in: a PUT that reads nothing would leave every read a 404.
         try (FixtureProject project = FixtureProject.serve(dir)) {
             final MockMvc mvc =
                     MockMvcBuilders.standaloneSetup(
-                                    new BoardController(
+                                    controller(
                                             StoreConfiguration.fromGit(
                                                     StoreConfiguration.gitProjects(
                                                             project.environment()))))

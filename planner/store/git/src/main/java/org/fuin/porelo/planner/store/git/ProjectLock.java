@@ -11,6 +11,16 @@ public interface ProjectLock {
      */
     Held acquire();
 
+    /**
+     * Waits for the project at most a while and holds it.
+     *
+     * @param most how long to wait at most
+     * @return the hold, or empty when the project stayed held that long
+     */
+    default java.util.Optional<Held> acquire(final java.time.Duration most) {
+        return java.util.Optional.of(acquire());
+    }
+
     /** A held project. */
     interface Held extends AutoCloseable {
         @Override

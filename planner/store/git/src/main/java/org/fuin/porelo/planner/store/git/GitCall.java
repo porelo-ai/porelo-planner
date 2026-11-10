@@ -56,6 +56,27 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
         return new GitCall(line, environment(inherited, connectTimeout));
     }
 
+    /**
+     * Makes a call that works on an index file of its own, as a save builds its commit.
+     *
+     * @param inherited the planner's own environment
+     * @param connectTimeout how long ssh waits for a host
+     * @param index the index file, never the clone's own
+     * @param arguments the call's arguments after {@code git} and the safe configuration
+     * @return the call
+     */
+    public static GitCall withIndex(
+            final Map<String, String> inherited,
+            final Duration connectTimeout,
+            final java.nio.file.Path index,
+            final List<String> arguments) {
+        final GitCall call = of(inherited, connectTimeout, arguments);
+        final Map<String, String> variables = new TreeMap<>(call.environment());
+        // Set after the person's GIT_ variables are gone, so only this one names an index.
+        variables.put("GIT_INDEX_FILE", index.toString());
+        return new GitCall(call.arguments(), variables);
+    }
+
     private static Map<String, String> environment(
             final Map<String, String> inherited, final Duration connectTimeout) {
         final Map<String, String> variables = new TreeMap<>(inherited);

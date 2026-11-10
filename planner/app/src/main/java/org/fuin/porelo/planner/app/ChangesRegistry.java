@@ -112,6 +112,21 @@ public final class ChangesRegistry implements AutoCloseable {
     }
 
     /**
+     * Tells a followed project's windows the board the planner's own save made.
+     *
+     * @param project the project's checked name
+     */
+    public void saved(final String project) {
+        final Followed known;
+        synchronized (this) {
+            known = followed.get(project);
+        }
+        if (known != null) {
+            known.changes().saved();
+        }
+    }
+
+    /**
      * Answers how many projects are followed, which is how many are polled.
      *
      * @return their number

@@ -9,7 +9,11 @@ public abstract sealed class StoreException extends RuntimeException
                 StoreException.WorkflowMissing,
                 StoreException.CredentialRefused,
                 StoreException.Unreachable,
-                StoreException.Unreadable {
+                StoreException.Unreadable,
+                StoreException.StaleRevision,
+                StoreException.NotSavable,
+                StoreException.Busy,
+                StoreException.PartlySaved {
 
     private static final long serialVersionUID = 1L;
 
@@ -120,6 +124,90 @@ public abstract sealed class StoreException extends RuntimeException
             super(
                     Ids.name(repository),
                     "Repository " + repository + " could not be read: " + fault);
+        }
+    }
+
+    /** The store moved since the revision a save was checked against. */
+    public static final class StaleRevision extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final String current;
+
+        /**
+         * Names the revision the store holds now.
+         *
+         * @param current the current revision
+         */
+        public StaleRevision(final String current) {
+            super(current, "The planning changed since it was shown");
+            this.current = current;
+        }
+
+        /**
+         * Answers the revision the store holds now.
+         *
+         * @return the current revision
+         */
+        public String current() {
+            return current;
+        }
+    }
+
+    /** An item that cannot be written in its repository. */
+    public static final class NotSavable extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the item and why.
+         *
+         * @param item the story's or the issue's id
+         * @param reason why it cannot be written
+         */
+        public NotSavable(final String item, final String reason) {
+            super(item, reason);
+        }
+    }
+
+    /** Another save or a check held the project longer than a save waits. */
+    public static final class Busy extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * Names the project's own repository.
+         *
+         * @param repository the repository's name
+         */
+        public Busy(final String repository) {
+            super(repository, "The project is busy with another save or check");
+        }
+    }
+
+    /** A save whose later repository failed after earlier ones were pushed. */
+    public static final class PartlySaved extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final java.util.List<String> pushed;
+
+        /**
+         * Names what was pushed and what failed.
+         *
+         * @param failed the repository that failed
+         * @param pushed the repositories already pushed, in order
+         * @param reason why it failed
+         */
+        public PartlySaved(
+                final String failed, final java.util.List<String> pushed, final String reason) {
+            super(failed, reason);
+            this.pushed = java.util.List.copyOf(pushed);
+        }
+
+        /**
+         * Answers the repositories already pushed.
+         *
+         * @return their names, in order
+         */
+        public java.util.List<String> pushed() {
+            return pushed;
         }
     }
 }

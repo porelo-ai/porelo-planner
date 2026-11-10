@@ -73,6 +73,7 @@ public final class StoreReader implements PartReader {
             remote.read(name, commit, index).ifPresent(text -> pages.put(index, text));
         }
         final List<Issue> read = new ArrayList<>();
+        final Map<String, String> paths = new LinkedHashMap<>();
         if (!issueFiles.isEmpty() || !pages.isEmpty()) {
             // An issues directory is checked against its own workflow, or else the project's
             // beside its stories.
@@ -90,6 +91,7 @@ public final class StoreReader implements PartReader {
                 final Issue issue = issue(name, commit, file, issues);
                 headed.add(issue.id());
                 read.add(issue);
+                paths.put(issue.id(), file);
             }
             // A finished or rejected issue's file is deleted; its index row is all that is left.
             for (final IssueIndex row : rows(name, pages, issues).values()) {
@@ -99,20 +101,23 @@ public final class StoreReader implements PartReader {
             }
         }
         if (!own) {
-            return new Part(null, List.of(), read, null);
+            return new Part(null, List.of(), read, null, paths);
         }
         final Workflow board = Workflow.read(storiesWorkflow.orElseThrow());
         final List<Story> stories = new ArrayList<>();
         for (final String file : bounded(remote.list(name, commit, "stories"))) {
             if (STORY_FILE.matcher(file.substring(file.lastIndexOf('/') + 1)).matches()) {
-                stories.add(Story.read(text(name, commit, file), board));
+                final Story story = Story.read(text(name, commit, file), board);
+                stories.add(story);
+                paths.put(Part.story(story.id()), file);
             }
         }
         return new Part(
                 board,
                 stories,
                 read,
-                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)));
+                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
+                paths);
     }
 
     private static Map<String, IssueIndex> rows(

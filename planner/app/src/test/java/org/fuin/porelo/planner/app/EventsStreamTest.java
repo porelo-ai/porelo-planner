@@ -104,7 +104,7 @@ class EventsStreamTest {
             throws Exception {
         final MockMvc mvc =
                 MockMvcBuilders.standaloneSetup(
-                                new BoardController(changes.projects()),
+                                new BoardController(changes.projects(), changes),
                                 new EventsController(changes, Duration.ofSeconds(2)))
                         .setControllerAdvice(new Problems())
                         .build();

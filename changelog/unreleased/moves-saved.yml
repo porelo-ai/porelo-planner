@@ -1,0 +1,2 @@
+title: The planner saves a batch of moves all or none, one commit per repository pushed with the person's own Git login, and tells every window the saved board.
+type: added

@@ -47,7 +47,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Issue", Answers.Issue.class),
                     Map.entry("IssueDetail", Answers.IssueDetail.class),
                     Map.entry("Board", Answers.Board.class),
-                    Map.entry("Refreshed", Answers.Refreshed.class));
+                    Map.entry("Refreshed", Answers.Refreshed.class),
+                    Map.entry("Moved", Answers.Moved.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {

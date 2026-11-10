@@ -8,19 +8,23 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,15 +41,153 @@ public class BoardController {
             Pattern.compile(
                     "(?m)^\\*\\*What must be true\\.\\*\\*[ \\t]*(.+(?:\\r?\\n(?!\\s*\\n).+)*)");
 
+    /** The most moves one batch may hold. */
+    private static final int MOST_MOVES = 200;
+
+    /** A state's name as a refusal may repeat it; anything else is never echoed. */
+    private static final Pattern STATE = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
+
     private final Projects projects;
+
+    private final ChangesRegistry changes;
 
     /**
      * Makes the controller.
      *
      * @param projects the projects the window has given
+     * @param changes tells a followed project's windows of a save
      */
-    public BoardController(final Projects projects) {
+    public BoardController(final Projects projects, final ChangesRegistry changes) {
         this.projects = projects;
+        this.changes = changes;
+    }
+
+    /**
+     * A batch of moves as the window sends it.
+     *
+     * @param revision the revision the window shows
+     * @param moves the moves, in order
+     * @param confirm whether a story may stand where its issues do not fit
+     */
+    public record MovesBody(
+            @Nullable String revision,
+            @Nullable List<@Nullable MoveBody> moves,
+            @Nullable Boolean confirm) {}
+
+    /**
+     * One move as the window sends it, naming a story or an issue.
+     *
+     * @param story the story's id, or null
+     * @param issue the issue's id, or null
+     * @param to the state it moves to
+     */
+    public record MoveBody(@Nullable String story, @Nullable String issue, @Nullable String to) {}
+
+    /**
+     * Saves a batch of moves, all or none.
+     *
+     * @param project the project's name
+     * @param body the batch
+     * @return the revision after the save and the issues moved
+     */
+    @PostMapping("/projects/{project}/moves")
+    public Answers.Moved saveMoves(
+            @PathVariable("project") final String project, @RequestBody final MovesBody body) {
+        final String name = name(project);
+        final List<Moves.Move> moves = moves(name, body);
+        final String revision = body.revision();
+        if (revision == null) {
+            throw notAllowed("", "", "The body names no revision.");
+        }
+        final PlanningStore store = projects.store(name);
+        final Board board = store.board();
+        if (!board.revision().value().equals(revision)) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        final Moves.Planned planned;
+        final Board saved;
+        try {
+            planned =
+                    Moves.check(
+                            board, moves, Boolean.TRUE.equals(body.confirm()), store::storyState);
+            if (planned.issues().isEmpty()
+                    && planned.stories().isEmpty()
+                    && planned.unstated().isEmpty()) {
+                // Nothing changes, so no repository is locked or asked.
+                return new Answers.Moved(board.revision().value(), planned.moved());
+            }
+            saved =
+                    store.save(
+                            board.revision(),
+                            new Writes(planned.issues(), planned.stories(), planned.unstated()));
+        } catch (final StoreException.PartlySaved e) {
+            // The repositories pushed first hold the save, and every window shows what they hold.
+            changes.saved(name);
+            throw e;
+        } catch (final StoreException.NotSavable e) {
+            final String item = e.subject();
+            throw notAllowed(
+                    item,
+                    board.issue(item)
+                            .map(Issue::state)
+                            .or(() -> board.story(item).map(Story::state))
+                            .orElse(""),
+                    String.valueOf(e.getMessage()),
+                    moves.stream()
+                            .filter(move -> move.id().equals(item))
+                            .map(Moves.Move::to)
+                            .findFirst()
+                            .orElse(""));
+        } catch (final UnsupportedOperationException e) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not save moves.",
+                    Map.of("project", name));
+        }
+        changes.saved(name);
+        return new Answers.Moved(saved.revision().value(), planned.moved());
+    }
+
+    private static List<Moves.Move> moves(final String project, final MovesBody body) {
+        final List<@Nullable MoveBody> given = body.moves();
+        if (given == null || given.size() > MOST_MOVES) {
+            throw notAllowed("", "", "Moves must be a list of at most " + MOST_MOVES + ".");
+        }
+        final List<Moves.Move> moves = new ArrayList<>();
+        for (final MoveBody move : given) {
+            if (move == null || (move.story() == null) == (move.issue() == null)) {
+                throw notAllowed("", "", "Each move must name exactly one item, once.");
+            }
+            final String story = move.story();
+            final String id =
+                    story != null
+                            ? checked(project, () -> Ids.story(story), "story")
+                            : checked(
+                                    project,
+                                    () -> Ids.issue(String.valueOf(move.issue())),
+                                    "issue");
+            final String to = move.to();
+            if (to == null || !STATE.matcher(to).matches()) {
+                throw notAllowed(id, "", "The destination must be a state's name.");
+            }
+            moves.add(new Moves.Move(story != null, id, to));
+        }
+        return moves;
+    }
+
+    private static Refusal notAllowed(final String item, final String from, final String reason) {
+        return notAllowed(item, from, reason, "");
+    }
+
+    private static Refusal notAllowed(
+            final String item, final String from, final String reason, final String to) {
+        final Map<String, String> parameters = new java.util.LinkedHashMap<>();
+        parameters.put("item", item);
+        parameters.put("from", from);
+        parameters.put("to", to);
+        parameters.put("reason", reason);
+        return new Refusal("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, parameters);
     }
 
     /**

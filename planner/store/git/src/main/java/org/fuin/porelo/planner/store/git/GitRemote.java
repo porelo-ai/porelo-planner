@@ -167,6 +167,122 @@ public final class GitRemote implements Remote {
         return entries(repository, commit, directory, "tree");
     }
 
+    @Override
+    public String commit(
+            final String repository,
+            final String parent,
+            final Path root,
+            final List<String> paths,
+            final String subject) {
+        final Path clone = clone(repository);
+        final Path index = root.resolve(".index-" + Ids.name(repository));
+        runIndexed(clone, index, List.of("read-tree", "--end-of-options", commit(parent)));
+        for (final String path : paths) {
+            final String checked = RepoPath.checked(path);
+            final Path file = root.resolve(checked);
+            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                throw new GitFailure(
+                        GitFailure.Kind.FAILED, repository + ": " + path + " is no plain file");
+            }
+            final String blob =
+                    text(run(
+                                    clone,
+                                    List.of(
+                                            "hash-object",
+                                            "-w",
+                                            "--no-filters",
+                                            "--",
+                                            file.toString())))
+                            .strip();
+            runIndexed(
+                    clone,
+                    index,
+                    List.of(
+                            "update-index",
+                            "--add",
+                            "--cacheinfo",
+                            mode(repository, parent, checked) + "," + blob + "," + checked));
+        }
+        final String tree = text(runIndexed(clone, index, List.of("write-tree"))).strip();
+        return commit(
+                text(run(
+                                clone,
+                                List.of(
+                                        "commit-tree",
+                                        "-p",
+                                        commit(parent),
+                                        "-m",
+                                        subject,
+                                        "--end-of-options",
+                                        tree)))
+                        .strip());
+    }
+
+    @Override
+    public void push(
+            final String repository,
+            final CloneUrl url,
+            final @Nullable String branch,
+            final String commit,
+            final String expected) {
+        final String ref =
+                "refs/heads/" + (branch == null ? defaultBranch(repository, url) : branch(branch));
+        run(
+                clone(repository),
+                List.of(
+                        "push",
+                        "--quiet",
+                        "--no-verify",
+                        "--force-with-lease=" + ref + ":" + commit(expected),
+                        "--",
+                        url.value(),
+                        commit(commit) + ":" + ref));
+    }
+
+    @Override
+    public void advance(final String repository, final String commit) {
+        run(clone(repository), List.of("update-ref", FETCHED, commit(commit)));
+    }
+
+    @Override
+    public Path scratch() {
+        try {
+            return Files.createTempDirectory(project, "save-");
+        } catch (final java.io.IOException e) {
+            throw new java.io.UncheckedIOException("no directory for the save", e);
+        }
+    }
+
+    /** The branch a remote's HEAD names, which a push needs by name. */
+    private String defaultBranch(final String repository, final CloneUrl url) {
+        final String out =
+                text(run(null, List.of("ls-remote", "--symref", "--", url.value(), "HEAD")));
+        for (final String line : out.split("\n")) {
+            if (line.startsWith("ref: refs/heads/") && line.endsWith("\tHEAD")) {
+                return branch(line.substring(16, line.length() - 5));
+            }
+        }
+        throw new GitFailure(
+                GitFailure.Kind.FAILED, "the remote of " + repository + " names no default branch");
+    }
+
+    /** A changed file keeps its mode; a new one is a plain file. */
+    private String mode(final String repository, final String commit, final String path) {
+        final String entry =
+                text(
+                        run(
+                                clone(repository),
+                                List.of("ls-tree", "-z", "--end-of-options", commit, "--", path)));
+        return entry.startsWith("100755 ") ? "100755" : "100644";
+    }
+
+    private byte[] runIndexed(final Path clone, final Path index, final List<String> arguments) {
+        final List<String> line = new ArrayList<>();
+        line.add("--git-dir=" + clone);
+        line.addAll(arguments);
+        return runner.run(GitCall.withIndex(environment, connectTimeout, index, line), clone);
+    }
+
     private List<String> entries(
             final String repository,
             final String commit,

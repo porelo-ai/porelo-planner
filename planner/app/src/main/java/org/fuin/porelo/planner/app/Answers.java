@@ -55,6 +55,14 @@ public final class Answers {
     public record Refreshed(String revision) {}
 
     /**
+     * The answer to a saved batch of moves.
+     *
+     * @param revision the board's revision after the save
+     * @param moved every issue the batch moved, each once
+     */
+    public record Moved(String revision, List<String> moved) {}
+
+    /**
      * A state.
      *
      * @param name its name

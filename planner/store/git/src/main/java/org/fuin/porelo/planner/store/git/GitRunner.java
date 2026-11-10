@@ -30,6 +30,11 @@ public final class GitRunner {
                             + "|permission denied \\(publickey|host key verification failed"
                             + "|invalid username or password|requested url returned error: 40[13]");
 
+    /** What Git prints when a push is refused because the branch moved or is not as leased. */
+    private static final Pattern REJECTED =
+            Pattern.compile(
+                    "\\[rejected\\]|\\(stale info\\)|\\(fetch first\\)|\\(non-fast-forward\\)");
+
     /**
      * User info in a URL, a slash in it too, and the token forms forges hand out, which Git may
      * echo in an error.
@@ -100,7 +105,11 @@ public final class GitRunner {
             final String err = new String(finished(errors, process), StandardCharsets.UTF_8);
             if (process.exitValue() != 0) {
                 final GitFailure.Kind kind =
-                        LOGIN.matcher(err).find() ? GitFailure.Kind.LOGIN : GitFailure.Kind.FAILED;
+                        LOGIN.matcher(err).find()
+                                ? GitFailure.Kind.LOGIN
+                                : REJECTED.matcher(err).find()
+                                        ? GitFailure.Kind.REJECTED
+                                        : GitFailure.Kind.FAILED;
                 throw new GitFailure(
                         kind, "git exited with " + process.exitValue() + ": " + scrubbed(err));
             }

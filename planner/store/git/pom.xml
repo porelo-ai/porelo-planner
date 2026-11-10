@@ -42,6 +42,12 @@
         </dependency>
         <dependency>
             <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-release</artifactId>
+            <version>${porelo.buildtools.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.fuin.porelo</groupId>
             <artifactId>porelo-planner-store-api</artifactId>
             <version>${project.version}</version>
         </dependency>

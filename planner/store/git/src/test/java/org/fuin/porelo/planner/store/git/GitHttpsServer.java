@@ -151,6 +151,10 @@ public final class GitHttpsServer implements AutoCloseable {
             env.put("GIT_CONFIG_NOSYSTEM", "1");
             env.put("GIT_PROJECT_ROOT", root.toString());
             env.put("GIT_HTTP_EXPORT_ALL", "1");
+            // A save pushes; a forge takes a push from a signed-in person alike.
+            env.put("GIT_CONFIG_COUNT", "1");
+            env.put("GIT_CONFIG_KEY_0", "http.receivepack");
+            env.put("GIT_CONFIG_VALUE_0", "true");
             env.put("REQUEST_METHOD", exchange.getRequestMethod());
             env.put("PATH_INFO", exchange.getRequestURI().getPath());
             final String query = exchange.getRequestURI().getRawQuery();

@@ -1,0 +1,280 @@
+package org.fuin.porelo.planner.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+
+import java.util.List;
+import java.util.Map;
+import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Workflow;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Test;
+
+/** A batch of moves checked against the board a window shows, saved all or none. */
+class MovesTest {
+
+    private static final List<String> STATES =
+            List.of("Idea", "Backlog", "Building", "Reading", "Review", "Finished", "Rejected");
+
+    private static final List<String> CLOSED = List.of("Finished", "Rejected");
+
+    /** Building and Reading are entered only by work, as the work rules name them. */
+    private static final Work WORK =
+            new Work(
+                    Map.of(
+                            "Building", rule("Reading"),
+                            "Reading", rule(null)),
+                    List.of());
+
+    /** The rule the stories index applies: the earliest open state, else the earliest closed. */
+    private static final Moves.StoryState DERIVE = MovesTest::derive;
+
+    private final Board board = board(WORK);
+
+    private static Board board(final Work work) {
+        return new Board(
+                new Revision("r1"),
+                new Workflow(STATES, List.of(), CLOSED),
+                List.of(
+                        story("ST1", "Backlog", false, "PL1", "PL2"),
+                        story("ST2", "Backlog", true),
+                        story("ST3", "Review", true, "PL3")),
+                List.of(
+                        issue("PL1", "Backlog", null),
+                        issue("PL2", "Review", null),
+                        issue("PL3", "Review", null),
+                        issue("PL4", "Review", null),
+                        issue("PL4.1", "Backlog", "PL4"),
+                        issue("PL4.2", "Finished", "PL4"),
+                        issue("PL5", "Finished", null),
+                        issue("PL5.1", "Finished", "PL5")),
+                work);
+    }
+
+    @Test
+    void aStoryMovesItsLeastAdvancedIssuesAndLeavesThoseFurtherOn() {
+        // A story move that moved every issue would undo work already in Review.
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST1", "Review")), false, DERIVE);
+        assertThat(planned.issues())
+                .as("only the issue in Backlog")
+                .containsExactly(entry("PL1", "Review"));
+        assertThat(planned.moved()).as("the window's expected issues").containsExactly("PL1");
+        assertThat(planned.stories()).as("its state follows from its issues").isEmpty();
+    }
+
+    @Test
+    void aStoryMovedWhereItsIssuesDoNotFitIsRefusedNamingThemUnlessConfirmed() {
+        // A story shown Rejected while an issue of it is in Review hides open work.
+        final Moves.Refused refused = refused(List.of(story("ST1", "Rejected")), false);
+        assertThat(refused.name()).isEqualTo("StoryStateMismatch");
+        assertThat(refused.parameters())
+                .as("the story, its target and each issue that does not fit")
+                .containsExactly(
+                        entry("story", "ST1"),
+                        entry("to", "Rejected"),
+                        entry("issues", "PL2:Review"));
+
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE);
+        assertThat(planned.issues())
+                .as("the Backlog issue")
+                .containsExactly(entry("PL1", "Rejected"));
+        assertThat(planned.stories())
+                .as("the story states its state")
+                .containsExactly(entry("ST1", "Rejected"));
+    }
+
+    @Test
+    void aStoryWithoutIssuesTakesTheStateItself() {
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST2", "Idea")), false, DERIVE);
+        assertThat(planned.stories()).containsExactly(entry("ST2", "Idea"));
+        assertThat(planned.issues()).isEmpty();
+    }
+
+    @Test
+    void aMoveIntoAWorkingStateIsRefusedSoTheWindowOffersTheWork() {
+        // Building entered without its work would show a story in work that nobody does.
+        final Moves.Refused refused = refused(List.of(issue("PL1", "Building")), false);
+        assertThat(refused.name()).isEqualTo("EnteredOnlyByWork");
+        assertThat(refused.parameters())
+                .containsExactly(entry("item", "PL1"), entry("to", "Building"));
+        assertThat(refused(List.of(story("ST2", "Reading")), false).name())
+                .as("a story too")
+                .isEqualTo("EnteredOnlyByWork");
+    }
+
+    @Test
+    void aMoveIntoAStateTheWorkflowDoesNotNameIsRefused() {
+        final Moves.Refused refused = refused(List.of(issue("PL1", "Shipped")), false);
+        assertThat(refused.name()).isEqualTo("StateNotAllowed");
+        assertThat(refused.parameters())
+                .containsEntry("item", "PL1")
+                .containsEntry("from", "Backlog")
+                .containsEntry("to", "Shipped");
+    }
+
+    @Test
+    void anItemNamedTwiceOrNotOnTheBoardIsRefused() {
+        // A batch naming an item twice would save whichever move came last.
+        final Moves.Refused twice =
+                refused(List.of(issue("PL1", "Review"), issue("PL1", "Finished")), false);
+        assertThat(twice.name()).isEqualTo("MoveNotAllowed");
+        assertThat(twice.parameters()).containsEntry("item", "PL1");
+        assertThat(refused(List.of(story("ST9", "Review")), false).parameters())
+                .as("an unknown story")
+                .containsExactly(entry("story", "ST9"));
+        assertThat(refused(List.of(story("ST9", "Review")), false).name()).isEqualTo("NoSuchStory");
+        assertThat(refused(List.of(issue("PL9", "Review")), false).name()).isEqualTo("NoSuchIssue");
+    }
+
+    @Test
+    void aParentIsClosedOnlyOnceEverySubIssueIsClosedAfterTheBatch() {
+        // A parent Finished over an open sub-issue would hide that work from the board.
+        final Moves.Refused refused = refused(List.of(issue("PL4", "Finished")), false);
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.parameters())
+                .containsEntry("item", "PL4")
+                .containsEntry("to", "Finished");
+        assertThat(refused.getMessage())
+                .as("names the open sub-issue")
+                .contains("PL4.1", "Backlog");
+
+        final Moves.Planned planned =
+                Moves.check(
+                        board,
+                        List.of(issue("PL4", "Finished"), issue("PL4.1", "Rejected")),
+                        false,
+                        DERIVE);
+        assertThat(planned.issues())
+                .as("closed together in one batch")
+                .containsExactly(entry("PL4", "Finished"), entry("PL4.1", "Rejected"));
+    }
+
+    @Test
+    void storyMovesApplyBeforeIssueMovesAsTheWindowSendsThem() {
+        // The window shows an explicit issue move made after a story move as the one that wins.
+        final Moves.Planned planned =
+                Moves.check(
+                        board,
+                        List.of(issue("PL1", "Rejected"), story("ST1", "Review")),
+                        true,
+                        DERIVE);
+        assertThat(planned.issues())
+                .as("the issue's own move wins")
+                .containsEntry("PL1", "Rejected");
+        assertThat(planned.moved()).containsExactlyInAnyOrder("PL1");
+    }
+
+    @Test
+    void aRefusedBatchPlansNothing() {
+        // One refused move must leave every other move of the batch unsaved.
+        final Moves.Refused refused =
+                refused(List.of(issue("PL1", "Review"), issue("PL2", "Building")), false);
+        assertThat(refused.name()).isEqualTo("EnteredOnlyByWork");
+    }
+
+    @Test
+    void aSubIssueReopenedUnderAClosedParentIsRefused() {
+        // A parent left Finished over a sub-issue in Backlog again hides open work.
+        final Moves.Refused refused = refused(List.of(issue("PL5.1", "Backlog")), false);
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.parameters())
+                .containsEntry("item", "PL5")
+                .containsEntry("to", "Finished");
+        assertThat(refused.getMessage()).contains("PL5.1", "Backlog");
+    }
+
+    @Test
+    void workRulesWithFaultsRefuseEveryMove() {
+        // A working state whose rule could not be read would be entered without its work.
+        final Board faulty = board(new Work(Map.of(), List.of("stories/work.yml: not YAML")));
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () -> Moves.check(faulty, List.of(issue("PL1", "Review")), false, DERIVE));
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.getMessage()).contains("stories/work.yml: not YAML");
+    }
+
+    @Test
+    void aStoryWithIssuesThatFitsItsTargetAgainLosesItsStatedState() {
+        // A stated state left behind would hold the story where its issues no longer are.
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST3", "Finished")), false, DERIVE);
+        assertThat(planned.issues()).containsExactly(entry("PL3", "Finished"));
+        assertThat(planned.stories()).as("no stated state").isEmpty();
+        assertThat(planned.unstated()).containsExactly("ST3");
+    }
+
+    @Test
+    void onlyIssuesWhoseStateChangesAreWrittenButEveryMovedIssueIsNamed() {
+        // A write of an unchanged head would make a commit that changes nothing.
+        final Moves.Planned planned =
+                Moves.check(
+                        board,
+                        List.of(issue("PL2", "Review"), story("ST1", "Review")),
+                        false,
+                        DERIVE);
+        assertThat(planned.issues())
+                .as("PL2 stays in Review")
+                .containsExactly(entry("PL1", "Review"));
+        assertThat(planned.moved()).as("as the window expects").containsExactly("PL1", "PL2");
+    }
+
+    private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class, () -> Moves.check(board, moves, confirm, DERIVE));
+        assertThat(refused).as("refused: " + moves).isNotNull();
+        return refused;
+    }
+
+    private static @Nullable String derive(final List<String> states) {
+        final List<String> open = states.stream().filter(state -> !CLOSED.contains(state)).toList();
+        final List<String> candidates = open.isEmpty() ? states : open;
+        return candidates.stream()
+                .min((a, b) -> STATES.indexOf(a) - STATES.indexOf(b))
+                .orElse(null);
+    }
+
+    private static Map.Entry<String, String> entry(final String key, final String value) {
+        return Map.entry(key, value);
+    }
+
+    private static Moves.Move story(final String id, final String to) {
+        return new Moves.Move(true, id, to);
+    }
+
+    private static Moves.Move issue(final String id, final String to) {
+        return new Moves.Move(false, id, to);
+    }
+
+    private static WorkRule rule(final @Nullable String then) {
+        return new WorkRule(
+                List.of("Backlog"),
+                "Review",
+                then,
+                null,
+                WorkRule.Per.STORY,
+                List.of("UNATTENDED"),
+                "Build {story}",
+                Map.of("codex", "gpt"));
+    }
+
+    private static Story story(
+            final String id, final String state, final boolean given, final String... issues) {
+        return new Story(id, "A story", state, given, "High", List.of(issues), "", null);
+    }
+
+    private static Issue issue(final String id, final String state, final @Nullable String parent) {
+        return new Issue(id, "porelo-planner", "An issue", state, "S", List.of(), parent, null, "");
+    }
+}

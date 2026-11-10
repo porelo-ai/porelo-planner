@@ -12,7 +12,9 @@ public final class GitFailure extends RuntimeException {
         /** The remote gave no answer in time. */
         UNREACHABLE,
         /** Any other failure. */
-        FAILED
+        FAILED,
+        /** The remote refused a push because its branch is not where the push expected it. */
+        REJECTED
     }
 
     private final Kind kind;

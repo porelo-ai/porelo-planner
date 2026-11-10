@@ -1,6 +1,10 @@
 package org.fuin.porelo.planner.store.git;
 
+import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,6 +26,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
@@ -29,6 +34,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -41,6 +47,9 @@ public final class GitStore implements PlanningStore {
     /** One board and what it was made of. */
     private record Snapshot(
             Board board, Map<String, String> commits, Map<String, Part> parts, Instant checked) {}
+
+    /** How long a save waits for a check or another save of the project. */
+    private static final Duration LOCK_WAIT = Duration.ofSeconds(30);
 
     private final List<Repository> repositories;
 
@@ -179,6 +188,425 @@ public final class GitStore implements PlanningStore {
         }
     }
 
+    /**
+     * Saves the writes: every repository they change gets one commit, all built and read back
+     * before the first push, the others' pushed before the own, each only while its branch still
+     * stands where it was fetched.
+     */
+    @Override
+    public Board save(final Revision revision, final Writes writes) {
+        final String own = repositories.get(0).name();
+        final ProjectLock.Held held =
+                lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own));
+        try (held) {
+            requireActive();
+            final Snapshot snapshot = current.get();
+            if (snapshot == null || !snapshot.board().revision().equals(revision)) {
+                throw new StoreException.StaleRevision(
+                        snapshot == null ? "" : snapshot.board().revision().value());
+            }
+            final Map<String, String> heads =
+                    each(
+                            repository ->
+                                    remote.head(
+                                            repository.name(),
+                                            repository.url(),
+                                            repository.branch()));
+            if (!heads.equals(snapshot.commits())) {
+                throw new StoreException.StaleRevision(revision(heads));
+            }
+            final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
+            final Map<String, String> stories = storyHeads(snapshot, writes);
+            if (issues.isEmpty() && stories.isEmpty()) {
+                return snapshot.board();
+            }
+            final Path scratch;
+            try {
+                scratch = remote.scratch();
+            } catch (final UncheckedIOException e) {
+                throw new StoreException.Unreadable(own, "no directory for the save");
+            }
+            try {
+                return commitAndPush(snapshot, writes, issues, stories, scratch);
+            } catch (final GitFailure | UncheckedIOException e) {
+                throw new StoreException.Unreadable(own, local(e, scratch));
+            } finally {
+                deleteScratch(scratch, own);
+            }
+        }
+    }
+
+    /** A scratch directory left behind holds only copies of fetched files; the answer stands. */
+    private void deleteScratch(final Path scratch, final String own) {
+        try {
+            SaveFiles.delete(scratch);
+        } catch (final UncheckedIOException e) {
+            lastFailure.set(new StoreException.Unreadable(own, local(e, scratch)));
+        }
+    }
+
+    /** A failure's words with the save's scratch directory taken out, so no local path is shown. */
+    private static String local(final Throwable thrown, final Path scratch) {
+        return GitRunner.scrubbed(
+                causes(thrown).replace(scratch + "/", "").replace(scratch.toString(), ""));
+    }
+
+    @Override
+    public @Nullable String storyState(final List<String> issueStates) {
+        final Snapshot snapshot = current.get();
+        final Part own = snapshot == null ? null : snapshot.parts().get(repositories.get(0).name());
+        final org.fuin.porelo.stories.Workflow workflow = own == null ? null : own.workflow();
+        if (workflow == null) {
+            throw new IllegalStateException("No board was read yet");
+        }
+        return workflow.storyState(null, issueStates);
+    }
+
+    /** Each written issue's file and new state, by repository; every issue checked savable. */
+    private Map<String, Map<String, String>> byRepository(
+            final Snapshot snapshot, final Writes writes) {
+        final Map<String, Map<String, String>> files = new LinkedHashMap<>();
+        for (final Map.Entry<String, String> write : writes.issues().entrySet()) {
+            final String id = write.getKey();
+            final Issue issue =
+                    snapshot.board()
+                            .issue(id)
+                            .orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            final String name = issue.repository();
+            final String path = of(snapshot.parts(), name).paths().get(id);
+            if (path == null) {
+                throw new StoreException.NotSavable(
+                        id, "its file is gone and only its index row is left");
+            }
+            final String commit = of(snapshot.commits(), name);
+            // The repository's commit check refuses a state change without the issue's record.
+            if (records(name, commit, "stats/seed.csv")
+                    && !records(name, commit, "stats/" + id + ".jsonl")) {
+                throw new StoreException.NotSavable(
+                        id, "the repository records issue stats and this issue has none");
+            }
+            files.computeIfAbsent(name, key -> new LinkedHashMap<>()).put(path, write.getValue());
+        }
+        return files;
+    }
+
+    private boolean records(final String name, final String commit, final String path) {
+        try {
+            return remote.read(name, commit, path).isPresent();
+        } catch (final GitFailure e) {
+            throw refusal(name, e);
+        }
+    }
+
+    /** Each written story's file and its new stated state, empty where it goes. */
+    private Map<String, String> storyHeads(final Snapshot snapshot, final Writes writes) {
+        final Part own = of(snapshot.parts(), repositories.get(0).name());
+        final Map<String, String> files = new LinkedHashMap<>();
+        final Map<String, String> states = new LinkedHashMap<>(writes.stories());
+        writes.unstated().forEach(id -> states.put(id, ""));
+        for (final Map.Entry<String, String> write : states.entrySet()) {
+            final String id = write.getKey();
+            final String path = own.paths().get(Part.story(id));
+            if (path == null) {
+                throw new StoreException.NoSuchStory(id);
+            }
+            files.put(path, write.getValue());
+        }
+        return files;
+    }
+
+    private Board commitAndPush(
+            final Snapshot snapshot,
+            final Writes writes,
+            final Map<String, Map<String, String>> issues,
+            final Map<String, String> stories,
+            final Path scratch) {
+        final String own = repositories.get(0).name();
+        final Map<String, Map<String, String>> before = new LinkedHashMap<>();
+        for (final Repository repository : repositories) {
+            final String name = repository.name();
+            try {
+                before.put(
+                        name,
+                        SaveFiles.write(
+                                remote,
+                                name,
+                                of(snapshot.commits(), name),
+                                scratch.resolve(Ids.name(name))));
+            } catch (final GitFailure | IllegalArgumentException e) {
+                throw refusal(name, e);
+            }
+        }
+        final Map<String, List<String>> rewritten = new LinkedHashMap<>();
+        for (final Map.Entry<String, Map<String, String>> repository : issues.entrySet()) {
+            final String name = repository.getKey();
+            final Path root = scratch.resolve(name);
+            for (final Map.Entry<String, String> head : repository.getValue().entrySet()) {
+                edit(
+                        snapshot,
+                        name,
+                        root,
+                        head.getKey(),
+                        text -> HeadEdit.issueState(text, head.getValue()));
+            }
+            final org.fuin.porelo.stories.IssuesIndex.Result index;
+            try {
+                index = org.fuin.porelo.stories.IssuesIndex.write(root.resolve("issues"));
+            } catch (final IOException | UncheckedIOException e) {
+                throw new StoreException.Unreadable(name, local(e, scratch));
+            } catch (final IllegalArgumentException e) {
+                throw new StoreException.NotSavable("", local(e, scratch));
+            }
+            refuseFaults(snapshot, name, repository.getValue().keySet(), index.faults());
+            rewritten.put(name, new ArrayList<>(relative(root, index.written())));
+        }
+        final Path ownRoot = scratch.resolve(own);
+        for (final Map.Entry<String, String> head : stories.entrySet()) {
+            final String state = head.getValue();
+            edit(
+                    snapshot,
+                    own,
+                    ownRoot,
+                    head.getKey(),
+                    text -> HeadEdit.storyState(text, state.isEmpty() ? null : state));
+        }
+        if (Files.isDirectory(ownRoot.resolve("stories"))) {
+            final org.fuin.porelo.stories.StoriesIndex.Result index;
+            try {
+                index =
+                        org.fuin.porelo.stories.StoriesIndex.write(
+                                ownRoot.resolve("stories"),
+                                org.fuin.porelo.stories.IssueSource.local(ownRoot));
+            } catch (final IOException | UncheckedIOException e) {
+                throw new StoreException.Unreadable(own, local(e, scratch));
+            } catch (final IllegalArgumentException e) {
+                // A project.yml the library refuses, such as one naming a central it does not take.
+                throw new StoreException.NotSavable("", local(e, scratch));
+            }
+            final List<String> edited = new ArrayList<>(stories.keySet());
+            issues.values().forEach(heads -> edited.addAll(heads.keySet()));
+            refuseFaults(snapshot, own, edited, index.faults());
+            rewritten
+                    .computeIfAbsent(own, key -> new ArrayList<>())
+                    .addAll(relative(ownRoot, index.written()));
+        }
+        final Map<String, String> subjects = new LinkedHashMap<>();
+        final Map<String, List<String>> changed = new LinkedHashMap<>();
+        for (final Repository repository : repositories) {
+            final String name = repository.name();
+            final Map<String, String> edited = issues.getOrDefault(name, Map.of());
+            // The heads edited and every file the index library rewrote, the story texts too.
+            final List<String> heads = new ArrayList<>(edited.keySet());
+            heads.addAll(rewritten.getOrDefault(name, List.of()));
+            if (name.equals(own)) {
+                heads.addAll(stories.keySet());
+            }
+            final List<String> paths =
+                    SaveFiles.changed(scratch.resolve(name), of(before, name), heads);
+            if (paths.isEmpty()) {
+                continue;
+            }
+            final Map<String, String> movedIssues = new LinkedHashMap<>();
+            writes.issues()
+                    .forEach(
+                            (id, state) -> {
+                                final String path = of(snapshot.parts(), name).paths().get(id);
+                                if (path != null && edited.containsKey(path)) {
+                                    movedIssues.put(id, state);
+                                }
+                            });
+            final Map<String, String> movedStories =
+                    name.equals(own) ? stories : Map.<String, String>of();
+            subjects.put(name, SaveFiles.subject(movedIssues, movedStories));
+            changed.put(name, paths);
+        }
+        final Map<String, String> made = new LinkedHashMap<>();
+        final Map<String, Part> after = new LinkedHashMap<>(snapshot.parts());
+        for (final Map.Entry<String, List<String>> entry : changed.entrySet()) {
+            final String name = entry.getKey();
+            try {
+                final String commit =
+                        remote.commit(
+                                name,
+                                of(snapshot.commits(), name),
+                                scratch.resolve(name),
+                                entry.getValue(),
+                                of(subjects, name));
+                readBack(name, commit, scratch.resolve(name), entry.getValue());
+                after.put(name, reader.read(repository(name), commit, own(repository(name))));
+                made.put(name, commit);
+            } catch (final GitFailure e) {
+                throw refusal(name, e);
+            }
+        }
+        // The whole board after the save reads before anything leaves.
+        final Map<String, String> all = new LinkedHashMap<>(snapshot.commits());
+        all.putAll(made);
+        board(all, after);
+        // The own repository last: its stories index names the others' states, pushed first.
+        final List<String> order = new ArrayList<>(made.keySet());
+        if (order.remove(own)) {
+            order.add(own);
+        }
+        final List<String> pushed = new ArrayList<>();
+        final Map<String, String> commits = new LinkedHashMap<>(snapshot.commits());
+        for (final String name : order) {
+            final Repository repository = repository(name);
+            try {
+                remote.push(
+                        name,
+                        repository.url(),
+                        repository.branch(),
+                        of(made, name),
+                        of(snapshot.commits(), name));
+            } catch (final GitFailure e) {
+                if (pushed.isEmpty()) {
+                    if (e.kind() == GitFailure.Kind.REJECTED) {
+                        throw new StoreException.StaleRevision(revision(heads()));
+                    }
+                    throw refusal(name, e);
+                }
+                final StoreException.PartlySaved partly =
+                        new StoreException.PartlySaved(
+                                name, pushed, String.valueOf(refusal(name, e).getMessage()));
+                try {
+                    swapAfter(snapshot, commits, after);
+                } catch (final RuntimeException board) {
+                    partly.addSuppressed(board);
+                }
+                throw partly;
+            }
+            commits.put(name, of(made, name));
+            pushed.add(name);
+            try {
+                remote.advance(name, of(made, name));
+            } catch (final GitFailure e) {
+                // The remote holds the save; the next fetch records its commit in the clone.
+                lastFailure.set(
+                        new StoreException.Unreadable(name, String.valueOf(e.getMessage())));
+            }
+        }
+        return swapAfter(snapshot, commits, after).board();
+    }
+
+    /** Edits one head, a refusal naming the item whose file it is. */
+    private static void edit(
+            final Snapshot snapshot,
+            final String name,
+            final Path root,
+            final String path,
+            final java.util.function.UnaryOperator<String> edit) {
+        final Path file = root.resolve(path);
+        try {
+            Files.writeString(
+                    file,
+                    edit.apply(Files.readString(file, StandardCharsets.UTF_8)),
+                    StandardCharsets.UTF_8);
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable(
+                    item(snapshot, name, path), String.valueOf(e.getMessage()));
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(
+                    name, item(snapshot, name, path) + " could not be edited");
+        }
+    }
+
+    /** Refuses the save when the index library finds faults, naming the moved item they concern. */
+    private static void refuseFaults(
+            final Snapshot snapshot,
+            final String name,
+            final java.util.Collection<String> edited,
+            final List<String> faults) {
+        if (faults.isEmpty()) {
+            return;
+        }
+        String item = "";
+        for (final String path : edited) {
+            final String file = path.substring(path.lastIndexOf('/') + 1);
+            if (faults.stream().anyMatch(fault -> fault.startsWith(file + ":"))) {
+                item = item(snapshot, name, path);
+                break;
+            }
+        }
+        throw new StoreException.NotSavable(
+                item, "the planning index refuses it: " + GitRunner.scrubbed(faults.get(0)));
+    }
+
+    /** The id of the issue or story whose file a path is, or empty. */
+    private static String item(final Snapshot snapshot, final String name, final String path) {
+        final Part part = snapshot.parts().get(name);
+        if (part == null) {
+            return "";
+        }
+        return part.paths().entrySet().stream()
+                .filter(entry -> entry.getValue().equals(path))
+                .map(Map.Entry::getKey)
+                .map(
+                        key ->
+                                key.startsWith(Part.story(""))
+                                        ? key.substring(Part.story("").length())
+                                        : key)
+                .findFirst()
+                .orElse("");
+    }
+
+    private static List<String> relative(final Path root, final List<Path> written) {
+        return written.stream()
+                .map(path -> root.relativize(path.toAbsolutePath().normalize()))
+                .filter(path -> !path.startsWith(".."))
+                .map(path -> path.toString().replace('\\', '/'))
+                .toList();
+    }
+
+    private Repository repository(final String name) {
+        return repositories.stream().filter(r -> r.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    /** Every repository's branch head as the remotes hold it now. */
+    private Map<String, String> heads() {
+        return each(
+                repository ->
+                        remote.head(repository.name(), repository.url(), repository.branch()));
+    }
+
+    /** The board after a save, its changed repositories as read before the first push. */
+    private Snapshot swapAfter(
+            final Snapshot snapshot,
+            final Map<String, String> commits,
+            final Map<String, Part> after) {
+        final Map<String, Part> parts = new LinkedHashMap<>(snapshot.parts());
+        for (final Repository repository : repositories) {
+            final String name = repository.name();
+            if (!of(commits, name).equals(snapshot.commits().get(name))) {
+                parts.put(name, of(after, name));
+            }
+        }
+        return swap(commits, parts, snapshot.checked());
+    }
+
+    /** A commit is pushed only once it holds exactly what the save wrote. */
+    private void readBack(
+            final String name, final String commit, final Path root, final List<String> paths) {
+        for (final String path : paths) {
+            final String wrote;
+            try {
+                wrote = Files.readString(root.resolve(path), StandardCharsets.UTF_8);
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (!remote.read(name, commit, path).orElse("").equals(wrote)) {
+                throw new StoreException.Unreadable(
+                        name, path + " reads back otherwise than the save wrote it");
+            }
+        }
+    }
+
+    private String revision(final Map<String, String> commits) {
+        return repositories.stream()
+                .map(repository -> repository.name() + "@" + of(commits, repository.name()))
+                .collect(Collectors.joining(" "));
+    }
+
     @Override
     public void retire() {
         retired.set(true);
@@ -272,15 +700,7 @@ public final class GitStore implements PlanningStore {
         for (final Repository repository : repositories) {
             issues.addAll(of(parts, repository.name()).issues());
         }
-        final Revision revision =
-                new Revision(
-                        repositories.stream()
-                                .map(
-                                        repository ->
-                                                repository.name()
-                                                        + "@"
-                                                        + of(commits, repository.name()))
-                                .collect(Collectors.joining(" ")));
+        final Revision revision = new Revision(revision(commits));
         try {
             final Workflow workflow =
                     new Workflow(
@@ -409,7 +829,7 @@ public final class GitStore implements PlanningStore {
                 case UNREACHABLE ->
                         new StoreException.Unreachable(
                                 repository, String.valueOf(git.getMessage()));
-                case FAILED ->
+                case FAILED, REJECTED ->
                         new StoreException.Unreadable(repository, String.valueOf(git.getMessage()));
             };
         }

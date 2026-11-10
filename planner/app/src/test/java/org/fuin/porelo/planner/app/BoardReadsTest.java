@@ -8,10 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -145,7 +147,13 @@ class BoardReadsTest {
                         },
                         8);
         mvc =
-                MockMvcBuilders.standaloneSetup(new BoardController(projects))
+                MockMvcBuilders.standaloneSetup(
+                                new BoardController(
+                                        projects,
+                                        new ChangesRegistry(
+                                                projects,
+                                                Duration.ofHours(1),
+                                                Executors.newSingleThreadScheduledExecutor())))
                         .setControllerAdvice(new Problems())
                         .build();
     }

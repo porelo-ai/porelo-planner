@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL05",
   "title": "Moves Saved All Or None",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 4,
@@ -88,6 +88,26 @@ under it is Finished. After a save the stories index reads as the project's own 
   its indexes equal to what the library writes; a remote that moved is `StaleRevision` with nothing changed locally or
   remotely; two saves on one revision, one wins; a save waits for a refresh. `MovesEndpointTest` - each refusal's
   name and parameters, and the told board.
+
+### As built
+
+- **Only Porelo's own projects save.** The stories library takes a repository's central in `project.yml` only under
+  `github.com/porelo-ai`; for any other project rewriting the stories index fails, and the save is refused as
+  `MoveNotAllowed` before anything is committed or pushed. A repository other than `porelo-project` needs its own
+  `issues/workflow.yml` for the stories index, as the library reads it there.
+- **`NotOffered` (501)** answers a store that saves nothing, as the mock mode's does.
+- **A store that cannot save an issue** answers `MoveNotAllowed` naming the issue, its state and its target.
+- **A push never overwrites a moved branch**: the planner's clone is shallow, so Git refuses any push that is not a
+  fast-forward of the commit fetched, and the lease refuses one onto a branch rewound since; the test holds the
+  outcome, a rewound branch left as it is.
+- **The index library has the last word before a push**: a fault it finds refuses the save as `MoveNotAllowed`
+  naming the moved item whose file it concerns, and every file it rewrites - the story texts above `## Data` too -
+  goes into the commit, so what is pushed passes the repository's index check. The board the commits give is read
+  before the first push.
+- **A push the remote took is told as taken**: a clone that cannot record the pushed commit only delays that to the
+  next fetch, and after a partly saved batch every window is told the board the pushed repositories hold.
+- **Two moves of one item in a batch** are refused as `MoveNotAllowed`; a story's move and its issue's own move in
+  one batch are allowed, the issue's own move winning, as the window shows the batch.
 
 ## Acceptance
 
