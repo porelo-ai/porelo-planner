@@ -335,7 +335,11 @@ public final class GitStore implements PlanningStore {
             throw new IllegalArgumentException(story.id() + " states no state and names no issue");
         }
         // With issues the rule reads only their states, never the stated one.
-        final String state = stated != null ? stated : workflow.storyState("", states);
+        final String state = stated != null ? stated : workflow.storyState(null, states);
+        if (state == null) {
+            throw new IllegalArgumentException(
+                    story.id() + ": no state follows from its issues' states " + states);
+        }
         return new Story(
                 story.id(),
                 story.title(),
