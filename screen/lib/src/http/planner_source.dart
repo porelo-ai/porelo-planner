@@ -58,10 +58,16 @@ class PlannerAddress {
 
   /// Reads the address file the planner of this account wrote under [runtimeDirectory], `XDG_RUNTIME_DIR` when
   /// null; when that is blank, under `<runUser>/<uid>` as the planner falls back, with the uid [uid] answers.
+  ///
+  /// The file is trusted only when no other account can have placed or swapped it: every directory above the
+  /// runtime directory belongs to root or this account, one others may write being sticky as `/tmp` is; the runtime
+  /// directory, its `porelo-planner` directory and `planner.json` are this account's, no symbolic link, and closed to
+  /// group and others. [stat] answers each path's owner and mode, the link itself for a link.
   static Future<PlannerAddress> read({
     String? runtimeDirectory,
     String runUser = '/run/user',
     Future<int?> Function() uid = _ownUid,
+    Future<List<({int owner, int mode})>?> Function(List<String> paths) stat = _stat,
   }) async {
     var runtime = runtimeDirectory ?? Platform.environment['XDG_RUNTIME_DIR'] ?? '';
     if (runtime.trim().isEmpty) {
@@ -74,16 +80,31 @@ class PlannerAddress {
     if (!runtime.startsWith('/')) {
       throw const PlanningRefusal('NoAddress', {}, 'XDG_RUNTIME_DIR is not an absolute path');
     }
-    final path = '$runtime/$directory/$file';
+    final own = await uid();
+    if (own == null) {
+      throw const PlanningRefusal('NoAddress', {}, 'this account\'s uid is unknown');
+    }
+    final steps = runtime.split('/').where((step) => step.isNotEmpty).toList();
+    // A `.` or `..`, or a trailing `/.`, would let a link stand where the checks below see a directory.
+    if (steps.any((step) => step == '.' || step == '..')) {
+      throw const PlanningRefusal('BadAddress', {}, 'XDG_RUNTIME_DIR names . or ..');
+    }
+    final base = '/${steps.join('/')}';
+    final above = ['/', for (var count = 1; count < steps.length; count++) '/${steps.take(count).join('/')}'];
+    final path = '$base/$directory/$file';
+    final paths = [...above, base, '$base/$directory', path];
+    final entries = await stat(paths);
+    if (entries == null || entries.length != paths.length) {
+      throw PlanningRefusal('NoAddress', const {}, 'no planner runs: $path cannot be read');
+    }
+    for (var index = 0; index < above.length; index++) {
+      _above(above[index], entries[index], own);
+    }
+    _ownOnly(base, entries[above.length], own, _directoryType);
+    _ownOnly('$base/$directory', entries[above.length + 1], own, _directoryType);
+    _ownOnly(path, entries[above.length + 2], own, _fileType);
     RandomAccessFile? opened;
     try {
-      if (await FileSystemEntity.type(path, followLinks: false) != FileSystemEntityType.file) {
-        throw PlanningRefusal('NoAddress', const {}, 'no planner runs: $path is not a file');
-      }
-      // The planner writes it owner-only; a file others may read has leaked its token or was not written by it.
-      if ((await File(path).stat()).mode & 0x3f != 0) {
-        throw PlanningRefusal('BadAddress', const {}, '$path may be read or written by other accounts');
-      }
       opened = await File(path).open();
       final bytes = await opened.read(_addressBytes + 1);
       if (bytes.length > _addressBytes) {
@@ -97,6 +118,65 @@ class PlannerAddress {
       await opened?.close();
     }
   }
+
+  /// Each path's owner and mode from stat(1), which reads a link itself, since Dart's FileStat has no owner; null
+  /// when any cannot be read.
+  static Future<List<({int owner, int mode})>?> _stat(List<String> paths) async {
+    final ProcessResult result;
+    try {
+      result = await Process.run('/usr/bin/stat', ['--format=%u %f', '--', ...paths], environment: {'LC_ALL': 'C'});
+    } on ProcessException {
+      return null;
+    }
+    if (result.exitCode != 0) return null;
+    final entries = <({int owner, int mode})>[];
+    for (final line in const LineSplitter().convert(result.stdout as String)) {
+      final fields = line.split(' ');
+      final owner = fields.length == 2 ? int.tryParse(fields[0]) : null;
+      final mode = fields.length == 2 ? int.tryParse(fields[1], radix: 16) : null;
+      if (owner == null || mode == null) return null;
+      entries.add((owner: owner, mode: mode));
+    }
+    return entries;
+  }
+
+  /// Refuses a directory above the runtime directory that another account could change: one not root's or this
+  /// account's, or one others may write that is not sticky. A link of root or this account is followed.
+  static void _above(String path, ({int owner, int mode}) entry, int own) {
+    if (entry.owner != 0 && entry.owner != own) {
+      throw PlanningRefusal('BadAddress', const {}, '$path belongs to another account');
+    }
+    final type = entry.mode & _typeBits;
+    if (type == _linkType) return;
+    if (type != _directoryType) {
+      throw PlanningRefusal('BadAddress', const {}, '$path is not a directory');
+    }
+    if (entry.mode & _othersWrite != 0 && entry.mode & _sticky == 0) {
+      throw PlanningRefusal('BadAddress', const {}, '$path may be changed by other accounts');
+    }
+  }
+
+  /// Refuses [path] unless it is of [type], not a symbolic link, owned by [own] and with no bit for group or others.
+  static void _ownOnly(String path, ({int owner, int mode}) entry, int own, int type) {
+    final (:owner, :mode) = entry;
+    if (mode & _typeBits != type) {
+      throw PlanningRefusal('BadAddress', const {}, '$path is not a ${type == _fileType ? 'file' : 'directory'}');
+    }
+    if (owner != own) {
+      throw PlanningRefusal('BadAddress', const {}, '$path belongs to another account');
+    }
+    // The planner makes them owner-only; one others may open has leaked its token or was not made by it.
+    if (mode & 0x3f != 0) {
+      throw PlanningRefusal('BadAddress', const {}, '$path may be read or written by other accounts');
+    }
+  }
+
+  static const _typeBits = 0xf000;
+  static const _directoryType = 0x4000;
+  static const _fileType = 0x8000;
+  static const _linkType = 0xa000;
+  static const _othersWrite = 0x12;
+  static const _sticky = 0x200;
 
   /// This account's uid from the `Uid:` line of `/proc/self/status`, or null when it cannot be read.
   static Future<int?> _ownUid() async {

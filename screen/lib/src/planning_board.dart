@@ -834,7 +834,8 @@ class PlanningBoards extends ChangeNotifier {
     for (final entry in wanted.entries) {
       if (_boards[entry.key] case final existing?) {
         final connected = providers.any((provider) => provider.name == entry.key.$1 && provider.connected);
-        if (connected && _connected[entry.key.$1] == false) {
+        // A board that failed, such as for a repository not yet named, tries again with each change.
+        if (connected && (!existing.live && existing.problem != null || _connected[entry.key.$1] == false)) {
           unawaited(existing.changeProject(entry.value, entry.key.$2));
         }
         continue;
@@ -973,6 +974,12 @@ class PlanningBoards extends ChangeNotifier {
   }
 }
 
+/// [words] without control characters and at most 4096 characters long, for the screen.
+String _shown(String words) {
+  final safe = words.replaceAll(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'), '');
+  return safe.length > 4096 ? safe.substring(0, 4096) : safe;
+}
+
 /// Preserves a daemon refusal in its own detail words.
 String planningFailureWords(Object error) {
   if (error is PlanningRefusal) {
@@ -985,11 +992,11 @@ String planningFailureWords(Object error) {
     final retry = error.parameters['retryAfter'];
     if (words != null) return '$words${retry is int && retry > 0 ? ' — try again in $retry s' : ''}';
     if (error.name == 'PlanningAdapterError') {
-      final diagnostic = '${error.parameters['error']}: ${error.parameters['parameters']}';
-      final safe = diagnostic.replaceAll(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'), '');
-      return safe.length > 4096 ? safe.substring(0, 4096) : safe;
+      return _shown('${error.parameters['error']}: ${error.parameters['parameters']}');
     }
     if (error.name == 'EnteredOnlyByWork') return '${error.parameters['to']} can be entered only by work.';
+    // The planner's refusals carry their sentence here alone.
+    if (error.description.trim().isNotEmpty) return _shown(error.description);
     return '${error.name}: ${error.parameters}';
   }
   if (error is StateError) return error.message.toString();

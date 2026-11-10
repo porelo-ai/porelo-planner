@@ -195,6 +195,20 @@ Future<(_Planner, HttpPlanningSource)> _started({
   return (planner, source);
 }
 
+/// A runtime directory with its `porelo-planner` directory, both owner-only as the planner makes them.
+Future<Directory> _ownRuntime() async {
+  final runtime = await Directory.systemTemp.createTemp('planner-address');
+  addTearDown(() async {
+    await Process.run('chmod', ['-R', 'u+rwx', runtime.path]);
+    await runtime.delete(recursive: true);
+  });
+  await Directory('${runtime.path}/porelo-planner').create();
+  await Process.run('chmod', ['700', runtime.path, '${runtime.path}/porelo-planner']);
+  return runtime;
+}
+
+Future<int> _uid() async => int.parse(((await Process.run('id', ['-u'])).stdout as String).trim());
+
 Future<PlanningRefusal> _refusal(Future<Object?> call) async {
   try {
     await call;
@@ -434,8 +448,7 @@ void main() {
 
   // Harm: an address file others could read or write is trusted, though its token may be theirs or leaked.
   test('the address file is read only when it is the account\'s own', () async {
-    final runtime = await Directory.systemTemp.createTemp('planner-address');
-    addTearDown(() => runtime.delete(recursive: true));
+    final runtime = await _ownRuntime();
     final file = File('${runtime.path}/porelo-planner/planner.json');
 
     final missing = await _refusal(PlannerAddress.read(runtimeDirectory: runtime.path));
@@ -452,17 +465,119 @@ void main() {
     expect(address.port, 4711);
   });
 
+  // Harm: a runtime directory pointed at a shared place hands the window another account's planner and its token.
+  test('the address is read only from directories and a file this account owns and others cannot open', () async {
+    final runtime = await _ownRuntime();
+    final own = await _uid();
+    final planner = '${runtime.path}/porelo-planner';
+    final file = File('$planner/planner.json');
+    await file.writeAsString('{"port": 4711, "token": "$_token"}');
+    await Process.run('chmod', ['600', file.path]);
+    Future<String> refused(String path, {int? uid}) async =>
+        (await _refusal(PlannerAddress.read(runtimeDirectory: path, uid: () async => uid ?? own))).name;
+
+    expect((await PlannerAddress.read(runtimeDirectory: runtime.path)).port, 4711, reason: 'all of it its own');
+
+    await Process.run('chmod', ['755', runtime.path]);
+    expect(await refused(runtime.path), 'BadAddress', reason: 'a runtime directory others may open');
+    await Process.run('chmod', ['700', runtime.path]);
+
+    await Process.run('chmod', ['755', planner]);
+    expect(await refused(runtime.path), 'BadAddress', reason: 'a porelo-planner directory others may open');
+    await Process.run('chmod', ['700', planner]);
+
+    expect(await refused(runtime.path, uid: own + 1), 'BadAddress', reason: 'owned by another account');
+
+    final elsewhere = await _ownRuntime();
+    await Directory('${elsewhere.path}/porelo-planner').delete();
+    await Link('${elsewhere.path}/porelo-planner').create(planner);
+    expect(await refused(elsewhere.path), 'BadAddress', reason: 'porelo-planner a symbolic link');
+
+    final linked = '${elsewhere.path}/runtime';
+    await Link(linked).create(runtime.path);
+    expect(await refused(linked), 'BadAddress', reason: 'the runtime directory a symbolic link');
+
+    expect(await refused('relative/run'), 'NoAddress', reason: 'a relative runtime directory');
+    expect(await refused('${runtime.path}/.'), 'BadAddress', reason: 'a path that would follow a link');
+    expect(await refused('${elsewhere.path}/../${runtime.path.split('/').last}'), 'BadAddress', reason: 'a ..');
+    final unknown = await _refusal(PlannerAddress.read(runtimeDirectory: runtime.path, uid: () async => null));
+    expect(unknown.name, 'NoAddress', reason: 'no uid, nothing to compare the owners with');
+
+    for (final (target, mode) in [(runtime.path, '750'), (planner, '705'), (file.path, '640'), (file.path, '604')]) {
+      await Process.run('chmod', [mode, target]);
+      expect(await refused(runtime.path), 'BadAddress', reason: '$target with mode $mode');
+      await Process.run('chmod', [target == file.path ? '600' : '700', target]);
+    }
+
+    await file.rename('$planner/real.json');
+    await Link(file.path).create('$planner/real.json');
+    expect(await refused(runtime.path), 'BadAddress', reason: 'planner.json a symbolic link');
+
+    await file.delete();
+    await Process.run('mkfifo', ['-m', '600', file.path]);
+    expect(await refused(runtime.path), 'BadAddress', reason: 'a pipe, whose read would wait for ever');
+  });
+
+  // Harm: a step on the way owned or changeable by another account lets it swap the address file after the checks.
+  test('every directory on the way is owned by root or this account, and one others may write is sticky', () async {
+    const own = 4242424;
+    const directory = 0x41c0, file = 0x8180, link = 0xa1ff;
+    Future<String> answer(Map<String, ({int owner, int mode})> differ) async {
+      final read = PlannerAddress.read(
+        runtimeDirectory: '/run/user/4242424',
+        uid: () async => own,
+        stat: (paths) async => [
+          for (final path in paths)
+            differ[path] ??
+                (path == '/run/user/4242424/porelo-planner/planner.json'
+                    ? (owner: own, mode: file)
+                    : path.startsWith('/run/user/4242424')
+                    ? (owner: own, mode: directory)
+                    : (owner: 0, mode: 0x41ed)),
+        ],
+      );
+      try {
+        await read;
+      } on PlanningRefusal catch (refusal) {
+        return refusal.name;
+      } on FileSystemException {
+        return 'read';
+      }
+      return 'read';
+    }
+
+    expect(await answer({}), 'NoAddress', reason: 'all checks passed; the fake file does not exist to read');
+    expect(await answer({'/run': (owner: 4242425, mode: 0x41ed)}), 'BadAddress', reason: 'an ancestor of another');
+    expect(await answer({'/run/user': (owner: 0, mode: 0x41ff)}), 'BadAddress', reason: 'world-writable, not sticky');
+    expect(await answer({'/run/user': (owner: 0, mode: 0x43ff)}), 'NoAddress', reason: 'sticky, as /tmp is');
+    expect(await answer({'/run': (owner: 0, mode: link)}), 'NoAddress', reason: 'root\'s link, as /var/run is');
+    expect(await answer({'/run': (owner: 4242425, mode: link)}), 'BadAddress', reason: 'another account\'s link');
+    expect(
+      await answer({'/run/user/4242424/porelo-planner': (owner: 4242425, mode: directory)}),
+      'BadAddress',
+      reason: 'porelo-planner of another',
+    );
+    expect(
+      await answer({'/run/user/4242424/porelo-planner/planner.json': (owner: 4242425, mode: file)}),
+      'BadAddress',
+      reason: 'planner.json of another',
+    );
+  });
+
   // Harm: without XDG_RUNTIME_DIR the window looks elsewhere than the planner wrote, and finds no planner.
   test(
     'without a runtime directory the address is read where the planner falls back to, by this account\'s uid',
     () async {
       final runUser = await Directory.systemTemp.createTemp('run-user');
       addTearDown(() => runUser.delete(recursive: true));
-      final uid = int.parse(((await Process.run('id', ['-u'])).stdout as String).trim());
+      final uid = await _uid();
       final file = File('${runUser.path}/$uid/porelo-planner/planner.json');
       await file.create(recursive: true);
       await file.writeAsString('{"port": 4712, "token": "$_token"}');
       await Process.run('chmod', ['600', file.path]);
+      await Process.run('chmod', ['700', '${runUser.path}/$uid', '${runUser.path}/$uid/porelo-planner']);
+      // As /run/user is: no other account may change it.
+      await Process.run('chmod', ['755', runUser.path]);
 
       final address = await PlannerAddress.read(runtimeDirectory: ' ', runUser: runUser.path);
       final unknown = await _refusal(
@@ -476,8 +591,7 @@ void main() {
 
   // Harm: an address file that cannot be read, or vanishes while it is read, crashes the window instead of saying so.
   test('an address file that cannot be read is no address, and one too large is refused', () async {
-    final runtime = await Directory.systemTemp.createTemp('planner-address');
-    addTearDown(() => runtime.delete(recursive: true));
+    final runtime = await _ownRuntime();
     final file = File('${runtime.path}/porelo-planner/planner.json');
     await file.create(recursive: true);
     await file.writeAsString('{"port": 4711, "token": "$_token"}${' ' * 5000}');

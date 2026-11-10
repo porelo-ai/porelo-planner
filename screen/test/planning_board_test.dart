@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/fake_planning.dart';
+
 class _Backend extends Fake implements PlanningSource {
   @override
   Future<PlanningSnapshot> planningWorkflow(String project) async => _snapshot('workflow');
@@ -21,6 +23,42 @@ class _Backend extends Fake implements PlanningSource {
         ),
       )
       .stream;
+}
+
+/// A source whose first watch is refused, as for a repository the planner does not take, and later ones answer.
+class _RefusedOnce extends Fake implements PlanningSource {
+  int watches = 0;
+  @override
+  Future<PlanningSnapshot> planningWorkflow(String project) async => _snapshot('workflow');
+  @override
+  Stream<PlanningSnapshot> watchStories(String project) => ++watches == 1
+      ? Stream.error(const PlanningRefusal('NotACloneUrl', {}, 'the repository is not a clone URL'))
+      : Stream.value(_snapshot('ST1'));
+}
+
+/// A source whose board loads with a workflow fault.
+class _Faulty extends Fake implements PlanningSource {
+  int watches = 0;
+  @override
+  Future<PlanningSnapshot> planningWorkflow(String project) async => PlanningSnapshot.from({
+    'states': [
+      {'name': 'Building', 'kind': 'WORKING'},
+    ],
+    'phases': [
+      {
+        'name': 'Build',
+        'states': ['Building'],
+      },
+    ],
+    'faults': ['a fault'],
+  });
+  @override
+  Stream<PlanningSnapshot> watchStories(String project) {
+    watches++;
+    final replies = StreamController<PlanningSnapshot>();
+    replies.add(_snapshot('ST1'));
+    return replies.stream;
+  }
 }
 
 PlanningSnapshot _snapshot(String id) => PlanningSnapshot.from({
@@ -90,6 +128,62 @@ void main() {
     current = 'local';
     client.changed();
     expect(boards.selected!.backend, same(first));
+  });
+
+  // Harm: the person sees a refusal's name and an empty map instead of what went wrong.
+  test('a refusal is shown in its own words', () {
+    expect(
+      planningFailureWords(const PlanningRefusal('PlannerUnreachable', {}, 'the planner cannot be reached: refused')),
+      'the planner cannot be reached: refused',
+    );
+  });
+
+  // Harm: a description bypasses the special wordings, or carries control characters to the screen.
+  test('a refusal\'s description comes after the special wordings and is shown without control characters', () {
+    expect(
+      planningFailureWords(mockRefusal('org.fuin.porelo.Tasks1.EnteredOnlyByWork', {'item': 'ST1', 'to': 'Building'})),
+      'Building can be entered only by work.',
+    );
+    expect(planningFailureWords(const PlanningRefusal('Unreachable', {}, 'no\x07 answer\x1b[2J')), 'no answer[2J');
+  });
+
+  // Harm: a live board whose workflow has faults is torn down and read again on every change of the window.
+  test('a live board with workflow faults is not loaded again when its provider changes', () async {
+    final source = _Faulty();
+    final client = FakePlanningClient([provider('local', source)]);
+    final boards = PlanningBoards(client);
+    addTearDown(() {
+      boards.dispose();
+      client.dispose();
+    });
+    await pumpEventQueue();
+    expect(boards.selected!.live, isTrue);
+    expect(boards.selected!.problem, 'a fault');
+
+    client.providers = [provider('local', source)];
+    await pumpEventQueue();
+
+    expect(source.watches, 1, reason: 'the live board kept its watch');
+  });
+
+  // Harm: a board that failed once stays failed for good, though the repository has since been named.
+  test('a board that failed loads again when its provider changes', () async {
+    final source = _RefusedOnce();
+    final client = FakePlanningClient([provider('local', source)]);
+    final boards = PlanningBoards(client);
+    addTearDown(() {
+      boards.dispose();
+      client.dispose();
+    });
+    await pumpEventQueue();
+    expect(boards.selected!.problem, 'the repository is not a clone URL', reason: 'the first watch was refused');
+
+    client.providers = [provider('local', source)];
+    await pumpEventQueue();
+
+    expect(source.watches, 2, reason: 'the board watched again');
+    expect(boards.selected!.problem, isNull, reason: 'and holds the board now');
+    expect(boards.selected!.snapshot, isNotNull);
   });
 
   // Harm: a silent subscription keeps a project or a disposed window alive indefinitely.
@@ -177,7 +271,8 @@ void main() {
       ({'detail': 'The detail', 'message': 'The message'}, 'The detail'),
       ({'detail': ' ', 'message': 'The message'}, 'The message'),
       ({'detail': 7, 'message': 'The message'}, 'The message'),
-      ({'detail': 7, 'message': false}, 'WorkNotAllowed: {detail: 7, message: false}'),
+      // No words among the parameters: the service's own wording of the refusal.
+      ({'detail': 7, 'message': false}, 'org.fuin.porelo.Tasks1.WorkNotAllowed {detail: 7, message: false}'),
     ];
     for (final (parameters, words) in cases) {
       backend.controllers['project']!.addError(mockRefusal('org.fuin.porelo.Tasks1.WorkNotAllowed', parameters));
