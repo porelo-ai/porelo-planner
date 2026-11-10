@@ -17,9 +17,12 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl17"></a>[PL17](PL17-The-Changes-Stream-In-The-Screen-Package.md) | - | [PL06](README.md#pl06) | The screen package's watchStories over the planner's event stream: the board first, every change after, 45 s of silence taken as a lost connection, reconnect with Last-Event-ID backing off 1 to 30 s |
 | <a id="pl05"></a>[PL05](PL05-Moves-Saved-All-Or-None.md) | L | [PL04](README.md#pl04) | Moves saved all or none against the revision, committed and pushed, the stories index rewritten; working states only by work; a mismatching story state saved on confirmation; a parent Finished only after its sub-issues |
 | <a id="pl08"></a>[PL08](PL08-The-Work-Proposal.md) | M | [PL07](README.md#pl07) | The work proposal: main agent per repository, each sub-issue a task of its own, the operator's choices, comment and reading limit, and the prompts the window starts each task with |
 | <a id="pl09"></a>[PL09](PL09-The-Run-From-Building-To-Review.md) | L | [PL08](README.md#pl08) | The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window |
+| <a id="pl18"></a>[PL18](PL18-Moves-And-Story-Work-In-The-Screen-Package.md) | - | [PL05](README.md#pl05), [PL08](README.md#pl08), [PL09](README.md#pl09) | The screen package's HTTP calls for saving moves, proposing, reading and stopping story work, an issue's findings and a reading round's decision, so the window can start a story's work |
+| <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | - | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |
 
 ## Implementing
 
