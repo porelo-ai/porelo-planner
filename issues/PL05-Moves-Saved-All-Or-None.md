@@ -32,11 +32,19 @@ under it is Finished. After a save the stories index reads as the project's own 
   leaves those further on; a story without issues takes its own state; a target that is a working state (a key of
   the work rules) is refused; a parent to Finished with a sub-issue not Finished is refused, naming it.
 - `store/api`: `save(revision, changes)`; `store/git`: under a lock per project, fetch, refuse when the revision
-  moved, rewrite each changed issue's status line and index row and each story's head, rewrite the stories index with
+  moved, rewrite each changed issue's JSON head and index row and each story's head, rewrite the stories index with
   the `porelo-stories` library over the clones, commit per repository and push; a refused push rolls the local
   commits back and answers `stale-revision`. Each repository's push is all or none; a save over several
   repositories whose later push fails is reported naming the repositories already pushed, never retried silently.
   The writing in the unpushed stories-git state-setting branch is the model.
+- **Concurrent writers.** A save and a refresh of one project hold the same lock, one in the process and a file lock
+  on the project's cache directory, so two saves, a save and a background check, or two planners of the same person
+  never touch a clone at once; a request waiting on it answers once its turn comes, or after a bound with `busy`.
+  Writers on other computers are met by Git alone: a commit is made only on the commit just fetched, a push is never
+  forced, and a push the remote refuses because it moved is the `stale-revision` answer, with the local commits
+  rolled back. A saved board replaces the one in memory whole, so a reader never sees half a save. Proven by unit
+  tests over a fake remote: two saves on one revision, one wins and the other is `stale-revision`; a save during a
+  check waits for it; a refused push leaves the clone and the board as they were.
 - **Red first:** `MovesTest` - a story in Backlog with issues in Backlog and Review, moved to Rejected, moves the
   Backlog issue alone; a move into a working state is refused; a story moved where its issues do not fit warns and is
   saved only with `confirm`. `GitStoreSaveTest` - a push refused because the remote moved changes nothing, locally or

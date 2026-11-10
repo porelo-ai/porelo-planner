@@ -9,6 +9,7 @@ What holds and why: one row per decision, and its full text below.
 | License | [Everything the executable links is under the LGPL or more permissive](#everything-the-executable-links-is-under-the-lgpl-or-more-permissive) |
 | Work | [A story's work is recorded on the computer it runs on](#a-storys-work-is-recorded-on-the-computer-it-runs-on) |
 | Work | [The window tells the planner of its tasks](#the-window-tells-the-planner-of-its-tasks) |
+| Access | [One planner per person](#one-planner-per-person) |
 
 ## Git is a plain store
 
@@ -45,3 +46,10 @@ public text in a repository, and the store's history holds no commit per task en
 The planner talks to no Porelo. The window, which starts a story's tasks with Porelo's `Start` and watches them
 already, tells the planner of every change of such a task - started, ended, stopped - and the planner judges what
 follows from it. A change told twice is taken once.
+
+## One planner per person
+
+A planner serves one person, on their own computer or under their own account on a host, with their own Git login,
+clones and token; several people on one host each start their own. A planner shared by every user of a host would
+have to keep each user's Git login or write under an account of its own, which no longer shows who moved a story, so
+it stays an idea until that is decided.
