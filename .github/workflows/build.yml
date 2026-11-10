@@ -60,3 +60,26 @@ jobs:
                       start=origin/main
                   fi
                   ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $start..$GITHUB_SHA"
+
+    # The window's planning screen, a Flutter package: analysed and tested as the window's build does it, with the
+    # Flutter its pubspec pins. Only the screen's module: the Java build is the job above.
+    screen:
+        name: The planning screen
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+              with:
+                  flutter-version-file: screen/pubspec.yaml
+                  cache: true
+
+            # Maven drives Flutter, so the runner needs a JDK as well: the pinned one.
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            - name: The screen's analysis and tests
+              run: ./mvnw -B -U -s settings.xml -Pall -pl screen verify

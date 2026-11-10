@@ -1,0 +1,3 @@
+# Flutter's build output and a local override of a dependency are never committed.
+build/
+pubspec_overrides.yaml

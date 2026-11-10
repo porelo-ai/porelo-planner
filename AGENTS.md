@@ -16,6 +16,9 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
 - **The OpenAPI description is the contract with the window**, written first; the app serves exactly what it describes.
 - **After a change, the stories index is rewritten with the `porelo-stories` library**, so the index stays as
   `porelo-release stories index` writes it.
+- **The window's planning screen is a Flutter package in `screen/`**, because the window is Flutter and embeds it by a
+  Git ref and the path `screen`. Maven drives Flutter there as the window's build does; the module is listed only
+  under the root's profile `all`, so a Java build needs no Flutter, and the Build workflow runs it in a job of its own.
 - **A mock mode serves the window's mock board**, for the window's planning tests; it reaches no store.
 - **A changelog entry is one YAML file under `changelog/unreleased/`** with a one-sentence `title` and a `type`.
 - **The tests tagged `documents` run alone with `./mvnw -B -s settings.xml -Pdocuments test`.**

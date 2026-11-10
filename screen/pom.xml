@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.fuin.porelo</groupId>
+        <artifactId>porelo-planner</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <!-- Never published to Maven. The window takes the package by a Git ref and the path 'screen'. -->
+    <artifactId>porelo-planner-screen</artifactId>
+    <name>Porelo Planner Screen</name>
+    <description>The window's planning screen, a Flutter package; Maven drives Flutter as the window's build does</description>
+    <packaging>pom</packaging>
+
+    <properties>
+        <!-- Declared so -DskipTests resolves here as it does for surefire. -->
+        <skipTests>false</skipTests>
+    </properties>
+
+    <build>
+        <plugins>
+            <!-- Flutter and dart from PATH, as the window's build takes them: this module is listed only under the
+                 root's profile 'all', so a Java build needs no Flutter, and a build that lists it never skips it. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>flutter-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>flutter</executable>
+                            <arguments>
+                                <argument>clean</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-pub-get</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>flutter</executable>
+                            <arguments>
+                                <argument>pub</argument>
+                                <argument>get</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <!-- As `dart format` writes it, at the width analysis_options.yaml takes from the shared
+                         .editorconfig. -->
+                    <execution>
+                        <id>dart-format</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>dart</executable>
+                            <arguments>
+                                <argument>format</argument>
+                                <argument>--output=none</argument>
+                                <argument>--set-exit-if-changed</argument>
+                                <argument>lib</argument>
+                                <argument>test</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <!-- dart, never flutter analyze, which rewrites analysis_options.yaml. -->
+                    <execution>
+                        <id>dart-analyze</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>dart</executable>
+                            <arguments>
+                                <argument>analyze</argument>
+                                <argument>--fatal-infos</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-test</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipTests}</skip>
+                            <executable>flutter</executable>
+                            <arguments>
+                                <argument>test</argument>
+                                <argument>--file-reporter=json:build/test-results.json</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
