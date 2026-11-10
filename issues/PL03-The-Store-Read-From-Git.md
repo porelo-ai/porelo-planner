@@ -48,9 +48,13 @@ only those.
   `GIT_CONFIG_GLOBAL` and the system config honoured but `core.hooksPath` and `protocol.file.allow` refused for
   the planner's own clones, no credential on any command line, error output scanned so no secret reaches a log.
   The Git HTTP test server and the secret scan go to `test-support`.
+- **No prompt, ever (fail closed):** every `git` call runs with `GIT_TERMINAL_PROMPT=0`, `SSH_ASKPASS` and
+  `GIT_ASKPASS` unset, `SSH_ASKPASS_REQUIRE=never` and `ssh -o BatchMode=yes`, so a missing or expired login never
+  waits on a terminal or opens a dialog: it answers `CredentialRefused` at once, and the window says which
+  repository needs a login. The person's ssh-agent and credential helper apply as they are.
 - **Red first:** `GitStoreReadTest` over a fixture served by the test server: a story with two issues and a
-  sub-issue reads with the right states; a link out of the clone is refused; a refused login reads as
-  `CredentialRefused` with no credential in its text.
+  sub-issue reads with the right states; a link out of the clone is refused; a refused login, and one that would
+  prompt, read as `CredentialRefused` at once, with no credential in its text.
 
 ## Acceptance
 
@@ -59,6 +63,8 @@ only those.
 
 ## To be checked
 
+- That the window starts the planner with its own environment, `SSH_AUTH_SOCK` included, so the person's ssh-agent
+  is reached; agreed with the window.
 - How the planner learns where a project's repository is (its clone URL and branch) for a project name: the
   window holds the projects the person follows; the way it hands one over is agreed with the window.
 - Which `project.yml` field names each repository's clone URL, and whether a repository's issue index may be split

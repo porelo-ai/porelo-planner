@@ -16,6 +16,10 @@ A state change is committed and pushed straight to the planning repository with 
 gate and no review, as a database would take it. The store sits behind an interface, so the rest of the planner knows
 no Git.
 
+The planner never asks for a login. Git runs without a terminal prompt or a password dialog; a missing or expired
+login is refused at once and shown in the window, since a background process that waits on a prompt nobody sees
+hangs the board.
+
 ## One native executable of four parts
 
 The planner is one GraalVM native executable. `core` holds the planning rules without Spring, `store/api` the store's
