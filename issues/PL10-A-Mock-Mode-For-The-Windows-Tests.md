@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL10",
   "title": "A Mock Mode For The Window's Tests",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 3,
