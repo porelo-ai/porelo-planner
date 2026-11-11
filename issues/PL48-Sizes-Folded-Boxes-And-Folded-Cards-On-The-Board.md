@@ -5,12 +5,11 @@
   "$schema": "issue-1.json",
   "id": "PL48",
   "title": "Sizes, Folded Boxes And Folded Cards On The Board",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Medium",
   "rank": 31,
   "blockedBy": ["PL47"],
-  "openQuestions": 1,
   "covers": "Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority"
 }
 ```
@@ -19,11 +18,11 @@
 the story's size read from a member the board's answer gains first; no contract of its own.
 
 **Estimate:** 67 min, the measured median of M. Uncertain: whether a size badge fits the 136-pixel tiles of a narrowed
-column beside mark, number and menu; existing tests that find cards of a box folded by default.
+column beside mark, number and menu.
 
 **What must be true.** A person sees each story's and issue's size as a badge beside its priority, and can fold away
 what they do not need: a state's box down to its heading, and a single story card down to its number and priority,
-without the column changing its width.
+without the column changing its width. Every box starts open, `In analysis` included; a person folds it.
 
 ## Plan
 
@@ -43,6 +42,8 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
   depends only on `foldedPhases` (`_phase`). Change: a state folded by its own chevron shows its heading row only
   (name, count, chevron) and no tile; a state inside a folded phase keeps the compact tiles, so only the column's
   chevron narrows the column and shows tiles. The box stays a `DragTarget`, so a story can still be dropped on it.
+  `PlanningPreferences.foldedStates` starts empty: `In analysis`, folded by default today, starts open like every
+  other box.
 - **A folded card.** `PlanningPreferences` gains `foldedStories` and `PlanningBoard` a `foldStory(id)`, as
   `expandedStories` and `expand`. The card's top row gets a fold button (`planning-fold-story <id>`); folded, the card
   shows number, priority, size, menu and a pending move or its refusal, and hides title, work line, reading line,
@@ -59,20 +60,15 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
 
 ## Acceptance
 
-- A folded box shows its heading only, at the column's width; a narrowed column still shows its compact tiles.
+- A folded box shows its heading only, at the column's width; a narrowed column still shows its compact tiles; on a
+  fresh board every box is open, `In analysis` included.
 - A folded card shows its number, priority and size only, and the cards beside it stay open.
 - Every story card, issue row and compact tile with a size shows it as a badge; each new test has been seen red.
 - The screen module's Maven build passes locally: `dart format`, `dart analyze --fatal-infos` and `flutter test`.
-
-## Open questions
-
-- `PlanningPreferences.foldedStates` starts with `In analysis` folded, which today shows its stories as compact
-  tiles. Under this change a folded box shows no story at all. Should `In analysis` still start folded, now hiding
-  its stories until the person opens it, or start open?
 
 ## To be checked
 
 - Whether a size badge fits the narrowed column's tile (`PlanningStyle.foldedColumn`, 136) beside the mark of
   `PlanningStyle.foldedMark` width, the number and the dense menu, measured with the longest number of the mock board.
-- Which existing tests in `screen/test` and which of the window's planning tests over the mock board find a card in
-  a box folded by default; the window's ones are asked of the window's agent before the change.
+- Which existing tests in `screen/test` and which of the window's planning tests over the mock board expect
+  `In analysis` folded by default; the window's ones are asked of the window's agent before the change.

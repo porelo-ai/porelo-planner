@@ -5,21 +5,20 @@
   "$schema": "issue-1.json",
   "id": "PL45",
   "title": "A Story Moves With Its Issues",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Medium",
   "rank": 28,
   "blockedBy": [],
-  "openQuestions": 1,
   "covers": "A story's state follows its issues where the hands are the planner's: it stands Implementing once its first issue is, Review once every issue is in Review, Finished or Rejected, and a story set Finished sets its issues still in Review to Finished with it"
 }
 ```
 
 **Size:** M - one story rule in the core used by the board's moves and by work, one guard of work loosened, the
-contract's words on a story move, and the screen's prediction and fake board; the Git store already writes it.
+contract's words on a story move, and the screen's prediction and fake board; the Git store already writes it. In
+this repository only: the shared stories rule stays as it is.
 
-**Estimate:** 67 min, the measured median of M. Uncertain: if the open question moves the rule into the shared
-stories library, the work crosses repositories and becomes L (113 min).
+**Estimate:** 67 min, the measured median of M.
 
 **What must be true.** A person who moves an issue sees its story follow - Implementing with its first issue, Review
 once all are in Review or done - and a story the person sets Finished after its test takes its issues still in
@@ -36,6 +35,11 @@ Review with it.
   Finished whose open issues all stand in Review already takes them to Finished, and `GitStore.settled`/`settle`
   settles each in the same commit. What is missing: issues in Review are left behind when another open issue stands
   earlier (it is moved instead) or later (Rework); the confirmed move then states the story Finished over them.
+- **Where the rule lives.** The planner writes the state its rule gives into the story's head wherever the stories
+  index's rule gives another; the shared stories rule, in the stories library and its copy here, stays as it is, so
+  every reader of the index still reads the index's rule. `porelo-release stories index` warns for each such story,
+  as `StoriesIndex.generate` already adds a WARN line for a stated state that differs from its issues; that warning
+  is expected and is not a fault.
 - **The rule, one class in `core`** (`StoryFollows`, plain Java): for a story with issues, the work's done state
   (Review, the `done` of the work rules) when every issue stands in it or closed and one stands in it; else the
   first working state in workflow order (Implementing) when any issue stands from there on and one is still open;
@@ -67,15 +71,7 @@ Review with it.
   read from a fresh clone, in one commit per repository changed; a story stands stated only where the index's rule
   gives another state.
 - Each named test is seen red with its part of the rule broken on purpose; `stories index` over the result reports
-  no fault.
-
-## Open questions
-
-- Where does the rule live? (a) The planner states Implementing in a story's head while the index's rule gives an
-  earlier state; the shared stories rule stays, and `porelo-release stories index` notes a WARN for each such story
-  on every run (size M, this repository only). (b) The shared stories rule itself changes, in the stories library
-  and its copy here, so heads stay unstated and every reader of the index agrees (size L, needs the stories
-  library's release first). Recommended: (a) now, (b) as its own change if the warnings disturb.
+  no fault, and a WARN for each story whose head states a state the index's rule does not give.
 
 ## To be checked
 

@@ -5,25 +5,26 @@
   "$schema": "issue-1.json",
   "id": "PL15",
   "title": "The Answer Types Generated From The Description",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Low",
   "rank": 3,
   "blockedBy": [],
-  "openQuestions": 1,
-  "covers": "The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand"
+  "covers": "The planner's answer records generated from openapi/planner.yaml instead of written by hand; the controllers stay hand-written"
 }
 ```
 
 **Size:** M - one module's build and its about thirty answer records, an enum mapping in the controllers and the
-contract test reworked; L if the controllers' interfaces are generated too (see *Open questions*).
+contract test reworked; the controllers stay hand-written.
 
 **Estimate:** 67 min, the measured median of M. Uncertain: how generator 7.27.0 reads the description's OpenAPI 3.1
 null forms is not yet measured; a shape the templates do not cover fails under NullAway and costs a detour.
 
 **What must be true.** The planner's Java answer types are generated from `openapi/planner.yaml` at build time, so a
 change of the description changes the code with it and the compiler, not only a test, holds the controllers to it;
-they stay records with `@Nullable` where the description allows null, and run in the native executable.
+they stay records with `@Nullable` where the description allows null, and run in the native executable. Only the
+answer records are generated; the controllers stay hand-written, held to the paths and statuses by
+`ApiMatchesDescriptionTest`.
 
 ## Plan
 
@@ -47,10 +48,12 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
   `useJspecify=true`, `useSpringBoot4=true`, `useJakartaEe=true`, `openApiNullable=false`, `useBeanValidation=false`,
   `annotationLibrary=none`, `documentationProvider=none`, `hideGenerationTimestamp=true`. The plugin version goes into
   the root's properties.
-- **Only the answers are generated.** The request bodies stay as they are (`WorkRequests`, `BoardController.MovesBody`
-  and `MoveBody`): they are read by hand, bounded, strictly and with refusals that never repeat what was sent, which a
-  generated record's constructor does not give. Where a request carries an answer's schema
-  (`StoryWorkRequest.repositories` is a `PlanRepositoryWork`), it takes the generated record.
+- **Only the answers are generated.** No controller interface is generated: the templates artifact holds models only,
+  and the events stream and the bodies read by hand do not fit a generated interface. The request bodies stay as
+  they are (`WorkRequests`, `BoardController.MovesBody` and `MoveBody`): they are read by hand, bounded, strictly and
+  with refusals that never repeat what was sent, which a generated record's constructor does not give. Where a
+  request carries an answer's schema (`StoryWorkRequest.repositories` is a `PlanRepositoryWork`), it takes the
+  generated record.
 - **Steps:** add the execution and generate once; read every generated record against the hand one it replaces
   (fields, `@Nullable`, which fields are left out when null); replace `Answers` and the answer records of `WorkAnswers`
   by the generated ones, keeping `WorkAnswers`' factory methods (`knownWork`, `starts`, `issue`); map each core value to
@@ -80,13 +83,6 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
 - The JSON every operation answers is unchanged, shown by the existing HTTP tests, and the native executable starts
   and answers.
 - The Build workflow's steps pass locally, the native build included.
-
-## Open questions
-
-- Are the controllers' interfaces generated too, or only the answer records? Records only keeps the size M and
-  leaves paths and statuses to `ApiMatchesDescriptionTest`. Interfaces as well make it L: the templates artifact holds
-  models only, so the generator's own Spring API templates come beside it, and the events stream (`text/event-stream`)
-  and the bodies read by hand from `HttpServletRequest` do not fit a generated interface and stay outside it.
 
 ## To be checked
 

@@ -5,13 +5,12 @@
   "$schema": "issue-1.json",
   "id": "PL14",
   "title": "A Project Whose Repositories Are Local Paths",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Low",
   "rank": 2,
   "blockedBy": ["PL42"],
-  "openQuestions": 1,
-  "covers": "Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout"
+  "covers": "Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout"
 }
 ```
 
@@ -23,7 +22,8 @@ yet known, and how [PL42](README.md#pl42)'s link pattern reads for a `project.ym
 
 **What must be true.** A person plans a project whose repositories Porelo names by an absolute local path rather
 than a clone URL, as Porelo's Default project and a local checkout do; today the planner refuses such a project as
-`NotACloneUrl`, and the window offers no planning for it.
+`NotACloneUrl`, and the window offers no planning for it. A local project's `project.yml` reaches only repositories
+in the same directory as the own repository; any other path is refused.
 
 ## Plan
 
@@ -54,8 +54,12 @@ The shape:
 - `GitCall` adds `protocol.file.allow=always` only to a call whose address is a `LocalPath`; every other call keeps
   file transport refused.
 - A local path is taken only where the person chose it: as the window's own source, and in `project.yml` only when
-  the own repository is itself local (and within the bound the open question settles). A project fetched from a
-  clone URL whose `project.yml` names a local path is refused as `Unreadable`, naming the repository key.
+  the own repository is itself local. A project fetched from a clone URL whose `project.yml` names a local path is
+  refused as `Unreadable`, naming the repository key.
+- **The guard on a local project's reach.** A local path in `project.yml` is taken only when its parent directory is
+  the own repository's parent directory, compared on the normal paths; any other absolute path, a deeper one in that
+  directory included, is refused as `Unreadable`, naming the repository key and no path. The check sits in
+  `ProjectFile`, where `project.yml`'s repositories are turned into addresses, before any Git call reaches them.
 - A save to a working checkout whose branch is checked out is refused as Git refuses it, told in the planner's words;
   the planner never sets `receive.denyCurrentBranch` nor touches a working tree.
 - `StoreConfiguration` takes either form; `NotACloneUrl` stays the refusal's name for anything else. `planner.yaml`
@@ -69,6 +73,11 @@ Tests, each with its level and the harm it prevents:
 - Unit, `ProjectFileTest` over its fake remote: a project fetched from a clone URL whose `project.yml` names a local
   central is refused. Harm: someone with write access to a shared store makes the planner read or push into the
   person's own local repositories.
+- Red first, unit, `ProjectFileTest` over its fake remote: a local own repository at `/work/p/own` whose
+  `project.yml` names `/work/p/other` is read; one naming `/home/person/secret/repo`, `/work/other/repo` or
+  `/work/p/own/sub` is refused, and its fake remote is never asked for it. Fails today, since no such check exists.
+  Harm: a change to `project.yml` points the planner, which pushes with the person's rights, at another of the
+  person's repositories. Seen red by turning the parent comparison off.
 - Unit, `GitCallTest`: a call for a clone URL keeps `file` transport refused; only a local call allows it. Harm: a
   remote reaches the local filesystem through Git.
 - Unit, a `LocalPath` test beside `CloneUrlTest`: relative, `..`, `file://`, an option and a Windows path on Linux are
@@ -84,15 +93,9 @@ path and sends that path as `repository`.
 ## Acceptance
 
 - A local project of bare repositories is read and a move pushed into it, seen in the repository's log.
-- A remote project naming a local central, a relative path, and a save into a checked-out branch are each refused,
-  each test seen red once.
+- A remote project naming a local central, a local project naming a repository outside its own repository's
+  directory, a relative path, and a save into a checked-out branch are each refused, each test seen red once.
 - The contract in `planner.yaml` names both forms, agreed with the window's repository before it changes.
-
-## Open questions
-
-- How far a local project's `project.yml` may reach: any absolute path, or only repositories in the same directory as
-  the own repository. An agent's change to `project.yml` that passes the gate could otherwise point the planner, which
-  pushes with the person's rights, at any other local repository of the person.
 
 ## To be checked
 

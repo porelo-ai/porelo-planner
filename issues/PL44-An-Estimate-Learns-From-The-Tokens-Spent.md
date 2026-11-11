@@ -5,12 +5,11 @@
   "$schema": "issue-1.json",
   "id": "PL44",
   "title": "An Estimate Learns From The Tokens Spent",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "Medium",
   "rank": 27,
   "blockedBy": ["PL61"],
-  "openQuestions": 1,
   "covers": "A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one"
 }
 ```
@@ -24,7 +23,7 @@ whether the work rules' format may take a new placeholder without a change elsew
 
 **What must be true.** A task started to estimate an issue is told, per size of its repository, what finished issues
 of that size cost in minutes and in new tokens per phase, and which finished issue is most like the new one, so a size
-says something measured.
+says something measured. The cost is told in tokens only; no price list is kept and no cost in money is shown.
 
 ## Plan
 
@@ -40,6 +39,8 @@ What stands today, read in the code, and what [PL61](README.md#pl61) already cov
   of this issue.
 - Left for this issue: the statistic of tokens, not only minutes, split by phase; handing the numbers to an
   estimating task; and the finished issue most like the new one.
+- Taken out: a cost in money. Porelo's task record carries tokens, and a price per model would need a price list the
+  planner keeps current; the statistic counts tokens only.
 - Taken out as moot: the figures in the index's *Finished* row. The kept record already holds them, a second copy
   in Markdown goes stale, and the index format is shared with every repository's tools.
 - The order a task is given is `WorkRule.order`, filled in by `WorkOrder.prompt`, whose `PLACEHOLDER` knows only
@@ -80,12 +81,6 @@ Tests, red first, all unit tests over fakes:
 - The tests above, each seen red first; the full build green.
 - A task started from a work rule whose order names `{estimate}` gets, for its issue's repository, the minutes and
   new tokens per size and phase and the nearest finished issue, matching the task records they were computed from.
-
-## Open questions
-
-- The issue first asked for a cost in money with its price date beside the tokens. Porelo's task record carries
-  tokens, not money, so a cost needs a price list per model that the planner keeps. Should the statistic show
-  tokens only, or also a cost from such a price list?
 
 ## To be checked
 

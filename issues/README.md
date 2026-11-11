@@ -12,17 +12,6 @@ left out.
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 
-## Analyzed
-
-| # | Size | Blocked by | What it covers | Open questions |
-|---|---|---|---|---|
-| <a id="pl66"></a>[PL66](PL66-Model-And-Effort-Chosen-By-Phase-And-Risk.md) | XL | [PL46](README.md#pl46) | An issue's head may say how much harm its change can do, and the work rules give per working state the model and effort for each risk, which a start hands to the window | 1 |
-| <a id="pl44"></a>[PL44](PL44-An-Estimate-Learns-From-The-Tokens-Spent.md) | L | [PL61](README.md#pl61) | A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one | 1 |
-| <a id="pl45"></a>[PL45](PL45-A-Story-Moves-With-Its-Issues.md) | M | - | A story's state follows its issues where the hands are the planner's: it stands Implementing once its first issue is, Review once every issue is in Review, Finished or Rejected, and a story set Finished sets its issues still in Review to Finished with it | 1 |
-| <a id="pl48"></a>[PL48](PL48-Sizes-Folded-Boxes-And-Folded-Cards-On-The-Board.md) | M | [PL47](README.md#pl47) | Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority | 1 |
-| <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout | 1 |
-| <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | M | - | The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand | 1 |
-
 ## Estimated
 
 | # | Size | Blocked by | What it covers |
@@ -35,12 +24,19 @@ left out.
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
+| <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | [PL46](README.md#pl46) | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |
+| <a id="pl69"></a>[PL69](PL69-The-Rules-Effort-Offered-In-The-Start-Dialog.md) | L | [PL66](README.md#pl66) | The model and effort the work rules choose for an issue's risk reach the window with where the choice came from; the start dialog proposes the rule's effort, the person may change it, and the effort chosen is handed to the window's Start |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | S | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
+| <a id="pl44"></a>[PL44](PL44-An-Estimate-Learns-From-The-Tokens-Spent.md) | L | [PL61](README.md#pl61) | A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one |
+| <a id="pl45"></a>[PL45](PL45-A-Story-Moves-With-Its-Issues.md) | M | - | A story's state follows its issues where the hands are the planner's: it stands Implementing once its first issue is, Review once every issue is in Review, Finished or Rejected, and a story set Finished sets its issues still in Review to Finished with it |
 | <a id="pl56"></a>[PL56](PL56-The-Board-Builds-Only-What-Is-Seen.md) | L | [PL48](README.md#pl48) | The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand |
 | <a id="pl47"></a>[PL47](PL47-A-Storys-Size-Beside-Its-Priority.md) | M | - | A story carries its own size, XS to XL, set when it is estimated; the board's answer carries it beside its priority, and an issue's size, which the answer already carries, shows the same way |
+| <a id="pl48"></a>[PL48](PL48-Sizes-Folded-Boxes-And-Folded-Cards-On-The-Board.md) | M | [PL47](README.md#pl47) | Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority |
 | <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
+| <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout |
+| <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | M | - | The planner's answer records generated from openapi/planner.yaml instead of written by hand; the controllers stay hand-written |
 
 ## Backlog
 
