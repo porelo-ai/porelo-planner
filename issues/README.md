@@ -56,6 +56,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl63"></a>[PL63](PL63-A-Fresh-Board-At-Once-And-Its-Faults-Folded.md) | S | - | A window that follows a project gets the board fetched from the remotes within seconds, not only the clones' older one until the first poll; Reload planning fetches; the board's faults take one line, folded until the person opens them |
 | <a id="pl41"></a>[PL41](PL41-The-Git-Store-Alone-Handles-Stories-And-Issues.md) | L | - | Stories and issues kept as files in Git are read, checked, indexed and written by the planner's Git store alone - the shared stories library's code taken into store/git, a broken head and a broken issue link shown as faults on the board, a new idea written through the planner, every repository's issues checked against the project's one workflow, and each issue's stages recorded so the project's velocity goes to an estimate - so the build tools can drop the library and their story, issue, stage and link commands |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
