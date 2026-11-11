@@ -12,14 +12,6 @@ left out.
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 
-## Accepted
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl72"></a>[PL72](PL72-The-Boards-Search-Finds-Issues-Too.md) | - | - | The board's search matches an issue's number and title too; the story holding a matching issue is shown with its issue list open, the issue marked, and scrolled into view in its column |
-| <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | - | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
-| <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | - | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
-
 ## Estimated
 
 | # | Size | Blocked by | What it covers |
@@ -51,10 +43,13 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
+| <a id="pl72"></a>[PL72](PL72-The-Boards-Search-Finds-Issues-Too.md) | S | - | The board's search matches an issue's number and title too; the story holding a matching issue is shown with its issue list open, the issue marked, and scrolled into view in its column |
+| <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | M | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
+| <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
+| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists |
-| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | M | - | Every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch |
 | <a id="pl26"></a>[PL26](PL26-The-Mock-Board-Saves-Moves.md) | M | - | The mock mode saves moves into its in-memory board with a new revision and a change event, answers PartlySaved for one fixed story, and serves a story with sub-issues so a refused move can be reached |
 | <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | S | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
