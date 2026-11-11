@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL55",
   "title": "The Window Sets The Planner's Log Level",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "M",
   "priority": "High",
   "rank": 28,

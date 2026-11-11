@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL54",
   "title": "The Planner Keeps A Log Beside The Window's",
-  "state": "Estimated",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 27,
