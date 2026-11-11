@@ -6,7 +6,7 @@
   "id": "PL41",
   "title": "The Git Store Alone Handles Stories And Issues",
   "state": "Backlog",
-  "size": "XL",
+  "size": "L",
   "priority": "High",
   "rank": 23,
   "blockedBy": [],
@@ -14,9 +14,9 @@
 }
 ```
 
-**Size:** XL - it splits into one L, four M and three S of this repository, below; dropping the library, the
-story and issue commands, `stage` and the issue part of `check-citations` from the build tools, and the checks from
-every build, is other repositories' work.
+**Size:** L - six pieces of this repository, below, weighed together by the code they share; dropping the library,
+the story and issue commands, `stage` and the issue part of `check-citations` from the build tools, and the checks
+from every build, is other repositories' work.
 
 **What must be true.** In a repository whose build has no story or issue tooling, the planner reads, checks,
 indexes and writes stories and issues kept as files in Git by itself: an issue's state changed and an idea added
@@ -49,50 +49,49 @@ its own `issues/workflow.yml`, else its own `stories/workflow.yml`. A broken hea
 repository with `stats/seed.csv` is refused before anything is written. In the build tools, `stage` is about 1050
 lines with its tokens and as many of tests; the issue-link check of `check-citations` about 600.
 
-1. **The library's code taken into `store/git`** (S). The classes, schemas, reachability metadata and tests move
+1. **The library's code taken into `store/git`** (S, a move with a package renamed). The classes, schemas, reachability metadata and tests move
    unchanged in content to a package of `store/git` that is not exported; the dependency on `porelo-stories` goes,
    and with it the rule in `AGENTS.md` and `doc/` that the index is rewritten by that library. No behavior
    changes, so no test goes red first: the moved tests and the store's own tests prove the move, on the JVM and in
    the native executable. About 3600 lines of code and 3000 of tests to move may take longer than the median of
    an S.
-2. **One workflow for every repository's issues** (S). `StoreReader` reads the project's `stories/workflow.yml`
+2. **One workflow for every repository's issues** (XS, one reading in `StoreReader`). `StoreReader` reads the project's `stories/workflow.yml`
    once and checks every repository's issues against it; a repository's own `issues/workflow.yml` is no longer
    read. Red first: a repository whose own `issues/workflow.yml` names a state the project's lacks has that issue
    faulted. Unit tests.
-3. **A story takes the state it is given** (S). A story whose head names a state keeps it, and the index gives a
-   warning where its issues say otherwise; a story without one keeps the computed state. Red first: a story with
-   a state in its head and a less advanced issue is indexed with the head's state. Unit tests.
-4. **A broken head is a fault on the board** (M). A story or issue file whose head is missing, unreadable or
-   against its schema is left off the board and named with its path and what is wrong in `Board.faults`, instead
-   of failing the whole reading. A change to the window's contract: `Board.faults` describes faults of files too.
-   Red first: a project with one broken issue head answers its board with the other stories and one fault naming
-   the file. Unit tests in `store/git`, one controller test for the answer.
-5. **A broken issue link is a fault on the board** (M). The store reads how issue pages name an issue - every
+3. **A story takes the state it is given** - done: the store keeps a story's stated state and the library's index
+   warns where its issues give another; it moves with piece 1.
+4. **A broken head is a fault on the board** - done: an unreadable story or issue file, a duplicate id, an unknown
+   state and an unreadable index are faults on the board and the rest is served.
+5. **A broken issue link is a fault on the board** (M, a reading taken over with its tests). The store reads how issue pages name an issue - every
    number a link to its row in an index, every row anchored, every link reaching an anchor - and names each
    broken one in `Board.faults` with its file and line. Red first: an issue page linking a number whose index row
    has no anchor shows one fault naming the page and line. Unit tests over files.
-6. **An idea added through the planner** (M). A new call writes an issue file with its head in state Idea under
+   Already a fault, and not part of this piece: a story naming an issue that is not in the project's repositories.
+   The issue-link part of `check-citations`, about 600 lines, is taken over with its tests.
+6. **An idea added through the planner** (M, a write the save does not have yet, the contract and the screen's
+   form). A new call writes an issue file with its head in state Idea under
    the repository's `issues/`, with the next free number of a prefix the repository owns, rewrites the index and
    commits and pushes as a move does. A change to the window's contract and the screen's form. Red first: an
    idea added is read back from a fresh clone with its head, its index row and its number. Unit and store tests
    over a local bare repository.
-7. **An issue's stages recorded, the velocity handed to an estimate** (L). A move writes the issue's stage line
-   in `stats/<ID>.jsonl` in the record's own format, also for an issue without a record yet, keeping a session's
-   sources private as the record requires; the store gives the project's velocity - the median minutes by size -
-   and the planner hands it to the task it starts for an estimate. A change to the window's contract where the
-   start of an estimate carries it. It covers the stage line of a moved issue, which was asked on its own before
+7. **An issue's stages recorded** (M). A move writes the issue's stage line in `stats/<ID>.jsonl` in the record's
+   own format, also for an issue without a record yet, keeping a session's sources private as the record requires,
+   and the store answers the project's velocity, the median minutes by size. `stage` is about 1050 lines with its
+   tokens, taken over with its tests. The planner starts no estimate today, so handing the velocity to an estimate
+   comes with the step that starts one. It covers the stage line of a moved issue, which was asked on its own before
    ([PL22](README.md#pl22)). Red first: a move of an issue without a record writes a stage line that the record's
-   reader takes back. Unit tests over files; one controller test for the estimate's start.
+   reader takes back. Unit tests over files.
 
-8. **An issue settled when it is Finished** (M). A person sets an issue Finished, and that is always taken: the
+8. **An issue settled when it is Finished** (S, on piece 5's reading of the links). A person sets an issue Finished, and that is always taken: the
    Git store settles it in the same commit, deleting its file and keeping its row in the index. Any mention of the
    number left outside `issues/`, or a link to the file, shows as a fault on the board naming each place, on that
    reading and every one after. Red first: setting Finished an issue whose number a document still names commits
    the file's deletion with its row kept, and the next board names the document and line as a fault. Unit and store
    tests over a local bare repository.
 
-Order: 1, 2, 3, 4, 5, 6, 7, 8. Steps 4 to 8 change what the window is answered and are agreed before they are
-built. Sum by the medians: 1 L, 4 M, 3 S = 113 + 268 + 99 = 480 minutes.
+Order: 1, 2, 5, 8, 6, 7. Steps 5 to 8 change what the window is answered and are agreed before they are built.
+Sum: S 33 + XS 15 (a guess; no XS is measured yet) + M 67 + S 33 + M 67 + M 67 = 282 minutes.
 
 ## The checks that leave, and when the Git store runs them
 
@@ -114,7 +113,7 @@ commits in a repository is found on the next reading, since the planner is not a
 | `check-commits`: `issues/workflow.yml` in the tree | no: every repository's issues are checked against the project's `stories/workflow.yml` | every reading | fault, as a broken workflow is today | 2 |
 | `check-commits`: `stats/*.jsonl` valid, closed stage records | yes | the planner writes the records itself on a move; a reading finds a broken or open record | reading: fault; write: written right | 7 |
 | `check-commits`: with `stats/seed.csv`, a measured state reached only with its stage record | yes | a move or idea of the planner writes the record with it; a reading finds a state reached by another commit without one | reading: fault naming the issue | 7 |
-| velocity from `stats/` | yes | when the planner starts a task for an estimate | no velocity yet: the estimate is started without one, and the task is told so | 7 |
+| velocity from `stats/` | yes | the store answers it; handed to an estimate once the planner starts one | no velocity yet: an estimate is told so | 7 |
 | `check-citations`: a number in `issues/` a link to its index row, the row anchored, the link reaching an anchor | yes | every reading; a write of an issue page | reading: fault naming page and line; write: refused | 5 |
 | `check-citations`: an own number in `issues/` names an issue that exists | yes | every reading | fault naming page and line | 5 |
 | `check-citations`: no issue number outside `issues/`, no link to an issue's file | yes | setting an issue Finished; every reading | fault naming each place; Finished is still taken | 8 |
@@ -128,10 +127,8 @@ commits in a repository is found on the next reading, since the planner is not a
   re-reading them expects, seen in a fresh clone; a moved issue's stage line is there and read back.
 - A broken head and a broken issue link each show as a fault on the board naming the file, and the rest of the
   board is served.
-- A task started for an estimate carries the project's velocity.
+- The store answers the project's velocity from the stage records.
 
 ## To be checked
 
-- Which sizes the steps keep once the classes are read one by one against what the planner already holds.
 - Whether the screen's form for an idea is the one the window's other lists use.
-- What the window's start of a task carries today, and where the velocity fits in it.

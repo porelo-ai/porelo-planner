@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL58",
   "title": "A Discussed Idea Becomes A Story And Its Issues",
-  "state": "Idea",
+  "state": "Backlog",
   "size": "L",
   "priority": "Medium",
   "rank": 31,
@@ -30,7 +30,11 @@ issues, each in its repository, without writing a file by hand; a malformed idea
   window hands the file's content, which Core takes from the ended task, to `POST /projects/{project}/ideas` with
   the offer it belongs to: `{offer, idea}`, the idea as a JSON object of at most 64 KiB. The planner checks it
   against `idea-1.json` and answers 201 with the new story's id, or 422 naming each fault and writing nothing; an
-  offer's idea is taken once, by the offer's id, which the discussion's offer did not record.
+  offer's idea is taken once: the work record keeps each taken offer's id with the story it made, and a second idea
+  for the same offer is answered with that story's id and writes nothing. The discussion's offer itself is not
+  recorded; whoever holds the planner's token may create a story anyway, so an unknown offer is no harm.
+- The idea is checked beyond the schema too: each repository it names is one of the project's, and a title is one
+  line.
 - One save, as a move's: each repository the idea names gets an issue file in Idea with the next free number of a
   prefix it owns, its head, and its index row ([PL41](README.md#pl41)'s new idea); then the project's repository gets
   the story file in Idea naming those issues, and the stories index. Others first, the own repository last, all or
@@ -45,7 +49,3 @@ issues, each in its repository, without writing a file by hand; a malformed idea
 
 - After a discussion ends, the board shows its story in Idea with an issue in each repository it named; a malformed
   idea, or one whose save fails in one repository, leaves every repository as it was and names the fault.
-
-## To be checked
-
-- With Core and Frontend: that the ended task's file content, not its path, reaches the planner, and its size bound.
