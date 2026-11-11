@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.logging.LoggingSystem;
 import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.ApplicationListener;
@@ -80,6 +81,28 @@ public class AccessConfiguration {
                 files,
                 maxFileSize.toBytes(),
                 history);
+    }
+
+    /**
+     * The level of the planner's log, set once its file is open: the one kept in the state
+     * directory, or INFO; in the mock mode kept nowhere.
+     *
+     * @param log The log file, open before its level is set.
+     * @param mode Present only in the mock mode.
+     * @param base A base for the state directory instead of the platform's, such as a test's own.
+     * @return The level in force.
+     */
+    @Bean
+    public LogLevel logLevel(
+            final LogFile log,
+            final ObjectProvider<MockMode> mode,
+            @Value("${planner.state.base:}") final String base) {
+        final PrivateFiles files = PrivateFiles.of(System.getenv());
+        final LoggingSystem logging = LoggingSystem.get(getClass().getClassLoader());
+        if (mode.getIfAvailable() != null) {
+            return LogLevel.inMemory(logging, files);
+        }
+        return LogLevel.kept(logging, files, System.getenv(), base);
     }
 
     /**

@@ -1,0 +1,2 @@
+title: The window sets the planner's log level - ERROR, WARN, INFO or DEBUG - through GET and PUT /log/level, at once and from the next start too.
+type: added

@@ -27,6 +27,47 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /log/level:
+    get:
+      operationId: getLogLevel
+      summary: The log's level
+      description: >-
+        Answers the level of the planner's own log in force. Where the log lies is the address file's `log` field.
+      tags: [log]
+      responses:
+        '200':
+          description: The level in force.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Level'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: putLogLevel
+      summary: Set the log's level
+      description: >-
+        Sets the level of the planner's own log at once and keeps it, so it holds from the next start too. The
+        planner's log takes only its own lines; a library's stay out of it at every level.
+      tags: [log]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Level'
+      responses:
+        '200':
+          description: The level now in force.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Level'
+        '400':
+          $ref: '#/components/responses/InvalidLevel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /mock/reset:
     post:
       operationId: resetMock
@@ -836,6 +877,17 @@ components:
           schema:
             type: string
             const: Bearer
+    InvalidLevel:
+      description: The level is none of ERROR, WARN, INFO and DEBUG (InvalidLevel); the level in force stays.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:InvalidLevel
+            title: InvalidLevel
+            status: 400
+            detail: The level is none of ERROR, WARN, INFO, DEBUG.
     InvalidName:
       description: >-
         A project name, story id or issue id was refused (InvalidName); its parameters name the project, unless the
@@ -1225,6 +1277,15 @@ components:
         characters.
       type: string
       pattern: '^[!-~]{1,200}$'
+
+    Level:
+      type: object
+      required: [level]
+      properties:
+        level:
+          type: string
+          enum: [ERROR, WARN, INFO, DEBUG]
+          description: How much the planner's log holds, the least first; INFO when none was set.
 
     Health:
       type: object

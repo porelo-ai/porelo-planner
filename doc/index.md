@@ -51,8 +51,8 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 | The log, beside the window's | `$XDG_STATE_HOME/porelo/logs/planner.log` | `%LOCALAPPDATA%\porelo\logs\planner.log` |
 
 - Every base is an absolute path read from the environment; a relative path, `..` or, on Windows, a UNC path is
-  refused. The property `planner.runtime-directory` overrides the base of the address file, and `planner.log.base`
-  the base of the log.
+  refused. The property `planner.runtime-directory` overrides the base of the address file, `planner.log.base`
+  the base of the log, and `planner.state.base` the base of the kept log level.
 - **Only the account reads or writes them.** On Linux each directory is the account's own, of mode `0700`. On Windows
   each directory the planner makes gets one access entry, full control for the account, inherited by what is made in
   it and by nothing from above. A directory of the planner's own, and `%LOCALAPPDATA%`, is accepted only when its owner
@@ -65,8 +65,10 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
   read with the faults it left out, each save, the tasks offered and each task's report, refused calls by their kind,
   and at DEBUG each Git call by its subcommand, duration and scrubbed failure. Every value from a repository, Git or
   the window has its control characters replaced and is cut to 200 characters, so no value starts a line of its own.
-  `logging.level.org.fuin.porelo.planner` sets the level, INFO by default; only the planner's own lines reach the
-  file. It rolls over at `planner.log.max-file-size` (10 MB) into `planner.1.log` to `planner.3.log`
+  The window sets the level through `PUT /log/level` - ERROR, WARN, INFO or DEBUG - at once, and the planner keeps it
+  in the file `log-level` of its state directory, so it holds from the next start; where none is kept,
+  `logging.level.org.fuin.porelo.planner` sets it, INFO by default. Only the planner's own lines reach the file, at
+  every level. It rolls over at `planner.log.max-file-size` (10 MB) into `planner.1.log` to `planner.3.log`
   (`planner.log.max-history`), and every file is the account's alone. `porelo/`, which other parts of Porelo share,
   may be readable by others but not writable by the group or others; `logs/` is the account's alone, and a start
   refuses one that is not, naming it. The file is opened only once the planner holds its one-planner lock.

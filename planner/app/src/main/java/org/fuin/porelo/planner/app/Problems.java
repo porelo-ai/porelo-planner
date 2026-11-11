@@ -102,6 +102,13 @@ public class Problems {
             fields.put("reason", reason);
             return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, fields);
         }
+        if ("/log/level".equals(pattern)) {
+            return problem(
+                    "InvalidLevel",
+                    HttpStatus.BAD_REQUEST,
+                    "The body is no level of ERROR, WARN, INFO and DEBUG.",
+                    Map.of());
+        }
         if (!"/projects/{project}".equals(pattern)) {
             return refused(WorkRefusal.invalidSettings());
         }
