@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** XL - it splits into two L, four M and two S of this repository, below; dropping the library, the
+**Size:** XL - it splits into two L, three M and two S of this repository, below; dropping the library, the
 story and issue commands, `stage` and the issue part of `check-citations` from the build tools, and the checks from
 every build, is other repositories' work.
 
@@ -33,8 +33,8 @@ on the board; each issue's stages are recorded, and the project's velocity reach
 - Until this issue is done, the stories library's code may stand both here and in the build tools.
 - A repository's own `issues/workflow.yml` goes; every repository's issues are checked against the project's
   `stories/workflow.yml`.
-- Which issue prefixes a repository owns leaves `project.yml` (`repositories[].issues`) and becomes a setting of the
-  Git store adapter's configuration.
+- Which issue prefixes a repository owns stays in `project.yml` (`repositories[].issues`): they mark the project,
+  not only its issues, and the Git store reads them from there.
 
 ## Plan
 
@@ -83,15 +83,8 @@ lines with its tokens and as many of tests; the issue-link check of `check-citat
    ([PL22](README.md#pl22)). Red first: a move of an issue without a record writes a stage line that the record's
    reader takes back. Unit tests over files; one controller test for the estimate's start.
 
-8. **A repository's issue prefixes from the store's configuration** (M). The Git store reads which prefixes each
-   repository owns from its own configuration instead of `repositories[].issues` in `project.yml`; the index, the
-   checks and a new idea's number take them from there, and a repository with issues but no prefixes configured
-   is a fault on the board. Red first: a `project.yml` without `issues` and a configuration naming a prefix give
-   that repository's issues and the next idea's number under the prefix. Unit tests over files.
-
-Order: 1, 8, 2, 3, 4, 5, 6, 7 - step 8 right after the library's code is here, since the index and the checks
-read the prefixes. Steps 4, 5, 6 and 7 change the window's contract and are agreed before they are built. Sum by
-the medians: 2 L, 4 M, 2 S = 226 + 268 + 66 = 560 minutes.
+Order: 1, 2, 3, 4, 5, 6, 7. Steps 4, 5, 6 and 7 change the window's contract and are agreed before they are
+built. Sum by the medians: 2 L, 3 M, 2 S = 226 + 201 + 66 = 493 minutes.
 
 ## Acceptance
 
@@ -102,12 +95,6 @@ the medians: 2 L, 4 M, 2 S = 226 + 268 + 66 = 560 minutes.
 - A broken head and a broken issue link each show as a fault on the board naming the file, and the rest of the
   board is served.
 - A task started for an estimate carries the project's velocity.
-
-## Open questions
-
-- Where does the Git store's configuration of issue prefixes live: in a file of the project's central repository,
-  so every person's planner reads the same, or on each machine beside the planner's other settings? Proposed: a file
-  in the central repository, since prefixes are the project's, not one person's.
 
 ## To be checked
 
