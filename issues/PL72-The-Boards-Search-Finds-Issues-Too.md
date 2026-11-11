@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL72",
   "title": "The Board's Search Finds Issues Too",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 1,
