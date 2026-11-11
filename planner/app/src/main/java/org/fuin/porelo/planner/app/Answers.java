@@ -37,6 +37,7 @@ public final class Answers {
      * @param phases the board's columns
      * @param work the sound work rules
      * @param faults why rules were dropped, and each story, issue or reference left out, in words
+     * @param repositories the project's repositories, its own first
      * @param stories every story, without its description
      */
     public record Board(
@@ -45,6 +46,7 @@ public final class Answers {
             List<Phase> phases,
             List<WorkRule> work,
             List<String> faults,
+            List<String> repositories,
             List<Story> stories) {}
 
     /**
@@ -61,6 +63,14 @@ public final class Answers {
      * @param moved every issue the batch moved, each once
      */
     public record Moved(String revision, List<String> moved) {}
+
+    /**
+     * A new issue added.
+     *
+     * @param id the id the store gave it
+     * @param revision the board's revision after the save
+     */
+    public record IssueAdded(String id, String revision) {}
 
     /**
      * A state.

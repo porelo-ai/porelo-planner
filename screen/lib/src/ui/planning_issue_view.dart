@@ -47,6 +47,8 @@ class PlanningIssueView extends StatelessWidget {
           : const Text('Issue not reported.');
     }
     final work = detail.story?.story?.work;
+    // A closed issue whose file is gone is answered from its index row alone.
+    final settled = reply.textReported && reply.text.isEmpty && detail.board.state(issue.state)?.kind == 'CLOSED';
     final owner =
         detail.board.stories.where((story) => story.issues.any((item) => item.id == issue.id)).firstOrNull?.id ?? '';
     return Column(
@@ -114,7 +116,9 @@ class PlanningIssueView extends StatelessWidget {
           ],
         ]),
         planningSection(context, 'What must be true', [
-          if (!reply.criteriaReported)
+          if (settled)
+            const Text('Settled; its text was removed when it was finished.')
+          else if (!reply.criteriaReported)
             Text(
               reply.criteriaSupplied
                   ? 'Acceptance criteria not reported completely'

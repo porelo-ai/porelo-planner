@@ -372,6 +372,8 @@ class PlanningSnapshot {
       phases = source.phases,
       work = source.work,
       faults = source.faults,
+      repositories = source.repositories,
+      repositoriesReported = source.repositoriesReported,
       statesReported = source.statesReported,
       phasesReported = source.phasesReported,
       storiesReported = source.storiesReported,
@@ -381,6 +383,8 @@ class PlanningSnapshot {
   PlanningSnapshot.from(Map<String, dynamic> map)
     : work = _planList(map['work'], PlanWorkRule.from),
       faults = _planStrings(map['faults']),
+      repositories = _planStrings(map['repositories']),
+      repositoriesReported = _planStringsReported(map['repositories']),
       states = _planList(map['states'], PlanState.from),
       phases = _planList(map['phases'], PlanPhase.from),
       stories = _planList(map['stories'], PlanStory.from),
@@ -393,6 +397,8 @@ class PlanningSnapshot {
   PlanningSnapshot.fromParts(PlanningSnapshot workflow, PlanningSnapshot board)
     : work = workflow.work,
       faults = workflow.faults,
+      repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
+      repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
       states = workflow.states,
       phases = workflow.phases,
       stories = board.stories,
@@ -406,6 +412,12 @@ class PlanningSnapshot {
 
   /// The faults reported by the daemon.
   final List<String> faults;
+
+  /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
+  final List<String> repositories;
+
+  /// Whether the planner sent the repository list, which a streamed whole board must carry.
+  final bool repositoriesReported;
 
   /// Whether the daemon sent the state list.
   final bool statesReported;
@@ -509,6 +521,18 @@ class PlanningMoveResult {
 
   /// The complete reported by the daemon.
   final bool complete;
+}
+
+/// A new issue the planner wrote: its id and the board's revision after the save.
+class PlanningIssueAdded {
+  /// Takes what the planner answered.
+  const PlanningIssueAdded({required this.id, required this.revision});
+
+  /// The id the planner gave it.
+  final String id;
+
+  /// The board's revision after the save.
+  final String revision;
 }
 
 /// One finding from the reader's last report, preserving unknown severities.
@@ -618,10 +642,18 @@ class PlanIssueDetail {
       subAgentsReported = _planMapsReported(map['subAgents']),
       subAgentsSupplied = map['subAgents'] != null,
       subIssues = _planStrings(map['subIssues']),
-      subIssuesReported = _planStringsReported(map['subIssues']);
+      subIssuesReported = _planStringsReported(map['subIssues']),
+      text = _planText(map, 'text'),
+      textReported = map['text'] is String;
 
   /// The revision reported by the daemon.
   final String revision;
+
+  /// The issue's text, empty when its file is gone.
+  final String text;
+
+  /// Whether the planner sent the text, an empty one included.
+  final bool textReported;
 
   /// The issue when supplied.
   /// The issue record returned by the daemon.

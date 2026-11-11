@@ -835,6 +835,17 @@ public final class WorkRun {
                 });
     }
 
+    /**
+     * Serializes a store write that touches no run, such as a new issue, with the runs' saves.
+     *
+     * @param save the write
+     * @param <T> what the write answers
+     * @return what the write answered
+     */
+    public <T> T alone(final Supplier<T> save) {
+        return record.locked(session -> save.get());
+    }
+
     /** Serializes a window move with report ownership checks and the store save itself. */
     public <T> T moves(final List<Moves.Move> moves, final Supplier<T> save) {
         return record.locked(

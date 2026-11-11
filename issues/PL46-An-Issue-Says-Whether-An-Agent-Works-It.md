@@ -33,7 +33,9 @@ the contract with the window, and the screen package's issue row), each with its
   Manual proposes no task, and its move goes ahead without a start.
 - The contract: `Issue.worker`, the proposal's `manual` list, and `PUT /projects/{project}/issues/{issue}/worker`
   with `{worker, revision}`, saved and answered as a move is, refused at a stale revision.
-- The screen package: the issue's row shows Agent or Manual and switches it through the new call.
+- The screen package: the issue's row shows Agent or Manual and switches it through the new call; the package moves a
+  story whose open issues are all Manual without opening Start, and its Start dialog names the proposal's `manual`
+  issues by the titles the board holds. The window reads none of it and only takes the new pin.
 - Every issue of a project counts as Manual until a person sets it, so the first story's work after this change
   starts nothing until its issues are set to Agent; the changelog says so.
 - Tests: red first in `core`, a story's work over one Agent and one Manual issue proposes a task for the Agent issue
@@ -44,8 +46,3 @@ the contract with the window, and the screen package's issue row), each with its
 ## Acceptance
 
 - A Manual issue gets no task in any start, an Agent issue does; the field is read back from a fresh clone after the person sets it.
-
-## To be checked
-
-- With Frontend: that the window moves a story whose issues are all Manual without opening Start, and shows the
-  proposal's Manual issues in the Start dialog.

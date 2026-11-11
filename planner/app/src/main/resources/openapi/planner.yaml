@@ -495,6 +495,50 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/issues:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: createIssue
+      summary: Add an idea as a new issue
+      description: >-
+        Writes a new issue in state Idea into the named repository of the project, saved as a move is saved: its file
+        with the next free number of the repository's first issue prefix, the repository's issue index rewritten, one
+        commit pushed under the person's own Git login, or nothing at all. A number an index row still holds is never
+        given again. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewIssueRequest'
+      responses:
+        '201':
+          description: The issue is written and pushed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueAdded'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/IssueRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/tasks/{task}/events:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -976,8 +1020,39 @@ components:
                 detail: The Git login was refused for the repository.
                 parameters:
                   repository: example
+    IssueConflict:
+      description: The board moved since the given revision (StaleRevision, naming the current one).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:StaleRevision
+            title: StaleRevision
+            status: 409
+            detail: The board moved since that revision.
+            parameters:
+              revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+    IssueRefused:
+      description: >-
+        A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 65536 bytes (field
+        empty), or a field is out of bounds (field repository, title, mustBeTrue, size or revision), or the store cannot
+        write it in its repository, such as a repository whose issues give no prefix (field empty). What was sent is
+        never repeated.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:IssueNotAllowed
+            title: IssueNotAllowed
+            status: 422
+            detail: The title must have 1 to 120 characters.
+            parameters:
+              field: title
+              reason: The title must have 1 to 120 characters.
     NotOffered:
-      description: This planner's store saves no moves, as in mock mode (NotOffered).
+      description: This planner's store saves no moves or adds no issues, as in mock mode (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -1140,12 +1215,21 @@ components:
             type: string
 
     Board:
-      description: The whole board at one revision, as an event of the stream carries it - the workflow and the stories.
+      description: >-
+        The whole board at one revision, as an event of the stream carries it - the workflow, the project's
+        repositories and the stories.
       type: object
-      required: [revision, states, phases, work, faults, stories]
+      required: [revision, states, phases, work, faults, repositories, stories]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        repositories:
+          type: array
+          description: >-
+            The project's repositories, its own first, the others in the order project.yml names them; a new issue
+            may be added in each of them, whether or not a story names an issue of it.
+          items:
+            $ref: '#/components/schemas/Name'
         states:
           type: array
           description: The states in workflow order.
@@ -1213,6 +1297,41 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IssueId'
+
+    NewIssueRequest:
+      description: An idea a person wrote, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [repository, title, mustBeTrue, revision]
+      properties:
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+          description: >-
+            One line without control characters; the spaces around it are dropped. At most 120 characters, as an
+            issue's head holds its title.
+          minLength: 1
+          maxLength: 120
+        mustBeTrue:
+          type: string
+          description: The paragraph the issue's file opens with.
+          minLength: 1
+          maxLength: 4000
+        size:
+          type: string
+          enum: [XS, S, M, L, XL]
+        revision:
+          $ref: '#/components/schemas/Revision'
+    IssueAdded:
+      description: The new issue's id and the board's revision after the save.
+      type: object
+      required: [id, revision]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
 
     Refreshed:
       description: The revision after a fetch.
@@ -1826,6 +1945,9 @@ components:
               type: string
             item:
               type: string
+            field:
+              type: string
+              description: The member of a new issue's body a refusal is about, or empty.
             from:
               type: string
             to:

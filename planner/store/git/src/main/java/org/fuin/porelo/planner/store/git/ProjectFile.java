@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
-import org.fuin.porelo.stories.Project;
+import org.fuin.porelo.planner.store.git.stories.Project;
 import org.jspecify.annotations.Nullable;
 
 /** Reads which repositories a project has from {@code project.yml} in its own repository. */

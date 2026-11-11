@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
@@ -40,6 +41,7 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -168,27 +170,36 @@ public final class GitStore implements PlanningStore {
                                             repository.name(),
                                             repository.url(),
                                             repository.branch()));
-            final Map<String, Map.Entry<String, Part>> read =
+            final Map<String, String> commits =
                     each(
                             repository -> {
                                 final String name = repository.name();
-                                if (old != null
-                                        && of(heads, name).equals(old.commits().get(name))) {
-                                    return Map.entry(
-                                            of(old.commits(), name), of(old.parts(), name));
+                                if (old != null && unchanged(old, heads, name)) {
+                                    return of(old.commits(), name);
                                 }
-                                final String commit =
-                                        remote.fetch(name, repository.url(), repository.branch());
-                                return Map.entry(
-                                        commit, reader.read(repository, commit, own(repository)));
+                                return remote.fetch(name, repository.url(), repository.branch());
                             });
-            final Map<String, String> commits = new LinkedHashMap<>();
-            final Map<String, Part> parts = new LinkedHashMap<>();
-            read.forEach(
-                    (name, entry) -> {
-                        commits.put(name, entry.getKey());
-                        parts.put(name, entry.getValue());
-                    });
+            final String own = repositories.get(0).name();
+            final Part ownPart =
+                    old != null && unchanged(old, heads, own)
+                            ? of(old.parts(), own)
+                            : ownPart(of(commits, own));
+            final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);
+            // A part read against another workflow is read again, since its checks may differ.
+            final boolean sameWorkflow =
+                    old != null && sameWorkflow(of(old.parts(), own).workflow(), project);
+            final Map<String, Part> parts =
+                    each(
+                            repository -> {
+                                final String name = repository.name();
+                                if (own(repository)) {
+                                    return ownPart;
+                                }
+                                if (old != null && sameWorkflow && unchanged(old, heads, name)) {
+                                    return of(old.parts(), name);
+                                }
+                                return reader.read(repository, of(commits, name), project);
+                            });
             return swap(commits, parts, clock.instant()).board();
         }
     }
@@ -200,6 +211,32 @@ public final class GitStore implements PlanningStore {
      */
     @Override
     public Board save(final Revision revision, final Writes writes) {
+        return saved(revision, writes, null).board();
+    }
+
+    /**
+     * Adds the issue as a move is saved: its file and its repository's index in one commit, read
+     * back before it is pushed.
+     */
+    @Override
+    public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
+        if (repositories.stream().noneMatch(r -> r.name().equals(issue.repository()))) {
+            throw new StoreException.NotSavable(
+                    "", issue.repository() + " is no repository of the project");
+        }
+        final Saved saved = saved(revision, new Writes(Map.of(), Map.of(), List.of()), issue);
+        final String id = saved.added();
+        if (id == null) {
+            throw new IllegalStateException("a save of a new issue gave it no id");
+        }
+        return new NewIssue.Added(id, saved.board());
+    }
+
+    /** A save's board, and the id it gave a new issue, if it added one. */
+    private record Saved(Board board, @Nullable String added) {}
+
+    private Saved saved(
+            final Revision revision, final Writes writes, final @Nullable NewIssue idea) {
         final String own = repositories.get(0).name();
         final ProjectLock.Held held =
                 lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own));
@@ -222,8 +259,8 @@ public final class GitStore implements PlanningStore {
             }
             final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
             final Map<String, String> stories = storyHeads(snapshot, writes);
-            if (issues.isEmpty() && stories.isEmpty()) {
-                return snapshot.board();
+            if (issues.isEmpty() && stories.isEmpty() && idea == null) {
+                return new Saved(snapshot.board(), null);
             }
             final Path scratch;
             try {
@@ -232,7 +269,7 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.Unreadable(own, "no directory for the save");
             }
             try {
-                return commitAndPush(snapshot, writes, issues, stories, scratch);
+                return commitAndPush(snapshot, writes, idea, issues, stories, scratch);
             } catch (final GitFailure | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
             } finally {
@@ -260,11 +297,59 @@ public final class GitStore implements PlanningStore {
     public @Nullable String storyState(final List<String> issueStates) {
         final Snapshot snapshot = current.get();
         final Part own = snapshot == null ? null : snapshot.parts().get(repositories.get(0).name());
-        final org.fuin.porelo.stories.Workflow workflow = own == null ? null : own.workflow();
+        final org.fuin.porelo.planner.store.git.stories.Workflow workflow =
+                own == null ? null : own.workflow();
         if (workflow == null) {
             throw new IllegalStateException("No board was read yet");
         }
         return workflow.storyState(null, issueStates);
+    }
+
+    /**
+     * Answers what a size took in one of the project's repositories, from its stage records at the
+     * board's commit, as {@code stage median} computes it; a person's moves count for nothing.
+     *
+     * @param repository the repository's name
+     * @param size the size, {@code XS} to {@code XL}
+     * @return the median minutes, or empty when the repository keeps no {@code stats/seed.csv}
+     * @throws StoreException.Unreadable when its seed or a record cannot be read, naming why
+     */
+    public Optional<Double> velocity(final String repository, final String size) {
+        final Snapshot snapshot = current.get();
+        if (snapshot == null) {
+            throw new IllegalStateException("No board was read yet");
+        }
+        final String commit = snapshot.commits().get(repository);
+        if (commit == null) {
+            throw new IllegalArgumentException(repository + " is no repository of the project");
+        }
+        try {
+            final Optional<String> seed = remote.read(repository, commit, "stats/seed.csv");
+            if (seed.isEmpty()) {
+                return Optional.empty();
+            }
+            final Map<String, String> files = new LinkedHashMap<>();
+            for (final String path : remote.list(repository, commit, "stats")) {
+                if (!path.endsWith(".jsonl")) {
+                    continue;
+                }
+                files.put(
+                        path.substring(path.lastIndexOf('/') + 1),
+                        remote.read(repository, commit, path).orElse(""));
+            }
+            return Optional.of(
+                    StageRecords.statistic(
+                            seed.get(),
+                            files,
+                            size,
+                            false,
+                            project(of(snapshot.parts(), repositories.get(0).name()))));
+        } catch (final GitFailure e) {
+            throw refusal(repository, e);
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.Unreadable(
+                    repository, "its velocity cannot be read: " + e.getMessage());
+        }
     }
 
     /** Each written issue's file and new state, by repository; every issue checked savable. */
@@ -283,24 +368,9 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.NotSavable(
                         id, "its file is gone and only its index row is left");
             }
-            final String commit = of(snapshot.commits(), name);
-            // The repository's commit check refuses a state change without the issue's record.
-            if (records(name, commit, "stats/seed.csv")
-                    && !records(name, commit, "stats/" + id + ".jsonl")) {
-                throw new StoreException.NotSavable(
-                        id, "the repository records issue stats and this issue has none");
-            }
             files.computeIfAbsent(name, key -> new LinkedHashMap<>()).put(path, write.getValue());
         }
         return files;
-    }
-
-    private boolean records(final String name, final String commit, final String path) {
-        try {
-            return remote.read(name, commit, path).isPresent();
-        } catch (final GitFailure e) {
-            throw refusal(name, e);
-        }
     }
 
     /** Each written story's file and its new stated state, empty where it goes. */
@@ -320,9 +390,10 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
-    private Board commitAndPush(
+    private Saved commitAndPush(
             final Snapshot snapshot,
             final Writes writes,
+            final @Nullable NewIssue idea,
             final Map<String, Map<String, String>> issues,
             final Map<String, String> stories,
             final Path scratch) {
@@ -342,11 +413,16 @@ public final class GitStore implements PlanningStore {
                 throw refusal(name, e);
             }
         }
+        final IdeaFile.Written added = idea == null ? null : idea(snapshot, idea, scratch);
+        final Set<String> indexed = new java.util.LinkedHashSet<>(issues.keySet());
+        if (idea != null) {
+            indexed.add(idea.repository());
+        }
         final Map<String, List<String>> rewritten = new LinkedHashMap<>();
-        for (final Map.Entry<String, Map<String, String>> repository : issues.entrySet()) {
-            final String name = repository.getKey();
+        for (final String name : indexed) {
+            final Map<String, String> moved = issues.getOrDefault(name, Map.of());
             final Path root = scratch.resolve(name);
-            for (final Map.Entry<String, String> head : repository.getValue().entrySet()) {
+            for (final Map.Entry<String, String> head : moved.entrySet()) {
                 edit(
                         snapshot,
                         name,
@@ -354,16 +430,19 @@ public final class GitStore implements PlanningStore {
                         head.getKey(),
                         text -> HeadEdit.issueState(text, head.getValue()));
             }
-            final org.fuin.porelo.stories.IssuesIndex.Result index;
-            try {
-                index = org.fuin.porelo.stories.IssuesIndex.write(root.resolve("issues"));
-            } catch (final IOException | UncheckedIOException e) {
-                throw new StoreException.Unreadable(name, local(e, scratch));
-            } catch (final IllegalArgumentException e) {
-                throw new StoreException.NotSavable("", local(e, scratch));
+            final List<String> heads = written(moved.keySet(), added, idea, name);
+            final List<String> written =
+                    new ArrayList<>(writeIndex(snapshot, name, root, scratch, heads));
+            written.addAll(recordMoves(snapshot, writes, name, root, moved));
+            final List<String> settled = settled(snapshot, moved);
+            if (!settled.isEmpty()) {
+                // The row is written from the head first, then outlives the file it was read from.
+                for (final String path : settled) {
+                    settle(snapshot, name, root, path);
+                }
+                written.addAll(writeIndex(snapshot, name, root, scratch, heads));
             }
-            refuseFaults(snapshot, name, repository.getValue().keySet(), index.faults());
-            rewritten.put(name, new ArrayList<>(relative(root, index.written())));
+            rewritten.put(name, written);
         }
         final Path ownRoot = scratch.resolve(own);
         for (final Map.Entry<String, String> head : stories.entrySet()) {
@@ -376,12 +455,13 @@ public final class GitStore implements PlanningStore {
                     text -> HeadEdit.storyState(text, state.isEmpty() ? null : state));
         }
         if (Files.isDirectory(ownRoot.resolve("stories"))) {
-            final org.fuin.porelo.stories.StoriesIndex.Result index;
+            final org.fuin.porelo.planner.store.git.stories.StoriesIndex.Result index;
             try {
                 index =
-                        org.fuin.porelo.stories.StoriesIndex.write(
+                        org.fuin.porelo.planner.store.git.stories.StoriesIndex.write(
                                 ownRoot.resolve("stories"),
-                                org.fuin.porelo.stories.IssueSource.local(ownRoot));
+                                org.fuin.porelo.planner.store.git.stories.IssueSource.local(
+                                        ownRoot, project(of(snapshot.parts(), own))));
             } catch (final IOException | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
             } catch (final IllegalArgumentException e) {
@@ -390,6 +470,9 @@ public final class GitStore implements PlanningStore {
             }
             final List<String> edited = new ArrayList<>(stories.keySet());
             issues.values().forEach(heads -> edited.addAll(heads.keySet()));
+            if (added != null) {
+                edited.add(added.path());
+            }
             refuseFaults(snapshot, own, edited, index.faults());
             rewritten
                     .computeIfAbsent(own, key -> new ArrayList<>())
@@ -401,7 +484,7 @@ public final class GitStore implements PlanningStore {
             final String name = repository.name();
             final Map<String, String> edited = issues.getOrDefault(name, Map.of());
             // The heads edited and every file the index library rewrote, the story texts too.
-            final List<String> heads = new ArrayList<>(edited.keySet());
+            final List<String> heads = written(edited.keySet(), added, idea, name);
             heads.addAll(rewritten.getOrDefault(name, List.of()));
             if (name.equals(own)) {
                 heads.addAll(stories.keySet());
@@ -422,7 +505,11 @@ public final class GitStore implements PlanningStore {
                             });
             final Map<String, String> movedStories =
                     name.equals(own) ? stories : Map.<String, String>of();
-            subjects.put(name, SaveFiles.subject(movedIssues, movedStories));
+            subjects.put(
+                    name,
+                    added != null && movedIssues.isEmpty() && movedStories.isEmpty()
+                            ? "Add an idea"
+                            : SaveFiles.subject(movedIssues, movedStories));
             changed.put(name, paths);
         }
         final Map<String, String> made = new LinkedHashMap<>();
@@ -438,7 +525,15 @@ public final class GitStore implements PlanningStore {
                                 entry.getValue(),
                                 of(subjects, name));
                 readBack(name, commit, scratch.resolve(name), entry.getValue());
-                after.put(name, reader.read(repository(name), commit, own(repository(name))));
+                final Part part =
+                        reader.read(
+                                repository(name),
+                                commit,
+                                own(repository(name)) ? null : project(of(snapshot.parts(), own)));
+                if (added != null && idea != null && name.equals(idea.repository())) {
+                    readsBack(name, part, added.id());
+                }
+                after.put(name, part);
                 made.put(name, commit);
             } catch (final GitFailure e) {
                 throw refusal(name, e);
@@ -491,7 +586,163 @@ public final class GitStore implements PlanningStore {
                         new StoreException.Unreadable(name, String.valueOf(e.getMessage())));
             }
         }
-        return swapAfter(snapshot, commits, after).board();
+        return new Saved(
+                swapAfter(snapshot, commits, after).board(), added == null ? null : added.id());
+    }
+
+    /**
+     * Adds a move line to the stage records of each issue the save moves in a repository, in the
+     * save's copy of it.
+     *
+     * @return the record files written, by their paths in the repository
+     */
+    private List<String> recordMoves(
+            final Snapshot snapshot,
+            final Writes writes,
+            final String name,
+            final Path root,
+            final Map<String, String> moved) {
+        final org.fuin.porelo.planner.store.git.stories.Workflow workflow =
+                project(of(snapshot.parts(), repositories.get(0).name()));
+        final String commit = of(snapshot.commits(), name);
+        final Instant at = clock.instant();
+        final List<String> written = new ArrayList<>();
+        for (final Map.Entry<String, String> write : writes.issues().entrySet()) {
+            final String id = write.getKey();
+            final String path = of(snapshot.parts(), name).paths().get(id);
+            final Issue issue = snapshot.board().issue(id).orElse(null);
+            if (path == null
+                    || !moved.containsKey(path)
+                    || issue == null
+                    || issue.state().equals(write.getValue())
+                    || !StageRecords.recorded(id)) {
+                continue;
+            }
+            final String stats = StageRecords.path(id);
+            final String text;
+            try {
+                text =
+                        StageRecords.move(
+                                remote.read(name, commit, stats).orElse(null),
+                                id,
+                                issue.size(),
+                                issue.state(),
+                                write.getValue(),
+                                at,
+                                workflow);
+            } catch (final GitFailure e) {
+                throw refusal(name, e);
+            } catch (final IllegalArgumentException e) {
+                throw new StoreException.NotSavable(
+                        id, stats + " cannot take the move: " + e.getMessage());
+            }
+            try {
+                final Path file = root.resolve(RepoPath.checked(stats));
+                Files.createDirectories(file.getParent());
+                Files.writeString(file, text, StandardCharsets.UTF_8);
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            written.add(stats);
+        }
+        return written;
+    }
+
+    /** Writes the new issue's file in the save's copy of its repository. */
+    private IdeaFile.Written idea(
+            final Snapshot snapshot, final NewIssue idea, final Path scratch) {
+        final String own = repositories.get(0).name();
+        try {
+            return IdeaFile.write(
+                    scratch.resolve(idea.repository()),
+                    scratch.resolve(own),
+                    idea.repository().equals(own),
+                    idea,
+                    project(of(snapshot.parts(), own)));
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable("", local(e, scratch));
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(idea.repository(), local(e, scratch));
+        }
+    }
+
+    /** The heads a save wrote in a repository: those it edited, and a new issue's file. */
+    private static List<String> written(
+            final java.util.Collection<String> edited,
+            final IdeaFile.@Nullable Written added,
+            final @Nullable NewIssue idea,
+            final String name) {
+        final List<String> heads = new ArrayList<>(edited);
+        if (added != null && idea != null && name.equals(idea.repository())) {
+            heads.add(added.path());
+        }
+        return heads;
+    }
+
+    /** A new issue is pushed only once its commit reads it back in the state it was written in. */
+    private static void readsBack(final String name, final Part part, final String id) {
+        if (part.issues().stream()
+                .noneMatch(
+                        issue -> issue.id().equals(id) && issue.state().equals(IdeaFile.STATE))) {
+            throw new StoreException.Unreadable(
+                    name, "the new issue " + id + " does not read back from its commit");
+        }
+    }
+
+    /** Writes a repository's issue indexes from its heads, refusing what the index refuses. */
+    private List<String> writeIndex(
+            final Snapshot snapshot,
+            final String name,
+            final Path root,
+            final Path scratch,
+            final java.util.Collection<String> heads) {
+        final org.fuin.porelo.planner.store.git.stories.IssuesIndex.Result index;
+        try {
+            index =
+                    org.fuin.porelo.planner.store.git.stories.IssuesIndex.write(
+                            root.resolve("issues"),
+                            project(of(snapshot.parts(), repositories.get(0).name())));
+        } catch (final IOException | UncheckedIOException e) {
+            throw new StoreException.Unreadable(name, local(e, scratch));
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable("", local(e, scratch));
+        }
+        refuseFaults(snapshot, name, heads, index.faults());
+        return relative(root, index.written());
+    }
+
+    /** The files of the issues a save moves into a closed state, which it settles. */
+    private List<String> settled(final Snapshot snapshot, final Map<String, String> heads) {
+        final org.fuin.porelo.planner.store.git.stories.Workflow workflow =
+                project(of(snapshot.parts(), repositories.get(0).name()));
+        return heads.entrySet().stream()
+                .filter(head -> workflow.closed(head.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /**
+     * Settles a closed issue: its row names it without a link to its file, and the file goes, so
+     * the row is all that is left of it.
+     */
+    private static void settle(
+            final Snapshot snapshot, final String name, final Path root, final String path) {
+        final Path file = root.resolve(path);
+        final String id = item(snapshot, name, path);
+        final Path index = file.resolveSibling("README.md");
+        final String anchor = "<a id=\"" + id.toLowerCase(java.util.Locale.ROOT) + "\"></a>";
+        final String linked = anchor + "[" + id + "](" + file.getFileName() + ")";
+        try {
+            final String text = Files.readString(index, StandardCharsets.UTF_8);
+            if (id.isEmpty() || !text.contains(linked)) {
+                throw new StoreException.NotSavable(
+                        id, "its index row does not stand where the index writes it");
+            }
+            Files.writeString(index, text.replace(linked, anchor + id), StandardCharsets.UTF_8);
+            Files.delete(file);
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(name, id + " could not be settled");
+        }
     }
 
     /** Edits one head, a refusal naming the item whose file it is. */
@@ -528,7 +779,13 @@ public final class GitStore implements PlanningStore {
         String item = "";
         for (final String path : edited) {
             final String file = path.substring(path.lastIndexOf('/') + 1);
-            if (faults.stream().anyMatch(fault -> fault.startsWith(file + ":"))) {
+            // The index names a subgroup's file by its path below issues/, not its name alone.
+            final String below = path.substring(path.indexOf('/') + 1);
+            if (faults.stream()
+                    .anyMatch(
+                            fault ->
+                                    fault.startsWith(file + ":")
+                                            || fault.startsWith(below + ":"))) {
                 item = item(snapshot, name, path);
                 break;
             }
@@ -593,9 +850,17 @@ public final class GitStore implements PlanningStore {
     private void readBack(
             final String name, final String commit, final Path root, final List<String> paths) {
         for (final String path : paths) {
+            final Path file = root.resolve(path);
+            if (!Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                if (remote.read(name, commit, path).isPresent()) {
+                    throw new StoreException.Unreadable(
+                            name, path + " is still there though the save deleted it");
+                }
+                continue;
+            }
             final String wrote;
             try {
-                wrote = Files.readString(root.resolve(path), StandardCharsets.UTF_8);
+                wrote = Files.readString(file, StandardCharsets.UTF_8);
             } catch (final IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -690,13 +955,17 @@ public final class GitStore implements PlanningStore {
                 }
                 commits.put(repository.name(), fetched.get());
             }
+            final Part ownPart = ownPart(of(commits, repositories.get(0).name()));
+            final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);
             final Map<String, Part> parts =
                     each(
                             repository ->
-                                    reader.read(
-                                            repository,
-                                            of(commits, repository.name()),
-                                            own(repository)));
+                                    own(repository)
+                                            ? ownPart
+                                            : reader.read(
+                                                    repository,
+                                                    of(commits, repository.name()),
+                                                    project));
             // Checked never: the first request starts a check at once.
             return Optional.of(swap(commits, parts, Instant.MIN));
         }
@@ -719,7 +988,7 @@ public final class GitStore implements PlanningStore {
     private Board board(final Map<String, String> commits, final Map<String, Part> parts) {
         final String own = repositories.get(0).name();
         final Part ownPart = of(parts, own);
-        final org.fuin.porelo.stories.Workflow read = ownPart.workflow();
+        final org.fuin.porelo.planner.store.git.stories.Workflow read = ownPart.workflow();
         if (read == null) {
             throw new StoreException.WorkflowMissing(own);
         }
@@ -759,7 +1028,7 @@ public final class GitStore implements PlanningStore {
             final Map<String, Issue> byId = new LinkedHashMap<>();
             issues.forEach(issue -> byId.put(issue.id(), issue));
             final List<Story> stories = new ArrayList<>();
-            for (final org.fuin.porelo.stories.Story story : ownPart.stories()) {
+            for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
                 try {
                     stories.add(story(story, byId, read, faults));
                 } catch (final IllegalArgumentException e) {
@@ -785,9 +1054,9 @@ public final class GitStore implements PlanningStore {
      * A story as the board shows it: its issues by id, and its state as the stories index gives it.
      */
     private Story story(
-            final org.fuin.porelo.stories.Story story,
+            final org.fuin.porelo.planner.store.git.stories.Story story,
             final Map<String, Issue> issues,
-            final org.fuin.porelo.stories.Workflow workflow,
+            final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
             final List<String> faults) {
         final List<String> ids = new ArrayList<>();
         final List<String> states = new ArrayList<>();
@@ -840,6 +1109,47 @@ public final class GitStore implements PlanningStore {
             throw new IllegalStateException("nothing read for " + repository);
         }
         return value;
+    }
+
+    private static boolean unchanged(
+            final Snapshot old, final Map<String, String> heads, final String name) {
+        return of(heads, name).equals(old.commits().get(name));
+    }
+
+    /** Reads the project's own repository, which holds the workflow every part is read against. */
+    private Part ownPart(final String commit) {
+        final Repository own = repositories.get(0);
+        try {
+            return reader.read(own, commit, null);
+        } catch (final RuntimeException e) {
+            throw refusal(own.name(), e);
+        }
+    }
+
+    private org.fuin.porelo.planner.store.git.stories.Workflow project(final Part ownPart) {
+        final org.fuin.porelo.planner.store.git.stories.Workflow project = ownPart.workflow();
+        if (project == null) {
+            throw new StoreException.WorkflowMissing(repositories.get(0).name());
+        }
+        return project;
+    }
+
+    private static boolean sameWorkflow(
+            final org.fuin.porelo.planner.store.git.stories.@Nullable Workflow before,
+            final org.fuin.porelo.planner.store.git.stories.Workflow now) {
+        if (before == now) {
+            return true;
+        }
+        if (before == null
+                || !before.states().equals(now.states())
+                || !before.phases().equals(now.phases())) {
+            return false;
+        }
+        return now.states().stream()
+                .allMatch(
+                        state ->
+                                before.closed(state) == now.closed(state)
+                                        && before.measured(state) == now.measured(state));
     }
 
     private boolean own(final Repository repository) {

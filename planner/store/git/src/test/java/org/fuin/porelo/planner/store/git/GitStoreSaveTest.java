@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -16,11 +17,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Writes;
-import org.fuin.porelo.stories.IssueSource;
-import org.fuin.porelo.stories.IssuesIndex;
-import org.fuin.porelo.stories.StoriesIndex;
+import org.fuin.porelo.planner.store.git.stories.IssueHead;
+import org.fuin.porelo.planner.store.git.stories.IssueSource;
+import org.fuin.porelo.planner.store.git.stories.IssuesIndex;
+import org.fuin.porelo.planner.store.git.stories.StageRecords;
+import org.fuin.porelo.planner.store.git.stories.StoriesIndex;
+import org.fuin.porelo.planner.store.git.stories.Workflow;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +55,21 @@ class GitStoreSaveTest {
               - {name: Build, states: [Review]}
               - {name: Done, states: [Finished, Rejected]}
             """;
+
+    /** A closed line as the build tools' stage command writes it for an agent's work. */
+    private static final String AGENT_LINE =
+            "{\"issue\":\"CD01\",\"stage\":\"implement\",\"n\":1,\"actor\":\"agent\","
+                    + "\"model\":null,\"effort\":null,\"size\":\"S\",\"status_before\":\"Backlog\","
+                    + "\"status_after\":\"Backlog\",\"start\":\"2026-01-01T10:00:00Z\","
+                    + "\"end\":\"2026-01-01T10:04:00Z\",\"wall_min\":4.0,\"vm_min\":0,"
+                    + "\"estimate_min\":null,\"result\":\"done\",\"wait_reason\":null,"
+                    + "\"note\":\"no-session\",\"claude_input_tokens\":null,"
+                    + "\"claude_output_tokens\":null,\"claude_cache_read_tokens\":null,"
+                    + "\"claude_cache_write_tokens\":null,\"claude_messages\":null,"
+                    + "\"codex_input_tokens\":null,\"codex_cached_tokens\":null,"
+                    + "\"codex_output_tokens\":null,\"codex_reasoning_tokens\":null,"
+                    + "\"agy_input_tokens\":null,\"agy_cache_read_tokens\":null,"
+                    + "\"agy_output_tokens\":null}\n";
 
     @TempDir Path dir;
 
@@ -120,8 +141,10 @@ class GitStoreSaveTest {
                 .isEqualTo("Idea");
         assertThat(saved.revision()).as("a new revision").isNotEqualTo(board.revision());
         assertThat(names(OTHER, head(OTHER)))
-                .as("the other repository's commit changes its issue and its index alone")
-                .containsExactlyInAnyOrder("issues/CD01-Other.md", "issues/README.md");
+                .as(
+                        "the other repository's commit changes its issue, its index and its record alone")
+                .containsExactlyInAnyOrder(
+                        "issues/CD01-Other.md", "issues/README.md", "stats/CD01.jsonl");
         assertThat(read(OTHER, "issues/CD01-Other.md"))
                 .as("the head carries the new state")
                 .contains("\"state\": \"Idea\"");
@@ -137,6 +160,85 @@ class GitStoreSaveTest {
         assertThat(log(OTHER, head(OTHER), "%an <%ae>%n%B"))
                 .as("the person's own login and a subject naming no item, with no trailer")
                 .containsExactly("A Person <person@example.org>", "Move an issue to Idea", "");
+    }
+
+    @Test
+    void anIssueMovedToFinishedIsSettledAndAMentionOutsideTheIssuesIsAFaultAfterwards()
+            throws Exception {
+        // A finished issue's file left behind, or its number left in a document, sends a reader
+        // to an issue nobody keeps any more.
+        repositories.repository(OTHER, Map.of("doc/guide.md", "How it works.\nAs CD01 asked.\n"));
+        final GitStore store = store();
+        final Board board = store.board();
+        assertThat(board.faults())
+                .as("an open issue's number is not judged here")
+                .noneMatch(fault -> fault.contains("doc/guide.md"));
+
+        final Board saved =
+                store.save(
+                        board.revision(), writes(Map.of("CD01", "Finished"), Map.of(), List.of()));
+
+        assertThat(names(OTHER, head(OTHER)))
+                .as("one commit deletes the file, rewrites the index and records the move")
+                .containsExactlyInAnyOrder(
+                        "issues/CD01-Other.md", "issues/README.md", "stats/CD01.jsonl");
+        assertThat(
+                        StageRecords.read(
+                                read(OTHER, "stats/CD01.jsonl"),
+                                "CD01.jsonl",
+                                true,
+                                Workflow.read(WORKFLOW)))
+                .as("the settled issue's record stays, its last line the move to Finished")
+                .last()
+                .satisfies(
+                        record ->
+                                assertThat(record)
+                                        .as("the move")
+                                        .containsEntry("stage", "move")
+                                        .containsEntry("status_after", "Finished"));
+        assertThat(git(OTHER, "ls-tree", "-r", "--name-only", head(OTHER)))
+                .as("the issue's file is gone")
+                .doesNotContain("issues/CD01-Other.md");
+        assertThat(read(OTHER, "issues/README.md"))
+                .as(
+                        "its row is kept under Finished, anchored, with its title and no link to the file")
+                .contains("## Finished")
+                .contains("| <a id=\"cd01\"></a>CD01 | An issue | Something. |")
+                .doesNotContain("CD01-Other.md");
+        assertThat(saved.issue("CD01").orElseThrow())
+                .as("the board answers the settled issue from its row")
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.state()).as("state").isEqualTo("Finished");
+                            assertThat(issue.title()).as("title").isEqualTo("An issue");
+                            assertThat(issue.repository()).as("repository").isEqualTo(OTHER);
+                            assertThat(issue.text()).as("no text").isEmpty();
+                        });
+        assertThat(saved.faults())
+                .as("the document still naming the settled number, with its line")
+                .contains("porelo-other: doc/guide.md:2: CD01 names an issue that is settled");
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
+        assertThat(freshBoard().issue("CD01").orElseThrow().state())
+                .as("a fresh clone reads the settled issue back from its row")
+                .isEqualTo("Finished");
+    }
+
+    @Test
+    void aSaveChecksARepositorysIssuesAgainstTheProjectsWorkflowAndNotItsOwnFile()
+            throws Exception {
+        // A file the board no longer reads must not refuse a move the board offers.
+        repositories.repository(OTHER, Map.of("issues/workflow.yml", "states: [\n"));
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final Board saved =
+                store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+
+        assertThat(saved.issue("CD01").orElseThrow().state())
+                .as("the move is saved against the project's workflow")
+                .isEqualTo("Idea");
     }
 
     @Test
@@ -255,16 +357,100 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void anIssueWithoutItsRecordWhereTheRepositoryRecordsStatsIsRefusedBeforeAnyWrite()
-            throws Exception {
-        // The repository's commit check would refuse the planner's commit once it is pushed.
+    void aMoveOfAnIssueWithoutARecordWritesAMoveLineTheRecordsReaderTakesBack() throws Exception {
+        // A move left out of the issue's records loses when its state changed, and a repository
+        // that records stats would refuse the planner's commit without them.
         Files.createDirectories(repositories.work(OTHER).resolve("stats"));
-        Files.writeString(repositories.work(OTHER).resolve("stats/seed.csv"), "id,stage\n");
+        Files.writeString(
+                repositories.work(OTHER).resolve("stats/seed.csv"),
+                "size,minutes\nXS,8\nS,27\nM,53\nL,80\n");
         repositories.commit(OTHER);
         final GitStore store = store();
         final Board board = store.board();
-        final String other = head(OTHER);
+        final Instant before = Instant.now();
+
+        store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
+
+        final Instant after = Instant.now();
+        assertThat(names(OTHER, head(OTHER)))
+                .as("the record is written in the move's own commit")
+                .containsExactlyInAnyOrder(
+                        "issues/CD01-Other.md", "issues/README.md", "stats/CD01.jsonl");
+        final List<Map<String, @Nullable Object>> records =
+                StageRecords.read(
+                        read(OTHER, "stats/CD01.jsonl"),
+                        "CD01.jsonl",
+                        true,
+                        Workflow.read(WORKFLOW));
+        assertThat(records).as("one closed line, read back by the records' reader").hasSize(1);
+        final Map<String, @Nullable Object> record = records.get(0);
+        assertThat(record)
+                .as("a person's move with the old and new state and the issue's size")
+                .containsEntry("issue", "CD01")
+                .containsEntry("stage", "move")
+                .containsEntry("n", 1)
+                .containsEntry("actor", "person")
+                .containsEntry("size", "S")
+                .containsEntry("status_before", "Backlog")
+                .containsEntry("status_after", "Review")
+                .containsEntry("result", "done")
+                .containsEntry("wall_min", null)
+                .containsEntry("vm_min", null)
+                .containsEntry("note", null)
+                .doesNotContainKey("session");
+        assertThat(record.get("end"))
+                .as("closed the moment it starts")
+                .isEqualTo(record.get("start"));
+        assertThat(Instant.parse((String) record.get("start")))
+                .as("the time of the move")
+                .isBetween(before, after);
+        assertThat(read(OTHER, "stats/CD01.jsonl"))
+                .as("no local path, account or machine in the public record")
+                .doesNotContain(dir.toString())
+                .doesNotContain("person@example.org")
+                .doesNotContain("A Person");
+    }
+
+    @Test
+    void aMoveIsAppendedToAnIssuesRecordKeepingEveryEarlierLineAndNumberedAfterItsMoves()
+            throws Exception {
+        // A move that rewrote or dropped an agent's line would lose measured work.
+        Files.createDirectories(repositories.work(OTHER).resolve("stats"));
+        Files.writeString(repositories.work(OTHER).resolve("stats/CD01.jsonl"), AGENT_LINE);
+        repositories.commit(OTHER);
+        final GitStore store = store();
+        Board board = store.board();
+
+        board = store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
+        store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+
+        final String text = read(OTHER, "stats/CD01.jsonl");
+        assertThat(text).as("the agent's line is kept as it was, first").startsWith(AGENT_LINE);
+        final List<Map<String, @Nullable Object>> records =
+                StageRecords.read(text, "CD01.jsonl", true, Workflow.read(WORKFLOW));
+        assertThat(records.stream().map(record -> record.get("stage")).toList())
+                .as("the agent's stage and then the two moves")
+                .containsExactly("implement", "move", "move");
+        assertThat(records.stream().map(record -> record.get("n")).toList())
+                .as("moves numbered among themselves, after the agent's own")
+                .containsExactly(1, 1, 2);
+        assertThat(records.get(2))
+                .as("the second move leaves the state the first one set")
+                .containsEntry("status_before", "Review")
+                .containsEntry("status_after", "Idea");
+    }
+
+    @Test
+    void aMoveOfAnIssueWhoseRecordIsBrokenIsRefusedNamingTheFileAndPushesNothing()
+            throws Exception {
+        // A line added to a record nobody can read would hide the fault under one more commit.
+        Files.createDirectories(repositories.work(OTHER).resolve("stats"));
+        Files.writeString(repositories.work(OTHER).resolve("stats/CD01.jsonl"), "{\"issue\":\n");
+        repositories.commit(OTHER);
+        final GitStore store = store();
+        final Board board = store.board();
         final String own = head(OWN);
+        final String other = head(OTHER);
 
         final StoreException.NotSavable refused =
                 catchThrowableOfType(
@@ -280,10 +466,73 @@ class GitStoreSaveTest {
         assertThat(refused).as("refused").isNotNull();
         assertThat(refused.subject()).as("names the issue").isEqualTo("CD01");
         assertThat(refused.getMessage())
-                .isEqualTo("the repository records issue stats and this issue has none");
+                .as("names the record's file and why")
+                .startsWith("stats/CD01.jsonl cannot take the move: ");
         assertThat(List.of(head(OWN), head(OTHER)))
                 .as("nothing pushed")
                 .containsExactly(own, other);
+    }
+
+    @Test
+    void theVelocityIsTheSeedsAndFinishedWorksMedianAndAMoveLeavesItAsItWas() throws Exception {
+        // A velocity counting a person's move, or taken from no seed, would mislead an estimate.
+        Files.createDirectories(repositories.work(OTHER).resolve("stats"));
+        Files.writeString(
+                repositories.work(OTHER).resolve("stats/seed.csv"),
+                "size,minutes\nXS,8\nS,27\nM,53\nL,80\n");
+        Files.writeString(
+                repositories.work(OTHER).resolve("stats/CD01.jsonl"),
+                AGENT_LINE.replace(
+                        "\"status_after\":\"Backlog\"", "\"status_after\":\"Finished\""));
+        repositories.commit(OTHER);
+        final GitStore store = store();
+        final Board board = store.board();
+
+        assertThat(store.velocity(OTHER, "S"))
+                .as("the median of the seed's 27 and the finished issue's 4")
+                .contains(15.5);
+        store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
+        assertThat(store.velocity(OTHER, "S"))
+                .as("the move is recorded but counts for nothing")
+                .contains(15.5);
+        assertThat(store.velocity(OWN, "S"))
+                .as("a repository without a seed has no velocity yet")
+                .isEmpty();
+    }
+
+    @Test
+    void anIssueSavedInTheStateItHasRecordsNoMoveAndCommitsNothing() throws Exception {
+        // A line for a move nobody made would stand in the issue's history as a state change.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String other = head(OTHER);
+
+        store.save(board.revision(), writes(Map.of("CD01", "Backlog"), Map.of(), List.of()));
+
+        assertThat(head(OTHER)).as("no commit, so no record").isEqualTo(other);
+    }
+
+    @Test
+    void aSubIssueIsMovedWithoutARecordSinceNoRecordFileCanNameIt() throws Exception {
+        // Stage records name top-level issues only, and refusing the move would strand a sub-issue.
+        final Path issues = repositories.work(OTHER).resolve("issues");
+        Files.writeString(
+                issues.resolve("CD01.1-Part.md"),
+                issue("CD01.1", "Backlog")
+                        .replace(
+                                "\"Something.\"\n}",
+                                "\"Something.\",\n  \"parent\": \"CD01\",\n  \"role\": \"builder\"\n}"));
+        IssuesIndex.write(issues);
+        repositories.commit(OTHER);
+        final GitStore store = store();
+        final Board board = store.board();
+
+        store.save(board.revision(), writes(Map.of("CD01.1", "Review"), Map.of(), List.of()));
+
+        assertThat(names(OTHER, head(OTHER)))
+                .as("the move is committed, with no record file")
+                .containsExactlyInAnyOrder("issues/CD01.1-Part.md", "issues/README.md");
+        assertThat(read(OTHER, "issues/CD01.1-Part.md")).contains("\"state\": \"Review\"");
     }
 
     @Test
@@ -491,6 +740,126 @@ class GitStoreSaveTest {
         assertThat(read(OTHER, "issues/CD01-Other.md")).contains("\"state\": \"Review\"");
     }
 
+    @Test
+    void anIdeaIsReadBackFromAFreshCloneWithItsHeadItsIndexRowAndANumberNoIndexRowHolds()
+            throws Exception {
+        // A number taken twice would give two issues one id, and the finished one lives on only
+        // in its index row once its file is deleted.
+        Files.writeString(
+                repositories.work(OTHER).resolve("issues/CD02-Done.md"), issue("CD02", "Finished"));
+        IssuesIndex.write(repositories.work(OTHER).resolve("issues"));
+        Files.delete(repositories.work(OTHER).resolve("issues/CD02-Done.md"));
+        repositories.commit(OTHER);
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final NewIssue.Added added =
+                store.createIssue(
+                        board.revision(),
+                        new NewIssue(OTHER, "A new idea's words", "It is there.\n", "S"));
+
+        assertThat(added.id()).as("the number after the one only a row holds").isEqualTo("CD03");
+        assertThat(added.board().issue("CD03").orElseThrow().state())
+                .as("the board after the save holds it in Idea")
+                .isEqualTo("Idea");
+        assertThat(names(OTHER, head(OTHER)))
+                .as("one commit adds the issue's file and rewrites the index")
+                .containsExactlyInAnyOrder("issues/CD03-A-new-ideas-words.md", "issues/README.md");
+        assertThat(head(OWN)).as("the own repository is left alone").isEqualTo(own);
+        final Path clone = dir.resolve("fresh");
+        git(
+                null,
+                "clone",
+                "--quiet",
+                repositories.served().resolve(OTHER + ".git").toString(),
+                clone.toString());
+        final String text = Files.readString(clone.resolve("issues/CD03-A-new-ideas-words.md"));
+        final IssueHead head =
+                IssueHead.read(
+                        text,
+                        Workflow.read(Files.readString(clone.resolve("issues/workflow.yml"))));
+        assertThat(head).as("the file opens with a head the schema takes").isNotNull();
+        assertThat(List.of(head.id(), head.title(), head.state(), head.size()))
+                .as("its id, title, state and size")
+                .containsExactly("CD03", "A new idea's words", "Idea", "S");
+        assertThat(text)
+                .as("the heading and what must be true")
+                .startsWith("# CD03 — A new idea's words\n")
+                .contains("\n**What must be true.** It is there.\n");
+        assertThat(Files.readString(clone.resolve("issues/README.md")))
+                .as("the index has its row")
+                .contains("<a id=\"cd03\"></a>");
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+        assertThat(log(OTHER, head(OTHER), "%s"))
+                .as("a subject naming no number")
+                .containsExactly("Add an idea");
+    }
+
+    @Test
+    void anIdeaInTheOwnRepositoryTakesThePrefixItsIssuesUse() throws Exception {
+        // project.yml names no prefix for the own repository; a wrong one would file it elsewhere.
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final NewIssue.Added added =
+                store.createIssue(board.revision(), new NewIssue(OWN, "Own", "Own.", null));
+
+        assertThat(added.id()).as("the own issues' prefix, the next number").isEqualTo("AB03");
+        assertThat(read(OWN, "issues/AB03-Own.md")).as("no size yet").contains("\"size\": \"-\"");
+    }
+
+    @Test
+    void anIdeaForARepositoryOutsideTheProjectWritesNothingAnywhere() throws Exception {
+        // Written to a repository the project does not name, the idea would land where nobody
+        // plans.
+        final java.util.concurrent.atomic.AtomicBoolean begun =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final GitStore store = store(real -> remote(real, "scratch", () -> begun.set(true)));
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                store.createIssue(
+                                        board.revision(),
+                                        new NewIssue("porelo-elsewhere", "Idea", "Text.", null)));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(begun.get()).as("refused before a save begins to write").isFalse();
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed")
+                .containsExactly(own, other);
+    }
+
+    @Test
+    void anIdeaAgainstAnOlderRevisionIsRefusedAndWritesNothing() throws Exception {
+        // An idea numbered on an old board could take a number someone has taken since.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        Files.writeString(
+                repositories.work(OTHER).resolve("issues/CD01-Other.md"), issue("CD01", "Idea"));
+        repositories.commit(OTHER);
+        final String other = head(OTHER);
+
+        final StoreException.StaleRevision stale =
+                catchThrowableOfType(
+                        StoreException.StaleRevision.class,
+                        () ->
+                                store.createIssue(
+                                        board.revision(),
+                                        new NewIssue(OTHER, "Idea", "Text.", null)));
+
+        assertThat(stale).as("refused as stale").isNotNull();
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed")
+                .containsExactly(own, other);
+    }
+
     /** A step run before one of the remote's calls, to make the race or failure it needs. */
     @FunctionalInterface
     private interface Before {
@@ -568,6 +937,33 @@ class GitStoreSaveTest {
                 Duration.ofSeconds(10),
                 4,
                 Runnable::run);
+    }
+
+    /** The board as a store with a cache of its own reads it from the served repositories. */
+    private Board freshBoard() throws Exception {
+        final Map<String, String> other = new HashMap<>(person);
+        other.put("XDG_CACHE_HOME", Files.createDirectories(dir.resolve("fresh-cache")).toString());
+        final Path cache = CacheDirectory.of(other, "project");
+        final GitRemote fresh =
+                new GitRemote(
+                        cache,
+                        other,
+                        Duration.ofSeconds(5),
+                        new GitRunner(Duration.ofSeconds(20), 1 << 20),
+                        1 << 16);
+        return new GitStore(
+                        List.of(
+                                new Repository(OWN, new CloneUrl(server.url(OWN + ".git")), null),
+                                new Repository(
+                                        OTHER, new CloneUrl(server.url(OTHER + ".git")), "main")),
+                        fresh,
+                        new StoreReader(fresh, 1000),
+                        new FileProjectLock(cache),
+                        Clock.systemUTC(),
+                        Duration.ofSeconds(10),
+                        4,
+                        Runnable::run)
+                .board();
     }
 
     /** The fixture's indexes as the library writes them, so a save changes only what it moves. */

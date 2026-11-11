@@ -1,0 +1,46 @@
+{
+  "reflection": [
+    {
+      "type": "com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.io.Serializable"
+    },
+    {
+      "type": "java.lang.Class",
+      "methods": [
+        {
+          "name": "isRecord",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Object[]"
+    },
+    {
+      "type": "java.sql.Date"
+    },
+    {
+      "type": "java.sql.Timestamp"
+    },
+    {
+      "type": "java.util.AbstractMap"
+    },
+    {
+      "type": "java.util.ImmutableCollections$AbstractImmutableMap"
+    },
+    {
+      "type": "java.util.ImmutableCollections$MapN"
+    },
+    {
+      "type": "java.util.Map"
+    }
+  ]
+}

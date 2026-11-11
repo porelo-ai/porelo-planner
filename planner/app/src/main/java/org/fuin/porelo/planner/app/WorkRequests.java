@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.fuin.porelo.planner.core.Moves;
+import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -63,6 +65,62 @@ public final class WorkRequests {
     /** One choice against a completed, stopped reading. */
     public record ReadingRequest(
             String story, int round, String choice, String comment, String revision) {}
+
+    /**
+     * A new issue's body as the window sends it, each member a text where it is given.
+     *
+     * @param repository the repository's name
+     * @param title the title
+     * @param mustBeTrue what must be true
+     * @param size the size
+     * @param revision the board's revision the person saw
+     */
+    public record IssueRequest(
+            @Nullable String repository,
+            @Nullable String title,
+            @Nullable String mustBeTrue,
+            @Nullable String size,
+            @Nullable String revision) {}
+
+    private static final Set<String> ISSUE_MEMBERS =
+            Set.of("repository", "title", "mustBeTrue", "size", "revision");
+
+    /**
+     * Reads a new issue's body strictly: at most 65536 bytes, one JSON object, no other member,
+     * each member a text; a refusal never repeats what was sent.
+     *
+     * @param request the request
+     * @return the body's members
+     * @throws Moves.Refused {@code IssueNotAllowed} for a body that is no new issue
+     */
+    static IssueRequest issue(final HttpServletRequest request) {
+        final JsonNode body;
+        try {
+            body = read(request);
+        } catch (final WorkRefusal invalid) {
+            throw NewIssues.refused("", "The body is no new issue.");
+        }
+        if (!ISSUE_MEMBERS.containsAll(body.propertyNames())) {
+            throw NewIssues.refused("", "The body is no new issue.");
+        }
+        return new IssueRequest(
+                member(body, "repository"),
+                member(body, "title"),
+                member(body, "mustBeTrue"),
+                member(body, "size"),
+                member(body, "revision"));
+    }
+
+    private static @Nullable String member(final JsonNode body, final String name) {
+        if (!body.has(name)) {
+            return null;
+        }
+        final JsonNode value = body.get(name);
+        if (value == null || !value.isString()) {
+            throw NewIssues.refused(name, "The member " + name + " must be a text.");
+        }
+        return value.asString();
+    }
 
     static JsonNode read(final HttpServletRequest request) {
         return read(request, 65536);

@@ -305,6 +305,122 @@ class GitStoreReadTest {
     }
 
     @Test
+    void aRepositorysIssuesAreCheckedAgainstTheProjectsWorkflowAndNotItsOwn() throws Exception {
+        // A repository's own workflow would keep issues in states the board cannot show, and
+        // leave out issues in states it can.
+        repositories.repository(
+                "porelo-other",
+                Map.of(
+                        "issues/workflow.yml",
+                        WORKFLOW.replace("Backlog", "Waiting"),
+                        "issues/CD02-Waiting.md",
+                        issue("CD02", "Waiting", "Waiting", ""),
+                        "issues/CD03-Planned.md",
+                        issue("CD03", "Planned", "Backlog", "")));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the issue in a state only the repository's own workflow names is a fault")
+                .anyMatch(fault -> fault.contains("CD02") && fault.contains("Waiting"))
+                .noneMatch(fault -> fault.contains("CD03"));
+        assertThat(board.issues())
+                .as("the board is served, with the issue in a state of the project's workflow")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("AB01", "AB01.1", "CD01", "CD03");
+    }
+
+    @Test
+    void aRepositorysOwnWorkflowFileIsNotReadEvenWhenItIsBroken() throws Exception {
+        // A file no longer read must not take the whole project's board away.
+        repositories.repository("porelo-other", Map.of("issues/workflow.yml", "states: [\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("nothing is said of a file that is not read")
+                .noneMatch(fault -> fault.contains("workflow.yml"));
+        assertThat(board.issues())
+                .as("the repository's issues are read against the project's workflow")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("AB01", "AB01.1", "CD01");
+    }
+
+    @Test
+    void aLinkToAnIndexRowWithoutItsAnchorIsAFaultNamingThePageAndLine() throws Exception {
+        // A link that reaches no row sends a reader nowhere once the issue's file is gone.
+        final String linking = issue("CD02", "Linking", "Review", "");
+        repositories.repository(
+                "porelo-other",
+                Map.of(
+                        "issues/README.md",
+                        "# Issues\n\n## Review\n\n| # | Size | Blocked by | What it covers |\n"
+                                + "|---|---|---|---|\n| CD01 | S | - | Grouped. |\n"
+                                + "| <a id=\"cd02\"></a>CD02 | S | - | Linking. |\n",
+                        "issues/CD02-Linking.md",
+                        linking + "After [CD01](README.md#cd01).\n"));
+        final Board board = store(null).board();
+        final int line = linking.split("\n", -1).length;
+        assertThat(board.faults())
+                .as("the link is named once, with its page and line")
+                .filteredOn(fault -> fault.startsWith("porelo-other: issues/CD02-Linking.md:"))
+                .containsExactly(
+                        "porelo-other: issues/CD02-Linking.md:"
+                                + line
+                                + ": README.md#cd01 reaches no row's anchor");
+        assertThat(board.faults())
+                .as("the row without its anchor is named on its own line")
+                .contains(
+                        "porelo-other: issues/README.md:7: the row of CD01 does not open with its"
+                                + " anchor <a id=\"cd01\"></a>");
+        assertThat(board.issues())
+                .as("the board is served")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("AB01", "AB01.1", "CD01", "CD02");
+    }
+
+    @Test
+    void aLinkToAPageThatIsALinkIsAFaultAndTheBoardIsStillRead() throws Exception {
+        // A page a link names is read only for its anchors; one that is no plain file must not
+        // take the project's board away.
+        Files.createSymbolicLink(
+                repositories.work("porelo-other").resolve("issues/notes.md"),
+                Path.of("/etc/hostname"));
+        final String linking = issue("CD02", "Linking", "Review", "");
+        repositories.repository(
+                "porelo-other",
+                Map.of("issues/CD02-Linking.md", linking + "Why: [the notes](notes.md#cd01).\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the link is named with its page and line")
+                .contains(
+                        "porelo-other: issues/CD02-Linking.md:"
+                                + linking.split("\n", -1).length
+                                + ": notes.md#cd01 reaches no row's anchor");
+        assertThat(board.issues())
+                .as("the board is served")
+                .extracting(Issue::id)
+                .contains("CD01", "CD02");
+    }
+
+    @Test
+    void aLinkToAPathNoReadingTakesIsAFaultAndTheBoardIsStillRead() throws Exception {
+        // A page's link is text anyone writes; a path the store will not read must not take the
+        // project's board away.
+        final String linking = issue("CD02", "Linking", "Review", "");
+        repositories.repository(
+                "porelo-other",
+                Map.of("issues/CD02-Linking.md", linking + "Why: [hidden](.notes.md#cd01).\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the link is named with its page and line")
+                .contains(
+                        "porelo-other: issues/CD02-Linking.md:"
+                                + linking.split("\n", -1).length
+                                + ": .notes.md#cd01 reaches no row's anchor");
+        assertThat(board.issues())
+                .as("the board is served")
+                .extracting(Issue::id)
+                .contains("CD01", "CD02");
+    }
+
+    @Test
     void anIndexThatCannotBeReadIsAFaultAndTheIssueFilesAreStillRead() throws Exception {
         repositories.repository(
                 "porelo-other",

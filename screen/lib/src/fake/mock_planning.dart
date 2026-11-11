@@ -155,6 +155,51 @@ class MockPlanningSource implements PlanningSource {
     return PlanningMoveResult.from({'revision': moved['revision'], 'moved': moved['moved']});
   }
 
+  /// New issues asked of it, each with its project, repository, title, what must be true, size and revision.
+  final List<Map<String, dynamic>> issueCalls = [];
+
+  /// Adds the issue as the planner does, numbered after its repository's issues on the board, and shows the board at a
+  /// new revision; the mock board lists no issue outside a story, so the new one is not shown.
+  @override
+  Future<PlanningIssueAdded> createIssue(
+    String project,
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size,
+    String revision,
+  ) async {
+    issueCalls.add({
+      'project': project,
+      'repository': repository,
+      'title': title,
+      'mustBeTrue': mustBeTrue,
+      'size': size,
+      'revision': revision,
+    });
+    final current = board(project);
+    if (revision != current['revision']) {
+      throw mockRefusal('StaleRevision', {'revision': current['revision']});
+    }
+    if (moveFailure case final failure?) throw failure;
+    final numbers = <String, int>{};
+    for (final story in (current['stories'] as List).cast<Map<String, dynamic>>()) {
+      for (final issue in (story['issues'] as List).cast<Map<String, dynamic>>()) {
+        if (issue['repository'] != repository) continue;
+        final match = RegExp(r'^([A-Z]{1,4})([0-9]{1,5})').firstMatch(issue['id'] as String);
+        if (match == null) continue;
+        final number = int.parse(match.group(2)!);
+        if (number > (numbers[match.group(1)!] ?? 0)) numbers[match.group(1)!] = number;
+      }
+    }
+    if (numbers.isEmpty) throw mockRefusal('IssueNotAllowed', {'field': '', 'reason': 'no prefix for $repository'});
+    final prefix = numbers.keys.first;
+    final id = '$prefix${(numbers[prefix]! + 1).toString().padLeft(2, '0')}';
+    final next = '${current['revision']}:added';
+    push(project, {...current, 'revision': next});
+    return PlanningIssueAdded(id: id, revision: next);
+  }
+
   @override
   Future<PlanStoryDetail> getStory(String project, String story) async {
     if (detailFailure case final failure?) throw failure;

@@ -168,6 +168,51 @@ public final class GitRemote implements Remote {
     }
 
     @Override
+    public List<Found> grep(
+            final String repository,
+            final String commit,
+            final java.util.Collection<String> words) {
+        if (words.isEmpty()) {
+            return List.of();
+        }
+        final List<String> arguments =
+                new ArrayList<>(List.of("grep", "-I", "-n", "-w", "-F", "--null", "--no-color"));
+        for (final String word : words) {
+            arguments.add("-e");
+            arguments.add(Ids.issue(word));
+        }
+        final String tree = commit(commit);
+        arguments.add(tree);
+        arguments.add("--");
+        final Path clone = clone(repository);
+        final List<String> line = new ArrayList<>();
+        line.add("--git-dir=" + clone);
+        line.addAll(arguments);
+        final String out = text(runner.find(GitCall.of(environment, connectTimeout, line), clone));
+        final List<Found> found = new ArrayList<>();
+        // "<commit>:<path>\0<line>\0<text>\n"
+        for (final String entry : out.split("\n")) {
+            if (entry.isEmpty()) {
+                continue;
+            }
+            final String[] parts = entry.split("\0", 3);
+            if (parts.length != 3 || !parts[0].startsWith(tree + ":")) {
+                throw new GitFailure(
+                        GitFailure.Kind.FAILED, repository + ": git grep answered otherwise");
+            }
+            final int number;
+            try {
+                number = Integer.parseInt(parts[1]);
+            } catch (final NumberFormatException e) {
+                throw new GitFailure(
+                        GitFailure.Kind.FAILED, repository + ": git grep answered otherwise");
+            }
+            found.add(new Found(parts[0].substring(tree.length() + 1), number, parts[2]));
+        }
+        return List.copyOf(found);
+    }
+
+    @Override
     public String commit(
             final String repository,
             final String parent,
@@ -180,6 +225,19 @@ public final class GitRemote implements Remote {
         for (final String path : paths) {
             final String checked = RepoPath.checked(path);
             final Path file = root.resolve(checked);
+            if (!Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                // The save's own directory, where the file is gone, stands in for a work tree.
+                runIndexed(
+                        clone,
+                        index,
+                        List.of(
+                                "--work-tree=" + root,
+                                "update-index",
+                                "--force-remove",
+                                "--",
+                                checked));
+                continue;
+            }
             if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                 throw new GitFailure(
                         GitFailure.Kind.FAILED, repository + ": " + path + " is no plain file");

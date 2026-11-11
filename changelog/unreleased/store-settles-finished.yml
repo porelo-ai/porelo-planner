@@ -1,0 +1,2 @@
+title: An issue moved to a closed state such as Finished is settled in the same commit - its file deleted and its row kept in the index - and the board names each place in its repository that still mentions it.
+type: changed

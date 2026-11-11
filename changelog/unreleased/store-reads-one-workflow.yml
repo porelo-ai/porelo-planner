@@ -1,0 +1,2 @@
+title: Every repository's issues are checked against the project's one workflow in stories/workflow.yml, and a repository's own issues/workflow.yml is no longer read.
+type: changed

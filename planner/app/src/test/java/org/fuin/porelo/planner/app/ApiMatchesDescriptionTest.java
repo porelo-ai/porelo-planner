@@ -52,6 +52,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Board", Answers.Board.class),
                     Map.entry("Refreshed", Answers.Refreshed.class),
                     Map.entry("Moved", Answers.Moved.class),
+                    Map.entry("IssueAdded", Answers.IssueAdded.class),
                     Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
                     Map.entry("StoryWorkRequest", WorkRequests.Request.class),
                     Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),

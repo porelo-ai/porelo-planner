@@ -532,6 +532,58 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
+  /// The project's repositories, its own first, as the last whole board named them; empty before one did.
+  List<String> get repositories => _repositories;
+
+  // Kept apart from the snapshot: a board read again by its workflow and stories names no repositories.
+  List<String> _repositories = const [];
+
+  /// Why a new issue cannot be added now, or null when it can.
+  String? get newIssueUnavailable =>
+      unavailableActions['CreateIssue'] ??
+      (_disposed || !live
+          ? 'the planning board is not live'
+          : snapshot == null || snapshot!.revision.trim().isEmpty
+          ? 'the planning revision was not reported'
+          : actionBusy || saving
+          ? 'waiting for the planner'
+          : repositories.isEmpty
+          ? 'no repository was reported'
+          : null);
+
+  /// Adds an idea as a new issue against the revision the board shows; answers its id, or null after a refusal,
+  /// whose words stand in [actionProblem] as every board action's do.
+  Future<String?> createIssue(String repository, String title, String mustBeTrue, String? size) async {
+    if (newIssueUnavailable case final reason?) {
+      actionProblem = 'No new issue: $reason.';
+      _changed();
+      return null;
+    }
+    final source = backend;
+    final name = project;
+    final revision = snapshot!.revision;
+    final generation = _generation;
+    actionBusy = true;
+    actionProblem = null;
+    _changed();
+    try {
+      return (await source.createIssue(name, repository, title, mustBeTrue, size, revision)).id;
+    } catch (error) {
+      if (!_disposed && generation == _generation) {
+        reportActionProblem(error);
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
+          unavailableActions['CreateIssue'] = planningFailureWords(error);
+        }
+      }
+      return null;
+    } finally {
+      if (!_disposed && generation == _generation) {
+        actionBusy = false;
+        _changed();
+      }
+    }
+  }
+
   /// Applies a run reply immediately, independently of a subsequent board reload.
   void applyWork(String story, StoryWorkStatus status) {
     if (_disposed) return;
@@ -560,6 +612,7 @@ class PlanningBoard extends ChangeNotifier {
     project = name;
     if (!sameProject) {
       snapshot = null;
+      _repositories = const [];
       _pending.clear();
       moveProblem = null;
       storyWork.clear();
@@ -694,6 +747,7 @@ class PlanningBoard extends ChangeNotifier {
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
     if (order <= _snapshotOrder) return;
     snapshot = reply;
+    if (reply.repositoriesReported) _repositories = List.unmodifiable(reply.repositories);
     for (final story in reply.stories) {
       runOf(story.id).observe(story.work);
     }

@@ -78,7 +78,7 @@ final class SaveFiles {
 
     /**
      * Answers the files a save may commit that differ from the commit: the edited heads and the
-     * indexes, never anything else a library wrote.
+     * indexes, never anything else a library wrote; a head the save deleted is among them.
      *
      * @param root the repository's directory in the scratch directory
      * @param before each file's text at the commit, by path
@@ -97,6 +97,9 @@ final class SaveFiles {
         for (final String path : allowed) {
             final Path file = root.resolve(path);
             if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+                if (before.containsKey(path)) {
+                    changed.add(path);
+                }
                 continue;
             }
             if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {

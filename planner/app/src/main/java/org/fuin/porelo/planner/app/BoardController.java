@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Moves;
+import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
@@ -19,6 +20,7 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -163,6 +165,53 @@ public class BoardController {
         return new Answers.Moved(saved.revision().value(), planned.moved());
     }
 
+    /**
+     * Adds an idea as a new issue in state Idea, saved as a move is saved.
+     *
+     * @param project the project's name
+     * @param request the request, whose body is the new issue
+     * @return the new issue's id and the revision after the save, as created
+     */
+    @PostMapping("/projects/{project}/issues")
+    public ResponseEntity<Answers.IssueAdded> createIssue(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = name(project);
+        final WorkRequests.IssueRequest body = WorkRequests.issue(request);
+        final String revision = body.revision();
+        if (revision == null) {
+            throw NewIssues.refused("revision", "The body names no revision.");
+        }
+        final NewIssue.Added added;
+        try {
+            added = projects.work(name).alone(() -> createIssue(name, revision, body));
+        } catch (final StoreException.NotSavable e) {
+            throw NewIssues.refused("", String.valueOf(e.getMessage()));
+        } catch (final UnsupportedOperationException e) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not add issues.",
+                    Map.of("project", name));
+        } finally {
+            changes.saved(name);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new Answers.IssueAdded(added.id(), added.board().revision().value()));
+    }
+
+    private NewIssue.Added createIssue(
+            final String name, final String revision, final WorkRequests.IssueRequest body) {
+        final PlanningStore store = projects.store(name);
+        final Board board = store.board();
+        if (!board.revision().value().equals(revision)) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        final NewIssue issue =
+                NewIssues.check(
+                        board, body.repository(), body.title(), body.mustBeTrue(), body.size());
+        return store.createIssue(board.revision(), issue);
+    }
+
     private static List<Moves.Move> moves(final String project, final MovesBody body) {
         final List<@Nullable MoveBody> given = body.moves();
         if (given == null || given.size() > MOST_MOVES) {
@@ -288,6 +337,7 @@ public class BoardController {
                 workflow.phases(),
                 workflow.work(),
                 workflow.faults(),
+                board.repositories(),
                 board.stories().stream().map(story -> story(board, story, snapshot)).toList());
     }
 

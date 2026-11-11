@@ -51,6 +51,9 @@
         <spring-boot.version>4.1.2</spring-boot.version>
         <!-- The command line 'exec:exec@machines' gives porelo-machines, such as 'jdk'. -->
         <machines.args></machines.args>
+        <!-- The JSON schema validator the build tools' stories tests are written against. -->
+        <json-schema-validator.version>1.5.9</json-schema-validator.version>
+        <archunit.version>1.4.2</archunit.version>
     </properties>
 
     <modules>
@@ -68,6 +71,16 @@
                 <version>${spring-boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit</artifactId>
+                <version>${archunit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -44,6 +44,9 @@ class EventsStreamTest {
             assertThat(events.getContentAsString())
                     .as("the first board's data")
                     .contains("\"stories\":[{\"id\":\"ST7\"", "\"kind\":\"WORKING\"");
+            assertThat(events.getContentAsString())
+                    .as("the project's repositories, which the window offers a new issue in")
+                    .contains("\"repositories\":[\"porelo-store\"]");
 
             project.pushElsewhere();
             final String refreshed =

@@ -69,13 +69,34 @@ public interface Remote {
     List<String> directories(String repository, String commit, String directory);
 
     /**
+     * A line of a commit's file that holds a word looked for.
+     *
+     * @param path the file's path in the repository
+     * @param line the line's number, from 1
+     * @param text the line
+     */
+    record Found(String path, int line, String text) {}
+
+    /**
+     * Finds the lines of a fetched commit's text files that hold one of the words as a whole word,
+     * in one search of the whole tree.
+     *
+     * @param repository the repository's name
+     * @param commit the commit id
+     * @param words the words, each an issue's id
+     * @return each line found, none when nothing holds a word
+     */
+    List<Found> grep(String repository, String commit, java.util.Collection<String> words);
+
+    /**
      * Makes a commit on a fetched one in the planner's own clone, changing only the files named;
      * nothing leaves the clone.
      *
      * @param repository the repository's name
      * @param parent the commit it follows
      * @param root the directory holding the changed files at their paths
-     * @param paths the changed files' paths in the repository
+     * @param paths the changed files' paths in the repository; one missing under the root is
+     *     deleted
      * @param subject the commit's subject, its whole message
      * @return the new commit's id
      */

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL41",
   "title": "The Git Store Alone Handles Stories And Issues",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 23,
@@ -112,7 +112,7 @@ commits in a repository is found on the next reading, since the planner is not a
 | porelo-project's hourly Stories check | no: the board reads every repository's issues at each reading | - | - | none |
 | `check-commits`: `issues/workflow.yml` in the tree | no: every repository's issues are checked against the project's `stories/workflow.yml` | every reading | fault, as a broken workflow is today | 2 |
 | `check-commits`: `stats/*.jsonl` valid, closed stage records | yes | the planner writes the records itself on a move; a reading finds a broken or open record | reading: fault; write: written right | 7 |
-| `check-commits`: with `stats/seed.csv`, a measured state reached only with its stage record | yes | a move or idea of the planner writes the record with it; a reading finds a state reached by another commit without one | reading: fault naming the issue | 7 |
+| `check-commits`: with `stats/seed.csv`, a measured state reached only with its stage record | yes, on a write | a move of the planner writes the record with it; a reading cannot tell when a state was reached, so it does not look | write: written right; a sub-issue, which no record names, moves without one | 7 |
 | velocity from `stats/` | yes | the store answers it; handed to an estimate once the planner starts one | no velocity yet: an estimate is told so | 7 |
 | `check-citations`: a number in `issues/` a link to its index row, the row anchored, the link reaching an anchor | yes | every reading; a write of an issue page | reading: fault naming page and line; write: refused | 5 |
 | `check-citations`: an own number in `issues/` names an issue that exists | yes | every reading | fault naming page and line | 5 |
@@ -132,3 +132,34 @@ commits in a repository is found on the next reading, since the planner is not a
 ## To be checked
 
 - Whether the screen's form for an idea is the one the window's other lists use.
+
+## Reading
+
+Read against spring-boot-patterns 2026.906.3, graal 2026.910.3 and api-contract-review 2026.906.3 by another model,
+on pieces 1, 2, 5, 6 and 8. Fixed, each with a test seen red first:
+
+- A link whose target the store will not read, such as a hidden file, took the whole board away; it is a fault on
+  the board now.
+- A save still checked a repository's issues against that repository's own workflow file and named the project's
+  own repository by a fixed name; the save takes the project's workflow now, as the reading does.
+- A new issue was saved beside the work record's lock, so a run's own save at the same time was refused as stale
+  and halted the run; it is saved under that lock now.
+
+Fixed without a test, since nothing is lost and a refusal names its reason: a Markdown file under `issues/` that is
+no issue no longer counts as a used prefix; a refusal names a subgroup's issue; New issue waits while a move is
+saved, and its last confirmation goes when the next one opens. Two findings in the refusal texts go to
+[PL62](README.md#pl62).
+
+Declined: a request's revision that is no revision is answered as a stale one, the same as a move's, which names
+the current revision and does no harm; the rules on a settled issue's mentions are those `check-citations` holds,
+which this piece takes over; a description length the reading reported as different is the same, 4000, in the
+contract, the core and the screen.
+
+Piece 7 was read on its own, against spring-boot-patterns 2026.906.3, graal 2026.910.3 and java-code-review 2026.906.3,
+by another model. Fixed, each with a test seen red first: an issue whose last stage is still open, as while an agent
+works on it, made the whole repository's velocity unreadable, and is left out now; a move onto a record with an open
+stage appended to it a file the commit check refuses, and is refused now. Fixed without a test: the velocity reads only
+the record files under `stats/`. Declined: a reading does not fault an issue in a measured state without a record, since
+the rule is on the commit that reaches the state; measured on the project's repositories, it would fault nine issues in
+one repository that reached Review before their records began. A pattern compiled per record line costs nothing next to
+reading the files from Git.

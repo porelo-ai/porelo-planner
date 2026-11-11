@@ -133,6 +133,17 @@ abstract interface class PlanningSource {
   /// Saves the entire reviewed batch in one atomic call.
   Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision);
 
+  /// Adds an idea as a new issue in state Idea of [repository], against the board at [revision]; [size] is one of
+  /// `XS` to `XL`, or null when it is not known yet.
+  Future<PlanningIssueAdded> createIssue(
+    String project,
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size,
+    String revision,
+  );
+
   /// Reads one story and its source text.
   Future<PlanStoryDetail> getStory(String project, String story);
 

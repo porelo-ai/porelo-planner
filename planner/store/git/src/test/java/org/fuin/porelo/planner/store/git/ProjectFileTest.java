@@ -71,6 +71,14 @@ class ProjectFileTest {
                 final String repository, final String commit, final String directory) {
             return List.of();
         }
+
+        @Override
+        public List<Found> grep(
+                final String repository,
+                final String commit,
+                final java.util.Collection<String> words) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static Files with(final String project) {

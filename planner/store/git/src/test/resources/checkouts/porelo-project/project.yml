@@ -1,0 +1,113 @@
+# The Porelo project. Every key is documented in the core repository, doc/project-file.md.
+
+project:
+    name: "porelo"
+    description: "A hardened box an agent works in, and a gate its work leaves through"
+    security_class: "online"
+
+    # The project's own repository: this one, holding the planning and the issues. A task can be
+    # started for it, which is how an agent gets a task for planning.
+    central: "git@github.com:porelo-ai/porelo-project.git"
+
+# The model a task runs on for each provider when its start names none.
+providers:
+    anthropic:
+        model: "claude-opus-5-5"
+        label: "Opus 5.5"
+
+# The repositories the work happens in. A task works on exactly one, named at
+# 'porelo task start --repository <name>'; these names are what a person types.
+#
+# 'porelo' is not among them: that name belongs to the project's own repository, above.
+repositories:
+    core:
+        central: "git@github.com:porelo-ai/porelo.git"
+        description: "The CLI, the daemon, the gate and the guarantees they make"
+        issues: ["B", "P"]
+        maturity: "crazy-chicken"
+    frontend:
+        central: "git@github.com:porelo-ai/porelo-frontend.git"
+        description: "The interface, which reaches the daemon over the socket and never the filesystem"
+        issues: ["F"]
+        maturity: "crazy-chicken"
+    sluice:
+        central: "git@github.com:porelo-ai/porelo-message-sluice.git"
+        description: "The message filter: what may pass between tasks"
+        issues: ["SL"]
+        maturity: "crazy-chicken"
+    matrix:
+        central: "git@github.com:porelo-ai/porelo-message-matrix.git"
+        description: "The Matrix transport: a project's room, where tasks talk"
+        issues: ["MX"]
+        maturity: "crazy-chicken"
+    claude:
+        central: "git@github.com:porelo-ai/porelo-claude-code.git"
+        description: "The packaged agent: Claude Code, as Porelo installs and drives it"
+        issues: ["CC"]
+        maturity: "crazy-chicken"
+    pi:
+        central: "git@github.com:porelo-ai/porelo-pi.git"
+        description: "The packaged agent: pi"
+        issues: ["PI"]
+        maturity: "crazy-chicken"
+    omp:
+        central: "git@github.com:porelo-ai/porelo-omp.git"
+        description: "The packaged agent: oh-my-pi"
+        issues: ["OM"]
+        maturity: "crazy-chicken"
+    codex:
+        central: "git@github.com:porelo-ai/porelo-codex.git"
+        description: "The packaged agent: Codex CLI"
+        issues: ["CX"]
+        maturity: "crazy-chicken"
+    agy:
+        central: "git@github.com:porelo-ai/porelo-agy.git"
+        description: "The packaged agent: Antigravity CLI"
+        issues: ["AG"]
+        maturity: "crazy-chicken"
+    buildtools:
+        central: "git@github.com:porelo-ai/porelo-buildtools.git"
+        description: "Build and test tooling for the Porelo repositories: rented test machines, release checks and package checks"
+        issues: ["BT"]
+        maturity: "crazy-chicken"
+    parent:
+        central: "git@github.com:porelo-ai/porelo-parent.git"
+        description: "The parent pom every Porelo Maven repository takes: shared build settings, plugin and tool versions"
+        issues: ["PA"]
+        maturity: "crazy-chicken"
+    github:
+        central: "git@github.com:porelo-ai/porelo-adapters.git"
+        description: "The build-server adapters for GitHub and Forgejo: the verdict and the failing job's log of a task's build"
+        nickname: "Adapters"
+        issues: ["GH"]
+        maturity: "crazy-chicken"
+    forge-clients:
+        central: "git@github.com:porelo-ai/porelo-forge-clients.git"
+        description: "Clients for forge and build server APIs, one module per forge, knowing nothing of Porelo"
+        issues: ["FC"]
+        maturity: "crazy-chicken"
+    ecosystems:
+        central: "git@github.com:porelo-ai/porelo-ecosystems.git"
+        description: "Build-tool plugins: propose a project's tools and rules from its checkout, offline"
+        issues: ["EC"]
+        maturity: "crazy-chicken"
+    intellij:
+        central: "git@github.com:porelo-ai/porelo-intellij.git"
+        description: "The IntelliJ plugin: an agent's waiting work reviewed, approved or rejected in the IDE"
+        issues: ["IJ"]
+        maturity: "crazy-chicken"
+    host:
+        central: "git@github.com:porelo-ai/porelo-host.git"
+        description: "Brings a Porelo project up on a server and takes it down again, owned or rented by the hour: an Ansible collection"
+        issues: ["HO"]
+        maturity: "crazy-chicken"
+    site:
+        central: "git@github.com:porelo-ai/porelo-ai.github.io.git"
+        description: "The documentation site: collects every repository's doc/ into one site on GitHub Pages"
+        issues: ["SI"]
+        maturity: "crazy-chicken"
+    mcp:
+        central: "git@github.com:porelo-ai/porelo-mcp.git"
+        description: "Porelo's API as MCP tools, generated from the daemon's contract and holding no rule of its own"
+        issues: ["MC"]
+        maturity: "crazy-chicken"

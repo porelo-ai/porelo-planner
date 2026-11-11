@@ -11,6 +11,7 @@ import '../planning_detail.dart';
 import '../story_work.dart';
 import '../story_work_order.dart';
 import 'actions.dart';
+import 'new_issue_dialog.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
 import 'story_work_dialog.dart';
@@ -340,10 +341,17 @@ class _BoardViewState extends State<_BoardView> {
                           (board.discussing ? 'waiting for the planner' : null),
                       run: () => unawaited(_discuss()),
                     ),
+                    PlanningAction(
+                      id: 'planning-new-issue',
+                      label: 'New issue…',
+                      unavailable: board.newIssueUnavailable,
+                      run: () => unawaited(_newIssue()),
+                    ),
                   ],
                 ),
               ],
             ),
+            if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
             for (final problem in widget.providerProblems)
               Text(problem, style: TextStyle(color: theme.colorScheme.error)),
             if (board.catchingUp)
@@ -753,6 +761,19 @@ class _BoardViewState extends State<_BoardView> {
     final idea = await showDialog<String>(context: context, builder: (_) => const _IdeaDialog());
     if (!mounted || idea == null) return;
     await board.discussIdea(idea, widget.startTask);
+  }
+
+  /// What the last new issue was given, shown until the next one.
+  String? _added;
+
+  Future<void> _newIssue() async {
+    setState(() => _added = null);
+    final id = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NewIssueDialog(board: board),
+    );
+    if (mounted && id != null) setState(() => _added = 'Added $id in state Idea.');
   }
 
   Future<void> _stop(PlanStory story) async {

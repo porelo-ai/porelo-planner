@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Work;
-import org.fuin.porelo.stories.Story;
-import org.fuin.porelo.stories.Workflow;
+import org.fuin.porelo.planner.store.git.stories.Story;
+import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
 
 /**

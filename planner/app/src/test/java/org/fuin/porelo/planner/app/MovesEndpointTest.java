@@ -219,7 +219,8 @@ class MovesEndpointTest {
         // The window must learn why a move stayed unsaved, and which issue holds it.
         failure =
                 new StoreException.NotSavable(
-                        "AB01", "the repository records issue stats and this issue has none");
+                        "AB01",
+                        "stats/AB01.jsonl cannot take the move: invalid JSON in a stage record");
         moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
@@ -229,8 +230,8 @@ class MovesEndpointTest {
                 .andExpect(
                         jsonPath("$.parameters.reason")
                                 .value(
-                                        "the repository records issue stats and this issue has"
-                                                + " none"));
+                                        "stats/AB01.jsonl cannot take the move: invalid JSON in"
+                                                + " a stage record"));
     }
 
     @Test

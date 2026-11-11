@@ -1,0 +1,2 @@
+title: Every issue move through the planner adds a closed move line to the issue's stage records under stats/ in the same commit, a broken or open record shows as a fault on the board, and the Git store answers a repository's velocity as the stage command's median, with moves left out.
+type: added

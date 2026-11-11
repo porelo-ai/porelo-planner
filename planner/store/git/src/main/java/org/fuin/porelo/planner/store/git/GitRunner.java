@@ -74,6 +74,24 @@ public final class GitRunner {
      *     secrets
      */
     public byte[] run(final GitCall call, final @Nullable Path directory) {
+        return run(call, directory, false);
+    }
+
+    /**
+     * Runs a call that, as {@code git grep} does, exits with 1 and says nothing when it finds
+     * nothing.
+     *
+     * @param call the call
+     * @param directory where it runs, or {@code null} for the planner's own directory
+     * @return its standard output, empty when it found nothing
+     * @throws GitFailure when it fails otherwise, runs too long or prints too much
+     */
+    public byte[] find(final GitCall call, final @Nullable Path directory) {
+        return run(call, directory, true);
+    }
+
+    private byte[] run(
+            final GitCall call, final @Nullable Path directory, final boolean noneFoundIsEmpty) {
         final ProcessBuilder builder = new ProcessBuilder(call.arguments());
         builder.environment().clear();
         builder.environment().putAll(call.environment());
@@ -102,6 +120,9 @@ public final class GitRunner {
             }
             final byte[] out = finished(output, process);
             final String err = new String(finished(errors, process), StandardCharsets.UTF_8);
+            if (noneFoundIsEmpty && process.exitValue() == 1 && out.length == 0 && err.isBlank()) {
+                return out;
+            }
             if (process.exitValue() != 0) {
                 final GitFailure.Kind kind =
                         LOGIN.matcher(err).find()

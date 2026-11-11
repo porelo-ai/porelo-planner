@@ -1,0 +1,82 @@
+{
+  "porelo-adapters/issues/README.md" : {
+    "rows" : 22,
+    "sha256" : "15777d0080eb2ac28a5970fc6d8894abc93d5150b08171c5f8bd1f56ac27f0e1"
+  },
+  "porelo-agy/issues/README.md" : {
+    "rows" : 14,
+    "sha256" : "b7f9bd9b95b50408d0f988b6b5ada6aba8836e78f2b079638a543c92b6e300eb"
+  },
+  "porelo-ai.github.io/issues/README.md" : {
+    "rows" : 6,
+    "sha256" : "626348b826e69bf5d409ac226da4ea1df940575872e8b4cdf03639ac43529767"
+  },
+  "porelo-buildtools/issues/README.md" : {
+    "rows" : 55,
+    "sha256" : "fcdf517df172ae021958fee919c551fbe8d96c2eb9cf0583f378e8d37b90a971"
+  },
+  "porelo-claude-code/issues/README.md" : {
+    "rows" : 24,
+    "sha256" : "b2af698318cc1443e171a997932db677eb897ee7678f0987dc95647a7ca8dd5e"
+  },
+  "porelo-codex/issues/README.md" : {
+    "rows" : 15,
+    "sha256" : "1ea3cce1807a6ff2d9f7483465f500fcddc3816b3a21ae67933e414a0c2e91d8"
+  },
+  "porelo-ecosystems/issues/README.md" : {
+    "rows" : 17,
+    "sha256" : "04df390e876fd3cf01e5adbab039e8915f868b0e6489f1ff77d6f9260d01577d"
+  },
+  "porelo-forge-clients/issues/README.md" : {
+    "rows" : 17,
+    "sha256" : "6a3b1b33831ecf4cef4d44224b46096624b3c69a2144ae4fb77cc240a270f5fc"
+  },
+  "porelo-frontend/issues/README.md" : {
+    "rows" : 371,
+    "sha256" : "9af769b09754ebe30496f5fdec8386ef92e93c7561b992c8be8320a87115f1dc"
+  },
+  "porelo-host/issues/README.md" : {
+    "rows" : 158,
+    "sha256" : "3cae603f9d2f52362ecb4be51c157c9c95a3f3d3f253e1263dfab90a1e9d3e27"
+  },
+  "porelo-intellij/issues/README.md" : {
+    "rows" : 22,
+    "sha256" : "4f2edabe8458fbeed5ca15b59d60ff2d0b427e4ae0bf279cece5e38dfba6eebd"
+  },
+  "porelo-mcp/issues/README.md" : {
+    "rows" : 10,
+    "sha256" : "f319aec2b0ec876a49da00d70d5f2a20d0cb37eabbfdea2f91795845532e5c2b"
+  },
+  "porelo-message-matrix/issues/README.md" : {
+    "rows" : 78,
+    "sha256" : "71c5f0e031d11a9cf49fe1c2e3dd24416a8d165724748173509caf1c7255f1c7"
+  },
+  "porelo-message-sluice/issues/README.md" : {
+    "rows" : 31,
+    "sha256" : "a7267bea27f84db4b334402e5357d05222b9df7160a4db585c4020e1e2d58c3e"
+  },
+  "porelo-omp/issues/README.md" : {
+    "rows" : 26,
+    "sha256" : "e8165869a7fb473c8a6b946bdd106e9a8a1c9f5920eb4a4a1fcd1b052eaeac7b"
+  },
+  "porelo-pi/issues/README.md" : {
+    "rows" : 26,
+    "sha256" : "bf1de52f33f81fc7c02b89f4abdd7d1a98f9b683b51ac855dfc30bb9b7538ddb"
+  },
+  "porelo-project/issues/README.md" : {
+    "rows" : 89,
+    "sha256" : "980e2530379565b0c06cf346bcb9fed13460b4c9bd72b3eae08807a3fdc2f74f"
+  },
+  "porelo/issues/README.md" : {
+    "rows" : 0,
+    "sha256" : "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "porelo/issues/base/README.md" : {
+    "rows" : 485,
+    "sha256" : "459532b2444a189e4c22ddd211e835c16d2fb6250f672a4100920b4b3f543776"
+  },
+  "porelo/issues/providers/README.md" : {
+    "rows" : 8,
+    "sha256" : "9c8140f0b552711a72e23213af407a7e2b35210fbc26fb26eab0493de0e728f9"
+  }
+}

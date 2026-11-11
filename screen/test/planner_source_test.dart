@@ -206,9 +206,10 @@ Future<(_Planner, HttpPlanningSource)> _started({
   return (planner, source);
 }
 
-/// One `board` event as the planner sends it: the workflow's and the stories' fields in one object.
-List<int> _event(String revision) => utf8.encode(
-  'event:board\nid:$revision\ndata:${jsonEncode({..._workflow(revision), 'stories': _stories(revision)['stories']})}\n\n',
+/// One `board` event as the planner sends it: the workflow's and the stories' fields and the repositories in one
+/// object.
+List<int> _event(String revision, {Object? repositories = const ['porelo-project', 'porelo-other']}) => utf8.encode(
+  'event:board\nid:$revision\ndata:${jsonEncode({..._workflow(revision), 'stories': _stories(revision)['stories'], 'repositories': ?repositories})}\n\n',
 );
 
 /// The planner's event streams, one per connection the source opened, each fed by the test.
@@ -520,6 +521,32 @@ void main() {
     expect(planner.calls.last.authorization, 'Bearer $_token');
     expect(saved.revision, 'r2');
     expect(saved.moved, ['PR1', 'PR2']);
+  });
+
+  // Harm: a new issue sent with another body than the planner reads, or a confirmation without an id, is taken as
+  // written.
+  test('a new issue posts exactly its members and refuses an answer without its id', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/issues'] = () => _Reply(201, {'id': 'PR3', 'revision': 'r2'});
+    final added = await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, 'r1');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/issues']);
+    expect(jsonDecode(planner.calls.last.body), {
+      'repository': 'porelo-other',
+      'title': 'An idea',
+      'mustBeTrue': 'It holds.',
+      'revision': 'r1',
+    }, reason: 'no size member when none is known');
+    expect((added.id, added.revision), ('PR3', 'r2'));
+    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1');
+    expect(jsonDecode(planner.calls.last.body)['size'], 'S', reason: 'a known size is sent');
+    for (final answer in [
+      {'revision': 'r2'},
+      {'id': 'wrong', 'revision': 'r2'},
+      {'id': 'PR3', 'revision': ''},
+    ]) {
+      planner.routes['POST /projects/demo/issues'] = () => _Reply(201, answer);
+      expect((await _refusal(source.createIssue('demo', 'porelo-other', 'T', 'W', null, 'r1'))).name, 'BadAnswer');
+    }
   });
 
   // Harm: an uncertain or refused write is replayed and saves the same move twice.
@@ -935,6 +962,26 @@ void main() {
     await ended.future.timeout(const Duration(seconds: 5));
 
     expect((errors.single as PlanningRefusal).name, 'BadAnswer');
+  });
+
+  // Harm: a board without the project's repositories would offer a new issue only where an issue already stands.
+  test('a streamed board without its repositories, or with one that is no name, ends the watch', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final watched = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    streams.opened.last.add(_event('r1', repositories: null));
+    expect((await _refusal(watched)).name, 'BadAnswer', reason: 'no repositories');
+
+    final named = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 1, 'the second stream');
+    streams.opened.last.add(_event('r1', repositories: ['../x']));
+    expect((await _refusal(named)).name, 'BadAnswer', reason: 'a repository that is no name');
+
+    final read = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 2, 'the third stream');
+    streams.opened.last.add(_event('r1'));
+    expect((await read).repositories, ['porelo-project', 'porelo-other'], reason: 'read in the planner\'s order');
   });
 
   // Harm: an id past its bound would go back to the planner as an endless header.
@@ -1548,6 +1595,7 @@ void main() {
           'work': servedWork()..['tasks'] = [servedRunTask()],
         },
       ],
+      'repositories': ['porelo-project'],
     };
     final event = utf8.encode('event:board\nid:r1\ndata:${jsonEncode(board)}\n\n');
     streams.opened.last.add(event);

@@ -1830,6 +1830,22 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     }
   ],
   "revision": "design-1",
+  "repositories": [
+    "porelo-project",
+    "porelo-forge-clients",
+    "porelo-ai.github.io",
+    "porelo",
+    "porelo-host",
+    "porelo-frontend",
+    "porelo-message-matrix",
+    "porelo-intellij",
+    "porelo-buildtools",
+    "porelo-pi",
+    "porelo-omp",
+    "porelo-claude-code",
+    "porelo-message-sluice",
+    "porelo-adapters"
+  ],
   "work": [
     {
       "state": "In analysis",
@@ -1998,4 +2014,5 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
       },
   ],
   'revision': board['revision'],
+  if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
 };

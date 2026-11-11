@@ -32,7 +32,7 @@ without reflection the native image does not know of.
 
 The planner is LGPL-3.0-or-later. A native executable compiles every library it uses into itself, so a library under
 the GPL would make the whole executable a work under the GPL. Each library it links is therefore under the LGPL or a
-more permissive license, the stories library included.
+more permissive license.
 
 ## A story's work is recorded on the computer it runs on
 

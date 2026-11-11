@@ -370,6 +370,33 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<PlanningIssueAdded> createIssue(
+    String project,
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size,
+    String revision,
+  ) async {
+    final answer = await _write(
+      project,
+      ['issues'],
+      {
+        'repository': _checked('repository', repository, _name),
+        'title': title,
+        'mustBeTrue': mustBeTrue,
+        'size': ?size,
+        'revision': revision,
+      },
+    );
+    final id = answer['id'];
+    if (id is! String || !_issueId.hasMatch(id)) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not confirm the new issue\'s id.');
+    }
+    return PlanningIssueAdded(id: id, revision: answer['revision'] as String);
+  }
+
+  @override
   Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async {
     final answer = await _write(project, ['stories', _checked('story', story, _storyId), 'proposal'], {'to': to});
     try {
@@ -1124,6 +1151,10 @@ class _Watch {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner streamed a board that cannot be read: $error');
       }
       if (!snapshot.complete) throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed an incomplete board');
+      if (!snapshot.repositoriesReported ||
+          snapshot.repositories.any((name) => !HttpPlanningSource._name.hasMatch(name))) {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board without its repositories');
+      }
       boards++;
       first?.cancel();
       final revision = json['revision'] as String;

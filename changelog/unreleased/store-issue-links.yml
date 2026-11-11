@@ -1,0 +1,2 @@
+title: The board names each broken issue link in a repository's issues - a number not linked to its index row, a row without its anchor, a link that reaches no row, and a number that names no issue - with its file and line, and serves the rest.
+type: added

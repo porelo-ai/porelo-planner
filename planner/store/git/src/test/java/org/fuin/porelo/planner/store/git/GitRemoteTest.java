@@ -117,6 +117,21 @@ class GitRemoteTest {
     }
 
     @Test
+    void aSearchOfTheTreeNamesEachLineOfAWordAndNothingWhenNoneHoldsIt() throws Exception {
+        // A search that finds nothing must answer nothing, not fail the reading of the board.
+        final GitRemote remote = remote(null);
+        remote.fetch("store", url(), "main");
+        assertThat(remote.grep("store", commit, List.of("XY01", "XY02")))
+                .as("each line holding a word, with its file and line")
+                .containsExactlyInAnyOrder(
+                        new Remote.Found("issues/XY01-One.md", 1, "# XY01 — One"),
+                        new Remote.Found("issues/base/XY02-Two.md", 1, "# XY02 — Two"));
+        assertThat(remote.grep("store", commit, List.of("XY0", "XY99")))
+                .as("no line holds these as whole words")
+                .isEmpty();
+    }
+
+    @Test
     void aLinkOrAnOversizedFileIsRefused() throws Exception {
         // A link in the store points at a file of the person's; a huge file fills the planner's
         // memory.

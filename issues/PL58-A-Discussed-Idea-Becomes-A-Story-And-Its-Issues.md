@@ -41,6 +41,10 @@ issues, each in its repository, without writing a file by hand; a malformed idea
   none, as `GitStore.save` pushes today.
 - An issue's `worker` is taken from the idea; one without it is refused, as the person must choose.
 - The planner answers the new story's id, and the board shows it by its next read.
+- The screen package carries the call, so the window never reaches the planner's HTTP itself:
+  `Future<String> PlanningSource.handIdea(String project, String offer, Map<String, Object?> idea)` answers the new
+  story's id, the same id on a second hand-in of the offer; a 422 is a `PlanningRefusal` named `IdeaRefused` with
+  `parameters.faults`, a list of strings; the fake records each hand-in.
 - Red first in `store/git`: an idea naming two repositories, saved over local bare repositories, is read back from
   fresh clones as one story in Idea naming two new issues with the next numbers; an idea naming a repository outside
   the project writes nothing.

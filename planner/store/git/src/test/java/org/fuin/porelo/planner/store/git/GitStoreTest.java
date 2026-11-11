@@ -21,17 +21,18 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
-import org.fuin.porelo.stories.Workflow;
+import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class GitStoreTest {
 
-    private static final Workflow WORKFLOW =
-            Workflow.read(
-                    "states:\n  - {name: Idea, closed: false}\n  - {name: Backlog, closed: false}\n"
-                            + "  - {name: Finished, closed: true}\nphases:\n"
-                            + "  - {name: Open, states: [Idea, Backlog]}\n");
+    private static final String WORKFLOW_TEXT =
+            "states:\n  - {name: Idea, closed: false}\n  - {name: Backlog, closed: false}\n"
+                    + "  - {name: Finished, closed: true}\nphases:\n"
+                    + "  - {name: Open, states: [Idea, Backlog]}\n";
+
+    private static final Workflow WORKFLOW = Workflow.read(WORKFLOW_TEXT);
 
     private static final Repository OWN =
             new Repository("store", new CloneUrl("https://git.example.org/store"), null);
@@ -99,6 +100,14 @@ class GitStoreTest {
             throw new UnsupportedOperationException();
         }
 
+        @Override
+        public List<Found> grep(
+                final String repository,
+                final String commit,
+                final java.util.Collection<String> words) {
+            throw new UnsupportedOperationException();
+        }
+
         int fetched(final Repository repository) {
             return fetches.getOrDefault(repository.name(), new AtomicInteger()).get();
         }
@@ -106,13 +115,13 @@ class GitStoreTest {
 
     /** Reads a part whose one issue's title is the commit it was read at. */
     private static final PartReader READER =
-            (repository, commit, own) ->
+            (repository, commit, project) ->
                     new Part(
-                            own ? WORKFLOW : null,
+                            project == null ? WORKFLOW : null,
                             List.of(),
                             List.of(
                                     new Issue(
-                                            own ? "XY1" : "QZ1",
+                                            project == null ? "XY1" : "QZ1",
                                             repository.name(),
                                             commit,
                                             "Idea",
@@ -191,10 +200,10 @@ class GitStoreTest {
     void theBoardKeepsTheOwnRepositoryEvenWhenItsPartHasNoIssues() {
         // Story work must not pick another repository just because the own checkout has no issues.
         final PartReader reader =
-                (repository, commit, own) ->
-                        own
+                (repository, commit, project) ->
+                        project == null
                                 ? new Part(WORKFLOW, List.of(), List.of(), null)
-                                : READER.read(repository, commit, false);
+                                : READER.read(repository, commit, project);
         final GitStore store =
                 new GitStore(
                         List.of(OWN, OTHER),
@@ -222,6 +231,47 @@ class GitStoreTest {
                 .isInstanceOf(StoreException.Unreadable.class)
                 .hasMessageContaining("given anew");
         assertThat(remote.fetched(OTHER)).as("nothing fetched after retiring").isEqualTo(1);
+    }
+
+    @Test
+    void anotherRepositoryIsReadAgainOnlyWhenTheProjectsWorkflowChanged() {
+        // Kept from before, its issues would stay checked against states the project no longer
+        // has; read again on every own commit, a large project's check would be slow.
+        final Workflow wider = Workflow.read(WORKFLOW_TEXT.replace("Backlog", "Waiting"));
+        final List<List<String>> checkedAgainst = new CopyOnWriteArrayList<>();
+        final PartReader reader =
+                (repository, commit, project) -> {
+                    if (project == null) {
+                        return new Part(
+                                commit.startsWith("d") ? wider : Workflow.read(WORKFLOW_TEXT),
+                                List.of(),
+                                List.of(),
+                                null);
+                    }
+                    checkedAgainst.add(project.states());
+                    return READER.read(repository, commit, project);
+                };
+        final GitStore store =
+                new GitStore(
+                        List.of(OWN, OTHER),
+                        remote,
+                        reader,
+                        inProcess(),
+                        clock,
+                        Duration.ofSeconds(10),
+                        4,
+                        queue);
+        store.board();
+        remote.heads.put("store", "c".repeat(40));
+        store.refresh();
+        assertThat(checkedAgainst)
+                .as("an own commit with the same workflow leaves the other's part as it was read")
+                .containsExactly(WORKFLOW.states());
+        remote.heads.put("store", "d".repeat(40));
+        store.refresh();
+        assertThat(checkedAgainst)
+                .as("a changed workflow reads the other repository again against it")
+                .containsExactly(WORKFLOW.states(), wider.states());
     }
 
     @Test
@@ -343,11 +393,11 @@ class GitStoreTest {
                 new GitStore(
                         List.of(OWN, OTHER),
                         remote,
-                        (repository, commit, own) -> {
+                        (repository, commit, project) -> {
                             if (commit.equals("c".repeat(40))) {
                                 throw new IllegalStateException("a fault nobody foresaw");
                             }
-                            return READER.read(repository, commit, own);
+                            return READER.read(repository, commit, project);
                         },
                         inProcess(),
                         clock,

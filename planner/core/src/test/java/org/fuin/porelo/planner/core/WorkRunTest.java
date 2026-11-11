@@ -23,6 +23,16 @@ import org.junit.jupiter.api.Test;
 class WorkRunTest {
 
     @Test
+    void aWriteOfItsOwnRunsUnderTheRecordsLock() {
+        // A write beside the record's would move the board under a run's save, which then halts.
+        final Fixture f = new Fixture();
+
+        assertThat(f.run.alone(() -> f.record.held))
+                .as("the write runs while the record is held")
+                .isTrue();
+    }
+
+    @Test
     void aStartedTaskKeepsItsMachineAndAnEndCannotRebindIt() {
         // Prevents a later report from directing a bound task to another machine.
         final Fixture f = new Fixture();
@@ -1054,10 +1064,20 @@ class WorkRunTest {
     static final class Memory implements WorkRun.Record {
         WorkRun.Snapshot value = new WorkRun.Snapshot(0, Map.of());
         boolean refuseReaders;
+        boolean held;
 
         /** Serializes actions as a disk record must. */
         @Override
         public synchronized <T extends @Nullable Object> T locked(final WorkRun.Action<T> action) {
+            held = true;
+            try {
+                return apply(action);
+            } finally {
+                held = false;
+            }
+        }
+
+        private <T extends @Nullable Object> T apply(final WorkRun.Action<T> action) {
             return action.apply(
                     new WorkRun.Session() {
                         /** Preserves state between service instances. */

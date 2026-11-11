@@ -46,6 +46,7 @@ Map<String, dynamic> smallBoard({String revision = 'r1'}) => {
     },
   ],
   'revision': revision,
+  'repositories': ['repo', 'porelo-other'],
 };
 
 /// A provider that answers from a board held in memory and records what it was asked to change.
@@ -66,7 +67,11 @@ class FakePlanningSource implements PlanningSource {
 
   final _changes = StreamController<Map<String, dynamic>>.broadcast();
 
-  PlanningSnapshot _stories() => PlanningSnapshot.from({'stories': board['stories'], 'revision': board['revision']});
+  PlanningSnapshot _stories() => PlanningSnapshot.from({
+    'stories': board['stories'],
+    'revision': board['revision'],
+    'repositories': ?board['repositories'],
+  });
 
   /// Replaces the board, as another person's change would, and tells every watch.
   void replace(Map<String, dynamic> next) {
@@ -133,6 +138,29 @@ class FakePlanningSource implements PlanningSource {
     final next = 'r${saves.length + 1}';
     replace({...board, 'stories': stories, 'revision': next});
     return PlanningMoveResult.from({'revision': next, 'moved': moved});
+  }
+
+  /// Every new issue asked of it: the project, repository, title, what must be true, size and revision.
+  final List<(String, String, String, String, String?, String)> added = [];
+
+  /// A refusal of the next new issue, set by a test.
+  Object? addFailure;
+
+  @override
+  Future<PlanningIssueAdded> createIssue(
+    String project,
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size,
+    String revision,
+  ) async {
+    added.add((project, repository, title, mustBeTrue, size, revision));
+    if (addFailure case final failure?) throw failure;
+    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    final next = 'r${saves.length + added.length + 1}';
+    replace({...board, 'revision': next});
+    return PlanningIssueAdded(id: 'I${added.length + 2}', revision: next);
   }
 
   Never _notServed(String call) => throw PlanningUnsupported('this provider has no $call');
