@@ -402,6 +402,21 @@ void main() {
     expect(board.unplaced.single.id, 'orphan');
     expect(board.workingCount, isNull);
   });
+  // Harm: a column kept from before a search or filter shows cards the person did not ask for and drags the wrong one.
+  test('each column answers the search and the priority as they are now', () async {
+    final backend = _Backend();
+    final board = PlanningBoard(backend, 'project');
+    addTearDown(board.dispose);
+    backend.controllers['project']!.add(_snapshot('ST7'));
+    await Future<void>.delayed(Duration.zero);
+    expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the column before any search');
+    board.search('nothing like it');
+    expect(board.cards('Building'), isEmpty, reason: 'the search leaves out the story');
+    board.search('st7');
+    expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the search finds it again');
+    board.filter(PlanningPriority.highest);
+    expect(board.cards('Building'), isEmpty, reason: 'a High story is below Highest');
+  });
   // Harm: a failed planning stream cannot be resumed while the machine remains connected.
   test('retry replaces an ended watch without resetting the view choices', () async {
     final backend = _Backend();

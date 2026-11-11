@@ -898,23 +898,55 @@ class PlanningBoard extends ChangeNotifier {
     'Low' => 3,
     _ => 4,
   };
-  bool _matches(PlanStory story) {
-    final query = preferences.search.trim().toLowerCase();
+  static final _trailingNumber = RegExp(r'\d+$');
+
+  /// Each story's words for the search and its number for the order, made once per story read.
+  static final _keys = Expando<(String, String, int?)>('story keys');
+
+  static (String, String, int?) _keysOf(PlanStory story) => _keys[story] ??= (
+    story.id.toLowerCase(),
+    story.title.toLowerCase(),
+    int.tryParse(_trailingNumber.firstMatch(story.id)?.group(0) ?? ''),
+  );
+
+  bool _matches(PlanStory story, String query) {
+    final keys = _keysOf(story);
     return (preferences.priority.maximum == null || rank(story.priority) <= preferences.priority.maximum!) &&
-        (query.isEmpty || story.id.toLowerCase().contains(query) || story.title.toLowerCase().contains(query));
+        (query.isEmpty || keys.$1.contains(query) || keys.$2.contains(query));
   }
 
-  List<PlanStory> _sort(Iterable<PlanStory> stories) => stories.where(_matches).toList()
-    ..sort((a, b) {
+  List<PlanStory> _sort(Iterable<PlanStory> stories) {
+    final query = preferences.search.trim().toLowerCase();
+    return stories.where((story) => _matches(story, query)).toList()..sort((a, b) {
       final priority = rank(a.priority).compareTo(rank(b.priority));
       if (priority != 0) return priority;
-      int? number(String id) => int.tryParse(RegExp(r'\d+$').firstMatch(id)?.group(0) ?? '');
-      final left = number(a.id), right = number(b.id);
+      final left = _keysOf(a).$3, right = _keysOf(b).$3;
       return left != null && right != null && left != right ? left.compareTo(right) : a.id.compareTo(b.id);
     });
+  }
+
+  /// What the columns were sorted from, and the columns; a board of hundreds of stories is sorted once per change,
+  /// not once per column and frame.
+  (List<Object?>, Map<String, List<PlanStory>>)? _columns;
 
   /// The filtered, sorted stories of exactly this reported state.
-  List<PlanStory> cards(String name) => _sort(stories.where((story) => displayedState(story) == name));
+  List<PlanStory> cards(String name) {
+    final inputs = <Object?>[
+      snapshot,
+      preferences.search,
+      preferences.priority,
+      for (final move in _pending.entries) ...[move.key, move.value.to, move.value.problem],
+    ];
+    final columns = _columns;
+    if (columns != null && listEquals(columns.$1, inputs)) return columns.$2[name] ?? const [];
+    final grouped = <String, List<PlanStory>>{};
+    for (final story in stories) {
+      (grouped[displayedState(story)] ??= []).add(story);
+    }
+    final sorted = {for (final entry in grouped.entries) entry.key: List<PlanStory>.unmodifiable(_sort(entry.value))};
+    _columns = (inputs, sorted);
+    return sorted[name] ?? const [];
+  }
 
   /// Stories whose state is missing from the column configuration, kept visible with an explanation.
   List<PlanStory> get unplaced => _sort(

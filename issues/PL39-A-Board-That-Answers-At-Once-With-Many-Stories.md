@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL39",
   "title": "A Board That Answers At Once With Many Stories",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 11,
@@ -43,3 +43,33 @@ slower than the shipped build.
 - The measured time of a fold and of a keystroke in profile mode, before and after, each under a frame's budget of
   16 ms or named with the reason it cannot be.
 - The rebuild test fails on today's board and passes after.
+
+## Measured
+
+In profile mode on the operator's board, with the Flutter DevTools, folding a column three times and typing in the
+search, the build time per frame:
+
+| | Frames over 16.7 ms | 95 % of frames under | Slowest frame |
+|---|---|---|---|
+| Before | 13 % | 27 ms | 213 ms |
+| Each card cached by its inputs | 38 % | 81 ms | 400 ms |
+| And the columns sorted once per change | 6 % | 18 ms | 127 ms |
+
+- Before, every change built all of the board's cards again, each with its action menu.
+- With each card kept as last built, only the changed column's cards are built; but every slow frame still spent 50
+  to 110 ms in garbage collection: each column was filtered and sorted several times a frame, with a regular
+  expression made for every comparison and every title copied in lower case.
+- With the columns sorted once per change, and each story's search words and number made once, the slow frames are
+  the unfolding of a large column - about 70 ms for 125 cards - and a keystroke in the search at 21 to 28 ms.
+- Not under budget, and why: the board scrolls as one page, so an unfolded column is built whole; building only the
+  cards in sight needs each column to scroll by itself, a change of the layout, which is
+  [PL56](README.md#pl56).
+- The rebuild test, `planning_board_rebuild_test.dart`, failed on the board before and passes after; a test that the
+  columns follow the search and the priority was seen red with either left out of what they are kept by.
+
+## Reading
+
+Read once by another model, asking whether a cached card or column can show stale data or keep a board alive: no
+finding. Every input a card or a column is built from is in its key, mutable ones taken by value; a column cache holds
+only the latest columns of its board, the card cache lives in the view of one board, and the per-story keys are held
+weakly.

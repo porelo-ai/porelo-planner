@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../client.dart';
@@ -737,29 +738,58 @@ class _BoardViewState extends State<_BoardView> {
       PlanningAction(
         id: 'planning-start ${story.id}',
         label: 'Start work…',
-        unavailable:
-            board.startUnavailable(story) ??
-            (!board.states.any((state) => state.kind == 'WORKING') ? 'no working state was reported' : null),
+        unavailable: _startUnavailable(story),
         run: () => unawaited(_start(story)),
       ),
       PlanningAction(
         id: 'planning-stop ${story.id}',
         label: 'Stop work',
-        unavailable:
-            board.unavailableActions['StopStoryWork'] ??
-            (!board.live
-                ? 'the planning board is not live'
-                : board.actionBusy
-                ? 'waiting for the planner'
-                : board.workOf(story)?.atWork != true
-                ? 'no running work was reported'
-                : null),
+        unavailable: _stopUnavailable(story),
         run: () => unawaited(_stop(story)),
       ),
     ],
   );
 
+  String? _startUnavailable(PlanStory story) =>
+      board.startUnavailable(story) ??
+      (!board.states.any((state) => state.kind == 'WORKING') ? 'no working state was reported' : null);
+
+  String? _stopUnavailable(PlanStory story) =>
+      board.unavailableActions['StopStoryWork'] ??
+      (!board.live
+          ? 'the planning board is not live'
+          : board.actionBusy
+          ? 'waiting for the planner'
+          : board.workOf(story)?.atWork != true
+          ? 'no running work was reported'
+          : null);
+
+  /// Each card as last built, with what it was built from; a board of hundreds of cards is not built anew on
+  /// every change, only the cards whose inputs changed.
+  final Map<String, (List<Object?>, Widget)> _cards = {};
+
   Widget _card(BuildContext context, PlanStory story) {
+    final inputs = <Object?>[
+      board,
+      story,
+      Theme.of(context),
+      board.preferences.expandedStories.contains(story.id),
+      _work(story),
+      board.pending[story.id],
+      board.pending[story.id]?.problem,
+      board.saving,
+      board.live,
+      _startUnavailable(story),
+      _stopUnavailable(story),
+    ];
+    final built = _cards[story.id];
+    if (built != null && listEquals(built.$1, inputs)) return built.$2;
+    final card = _buildCard(context, story);
+    _cards[story.id] = (inputs, card);
+    return card;
+  }
+
+  Widget _buildCard(BuildContext context, PlanStory story) {
     final theme = Theme.of(context);
     final open = board.preferences.expandedStories.contains(story.id);
     final work = _work(story);
