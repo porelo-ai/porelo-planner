@@ -48,7 +48,6 @@ left out.
 | <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | - | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
-| <a id="pl42"></a>[PL42](PL42-A-Project-On-Any-Host-And-Owner.md) | S | - | The Git store reads a project whose repositories live on any host and under any owner: each central from any clone URL - https, ssh or scp-like - and the link pattern and host of story texts and indexes from project.yml instead of one fixed owner |
 | <a id="pl58"></a>[PL58](PL58-A-Discussed-Idea-Becomes-A-Story-And-Its-Issues.md) | L | [PL46](README.md#pl46) | The idea a discussion wrote comes back to the planner when its task ends, is checked against the idea format and becomes, in one save, a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix |
 
 ## Implementing
@@ -57,6 +56,7 @@ left out.
 |---|---|---|---|
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | - | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
+| <a id="pl42"></a>[PL42](PL42-A-Project-On-Any-Host-And-Owner.md) | S | - | The Git store reads a project whose repositories live on any host and under any owner: each central from any clone URL - https, ssh or scp-like - and the link pattern and host of story texts and indexes from project.yml instead of one fixed owner |
 | <a id="pl46"></a>[PL46](PL46-An-Issue-Says-Whether-An-Agent-Works-It.md) | M | - | Every issue's head carries who works it, Agent or Manual, read as Agent where it names none; the planner saves it through its own call, and the board shows it |
 
 ## Finished
