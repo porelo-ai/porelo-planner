@@ -9,6 +9,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl77"></a>[PL77](PL77-Each-Raised-Row-Offers-Its-Action.md) | - | - | Every row in Needs you offers what answers its reason: start again or stop after a failed next step or a refused save, move on or start again after a stop, open the task to push its commits, read again or go to Review after invalid findings |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
@@ -40,7 +41,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists |
@@ -68,6 +68,7 @@ left out.
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
 | <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | L | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog |
+| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL64](README.md#pl64) | The planner marks an issue as needing the person only from its run, naming the run's reason; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 
 ## Finished
 

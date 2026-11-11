@@ -22,8 +22,12 @@ class StoryWorkAttentionView extends StatefulWidget {
     required this.machine,
     this.openStory = true,
     this.taskChanges,
+    this.onPutAway,
     super.key,
   });
+
+  /// Where the window keeps an issue's row a person puts away; without it the row offers no Put away.
+  final ValueChanged<PlanningPutAway>? onPutAway;
 
   /// How the window opens a task, given where the planning screen may never have been shown; the row's board's
   /// own hook otherwise.
@@ -152,6 +156,16 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
             if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) _taskEnd(issue),
             if (row.issue case final issue?) ...[
               Text('${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}'),
+              if (widget.onPutAway case final putAway? when !widget.resolved)
+                if (row.putAwayOn(widget.machine) case final kept?)
+                  Tooltip(
+                    message: 'Leave this row out of Needs you until its reason or state changes',
+                    child: TextButton(
+                      key: Key('story-work-put-away ${issue.id}'),
+                      onPressed: () => putAway(kept),
+                      child: const Text('Put away'),
+                    ),
+                  ),
               if (!widget.resolved && reading?.detail == null && reading?.busy == true)
                 const Text('Reading the last findings…'),
               for (final finding in reading?.detail?.blockingFirst ?? <PlanFinding>[])

@@ -503,6 +503,60 @@ class PlanningAttention {
 
   /// The durable issue reason, independent of the agent’s finished flag.
   final String reason;
+
+  /// What the window keeps when a person puts this issue's row away on [machine], or null for a story's end.
+  PlanningPutAway? putAwayOn(String machine) => switch (issue) {
+    final issue? => PlanningPutAway(
+      machine: machine,
+      project: project,
+      issue: issue.id,
+      reason: planReasonNeedsAttention(reason) ? reason : issue.attention,
+      state: issue.state,
+    ),
+    null => null,
+  };
+}
+
+/// An issue's Needs you row a person put away, kept by the window alone.
+///
+/// It names the reason and the state the row was put away with, so the row comes back once either changes.
+@immutable
+class PlanningPutAway {
+  /// Takes the row's source, issue, reason and state.
+  const PlanningPutAway({
+    required this.machine,
+    required this.project,
+    required this.issue,
+    required this.reason,
+    required this.state,
+  });
+
+  /// The provider that reported the row.
+  final String machine;
+
+  /// The project the issue belongs to.
+  final String project;
+
+  /// The issue's identifier.
+  final String issue;
+
+  /// The reason's wire name the row showed.
+  final String reason;
+
+  /// The issue's state when it was put away.
+  final String state;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningPutAway &&
+      other.machine == machine &&
+      other.project == project &&
+      other.issue == issue &&
+      other.reason == reason &&
+      other.state == state;
+
+  @override
+  int get hashCode => Object.hash(machine, project, issue, reason, state);
 }
 
 /// The state of one stopped reading's decision, shared by every view of it on one board.

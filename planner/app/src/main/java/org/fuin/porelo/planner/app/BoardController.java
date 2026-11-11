@@ -594,6 +594,8 @@ public class BoardController {
                         view.atWork(),
                         view.needsYou(),
                         view.readingStopped(),
+                        view.noRunHere(),
+                        view.attention(),
                         view.findings()));
     }
 

@@ -107,7 +107,7 @@ Map<String, dynamic> _board() => {
       'title': 'A story whose run was lost',
       'state': 'Building',
       'issues': [
-        {'id': 'Orphan', 'repository': 'repo', 'state': 'Building', 'needsYou': true},
+        {'id': 'Orphan', 'repository': 'repo', 'state': 'Building', 'needsYou': false, 'noRunHere': true},
       ],
     },
   ],
@@ -179,8 +179,8 @@ void main() {
     });
   }
 
-  // Harm: a row offers to open a task that did not raise its reason, or a run lost with no task at all.
-  for (final (story, issue) in [('Held', 'Nameless'), ('Lost', 'Orphan')]) {
+  // Harm: a row offers to open a task that did not raise its reason.
+  for (final (story, issue) in [('Held', 'Nameless')]) {
     testWidgets('the row of $issue, with no task to tell, says its reason instead', (tester) async {
       final opened = _Opened();
       await show(tester, row(story, issue), changes: opened);

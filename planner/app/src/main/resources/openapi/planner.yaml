@@ -1659,7 +1659,7 @@ components:
     Issue:
       description: One issue of a story.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped]
+      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -1703,8 +1703,20 @@ components:
           type: boolean
         needsYou:
           type: boolean
+          description: >-
+            Whether the person must act on it: a run of this planner raised it, with the reason in attention. An issue
+            a person works, or one with no run here, is never raised.
         readingStopped:
           type: boolean
+        noRunHere:
+          type: boolean
+          description: >-
+            Whether an issue an agent works stands in a working state with no run in this planner's record, such as
+            work started elsewhere or set by a commit; it is shown, not raised.
+        attention:
+          type: string
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
+          description: Why the person must act, the reason the run reported; NONE when needsYou is false.
         findings:
           type: array
           maxItems: 100

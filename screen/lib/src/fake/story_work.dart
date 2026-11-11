@@ -132,6 +132,7 @@ class MockStoryWork {
       }
       issue['readingStopped'] = false;
       issue['needsYou'] = false;
+      issue['attention'] = 'NONE';
       if (choice == 'REVIEW_ANYWAY') {
         issue['state'] = 'Review';
       } else {

@@ -221,6 +221,8 @@ class PlanIssue {
       readingStopped = source.readingStopped,
       atWork = source.atWork,
       needsYou = source.needsYou,
+      noRunHere = source.noRunHere,
+      attention = source.attention,
       worker = source.worker,
       workerMalformed = source.workerMalformed,
       findings = source.findings,
@@ -243,6 +245,8 @@ class PlanIssue {
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
       needsYou = map['needsYou'] is bool ? map['needsYou'] as bool : null,
+      noRunHere = map['noRunHere'] == true,
+      attention = map['attention'] is String ? map['attention'] as String : '',
       worker = IssueWorker.read(map['worker']),
       workerMalformed = map.containsKey('worker') && IssueWorker.read(map['worker']) == null,
       findings = _planList(map['findings'], PlanFinding.from),
@@ -272,6 +276,12 @@ class PlanIssue {
 
   /// The atWork, needsYou reported by the daemon.
   final bool? atWork, needsYou;
+
+  /// Whether an agent's issue stands in a working state with no run of the planner, so it is worked elsewhere.
+  final bool noRunHere;
+
+  /// Why the planner raised it, the run's reason; empty when unsaid and `NONE` when not raised.
+  final String attention;
 
   /// Who works it, or null when the planner named no worker it describes.
   final IssueWorker? worker;

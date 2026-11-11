@@ -157,7 +157,8 @@ class WorkRunHttpTest {
     }
 
     @Test
-    void aPersonsIssueInAWorkingStateIsNeitherLostNorWaitingOnAReadingChoice() throws Exception {
+    void aPersonsIssueInAWorkingStateIsNeitherWorkedElsewhereNorWaitingOnAReadingChoice()
+            throws Exception {
         // A person's own issue raised as needing them would bury the issues that really do.
         final Issue manual =
                 new Issue(
@@ -194,8 +195,8 @@ class WorkRunHttpTest {
                         List.of("alpha"));
         final WorkRun.Snapshot none = new WorkRun.Snapshot(0, Map.of());
 
-        assertThat(WorkAnswers.issue(board, agents, none).needsYou())
-                .as("an agent's issue in a working state without a run is lost work")
+        assertThat(WorkAnswers.issue(board, agents, none).noRunHere())
+                .as("an agent's issue in a working state without a run is worked elsewhere")
                 .isTrue();
         assertThat(WorkAnswers.issue(board, manual, none).needsYou())
                 .as("a person's issue there is their own work")

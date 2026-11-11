@@ -221,6 +221,9 @@ public final class Answers {
      * @param atWork whether a bound task is active
      * @param needsYou whether attention is needed
      * @param readingStopped whether a reading waits for a choice
+     * @param noRunHere whether an agent's issue stands in a working state with no run of this
+     *     planner, shown on the board and not raised
+     * @param attention why it needs the person, the run's reason, or {@code NONE}
      * @param findings latest findings, absent without a record
      */
     public record Issue(
@@ -238,6 +241,8 @@ public final class Answers {
             boolean atWork,
             boolean needsYou,
             boolean readingStopped,
+            boolean noRunHere,
+            String attention,
             @JsonInclude(JsonInclude.Include.NON_NULL)
                     @Nullable List<WorkAnswers.Finding> findings) {}
 
@@ -261,6 +266,9 @@ public final class Answers {
      * @param atWork whether a bound task is active
      * @param needsYou whether attention is needed
      * @param readingStopped whether a reading waits for a choice
+     * @param noRunHere whether an agent's issue stands in a working state with no run of this
+     *     planner, shown on the board and not raised
+     * @param attention why it needs the person, the run's reason, or {@code NONE}
      * @param findings latest findings, absent without a record
      */
     public record IssueDetail(
@@ -281,6 +289,8 @@ public final class Answers {
             boolean atWork,
             boolean needsYou,
             boolean readingStopped,
+            boolean noRunHere,
+            String attention,
             @JsonInclude(JsonInclude.Include.NON_NULL)
                     @Nullable List<WorkAnswers.Finding> findings) {}
 }

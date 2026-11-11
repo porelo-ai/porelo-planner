@@ -1053,6 +1053,8 @@ class _BoardViewState extends State<_BoardView> {
                                 if (issue.state.isNotEmpty) Text(issue.state),
                                 if (issue.size.isNotEmpty) Text(issue.size),
                                 if (issue.worker case final worker?) Text(planningWorker(worker)),
+                                if (issue.noRunHere)
+                                  Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
                               ],
                             ),
                             if (!issue.blockedByReported)

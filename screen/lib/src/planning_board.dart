@@ -1373,7 +1373,9 @@ class PlanningBoards extends ChangeNotifier {
   }
 
   void _changed() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    _forgetSettled();
+    notifyListeners();
   }
 
   /// Boards holding unsaved work, including providers no longer selected.
@@ -1386,18 +1388,48 @@ class PlanningBoards extends ChangeNotifier {
   /// The provider names known now, for saying which did not supply a project.
   List<String> get providerNames => [for (final provider in client.providers) provider.name];
 
-  /// Ended story runs and stopped readings that need a person, from every source including stale ones.
+  Set<PlanningPutAway> _putAway = const {};
+
+  /// The issue rows the window keeps put away; [needsYou] leaves each out while its reason and state stand.
+  Set<PlanningPutAway> get putAway => _putAway;
+
+  set putAway(Set<PlanningPutAway> rows) {
+    _putAway = Set.unmodifiable(rows);
+    _changed();
+  }
+
+  /// Forgets each row put away whose issue no longer needs the person, so the same reason raised anew is seen.
+  ///
+  /// The window reads [putAway] back after a change to keep only what still stands.
+  void _forgetSettled() {
+    if (_putAway.isEmpty) return;
+    final raised = <(String, String, String)>{
+      for (final board in sources)
+        for (final story in board.stories)
+          for (final row in storyAttention(board, story))
+            if (row.issue case final issue?) (machineOf(board), board.project, issue.id),
+    };
+    final standing = {
+      for (final kept in _putAway)
+        if (raised.contains((kept.machine, kept.project, kept.issue))) kept,
+    };
+    if (standing.length != _putAway.length) _putAway = Set.unmodifiable(standing);
+  }
+
+  /// Ended story runs and stopped readings that need a person, from every source including stale ones, without
+  /// the rows the window keeps put away.
   List<PlanningNeedsYou> get needsYou => [
     for (final board in sources)
       for (final story in board.stories)
         for (final row in storyAttention(board, story))
-          PlanningNeedsYou(
-            row.issue == null
-                ? 'story ended ${machineOf(board)}/${board.project}/${story.id}'
-                : 'reading ${machineOf(board)}/${board.project}/${row.issue!.id}',
-            machineOf(board),
-            row,
-          ),
+          if (!_putAway.contains(row.putAwayOn(machineOf(board))))
+            PlanningNeedsYou(
+              row.issue == null
+                  ? 'story ended ${machineOf(board)}/${board.project}/${story.id}'
+                  : 'reading ${machineOf(board)}/${board.project}/${row.issue!.id}',
+              machineOf(board),
+              row,
+            ),
   ];
 
   /// The rows of one story that need a person, from its own board: the run's end, then each issue.
@@ -1435,6 +1467,8 @@ class PlanningBoards extends ChangeNotifier {
       'rounds': result?.rounds ?? issue?.rounds,
       'roundsMost': result?.roundsMost ?? issue?.roundsMost,
       'readingStopped': result?.readingStopped ?? issue?.readingStopped,
+      'state': ?issue?.state,
+      'attention': ?issue?.attention,
       'worker': ?issue?.worker?.wire,
     });
   }

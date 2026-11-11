@@ -315,6 +315,8 @@ public final class WorkAnswers {
         // A person's issue needs no agent's choice, whatever a run recorded before the switch.
         final boolean manual = issue.worker() == org.fuin.porelo.planner.store.Worker.MANUAL;
         final NextStep.Progress progress = progress(snapshot, issue.id());
+        // Work this planner did not start is only shown; it asks the person for nothing here.
+        final boolean raised = !manual && progress != null && progress.needsYou();
         final var link = issue.link();
         return new Answers.Issue(
                 issue.id(),
@@ -329,8 +331,10 @@ public final class WorkAnswers {
                 progress == null ? null : progress.rounds().rounds(),
                 progress == null ? null : progress.rounds().roundsMost(),
                 atWork(snapshot, issue.id()),
-                !manual && (progress == null ? lost(board, snapshot, issue) : progress.needsYou()),
+                raised,
                 !manual && progress != null && progress.rounds().stopped(),
+                progress == null && lost(board, snapshot, issue),
+                raised && progress != null ? progress.reason() : "NONE",
                 progress == null ? null : findings(progress.findings()));
     }
 

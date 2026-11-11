@@ -5,14 +5,14 @@
   "$schema": "issue-1.json",
   "id": "PL50",
   "title": "Needs You Only For What A Person Must Do",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 25,
   "blockedBy": [
     "PL64"
   ],
-  "covers": "The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes"
+  "covers": "The planner marks an issue as needing the person only from its run, naming the run's reason; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes"
 }
 ```
 
@@ -47,22 +47,26 @@ working state is worked by hand and has no run by design, so it is never counted
    screen shows it on the issue's row as "worked outside this planner". Contract change in `planner.yaml`,
    `Answers.Issue`, `models.dart`, the mock board. Red first, unit, in a new `WorkAnswersTest` in `app`: an issue in
    Implementing with no run answers `needsYou` false and `noRunHere` true; a Manual one answers both false.
-2. **Each raised row names its action** (S). The board's `Issue` gets `attention` - the run's reason, `NONE` when not
-   raised - and `StoryWorkAttentionView` carries an action for each reason [PL64](README.md#pl64) leaves:
-   `NEXT_STEP_UNAVAILABLE` and `SAVE_REFUSED` look at the failure and start again or stop; `STOPPED` move the issue on
-   or start again; `UNPUSHED` open the task to push its commits; `INVALID_FINDINGS` read again or go to Review. Red
-   first, widget test of the screen package: a `STOPPED` row offers its two actions.
+2. **Each raised row names its reason.** The board's `Issue` gets `attention` - the run's reason, `NONE` when not
+   raised (`WorkAnswers`, `Answers.Issue`, `planner.yaml`, `models.dart`, the mock board). An action for each reason
+   is left to [PL77](README.md#pl77): today a raised row holds its story's Start, a halted run takes no start, the
+   screen offers Stop only while work runs, and the row has no start hooks. Red first, unit, `WorkAnswersTest`: a
+   raised issue names its run's reason and an unraised one `NONE`.
 3. **A raised row can be put away** (XS). A row put away is kept by the window alone, as a seen story end is kept
    today: it keeps the issue with the reason and state shown, and shows the row again once either changes. The
    screen package gives `StoryWorkAttentionView` a put-away action that hands the issue, its reason and its state to
    a callback of the window's, and `PlanningBoards.needsYou` leaves out what the window names as put away. Nothing
-   is stored in the planner and no request is added. Red first, widget test of the screen package: a row put away is
-   left out while its reason and state are unchanged and shown again when the reason changes.
+   is stored in the planner and no request is added. A row put away whose issue is no longer raised is forgotten,
+   so the same reason raised anew shows again. Red first, widget test of the screen package: a row put away is left
+   out while its reason and state are unchanged and shown again when the reason or the state changes, or when it
+   settles and is raised anew.
 
-Order: 1, 2, 3, after [PL64](README.md#pl64). Sum by the medians: 2 S + 1 XS = 33 + 33 + 15 = 81 minutes, an M.
+Order: 1, 2, 3, after [PL64](README.md#pl64). Built: `WorkAnswersTest` (no run here not raised; a Manual issue
+neither raised nor worked outside; the reason named) and `needs_you_put_away_test.dart` (a row put away returns when
+its reason or its state changes), each seen red under a break of its code.
 
 ## Acceptance
 
-- *Needs you* holds only issues with a reason and an action; putting one away keeps it away in that window until its
+- *Needs you* holds only issues a run of this planner raised, with its reason; putting one away keeps it away in that window until its
   state or reason changes; an issue with no run here shows on the board and is not raised, and a Manual issue is
   neither.

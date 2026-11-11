@@ -1303,7 +1303,9 @@ public final class WorkRun {
                                                                 .rules()
                                                                 .containsKey(i.state())))) {
             throw WorkRefusal.notAllowed(
-                    story.state(), to, "Working states without a run need attention.");
+                    story.state(),
+                    to,
+                    "An issue in a working state is worked outside this planner.");
         }
     }
 
