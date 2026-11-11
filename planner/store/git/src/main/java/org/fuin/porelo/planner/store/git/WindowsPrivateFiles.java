@@ -156,7 +156,9 @@ final class WindowsPrivateFiles implements PrivateFiles {
                     Files.createDirectory(directory);
                     made.add(directory);
                 } catch (final FileAlreadyExistsException exists) {
-                    // Checked below, whoever made it.
+                    // Its rights are checked below, whoever made it; but nothing is made behind a
+                    // link or junction first.
+                    requirePlainDirectory(directory);
                 }
             }
             final List<Path> asked = new ArrayList<>(above);
@@ -175,6 +177,16 @@ final class WindowsPrivateFiles implements PrivateFiles {
             return directory;
         } catch (final IOException e) {
             throw new UncheckedIOException(base + " cannot be used: " + e.getMessage(), e);
+        }
+    }
+
+    private static void requirePlainDirectory(final Path directory) throws IOException {
+        final BasicFileAttributes attributes =
+                Files.readAttributes(
+                        directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isDirectory() || attributes.isSymbolicLink() || attributes.isOther()) {
+            throw new IllegalStateException(
+                    directory + " is not a directory, or is a link or junction");
         }
     }
 

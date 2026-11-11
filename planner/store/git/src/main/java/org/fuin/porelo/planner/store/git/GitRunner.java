@@ -1,7 +1,6 @@
 package org.fuin.porelo.planner.store.git;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -48,8 +47,6 @@ public final class GitRunner {
     private static final Pattern LOCAL_PATH =
             Pattern.compile("file://[^\\s'\"]*|(?<![\\w/.~-])~?/(?!/)[^\\s'\"]+");
 
-    private static final File NO_INPUT = new File("/dev/null");
-
     private static final int ERROR_BYTES = 16 * 1024;
 
     private final Duration limit;
@@ -80,7 +77,6 @@ public final class GitRunner {
         final ProcessBuilder builder = new ProcessBuilder(call.arguments());
         builder.environment().clear();
         builder.environment().putAll(call.environment());
-        builder.redirectInput(NO_INPUT);
         if (directory != null) {
             builder.directory(directory.toFile());
         }
@@ -93,6 +89,9 @@ public final class GitRunner {
                     "git could not be started: " + scrubbed(e.getMessage()));
         }
         try {
+            // Nothing to read, and no file: /dev/null is C:\dev\null on Windows, which any account
+            // may make.
+            process.getOutputStream().close();
             final FutureTask<byte[]> output = read(process.getInputStream(), outputBytes, process);
             final FutureTask<byte[]> errors = read(process.getErrorStream(), ERROR_BYTES, process);
             if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -114,6 +113,10 @@ public final class GitRunner {
                         kind, "git exited with " + process.exitValue() + ": " + scrubbed(err));
             }
             return out;
+        } catch (final IOException e) {
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED,
+                    "git's input could not be closed: " + scrubbed(e.getMessage()));
         } catch (final InterruptedException e) {
             kill(process);
             Thread.currentThread().interrupt();
