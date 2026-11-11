@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -20,6 +22,7 @@ import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.json.JsonMapper;
@@ -426,6 +429,63 @@ class WorkRecordTest {
             assertThatThrownBy(() -> record.locked(s -> s.read()))
                     .as("duplicate or unreadable JSON cannot reset the record")
                     .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void aHeldRecordIsNotCheckedAgainOnEveryOperation() {
+        // On Windows each check of the directories starts PowerShell, which takes up to seconds.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final AtomicInteger checks = new AtomicInteger();
+        final PrivateFiles real = PrivateFiles.of(environment);
+        final PrivateFiles counted =
+                new PrivateFiles() {
+                    @Override
+                    public boolean windows() {
+                        return real.windows();
+                    }
+
+                    @Override
+                    public Path base(final Kind kind, final Map<String, String> variables) {
+                        return real.base(kind, variables);
+                    }
+
+                    @Override
+                    public List<String> steps(final Kind kind) {
+                        return real.steps(kind);
+                    }
+
+                    @Override
+                    public Path directories(
+                            final Path base,
+                            final boolean create,
+                            final Kind kind,
+                            final List<String> steps) {
+                        checks.incrementAndGet();
+                        return real.directories(base, create, kind, steps);
+                    }
+
+                    @Override
+                    public FileAttribute<?>[] ownerOnlyFile() {
+                        return real.ownerOnlyFile();
+                    }
+
+                    @Override
+                    public void requireOwnFile(final Path file, final boolean alone) {
+                        real.requireOwnFile(file, alone);
+                    }
+                };
+        try (WorkRecord records = new WorkRecord(environment, false, counted)) {
+            final WorkRun.Record store =
+                    records.open("project", "https://example.org/store.git", null);
+            for (int i = 0; i < 3; i++) {
+                store.locked(session -> session.read());
+            }
+
+            assertThat(checks.get())
+                    .as(
+                            "the directories are checked when the lock is taken, not again while it is held")
+                    .isEqualTo(1);
         }
     }
 }

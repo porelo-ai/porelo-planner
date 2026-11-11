@@ -178,12 +178,12 @@ public final class WorkRecord implements AutoCloseable {
 
         private void acquire() {
             try {
-                final Path dir = WorkRecord.this.directory(project);
-                directory = dir;
                 final FileLock held = fileLock;
-                if (held != null && held.isValid()) {
+                if (held != null && held.isValid() && directory != null) {
                     return;
                 }
+                final Path dir = WorkRecord.this.directory(project);
+                directory = dir;
                 final Path path = dir.resolve("work.lock");
                 try {
                     Files.createFile(path, files.ownerOnlyFile());
