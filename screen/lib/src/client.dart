@@ -144,6 +144,10 @@ abstract interface class PlanningSource {
     String revision,
   );
 
+  /// Sets [story]'s priority, one of [planningPriorities], against the board at [revision]; saved as a move is,
+  /// it answers the board's revision after the save, the same one when the story had that priority already.
+  Future<String> setPriority(String project, String story, String priority, String revision);
+
   /// Reads one story and its source text.
   Future<PlanStoryDetail> getStory(String project, String story);
 
@@ -195,6 +199,9 @@ abstract interface class PlanningSource {
     String? comment,
   });
 }
+
+/// The priorities a story may have, the highest first, as the planner names them.
+const planningPriorities = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
 
 /// Whether [error] says the provider does not offer the call at all.
 bool planningUnsupported(Object error) => error is PlanningUnsupported || error is PlanningRefusal && error.notOffered;

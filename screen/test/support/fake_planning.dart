@@ -177,6 +177,33 @@ class FakePlanningSource implements PlanningSource {
     return PlanningIssueAdded(id: 'I${added.length + 2}', revision: next);
   }
 
+  /// Every priority asked of it: the project, story, priority and revision.
+  final List<(String, String, String, String)> priorities = [];
+
+  /// A refusal of the next priority, set by a test.
+  Object? priorityFailure;
+
+  /// Held until a test completes it, so a priority answers only once the test lets it.
+  Completer<void>? priorityHeld;
+
+  @override
+  Future<String> setPriority(String project, String story, String priority, String revision) async {
+    priorities.add((project, story, priority, revision));
+    if (priorityHeld case final held?) await held.future;
+    if (priorityFailure case final failure?) throw failure;
+    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    final next = 'r${saves.length + added.length + priorities.length + 1}';
+    replace({
+      ...board,
+      'revision': next,
+      'stories': [
+        for (final record in (board['stories'] as List).cast<Map<String, dynamic>>())
+          record['id'] == story ? {...record, 'priority': priority} : record,
+      ],
+    });
+    return next;
+  }
+
   Never _notServed(String call) => throw PlanningUnsupported('this provider has no $call');
 
   @override

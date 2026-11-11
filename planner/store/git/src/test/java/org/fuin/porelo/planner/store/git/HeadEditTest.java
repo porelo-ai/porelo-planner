@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.git;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.fuin.porelo.planner.store.Worker;
 import org.junit.jupiter.api.Test;
 
@@ -121,5 +122,59 @@ class HeadEditTest {
                 .as("two worker members")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("worker");
+    }
+
+    @Test
+    void aStorysPriorityIsReplacedInItsHeadAndEveryOtherByteStays() {
+        // A head written wrong breaks every reader of the story and of the stories index.
+        final String edited = HeadEdit.storyPriority(STORY, "Lowest");
+        assertThat(edited)
+                .as("only the priority line differs")
+                .isEqualTo(STORY.replace("\"priority\": \"High\"", "\"priority\": \"Lowest\""));
+    }
+
+    @Test
+    void aPriorityInAnExampleAboveTheStorysOwnHeadIsNeverTouched() {
+        // An edit of the body's example would change the person's text and leave the priority.
+        final String shown =
+                STORY.replace(
+                        "A story served to the window.\n",
+                        "A head reads:\n\n## Data\n\n```json\n{\n  \"priority\": \"Low\",\n"
+                                + "  \"issues\": []\n}\n```\n");
+        final String edited = HeadEdit.storyPriority(shown, "Highest");
+        assertThat(edited)
+                .as("the example keeps its priority, the head takes the new one")
+                .isEqualTo(shown.replace("\"priority\": \"High\"", "\"priority\": \"Highest\""));
+    }
+
+    @Test
+    void aStoryHeadWithoutExactlyOnePriorityIsRefused() {
+        // Inserting one or guessing between two would save a priority no reader is sure of.
+        final String none = STORY.replace("  \"priority\": \"High\",\n", "");
+        assertThatThrownBy(() -> HeadEdit.storyPriority(none, "Low"))
+                .as("no priority line")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("priority");
+        final String twice =
+                STORY.replace(
+                        "  \"priority\": \"High\",\n",
+                        "  \"priority\": \"High\",\n  \"priority\": \"Low\",\n");
+        assertThatThrownBy(() -> HeadEdit.storyPriority(twice, "Low"))
+                .as("two priority lines")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("priority");
+    }
+
+    @Test
+    void aPriorityOutsideTheFiveIsRefused() {
+        // A sixth value, or one with a quote, would write a head the stories index refuses.
+        for (final String value : List.of("Urgent", "high", "Hi\"gh", "High\n", "")) {
+            assertThatThrownBy(() -> HeadEdit.storyPriority(STORY, value))
+                    .as("the priority %s", value)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThatThrownBy(() -> HeadEdit.storyPriority(STORY.replace("## Data\n\n", ""), "Low"))
+                .as("a story without its data section")
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

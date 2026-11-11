@@ -133,6 +133,25 @@ class MockModeTest {
     }
 
     @Test
+    void theMockAnswersAPriorityChangeAsNotOffered() throws Exception {
+        // The mock saves nothing; a priority answered as saved would let the window's tests pass a
+        // save that never happened.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> priority =
+                call(
+                        runtime,
+                        "PUT",
+                        "/projects/any/stories/ST294/priority",
+                        "{\"priority\": \"Lowest\", \"revision\": \"mock@1\"}");
+        assertThat(priority.statusCode())
+                .as("the status of a priority change: %s", priority.body())
+                .isEqualTo(501);
+        assertThat(JSON.readTree(priority.body()).path("type").asString())
+                .as("the refusal of a priority change")
+                .isEqualTo("urn:porelo-planner:NotOffered");
+    }
+
+    @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
         // Projects kept across the window's tests would leak a test's project into the next and
         // run into the planner's bound on projects after a few tests.

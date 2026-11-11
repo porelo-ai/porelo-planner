@@ -123,9 +123,10 @@ final class SaveFiles {
     }
 
     /**
-     * Words a commit's subject: what moved and where to, and how many issues' workers it sets,
-     * never which item, so it names no requirement number; a commit of planning files alone ends
-     * with {@code [skip ci]}, so it starts no build, the whole within the subject's limit.
+     * Words a commit's subject: what moved and where to, how many issues' workers and stories'
+     * priorities it sets, never which item, so it names no requirement number; a commit of planning
+     * files alone ends with {@code [skip ci]}, so it starts no build, the whole within the
+     * subject's limit.
      *
      * @param issues the issues the commit moves, with their new states
      * @param stories the stories whose head the commit changes, with their new stated states, or an
@@ -141,12 +142,34 @@ final class SaveFiles {
             final int workers,
             final boolean idea,
             final List<String> paths) {
+        return subject(issues, stories, workers, 0, idea, paths);
+    }
+
+    /**
+     * Words a commit's subject as {@link #subject(Map, Map, int, boolean, List)} does, the stories'
+     * priorities it sets counted too.
+     *
+     * @param issues the issues the commit moves, with their new states
+     * @param stories the stories whose stated state the commit changes, empty where it goes
+     * @param workers how many issues' workers the commit sets
+     * @param priorities how many stories' priorities the commit sets
+     * @param idea whether the save adds an idea
+     * @param paths the paths the commit changes
+     * @return the subject
+     */
+    static String subject(
+            final Map<String, String> issues,
+            final Map<String, String> stories,
+            final int workers,
+            final int priorities,
+            final boolean idea,
+            final List<String> paths) {
         final boolean planning = !paths.isEmpty() && paths.stream().allMatch(SaveFiles::planning);
         final int limit = planning ? SUBJECT - SKIP_CI.length() : SUBJECT;
         final String words =
                 idea && issues.isEmpty() && stories.isEmpty()
                         ? "Add an idea"
-                        : words(issues, stories, workers, limit);
+                        : words(issues, stories, workers, priorities, limit);
         return planning ? words + SKIP_CI : words;
     }
 
@@ -163,18 +186,38 @@ final class SaveFiles {
             final Map<String, String> issues,
             final Map<String, String> stories,
             final int workers,
+            final int priorities,
             final int limit) {
-        if (workers == 0) {
+        final List<String> sets = new ArrayList<>();
+        if (workers > 0) {
+            sets.add("who works " + (workers == 1 ? "an issue" : workers + " issues"));
+        }
+        if (priorities > 0) {
+            sets.add("the priority of " + (priorities == 1 ? "a story" : priorities + " stories"));
+        }
+        if (sets.isEmpty()) {
             return moved(issues, stories, limit);
         }
-        final String whom = workers == 1 ? "an issue" : workers + " issues";
+        final String set = "set " + String.join(" and ", sets);
         if (issues.isEmpty() && stories.isEmpty()) {
-            return "Set who works " + whom;
+            return fitted("S" + set.substring(1), workers, priorities, limit);
         }
-        final String both = moved(issues, stories, limit) + " and set who works " + whom;
+        final String both = moved(issues, stories, limit) + " and " + set;
         return both.length() <= limit
                 ? both
-                : "Move " + (issues.size() + stories.size()) + " items and set who works " + whom;
+                : fitted(
+                        "Move " + (issues.size() + stories.size()) + " items and " + set,
+                        workers,
+                        priorities,
+                        limit);
+    }
+
+    /** The words, or a shorter count of what changed where they exceed the limit. */
+    private static String fitted(
+            final String words, final int workers, final int priorities, final int limit) {
+        return words.length() <= limit
+                ? words
+                : "Set " + workers + " workers and " + priorities + " priorities";
     }
 
     /**

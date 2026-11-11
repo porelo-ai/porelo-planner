@@ -8,6 +8,7 @@ screen/test/planning_board_view_test.dart
 screen/test/planning_contract_regressions_test.dart
 screen/test/planning_detail_test.dart
 screen/test/planning_moves_test.dart
+screen/test/planning_priority_test.dart
 screen/test/reading_decision_test.dart
 screen/test/story_work_lifecycle_test.dart
 screen/test/story_work_test.dart
@@ -28,6 +29,7 @@ planner/app/src/test/java/org/fuin/porelo/planner/app/EventsStreamTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/HeadEditTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitStoreSaveTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/MovesEndpointTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/PriorityEndpointTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/IssuesEndpointTest.java
 planner/core/src/test/java/org/fuin/porelo/planner/core/WorkProposalTest.java
 planner/core/src/test/java/org/fuin/porelo/planner/core/WorkOrderTest.java

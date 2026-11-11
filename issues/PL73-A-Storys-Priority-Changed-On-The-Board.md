@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL73",
   "title": "A Story's Priority Changed On The Board",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -68,7 +68,14 @@ Taken from the plan's reading:
 - A priority chosen on the story's page or the card's menu is saved in one commit with the stories index, that
   commit starts no build, and the board sorts the story by it. Seen failing first: today's store saves no priority.
 
-## To be checked
+## Code reading
 
-- That the window implements `PlanningSource` only through test fakes that extend `Fake`, so a new method of it needs
-  no change in the window (asked of the window's agent).
+Read by another model; nothing grave. Declined, each harmless as built:
+
+- In the mock mode an unchanged priority answers its current revision before the store is asked, as an unchanged
+  worker does; a changed one is not offered.
+- A head without exactly one priority line is refused as a move is (422), naming the story.
+- A save never carries an idea and a priority together, so the subject's idea wording does not hide one.
+- A newer board that does not yet carry a chosen priority shows the old one until the board that carries it arrives;
+  only the display flickers.
+- The window builds against `MockPlanningSource`, which offers `setPriority`, so the window needs no change.

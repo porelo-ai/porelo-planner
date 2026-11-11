@@ -7,20 +7,26 @@ import java.util.Map;
 
 /**
  * What one save writes to the store: each issue's new state and worker and each story's new stated
- * state.
+ * state and priority.
  *
  * @param issues the issues' new states, by id
  * @param stories the stories' new stated states, by id
  * @param unstated the stories whose stated state is removed
  * @param workers the issues' new workers, by id
+ * @param priorities the stories' new priorities, by id, each one of {@link Story#PRIORITIES}
  */
 public record Writes(
         Map<String, String> issues,
         Map<String, String> stories,
         List<String> unstated,
-        Map<String, Worker> workers) {
+        Map<String, Worker> workers,
+        Map<String, String> priorities) {
 
-    /** Checks the ids and copies the maps and the list, keeping their order. */
+    /**
+     * Checks the ids and the priorities and copies the maps and the list, keeping their order.
+     *
+     * @throws IllegalArgumentException for a priority none of {@link Story#PRIORITIES}
+     */
     public Writes {
         issues.keySet().forEach(Ids::issue);
         stories.keySet().forEach(Ids::story);
@@ -30,6 +36,31 @@ public record Writes(
         unstated = List.copyOf(unstated);
         workers.keySet().forEach(Ids::issue);
         workers = Collections.unmodifiableMap(new LinkedHashMap<>(workers));
+        priorities.forEach(
+                (id, priority) -> {
+                    Ids.story(id);
+                    if (!Story.PRIORITIES.contains(priority)) {
+                        throw new IllegalArgumentException(
+                                "The priority of " + id + " is none of " + Story.PRIORITIES + ".");
+                    }
+                });
+        priorities = Collections.unmodifiableMap(new LinkedHashMap<>(priorities));
+    }
+
+    /**
+     * Writes that set no priority.
+     *
+     * @param issues the issues' new states, by id
+     * @param stories the stories' new stated states, by id
+     * @param unstated the stories whose stated state is removed
+     * @param workers the issues' new workers, by id
+     */
+    public Writes(
+            final Map<String, String> issues,
+            final Map<String, String> stories,
+            final List<String> unstated,
+            final Map<String, Worker> workers) {
+        this(issues, stories, unstated, workers, Map.of());
     }
 
     /**
@@ -43,7 +74,7 @@ public record Writes(
             final Map<String, String> issues,
             final Map<String, String> stories,
             final List<String> unstated) {
-        this(issues, stories, unstated, Map.of());
+        this(issues, stories, unstated, Map.of(), Map.of());
     }
 
     /**
@@ -52,6 +83,10 @@ public record Writes(
      * @return whether there is nothing to write
      */
     public boolean none() {
-        return issues.isEmpty() && stories.isEmpty() && unstated.isEmpty() && workers.isEmpty();
+        return issues.isEmpty()
+                && stories.isEmpty()
+                && unstated.isEmpty()
+                && workers.isEmpty()
+                && priorities.isEmpty();
     }
 }

@@ -1113,6 +1113,132 @@ class GitStoreSaveTest {
         assertThat(agent.id()).as("the own issue's id").isEqualTo("AB03");
     }
 
+    @Test
+    void aPrioritySavedAloneCommitsTheStorysHeadAndTheStoriesIndexInOneCommitStartingNoBuild()
+            throws Exception {
+        // A priority pushed without its index row turns the stories index check red, and one
+        // without the marker starts a build for a planning file.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        new Writes(
+                                Map.of(), Map.of(), List.of(), Map.of(), Map.of("ST2", "Lowest")));
+
+        assertThat(saved.story("ST2").orElseThrow().priority())
+                .as("the board after the save shows the priority")
+                .isEqualTo("Lowest");
+        assertThat(git(OWN, "rev-parse", head(OWN) + "^").strip())
+                .as("one commit on the one read")
+                .isEqualTo(own);
+        assertThat(names(OWN, head(OWN)))
+                .as("the story's head and the stories index, nothing else")
+                .containsExactly("stories/README.md", "stories/ST2-Alone.md");
+        // The text above the data the stories index writes; the head below is the save's.
+        assertThat(data(read(OWN, "stories/ST2-Alone.md")))
+                .as("the head carries the new priority in its place")
+                .isEqualTo(
+                        data(
+                                story("ST2", "  \"state\": \"Idea\",\n", "")
+                                        .replace(
+                                                "\"priority\": \"High\"",
+                                                "\"priority\": \"Lowest\"")));
+        assertThat(log(OWN, head(OWN), "%s"))
+                .as("a priority's subject")
+                .singleElement()
+                .satisfies(
+                        subject ->
+                                assertThat(subject)
+                                        .as("marked, within the subject's limit")
+                                        .endsWith(" [skip ci]")
+                                        .hasSizeLessThanOrEqualTo(72));
+        assertThat(head(OTHER)).as("the other repository is left alone").isEqualTo(other);
+        assertThat(checkCommits(OWN, own)).as("the own repository's commit check").isZero();
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+        assertThat(freshBoard().story("ST2").orElseThrow().priority())
+                .as("a fresh clone reads the priority back")
+                .isEqualTo("Lowest");
+
+        final String after = head(OWN);
+        store.save(
+                saved.revision(),
+                new Writes(Map.of(), Map.of(), List.of(), Map.of(), Map.of("ST2", "Lowest")));
+
+        assertThat(head(OWN)).as("an unchanged priority commits nothing").isEqualTo(after);
+    }
+
+    @Test
+    void aStoryMovedAndGivenAPriorityInOneSaveHasBothInItsHeadInOneCommit() throws Exception {
+        // Split over two edits or commits, one would overwrite the other or a failed push would
+        // save half of what was asked.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        new Writes(
+                                Map.of(),
+                                Map.of("ST2", "Review"),
+                                List.of(),
+                                Map.of(),
+                                Map.of("ST2", "Highest")));
+
+        assertThat(git(OWN, "rev-parse", head(OWN) + "^").strip())
+                .as("one commit holds both")
+                .isEqualTo(own);
+        // The text above the data the stories index writes; the head below is the save's.
+        assertThat(data(read(OWN, "stories/ST2-Alone.md")))
+                .as("the head carries the state and the priority, the rest as it was")
+                .isEqualTo(
+                        data(
+                                story("ST2", "  \"state\": \"Review\",\n", "")
+                                        .replace(
+                                                "\"priority\": \"High\"",
+                                                "\"priority\": \"Highest\"")));
+        assertThat(saved.story("ST2").orElseThrow())
+                .as("the board shows both")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::priority)
+                .containsExactly("Review", "Highest");
+        assertThat(log(OWN, head(OWN), "%s"))
+                .as("a move's and priority's subject")
+                .singleElement()
+                .satisfies(subject -> assertThat(subject).as("marked").endsWith(" [skip ci]"));
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+    }
+
+    @Test
+    void aPriorityForAStoryTheBoardLacksIsRefusedAndPushesNothing() throws Exception {
+        // A priority for no story would be dropped while the rest of the save went out.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final StoreException.NoSuchStory refused =
+                catchThrowableOfType(
+                        StoreException.NoSuchStory.class,
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        new Writes(
+                                                Map.of(),
+                                                Map.of(),
+                                                List.of(),
+                                                Map.of(),
+                                                Map.of("ST9", "Low"))));
+
+        assertThat(refused).as("refused as no such story").isNotNull();
+        assertThat(refused.subject()).as("naming the story").isEqualTo("ST9");
+        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
+    }
+
     /** Saves the writes, expects a refusal naming the issue, and checks nothing was pushed. */
     private void refusedPushingNothing(final Writes writes, final String issue) throws Exception {
         final GitStore store = store();
@@ -1357,6 +1483,11 @@ class GitStoreSaveTest {
                 + "  \"issues\": ["
                 + issues
                 + "],\n  \"tested\": null\n}\n```\n";
+    }
+
+    /** A story's text from its last data heading on: its head, below what the index writes. */
+    private static String data(final String story) {
+        return story.substring(story.lastIndexOf("## Data"));
     }
 
     private static String issue(final String id, final String state) {

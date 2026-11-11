@@ -3,12 +3,13 @@ package org.fuin.porelo.planner.store.git;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Edits the state in an issue's or a story's JSON head, or an issue's worker, and nothing else in
- * its file.
+ * Edits the state in an issue's or a story's JSON head, an issue's worker or a story's priority,
+ * and nothing else in its file.
  */
 final class HeadEdit {
 
@@ -21,6 +22,9 @@ final class HeadEdit {
 
     /** A top-level worker member, as the heads are written. */
     private static final Pattern WORKER = Pattern.compile("  \"worker\": \"[^\"\\\\]*\",?");
+
+    /** A top-level priority member, as the heads are written. */
+    private static final Pattern PRIORITY = Pattern.compile("  \"priority\": \"[^\"\\\\]*\",?");
 
     private static final Pattern PLAIN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}");
 
@@ -125,6 +129,11 @@ final class HeadEdit {
      */
     static String storyState(final String text, final @Nullable String state) {
         final String[] lines = text.split("\n", -1);
+        return edit(lines, storyFence(lines), state == null ? null : plain(state), true);
+    }
+
+    /** The line of the fence a story's head opens with, under its last data heading. */
+    private static int storyFence(final String[] lines) {
         // The head is the last data section, as the stories index reads it.
         int at = List.of(lines).lastIndexOf(DATA);
         if (at < 0) {
@@ -134,7 +143,41 @@ final class HeadEdit {
         while (at < lines.length && lines[at].isBlank()) {
             at++;
         }
-        return edit(lines, at, state == null ? null : plain(state), true);
+        return at;
+    }
+
+    /**
+     * Sets a story's priority in the head under its data heading, replacing the one priority line
+     * it holds.
+     *
+     * @param text the story's file
+     * @param priority the new priority, one of {@link Story#PRIORITIES}
+     * @return the file with the new priority
+     * @throws IllegalArgumentException when the priority is none of the five, or the file has no
+     *     such head or one without exactly one priority line
+     */
+    static String storyPriority(final String text, final String priority) {
+        if (!Story.PRIORITIES.contains(priority)) {
+            throw new IllegalArgumentException("the priority is none of " + Story.PRIORITIES);
+        }
+        final String[] lines = text.split("\n", -1);
+        final int fence = storyFence(lines);
+        final int end = close(lines, fence);
+        final List<Integer> found = new ArrayList<>();
+        for (int line = fence + 2; line < end - 1; line++) {
+            if (PRIORITY.matcher(lines[line]).matches()) {
+                found.add(line);
+            }
+        }
+        // None or two would mean inserting or guessing, so the head is refused instead.
+        if (found.size() != 1) {
+            throw new IllegalArgumentException(
+                    "the JSON head holds " + found.size() + " priority members, not one");
+        }
+        final int line = found.get(0);
+        final String[] out = lines.clone();
+        out[line] = "  \"priority\": \"" + priority + "\"" + (lines[line].endsWith(",") ? "," : "");
+        return String.join("\n", out);
     }
 
     /** Edits the one state line of the head whose fence opens at the given line. */

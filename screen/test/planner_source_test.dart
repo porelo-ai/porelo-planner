@@ -553,6 +553,29 @@ void main() {
     }
   });
 
+  // Harm: a priority sent with another method, path or body than the planner reads is never saved, and one answered
+  // without a revision is taken as saved.
+  test('a priority puts exactly its members on the story and reads the revision it answers', () async {
+    final (planner, source) = await _started();
+    planner.routes['PUT /projects/demo/stories/ST1/priority'] = () => _Reply(200, {'revision': 'r2'});
+    expect(await source.setPriority('demo', 'ST1', 'Lowest', 'r1'), 'r2', reason: 'the revision after the save');
+    expect(planner.targets, ['PUT /projects/demo', 'PUT /projects/demo/stories/ST1/priority']);
+    expect(jsonDecode(planner.calls.last.body), {'priority': 'Lowest', 'revision': 'r1'}, reason: 'only its members');
+    planner.routes['PUT /projects/demo/stories/ST1/priority'] = () => _Reply(200, {'revision': ''});
+    expect(
+      (await _refusal(source.setPriority('demo', 'ST1', 'Lowest', 'r1'))).name,
+      'BadAnswer',
+      reason: 'an answer without a revision is no save',
+    );
+    final calls = planner.calls.length;
+    expect(
+      (await _refusal(source.setPriority('demo', 'ST1', 'Urgent', 'r1'))).name,
+      'PriorityNotAllowed',
+      reason: 'a sixth priority is never sent',
+    );
+    expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
+  });
+
   // Harm: an uncertain or refused write is replayed and saves the same move twice.
   test('a move save is never replayed after a timeout or a refusal', () async {
     final (planner, source) = await _started(timeout: const Duration(milliseconds: 300));

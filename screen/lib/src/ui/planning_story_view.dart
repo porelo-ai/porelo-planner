@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../client.dart';
 
 import '../models.dart';
 import '../planning_board.dart';
@@ -52,7 +56,7 @@ class PlanningStoryView extends StatelessWidget {
             spacing: Space.small,
             children: [
               Text(story.id),
-              Chip(label: Text(planningValue(story.priority ?? ''))),
+              _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
             ],
           ),
@@ -179,6 +183,42 @@ class PlanningStoryView extends StatelessWidget {
           children: [StoryWorkAttentionView(row: row, resolved: false, machine: board.backend.label, openStory: false)],
         ),
     ]);
+  }
+
+  /// The story's priority as a choice of the five, the reported one marked, none when it reported none.
+  Widget _priority(String id, String? priority) {
+    final unavailable = detail.board.priorityUnavailable(id);
+    final pending = detail.board.pendingPriorities[id];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PopupMenuButton<String>(
+          key: Key('planning-priority $id'),
+          tooltip: unavailable ?? 'Change the priority of $id',
+          enabled: unavailable == null,
+          initialValue: planningPriorities.contains(priority) ? priority : null,
+          onSelected: (chosen) {
+            if (chosen != priority) unawaited(detail.board.setPriority(id, chosen));
+          },
+          itemBuilder: (_) => [
+            for (final choice in planningPriorities)
+              PopupMenuItem(value: choice, key: Key('planning-priority-to $id $choice'), child: Text(choice)),
+          ],
+          child: Chip(
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(planningValue(priority ?? '')),
+                const Icon(Icons.expand_more, size: PlanningStyle.rowIcon),
+              ],
+            ),
+          ),
+        ),
+        if (pending != null) Text('Pending: $pending', key: Key('planning-priority-pending $id')),
+        if (unavailable != null && pending == null && detail.board.live) Text(unavailable),
+      ],
+    );
   }
 
   String? _moveUnavailable(PlanIssue issue) =>

@@ -200,6 +200,37 @@ class MockPlanningSource implements PlanningSource {
     return PlanningIssueAdded(id: id, revision: next);
   }
 
+  /// Priorities asked of it, each with its project, story, priority and revision.
+  final List<Map<String, dynamic>> priorityCalls = [];
+
+  /// Sets the story's priority as the planner does and shows the board at a new revision; the same priority answers
+  /// the revision it was asked at.
+  @override
+  Future<String> setPriority(String project, String story, String priority, String revision) async {
+    priorityCalls.add({'project': project, 'story': story, 'priority': priority, 'revision': revision});
+    final current = board(project);
+    if (moveGate case final gate?) await gate.future;
+    if (revision != current['revision']) {
+      throw mockRefusal('StaleRevision', {'revision': current['revision']});
+    }
+    if (!planningPriorities.contains(priority)) throw mockRefusal('PriorityNotAllowed', {'story': story});
+    if (moveFailure case final failure?) throw failure;
+    final stories = (current['stories'] as List).cast<Map<String, dynamic>>();
+    final found = stories.where((record) => record['id'] == story).firstOrNull;
+    if (found == null) throw mockRefusal('NoSuchStory', {'story': story});
+    if (found['priority'] == priority) return revision;
+    final next = '${current['revision']}:priority';
+    push(project, {
+      ...current,
+      'revision': next,
+      'stories': [
+        for (final record in stories)
+          if (identical(record, found)) {...record, 'priority': priority} else record,
+      ],
+    });
+    return next;
+  }
+
   @override
   Future<PlanStoryDetail> getStory(String project, String story) async {
     if (detailFailure case final failure?) throw failure;

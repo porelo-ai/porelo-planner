@@ -88,4 +88,32 @@ class SaveFilesTest {
                     .doesNotContain("[skip ci]");
         }
     }
+
+    @Test
+    void aPrioritysSubjectSaysItSetsAPrioritySkipsTheBuildAndStaysWithinTheLimit() {
+        // A subject saying nothing of the priority hides what the commit changed, one without the
+        // marker starts a build, and one over 72 characters fails check-commits.
+        final List<String> stories = List.of("stories/README.md", "stories/ST1-Served.md");
+        final String longest = "A".repeat(31);
+        for (final String subject :
+                List.of(
+                        SaveFiles.subject(Map.of(), Map.of(), 0, 1, false, stories),
+                        SaveFiles.subject(Map.of(), Map.of(), 0, 12, false, stories),
+                        SaveFiles.subject(Map.of(), Map.of("ST1", "Review"), 0, 1, false, stories),
+                        SaveFiles.subject(
+                                Map.of("CD01", longest, "CD02", longest),
+                                Map.of("ST1", longest),
+                                12,
+                                120,
+                                false,
+                                PLANNING))) {
+            assertThat(subject)
+                    .as("the subject %s names a priority", subject)
+                    .containsIgnoringCase("priorit");
+            assertThat(subject.length())
+                    .as("the subject %s, the marker counted", subject)
+                    .isLessThanOrEqualTo(72);
+            assertThat(subject).as("the subject %s is marked", subject).endsWith(" [skip ci]");
+        }
+    }
 }

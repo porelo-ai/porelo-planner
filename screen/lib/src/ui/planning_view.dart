@@ -873,6 +873,7 @@ class _BoardViewState extends State<_BoardView> {
       unavailable: _stopUnavailable(story),
       run: () => unawaited(_stop(story)),
     ),
+    for (final priority in planningPriorities) setPriorityAction(board, story, priority),
   ];
 
   String? _startUnavailable(PlanStory story) =>
@@ -903,6 +904,8 @@ class _BoardViewState extends State<_BoardView> {
       _work(story),
       board.pending[story.id],
       board.pending[story.id]?.problem,
+      board.pendingPriorities[story.id],
+      board.priorityUnavailable(story.id),
       board.saving,
       board.live,
       _startUnavailable(story),
@@ -958,6 +961,8 @@ class _BoardViewState extends State<_BoardView> {
                 Text(story.title),
                 if (board.pending[story.id] case final move? when move.problem == null) const Text('moved'),
                 if (board.pending[story.id]?.problem case final problem?) Text(problem),
+                if (board.pendingPriorities[story.id] case final priority?)
+                  Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),
                 if (work != null && work.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: Space.small),

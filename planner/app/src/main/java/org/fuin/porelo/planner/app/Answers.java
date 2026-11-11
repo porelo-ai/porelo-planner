@@ -72,6 +72,13 @@ public final class Answers {
     public record WorkerSaved(String revision) {}
 
     /**
+     * A story's priority saved.
+     *
+     * @param revision the board's revision after the save
+     */
+    public record PrioritySaved(String revision) {}
+
+    /**
      * A new issue added.
      *
      * @param id the id the store gave it

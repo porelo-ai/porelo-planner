@@ -616,6 +616,80 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
+  /// Priorities chosen and not yet carried by the board, by story.
+  Map<String, String> get pendingPriorities => {
+    for (final entry in _priorities.entries) entry.key: entry.value.priority,
+  };
+
+  final Map<String, _PendingPriority> _priorities = {};
+
+  /// Why [story]'s priority cannot be changed now, or null when it can.
+  String? priorityUnavailable(String story) =>
+      unavailableActions['SetPriority'] ??
+      (_disposed || !live
+          ? 'the planning board is not live'
+          : snapshot == null || snapshot!.revision.trim().isEmpty
+          ? 'the planning revision was not reported'
+          : actionBusy || saving
+          ? 'waiting for the planner'
+          : story.isEmpty || !snapshot!.stories.any((reported) => reported.id == story)
+          ? 'the story is not on the board'
+          : null);
+
+  /// Sets [story]'s priority, one of [planningPriorities], against the revision the board shows; the choice stays
+  /// pending until a board carries it. Answers whether the planner took it; a refusal's words stand in
+  /// [actionProblem] as every board action's do.
+  Future<bool> setPriority(String story, String priority) async {
+    if (priorityUnavailable(story) case final reason?) {
+      actionProblem = 'No priority: $reason.';
+      _changed();
+      return false;
+    }
+    final source = backend;
+    final name = project;
+    final revision = snapshot!.revision;
+    final generation = _generation;
+    final pending = _PendingPriority(priority, revision);
+    _priorities[story] = pending;
+    actionBusy = true;
+    actionProblem = null;
+    _changed();
+    try {
+      await source.setPriority(name, story, priority, revision);
+      if (!_disposed && generation == _generation && identical(_priorities[story], pending)) {
+        pending.answered = true;
+        // A board that arrived before the answer may carry it already.
+        if (snapshot case final current?) _reconcilePriorities(current);
+      }
+      return true;
+    } catch (error) {
+      if (!_disposed && generation == _generation) {
+        if (identical(_priorities[story], pending)) _priorities.remove(story);
+        reportActionProblem(error);
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
+          unavailableActions['SetPriority'] = planningFailureWords(error);
+        }
+      }
+      return false;
+    } finally {
+      if (!_disposed && generation == _generation) {
+        actionBusy = false;
+        _changed();
+      }
+    }
+  }
+
+  /// Drops each pending priority the board carries, or whose save was answered and a newer board has come since.
+  void _reconcilePriorities(PlanningSnapshot reply) {
+    if (!reply.complete || reply.revision.isEmpty) return;
+    _priorities.removeWhere((story, pending) {
+      final reported = reply.stories.where((candidate) => candidate.id == story).firstOrNull;
+      return reported == null ||
+          reported.priority == pending.priority ||
+          pending.answered && reply.revision != pending.revision;
+    });
+  }
+
   /// Applies a run reply immediately, independently of a subsequent board reload.
   void applyWork(String story, StoryWorkStatus status) {
     if (_disposed) return;
@@ -646,6 +720,7 @@ class PlanningBoard extends ChangeNotifier {
       snapshot = null;
       _repositories = const [];
       _pending.clear();
+      _priorities.clear();
       moveProblem = null;
       storyWork.clear();
       workProblems.clear();
@@ -789,6 +864,7 @@ class PlanningBoard extends ChangeNotifier {
     workProblems.clear();
     workUnsupported.clear();
     unawaited(_readWork(reply, _generation));
+    _reconcilePriorities(reply);
     if (!reply.complete || reply.revision.isEmpty) return;
     final reconciled = <String>[];
     for (final entry in _pending.entries.toList()) {
@@ -1022,7 +1098,8 @@ class PlanningBoard extends ChangeNotifier {
     'High' => 1,
     'Medium' => 2,
     'Low' => 3,
-    _ => 4,
+    'Lowest' => 4,
+    _ => 5,
   };
   static final _trailingNumber = RegExp(r'\d+$');
 
@@ -1423,4 +1500,15 @@ String _failureWords(Object error) {
   if (error is StateError) return error.message.toString();
   if (error is FormatException) return error.message;
   return '$error';
+}
+
+/// A priority chosen for a story, the revision it was chosen against, and whether the planner answered it.
+class _PendingPriority {
+  _PendingPriority(this.priority, this.revision);
+
+  final String priority;
+
+  final String revision;
+
+  bool answered = false;
 }

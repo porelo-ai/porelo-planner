@@ -26,6 +26,10 @@ public record Story(
         String description,
         @Nullable URI link) {
 
+    /** The priorities a story may have, the highest first. */
+    public static final List<String> PRIORITIES =
+            List.of("Highest", "High", "Medium", "Low", "Lowest");
+
     /** Checks the ids and copies the list. */
     public Story {
         Ids.story(id);

@@ -261,7 +261,12 @@ public final class GitStore implements PlanningStore {
             final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
             final Map<String, String> stories = storyHeads(snapshot, writes);
             final Map<String, Map<String, Worker>> workers = workerHeads(snapshot, writes);
-            if (issues.isEmpty() && stories.isEmpty() && workers.isEmpty() && idea == null) {
+            final Map<String, String> priorities = priorityHeads(snapshot, writes);
+            if (issues.isEmpty()
+                    && stories.isEmpty()
+                    && workers.isEmpty()
+                    && priorities.isEmpty()
+                    && idea == null) {
                 return new Saved(snapshot.board(), null);
             }
             final Path scratch;
@@ -272,7 +277,9 @@ public final class GitStore implements PlanningStore {
             }
             try {
                 return commitAndPush(
-                        snapshot, new Edits(writes, idea, issues, stories, workers), scratch);
+                        snapshot,
+                        new Edits(writes, idea, issues, stories, workers, priorities),
+                        scratch);
             } catch (final GitFailure | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
             } finally {
@@ -425,13 +432,40 @@ public final class GitStore implements PlanningStore {
      * @param issues each moved issue's file and new state, by repository
      * @param stories each story's file and new stated state, empty where it goes
      * @param workers each changed worker's issue file and worker, by repository
+     * @param priorities each changed priority's story file and priority
      */
     private record Edits(
             Writes writes,
             @Nullable NewIssue idea,
             Map<String, Map<String, String>> issues,
             Map<String, String> stories,
-            Map<String, Map<String, Worker>> workers) {}
+            Map<String, Map<String, Worker>> workers,
+            Map<String, String> priorities) {}
+
+    /**
+     * Each changed priority's story file and its priority; every story checked on the board and
+     * savable before anything is written, an unchanged one left out.
+     */
+    private Map<String, String> priorityHeads(final Snapshot snapshot, final Writes writes) {
+        final Part own = of(snapshot.parts(), repositories.get(0).name());
+        final Map<String, String> files = new LinkedHashMap<>();
+        for (final Map.Entry<String, String> write : writes.priorities().entrySet()) {
+            final String id = write.getKey();
+            final org.fuin.porelo.planner.store.Story story =
+                    snapshot.board()
+                            .story(id)
+                            .orElseThrow(() -> new StoreException.NoSuchStory(id));
+            if (story.priority().equals(write.getValue())) {
+                continue;
+            }
+            final String path = own.paths().get(Part.story(id));
+            if (path == null) {
+                throw new StoreException.NoSuchStory(id);
+            }
+            files.put(path, write.getValue());
+        }
+        return files;
+    }
 
     /** Each written story's file and its new stated state, empty where it goes. */
     private Map<String, String> storyHeads(final Snapshot snapshot, final Writes writes) {
@@ -456,6 +490,7 @@ public final class GitStore implements PlanningStore {
         final Map<String, Map<String, String>> issues = edits.issues();
         final Map<String, String> stories = edits.stories();
         final Map<String, Map<String, Worker>> workers = edits.workers();
+        final Map<String, String> priorities = edits.priorities();
         final String own = repositories.get(0).name();
         final Map<String, Map<String, String>> before = new LinkedHashMap<>();
         for (final Repository repository : repositories) {
@@ -516,17 +551,27 @@ public final class GitStore implements PlanningStore {
             rewritten.put(name, written);
         }
         final Path ownRoot = scratch.resolve(own);
-        for (final Map.Entry<String, String> head : stories.entrySet()) {
-            final String state = head.getValue();
+        final Set<String> storyFiles = new java.util.LinkedHashSet<>(stories.keySet());
+        storyFiles.addAll(priorities.keySet());
+        // A story moved and given a priority in one save is edited once, with both.
+        for (final String path : storyFiles) {
+            final String state = stories.get(path);
+            final String priority = priorities.get(path);
             edit(
                     snapshot,
                     own,
                     ownRoot,
-                    head.getKey(),
-                    text -> HeadEdit.storyState(text, state.isEmpty() ? null : state));
+                    path,
+                    text -> {
+                        final String stated =
+                                state == null
+                                        ? text
+                                        : HeadEdit.storyState(text, state.isEmpty() ? null : state);
+                        return priority == null ? stated : HeadEdit.storyPriority(stated, priority);
+                    });
         }
         // A worker alone changes no row of the stories index, so it leaves the own repository be.
-        final boolean storiesIndexed = !issues.isEmpty() || !stories.isEmpty() || idea != null;
+        final boolean storiesIndexed = !issues.isEmpty() || !storyFiles.isEmpty() || idea != null;
         if (storiesIndexed && Files.isDirectory(ownRoot.resolve("stories"))) {
             final org.fuin.porelo.planner.store.git.stories.StoriesIndex.Result index;
             try {
@@ -541,7 +586,7 @@ public final class GitStore implements PlanningStore {
                 // A project.yml the library refuses, such as one naming a central it does not take.
                 throw new StoreException.NotSavable("", local(e, scratch));
             }
-            final List<String> edited = new ArrayList<>(stories.keySet());
+            final List<String> edited = new ArrayList<>(storyFiles);
             issues.values().forEach(heads -> edited.addAll(heads.keySet()));
             workers.values().forEach(heads -> edited.addAll(heads.keySet()));
             if (added != null) {
@@ -563,7 +608,7 @@ public final class GitStore implements PlanningStore {
             heads.addAll(set.keySet());
             heads.addAll(rewritten.getOrDefault(name, List.of()));
             if (name.equals(own)) {
-                heads.addAll(stories.keySet());
+                heads.addAll(storyFiles);
             }
             final List<String> paths =
                     SaveFiles.changed(scratch.resolve(name), of(before, name), heads);
@@ -583,7 +628,13 @@ public final class GitStore implements PlanningStore {
                     name.equals(own) ? stories : Map.<String, String>of();
             subjects.put(
                     name,
-                    SaveFiles.subject(movedIssues, movedStories, set.size(), added != null, paths));
+                    SaveFiles.subject(
+                            movedIssues,
+                            movedStories,
+                            set.size(),
+                            name.equals(own) ? priorities.size() : 0,
+                            added != null,
+                            paths));
             changed.put(name, paths);
         }
         final Map<String, String> made = new LinkedHashMap<>();

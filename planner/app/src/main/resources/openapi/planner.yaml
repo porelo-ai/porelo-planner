@@ -497,6 +497,51 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/stories/{story}/priority:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    put:
+      operationId: setPriority
+      summary: Set a story's priority
+      description: >-
+        Writes the story's priority into its head against the board at the given revision, saved as a move is saved:
+        the head and the stories index in one commit that starts no build, pushed under the person's own Git login, or
+        nothing at all. A priority equal to the story's is saved as nothing and answers the current revision. The
+        priority touches no issue, so it may change while the story's work runs.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriorityRequest'
+      responses:
+        '200':
+          description: The priority is saved, or was the story's already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrioritySaved'
+        '400':
+          $ref: '#/components/responses/PriorityRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/moves:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1096,9 +1141,36 @@ components:
             parameters:
               field: title
               reason: The title must have 1 to 120 characters.
+    PriorityRefused:
+      description: >-
+        A project name or story id was refused (InvalidName), or the body is no priority change (PriorityNotAllowed,
+        naming the story): not one JSON object of at most 65536 bytes with exactly a revision and one of the five
+        priorities. What was sent is never repeated.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            InvalidName:
+              value:
+                type: urn:porelo-planner:InvalidName
+                title: InvalidName
+                status: 400
+                detail: The story id is not a valid id.
+                parameters:
+                  project: example
+            PriorityNotAllowed:
+              value:
+                type: urn:porelo-planner:PriorityNotAllowed
+                title: PriorityNotAllowed
+                status: 400
+                detail: The priority must be Highest, High, Medium, Low or Lowest.
+                parameters:
+                  story: ST7
     NotOffered:
       description: >-
-        This planner's store saves no moves, adds no issues or saves no workers, as in mock mode (NotOffered).
+        This planner's store saves no moves, adds no issues, saves no workers or saves no priorities, as in mock mode
+        (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -1359,6 +1431,27 @@ components:
         revision:
           $ref: '#/components/schemas/Revision'
     WorkerSaved:
+      description: The board's revision after the save.
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+    Priority:
+      description: A story's priority, the highest first.
+      type: string
+      enum: [Highest, High, Medium, Low, Lowest]
+    PriorityRequest:
+      description: A story's new priority, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [priority, revision]
+      properties:
+        priority:
+          $ref: '#/components/schemas/Priority'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    PrioritySaved:
       description: The board's revision after the save.
       type: object
       required: [revision]

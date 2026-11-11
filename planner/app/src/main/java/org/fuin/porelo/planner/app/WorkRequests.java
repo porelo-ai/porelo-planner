@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
@@ -14,8 +15,10 @@ import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
@@ -100,6 +103,16 @@ public final class WorkRequests {
     private static final Set<String> WORKER_MEMBERS = Set.of("worker", "revision");
 
     /**
+     * A story's new priority as the window sends it.
+     *
+     * @param priority the priority it is to have, one of the five
+     * @param revision the board's revision the person saw
+     */
+    public record PriorityRequest(String priority, String revision) {}
+
+    private static final Set<String> PRIORITY_MEMBERS = Set.of("priority", "revision");
+
+    /**
      * Reads a new issue's body strictly: at most 65536 bytes, one JSON object, no other member,
      * each member a text; a refusal never repeats what was sent.
      *
@@ -153,6 +166,39 @@ public final class WorkRequests {
             }
         }
         throw Workers.refused(issue, "The worker must be AGENT or MANUAL.");
+    }
+
+    /**
+     * Reads a story's new priority strictly: at most 65536 bytes, one JSON object with exactly one
+     * of the five priorities and a revision; a refusal never repeats what was sent.
+     *
+     * @param request the request
+     * @param story the story's checked id, which a refusal names
+     * @return the priority and the revision
+     * @throws Refusal {@code PriorityNotAllowed} for a body that is no priority change
+     */
+    static PriorityRequest priority(final HttpServletRequest request, final String story) {
+        final JsonNode body;
+        try {
+            body = read(request);
+        } catch (final WorkRefusal invalid) {
+            throw priorityRefused(story, "The body is no priority change.");
+        }
+        if (!PRIORITY_MEMBERS.equals(Set.copyOf(body.propertyNames()))
+                || !body.get("revision").isString()) {
+            throw priorityRefused(story, "The body is no priority change.");
+        }
+        final JsonNode priority = body.get("priority");
+        if (!priority.isString() || !Story.PRIORITIES.contains(priority.asString())) {
+            throw priorityRefused(
+                    story, "The priority must be Highest, High, Medium, Low or Lowest.");
+        }
+        return new PriorityRequest(priority.asString(), body.get("revision").asString());
+    }
+
+    private static Refusal priorityRefused(final String story, final String reason) {
+        return new Refusal(
+                "PriorityNotAllowed", HttpStatus.BAD_REQUEST, reason, Map.of("story", story));
     }
 
     private static @Nullable String member(final JsonNode body, final String name) {

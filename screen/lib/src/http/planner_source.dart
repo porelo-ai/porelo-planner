@@ -419,6 +419,20 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<String> setPriority(String project, String story, String priority, String revision) async {
+    if (!planningPriorities.contains(priority)) {
+      throw PlanningRefusal('PriorityNotAllowed', {'story': story}, 'the priority is none of $planningPriorities');
+    }
+    final answer = await _write(
+      project,
+      ['stories', _checked('story', story, _storyId), 'priority'],
+      {'priority': priority, 'revision': revision},
+      method: 'PUT',
+    );
+    return answer['revision'] as String;
+  }
+
+  @override
   Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async {
     final answer = await _write(project, ['stories', _checked('story', story, _storyId), 'proposal'], {'to': to});
     try {
@@ -683,19 +697,20 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     Map<String, dynamic>? body, {
     bool revision = true,
     int? most,
+    String method = 'POST',
   }) async {
     final given = await _bound(project);
     final uri = _uri(project, path);
     final Map<String, dynamic> answer;
     try {
-      answer = await _call('POST', uri, body, revision: revision, most: most);
+      answer = await _call(method, uri, body, revision: revision, most: most, answers: true);
     } on PlanningRefusal catch (refusal) {
       // Only this explicit refusal proves the planner did not execute the write.
       if (refusal.name != 'NoSuchProject') rethrow;
       await _stillBound(project, given);
       await _retell(project, given);
       await _stillBound(project, given);
-      final retried = await _call('POST', uri, body, revision: revision, most: most);
+      final retried = await _call(method, uri, body, revision: revision, most: most, answers: true);
       await _stillBound(project, given);
       return retried;
     }
@@ -749,6 +764,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     Map<String, dynamic>? body, {
     bool revision = true,
     int? most,
+    bool answers = false,
   }) async {
     HttpClientRequest? request;
     try {
@@ -764,7 +780,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         }
         final response = await sent.close();
         final bytes = await _bytes(response, most: most);
-        return _answer(method, response, bytes, revision: revision);
+        return _answer(method, response, bytes, revision: revision, answers: answers);
       }().timeout(timeout);
     } on TimeoutException {
       request?.abort();
@@ -799,7 +815,14 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   PlanningRefusal _tooLarge([int? limit]) =>
       PlanningRefusal('AnswerTooLarge', const {}, 'the planner answered more than ${limit ?? maxBody} bytes');
 
-  Map<String, dynamic> _answer(String method, HttpClientResponse response, List<int> bytes, {bool revision = true}) {
+  /// Reads an answer; a PUT answers 204 unless [answers] says it answers a JSON object as a POST does.
+  Map<String, dynamic> _answer(
+    String method,
+    HttpClientResponse response,
+    List<int> bytes, {
+    bool revision = true,
+    bool answers = false,
+  }) {
     final status = response.statusCode;
     final String? type;
     try {
@@ -808,7 +831,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       throw PlanningRefusal('BadAnswer', const {}, 'the planner\'s answer has a malformed content type (HTTP $status)');
     }
     if (status >= 200 && status < 300) {
-      if (method == 'PUT') {
+      if (method == 'PUT' && !answers) {
         if (status == HttpStatus.noContent) return const {};
         throw PlanningRefusal('BadAnswer', const {}, 'the planner answered HTTP $status to naming a project, not 204');
       }

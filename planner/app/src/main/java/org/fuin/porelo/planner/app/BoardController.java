@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
+import org.fuin.porelo.planner.core.Priorities;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
@@ -260,6 +261,55 @@ public class BoardController {
                     "NotOffered",
                     HttpStatus.NOT_IMPLEMENTED,
                     "This planner does not save workers.",
+                    Map.of("project", name));
+        }
+    }
+
+    /**
+     * Sets a story's priority, saved as a move is saved: its head and the stories index in one
+     * commit that starts no build.
+     *
+     * @param project the project's name
+     * @param story the story's id
+     * @param request the request, whose body is the new priority and the revision
+     * @return the revision after the save, unchanged when the story had that priority already
+     */
+    @PutMapping("/projects/{project}/stories/{story}/priority")
+    public Answers.PrioritySaved setPriority(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String story,
+            final HttpServletRequest request) {
+        final String checked = storyId(project, story);
+        final String name = name(project);
+        final WorkRequests.PriorityRequest body = WorkRequests.priority(request, checked);
+        try {
+            // The priority touches no issue, so a running work does not hold it back.
+            return projects.work(name).alone(() -> savePriority(name, checked, body));
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    private Answers.PrioritySaved savePriority(
+            final String name, final String story, final WorkRequests.PriorityRequest body) {
+        final PlanningStore store = projects.store(name);
+        final Board board = store.board();
+        if (!board.revision().value().equals(body.revision())) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        final Writes writes = Priorities.check(board, story, body.priority());
+        if (writes.none()) {
+            // Nothing changes, so no repository is locked or asked.
+            return new Answers.PrioritySaved(board.revision().value());
+        }
+        try {
+            return new Answers.PrioritySaved(
+                    store.save(board.revision(), writes).revision().value());
+        } catch (final UnsupportedOperationException e) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not save priorities.",
                     Map.of("project", name));
         }
     }

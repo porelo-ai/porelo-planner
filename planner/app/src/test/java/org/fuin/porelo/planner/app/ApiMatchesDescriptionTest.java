@@ -55,6 +55,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueAdded", Answers.IssueAdded.class),
                     Map.entry("WorkerRequest", WorkRequests.WorkerRequest.class),
                     Map.entry("WorkerSaved", Answers.WorkerSaved.class),
+                    Map.entry("PriorityRequest", WorkRequests.PriorityRequest.class),
+                    Map.entry("PrioritySaved", Answers.PrioritySaved.class),
                     Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
                     Map.entry("StoryWorkRequest", WorkRequests.Request.class),
                     Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),

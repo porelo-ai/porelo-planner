@@ -81,6 +81,16 @@ PlanningAction movePlanningIssueAction(PlanningBoard board, PlanIssue issue, Str
   run: () => board.moveIssue(issue.id, to, reported: issue),
 );
 
+/// Sets a story's priority at once, saved as a move is; the story's current priority is listed but cannot be chosen.
+PlanningAction setPriorityAction(PlanningBoard board, PlanStory story, String priority) => PlanningAction(
+  id: 'planning-priority ${story.id} $priority',
+  label: 'Priority $priority',
+  unavailable:
+      board.priorityUnavailable(story.id) ??
+      ((board.pendingPriorities[story.id] ?? story.priority) == priority ? 'it is the story\'s priority' : null),
+  run: () => unawaited(board.setPriority(story.id, priority)),
+);
+
 /// The same save action is used by the board, detail screens and finder.
 PlanningAction savePlanningAction(PlanningBoard board) => PlanningAction(
   id: 'planning.save/${board.project}',
