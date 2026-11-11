@@ -11,6 +11,7 @@
   "rank": 31,
   "blockedBy": [
     "PL41",
+    "PL46",
     "PL57"
   ],
   "covers": "The idea a discussion wrote comes back to the planner when its task ends, is checked against the idea format and becomes, in one save, a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix"
