@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL47",
   "title": "A Story's Size Beside Its Priority",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "S",
   "priority": "Medium",
   "rank": 30,

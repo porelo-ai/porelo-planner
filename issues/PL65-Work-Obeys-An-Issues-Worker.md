@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL65",
   "title": "Work Obeys An Issue's Worker",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "L",
   "priority": "Medium",
   "rank": 1,

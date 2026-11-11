@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL36",
   "title": "A Description Shown In Its Own Format",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "-",
   "priority": "Medium",
   "rank": 23,

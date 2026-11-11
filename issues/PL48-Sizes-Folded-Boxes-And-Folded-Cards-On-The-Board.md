@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL48",
   "title": "Sizes, Folded Boxes And Folded Cards On The Board",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "M",
   "priority": "Medium",
   "rank": 31,

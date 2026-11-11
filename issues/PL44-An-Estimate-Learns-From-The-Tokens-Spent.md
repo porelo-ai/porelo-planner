@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL44",
   "title": "An Estimate Learns From The Tokens Spent",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "L",
   "priority": "Medium",
   "rank": 27,

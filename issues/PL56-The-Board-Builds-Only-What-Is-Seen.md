@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL56",
   "title": "The Board Builds Only What Is Seen",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "L",
   "priority": "Medium",
   "rank": 29,

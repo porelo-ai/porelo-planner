@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL14",
   "title": "A Project Whose Repositories Are Local Paths",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "-",
   "priority": "Low",
   "rank": 2,

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL66",
   "title": "Model And Effort Chosen By Phase And Risk",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "-",
   "priority": "Medium",
   "rank": 1,
