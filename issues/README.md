@@ -23,7 +23,6 @@ left out.
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | L | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
-| <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | [PL46](README.md#pl46) | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |
 | <a id="pl69"></a>[PL69](PL69-The-Rules-Effort-Offered-In-The-Start-Dialog.md) | L | [PL66](README.md#pl66) | The model and effort the work rules choose for an issue's risk reach the window with where the choice came from; the start dialog proposes the rule's effort, the person may change it, and the effort chosen is handed to the window's Start |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
@@ -60,6 +59,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
+| <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 
 ## Review
 
