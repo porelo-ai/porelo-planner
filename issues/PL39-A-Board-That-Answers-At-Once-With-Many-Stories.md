@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL39",
   "title": "A Board That Answers At Once With Many Stories",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 11,
