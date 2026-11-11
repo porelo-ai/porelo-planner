@@ -79,7 +79,7 @@ lines with its tokens and as many of tests; the issue-link check of `check-citat
    in `stats/<ID>.jsonl` in the record's own format, also for an issue without a record yet, keeping a session's
    sources private as the record requires; the store gives the project's velocity - the median minutes by size -
    and the planner hands it to the task it starts for an estimate. A change to the window's contract where the
-   start of an estimate carries it. This step takes in the open Backlog issue on recording a moved issue's stage
+   start of an estimate carries it. It covers the stage line of a moved issue, which was asked on its own before
    ([PL22](README.md#pl22)). Red first: a move of an issue without a record writes a stage line that the record's
    reader takes back. Unit tests over files; one controller test for the estimate's start.
 

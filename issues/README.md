@@ -28,7 +28,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl22"></a>[PL22](PL22-The-Planner-Records-The-Stage-Of-An-Issue-It-Moves.md) | - | [PL05](README.md#pl05) | The planner writes the stage line of an issue it moves, in the record's own format, where a repository records issue stats, instead of refusing the move |
 | <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | - | - | Moves staged for one repository of a project are dropped when the project is rebound to another; every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch |
 | <a id="pl26"></a>[PL26](PL26-The-Mock-Board-Saves-Moves.md) | - | - | The mock mode saves moves into its in-memory board with a new revision and a change event, answers PartlySaved for one fixed story, and serves a story with sub-issues so a refused move can be reached |
 | <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | - | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
@@ -74,4 +73,5 @@ left out.
 
 | # | Title | Why |
 |---|---|---|
+| <a id="pl22"></a>PL22 | The Planner Records The Stage Of An Issue It Moves | The Git store records every moved issue's stage as part of handling stories and issues alone ([PL41](README.md#pl41)). |
 | <a id="pl40"></a>PL40 | A Story's Work History Kept In The Store | A story's run is worth keeping only while it works, and Git's commits are its history; what must be kept is a task's results, a story of its own across the repositories |
