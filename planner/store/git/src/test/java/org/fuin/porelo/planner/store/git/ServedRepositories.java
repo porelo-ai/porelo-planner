@@ -93,6 +93,17 @@ public final class ServedRepositories {
         }
     }
 
+    /**
+     * Answers the commit a repository serves.
+     *
+     * @param name the repository's name
+     * @return its commit's id
+     * @throws Exception when git fails
+     */
+    public String head(final String name) throws Exception {
+        return git(work(name), "rev-parse", "HEAD").strip();
+    }
+
     private static String git(final Path where, final String... arguments) throws Exception {
         final List<String> line = new ArrayList<>(List.of("git"));
         line.addAll(List.of(arguments));

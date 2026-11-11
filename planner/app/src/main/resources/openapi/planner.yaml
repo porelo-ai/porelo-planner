@@ -110,8 +110,8 @@ paths:
       operationId: getEvents
       summary: Follow the board's changes
       description: >-
-        Streams the project's board as Server-Sent Events: event `board`, its `id` the revision and its `data` one
-        `Board` object, first at once and then whenever the store revision or local work generation changes. Work-only
+        Streams the project's board as Server-Sent Events: event `board`, its `id` the board's revision and its
+        `data` one `Board` object, first at once and then whenever the store revision or local work generation changes. Work-only
         changes retain the revision, including a cancellation or Needs you. Saves, polls and `refresh` publish the
         current board and work snapshot. A comment line `: keep-alive` comes every 15 s while nothing changes; a
         reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
@@ -121,7 +121,7 @@ paths:
         - name: Last-Event-ID
           in: header
           required: false
-          description: The last revision the window saw; the current board comes first in any case.
+          description: The last event id the window saw; the current board comes first in any case.
           schema:
             type: string
       responses:
@@ -857,7 +857,7 @@ components:
                 status: 409
                 detail: The board moved since that revision.
                 parameters:
-                  revision: porelo-project@4f3c2a1
+                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
             StoryStateMismatch:
               value:
                 type: urn:porelo-planner:StoryStateMismatch
@@ -977,8 +977,13 @@ components:
       type: string
       pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$'
     Revision:
-      description: The store's revision the answer was read at; opaque to the window.
+      description: >-
+        The store's revision the answer was read at; opaque to the window, which compares it only for equality. At
+        most 200 printable characters without spaces, however many repositories the project has, since the window
+        sends it back as the `Last-Event-ID` header; the Git store gives a SHA-256 as 64 lower-case hexadecimal
+        characters.
       type: string
+      pattern: '^[!-~]{1,200}$'
 
     Health:
       type: object

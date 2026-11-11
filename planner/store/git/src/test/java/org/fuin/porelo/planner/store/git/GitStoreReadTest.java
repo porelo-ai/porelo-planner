@@ -147,8 +147,13 @@ class GitStoreReadTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST2", "Backlog", false, List.of("AB01", "CD01")));
         assertThat(board.revision().value())
-                .as("the revision names both repositories")
-                .contains("porelo-store@", " porelo-other@");
+                .as("the revision is read from both repositories' commits")
+                .isEqualTo(
+                        GitStore.revision(
+                                List.of("porelo-store", "porelo-other"),
+                                Map.of(
+                                        "porelo-store", repositories.head("porelo-store"),
+                                        "porelo-other", repositories.head("porelo-other"))));
     }
 
     @Test

@@ -5,10 +5,13 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -602,9 +605,31 @@ public final class GitStore implements PlanningStore {
     }
 
     private String revision(final Map<String, String> commits) {
-        return repositories.stream()
-                .map(repository -> repository.name() + "@" + of(commits, repository.name()))
-                .collect(Collectors.joining(" "));
+        return revision(repositories.stream().map(Repository::name).toList(), commits);
+    }
+
+    /**
+     * The revision of the repositories' commits: the SHA-256 of each one's {@code <name>@<commit>},
+     * 64 hexadecimal characters however many repositories the project has, since the window keeps
+     * it and sends it back as a header.
+     *
+     * @param names the repositories, in the project's order
+     * @param commits each one's commit
+     * @return the revision's text
+     */
+    static String revision(final List<String> names, final Map<String, String> commits) {
+        final String text =
+                names.stream()
+                        .map(name -> name + "@" + of(commits, name))
+                        .collect(Collectors.joining(" "));
+        try {
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException("every Java has SHA-256", e);
+        }
     }
 
     @Override

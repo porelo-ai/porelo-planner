@@ -890,6 +890,18 @@ void main() {
     expect((await _refusal(watched)).name, 'BadAnswer');
   });
 
+  // Harm: a revision at the bound the description allows would end the live board.
+  test('a revision of exactly 200 characters is followed as the board\'s id', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final watched = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    streams.send('f' * 200);
+
+    expect((await watched).revision, 'f' * 200, reason: 'the bound is 200 characters, inclusive');
+  });
+
   // Harm: a refusal too large to read is retried for ever instead of being said.
   test('a 503 answer past the bound ends the watch', () async {
     final (planner, source) = await _started(maxBody: 4096, backoff: Duration.zero);

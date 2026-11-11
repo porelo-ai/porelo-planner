@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL31",
   "title": "A Short Event Id For Any Number Of Repositories",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 2,

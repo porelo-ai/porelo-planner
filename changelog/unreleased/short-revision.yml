@@ -1,0 +1,2 @@
+title: A project with many repositories keeps its live board, as the Git store's revision is now a 64-character digest of its repositories' commits.
+type: fixed

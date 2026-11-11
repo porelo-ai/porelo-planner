@@ -40,7 +40,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl31"></a>[PL31](PL31-A-Short-Event-Id-For-Any-Number-Of-Repositories.md) | S | - | The Git store's revision is a fixed-length digest of its repositories' commits, at most 200 characters as the screen accepts, so a project with many repositories keeps its live board |
 | <a id="pl28"></a>[PL28](PL28-The-Planners-Own-Files-On-Windows.md) | M | - | On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, each closed to other accounts through its access control list, with the same refusals as on Linux |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
@@ -49,6 +48,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl31"></a>[PL31](PL31-A-Short-Event-Id-For-Any-Number-Of-Repositories.md) | S | - | The Git store's revision is a fixed-length digest of its repositories' commits, at most 200 characters as the screen accepts, so a project with many repositories keeps its live board |
 | <a id="pl34"></a>[PL34](PL34-The-Board-Laid-Out-As-It-Is-Used.md) | XS | - | A folded column shows each story in one even row of mark, number and menu; the board's sideways scrollbar stays at the foot of the view, so a wide column's controls can be reached; the list of unsaved moves takes only the height it needs |
 | <a id="pl32"></a>[PL32](PL32-The-Planner-Run-From-The-Source-With-Restarts.md) | XS | - | A Maven profile dev runs the planner from the source on the JVM with Spring Boot DevTools, restarted within a second whenever any module compiles anew, for testing against real projects with the window |
 | <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | S | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |

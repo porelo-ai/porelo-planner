@@ -160,7 +160,9 @@ class GitStoreSaveTest {
                                         writes(Map.of("AB01", "Review"), Map.of(), List.of())));
 
         assertThat(stale).as("refused as stale").isNotNull();
-        assertThat(stale.current()).as("names the remote's revision").contains(OTHER + "@" + moved);
+        assertThat(stale.current())
+                .as("names the remote's revision, as a fresh read gives it")
+                .isEqualTo(store.refresh().revision().value());
         assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
         assertThat(moved).isNotEqualTo(other);
     }
@@ -458,8 +460,10 @@ class GitStoreSaveTest {
 
         assertThat(stale).as("refused as stale").isNotNull();
         assertThat(stale.current())
-                .as("naming the commit the other repository holds now")
-                .contains(OTHER + "@" + head(OTHER))
+                .as("naming the commits the repositories hold now")
+                .isEqualTo(
+                        GitStore.revision(
+                                List.of(OWN, OTHER), Map.of(OWN, head(OWN), OTHER, head(OTHER))))
                 .isNotEqualTo(board.revision().value());
     }
 

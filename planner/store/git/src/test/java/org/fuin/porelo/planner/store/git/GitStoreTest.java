@@ -238,7 +238,10 @@ class GitStoreTest {
                 .isEqualTo("c".repeat(40));
         assertThat(board.revision().value())
                 .as("the revision names every commit the board was read from")
-                .isEqualTo("store@" + "a".repeat(40) + " other@" + "c".repeat(40));
+                .isEqualTo(
+                        GitStore.revision(
+                                List.of("store", "other"),
+                                Map.of("store", "a".repeat(40), "other", "c".repeat(40))));
     }
 
     @Test
