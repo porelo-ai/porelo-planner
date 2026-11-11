@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL12",
   "title": "The Planning Screen As A Module Of Its Own",
-  "state": "Implementing",
+  "state": "Backlog",
   "size": "M",
   "priority": "Medium",
   "rank": 1,

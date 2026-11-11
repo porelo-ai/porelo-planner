@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL10",
   "title": "A Mock Mode For The Window's Tests",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 3,
@@ -29,9 +29,8 @@ reset between tests. Moves taken in memory are built in [PL26](README.md#pl26).
   turns the mode on. In it every project is served from `MockStore` after the same source checks as a real start,
   `POST /mock/reset` restores the board and forgets every project given, and the start is refused unless the runtime
   directory is given and is not the account's own, so the person's window never finds a mock.
-- **Built:** the reads, the reset and the guard, in the JVM and the native executable. **Still to build:** the event
-  stream (with the changes' own API), once the real planner offers it. Moves in memory are built in
-  [PL26](README.md#pl26), not here.
+- **Built:** the reads, the reset, the guard and the event stream, in the JVM and the native executable. Moves in
+  memory are built in [PL26](README.md#pl26), not here.
 - **Red first:** `MockModeTest` - the board answers the mock's stories; reset restores it; without `--mock`
   `/mock/reset` is not found.
 
