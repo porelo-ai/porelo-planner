@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.git;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -45,5 +46,26 @@ class GitCallWindowsTest {
                 .doesNotContainKeys("git_dir", "Git_Exec_Path", "ssh_askpass", "gcm_interactive")
                 .containsEntry("GCM_INTERACTIVE", "never")
                 .containsEntry("GIT_CONFIG_GLOBAL", "C:\\Users\\person\\.gitconfig");
+    }
+
+    @Test
+    void aLanguageVariableInAnyCaseCannotTurnGitsMessagesFromEnglish() {
+        final Map<String, String> person = new HashMap<>(PERSON);
+        person.put("lc_all", "de_DE.UTF-8");
+        person.put("Language", "de");
+        final GitCall call =
+                GitCall.of(
+                        person,
+                        Duration.ofSeconds(15),
+                        List.of("ls-remote", "--", "https://x/y"),
+                        true);
+
+        assertThat(call.environment())
+                .as(
+                        "Windows applies a lower case lc_all after LC_ALL=C, and a refused login would"
+                                + " no longer be told from an unreachable host")
+                .doesNotContainKeys("lc_all", "Language")
+                .containsEntry("LC_ALL", "C")
+                .containsEntry("LANGUAGE", "C");
     }
 }

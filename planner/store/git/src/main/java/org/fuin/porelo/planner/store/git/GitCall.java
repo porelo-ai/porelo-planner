@@ -131,7 +131,9 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
                             return upper.startsWith("GIT_") && !KEPT.contains(name)
                                     || upper.equals("SSH_ASKPASS")
                                     || upper.equals("SSH_ASKPASS_REQUIRE")
-                                    || upper.equals("GCM_INTERACTIVE");
+                                    || upper.equals("GCM_INTERACTIVE")
+                                    || upper.equals("LC_ALL")
+                                    || upper.equals("LANGUAGE");
                         });
         variables.put("GIT_TERMINAL_PROMPT", "0");
         // Set, not unset: an unset GIT_ASKPASS lets core.askPass from the person's configuration
