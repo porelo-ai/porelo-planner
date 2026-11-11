@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL60",
   "title": "The Commit And Push Rules Checked By The Planner",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "L",
   "priority": "High",
   "rank": 1,
