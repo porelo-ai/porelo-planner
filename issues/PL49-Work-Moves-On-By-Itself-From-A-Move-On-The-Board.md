@@ -10,65 +10,84 @@
   "priority": "High",
   "rank": 24,
   "blockedBy": [
-    "PL46"
+    "PL64",
+    "PL65"
   ],
-  "covers": "Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk",
-  "openQuestions": 0
+  "covers": "Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk",
+  "openQuestions": 1
 }
 ```
 
-**Size:** L - a move that starts work crosses the store, the core's work run, the board's contract and the screen;
-beside it two smaller changes to the work rules.
+**Size:** L - a move that starts work crosses the core's proposal, the board's contract and the screen; beside it a
+reading started by hand, and model and effort chosen by phase and risk.
 
-**What must be true.** A person moves an issue to Implementing on the board, and the planner does the rest as the
-project's work rules say: the builder starts with that state's instructions; work that ends done goes to Reading and
-a reader starts; a reading with blocking findings goes to Reworking and the builder starts with the findings; a
-reading without goes to Review, and only there is the person asked. A reading beyond the project's limit is never
-started.
+**What must be true.** A person moves an Agent issue, or a story, into a working state on the board, and the planner
+does the rest as the project's work rules say: the start dialog opens filled with the rule's first mode and the first
+agent's model, the builder starts with that state's instructions; work that ends done goes to Reading and a reader
+starts by itself; a reading without blocking findings goes to Review, and a reading with them asks the person.
 
 ## Plan
 
 What stands today, read in the code:
 
 - `stories/work.yml` in the project gives each working state its `from`, `done`, `then`, `blocked`, `per`, `modes`,
-  `order` and `models`; `WorkRules` keeps the sound ones.
-- A person starts a story's work with Start (`StoryWorkRequest`, `WorkRun`); the window starts the tasks. A task's
-  end is reported (`TaskEventRequest`), `WorkEnds` judges it, `NextStep` plans the next state and tasks along
-  `then` and `blocked`, `ReadingCycle` counts readings against the limit and stops in Reading under Needs you on
-  the last one; the screen starts the next tasks at once (`task_runs.dart`, `follow`).
-- So the chain from building through reading and rework to Review runs by itself already, once started from a
-  story's Start. What is missing:
+  `order` and `models`; `WorkRules` keeps the sound ones. The project's rules now include In analysis (from Idea and
+  Accepted), Under estimation (from Analyzed) and Reading from Review too.
+- A story dropped on a working state already opens the start dialog (`planning_view.dart`, `_start` with the target),
+  which preselects the proposal's first mode and the first agent's model. But the proposal (`WorkProposal.propose`)
+  names every open issue of the story, whatever its state, and the start (`NextStep.started`) refuses an issue whose
+  state the rule's `from` does not hold, so a story whose issues stand in different states cannot be started.
+- An issue cannot be moved into a working state: the screen stages it as a move, and `Moves.check` refuses it
+  (`EnteredOnlyByWork`). The proposal and the start take a whole story, never chosen issues.
+- A Reading cannot be started by hand: `WorkProposal.propose` refuses every rule with `blocked` ("Readings are offered
+  only by a run"), though the Reading rule now enters from Review.
+- Once started, the chain runs by itself: a task's end is reported (`TaskEventRequest`), `WorkEnds` judges it,
+  `NextStep` plans the next state and tasks along `then`, and the screen starts them at once (`task_runs.dart`,
+  `follow`). How a blocking reading and a task's mode are handled changes with
+  [PL64](README.md#pl64): a blocking reading asks the person instead of starting Reworking, and a task that starts by
+  itself takes the rule's first mode. A Manual issue gets no task in any start ([PL65](README.md#pl65), on the worker
+  field of [PL46](README.md#pl46)).
 
-1. **A move opens the Start** (L). A move of an issue into a working state opens the Start dialog filled with
-   the project's defaults - the first mode, the first agent and its model, the issue's own repository, the limit
-   of step 2 - and the person confirms or changes them before anything starts; cancelling the dialog cancels the
-   move. A story moved into a working state moves its least advanced issues along (as `Moves.check` does) and
-   starts all their tasks: the dialog shows one tab per task, each filled the same way. The planner answers the
-   planned tasks for a move before it is saved, so the dialog shows what the work rules give; saving the move and
-   the start is one request. A Manual issue gets no tab ([PL46](README.md#pl46)). A move out of a working state
-   while its task runs asks the person to stop the task or cancel the move. A change to the window's contract.
-   Red first in `core`: a planned move of an Agent issue from Backlog to Implementing yields one building task for
-   its repository; a story's move one per Agent issue; a Manual issue's none.
-2. **The reading limit in the work rules** (S). The Reading rule takes `readings: <n>`, one to ten; a start without
-   its own limit takes it, and `WorkRules` refuses a rule without one where a `blocked` state leads back to it. Red
-   first: a Reading rule of two readings stops the third in Reading under Needs you.
+What is missing:
+
+1. **A move opens the Start for what it moves** (M). The proposal and the start take an optional list of the story's
+   issues; a move of an issue into a working state opens the start dialog for that issue alone, and cancelling the
+   dialog cancels the move. A story's proposal names its least advanced open issues whose state the rule's `from`
+   holds, as `Moves.check` moves a story's least advanced issues, one tab per task. A change to the window's
+   contract (`StoryWorkProposalRequest`, `StoryWorkRequest`), the mock mode's answer and the screen's issue move
+   action. Red first, unit, in `WorkProposalTest`: a story with an issue in Backlog and one in Review, proposed for
+   Implementing, names only the Backlog issue; a proposal for one named issue names it alone.
+2. **A reading started by hand** (S). A proposal for a rule with `blocked` offers one reader per issue, each issue
+   alone, with the readings counted on from the issue's run. Red first, unit, in `WorkProposalTest`: a Reading for an
+   issue in Review offers one reader for it; in `NextStepTest`: its clean end leads to Review.
 3. **Model and effort by phase and risk** (M). An issue's head may carry `risk`: `harm`, `ordinary` (when none is
    set) or `small`. The work rules give per working state the effort for each risk, and a start hands agent, model
-   and effort to the window and names where the choice came from. The effort's meaning per agent is Porelo's.
-   Red first: a Reading task for a `harm` issue carries the rule's effort for `harm`.
+   and effort to the window and names where the choice came from. The effort's meaning per agent is Porelo's. Writing
+   `risk` into a head waits until the build tools' issue schema takes it, as the worker field does. Red first, unit:
+   a Reading task for a `harm` issue carries the rule's effort for `harm`.
 
-Order: 2, 1, 3. Sum by the medians: 1 L, 1 M, 1 S = 113 + 67 + 33 = 213 minutes.
+Not part of this issue: a reading limit in the work rules, since the work rules set no cap on reading
+rounds for now and the start dialog's reading rounds stay as they are; and asking to stop a running task before a
+move out of a working state, which belongs to the warnings before a move ([PL38](README.md#pl38)).
+
+Order: 2, 1, 3. Sum by the medians: 2 M, 1 S = 67 + 67 + 33 = 167 minutes, an L.
 
 ## Acceptance
 
-- With the work rules of Implementing to Reading, Reading to Reworking or Review, and two readings: an Agent issue
-  moved to Implementing gets its builder started; an end done sets Reading and starts the reader; a reading with
-  blocking findings sets Reworking and starts the builder with them; the next reading without sets Review; a third
-  reading is never started. A Manual issue moved the same way gets no task.
+- With today's work rules: an Agent issue moved to Implementing opens the start dialog for it alone, with the first
+  mode and model preselected, and its builder starts on confirmation; an end done sets Reading and starts the reader
+  in its rule's first mode; a reading without blocking findings sets Review; one with blocking findings stays in
+  Reading and asks the person. A story with issues in Backlog and Review dropped on Implementing starts only the
+  Backlog issue. An issue in Review can be read again by hand. A Manual issue moved the same way gets no task.
 
-Work moves on only while the window is open, as the chain does today: when it was closed as a task ended, the
-board is read again and the next step is taken once the window starts again. Work that moves on with no window
-open comes with the planner as a service of the system ([PL33](README.md#pl33)).
+Work moves on only while a window is open: the window, not the planner, starts every task with Porelo's `Start`, and
+reports each end. When no window was open as a task ended, the board is read again and the next step taken once a
+window starts again; the planner as a service of the system does not change that, since it starts no task itself.
+
+## Open questions
+
+- Does model and effort by phase and risk stay in this issue, or become an issue of its own, since it needs `risk` in
+  the issue's head, which the build tools' schema must take first?
 
 ## To be checked
 

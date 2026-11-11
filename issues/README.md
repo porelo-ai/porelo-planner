@@ -9,11 +9,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | - | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog |
-| <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
-| <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
-| <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
-| <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
@@ -28,12 +23,6 @@ left out.
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | - | - | Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | - | - | The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand |
 
-## Accepted
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | - | - | A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react |
-
 ## Analyzed
 
 | # | Size | Blocked by | What it covers | Open questions |
@@ -41,8 +30,14 @@ left out.
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | L | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work | 2 |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format | 1 |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists | 1 |
-| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL46](README.md#pl46) | Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk | 0 |
-| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | L | - | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes | - |
+| <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | L | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog | 2 |
+| <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | XL | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen | 4 |
+| <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | M | - | A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react | 1 |
+| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL64](README.md#pl64), [PL65](README.md#pl65) | Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk | 1 |
+| <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | L | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel | 1 |
+| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | L | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes | 1 |
+| <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it | 0 |
+| <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too | 0 |
 
 ## Backlog
 
