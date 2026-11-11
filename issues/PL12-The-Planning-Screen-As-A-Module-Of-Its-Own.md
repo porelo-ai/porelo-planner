@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL12",
   "title": "The Planning Screen As A Module Of Its Own",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 1,
@@ -26,48 +26,41 @@ against the planner started in its mock mode, without Porelo and without the win
 
 ## Plan
 
-- **The module:** `screen/` with `pom.xml` (packaging `pom`, artifactId `porelo-planner-screen`), `README.md`,
-  `pubspec.yaml` (package `porelo_planning`, Flutter pinned to the version the window pins, read from there when it
-  moves), `lib/`, `test/`, `example/`. In the root's `<modules>` only under the profile `all`, so a Java build needs
-  no Flutter.
-- **Maven drives Flutter** under `all` with `exec-maven-plugin`, as the window's build does: `flutter pub get`,
-  `dart format --set-exit-if-changed`, `dart analyze` (never `flutter analyze`), `flutter test`; the tests tagged
-  `documents` stay Java's.
-- **The window's hooks**, as the package's public API (`lib/porelo_planning.dart`):
-  - `PlanningScreen(client, startTask, taskChanges, agents)`, where `client` is a `PlanningClient`, an interface of
-    the package. `PlanningClient.http(baseUrl, token)` is the planner's REST/SSE client; until it exists the window
-    passes one that answers from today's daemon, and the moved tests use a Dart fake of the interface, so the screen
-    moves before the planner's API exists, with no change in behavior.
-  - The window reports a change of a task it started through the same client,
-    `client.taskEvent(project, task, STARTED|ENDED|STOPPED)`, and speaks no HTTP of the planner's itself;
-    `taskChanges` is only what the screen shows of a run (outcome and why).
-  - `PlanningAction` for the window's command menu, a `hasPendingMoves` getter for its leave guard, and a
-    `Listenable` of *Needs you* entries with the widget that shows one.
-  - `PlanningStyle` and a small `Space` move into the package; colors come from `Theme.of(context)` and the package
-    defines no theme of its own, so the screen looks like the window around it.
-- **The move:** the screen's files and their tests come in from porelo-frontend as they are, against a Dart fake of
-  today's models; the REST/SSE client follows with the planner's REST calls and its changes stream. The window's
-  agent moves them and hands them over once the window starts with the code from this checkout.
-- **CI:** a job `screen` in `build.yml` with the pinned Flutter beside the pinned JDK, running `-Pall verify` for the
-  module, and an integration test (`example/` driven by `flutter test integration_test` under `xvfb-run`) against the
-  planner's mock mode built in the same job.
-- `AGENTS.md`'s own part names Flutter and the reason: the window is Flutter, and the screen is part of it.
-- **Alongside, in `app`'s tests:** the access check's variants move down to unit tests - the token cases (no
-  header, a wrong token, one of the right length, `Basic`, a longer one) into a test of `AccessFilter` over a mock
-  request and response, the address cases (empty, `0.0.0.0`, `::`, a documentation address, a name) into a test of
-  `LoopbackBinding`'s parse. One refusal through the running server and one refused start stay as integration tests.
-  Each moved test is seen red by a break. The branch is rebased on `main` once the access check is there.
-- **Red first:** the package's own test of `hasPendingMoves` against a fake with one unsaved move; the integration
-  test against a planner that is not started fails naming the address.
+What stands already: the module `screen/` (package `porelo_planning`, Flutter pinned in `pubspec.yaml`, listed only
+under the root's profile `all`), Maven driving `flutter pub get`, `dart format`, `dart analyze` and `flutter test` in
+`screen/pom.xml`, the job `screen` in `build.yml`, the public API in `lib/porelo_planning.dart` (`PlanningScreen`,
+`HttpPlanningSource`, `PlanningAction`, `hasPendingMoves` with `pending_moves_test.dart`), and the access check's
+variants as unit tests (`AccessFilterTest`, `LoopbackBindingTest`). What is missing is the screen tested against the
+planner's mock mode: its HTTP source is tested only against answers written by hand in the test.
+
+- **The mock's answers, recorded by the planner's own test.** `MockAnswersTest` in `app` (integration level, the
+  planner started with `--mock` as `MockModeTest` starts it) asks what the screen asks at a board's start - `PUT
+  /projects/{p}` with a source, `GET /projects/{p}/workflow`, `GET /projects/{p}/stories` and the first `board` event
+  of `GET /projects/{p}/events`, then `GET /projects/{p}/issues/{id}` of one issue and the answer of one move - and
+  compares each answer with its file under `screen/test/served/mock/`. The files hold JSON bodies only (of the event,
+  its `data` line), no header, port, token or time; the mock's revisions are fixed (`mock@1`, `mock@2`). A difference
+  fails naming the file and both texts; started with `-Dplanner.mock.record=true` it writes the files instead, and
+  refuses to where the environment names `CI`, so a build never rewrites what it checks. So a change of what the mock
+  serves cannot leave the screen's copy behind; the refresh, the task stream and the other writes stay out of this
+  guarantee and are held by the screen's tests over hand-written answers.
+- **The screen reads them.** `mock_served_test.dart` serves those files from a local `HttpServer` behind the token,
+  as the planner does, at the paths the source builds; a request without the token, or for a path not recorded,
+  is refused, so a dropped header or an unexpected call fails. It reads a board, one issue and one move through
+  `HttpPlanningSource`: the snapshot's states, phases, stories and each story's issues with their states and workers
+  equal those of the screen's own `MockPlanningSource` board from `planning_data.dart`, the reference the window's
+  mock tests use, and a few fields are asserted literally (an issue's worker, what it is blocked by, its repository,
+  the move's new revision), since the mock's board is a copy of that reference. A field the planner serves that the
+  screen does not read, or reads under another name, shows as a difference.
+- No `example/` app and no `integration_test` under a display server: the board's widgets are tested over
+  `MockPlanningSource` already, and what only a running planner can show is its answers, which the two tests above
+  hold on each side; the window built against a ref of this repository is the operator's acceptance.
+- **Red first:** the Dart test against one recorded file with an issue's `state` renamed (fails naming the issue),
+  and with the source's token header dropped; the Java test against a recorded file with one story left out, and
+  record mode with `CI` set.
 
 ## Acceptance
 
-- `./mvnw -B -s settings.xml verify` builds without Flutter; `-Pall verify` runs the package's analysis and tests.
+- `./mvnw -B -s settings.xml verify` builds without Flutter; `-Pall verify` runs the package's analysis and tests,
+  among them the test over the mock's recorded answers.
+- `MockAnswersTest` fails when the mock serves anything other than the recorded files.
 - The window built against a ref of this repository shows the board from the planner's mock mode.
-
-## To be checked
-
-- The window's Flutter pin and its toolchain flags (`libsecret`, Linux desktop), read in porelo-frontend when the
-  package moves.
-- Whether the integration test needs a display server on the runner, or the widget tests over the mock's HTTP answers
-  suffice.
