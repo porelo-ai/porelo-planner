@@ -9,7 +9,7 @@
   "size": "L",
   "priority": "Medium",
   "rank": 18,
-  "blockedBy": ["PL28"],
+  "blockedBy": [],
   "covers": "A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages"
 }
 ```

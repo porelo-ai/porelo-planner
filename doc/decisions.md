@@ -10,6 +10,8 @@ What holds and why: one row per decision, and its full text below.
 | Work | [A story's work is recorded on the computer it runs on](#a-storys-work-is-recorded-on-the-computer-it-runs-on) |
 | Work | [The window tells the planner of its tasks](#the-window-tells-the-planner-of-its-tasks) |
 | Access | [One planner per person](#one-planner-per-person) |
+| Store | [The planner keeps its own clones](#the-planner-keeps-its-own-clones) |
+| Store | [The store owns the checks and records of its stories and issues](#the-store-owns-the-checks-and-records-of-its-stories-and-issues) |
 
 ## Git is a plain store
 
@@ -53,3 +55,20 @@ A planner serves one person, on their own computer or under their own account on
 clones and token; several people on one host each start their own. A planner shared by every user of a host would
 have to keep each user's Git login or write under an account of its own, which no longer shows who moved a story, so
 it stays an idea until that is decided.
+
+## The planner keeps its own clones
+
+The planner reads and writes a project through clones of its own, not through the read-only checkout a task gets.
+That checkout is assembled only when a task starts, on the machine the task runs on; the planner must commit and push
+a move or a new idea with the person's own Git login, a board read through the window would need a running window and
+a reachable machine, and on Windows or a Mac there is no such machine at all. Only a discussion task reads the
+project's repositories as one tree, since an agent needs one.
+
+## The store owns the checks and records of its stories and issues
+
+The checks of issue and story heads, of the issue indexes and of the links between issue pages belong to the store
+that keeps them; a store kept in an outside tool checks as that tool does. Recording an issue's stages and answering
+the project's velocity belong to the store too. Every repository's issues are checked against the project's one
+workflow, and which issue prefixes a repository owns stays in `project.yml`, since the prefixes mark the project and
+not only its issues.
+

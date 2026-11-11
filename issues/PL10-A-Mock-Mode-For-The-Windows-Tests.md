@@ -9,7 +9,7 @@
   "size": "M",
   "priority": "Medium",
   "rank": 3,
-  "blockedBy": ["PL04"],
+  "blockedBy": [],
   "covers": "`--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests"
 }
 ```

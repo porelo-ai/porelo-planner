@@ -10,9 +10,7 @@
   "priority": "Medium",
   "rank": 31,
   "blockedBy": [
-    "PL41",
-    "PL46",
-    "PL57"
+    "PL46"
   ],
   "covers": "The idea a discussion wrote comes back to the planner when its task ends, is checked against the idea format and becomes, in one save, a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix"
 }
@@ -36,7 +34,7 @@ issues, each in its repository, without writing a file by hand; a malformed idea
 - The idea is checked beyond the schema too: each repository it names is one of the project's, and a title is one
   line.
 - One save, as a move's: each repository the idea names gets an issue file in Idea with the next free number of a
-  prefix it owns, its head, and its index row ([PL41](README.md#pl41)'s new idea); then the project's repository gets
+  prefix it owns, its head, and its index row, as a new idea is written; then the project's repository gets
   the story file in Idea naming those issues, and the stories index. Others first, the own repository last, all or
   none, as `GitStore.save` pushes today.
 - An issue's `worker` is taken from the idea; one without it is refused, as the person must choose.

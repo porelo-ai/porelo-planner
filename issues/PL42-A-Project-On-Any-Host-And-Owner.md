@@ -9,7 +9,7 @@
   "size": "S",
   "priority": "Medium",
   "rank": 20,
-  "blockedBy": ["PL41"],
+  "blockedBy": [],
   "covers": "The Git store reads a project whose repositories live on any host and under any owner: each central from any clone URL - https, ssh or scp-like - and the link pattern and host of story texts and indexes from project.yml instead of one fixed owner"
 }
 ```

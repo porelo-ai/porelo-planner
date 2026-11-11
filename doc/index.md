@@ -39,6 +39,24 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
   another, gets `401` with `WWW-Authenticate: Bearer` and an empty body, and no CORS header is ever sent. The token
   is new on every start.
 
+## Where it keeps its files
+
+| What | Linux | Windows |
+|---|---|---|
+| The address file and its lock | `$XDG_RUNTIME_DIR/porelo-planner/planner.json` | `%LOCALAPPDATA%\porelo-planner\planner.json` |
+| The work record | `$XDG_STATE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\state\<project>\` |
+| The clones | `$XDG_CACHE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\cache\<project>\` |
+
+- Every base is an absolute path read from the environment; a relative path, `..` or, on Windows, a UNC path is
+  refused. The property `planner.runtime-directory` overrides the base of the address file.
+- **Only the account reads or writes them.** On Linux each directory is the account's own, of mode `0700`. On Windows
+  each directory the planner makes gets one access entry, full control for the account, inherited by what is made in
+  it and by nothing from above. A directory of the planner's own, and `%LOCALAPPDATA%`, is accepted only when its owner
+  is the account, `SYSTEM` or the local Administrators, no entry grants another principal a right, and it is no link,
+  junction or mount; every directory above it only when no other principal may delete, rename or re-permission it.
+  Owners and entries are read by security identifier, never by name, and a file system without access lists, such as
+  FAT32, makes the planner refuse to start.
+
 ## How it is built
 
 - **One native executable**, built with GraalVM for any x86-64 CPU. Its parts are libraries compiled into it:

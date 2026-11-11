@@ -46,7 +46,7 @@ against the planner started in its mock mode, without Porelo and without the win
   - `PlanningStyle` and a small `Space` move into the package; colors come from `Theme.of(context)` and the package
     defines no theme of its own, so the screen looks like the window around it.
 - **The move:** the screen's files and their tests come in from porelo-frontend as they are, against a Dart fake of
-  today's models; the REST/SSE client follows with [PL04](README.md#pl04) and [PL06](README.md#pl06). The window's
+  today's models; the REST/SSE client follows with the planner's REST calls and its changes stream. The window's
   agent moves them and hands them over once the window starts with the code from this checkout.
 - **CI:** a job `screen` in `build.yml` with the pinned Flutter beside the pinned JDK, running `-Pall verify` for the
   module, and an integration test (`example/` driven by `flutter test integration_test` under `xvfb-run`) against the
