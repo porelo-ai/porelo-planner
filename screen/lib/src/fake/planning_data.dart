@@ -175,7 +175,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "readingStopped": false,
           "noRunHere": false,
           "attention": "NONE",
-          "worker": "AGENT",
+          "worker": "MANUAL",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1860,7 +1860,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "readingStopped": false,
           "noRunHere": false,
           "attention": "NONE",
-          "worker": "AGENT",
+          "worker": "MANUAL",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []

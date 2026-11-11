@@ -388,3 +388,11 @@ planner/app/src/test/resources/work/porelo-sample/stories/README.md
 planner/app/src/test/resources/work/porelo-sample/stories/ST1-The-First-Release.md
 planner/app/src/test/resources/work/porelo-sample/stories/ST2-The-Second-Release.md
 planner/app/src/test/resources/work/porelo-sample/stories/ST3-An-Earlier-Release.md
+# The screen's copies of the planner's mock answers and the test that serves them: the mock board's made-up ids.
+planner/app/src/test/java/org/fuin/porelo/planner/app/MockAnswersTest.java
+screen/test/mock_served_test.dart
+screen/test/served/mock/board-event.json
+screen/test/served/mock/issue-B541.json
+screen/test/served/mock/move-B542.json
+screen/test/served/mock/stories.json
+screen/test/served/mock/workflow.json

@@ -1,0 +1,142 @@
+{
+  "revision" : "mock@1",
+  "states" : [ {
+    "name" : "Idea",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Accepted",
+    "kind" : "WAITING"
+  }, {
+    "name" : "In analysis",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Analyzed",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Under estimation",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Estimated",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Backlog",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Implementing",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Reading",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Review",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Rework",
+    "kind" : "WAITING"
+  }, {
+    "name" : "Reworking",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Finishing",
+    "kind" : "WORKING"
+  }, {
+    "name" : "Finished",
+    "kind" : "CLOSED"
+  }, {
+    "name" : "Rejected",
+    "kind" : "CLOSED"
+  } ],
+  "phases" : [ {
+    "name" : "Ideas",
+    "states" : [ "Idea", "Accepted" ]
+  }, {
+    "name" : "Analysis",
+    "states" : [ "In analysis", "Analyzed" ]
+  }, {
+    "name" : "Estimation",
+    "states" : [ "Under estimation", "Estimated" ]
+  }, {
+    "name" : "Backlog",
+    "states" : [ "Backlog" ]
+  }, {
+    "name" : "Build",
+    "states" : [ "Implementing", "Reworking", "Reading", "Review", "Rework" ]
+  }, {
+    "name" : "Done",
+    "states" : [ "Finishing", "Finished", "Rejected" ]
+  } ],
+  "work" : [ {
+    "state" : "In analysis",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : null,
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  }, {
+    "state" : "Under estimation",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : null,
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  }, {
+    "state" : "Implementing",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : null,
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  }, {
+    "state" : "Reading",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : "Reworking",
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  }, {
+    "state" : "Reworking",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : null,
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  }, {
+    "state" : "Finishing",
+    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "done" : "Review",
+    "then" : null,
+    "blocked" : null,
+    "per" : "repository",
+    "modes" : [ "UNATTENDED", "AGENT" ],
+    "order" : "Read the story and complete its work.",
+    "models" : {
+      "claude" : "claude-opus-5-5"
+    }
+  } ],
+  "faults" : [ ]
+}

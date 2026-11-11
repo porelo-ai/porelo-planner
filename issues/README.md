@@ -49,12 +49,6 @@ left out.
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
 | <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -69,6 +63,7 @@ left out.
 | <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL64](README.md#pl64) | The planner marks an issue as needing the person only from its run, naming the run's reason; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
+| <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | - | `--mock` serves the window's mock board through the same API and SSE, a reset between tests |
 | <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | M | - | Every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch; a discussion whose Start the person cancelled shows no error |

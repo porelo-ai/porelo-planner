@@ -1,0 +1,22 @@
+{
+  "revision" : "mock@1",
+  "issue" : {
+    "id" : "B541",
+    "repository" : "porelo",
+    "title" : "The host tool reads the organization and a task by its signature",
+    "state" : "Implementing",
+    "size" : "L",
+    "blockedBy" : [ "B540" ],
+    "parent" : null,
+    "link" : "https://example.org/issues/B541",
+    "worker" : "AGENT",
+    "text" : "**What must be true.** The work meets the story description.\n",
+    "subIssues" : [ ],
+    "whatMustBeTrue" : "The work meets the story description.",
+    "atWork" : false,
+    "needsYou" : false,
+    "readingStopped" : false,
+    "noRunHere" : true,
+    "attention" : "NONE"
+  }
+}

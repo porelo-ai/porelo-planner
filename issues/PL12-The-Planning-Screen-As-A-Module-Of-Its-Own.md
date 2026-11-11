@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL12",
   "title": "The Planning Screen As A Module Of Its Own",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 1,
@@ -54,9 +54,11 @@ planner's mock mode: its HTTP source is tested only against answers written by h
 - No `example/` app and no `integration_test` under a display server: the board's widgets are tested over
   `MockPlanningSource` already, and what only a running planner can show is its answers, which the two tests above
   hold on each side; the window built against a ref of this repository is the operator's acceptance.
+- The first run of the screen's test found two issues, FC03 and SL35, that the mock serves as a person's and the
+  screen's stand-in board as an agent's; the stand-in board now follows the mock.
 - **Red first:** the Dart test against one recorded file with an issue's `state` renamed (fails naming the issue),
-  and with the source's token header dropped; the Java test against a recorded file with one story left out, and
-  record mode with `CI` set.
+  and with the source's token header dropped; the Java test against a recorded file with a state renamed, and record
+  mode with `CI` set.
 
 ## Acceptance
 
