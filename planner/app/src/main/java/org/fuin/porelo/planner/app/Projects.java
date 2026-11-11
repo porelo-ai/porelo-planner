@@ -100,7 +100,10 @@ public final class Projects {
             }
             try {
                 final PlanningStore store =
-                        Objects.requireNonNull(opener.open(project, repository, branch), "store");
+                        new LoggedStore(
+                                project,
+                                Objects.requireNonNull(
+                                        opener.open(project, repository, branch), "store"));
                 final WorkRun.Record record = records.open(project, repository, branch);
                 record.locked(session -> session.read());
                 projects.put(

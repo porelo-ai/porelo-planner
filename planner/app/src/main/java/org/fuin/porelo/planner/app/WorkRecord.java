@@ -23,8 +23,11 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
@@ -35,6 +38,8 @@ import tools.jackson.databind.node.ObjectNode;
 
 /** Owns the private, bounded work record and refuses writers from another planner process. */
 public final class WorkRecord implements AutoCloseable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WorkRecord.class);
 
     static final int MOST_RECORD = 16 * 1024 * 1024;
     private static final int END_RESERVE = 2 * 1024 * 1024;
@@ -168,7 +173,12 @@ public final class WorkRecord implements AutoCloseable {
 
     /** Refuses the record with the reason in words, every local path relative to its base. */
     private WorkRefusal unavailable(final String project, final String why) {
-        return WorkRefusal.recordUnavailable(project, paths.relative(why));
+        final String reason = paths.relative(why);
+        LOG.warn(
+                "The work record of project {} is unavailable: {}",
+                LogText.of(project),
+                LogText.of(reason));
+        return WorkRefusal.recordUnavailable(project, reason);
     }
 
     /** Refuses the record for a failed step, with the check's or the system's own words. */

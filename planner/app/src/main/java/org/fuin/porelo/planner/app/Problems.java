@@ -5,6 +5,9 @@ import java.util.Map;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.git.LogText;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +24,8 @@ import org.springframework.web.servlet.HandlerMapping;
  */
 @RestControllerAdvice
 public class Problems {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Problems.class);
 
     /** The prefix of every problem type; the window reads the name after it. */
     static final String TYPE = "urn:porelo-planner:";
@@ -123,6 +128,7 @@ public class Problems {
     public ResponseEntity<ProblemDetail> refused(final StoreException refusal) {
         final String detail = String.valueOf(refusal.getMessage());
         final String subject = refusal.subject();
+        warnOfTheStore(refusal, subject, detail);
         return switch (refusal) {
             case StoreException.NoSuchStory any ->
                     problem("NoSuchStory", HttpStatus.NOT_FOUND, detail, Map.of("story", subject));
@@ -179,11 +185,32 @@ public class Problems {
         };
     }
 
+    /** A store that could not be read or saved to is worth a warning, with its own words. */
+    private static void warnOfTheStore(
+            final StoreException refusal, final String subject, final String detail) {
+        switch (refusal) {
+            case StoreException.WorkflowMissing any -> warn("has no workflow", subject, detail);
+            case StoreException.CredentialRefused any -> warn("refused the login", subject, detail);
+            case StoreException.Unreachable any -> warn("could not be reached", subject, detail);
+            case StoreException.Unreadable any -> warn("could not be read", subject, detail);
+            case StoreException.PartlySaved any -> warn("was not pushed", subject, detail);
+            default -> {
+                // A refusal of the window's call, logged by its kind alone.
+            }
+        }
+    }
+
+    private static void warn(final String what, final String subject, final String detail) {
+        LOG.warn("Repository {} {}: {}", LogText.of(subject), what, LogText.of(detail));
+    }
+
     private static ResponseEntity<ProblemDetail> problem(
             final String name,
             final HttpStatus status,
             final String detail,
             final Map<String, ?> parameters) {
+        // Its kind alone: the detail may repeat what the call carried.
+        LOG.info("Refused a call: {} ({})", name, status.value());
         final ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setType(URI.create(TYPE + name));
         problem.setTitle(name);

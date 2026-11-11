@@ -7,6 +7,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.fuin.porelo.planner.core.Changes;
+import org.fuin.porelo.planner.store.git.LogText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -182,7 +183,10 @@ public final class ChangesRegistry implements AutoCloseable {
             changes.poll();
         } catch (final RuntimeException e) {
             // The store's words are free of secrets and local paths; the next poll tries again.
-            LOG.warn("Fetching project {} failed: {}", project, e.getMessage());
+            LOG.warn(
+                    "Fetching project {} failed: {}",
+                    LogText.of(project),
+                    LogText.of(e.getMessage()));
         }
     }
 }

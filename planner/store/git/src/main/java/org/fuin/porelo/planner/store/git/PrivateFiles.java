@@ -8,8 +8,8 @@ import java.util.Map;
 
 /**
  * The planner's directories and files that only its account may read or change - the address file
- * with its token, the work record and the clones - made and checked the way the platform keeps them
- * to one account: by mode on Linux, by owner and access control list on Windows.
+ * with its token, the work record, the clones and the log - made and checked the way the platform
+ * keeps them to one account: by mode on Linux, by owner and access control list on Windows.
  */
 public interface PrivateFiles {
 
@@ -26,7 +26,7 @@ public interface PrivateFiles {
     }
 
     /**
-     * Whether this is the Windows form, which keeps all three kinds under {@code %LOCALAPPDATA%}.
+     * Whether this is the Windows form, which keeps every kind under {@code %LOCALAPPDATA%}.
      *
      * @return true on Windows
      */
@@ -46,13 +46,16 @@ public interface PrivateFiles {
      * The steps below {@link #base} to the planner's own directory of a kind.
      *
      * @param kind which of them
-     * @return the names, the first being {@code porelo-planner}
+     * @return the names: below {@code porelo-planner}, or for {@link Kind#LOGS} below {@code
+     *     porelo}, which other parts of Porelo share
      */
     List<String> steps(Kind kind);
 
     /**
      * Checks the way to a base and makes each step below it the account's alone, or checks the one
-     * already there.
+     * already there; for {@link Kind#LOGS} only the last step must be the account's alone, and a
+     * step above it, which other parts of Porelo share, is held only to the rules of a directory on
+     * the way.
      *
      * @param base the base, absolute and in its plain form
      * @param create whether a missing base is made; otherwise it must exist
@@ -82,13 +85,15 @@ public interface PrivateFiles {
      */
     void requireOwnFile(Path file, boolean alone);
 
-    /** The planner's three kinds of private directories. */
+    /** The planner's kinds of private directories. */
     enum Kind {
         /** The address file and its lock, which the window reads. */
         RUNTIME,
         /** The local work record. */
         STATE,
         /** The clones. */
-        CACHE
+        CACHE,
+        /** The log, in the directory the window keeps its own log in. */
+        LOGS
     }
 }

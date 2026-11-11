@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
 import org.fuin.porelo.planner.core.Changes;
+import org.fuin.porelo.planner.store.git.LogText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
@@ -89,7 +90,7 @@ public class EventsController {
             }
         } catch (final IOException | RuntimeException e) {
             // The window went away; its subscription goes with it.
-            LOG.debug("A stream ended: {}", e.getMessage());
+            LOG.debug("A stream ended: {}", LogText.of(e.getMessage()));
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {

@@ -34,7 +34,7 @@ class AddressFileTest {
         // A token another account can read lets that account act as the planner's owner.
         final AccessToken token = AccessToken.random();
         try (AddressFile file = AddressFile.open(runtime.toString())) {
-            file.publish(4711, token);
+            file.publish(4711, token, null);
             assertThat(mode(file.path())).as("the address file's mode").isEqualTo("rw-------");
             assertThat(mode(file.path().getParent()))
                     .as("the planner's directory's mode")
@@ -49,10 +49,26 @@ class AddressFileTest {
     }
 
     @Test
+    void aLogPathWithAQuoteOrABackslashStaysOneStringTheWindowReads() throws Exception {
+        // A path written into the JSON unescaped could end its string and add fields of its own.
+        final AccessToken token = AccessToken.random();
+        final Path log = runtime.resolve("a\\b\",\"port\":1,\"x\":\"").resolve("planner.log");
+        try (AddressFile file = AddressFile.open(runtime.toString())) {
+            file.publish(4714, token, log);
+            assertThat(RuntimeDirectories.read(runtime))
+                    .as("the port and token beside the log path")
+                    .isEqualTo(new RuntimeDirectories.Address(4714, token.text()));
+            assertThat(RuntimeDirectories.log(runtime))
+                    .as("the log path the window reads")
+                    .isEqualTo(log.toString());
+        }
+    }
+
+    @Test
     void stoppingDeletesTheAddressFile() throws Exception {
         // A file left behind sends the window to a port another program may now hold.
         final AddressFile file = AddressFile.open(runtime.toString());
-        file.publish(4711, AccessToken.random());
+        file.publish(4711, AccessToken.random(), null);
         file.close();
         assertThat(file.path()).as("the address file after the planner stopped").doesNotExist();
     }
@@ -65,7 +81,7 @@ class AddressFileTest {
         Files.writeString(directory.resolve("planner.json"), "{\"port\":1,\"token\":\"old\"}\n");
         final AccessToken token = AccessToken.random();
         try (AddressFile file = AddressFile.open(runtime.toString())) {
-            file.publish(4712, token);
+            file.publish(4712, token, null);
             assertThat(RuntimeDirectories.read(runtime))
                     .as("the address file after a new start")
                     .isEqualTo(new RuntimeDirectories.Address(4712, token.text()));
@@ -77,7 +93,7 @@ class AddressFileTest {
         // Every copy of the token left on disk is one more place it can be read from.
         try (AddressFile file = AddressFile.open(runtime.toString())) {
             Files.createDirectories(file.path().resolve("blocks-the-move"));
-            assertThatThrownBy(() -> file.publish(4713, AccessToken.random()))
+            assertThatThrownBy(() -> file.publish(4713, AccessToken.random(), null))
                     .as("a write over a directory of the address file's name")
                     .isInstanceOf(IllegalStateException.class);
             assertThat(names(file.path().getParent()))

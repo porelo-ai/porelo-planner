@@ -29,7 +29,10 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.git.LogText;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -57,6 +60,8 @@ public class BoardController {
 
     /** A state's name as a refusal may repeat it; anything else is never echoed. */
     private static final Pattern STATE = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
+
+    private static final Logger LOG = LoggerFactory.getLogger(BoardController.class);
 
     private final Projects projects;
 
@@ -164,6 +169,11 @@ public class BoardController {
                     "This planner does not save moves.",
                     Map.of("project", name));
         }
+        LOG.info(
+                "Saved {} moves of project {} as revision {}",
+                moves.size(),
+                LogText.of(name),
+                LogText.of(saved.revision().value()));
         return new Answers.Moved(saved.revision().value(), planned.moved());
     }
 
@@ -216,7 +226,13 @@ public class BoardController {
                         body.mustBeTrue(),
                         body.size(),
                         body.worker());
-        return store.createIssue(board.revision(), issue);
+        final NewIssue.Added added = store.createIssue(board.revision(), issue);
+        LOG.info(
+                "Added issue {} to project {} as revision {}",
+                LogText.of(added.id()),
+                LogText.of(name),
+                LogText.of(added.board().revision().value()));
+        return added;
     }
 
     /**
@@ -255,7 +271,13 @@ public class BoardController {
             return new Answers.WorkerSaved(board.revision().value());
         }
         try {
-            return new Answers.WorkerSaved(store.save(board.revision(), writes).revision().value());
+            final String saved = store.save(board.revision(), writes).revision().value();
+            LOG.info(
+                    "Saved the worker of issue {} of project {} as revision {}",
+                    LogText.of(issue),
+                    LogText.of(name),
+                    LogText.of(saved));
+            return new Answers.WorkerSaved(saved);
         } catch (final UnsupportedOperationException e) {
             throw new Refusal(
                     "NotOffered",
@@ -303,8 +325,13 @@ public class BoardController {
             return new Answers.PrioritySaved(board.revision().value());
         }
         try {
-            return new Answers.PrioritySaved(
-                    store.save(board.revision(), writes).revision().value());
+            final String saved = store.save(board.revision(), writes).revision().value();
+            LOG.info(
+                    "Saved the priority of story {} of project {} as revision {}",
+                    LogText.of(story),
+                    LogText.of(name),
+                    LogText.of(saved));
+            return new Answers.PrioritySaved(saved);
         } catch (final UnsupportedOperationException e) {
             throw new Refusal(
                     "NotOffered",
@@ -384,6 +411,8 @@ public class BoardController {
                     Map.of("project", name));
         }
         projects.put(name, repository, source.branch());
+        // The repository's address may carry a credential; the project's name says which it is.
+        LOG.info("The window gave project {}", LogText.of(name));
         return ResponseEntity.noContent().build();
     }
 
@@ -612,8 +641,15 @@ public class BoardController {
             throw WorkRefusal.invalidSettings();
         }
         try {
-            return WorkAnswers.order(
-                    projects.work(name(project)).order(checked, to, WorkRequests.decision(body)));
+            final WorkRun.Order order =
+                    projects.work(name(project)).order(checked, to, WorkRequests.decision(body));
+            LOG.info(
+                    "Offered {} tasks for story {} of project {} toward {}",
+                    order.tasks().size(),
+                    LogText.of(checked),
+                    LogText.of(name(project)),
+                    LogText.of(to));
+            return WorkAnswers.order(order);
         } finally {
             changes.saved(name(project));
         }
@@ -630,6 +666,14 @@ public class BoardController {
         WorkRun.checkedReport(task, report);
         try {
             final WorkRun.Answer answer = projects.work(name).report(task, report);
+            LOG.info(
+                    "Task {} of project {} reported {}{}",
+                    LogText.of(task),
+                    LogText.of(name),
+                    report.event(),
+                    report.ended() == null
+                            ? ""
+                            : report.ended().finished() ? ", finished" : ", not finished");
             return new WorkAnswers.TaskEventReply(
                     answer.revision(),
                     WorkAnswers.knownWork(answer.board(), answer.work()),
@@ -666,6 +710,10 @@ public class BoardController {
         WorkRequests.empty(request);
         try {
             final WorkRun.Run stopped = projects.work(name(project)).stop(checked);
+            LOG.info(
+                    "Stopped the work on story {} of project {}",
+                    LogText.of(checked),
+                    LogText.of(name(project)));
             return new WorkAnswers.StoryWorkReply(WorkAnswers.work(board(project), stopped));
         } finally {
             changes.saved(name(project));

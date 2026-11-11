@@ -33,6 +33,7 @@ class PlannerStartsTest {
     @DynamicPropertySource
     static void runtimeDirectory(final DynamicPropertyRegistry registry) {
         registry.add("planner.runtime-directory", RUNTIME::toString);
+        registry.add("planner.log.base", RUNTIME::toString);
     }
 
     @AfterAll

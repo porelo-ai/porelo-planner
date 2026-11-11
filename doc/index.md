@@ -30,8 +30,10 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 - **The address file** is `porelo-planner/planner.json` in the account's runtime directory (`XDG_RUNTIME_DIR`),
   written once the planner listens and deleted when it stops:
 
-      {"port":<port>,"token":"<43 base64url characters>"}
+      {"port":<port>,"token":"<43 base64url characters>","log":"<the log file's absolute path>"}
 
+  `log` names the planner's log file, which may not exist until the planner first writes; the mock mode keeps no log
+  and writes no `log`.
   With `XDG_RUNTIME_DIR` unset, the runtime directory is `/run/user/<uid>`, as the window reads it. The file is
   readable by the account alone, in a directory of mode `0700`; the planner refuses to start when the runtime
   directory is missing, is a link, or can be read by another account.
@@ -46,9 +48,11 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 | The address file and its lock | `$XDG_RUNTIME_DIR/porelo-planner/planner.json` | `%LOCALAPPDATA%\porelo-planner\planner.json` |
 | The work record | `$XDG_STATE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\state\<project>\` |
 | The clones | `$XDG_CACHE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\cache\<project>\` |
+| The log, beside the window's | `$XDG_STATE_HOME/porelo/logs/planner.log` | `%LOCALAPPDATA%\porelo\logs\planner.log` |
 
 - Every base is an absolute path read from the environment; a relative path, `..` or, on Windows, a UNC path is
-  refused. The property `planner.runtime-directory` overrides the base of the address file.
+  refused. The property `planner.runtime-directory` overrides the base of the address file, and `planner.log.base`
+  the base of the log.
 - **Only the account reads or writes them.** On Linux each directory is the account's own, of mode `0700`. On Windows
   each directory the planner makes gets one access entry, full control for the account, inherited by what is made in
   it and by nothing from above. A directory of the planner's own, and `%LOCALAPPDATA%`, is accepted only when its owner
@@ -56,6 +60,16 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
   junction or mount; every directory above it only when no other principal may delete, rename or re-permission it.
   Owners and entries are read by security identifier, never by name, and a file system without access lists, such as
   FAT32, makes the planner refuse to start.
+
+- **The log** holds one line per entry - time, level, class and words, never a stack trace: the start, each board
+  read with the faults it left out, each save, the tasks offered and each task's report, refused calls by their kind,
+  and at DEBUG each Git call by its subcommand, duration and scrubbed failure. Every value from a repository, Git or
+  the window has its control characters replaced and is cut to 200 characters, so no value starts a line of its own.
+  `logging.level.org.fuin.porelo.planner` sets the level, INFO by default; only the planner's own lines reach the
+  file. It rolls over at `planner.log.max-file-size` (10 MB) into `planner.1.log` to `planner.3.log`
+  (`planner.log.max-history`), and every file is the account's alone. `porelo/`, which other parts of Porelo share,
+  may be readable by others but not writable by the group or others; `logs/` is the account's alone, and a start
+  refuses one that is not, naming it. The file is opened only once the planner holds its one-planner lock.
 
 ## How it is built
 

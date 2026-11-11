@@ -8,6 +8,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -16,12 +17,19 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Runs one {@link GitCall} with no input unless one is given, a hard time limit and bounded output,
  * and tells a refused login from any other failure.
  */
 public final class GitRunner {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GitRunner.class);
+
+    /** A Git subcommand's name; anything else in its place is logged as {@code ?}. */
+    private static final Pattern SUBCOMMAND = Pattern.compile("[a-z][a-z-]{0,31}");
 
     /** What Git prints when a login is missing, refused or would have needed a prompt. */
     private static final Pattern LOGIN =
@@ -119,6 +127,49 @@ public final class GitRunner {
     }
 
     private byte[] run(
+            final GitCall call,
+            final @Nullable Path directory,
+            final boolean noneFoundIsEmpty,
+            final byte @Nullable [] input) {
+        final long start = System.nanoTime();
+        try {
+            final byte[] out = runOnce(call, directory, noneFoundIsEmpty, input);
+            LOG.debug("git {} ended in {} ms", subcommand(call), millisSince(start));
+            return out;
+        } catch (final GitFailure e) {
+            // Only fixed fields and the failure's scrubbed words: the call's line and environment
+            // may hold a credential.
+            LOG.debug(
+                    "git {} failed in {} ms, {}: {}",
+                    subcommand(call),
+                    millisSince(start),
+                    e.kind(),
+                    LogText.of(e.getMessage()));
+            throw e;
+        }
+    }
+
+    /**
+     * The subcommand of a call, after {@code git} and its options, such as {@code -c} and {@code
+     * --git-dir=}.
+     *
+     * @param call the call
+     * @return the subcommand's name, or {@code ?} when the place holds anything else
+     */
+    static String subcommand(final GitCall call) {
+        final List<String> line = call.arguments();
+        int i = 1;
+        while (i < line.size() && line.get(i).startsWith("-")) {
+            i += "-c".equals(line.get(i)) || "-C".equals(line.get(i)) ? 2 : 1;
+        }
+        return i < line.size() && SUBCOMMAND.matcher(line.get(i)).matches() ? line.get(i) : "?";
+    }
+
+    private static long millisSince(final long start) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+    }
+
+    private byte[] runOnce(
             final GitCall call,
             final @Nullable Path directory,
             final boolean noneFoundIsEmpty,

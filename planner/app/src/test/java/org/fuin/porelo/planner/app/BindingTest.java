@@ -33,7 +33,8 @@ class BindingTest {
                                 new SpringApplicationBuilder(PlannerApplication.class)
                                         .run(
                                                 "--server.address=" + address,
-                                                "--planner.runtime-directory=" + runtime)
+                                                "--planner.runtime-directory=" + runtime,
+                                                "--planner.log.base=" + runtime)
                                         .close())
                 .as("a start with server.address '%s'", address)
                 .hasStackTraceContaining("server.address is '" + address + "'");

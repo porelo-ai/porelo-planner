@@ -11,12 +11,14 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Where the window finds the planner: {@code porelo-planner/planner.json} in the account's runtime
@@ -36,6 +38,8 @@ public final class AddressFile implements AutoCloseable {
     static final String FILE = "planner.json";
 
     private static final String LOCK = "planner.lock";
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     /** The lock files this process holds. */
     private static final Set<Path> HELD = ConcurrentHashMap.newKeySet();
@@ -199,9 +203,18 @@ public final class AddressFile implements AutoCloseable {
      *
      * @param port The port the planner listens on.
      * @param token The token every call must carry.
+     * @param log The planner's log file, which the window may open; {@code null} when it keeps
+     *     none.
      */
-    public void publish(final int port, final AccessToken token) {
-        final String json = "{\"port\":" + port + ",\"token\":\"" + token.text() + "\"}\n";
+    public void publish(final int port, final AccessToken token, final @Nullable Path log) {
+        final Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("port", port);
+        fields.put("token", token.text());
+        if (log != null) {
+            fields.put("log", log.toAbsolutePath().toString());
+        }
+        // Written by Jackson, so a path holding a quote or a backslash stays one string.
+        final String json = JSON.writeValueAsString(fields) + "\n";
         Path temporary = null;
         try {
             temporary = directory.resolve("planner-" + UUID.randomUUID() + ".tmp");

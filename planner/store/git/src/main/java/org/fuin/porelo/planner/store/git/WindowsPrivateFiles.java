@@ -123,6 +123,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
             case RUNTIME -> List.of("porelo-planner");
             case STATE -> List.of("porelo-planner", "state");
             case CACHE -> List.of("porelo-planner", "cache");
+            case LOGS -> List.of("porelo", "logs");
         };
     }
 
@@ -172,7 +173,12 @@ final class WindowsPrivateFiles implements PrivateFiles {
             // the planner's directory first.
             access.requireOwnersAlone(base, above.size() - 1, true, false);
             for (int i = 0; i < own.size(); i++) {
-                access.requireOwnersAlone(own.get(i), above.size() + i, true, true);
+                if (kind == Kind.LOGS && i < own.size() - 1) {
+                    // Shared with other parts of Porelo: held only to the rules of a way there.
+                    access.requireSafeAncestor(own.get(i), above.size() + i);
+                } else {
+                    access.requireOwnersAlone(own.get(i), above.size() + i, true, true);
+                }
             }
             return directory;
         } catch (final IOException e) {

@@ -46,14 +46,14 @@ final class PosixPrivateFiles implements PrivateFiles {
     public Path base(final Kind kind, final Map<String, String> environment) {
         return switch (kind) {
             case RUNTIME -> runtime(environment);
-            case STATE -> under(environment, "XDG_STATE_HOME", ".local/state");
+            case STATE, LOGS -> under(environment, "XDG_STATE_HOME", ".local/state");
             case CACHE -> under(environment, "XDG_CACHE_HOME", ".cache");
         };
     }
 
     @Override
     public List<String> steps(final Kind kind) {
-        return List.of("porelo-planner");
+        return kind == Kind.LOGS ? List.of("porelo", "logs") : List.of("porelo-planner");
     }
 
     @Override
@@ -74,10 +74,14 @@ final class PosixPrivateFiles implements PrivateFiles {
             }
             requireNoWayRound(base, uid, kind == Kind.CACHE ? OTHERS_WRITE : GROUP_OR_OTHERS_WRITE);
             Path directory = base;
-            for (final String step : steps) {
-                directory = directory.resolve(step);
+            for (int i = 0; i < steps.size(); i++) {
+                directory = directory.resolve(steps.get(i));
                 createOwnerOnly(directory);
-                requireOwnersAlone(directory, uid);
+                if (kind == Kind.LOGS && i < steps.size() - 1) {
+                    requireOnTheWay(directory, uid);
+                } else {
+                    requireOwnersAlone(directory, uid);
+                }
             }
             return directory;
         } catch (final IOException e) {
@@ -185,6 +189,25 @@ final class PosixPrivateFiles implements PrivateFiles {
         if (!mode.equals(OWNER_ONLY_DIRECTORY)) {
             throw new IllegalStateException(
                     path + " has mode " + PosixFilePermissions.toString(mode) + ", not rwx------");
+        }
+    }
+
+    /**
+     * Refuses a shared directory on the way to the log that is a link, another account's, or one
+     * the group or others may write: each lets another account swap the log's directory.
+     */
+    private static void requireOnTheWay(final Path path, final int uid) throws IOException {
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalStateException(path + " is not a directory, or is a link");
+        }
+        final int owner = (Integer) Files.getAttribute(path, "unix:uid", LinkOption.NOFOLLOW_LINKS);
+        if (owner != uid) {
+            throw new IllegalStateException(
+                    path + " belongs to account " + owner + ", not to this one (" + uid + ")");
+        }
+        final int mode = (Integer) Files.getAttribute(path, "unix:mode", LinkOption.NOFOLLOW_LINKS);
+        if ((mode & GROUP_OR_OTHERS_WRITE) != 0) {
+            throw new IllegalStateException(path + " is a directory the group or others can write");
         }
     }
 

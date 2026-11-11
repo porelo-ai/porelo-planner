@@ -382,6 +382,8 @@ class NativeStartIT {
                             .redirectErrorStream(true)
                             .redirectOutput(output.toFile());
             builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            // The test's log and work record, never the person's.
+            builder.environment().put("XDG_STATE_HOME", runtime.toString());
             final Process planner = builder.start();
             final RuntimeDirectories.Address address;
             try {

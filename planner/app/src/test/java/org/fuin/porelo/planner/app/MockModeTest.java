@@ -256,7 +256,11 @@ class MockModeTest {
 
     private static ConfigurableApplicationContext start(final Path runtime, final String... more) {
         final List<String> args =
-                new ArrayList<>(List.of("--planner.runtime-directory=" + runtime));
+                new ArrayList<>(
+                        List.of(
+                                "--planner.runtime-directory=" + runtime,
+                                // A start without --mock keeps a log, never in the person's folder.
+                                "--planner.log.base=" + runtime));
         args.addAll(List.of(more));
         return PlannerApplication.run(args.toArray(String[]::new));
     }

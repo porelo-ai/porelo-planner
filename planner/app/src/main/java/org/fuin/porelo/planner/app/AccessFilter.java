@@ -8,12 +8,16 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Lets a call through only when it carries the planner's token, on every path and dispatch, before
  * anything else runs.
  */
 public final class AccessFilter implements Filter {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AccessFilter.class);
 
     private static final String PREFIX = "Bearer ";
 
@@ -39,6 +43,9 @@ public final class AccessFilter implements Filter {
             chain.doFilter(request, response);
             return;
         }
+        // Only that it happened: the header may hold a token, and a loop of refusals must not
+        // fill the log with what its calls carried.
+        LOG.info("A call without the planner's token was refused");
         // Set, never sendError: that would hand the call on to Spring's error page.
         final HttpServletResponse refused = (HttpServletResponse) response;
         refused.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
