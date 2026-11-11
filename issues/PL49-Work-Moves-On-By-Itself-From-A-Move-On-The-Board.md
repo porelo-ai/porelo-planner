@@ -12,8 +12,8 @@
   "blockedBy": [
     "PL46"
   ],
-  "covers": "Moving an issue into a working state on the board starts that state's work for it at once, with the project's defaults, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk",
-  "openQuestions": 3
+  "covers": "Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk",
+  "openQuestions": 0
 }
 ```
 
@@ -39,13 +39,16 @@ What stands today, read in the code:
 - So the chain from building through reading and rework to Review runs by itself already, once started from a
   story's Start. What is missing:
 
-1. **A move starts the work** (L). Saving a move of an issue into a working state (`saveMoves`, `Moves.check`)
-   also starts that state's work for it with the project's defaults - the first mode, the first agent and its
-   model, the issue's own repository, the limit of step 2 - as a story's Start does, and answers the tasks for the
-   window to start. A Manual issue starts nothing ([PL46](README.md#pl46)). A move out of a working state while its
-   task runs asks the person to stop the task or cancel the move. A change to the window's contract: the move's
-   answer carries the tasks. Red first in `core`: a planned move of an Agent issue from Backlog to Implementing
-   yields one building task for its repository; of a Manual issue none.
+1. **A move opens the Start** (L). A move of an issue into a working state opens the Start dialog filled with
+   the project's defaults - the first mode, the first agent and its model, the issue's own repository, the limit
+   of step 2 - and the person confirms or changes them before anything starts; cancelling the dialog cancels the
+   move. A story moved into a working state moves its least advanced issues along (as `Moves.check` does) and
+   starts all their tasks: the dialog shows one tab per task, each filled the same way. The planner answers the
+   planned tasks for a move before it is saved, so the dialog shows what the work rules give; saving the move and
+   the start is one request. A Manual issue gets no tab ([PL46](README.md#pl46)). A move out of a working state
+   while its task runs asks the person to stop the task or cancel the move. A change to the window's contract.
+   Red first in `core`: a planned move of an Agent issue from Backlog to Implementing yields one building task for
+   its repository; a story's move one per Agent issue; a Manual issue's none.
 2. **The reading limit in the work rules** (S). The Reading rule takes `readings: <n>`, one to ten; a start without
    its own limit takes it, and `WorkRules` refuses a rule without one where a `blocked` state leads back to it. Red
    first: a Reading rule of two readings stops the third in Reading under Needs you.
@@ -63,14 +66,8 @@ Order: 2, 1, 3. Sum by the medians: 1 L, 1 M, 1 S = 113 + 67 + 33 = 213 minutes.
   blocking findings sets Reworking and starts the builder with them; the next reading without sets Review; a third
   reading is never started. A Manual issue moved the same way gets no task.
 
-## Open questions
-
-- Does a move into a working state start the work at once with the defaults, or open the Start dialog filled with
-  them for the person to confirm?
-- A story moved into a working state moves its least advanced issues along (as `Moves.check` does today): does it
-  start their work too, one task per repository as a story's Start does?
-- When the window is closed as a task ends, the end is reported once it opens again, and the chain goes on from
-  there. Is that enough, or must work move on while no window is open?
+Work that moves on while no window is open is a task of its own ([PL51](README.md#pl51)); here the chain goes on
+from the window as it does today.
 
 ## To be checked
 

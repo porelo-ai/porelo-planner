@@ -12,6 +12,7 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
 | <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | - | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
+| <a id="pl51"></a>[PL51](PL51-Work-Moves-On-Without-A-Window.md) | L | [PL49](README.md#pl49) | The chain the work rules give - build, reading, rework, review - goes on while no window is open: the planner learns a task's end and starts the next task itself |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
@@ -35,7 +36,7 @@ left out.
 
 | # | Size | Blocked by | What it covers | Open questions |
 |---|---|---|---|---|
-| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL46](README.md#pl46) | Moving an issue into a working state on the board starts that state's work for it at once, with the project's defaults, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk | 3 |
+| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL46](README.md#pl46) | Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, rework, review - runs on by itself within a reading limit the project's work rules set; the model and effort follow the task's phase and the issue's risk | 0 |
 
 ## Backlog
 
