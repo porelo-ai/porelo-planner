@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL57",
   "title": "Discuss An Idea From The Board",
-  "state": "Idea",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 30,
@@ -25,17 +25,28 @@ concerns.
 
 - Today a task is offered only for a story's work (`StoryWorkRequest`, `WorkProposal`, `WorkOrder`): one task per
   repository, with a brief built from the work rules. Nothing offers a task that belongs to no story.
-- `POST /projects/{project}/ideas/discussion` answers one offer as a story's start does - agent and model as the
-  person chose them in the Start dialog, the brief, role `DISCUSSION` and no story, and as its repository the
-  project's repositories read as one, a read-only checkout assembled when the task starts - for the window to start
-  with Porelo's `Start`. The request takes the person's first words of the idea.
-- The brief asks the agent to discuss the idea with the person and, once the person agrees, to write
-  `idea.json` in the idea format: the story's title, gain, test and priority, and per repository it concerns an
-  issue's title, what must be true, its size if known, and `worker` - `Agent` or `Manual`, asked of the person, never
-  filled in. The format is a JSON schema the planner holds, `idea-1.json`, and the brief carries it.
-- The screen package gets the menu item *Discuss an idea*, opening the Start dialog for this offer.
-- Red first in `core`: the discussion offer for a project of three repositories names the repositories read as one,
-  read only, and its brief holds the idea schema.
+- `POST /projects/{project}/ideas/discussion` takes `{idea}`, the person's first words, 1 to 4000 characters, and
+  answers one `PlanningStartTask`: a new `offer`, role `DISCUSSION`, no `repository`, no issues, mode `AGENT`, as
+  agent and model the first agent and its model of the first sound work rule (the Start dialog lets the person
+  change both), the brief, and `result: "idea.json"`. The window starts it with Porelo's `Start` and
+  `allRepositories: true`: every repository of the project read only under `/workspace/<repository>/`, and the file
+  handed back from `/run/porelo/result/`. A project without a sound work rule is refused as story work is.
+- The offer records nothing and writes nothing to any repository; the window reports no task events for it, as no
+  story's run owns it. Taking its idea once is the next step's, by the offer's id.
+- `PlanningStartTask` in the contract: role `DISCUSSION` added, `repository` required for every other role and
+  absent for it, `result` an optional plain file name.
+- The brief (`IdeaDiscussion` in `core`) names the project's repositories and where they are, asks the agent to
+  discuss the idea with the person, read what it needs, change nothing, and once the person agrees write
+  `/run/porelo/result/idea.json` in the idea format: the story's title, gain, test and priority, and per repository
+  it concerns an issue's title, what must be true, its size if known, and `worker` - `Agent` or `Manual`, asked of
+  the person, never filled in. The format is a JSON schema the planner holds, `idea-1.json`, and the brief carries it.
+- The screen package: `PlanningTaskOrder` reads role `DISCUSSION` with no repository and a `result`; a source's
+  `discussIdea(project, idea)`, served by the HTTP source and the mock; the menu item *Discuss an idea* asks for the
+  first words and hands the order to the existing `PlanningStartTask` hook with an empty story.
+- Tests: red first in `core`, the discussion offer for a project of three repositories names all three in its brief
+  and carries the idea schema, and a project without a sound rule is refused; in `app`, the endpoint answers the
+  contract's shape and refuses an empty or too long idea; in `screen`, a `DISCUSSION` order with a repository, or
+  any other role without one, is refused, and the menu item hands the hook an empty story.
 
 ## Acceptance
 

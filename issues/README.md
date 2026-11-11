@@ -22,7 +22,6 @@ left out.
 | <a id="pl46"></a>[PL46](PL46-An-Issue-Says-Whether-An-Agent-Works-It.md) | M | - | Every issue's head carries who works it, Agent or Manual; the board shows it and lets a person set it, and only an Agent issue gets a task started for it when it reaches a state that starts work |
 | <a id="pl56"></a>[PL56](PL56-The-Board-Builds-Only-What-Is-Seen.md) | L | - | The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand |
 | <a id="pl47"></a>[PL47](PL47-A-Storys-Size-Beside-Its-Priority.md) | S | - | A story carries its own size, XS to XL, set when it is estimated; the board's answer carries it beside its priority, and an issue's size, which the answer already carries, shows the same way |
-| <a id="pl57"></a>[PL57](PL57-Discuss-An-Idea-From-The-Board.md) | M | - | A person chooses Discuss an idea on the board, and the planner answers one task for the window's Start over the project's repositories read as one: a brief that has the agent discuss the idea with the person and write it to a file in the planner's idea format |
 | <a id="pl48"></a>[PL48](PL48-Sizes-Folded-Boxes-And-Folded-Cards-On-The-Board.md) | M | - | Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority |
 | <a id="pl58"></a>[PL58](PL58-A-Discussed-Idea-Becomes-A-Story-And-Its-Issues.md) | L | [PL41](README.md#pl41), [PL57](README.md#pl57) | The idea a discussion wrote comes back to the planner when its task ends, is checked against the idea format and becomes, in one save, a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
@@ -60,6 +59,7 @@ left out.
 |---|---|---|---|
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
+| <a id="pl57"></a>[PL57](PL57-Discuss-An-Idea-From-The-Board.md) | M | - | A person chooses Discuss an idea on the board, and the planner answers one task for the window's Start over the project's repositories read as one: a brief that has the agent discuss the idea with the person and write it to a file in the planner's idea format |
 
 ## Review
 

@@ -29,7 +29,7 @@ issues, each in its repository, without writing a file by hand; a malformed idea
   window hands the file's content, which Core takes from the ended task, to `POST /projects/{project}/ideas` with
   the offer it belongs to: `{offer, idea}`, the idea as a JSON object of at most 64 KiB. The planner checks it
   against `idea-1.json` and answers 201 with the new story's id, or 422 naming each fault and writing nothing; an
-  offer's idea is taken once.
+  offer's idea is taken once, by the offer's id, which the discussion's offer did not record.
 - One save, as a move's: each repository the idea names gets an issue file in Idea with the next free number of a
   prefix it owns, its head, and its index row ([PL41](README.md#pl41)'s new idea); then the project's repository gets
   the story file in Idea naming those issues, and the stories index. Others first, the own repository last, all or
