@@ -30,6 +30,9 @@ final class SaveFiles {
 
     private static final int SUBJECT = 72;
 
+    /** Ends the subject of a commit no build needs; GitHub reads it from the pushed head. */
+    private static final String SKIP_CI = " [skip ci]";
+
     private SaveFiles() {}
 
     /**
@@ -121,27 +124,55 @@ final class SaveFiles {
 
     /**
      * Words a commit's subject: what moved and where to, and how many issues' workers it sets,
-     * never which item, so it names no requirement number.
+     * never which item, so it names no requirement number; a commit of planning files alone ends
+     * with {@code [skip ci]}, so it starts no build, the whole within the subject's limit.
      *
      * @param issues the issues the commit moves, with their new states
      * @param stories the stories whose head the commit changes, with their new stated states, or an
      *     empty text where the stated state goes
      * @param workers how many issues' workers the commit sets
+     * @param idea whether the save adds an idea
+     * @param paths the paths the commit changes
      * @return the subject
      */
     static String subject(
             final Map<String, String> issues,
             final Map<String, String> stories,
-            final int workers) {
+            final int workers,
+            final boolean idea,
+            final List<String> paths) {
+        final boolean planning = !paths.isEmpty() && paths.stream().allMatch(SaveFiles::planning);
+        final int limit = planning ? SUBJECT - SKIP_CI.length() : SUBJECT;
+        final String words =
+                idea && issues.isEmpty() && stories.isEmpty()
+                        ? "Add an idea"
+                        : words(issues, stories, workers, limit);
+        return planning ? words + SKIP_CI : words;
+    }
+
+    /** Whether a path is one of the planning files no build reads. */
+    private static boolean planning(final String path) {
+        final List<String> parts = List.of(path.split("/", -1));
+        // A path that leaves its directory again could name a file a build reads.
+        return parts.size() > 1
+                && List.of("issues", "stories", "stats").contains(parts.getFirst())
+                && parts.stream().noneMatch(p -> p.isEmpty() || p.equals(".") || p.equals(".."));
+    }
+
+    private static String words(
+            final Map<String, String> issues,
+            final Map<String, String> stories,
+            final int workers,
+            final int limit) {
         if (workers == 0) {
-            return moved(issues, stories);
+            return moved(issues, stories, limit);
         }
         final String whom = workers == 1 ? "an issue" : workers + " issues";
         if (issues.isEmpty() && stories.isEmpty()) {
             return "Set who works " + whom;
         }
-        final String both = moved(issues, stories) + " and set who works " + whom;
-        return both.length() <= SUBJECT
+        final String both = moved(issues, stories, limit) + " and set who works " + whom;
+        return both.length() <= limit
                 ? both
                 : "Move " + (issues.size() + stories.size()) + " items and set who works " + whom;
     }
@@ -152,10 +183,11 @@ final class SaveFiles {
      * @param issues the issues the commit moves, with their new states
      * @param stories the stories whose head the commit changes, with their new stated states, or an
      *     empty text where the stated state goes
+     * @param limit the longest the words may be
      * @return the subject
      */
     private static String moved(
-            final Map<String, String> issues, final Map<String, String> stories) {
+            final Map<String, String> issues, final Map<String, String> stories, final int limit) {
         final int count = issues.size() + stories.size();
         if (count == 0) {
             return "Rewrite the planning indexes";
@@ -178,7 +210,7 @@ final class SaveFiles {
         if (state.isEmpty()
                 || !PLAIN_STATE.matcher(state).matches()
                 || NUMBER.matcher(state).find()
-                || subject.length() > SUBJECT) {
+                || subject.length() > limit) {
             return "Move " + noun;
         }
         return subject;

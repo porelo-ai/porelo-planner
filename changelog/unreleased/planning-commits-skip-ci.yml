@@ -1,0 +1,2 @@
+title: A commit the planner makes that changes only issues, stories or their stage records ends its subject with [skip ci] and starts no build.
+type: changed

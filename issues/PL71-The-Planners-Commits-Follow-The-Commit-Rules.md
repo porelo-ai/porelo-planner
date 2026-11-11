@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL71",
   "title": "The Planner's Commits Follow The Commit Rules",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 1,
@@ -39,15 +39,15 @@ Steps:
    `[skip ci]`; every subject the tests produce is at most 72 characters; a commit with a path outside the three
    directories carries none (harm: a planning commit starting a full build on rented machines, or a code commit
    skipping its build).
-3. The subjects are checked against `porelo-release check-commits` on a repository with one of each kind of planner
-   commit, at the version the Build pins.
+3. The subjects are checked against `porelo-release check-commits` at the version the Build pins, which
+   `GitStoreSaveTest` runs over the planner's commits.
+
+- **Code reading:** read by another model. Fixed with a test seen red: a path that only starts like a planning
+  directory and leaves it again (`issues/../project.yml`), or an empty list, marks nothing. Declined: keeping the
+  store tests' full subjects - a test holds no text verbatim, and the subjects' words carry no harm a test guards;
+  the marker and the 72 characters are what the tests hold.
 
 ## Acceptance
 
 - The planner's commits of a move, a worker change and a new idea end with `[skip ci]`, each subject at most 72
   characters, and `check-commits` passes over them. Seen failing first: today's "Move an issue to Backlog".
-
-## To be checked
-
-- That `check-commits` at the pinned version takes a subject ending in `[skip ci]` and the planner's commits as they
-  are (no trailers).

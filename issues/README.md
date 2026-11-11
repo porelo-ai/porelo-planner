@@ -64,12 +64,6 @@ left out.
 | <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl71"></a>[PL71](PL71-The-Planners-Commits-Follow-The-Commit-Rules.md) | S | - | A commit the planner makes that changes only issues, stories or their stage records carries [skip ci] in its subject, within 72 characters, so the planner's commits pass check-commits and start no build |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -77,6 +71,7 @@ left out.
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | - | `--mock` serves the window's mock board through the same API and SSE, a reset between tests |
 | <a id="pl42"></a>[PL42](PL42-A-Project-On-Any-Host-And-Owner.md) | S | - | The Git store reads a project whose repositories live on any host and under any owner: each central from any clone URL - https, ssh or scp-like - and the link pattern and host of story texts and indexes from project.yml instead of one fixed owner |
 | <a id="pl46"></a>[PL46](PL46-An-Issue-Says-Whether-An-Agent-Works-It.md) | M | - | Every issue's head carries who works it, Agent or Manual, read as Agent where it names none; the planner saves it through its own call, and the board shows it |
+| <a id="pl71"></a>[PL71](PL71-The-Planners-Commits-Follow-The-Commit-Rules.md) | S | - | A commit the planner makes that changes only issues, stories or their stage records carries [skip ci] in its subject, within 72 characters, so the planner's commits pass check-commits and start no build |
 
 ## Finished
 

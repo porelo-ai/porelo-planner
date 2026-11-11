@@ -162,7 +162,15 @@ class GitStoreSaveTest {
                 .isEqualTo(ownBefore);
         assertThat(log(OTHER, head(OTHER), "%an <%ae>%n%B"))
                 .as("the person's own login and a subject naming no item, with no trailer")
-                .containsExactly("A Person <person@example.org>", "Move an issue to Idea", "");
+                .hasSize(3)
+                .satisfies(
+                        lines -> {
+                            assertThat(lines.get(0))
+                                    .as("the person's own login")
+                                    .isEqualTo("A Person <person@example.org>");
+                            assertThat(lines.get(1)).as("no build started").endsWith(" [skip ci]");
+                            assertThat(lines.get(2)).as("no trailer").isEmpty();
+                        });
     }
 
     @Test
@@ -609,7 +617,6 @@ class GitStoreSaveTest {
                         board.revision(), writes(Map.of(), Map.of("ST1", "Rejected"), List.of()));
         assertThat(board.story("ST1").orElseThrow().state()).isEqualTo("Rejected");
         assertThat(read(OWN, "stories/ST1-Served.md")).contains("\"state\": \"Rejected\"");
-        assertThat(log(OWN, head(OWN), "%s")).first().isEqualTo("Move a story to Rejected");
 
         board = store.save(board.revision(), writes(Map.of(), Map.of(), List.of("ST1")));
         assertThat(board.story("ST1").orElseThrow().stateGiven()).as("unstated again").isFalse();
@@ -635,8 +642,9 @@ class GitStoreSaveTest {
         assertThat(checkCommits(OTHER, other)).as("the other repository's check").isZero();
         assertThat(log(OWN, head(OWN), "%s"))
                 .first()
-                .as("a batch")
-                .isEqualTo("Move 2 issues to Finished");
+                .as("a batch of planning files starts no build")
+                .asString()
+                .endsWith(" [skip ci]");
     }
 
     @Test
@@ -833,8 +841,9 @@ class GitStoreSaveTest {
                 .contains("<a id=\"cd03\"></a>");
         assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
         assertThat(log(OTHER, head(OTHER), "%s"))
-                .as("a subject naming no number")
-                .containsExactly("Add an idea");
+                .as("a subject starting no build")
+                .singleElement()
+                .satisfies(subject -> assertThat(subject).as("marked").endsWith(" [skip ci]"));
     }
 
     @Test
@@ -929,8 +938,9 @@ class GitStoreSaveTest {
                 .contains("  \"covers\": \"Something.\",\n  \"worker\": \"Manual\"\n}\n```");
         assertThat(head(OWN)).as("the own repository is left alone").isEqualTo(own);
         assertThat(log(OTHER, head(OTHER), "%s"))
-                .as("a subject saying a worker changed")
-                .containsExactly("Set who works an issue");
+                .as("a worker's subject starting no build")
+                .singleElement()
+                .satisfies(subject -> assertThat(subject).as("marked").endsWith(" [skip ci]"));
         assertThat(freshBoard().issue("CD01").orElseThrow().worker())
                 .as("a fresh clone reads the worker back")
                 .isEqualTo(Worker.MANUAL);
@@ -1003,8 +1013,9 @@ class GitStoreSaveTest {
                         org.fuin.porelo.planner.store.Issue::worker)
                 .containsExactly("Idea", Worker.MANUAL);
         assertThat(log(OTHER, head(OTHER), "%s"))
-                .as("a subject naming the move and the worker")
-                .containsExactly("Move an issue to Idea and set who works an issue");
+                .as("a move's and worker's subject starting no build")
+                .singleElement()
+                .satisfies(subject -> assertThat(subject).as("marked").endsWith(" [skip ci]"));
         assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
     }
 

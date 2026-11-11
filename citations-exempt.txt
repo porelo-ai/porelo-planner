@@ -366,3 +366,4 @@ planner/store/git/src/test/resources/faulty-heads/wrong-types.json
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueLinksTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/WorkerEndpointTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueHeadTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/SaveFilesTest.java

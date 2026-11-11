@@ -583,9 +583,7 @@ public final class GitStore implements PlanningStore {
                     name.equals(own) ? stories : Map.<String, String>of();
             subjects.put(
                     name,
-                    added != null && movedIssues.isEmpty() && movedStories.isEmpty()
-                            ? "Add an idea"
-                            : SaveFiles.subject(movedIssues, movedStories, set.size()));
+                    SaveFiles.subject(movedIssues, movedStories, set.size(), added != null, paths));
             changed.put(name, paths);
         }
         final Map<String, String> made = new LinkedHashMap<>();
