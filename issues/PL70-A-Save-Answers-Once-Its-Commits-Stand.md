@@ -68,6 +68,25 @@ Steps:
 
 Order 1 to 5; every test runs over fakes in seconds; a VM is not needed.
 
+## Measured
+
+A save of four story moves with their twelve issues over three repositories (15 stories, 40 issues per repository),
+against local bare repositories served over HTTPS, median of three runs on a loaded machine: 21.7 s and about 808 Git
+processes. Of it: 191 single-file reads, about 8 s - most of them the scratch copy of every file of every repository,
+the rest the read-back; three commits, about 2.9 s, each running several processes per changed file; unexplained time
+between the Git calls, about 2 s before each commit and the first push; the three pushes with their heads, under 1.2 s.
+The pushes are not where the time goes; the commit part is.
+
+## Plan reading
+
+Read by another model, each claim checked in the code: a commit of the planner is referenced by no ref until it is
+pushed (`GitRemote.commit` runs `commit-tree`; only `advance` moves `refs/planner/fetched`), so a restart before the
+push loses a save already answered; the project lock is owned by its thread (`FileProjectLock`, a `ReentrantLock`)
+and cannot pass to a background push; every save compares the remote heads with the board's commits
+(`GitStore.saved`), so a pending or failed push would refuse every later save; a push the remote rejects can never be
+pushed again with its old lease. A background push needs answers to all of these, and to a second window saving on an
+unpushed revision.
+
 ## Acceptance
 
 - A save of moves over three repositories of a project of about fifteen answers within 5 s; its pushes follow, and
@@ -77,8 +96,17 @@ Order 1 to 5; every test runs over fakes in seconds; a VM is not needed.
   change silently.
 - The person's own moves are never reported as moved elsewhere, also when the window gave up waiting for the answer.
 
+## Open questions
+
+- The measurement puts the time in the commit part, not the pushes. Proposed: this issue makes the commit part fast
+  (step 2, with the read-back and the commit batched too) and pushes the other repositories in parallel, while the
+  save still answers after its pushes; the own moves are never reported as moved elsewhere (step 5's last sentence).
+  The background push (step 3, and step 5's pending and failed push) moves to an issue of its own, built only if a
+  save still answers too slowly after this, against a real remote. This changes *What must be true* (the answer would
+  follow the pushes) and the size to M.
+
 ## To be checked
 
-- Where the time of today's save goes, per part (step 1).
+- What fills the time between the Git calls (about 2 s before each commit), read with a profiler before step 2.
 - Whether the window outside the screen package needs a change for the push state, said to the coordinator as soon
   as the contract stands.
