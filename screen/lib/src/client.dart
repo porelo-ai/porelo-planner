@@ -101,6 +101,16 @@ abstract interface class PlanningClient implements Listenable {
   });
 }
 
+/// Optional watch status for sources that reconnect without ending their board stream.
+///
+/// Listeners are notified when [isReconnecting] changes for any project. A lost watch stays reconnecting until
+/// a complete board arrives, including at an unchanged revision, or until that watch ends or is canceled.
+/// Sources without this interface continue to report failures and completion through [PlanningSource.watchStories].
+abstract interface class PlanningReconnect implements Listenable {
+  /// Whether a watch of [project] is recovering from a lost connection and has not yet received its next board.
+  bool isReconnecting(String project);
+}
+
 /// One provider's planning calls, each answering with the provider's own records.
 ///
 /// A refusal arrives as a [PlanningRefusal], a call the provider does not offer as a [PlanningUnsupported].

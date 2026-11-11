@@ -198,8 +198,8 @@ class StoryWork extends ChangeNotifier {
     if (_disposed || starting || tasks.isNotEmpty) return;
     if (!current) {
       problem = !board.stories.any((each) => each.id == story.id)
-          ? 'The selected machine did not report story ${story.id}.'
-          : 'The selected machine did not report a current working state for this story.';
+          ? 'The planner did not report story ${story.id}.'
+          : 'The planner did not report a current working state for this story.';
       _changed();
       return;
     }
@@ -292,10 +292,10 @@ class StoryWork extends ChangeNotifier {
     mode = null;
     busy = false;
     if (reported == null) {
-      problem = 'The selected machine did not report story $id.';
+      problem = 'The planner did not report story $id.';
       _changed();
     } else if (working.isEmpty) {
-      problem = 'No working state was reported by the selected machine.';
+      problem = 'No working state was reported by the planner.';
       _changed();
     } else {
       unawaited(load());
@@ -567,7 +567,7 @@ class ReadingDecision extends ChangeNotifier {
           : !current
           ? 'The board changed or is no longer live.'
           : busy
-          ? 'Waiting for the machine’s answer.'
+          ? 'Waiting for the planner’s answer.'
           : submitted
           ? 'Waiting for the board to confirm the decision.'
           : problem ??
@@ -610,7 +610,7 @@ class ReadingDecision extends ChangeNotifier {
           detail = answer;
         } else {
           detail ??= answer;
-          problem = 'The machine did not report the last findings.';
+          problem = 'The planner did not report the last findings.';
         }
       }
     } catch (error) {

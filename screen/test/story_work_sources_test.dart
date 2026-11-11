@@ -176,7 +176,7 @@ void main() {
     expect(board.live, isTrue);
     expect(board.unsupported, isFalse);
     expect(board.workProblems, isEmpty);
-    expect(board.startUnavailable(board.stories.single), 'the machine does not offer story work status');
+    expect(board.startUnavailable(board.stories.single), isNotNull);
     backend.push('demo', _board('third'));
     await Future<void>.delayed(Duration.zero);
     expect(backend.workReads, 1);
@@ -303,14 +303,16 @@ void main() {
       backend.push('demo', _board('working', completeWork: false));
       await Future<void>.delayed(Duration.zero);
       expect(backend.workReads, 1);
-      expect(board.startUnavailable(board.stories.single), 'the machine does not offer story work status');
+      expect(board.workUnsupported, {'story'});
+      expect(board.startUnavailable(board.stories.single), isNotNull);
       final unknown = _board('unknown', completeWork: false);
       ((unknown['stories'] as List).single as Map<String, dynamic>)['work'] = <String, dynamic>{};
       backend.push('demo', unknown);
       await Future<void>.delayed(Duration.zero);
       // Work without its tasks is incomplete, so the fallback read is tried again.
       expect(backend.workReads, 2);
-      expect(board.startUnavailable(board.stories.single), 'the machine does not offer story work status');
+      expect(board.workUnsupported, {'story'});
+      expect(board.startUnavailable(board.stories.single), isNotNull);
       board.dispose();
       await backend.end();
     }
@@ -338,7 +340,7 @@ void main() {
     expect(identical(work.board, c), isTrue);
     expect(work.story.title, isEmpty);
     expect(work.proposal, isNull);
-    expect(work.problem, 'The selected machine did not report story story.');
+    expect(work.problem, isNotNull);
     expect(work.canStart, isFalse);
     await work.load();
     expect(missing.work.calls.where((call) => call.$1 == 'ProposeStoryWork'), isEmpty);

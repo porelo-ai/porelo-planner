@@ -109,6 +109,10 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Whether changes are still arriving.
   bool live = false;
+
+  /// Whether the watch is recovering, until its next board is accepted.
+  bool catchingUp = false;
+  VoidCallback? _unfollowReconnect;
   final Map<String, PendingPlanningMove> _pending = {};
 
   /// Unsaved moves in staging order.
@@ -205,11 +209,31 @@ class PlanningBoard extends ChangeNotifier {
   void _listen() {
     final generation = ++_generation;
     bool current() => !_disposed && generation == _generation;
+    var ended = false;
+    var reconnectVersion = 0;
+    final source = backend;
+    final name = project;
+    final reconnect = source is PlanningReconnect ? source as PlanningReconnect : null;
+    if (reconnect != null) {
+      void changed() {
+        if (!current() || !reconnect.isReconnecting(name)) return;
+        reconnectVersion++;
+        catchingUp = true;
+        live = false;
+        notifyListeners();
+      }
+
+      reconnect.addListener(changed);
+      _unfollowReconnect = () => reconnect.removeListener(changed);
+      changed();
+    }
     try {
       _watching = backend
           .watchStories(project)
           .listen(
             (reply) async {
+              final receivedVersion = reconnectVersion;
+              final recovering = reconnect?.isReconnecting(name) ?? false;
               final order = ++_replyOrder;
               try {
                 final prior = snapshot;
@@ -231,9 +255,10 @@ class PlanningBoard extends ChangeNotifier {
                 } else {
                   _accept(combined, order: order);
                 }
-                problem = workflow.faults.isEmpty ? null : workflow.faults.join('\n');
+                problem = workflow.faults.isEmpty ? null : planningShown(workflow.faults.join('\n'));
                 unsupported = false;
-                live = true;
+                if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
+                live = !ended && !catchingUp;
                 notifyListeners();
               } catch (error) {
                 if (!current()) return;
@@ -245,6 +270,8 @@ class PlanningBoard extends ChangeNotifier {
             onError: (Object error) {
               if (!current()) return;
               _generation++;
+              catchingUp = false;
+              _stopFollowingReconnect();
               final watching = _watching;
               _watching = null;
               unsupported = planningUnsupported(error);
@@ -257,15 +284,25 @@ class PlanningBoard extends ChangeNotifier {
             onDone: () {
               if (!current()) return;
               _watching = null;
-              // A final snapshot is a complete answer on daemons without subscriptions.
+              ended = true;
+              live = false;
+              catchingUp = false;
+              _stopFollowingReconnect();
               notifyListeners();
             },
           );
     } catch (error) {
+      _stopFollowingReconnect();
+      catchingUp = false;
       unsupported = planningUnsupported(error);
       problem = unsupported ? null : planningFailureWords(error);
       live = false;
     }
+  }
+
+  void _stopFollowingReconnect() {
+    _unfollowReconnect?.call();
+    _unfollowReconnect = null;
   }
 
   /// Story work read from this exact provider, retained while its watch is stale.
@@ -325,12 +362,12 @@ class PlanningBoard extends ChangeNotifier {
     if (_needsWorkRead(story) && !identical(_workSnapshots[story.id], snapshot)) {
       return workProblems[story.id] ??
           (workUnsupported.contains(story.id)
-              ? 'the machine does not offer story work status'
+              ? 'the planner does not offer story work status'
               : 'work status not reported');
     }
     if (_needsWorkRead(story)) {
       if (workProblems[story.id] case final problem?) return problem;
-      if (workUnsupported.contains(story.id)) return 'the machine does not offer story work status';
+      if (workUnsupported.contains(story.id)) return 'the planner does not offer story work status';
     }
     final work = workOf(story);
     if (work?.ended != null ||
@@ -384,7 +421,7 @@ class PlanningBoard extends ChangeNotifier {
         final answer = await source.getStoryWork(name, story.id);
         if (!current()) return;
         if (answer.work != null && !answer.work!.tasksReported) {
-          throw const FormatException('The machine did not report the work tasks.');
+          throw const FormatException('The planner did not report the work tasks.');
         }
         runOf(story.id).observe(answer.work);
         storyWork[story.id] = answer;
@@ -478,6 +515,9 @@ class PlanningBoard extends ChangeNotifier {
     }
     final sameProject = identical(backend, next) && project == name;
     final generation = ++_generation;
+    _stopFollowingReconnect();
+    catchingUp = false;
+    live = false;
     final watching = _watching;
     _watching = null;
     if (watching != null) await watching.cancel();
@@ -525,7 +565,7 @@ class PlanningBoard extends ChangeNotifier {
     if (story == null || target == null) return;
     if (!{'WAITING', 'CLOSED'}.contains(target.kind)) return;
     if (snapshot!.revision.isEmpty) {
-      moveProblem = 'The machine did not report a planning revision. Reload planning before moving stories.';
+      moveProblem = 'The planner did not report a planning revision. Reload planning before moving stories.';
       _changed();
       return;
     }
@@ -587,7 +627,7 @@ class PlanningBoard extends ChangeNotifier {
 
   PlanningSnapshot _checked(PlanningSnapshot reply) {
     if (!reply.complete || reply.revision.isEmpty) {
-      throw StateError('The machine did not report a complete planning board and revision.');
+      throw StateError('The planner did not report a complete planning board and revision.');
     }
     return reply;
   }
@@ -641,7 +681,7 @@ class PlanningBoard extends ChangeNotifier {
       }
       if (reported == null) {
         _pending.remove(entry.key);
-        reconciled.add('${entry.key} is no longer reported by the machine.');
+        reconciled.add('${entry.key} is no longer reported by the planner.');
       } else if (reported == entry.value.to) {
         _pending.remove(entry.key);
         reconciled.add('${entry.key} was moved to ${entry.value.to} elsewhere.');
@@ -711,7 +751,7 @@ class PlanningBoard extends ChangeNotifier {
       final reply = await backend.saveMoves(project, moves, revision);
       if (_disposed || generation != _generation) return;
       if (!reply.complete || reply.revision.isEmpty) {
-        throw const FormatException('The machine did not report the saved revision and moved issues.');
+        throw const FormatException('The planner did not report the saved revision and moved issues.');
       }
       final previous = snapshot!;
       final destinations = <String, String>{};
@@ -736,7 +776,7 @@ class PlanningBoard extends ChangeNotifier {
           if (!move.isIssue && expected.isEmpty) storyDestinations[id] = move.to;
           _pending.remove(entry.key);
         } else {
-          _pending[entry.key]?.problem = 'The machine did not confirm this destination.';
+          _pending[entry.key]?.problem = 'The planner did not confirm this destination.';
         }
       }
       _accept(
@@ -930,6 +970,8 @@ class PlanningBoard extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     live = false;
+    catchingUp = false;
+    _stopFollowingReconnect();
     _generation++;
     unawaited(_watching?.cancel());
     super.dispose();
@@ -1165,7 +1207,7 @@ String planningFailureWords(Object error) {
 
 String _failureWords(Object error) {
   if (error is PlanningRefusal) {
-    if (error.name == 'NotYetBuilt') return 'This machine does not offer ${error.parameters['method']} yet.';
+    if (error.name == 'NotYetBuilt') return 'The planner does not offer ${error.parameters['method']} yet.';
     final words = [
       for (final key in ['detail', 'message', 'reason'])
         if (error.parameters[key] is String && (error.parameters[key] as String).trim().isNotEmpty)

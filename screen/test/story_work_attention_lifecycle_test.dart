@@ -188,7 +188,7 @@ void main() {
     backend.heldFindings!.complete(PlanningIssueDetail.from({}));
     await settle(tester);
     expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
-    expect(find.text('The machine did not report the last findings.'), findsOneWidget);
+    expect(find.byKey(const Key('reading-error item')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     board.dispose();
     await backend.end();

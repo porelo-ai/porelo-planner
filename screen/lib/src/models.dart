@@ -599,7 +599,7 @@ class PlanIssueList {
   final bool supplied;
 }
 
-/// The standalone issue, acceptance criteria, last findings and sub-agents.
+/// The standalone issue, its sub-issues, acceptance criteria, last findings and sub-agents.
 class PlanIssueDetail {
   /// Reads additive fields leniently without inventing absent reports.
   factory PlanIssueDetail.from(Map<String, dynamic> map) => PlanIssueDetail._(
@@ -616,7 +616,9 @@ class PlanIssueDetail {
       findingsSupplied = map['findings'] != null,
       subAgents = _planList(map['subAgents'], PlanWorker.from),
       subAgentsReported = _planMapsReported(map['subAgents']),
-      subAgentsSupplied = map['subAgents'] != null;
+      subAgentsSupplied = map['subAgents'] != null,
+      subIssues = _planStrings(map['subIssues']),
+      subIssuesReported = _planStringsReported(map['subIssues']);
 
   /// The revision reported by the daemon.
   final String revision;
@@ -651,6 +653,12 @@ class PlanIssueDetail {
 
   /// Whether any sub-agent payload was supplied.
   final bool subAgentsSupplied;
+
+  /// The sub-issue identifiers from the standalone issue read, in reported order.
+  final List<String> subIssues;
+
+  /// Whether the planner supplied every sub-issue identifier, including an explicitly empty list.
+  final bool subIssuesReported;
 
   /// BLOCKING first, NOTE next, then unknown severities; report order within each group.
   List<PlanFinding> get orderedFindings => [

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL23",
   "title": "A Board Says When It Is Not Live",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Medium",
   "rank": 13,
@@ -49,3 +49,12 @@ a machine. An issue's screen shows the issue's sub-issues, as the planner serves
   any; the waiting text names the planner.
 - An issue read alone with sub-issues shows each of them on its screen, and opens it; a test over a fake source
   serving `subIssues` fails today, since `PlanIssueDetail` does not read them.
+
+## Taken from the code reading
+
+- **An opened sub-issue's id, an issue's "What must be true" and the workflow's faults are shown without control or
+  bidirectional characters.** Navigation and reads keep the planner's id unchanged.
+- **Moved to [PL25](README.md#pl25), since each predates this change or needs a case the screen does not make:**
+  - a board held back during a reload or a save stands as live before it is accepted;
+  - two watches of one source on the same project can hold each other in catching up;
+  - a board disposed inside its own notification may still open a watch.

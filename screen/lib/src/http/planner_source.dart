@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import '../client.dart';
 import '../models.dart';
 import '../story_work_order.dart';
@@ -223,7 +225,7 @@ class PlannerAddress {
 /// and again once when a read answers `NoSuchProject`, such as after the planner restarted. An
 /// `application/problem+json` answer arrives as a [PlanningRefusal] named after `urn:porelo-planner:`; what the
 /// planner does not offer yet - run reads, stops and reading decisions - as [PlanningUnsupported].
-class HttpPlanningSource implements PlanningSource {
+class HttpPlanningSource extends ChangeNotifier implements PlanningSource, PlanningReconnect {
   /// Calls the planner at [base], a loopback `http` address, with [token]; [projects] names each project's repository.
   HttpPlanningSource(
     this.base,
@@ -292,6 +294,17 @@ class HttpPlanningSource implements PlanningSource {
 
   final String _authorization;
   final HttpClient _client = HttpClient();
+  final Set<_Watch> _reconnecting = {};
+
+  @override
+  bool isReconnecting(String project) => _reconnecting.any((watch) => watch.project == project);
+
+  void _setReconnecting(_Watch watch, bool value) {
+    final before = isReconnecting(watch.project);
+    value ? _reconnecting.add(watch) : _reconnecting.remove(watch);
+    if (before != isReconnecting(watch.project)) notifyListeners();
+  }
+
   final Map<String, _Given> _given = {};
   final Map<String, PlannerProject> _readSources = {};
   final Map<(String, String, String), (PlannerProject, StoryWorkProposal)> _proposals = {};
@@ -809,6 +822,12 @@ class _Watch {
   static const _cancelled = PlanningRefusal('Cancelled', {}, 'the watch was cancelled');
 
   bool _ended = false;
+  bool _reconnecting = false;
+
+  void _reconnect(bool value) {
+    _reconnecting = value;
+    source._setReconnecting(this, value);
+  }
 
   /// The revision answered last, null before the first board or after the project moved to another repository.
   String? _last;
@@ -824,6 +843,7 @@ class _Watch {
 
   void _cancel() {
     _ended = true;
+    _reconnect(false);
     _request?.abort();
     unawaited(_reading?.cancel());
     _stop?.call();
@@ -854,6 +874,7 @@ class _Watch {
       if (connection.restored || lost == null) lost = now;
       final left = source.silence - now.difference(lost);
       if (left <= Duration.zero) return _end(connection.lost);
+      _reconnect(true);
       await _sleep(wait < left ? wait : left);
       final doubled = wait * 2;
       wait = doubled > source.backoffMost ? source.backoffMost : doubled;
@@ -863,6 +884,7 @@ class _Watch {
   void _end(PlanningRefusal failure, [StackTrace? stack]) {
     if (_ended) return;
     _ended = true;
+    _reconnect(false);
     replies.addError(failure, stack);
     unawaited(replies.close());
   }
@@ -1076,7 +1098,9 @@ class _Watch {
       first?.cancel();
       final revision = json['revision'] as String;
       final boardText = jsonEncode(json);
-      if (revision == _last && boardText == _lastBoard) return;
+      final restored = _reconnecting;
+      _reconnect(false);
+      if (revision == _last && boardText == _lastBoard && !restored) return;
       _last = revision;
       _lastBoard = boardText;
       renewed = true;

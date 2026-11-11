@@ -642,6 +642,49 @@ void main() {
     expect(planner.targets.where((target) => target == 'PUT /projects/demo'), hasLength(1));
   });
 
+  // Harm: an internally reconnecting stream leaves the board authorizing work on stale planning.
+  test('reconnect notifications last until a board arrives even at the same revision', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final states = <bool>[];
+    void changed() => states.add(source.isReconnecting('demo'));
+    source.addListener(changed);
+    addTearDown(() => source.removeListener(changed));
+    final revisions = <String>[];
+    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
+    await _until(() => revisions.isNotEmpty, 'the first board');
+    expect(source.isReconnecting('demo'), isFalse);
+
+    // Hold the replacement connection open without a board, including a heartbeat.
+    planner.routes['GET /projects/demo/events'] = () {
+      final stream = StreamController<List<int>>();
+      streams.opened.add(stream);
+      return _Reply.raw(
+        200,
+        utf8.encode(': keep-alive\n\n'),
+        headers: {'content-type': 'text/event-stream'},
+        more: stream.stream,
+      );
+    };
+    await streams.end();
+    await _until(() => streams.opened.length == 2, 'the replacement connection');
+    expect(states, [true]);
+    expect(source.isReconnecting('demo'), isTrue);
+    expect(source.isReconnecting('other'), isFalse);
+    streams.send('r1');
+    await _until(() => revisions.length == 2, 'the restored board at the same revision');
+    expect(states, [true, false]);
+    expect(source.isReconnecting('demo'), isFalse);
+    expect(revisions, ['r1', 'r1']);
+
+    await streams.end();
+    await _until(() => source.isReconnecting('demo'), 'a second reconnect');
+    await watching.cancel();
+    expect(source.isReconnecting('demo'), isFalse);
+    expect(states, [true, false, true, false]);
+  });
+
   // Harm: a connection that died without a word leaves the board frozen while it looks live.
   test('a stream that falls silent is opened again with the last revision', () async {
     final (planner, source) = await _started(silence: const Duration(milliseconds: 300), backoff: Duration.zero);
@@ -652,12 +695,12 @@ void main() {
 
     await _until(() => revisions.isNotEmpty, 'the first board');
     streams.send('r2');
-    await _until(() => streams.opened.length == 2, 'a second connection');
+    await _until(() => revisions.length == 3, 'the board restoring the second connection');
     streams.send('r3');
-    await _until(() => revisions.length == 3, 'the board after the reconnect');
+    await _until(() => revisions.length == 4, 'the board after the reconnect');
 
     expect(streams.lastEventIds, [null, 'r2'], reason: 'the reconnect names the last revision it saw');
-    expect(revisions, ['r1', 'r2', 'r3']);
+    expect(revisions, ['r1', 'r2', 'r2', 'r3']);
   });
 
   // Harm: a planner that restarts or fails for a while is called in a tight loop, or the window waits for minutes.

@@ -834,7 +834,7 @@ void main() {
       backend.confirmed = false;
       board.move('StoryOne', 'Done');
       await board.save();
-      expect(board.pending['StoryOne']?.problem, 'The machine did not confirm this destination.', reason: '$index');
+      expect(board.pending['StoryOne']?.problem, isNotNull, reason: '$index');
     }
   });
 

@@ -365,7 +365,7 @@ void main() {
   });
 
   // Harm: a normally ended stream leaves a frozen board looking current.
-  test('a final watch snapshot remains usable without a subscription', () async {
+  test('a final watch snapshot stays visible but cannot authorize actions', () async {
     final backend = _Backend();
     final board = PlanningBoard(backend, 'project');
     addTearDown(board.dispose);
@@ -373,7 +373,8 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(board.live, isTrue);
     await backend.controllers['project']!.close();
-    expect(board.live, isTrue);
+    expect(board.live, isFalse);
+    expect(board.startUnavailable(board.stories.single), isNotNull);
     expect(board.problem, isNull);
     expect(board.stories.single.id, 'last');
   });

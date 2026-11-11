@@ -42,7 +42,7 @@ Future<bool> confirmPlanningLeave(BuildContext context, Iterable<PlanningBoard> 
                 ),
                 content: Text(
                   saving
-                      ? 'Wait for the machine’s answer before leaving.'
+                      ? 'Wait for the planner’s answer before leaving.'
                       : !pending
                       ? 'The planning changes are saved. You can continue.'
                       : quitting
@@ -121,8 +121,8 @@ class PlanningScreen extends StatelessWidget {
             ),
             Text(
               pinned
-                  ? 'The machine supplying this planning item is no longer available.'
-                  : 'No project planning has been read from this machine.',
+                  ? 'The planner supplying this planning item is no longer available.'
+                  : 'No project planning has been read from the planner.',
             ),
           ],
         );
@@ -330,11 +330,16 @@ class _BoardViewState extends State<_BoardView> {
             ),
             for (final problem in widget.providerProblems)
               Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-            if (!board.live && board.snapshot != null && board.problem == null)
-              const Text('Waiting for the machine’s planning answer.'),
+            if (board.catchingUp)
+              const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
+            if (!board.live && (board.snapshot != null || board.problem != null))
+              const Text(
+                'Planning is not live. Reload planning shows the current state.',
+                key: Key('planning-not-live'),
+              ),
             if (board.actionProblem case final problem?) Text(problem, key: const Key('planning-action-error')),
             for (final entry in board.workProblems.entries) Text('${entry.key}: ${entry.value}'),
-            for (final story in board.workUnsupported) Text('$story: the machine does not offer story work status.'),
+            for (final story in board.workUnsupported) Text('$story: the planner does not offer story work status.'),
             if (board.problem case final problem?)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: Space.small),
@@ -345,7 +350,7 @@ class _BoardViewState extends State<_BoardView> {
                 ),
               ),
             if (board.snapshot != null && !board.snapshot!.complete)
-              const Text('The machine did not report the complete planning workflow and story list.'),
+              const Text('The planner did not report the complete planning workflow and story list.'),
             if (board.problem != null)
               TextButton.icon(
                 key: const Key('planning-retry'),
@@ -360,7 +365,7 @@ class _BoardViewState extends State<_BoardView> {
                 style: TextStyle(color: theme.colorScheme.error),
               ),
             if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
-            if (board.snapshot != null)
+            if (board.snapshot != null || board.problem != null)
               TextButton.icon(
                 key: const Key('planning-reload'),
                 onPressed: board.saving ? null : () => unawaited(board.reload()),
@@ -370,7 +375,7 @@ class _BoardViewState extends State<_BoardView> {
             if (board.pending.isNotEmpty) Flexible(child: _pending(context)),
             const SizedBox(height: Space.normal),
             if (board.snapshot == null && board.problem == null)
-              const Text('Waiting for the machine’s planning answer.'),
+              const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
             Expanded(
               child: board.snapshot == null
                   ? const SizedBox.shrink()
@@ -725,7 +730,7 @@ class _BoardViewState extends State<_BoardView> {
             (!board.live
                 ? 'the planning board is not live'
                 : board.actionBusy
-                ? 'waiting for the machine'
+                ? 'waiting for the planner'
                 : board.workOf(story)?.atWork != true
                 ? 'no running work was reported'
                 : null),
@@ -895,13 +900,16 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
               TextButton(
                 key: const Key('planning-crumb 1'),
                 onPressed: widget.issue == null ? null : widget.onParent,
-                child: Text(widget.story),
+                child: Text(planningShown(widget.story, multiline: false)),
               ),
-              if (widget.issue != null) ...[const Text('›'), Text(widget.issue!, key: const Key('planning-crumb 2'))],
+              if (widget.issue != null) ...[
+                const Text('›'),
+                Text(planningShown(widget.issue!, multiline: false), key: const Key('planning-crumb 2')),
+              ],
             ],
           ),
           Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
-          if (detail.loading) const Text('Waiting for the machine’s planning answer.'),
+          if (detail.loading) const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
           if (widget.board.problem case final problem?) ...[
             Text(problem, key: const Key('planning-watch-error')),
             TextButton.icon(
@@ -937,6 +945,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
             PlanningIssueView(
               detail: detail,
               onStory: widget.onStory,
+              onIssue: widget.onIssue,
               onTask: widget.onTask,
               taskUnavailable: widget.taskUnavailable,
               openLink: widget.openLink,

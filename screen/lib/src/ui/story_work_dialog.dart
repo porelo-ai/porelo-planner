@@ -107,7 +107,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                           if (value != null) work.changeTarget(value);
                         },
                 ),
-                if (work.busy) const Text('Waiting for the machine’s answer…'),
+                if (work.busy) const Text('Waiting for the planner’s answer…'),
                 if (!work.current)
                   const Text('The board changed or is no longer live. Cancel and open Start work again.'),
                 if (work.problem case final problem?) ...[
@@ -160,7 +160,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
       children: [
         const SizedBox(height: Space.normal),
         const Text('How to work'),
-        if (cards.isEmpty) const Text('The machine offered no supported modes.'),
+        if (cards.isEmpty) const Text('The planner offered no supported modes.'),
         if (MediaQuery.sizeOf(context).width < PlanningStyle.compactWidth)
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: cards)
         else

@@ -6,12 +6,13 @@ import '../planning_detail.dart';
 import 'planning_detail_widgets.dart';
 import 'style.dart';
 
-/// The issue's facts, acceptance criteria, last reading and sub-agents.
+/// The issue's facts, sub-issues, acceptance criteria, last reading and sub-agents.
 class PlanningIssueView extends StatelessWidget {
   /// Keeps navigation on the issue's original provider.
   const PlanningIssueView({
     required this.detail,
     required this.onStory,
+    required this.onIssue,
     required this.onTask,
     required this.taskUnavailable,
     required this.openLink,
@@ -23,6 +24,9 @@ class PlanningIssueView extends StatelessWidget {
 
   /// Returns to the owning story.
   final ValueChanged<String> onStory;
+
+  /// Opens a sub-issue on this issue's original provider and project.
+  final ValueChanged<String> onIssue;
 
   /// Opens a reported task on this machine.
   final ValueChanged<String> onTask;
@@ -51,7 +55,7 @@ class PlanningIssueView extends StatelessWidget {
         Wrap(
           spacing: Space.small,
           children: [
-            Text(issue.id),
+            Text(planningShown(issue.id, multiline: false)),
             Chip(label: Text(planningValue(issue.state))),
             Text(planningValue(issue.repository)),
           ],
@@ -74,6 +78,18 @@ class PlanningIssueView extends StatelessWidget {
             const Text('Not reported')
           else
             TextButton(key: const Key('planning-owner-story'), onPressed: () => onStory(owner), child: Text(owner)),
+        ]),
+        planningSection(context, 'Sub-issues', [
+          if (!reply.subIssuesReported)
+            const Text('Sub-issues not reported completely')
+          else if (reply.subIssues.isEmpty)
+            const Text('No sub-issues.'),
+          for (final id in reply.subIssues)
+            TextButton(
+              key: Key('planning-sub-issue $id'),
+              onPressed: () => onIssue(id),
+              child: Text(planningShown(id, multiline: false)),
+            ),
         ]),
         planningSection(context, 'Who builds it', [
           Text('Repository: ${planningValue(issue.repository)}'),
@@ -106,7 +122,7 @@ class PlanningIssueView extends StatelessWidget {
             )
           else if (reply.whatMustBeTrue.isEmpty)
             const Text('No acceptance criteria.'),
-          for (final text in reply.whatMustBeTrue) SelectableText(text),
+          for (final text in reply.whatMustBeTrue) SelectableText(planningShown(text)),
         ]),
         planningSection(context, 'Last reader findings', [
           if (!reply.findingsReported)

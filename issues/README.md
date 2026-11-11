@@ -12,7 +12,7 @@ left out.
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | - | - | Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | - | - | The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand |
-| <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | - | - | Moves staged for one repository of a project are dropped when the project is rebound to another; every agent's or repository's text the screen shows is stripped of control and bidirectional characters |
+| <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | - | - | Moves staged for one repository of a project are dropped when the project is rebound to another; every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch |
 | <a id="pl26"></a>[PL26](PL26-The-Mock-Board-Saves-Moves.md) | - | - | The mock mode saves moves into its in-memory board with a new revision and a change event, answers PartlySaved for one fixed story, and serves a story with sub-issues so a refused move can be reached |
 | <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | - | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
 
@@ -26,7 +26,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | S | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
@@ -34,6 +33,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | S | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |
 | <a id="pl24"></a>[PL24](PL24-Following-And-Stopping-Story-Work-In-The-Screen.md) | M | [PL09](README.md#pl09) | The screen package's calls for a story's run: following and stopping work, the window's task reports, an issue's findings and a reading round's decision, each follow-up task handed to the window's Start once |
 | <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | M | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |
 | <a id="pl09"></a>[PL09](PL09-The-Run-From-Building-To-Review.md) | L | [PL08](README.md#pl08) | The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window |

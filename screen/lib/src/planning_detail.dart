@@ -156,9 +156,9 @@ class PlanningDetail extends ChangeNotifier {
 
     Future<void> readStory(String id) async {
       try {
-        if (id.isEmpty) throw const FormatException('The machine did not report a story identifier.');
+        if (id.isEmpty) throw const FormatException('The planner did not report a story identifier.');
         final reply = await board.backend.getStory(board.project, id);
-        if (reply.story?.id != id) throw const FormatException('The machine did not return the requested story.');
+        if (reply.story?.id != id) throw const FormatException('The planner did not return the requested story.');
         nextStory = reply;
       } catch (error) {
         storyError = 'Story: ${planningFailureWords(error)}';
@@ -167,9 +167,9 @@ class PlanningDetail extends ChangeNotifier {
 
     if (issueId case final id?) {
       try {
-        if (id.isEmpty) throw const FormatException('The machine did not report an issue identifier.');
+        if (id.isEmpty) throw const FormatException('The planner did not report an issue identifier.');
         final reply = await board.backend.getIssue(board.project, id);
-        if (reply.issue?.id != id) throw const FormatException('The machine did not return the requested issue.');
+        if (reply.issue?.id != id) throw const FormatException('The planner did not return the requested issue.');
         nextIssue = reply;
       } catch (error) {
         issueError = 'Issue: ${planningFailureWords(error)}';

@@ -31,7 +31,9 @@ void main() {
       ),
     );
     await settle(tester);
-    expect(find.text('Waiting for the machine’s planning answer.'), findsOneWidget);
+    final waiting = tester.widget<Text>(find.byKey(const Key('planning-waiting'))).data!.toLowerCase();
+    expect(waiting, contains('planner'));
+    expect(waiting, isNot(contains('machine')));
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.binding.transientCallbackCount, 0);
