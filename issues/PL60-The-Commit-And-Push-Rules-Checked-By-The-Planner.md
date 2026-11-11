@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL60",
   "title": "The Commit And Push Rules Checked By The Planner",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -16,6 +16,10 @@
 
 **Size:** L - about 1,900 lines of checks and 3,000 lines of tests taken over, a GitHub client of the planner's
 own, and the command every repository's Build runs on each push.
+
+**Estimate:** 113 min, the measured median of L. Uncertain: about 4,900 lines of checks and tests are taken over, at
+the upper edge of L; if the carried-over tests do not run against the planner's readers at once, it is split into
+the commit check and the push check before it is built.
 
 **What must be true.** Every repository's build checks its commits and its pushes to `main` with the planner's command
 line, with the same rules, fault lines and exit codes as `check-commits` and `check-pushes` give today, and the stage

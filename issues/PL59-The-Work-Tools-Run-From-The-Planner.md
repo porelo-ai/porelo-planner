@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL59",
   "title": "The Work Tools Run From The Planner",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -16,6 +16,9 @@
 
 **Size:** M - one command line in the planner's own executable over code that is already there, and one more file
 the Build publishes; no new module, no Maven Central and no contract another repository builds against in Java.
+
+**Estimate:** 67 min, the measured median of M. Uncertain: the reachability metadata the commands need in the native
+image, and the published name of the executable, which the build tools' agent agrees.
 
 **What must be true.** Every repository indexes and checks its issues and stories with the planner's own executable,
 with the same results and exit codes as the build tools' `issues` and `stories` commands give today; a repository's

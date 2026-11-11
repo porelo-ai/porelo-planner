@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL61",
   "title": "The Work Numbers Come From Porelo's Own Record Of Each Task",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -17,6 +17,10 @@
 **Size:** L - it crosses repositories: the task's issue and phase go through the window's contract into Porelo's
 start, and the planner reads Porelo's records through an interface it does not call today; the velocity moves from the
 Git store into the store's interface and `core`.
+
+**Estimate:** 113 min, the measured median of L. Uncertain: it builds against Porelo's task records, whose answer and
+the field naming each call's issue are still being built elsewhere; until they stand, only the parts over fakes
+can be built.
 
 **What must be true.** The time and tokens an issue's work cost are those Porelo itself measured for the tasks that
 worked it, never what an agent wrote about itself, and the velocity an estimate is given comes from them, whatever
@@ -95,5 +99,7 @@ Tests, red first:
 - How an agent's stage name (`implement`, `review`, ...) maps to the workflow state a task record names, so the same
   work is recognized.
 - Whether the window already hands Porelo's `Start` an issue, and what it must add for the phase.
+- How Porelo's record names, for each call, the issue whose sub-agent made it, and the form of a sub-agent's start
+  and end in it, agreed in the channel.
 - Which store call the velocity needs beyond the board the store already answers (size and state of every issue,
   settled ones too), read in `store/api`.

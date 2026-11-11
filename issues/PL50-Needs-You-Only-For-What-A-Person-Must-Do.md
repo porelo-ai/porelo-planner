@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL50",
   "title": "Needs You Only For What A Person Must Do",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 25,
@@ -20,6 +20,9 @@
 
 **Size:** L - three steps across the board's contract, the work record's file, the app and the screen package: a
 contract change, a stored format change and a new request.
+
+**Estimate:** 113 min, the measured median of L. Uncertain: where a row put away is kept (the open question) may move
+its third step into the window, which makes it smaller here.
 
 **What must be true.** Every row the planner raises in *Needs you* asks the person for something they can do, and says
 what; what is only information is shown on the board, not raised; and a person can put a row away.

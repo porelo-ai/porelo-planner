@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL49",
   "title": "Work Moves On By Itself From A Move On The Board",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 24,
@@ -20,6 +20,10 @@
 
 **Size:** L - a move that starts work crosses the core's proposal, the board's contract and the screen; beside it a
 reading started by hand, and model and effort chosen by phase and risk.
+
+**Estimate:** 113 min, the measured median of L. Uncertain: the effort Porelo's `Start` takes is not yet known, and
+model and effort by phase and risk may leave this issue (see the open question); the issue waits on two others of
+this repository.
 
 **What must be true.** A person moves an Agent issue, or a story, into a working state on the board, and the planner
 does the rest as the project's work rules say: the start dialog opens filled with the rule's first mode and the first
