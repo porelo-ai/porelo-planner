@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** XL - it splits into one L, three M and three S of this repository, below; dropping the library, the
+**Size:** XL - it splits into one L, four M and three S of this repository, below; dropping the library, the
 story and issue commands, `stage` and the issue part of `check-citations` from the build tools, and the checks from
 every build, is other repositories' work.
 
@@ -84,8 +84,41 @@ lines with its tokens and as many of tests; the issue-link check of `check-citat
    ([PL22](README.md#pl22)). Red first: a move of an issue without a record writes a stage line that the record's
    reader takes back. Unit tests over files; one controller test for the estimate's start.
 
-Order: 1, 2, 3, 4, 5, 6, 7. Steps 4, 5, 6 and 7 change the window's contract and are agreed before they are
-built. Sum by the medians: 1 L, 3 M, 3 S = 113 + 201 + 99 = 413 minutes.
+8. **An issue settled when it is Finished** (M). Setting an issue Finished through the planner deletes its file and
+   keeps its row in the index, in one commit; the planner refuses it while the repository still mentions the
+   number outside `issues/` or links to the file, naming each place. Every reading of the board shows such a
+   mention of a settled or unknown number of the repository as a fault. Red first: setting Finished an issue whose
+   number a document still names is refused with the document and line, and nothing is committed. Unit and store
+   tests over a local bare repository.
+
+Order: 1, 2, 3, 4, 5, 6, 7, 8. Steps 4 to 8 change what the window is answered and are agreed before they are
+built. Sum by the medians: 1 L, 4 M, 3 S = 113 + 268 + 99 = 480 minutes.
+
+## The checks that leave, and when the Git store runs them
+
+All of them live in `store/git`. A reading of the board names what it finds as a fault on the board and serves the
+rest; a write of the planner refuses before it commits anything and names why. What another person or an agent
+commits in a repository is found on the next reading, since the planner is not asked before such a commit.
+
+| Check that leaves | Still needed | When in the life of an issue or story | On failure | Piece |
+|---|---|---|---|---|
+| `issues check`: a head by `issue-1.json` | yes | every reading of the board; every write of the planner | reading: fault, issue left off; write: refused | 1 moves the code, 4 makes it a fault |
+| `issues check`: each wait and parent an issue | yes | every reading; a write that sets a wait or a parent | reading: fault; write: refused | 1, 4 |
+| `issues check`: the index as the heads give it | no longer as a check: the planner writes the index from the heads on every write | every write rewrites it; a reading finds a hand-edited index | reading: fault, repaired by the next write | 1, 4 |
+| `stories check`: a story's head by `story-2.json`, its file named after its id, no id twice | yes | every reading; every write of a story | reading: fault; write: refused | 1, 4 |
+| `stories check`: a story's issues in a repository `project.yml` names and in its index | yes | every reading; adding an issue to a story | reading: fault; write: refused | 1, 4 |
+| `stories check`: a story's state given in its head against its issues', a tested day only on a completed story | yes | every reading; a move of a story | reading: warning on the card; write: refused for a tested day | 3 |
+| `stories check`: the story texts and `stories/README.md` as the heads give them | no longer as a check: the planner writes them on every write | every write | - | 1 |
+| porelo-project's hourly Stories check | no: the board reads every repository's issues at each reading | - | - | none |
+| `check-commits`: `issues/workflow.yml` in the tree | no: every repository's issues are checked against the project's `stories/workflow.yml` | every reading | fault, as a broken workflow is today | 2 |
+| `check-commits`: `stats/*.jsonl` valid, closed stage records | yes | the planner writes the records itself on a move; a reading finds a broken or open record | reading: fault; write: written right | 7 |
+| `check-commits`: with `stats/seed.csv`, a measured state reached only with its stage record | yes | a move or idea of the planner writes the record with it; a reading finds a state reached by another commit without one | reading: fault naming the issue | 7 |
+| velocity from `stats/` | yes | when the planner starts a task for an estimate | no velocity yet: the estimate is started without one, and the task is told so | 7 |
+| `check-citations`: a number in `issues/` a link to its index row, the row anchored, the link reaching an anchor | yes | every reading; a write of an issue page | reading: fault naming page and line; write: refused | 5 |
+| `check-citations`: an own number in `issues/` names an issue that exists | yes | every reading | fault naming page and line | 5 |
+| `check-citations`: no issue number outside `issues/`, no link to an issue's file | yes | setting an issue Finished; every reading | Finished: refused naming each place; reading: fault | 8 |
+| `check-citations`: an issue's file deleted when it is settled, its row kept | yes | setting an issue Finished | the planner does it, in one commit | 8 |
+| `check-commits`: a commit message names no issue number | open, see below | - | - | - |
 
 ## Acceptance
 
@@ -96,6 +129,12 @@ built. Sum by the medians: 1 L, 3 M, 3 S = 113 + 201 + 99 = 413 minutes.
 - A broken head and a broken issue link each show as a fault on the board naming the file, and the rest of the
   board is served.
 - A task started for an estimate carries the project's velocity.
+
+## Open questions
+
+- A commit message that names an issue number is a rule on commits people and agents make, not on issues; the
+  planner sees such a commit only after it is pushed. Does the rule stay with `check-commits`, reading the prefixes
+  from `project.yml`, or does it go, or should the planner show such a commit as a fault on the board?
 
 ## To be checked
 
