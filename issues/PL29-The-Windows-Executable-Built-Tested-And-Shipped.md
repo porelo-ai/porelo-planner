@@ -52,7 +52,7 @@ whether the ZIP is the one this repository's Build made can be checked.
 - **Publishing.** The publish job downloads `windows` only when the Windows job succeeded, so a red Windows job never
   holds back the Linux packages.
   - It checks `SHA256SUMS`, refuses a release whose folder already exists, and uploads each file with its SHA-1 and
-  SHA-256 to the generic repository `porelo-dist-windows`.
+  SHA-256 to `porelo-dist-windows/porelo-planner/<channel>/<version>/`, a folder of its own beside the window's.
   - It reads each file back without a token, as a person fetches it.
 - **Tests, red first.** `NativeStartIT` on Windows fails today, since the executable looks for `XDG_RUNTIME_DIR`.
   The ZIP check, which unpacks the ZIP and compares its entries with the expected list, is seen red by a missing
@@ -71,8 +71,6 @@ whether the ZIP is the one this repository's Build made can be checked.
 
 - Whether `native-image` finds the runner's Visual Studio build tools on its own, or needs `vcvars64.bat` first.
 - Whether `porelo-cpu-check` reads a PE executable; otherwise, how the `.exe`'s instruction set is checked.
-- The folder in `porelo-dist-windows` - `<channel>/<version>/` as the window's ZIP uses, or one per product - agreed
-  in the channel before the publish step is written.
 - **Packaged file system writes.** A packaged app's new files under `AppData` go to a private place of its package,
   which another package's process does not see. Either the manifest turns write virtualization off (the restricted
   capability `unvirtualizedResources`), or the address file lives outside `AppData`. The install check decides, and

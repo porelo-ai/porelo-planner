@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL28",
   "title": "The Planner's Own Files On Windows",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 17,

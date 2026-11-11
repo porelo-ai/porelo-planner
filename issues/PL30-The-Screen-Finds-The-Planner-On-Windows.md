@@ -56,7 +56,4 @@ file when another account could have written it or could read the token.
 
 ## To be checked
 
-- The discovery path, the property names and the refusal names, agreed with the window in the channel before this is
-  built.
-- How long the PowerShell call takes on the runner; if it is too slow for every read, the result is kept for as long
-  as the file's identity and modification time stay the same.
+- How long the PowerShell call takes on the runner. The window reads the address once per reach, never per request.

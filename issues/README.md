@@ -21,7 +21,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl22"></a>[PL22](PL22-The-Planner-Records-The-Stage-Of-An-Issue-It-Moves.md) | - | [PL05](README.md#pl05) | The planner writes the stage line of an issue it moves, in the record's own format, where a repository records issue stats, instead of refusing the move |
-| <a id="pl28"></a>[PL28](PL28-The-Planners-Own-Files-On-Windows.md) | M | - | On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, each closed to other accounts through its access control list, with the same refusals as on Linux |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | [PL28](README.md#pl28) | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
 
@@ -29,6 +28,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl28"></a>[PL28](PL28-The-Planners-Own-Files-On-Windows.md) | M | - | On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, each closed to other accounts through its access control list, with the same refusals as on Linux |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
