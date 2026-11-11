@@ -8,7 +8,7 @@ import 'support/fake_planning.dart';
 import 'support/story_work_support.dart';
 
 class _Source extends FakePlanningSource {
-  _Source() : super(smallBoard());
+  _Source([Map<String, dynamic>? board]) : super(board ?? smallBoard());
 
   final watches = <String, StreamController<PlanningSnapshot>>{};
 
@@ -27,6 +27,24 @@ class _Source extends FakePlanningSource {
       if (!watch.isClosed) await watch.close();
     }
     await super.close();
+  }
+}
+
+/// A source that holds the answer to a new issue until [answer] completes.
+class _HeldSource extends _Source {
+  final answer = Completer<void>();
+
+  @override
+  Future<PlanningIssueAdded> createIssue(
+    String project,
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size,
+    String revision,
+  ) async {
+    await answer.future;
+    return super.createIssue(project, repository, title, mustBeTrue, size, revision);
   }
 }
 
@@ -63,6 +81,16 @@ Future<void> _openForm(WidgetTester tester) async {
   await settle(tester);
 }
 
+Future<void> _pick(WidgetTester tester, String repository) async {
+  await tester.tap(find.byKey(const Key('new-issue-repository')));
+  await settle(tester);
+  await tester.tap(find.text(repository).last);
+  await settle(tester);
+}
+
+FilledButton _createButton(WidgetTester tester) =>
+    tester.widget<FilledButton>(find.byKey(const Key('new-issue-create')));
+
 Future<void> _fill(WidgetTester tester) async {
   await tester.enterText(find.byKey(const Key('new-issue-title')), 'An idea');
   await tester.enterText(find.byKey(const Key('new-issue-must-be-true')), 'It holds.');
@@ -76,6 +104,7 @@ void main() {
     await _show(tester, source);
 
     await _openForm(tester);
+    await _pick(tester, 'repo');
     await _fill(tester);
     await tester.tap(find.byKey(const Key('new-issue-create')));
     await settle(tester);
@@ -138,6 +167,7 @@ void main() {
     await _show(tester, source);
 
     await _openForm(tester);
+    await _pick(tester, 'repo');
     await _fill(tester);
     await tester.tap(find.byKey(const Key('new-issue-create')));
     await settle(tester);
@@ -149,5 +179,60 @@ void main() {
     );
     expect(find.byKey(const Key('planning-action-error')), findsOneWidget, reason: 'and on the board, as its refusals');
     expect(find.text('An idea'), findsOneWidget, reason: 'the title stays written');
+  });
+
+  // Harm: an issue is added to a repository the person never chose.
+  testWidgets('with several repositories none is chosen until the person picks one', (tester) async {
+    final source = _Source();
+    await _show(tester, source);
+
+    await _openForm(tester);
+    await _fill(tester);
+    expect(_createButton(tester).onPressed, isNull, reason: 'no repository is chosen, so nothing can be added');
+
+    await _pick(tester, 'porelo-other');
+    expect(_createButton(tester).onPressed, isNotNull, reason: 'a picked repository completes the form');
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+
+    expect(source.added.single.$2, 'porelo-other', reason: 'the issue goes to the picked repository');
+  });
+
+  // Harm: a board of one repository would ask for a choice that has only one answer before anything can be added.
+  testWidgets('the only repository of a board is chosen without asking', (tester) async {
+    final source = _Source({
+      ...smallBoard(),
+      'repositories': ['repo'],
+    });
+    await _show(tester, source);
+
+    await _openForm(tester);
+    await _fill(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+
+    expect(source.added.single.$2, 'repo', reason: 'the one repository is sent');
+  });
+
+  // Harm: an added issue or a refusal is never seen when the form can be closed while it is sent.
+  testWidgets('the form cannot be closed while the new issue is sent, and shows the answer once it comes', (
+    tester,
+  ) async {
+    final source = _HeldSource();
+    await _show(tester, source);
+
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    await _fill(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+    await Navigator.of(tester.element(find.byKey(const Key('new-issue-create')))).maybePop();
+    await settle(tester);
+    expect(find.byKey(const Key('new-issue-create')), findsOneWidget, reason: 'a dismiss leaves the sending form open');
+
+    source.answer.complete();
+    await settle(tester);
+
+    expect(find.text('Added I3 in state Idea.'), findsOneWidget, reason: 'the answer is shown once it comes');
   });
 }

@@ -23,7 +23,8 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
 
   final _title = TextEditingController();
   final _mustBeTrue = TextEditingController();
-  late String? _repository = widget.board.repositories.firstOrNull;
+  // Only a single repository is chosen for the person: with several, an unseen default sends the issue astray.
+  late String? _repository = widget.board.repositories.length == 1 ? widget.board.repositories.single : null;
   String? _size;
   String? _problem;
   bool _sending = false;
@@ -57,7 +58,13 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => PopScope(
+    // While the issue is sent the form stays open, so its answer, an id or a refusal, is seen.
+    canPop: !_sending,
+    child: _form(context),
+  );
+
+  Widget _form(BuildContext context) => AlertDialog(
     title: const Text('New issue'),
     content: SizedBox(
       width: PlanningStyle.dialog,
