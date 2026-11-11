@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL71",
   "title": "The Planner's Commits Follow The Commit Rules",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 1,
