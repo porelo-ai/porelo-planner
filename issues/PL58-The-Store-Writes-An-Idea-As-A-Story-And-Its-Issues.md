@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL58",
   "title": "The Store Writes An Idea As A Story And Its Issues",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 31,

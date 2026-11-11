@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL27",
   "title": "The Work Record Says Why It Is Unavailable",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Medium",
   "rank": 16,

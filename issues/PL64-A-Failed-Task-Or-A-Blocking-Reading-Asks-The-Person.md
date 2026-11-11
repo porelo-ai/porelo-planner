@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL64",
   "title": "A Failed Task Or A Blocking Reading Asks The Person",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 1,
