@@ -66,8 +66,9 @@ Order: 2, 1, 3. Sum by the medians: 1 L, 1 M, 1 S = 113 + 67 + 33 = 213 minutes.
   blocking findings sets Reworking and starts the builder with them; the next reading without sets Review; a third
   reading is never started. A Manual issue moved the same way gets no task.
 
-Work that moves on while no window is open comes with the planner running as a service of the system; here the
-chain goes on from the window as it does today.
+Work moves on only while the window is open, as the chain does today: when it was closed as a task ended, the
+board is read again and the next step is taken once the window starts again. Work that moves on with no window
+open comes with the planner as a service of the system ([PL33](README.md#pl33)).
 
 ## To be checked
 
