@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +76,28 @@ class WindowsFilesOnWindowsTest {
         assertThatThrownBy(this::made)
                 .as("a junction would send the planner's files where another account put it")
                 .hasMessageContaining("link or junction");
+        try (var made = Files.list(elsewhere)) {
+            assertThat(made.toList())
+                    .as("nothing is made or given rights behind the junction before it is refused")
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    void gitRunsWithNothingOnItsInput() {
+        // Git's input from /dev/null is C:\dev\null on Windows: missing, or another account's file.
+        final byte[] answer =
+                new GitRunner(Duration.ofSeconds(60), 64 * 1024)
+                        .run(
+                                GitCall.of(
+                                        System.getenv(),
+                                        Duration.ofSeconds(15),
+                                        List.of("--version")),
+                                base);
+
+        assertThat(new String(answer, StandardCharsets.UTF_8))
+                .as("git starts and answers")
+                .startsWith("git version");
     }
 
     private static void run(final String... command) throws Exception {
