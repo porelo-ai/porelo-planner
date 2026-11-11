@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL73",
   "title": "A Story's Priority Changed On The Board",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -37,13 +37,31 @@ Steps:
 2. `Writes` gains the stories' new priorities; `HeadEdit.storyPriority` replaces the head's `priority` line as
    `storyState` replaces the state, refusing a value outside the five. `GitStore` writes it before the indexes, so the
    stories index is rewritten in the same commit, whose subject ends in `[skip ci]`.
-3. The app maps the call to the store; the mock mode, which saves nothing, answers it as it answers a move today.
+3. The app maps the call to the store under the project's work lock; the mock mode answers it not offered.
 4. The screen package: `PlanningSource.setPriority`, its HTTP source and fakes, a priority choice on the story's page
    and in the card's menu, unavailable while the board is not live or saving. The board re-sorts from the next
    snapshot.
 5. Red first: unit in `HeadEditTest` (the line replaced, every other byte kept, a sixth value refused - harm: a head
    written wrong breaks every reader), `GitStoreSaveTest` (head and stories index in one commit) and an HTTP test
    against the description (`ApiMatchesDescriptionTest`); a widget test that the choice calls the source.
+
+Taken from the plan's reading:
+
+- A save that only sets priorities passes the stories-index gate (`storiesIndexed` in `GitStore.commitAndPush`), its
+  heads are among the changed paths, and its subject has its own wording, ending in `[skip ci]`; a test saves a
+  priority alone.
+- A story moved and given a priority in one save has its head edited once, with both; the call itself carries only a
+  priority, so this arises only inside the store.
+- `HeadEdit.storyPriority` uses its own pattern and needs exactly one `priority` line: none or two refuse the save
+  instead of inserting or guessing; the value is checked against the five names, not the general plain-word check.
+- An unchanged priority saves nothing and answers the current revision, as `setWorker` does. A value outside the five
+  is a refusal (400), never a 500. A story whose file is gone answers as an unknown story.
+- A priority may change while the story's run is at work: it touches no issue, and a race with a push answers stale
+  revision or save refused, with nothing partly written. The call runs under the project's work lock, as `setWorker`
+  does.
+- The mock mode, which saves nothing, answers it not offered (501), as `setWorker` does there.
+- The screen shows the chosen priority as pending until the board's snapshot carries it, and a story without a
+  reported priority shows no choice selected.
 
 ## Acceptance
 

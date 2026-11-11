@@ -42,8 +42,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | M | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
-| <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
 | <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format |
@@ -63,6 +61,8 @@ left out.
 |---|---|---|---|
 | <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
 | <a id="pl72"></a>[PL72](PL72-The-Boards-Search-Finds-Issues-Too.md) | S | - | The board's search matches an issue's number and title too; the story holding a matching issue is shown with its issue list open, the issue marked, and scrolled into view in its column |
+| <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | M | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
+| <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
 
 ## Review
 

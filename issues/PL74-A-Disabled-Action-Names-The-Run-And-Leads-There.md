@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL74",
   "title": "A Disabled Action Names The Run And Leads There",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -41,6 +41,21 @@ Steps:
 4. Red first, unit in `planning_board_test.dart`: a story whose issue's reading stopped answers that issue and its
    reason (harm: the person cannot find what holds the work); a widget test that the way on opens the story's page and
    that page shows the attention row.
+
+Taken from the plan's reading:
+
+- The way on belongs only to the attention reason, never to another reason (work running, a start awaiting
+  confirmation, a board not live), and is left out on the story's own page.
+- A disabled menu item cannot be tapped, so the way on is an enabled entry of its own beside the disabled action;
+  the disabled action still never runs.
+- The reason and the way on are read from the board when the menu opens and checked again when tapped, so a board
+  that changed meanwhile shows its current reason.
+- An ended run is shown, not settled; the story page leaves out the attention view's own "Open story".
+- The story page draws the attention rows from its own board only. One reading's decision is shared per board and
+  issue, so the story page and *Needs you* cannot both send one; a test shows two views and a single decision sent.
+  A refused decision shows its problem on the page too. An issue's detail is loaded when its row is opened, not for
+  every stopped issue when the page opens.
+- A reason the screen has no words for shows its wire name, never nothing.
 
 ## Acceptance
 
