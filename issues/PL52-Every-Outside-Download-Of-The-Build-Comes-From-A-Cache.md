@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL52",
   "title": "Every Outside Download Of The Build Comes From A Cache",
-  "state": "Idea",
+  "state": "Implementing",
   "size": "S",
   "priority": "Medium",
   "rank": 26,
