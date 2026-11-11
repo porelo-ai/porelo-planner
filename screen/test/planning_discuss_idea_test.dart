@@ -121,6 +121,22 @@ void main() {
     expect(starts, hasLength(1), reason: 'one idea starts one task');
   });
 
+  // Harm: an error shown for the person's own choice, read as a fault of the planner.
+  test('a discussion whose Start the person cancelled shows no error and stays offered', () async {
+    final source = _Source();
+    final board = PlanningBoard(source, 'demo');
+    addTearDown(board.dispose);
+    await pumpEventQueue();
+    await board.discussIdea(
+      'An idea',
+      (source, project, story, task) async =>
+          throw const PlanningRefusal('NotStarted', {}, 'The person did not start the task.'),
+    );
+    expect(board.actionProblem, isNull, reason: 'cancelling the Start is no fault');
+    expect(board.unavailableActions, isNot(contains('DiscussIdea')), reason: 'the discussion stays offered');
+    expect(board.discussing, isFalse, reason: 'the next idea may be discussed');
+  });
+
   // Harm: a discussion asked for on one project starts after the person moved to another.
   test('a board switched to another project starts no discussion asked for before', () async {
     final source = _Source()..gate = Completer<void>();

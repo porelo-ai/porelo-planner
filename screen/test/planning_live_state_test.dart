@@ -17,6 +17,7 @@ class _Source extends FakePlanningSource implements PlanningReconnect {
 
   final changes = _Changes();
   final watches = <String, StreamController<PlanningSnapshot>>{};
+  final opened = <StreamController<PlanningSnapshot>>[];
   final reconnecting = <String>{};
   final issueReads = <(String, String)>[];
   List<String> subIssues = ['I1.1', 'I1.2'];
@@ -42,6 +43,7 @@ class _Source extends FakePlanningSource implements PlanningReconnect {
   Stream<PlanningSnapshot> watchStories(String project) {
     final watch = StreamController<PlanningSnapshot>();
     watches[project] = watch;
+    opened.add(watch);
     return watch.stream;
   }
 
@@ -217,6 +219,110 @@ void main() {
     await next.close();
   });
 
+  // Harm: a move or a Start offered on a board that is not the one shown.
+  test('a board arriving after a reconnect during a reload stays stale until the reload ends', () async {
+    final read = Completer<void>();
+    final source = _HeldRead(read.future);
+    final board = PlanningBoard(source, 'demo');
+    source.send('demo');
+    await pumpEventQueue();
+    expect(board.live, isTrue, reason: 'the first board makes the watch live');
+    source.reconnect('demo', true);
+    expect(board.catchingUp, isTrue, reason: 'a lost connection makes the board catch up');
+
+    final reloading = board.reload();
+    await pumpEventQueue();
+    expect(board.saving, isTrue, reason: 'the reload waits for its read');
+    source.board = smallBoard(revision: 'r2');
+    source.reconnect('demo', false);
+    source.send('demo');
+    await pumpEventQueue();
+    expect(board.snapshot!.revision, 'r1', reason: 'the streamed board is held back during the reload');
+    expect(board.live, isFalse, reason: 'a held-back board does not make the watch live');
+    expect(board.catchingUp, isTrue, reason: 'catching up ends only with a board that is shown');
+    board.move('S1', 'Review');
+    expect(board.pending, isEmpty, reason: 'no move is offered on a board that is not shown');
+
+    read.complete();
+    await reloading;
+    expect(board.snapshot!.revision, 'r2', reason: 'the reload shows the newest board');
+    expect(board.catchingUp, isFalse, reason: 'the shown board ends catching up');
+    expect(board.live, isTrue, reason: 'the watch is live once its board is shown');
+    board.dispose();
+    await source.close();
+  });
+
+  // Harm: a board held stale, its moves and Starts refused, with nothing wrong on its own watch.
+  test('a board follows its own watch while another watch of the project reconnects', () async {
+    final source = _OwnWatches();
+    final first = PlanningBoard(source, 'demo');
+    final second = PlanningBoard(source, 'demo');
+    for (final watch in source.opened) {
+      watch.$1.add(PlanningSnapshot.from(source.board));
+    }
+    await pumpEventQueue();
+    expect([first.live, second.live], [isTrue, isTrue], reason: 'both watches brought a board');
+
+    source.reconnect(0, true);
+    expect(first.catchingUp, isTrue, reason: 'the first board\'s own watch reconnects');
+    source.opened[1].$1.add(PlanningSnapshot.from(smallBoard(revision: 'r2')));
+    await pumpEventQueue();
+    expect(second.catchingUp, isFalse, reason: 'the second board\'s own watch did not reconnect');
+    expect(second.live, isTrue, reason: 'the second board stays live on its own board');
+    expect(first.live, isFalse, reason: 'the first board waits for its own watch\'s board');
+
+    source.reconnect(0, false);
+    source.opened[0].$1.add(PlanningSnapshot.from(smallBoard(revision: 'r2')));
+    await pumpEventQueue();
+    expect(first.live, isTrue, reason: 'the first board turns live on its own watch\'s board');
+    first.dispose();
+    second.dispose();
+    await source.close();
+  });
+
+  // Harm: a stream connection and its reconnect loop left running for a board nobody shows any more.
+  test('a board closed on its first notification leaves its source with no open watch', () async {
+    final source = _Source();
+    final board = PlanningBoard(source, 'demo');
+    source.reconnect('demo', true);
+    final reported = <FlutterErrorDetails>[];
+    final onError = FlutterError.onError;
+    // Closing a notifier inside its own notification is asserted in debug builds only; release builds go on.
+    FlutterError.onError = reported.add;
+    addTearDown(() => FlutterError.onError = onError);
+    board.addListener(board.dispose);
+    await board.retry();
+    FlutterError.onError = onError;
+    expect(board.disposed, isTrue, reason: 'the listener closed the board');
+    expect(reported.map((error) => '${error.exception}'), everyElement(contains('notifyListeners')));
+    expect(source.opened.where((watch) => watch.hasListener), isEmpty, reason: 'a closed board keeps no watch open');
+    await source.close();
+  });
+
+  // Harm: a watch nobody cancels keeps its connection after the board moved on to another project.
+  test('a board rebound on its first notification keeps only the newer watch', () async {
+    final source = _Source();
+    final board = PlanningBoard(source, 'demo');
+    source.reconnect('demo', true);
+    var rebound = false;
+    board.addListener(() {
+      if (rebound) return;
+      rebound = true;
+      unawaited(board.changeProject(source, 'other'));
+    });
+    await board.retry();
+    await pumpEventQueue();
+    expect(
+      source.opened.where((watch) => watch.hasListener),
+      hasLength(1),
+      reason: 'one watch, the newer one, is open',
+    );
+    expect(source.watches['other']!.hasListener, isTrue, reason: 'the newer generation watches its project');
+    board.dispose();
+    expect(source.opened.where((watch) => watch.hasListener), isEmpty, reason: 'closing the board cancels its watch');
+    await source.close();
+  });
+
   // Harm: control or directional characters disguise a sub-issue link's identity before it is opened.
   testWidgets('sub-issue labels are cleaned without changing the navigation identifier', (tester) async {
     const id = 'I1.1\x07\u202e';
@@ -289,6 +395,55 @@ void main() {
       expect(source.issueReads.last, ('demo', child));
     }
   });
+}
+
+/// Like the HTTP source: each watch tells its own reconnect, and the source tells whether any watch of a project does.
+class _OwnWatches extends FakePlanningSource implements PlanningReconnect {
+  _OwnWatches() : super(smallBoard());
+
+  final changes = _Changes();
+  final opened = <(StreamController<PlanningSnapshot>, ValueNotifier<bool>)>[];
+
+  void reconnect(int watch, bool value) {
+    opened[watch].$2.value = value;
+    changes.changed();
+  }
+
+  @override
+  bool isReconnecting(String project) => opened.any((watch) => watch.$2.value);
+
+  @override
+  void addListener(VoidCallback listener) => changes.addListener(listener);
+
+  @override
+  void removeListener(VoidCallback listener) => changes.removeListener(listener);
+
+  @override
+  Stream<PlanningSnapshot> watchStories(String project) {
+    final watch = (StreamController<PlanningSnapshot>(), ValueNotifier(false));
+    opened.add(watch);
+    return PlanningWatch(watch.$1.stream, watch.$2);
+  }
+
+  @override
+  Future<void> close() async {
+    for (final watch in opened) {
+      if (!watch.$1.isClosed) await watch.$1.close();
+    }
+    changes.dispose();
+    await super.close();
+  }
+}
+
+class _HeldRead extends _Source {
+  _HeldRead(this.held);
+  final Future<void> held;
+
+  @override
+  Future<PlanningSnapshot> stories(String project) async {
+    await held;
+    return super.stories(project);
+  }
 }
 
 class _DelayedWorkflow extends _Source {

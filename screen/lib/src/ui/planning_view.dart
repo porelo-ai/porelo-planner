@@ -411,8 +411,9 @@ class _BoardViewState extends State<_BoardView> {
                 key: Key('planning-not-live'),
               ),
             if (board.actionProblem case final problem?) Text(problem, key: const Key('planning-action-error')),
-            for (final entry in board.workProblems.entries) Text('${entry.key}: ${entry.value}'),
-            for (final story in board.workUnsupported) Text('$story: the planner does not offer story work status.'),
+            for (final entry in board.workProblems.entries) Text(_line('${entry.key}: ${entry.value}')),
+            for (final story in board.workUnsupported)
+              Text(_line('$story: the planner does not offer story work status.')),
             if (board.problem case final problem?)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: Space.small),
@@ -475,7 +476,7 @@ class _BoardViewState extends State<_BoardView> {
                                       children: [
                                         const Text('Stories outside the reported workflow'),
                                         for (final story in board.unplaced) ...[
-                                          Text('State: ${story.state.isEmpty ? 'not reported' : story.state}'),
+                                          Text('State: ${story.state.isEmpty ? 'not reported' : _line(story.state)}'),
                                           _card(context, story),
                                         ],
                                       ],
@@ -542,11 +543,11 @@ class _BoardViewState extends State<_BoardView> {
         children: [
           Row(
             children: [
-              Expanded(child: Text(phase.name.toUpperCase(), style: Theme.of(context).textTheme.labelLarge)),
+              Expanded(child: Text(_line(phase.name).toUpperCase(), style: Theme.of(context).textTheme.labelLarge)),
               Text('$count'),
               IconButton(
                 key: Key('planning-fold-phase ${phase.name}'),
-                tooltip: '${folded ? 'Unfold' : 'Fold'} ${phase.name}',
+                tooltip: '${folded ? 'Unfold' : 'Fold'} ${_line(phase.name)}',
                 onPressed: () => board.foldPhase(phase.name),
                 icon: Icon(folded ? Icons.chevron_right : Icons.chevron_left),
               ),
@@ -589,7 +590,7 @@ class _BoardViewState extends State<_BoardView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (candidates.isNotEmpty) Text('Drop here for ${state.name}'),
+            if (candidates.isNotEmpty) Text('Drop here for ${_line(state.name)}'),
             Row(
               children: [
                 if (state.kind == 'WORKING')
@@ -597,12 +598,12 @@ class _BoardViewState extends State<_BoardView> {
                     padding: EdgeInsets.only(right: Space.tight),
                     child: Icon(Icons.schedule, size: PlanningStyle.mark),
                   ),
-                Expanded(child: Text(state.name, style: theme.textTheme.labelMedium)),
+                Expanded(child: Text(_line(state.name), style: theme.textTheme.labelMedium)),
                 Text('${cards.length}'),
                 if (!phaseFolded)
                   IconButton(
                     key: Key('planning-fold-state ${state.name}'),
-                    tooltip: '${folded ? 'Unfold' : 'Fold'} ${state.name}',
+                    tooltip: '${folded ? 'Unfold' : 'Fold'} ${_line(state.name)}',
                     onPressed: () => board.foldState(state.name),
                     icon: Icon(folded ? Icons.chevron_right : Icons.expand_more, size: PlanningStyle.rowIcon),
                   ),
@@ -611,7 +612,7 @@ class _BoardViewState extends State<_BoardView> {
             if (state.kind.isEmpty)
               const Text('State kind not reported')
             else if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind))
-              Text(state.kind),
+              Text(_line(state.kind)),
             if (folded)
               Wrap(
                 spacing: Space.tight,
@@ -624,7 +625,7 @@ class _BoardViewState extends State<_BoardView> {
                         key: Key('planning-story ${story.id}'),
                         onTap: story.id.isEmpty ? null : () => widget.onStory(story.id),
                         child: Tooltip(
-                          message: '${story.id} — ${story.title} (${story.priority})',
+                          message: _line('${story.id} — ${story.title} (${story.priority})'),
                           child: Container(
                             key: Key('planning-card ${story.id}'),
                             padding: const EdgeInsets.all(Space.tight),
@@ -641,7 +642,9 @@ class _BoardViewState extends State<_BoardView> {
                                         child: _priority(context, story.priority ?? '', mark: true),
                                       ),
                                     ),
-                                    Expanded(child: Text(story.id, softWrap: false, overflow: TextOverflow.fade)),
+                                    Expanded(
+                                      child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade),
+                                    ),
                                     _menu(story, dense: true),
                                   ],
                                 ),
@@ -679,7 +682,9 @@ class _BoardViewState extends State<_BoardView> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  '${entry.key} ${entry.value.from.isEmpty ? 'not reported' : entry.value.from} → ${entry.value.to}',
+                  _line(
+                    '${entry.key} ${entry.value.from.isEmpty ? 'not reported' : entry.value.from} → ${entry.value.to}',
+                  ),
                 ),
                 if (entry.value.problem != null) Text(entry.value.problem!),
                 TextButton(
@@ -714,7 +719,7 @@ class _BoardViewState extends State<_BoardView> {
     maxSimultaneousDrags: board.saving || !board.live ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
-      child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(story.id)),
+      child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
     ),
     childWhenDragging: Opacity(opacity: PlanningStyle.stale, child: child),
     child: child,
@@ -728,13 +733,13 @@ class _BoardViewState extends State<_BoardView> {
             'High' => '▲',
             'Medium' => '▬',
             'Low' => '▼',
-            _ => priority.isEmpty ? '?' : priority,
+            _ => priority.isEmpty ? '?' : _line(priority),
           }
         : priority.isEmpty
         ? 'Priority not reported'
-        : priority;
+        : _line(priority);
     return Semantics(
-      label: priority.isEmpty ? 'Priority not reported' : priority,
+      label: priority.isEmpty ? 'Priority not reported' : _line(priority),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Space.tight),
         decoration: BoxDecoration(
@@ -754,17 +759,17 @@ class _BoardViewState extends State<_BoardView> {
     if (work.atWork == false) return working ? 'nobody at work' : null;
     return [
       if (work.atWork == null) 'Work status not reported',
-      if (work.coordinator?.isNotEmpty ?? false) planningShown(work.coordinator!, multiline: false),
+      if (work.coordinator?.isNotEmpty ?? false) _line(work.coordinator!),
       if (mainTasks > 0) '$mainTasks ${mainTasks == 1 ? 'task' : 'tasks'}',
-      work.agent.isEmpty ? 'Agent not reported' : work.agent,
-      work.model.isEmpty ? 'Model not reported' : work.model,
+      work.agent.isEmpty ? 'Agent not reported' : _line(work.agent),
+      work.model.isEmpty ? 'Model not reported' : _line(work.model),
       if (work.mode.isNotEmpty)
         switch (work.mode) {
           'UNATTENDED' => 'unattended',
           'AGENT' => 'shell with you',
-          _ => work.mode,
+          _ => _line(work.mode),
         },
-      if (work.since.isNotEmpty) 'since ${work.since}',
+      if (work.since.isNotEmpty) 'since ${_line(work.since)}',
     ].join(' · ');
   }
 
@@ -856,7 +861,7 @@ class _BoardViewState extends State<_BoardView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Stop work on ${story.id}?'),
+        title: Text('Stop work on ${_line(story.id)}?'),
         content: const Text('The story stays in its working state with nobody at work until it is moved.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -875,7 +880,7 @@ class _BoardViewState extends State<_BoardView> {
   Widget _menu(PlanStory story, {bool dense = false}) => PlanningActionMenu(
     key: Key('planning-menu ${story.id}'),
     dense: dense,
-    tooltip: 'Work on ${story.id}',
+    tooltip: 'Work on ${_line(story.id)}',
     actions: _actions(story),
     current: () => _actions(story),
   );
@@ -975,13 +980,13 @@ class _BoardViewState extends State<_BoardView> {
                 Wrap(
                   spacing: Space.small,
                   children: [
-                    Text(story.id, style: theme.textTheme.labelMedium),
+                    Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
                     _menu(story),
                   ],
                 ),
                 const SizedBox(height: Space.small),
-                Text(story.title),
+                Text(_line(story.title)),
                 if (board.pending[story.id] case final move? when move.problem == null) const Text('moved'),
                 if (board.pending[story.id]?.problem case final problem?) Text(problem),
                 if (board.pendingPriorities[story.id] case final priority?)
@@ -1044,14 +1049,14 @@ class _BoardViewState extends State<_BoardView> {
                             TextButton(
                               key: Key('planning-issue ${issue.id}'),
                               onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
-                              child: Text('${issue.id} · ${issue.repository}'),
+                              child: Text(_line('${issue.id} · ${issue.repository}')),
                             ),
-                            if (issue.title.isNotEmpty) Text(issue.title),
+                            if (issue.title.isNotEmpty) Text(_line(issue.title)),
                             Wrap(
                               spacing: Space.small,
                               children: [
-                                if (issue.state.isNotEmpty) Text(issue.state),
-                                if (issue.size.isNotEmpty) Text(issue.size),
+                                if (issue.state.isNotEmpty) Text(_line(issue.state)),
+                                if (issue.size.isNotEmpty) Text(_line(issue.size)),
                                 if (issue.worker case final worker?) Text(planningWorker(worker)),
                                 if (issue.noRunHere)
                                   Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
@@ -1060,7 +1065,7 @@ class _BoardViewState extends State<_BoardView> {
                             if (!issue.blockedByReported)
                               const Text('Blockers not reported')
                             else if (issue.blockedBy.isNotEmpty)
-                              Text('Blocked by ${issue.blockedBy.join(', ')}'),
+                              Text(_line('Blocked by ${issue.blockedBy.join(', ')}')),
                           ],
                         ),
                       ),
@@ -1241,3 +1246,6 @@ class _IdeaDialogState extends State<_IdeaDialog> {
     ],
   );
 }
+
+/// [text] on one line, as the screen shows what an agent or a repository wrote.
+String _line(String text) => planningShown(text, multiline: false);

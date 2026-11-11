@@ -119,7 +119,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
             Text(
               '${widget.resolved ? 'Resolved' : 'Needs you'} · ${row.project} · ${planningShown(widget.machine, multiline: false)}',
             ),
-            Text('${row.story.id} — ${row.story.title}'),
+            Text(planningShown('${row.story.id} — ${row.story.title}', multiline: false)),
             if (row.ended case final ended?) ...[
               Text(
                 ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended),
@@ -140,10 +140,13 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                     run: () => showDialog<void>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: Text('${row.story.id} — ${row.story.title}'),
+                        title: Text(planningShown('${row.story.id} — ${row.story.title}', multiline: false)),
                         content: SingleChildScrollView(
                           child: Text(
-                            '${row.story.state}\n${row.story.description}\n${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
+                            planningShown(
+                              '${row.story.state}\n${row.story.description}\n'
+                              '${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
+                            ),
                           ),
                         ),
                         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
@@ -155,7 +158,12 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
             if (planReasonNeedsAttention(row.reason)) Text(planningShown(row.reason)),
             if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) _taskEnd(issue),
             if (row.issue case final issue?) ...[
-              Text('${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}'),
+              Text(
+                planningShown(
+                  '${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}',
+                  multiline: false,
+                ),
+              ),
               if (widget.onPutAway case final putAway? when !widget.resolved)
                 if (row.putAwayOn(widget.machine) case final kept?)
                   Tooltip(

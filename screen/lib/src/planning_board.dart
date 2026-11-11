@@ -132,7 +132,9 @@ class PlanningBoard extends ChangeNotifier {
   String? moveNotice;
 
   (PlanningSource, String)? _queuedProject;
-  (PlanningSnapshot, int)? _deferredSnapshot;
+
+  /// A board streamed during a save or reload, its order, and what its acceptance tells of the watch.
+  (PlanningSnapshot, int, VoidCallback)? _deferredSnapshot;
   int _replyOrder = 0;
   int _snapshotOrder = 0;
   StreamSubscription<PlanningSnapshot>? _watching;
@@ -215,83 +217,96 @@ class PlanningBoard extends ChangeNotifier {
     final source = backend;
     final name = project;
     final reconnect = source is PlanningReconnect ? source as PlanningReconnect : null;
-    if (reconnect != null) {
+    try {
+      final watch = source.watchStories(name);
+      // A watch that tells its own reconnect is followed alone; another watch of the project may reconnect meanwhile.
+      final (Listenable?, bool Function()) told = switch (watch) {
+        PlanningWatch(:final reconnecting) => (reconnecting, () => reconnecting.value),
+        _ when reconnect != null => (reconnect, () => reconnect.isReconnecting(name)),
+        _ => (null, () => false),
+      };
+      final (follows, reconnecting) = told;
       void changed() {
-        if (!current() || !reconnect.isReconnecting(name)) return;
+        if (!current() || !reconnecting()) return;
         reconnectVersion++;
         catchingUp = true;
         live = false;
         notifyListeners();
       }
 
-      reconnect.addListener(changed);
-      _unfollowReconnect = () => reconnect.removeListener(changed);
+      if (follows != null) {
+        follows.addListener(changed);
+        _unfollowReconnect = () => follows.removeListener(changed);
+      }
+      _watching = watch.listen(
+        (reply) async {
+          final receivedVersion = reconnectVersion;
+          final recovering = reconnecting();
+          final order = ++_replyOrder;
+          try {
+            final prior = snapshot;
+            final names = prior?.states.map((state) => state.name).toSet() ?? <String>{};
+            final unknown = reply.stories.any(
+              (story) => !names.contains(story.state) || story.issues.any((issue) => !names.contains(issue.state)),
+            );
+            // A whole board brings its own workflow, which a push elsewhere may have changed.
+            final workflow = reply.complete && (reply.states.isNotEmpty || reply.faults.isNotEmpty)
+                ? reply
+                : prior == null || unknown
+                ? await backend.planningWorkflow(project)
+                : prior;
+            if (!current()) return;
+            final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
+            void settle() {
+              if (!current()) return;
+              problem = workflow.faults.isEmpty ? null : planningShown(workflow.faults.join('\n'));
+              unsupported = false;
+              if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
+              live = !ended && !catchingUp;
+            }
+
+            if (saving) {
+              // Held back, the board is not yet shown, so the watch stays stale until it is.
+              // A board that read its workflow first may come after a newer one.
+              if (order > (_deferredSnapshot?.$2 ?? 0)) _deferredSnapshot = (combined, order, settle);
+            } else {
+              _accept(combined, order: order);
+              settle();
+            }
+            notifyListeners();
+          } catch (error) {
+            if (!current()) return;
+            problem = planningFailureWords(error);
+            live = false;
+            notifyListeners();
+          }
+        },
+        onError: (Object error) {
+          if (!current()) return;
+          _generation++;
+          catchingUp = false;
+          _stopFollowingReconnect();
+          final watching = _watching;
+          _watching = null;
+          unsupported = planningUnsupported(error);
+          problem = unsupported ? null : planningFailureWords(error);
+          live = false;
+          notifyListeners();
+          // A retry can start without waiting again on this terminal subscription's cancellation.
+          unawaited(watching?.cancel());
+        },
+        onDone: () {
+          if (!current()) return;
+          _watching = null;
+          ended = true;
+          live = false;
+          catchingUp = false;
+          _stopFollowingReconnect();
+          notifyListeners();
+        },
+      );
+      // Told only once the watch stands, so a listener that closes or rebinds the board cancels this watch.
       changed();
-    }
-    try {
-      _watching = backend
-          .watchStories(project)
-          .listen(
-            (reply) async {
-              final receivedVersion = reconnectVersion;
-              final recovering = reconnect?.isReconnecting(name) ?? false;
-              final order = ++_replyOrder;
-              try {
-                final prior = snapshot;
-                final names = prior?.states.map((state) => state.name).toSet() ?? <String>{};
-                final unknown = reply.stories.any(
-                  (story) => !names.contains(story.state) || story.issues.any((issue) => !names.contains(issue.state)),
-                );
-                // A whole board brings its own workflow, which a push elsewhere may have changed.
-                final workflow = reply.complete && (reply.states.isNotEmpty || reply.faults.isNotEmpty)
-                    ? reply
-                    : prior == null || unknown
-                    ? await backend.planningWorkflow(project)
-                    : prior;
-                if (!current()) return;
-                final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
-                if (saving) {
-                  // A board that read its workflow first may come after a newer one.
-                  if (order > (_deferredSnapshot?.$2 ?? 0)) _deferredSnapshot = (combined, order);
-                } else {
-                  _accept(combined, order: order);
-                }
-                problem = workflow.faults.isEmpty ? null : planningShown(workflow.faults.join('\n'));
-                unsupported = false;
-                if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
-                live = !ended && !catchingUp;
-                notifyListeners();
-              } catch (error) {
-                if (!current()) return;
-                problem = planningFailureWords(error);
-                live = false;
-                notifyListeners();
-              }
-            },
-            onError: (Object error) {
-              if (!current()) return;
-              _generation++;
-              catchingUp = false;
-              _stopFollowingReconnect();
-              final watching = _watching;
-              _watching = null;
-              unsupported = planningUnsupported(error);
-              problem = unsupported ? null : planningFailureWords(error);
-              live = false;
-              notifyListeners();
-              // A retry can start without waiting again on this terminal subscription's cancellation.
-              unawaited(watching?.cancel());
-            },
-            onDone: () {
-              if (!current()) return;
-              _watching = null;
-              ended = true;
-              live = false;
-              catchingUp = false;
-              _stopFollowingReconnect();
-              notifyListeners();
-            },
-          );
     } catch (error) {
       _stopFollowingReconnect();
       catchingUp = false;
@@ -501,6 +516,8 @@ class PlanningBoard extends ChangeNotifier {
       if (_disposed || generation != _generation) return;
       await start(source, name, '', task);
     } catch (error) {
+      // The person cancelled the Start: their own choice, no fault, and the discussion stays offered.
+      if (planningRefused(error, 'NotStarted')) return;
       if (!_disposed && generation == _generation) {
         reportActionProblem(error);
         if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
@@ -798,7 +815,7 @@ class PlanningBoard extends ChangeNotifier {
     unsupported = false;
     live = false;
     _listen();
-    notifyListeners();
+    _changed();
   }
 
   /// Restarts this project's watch after a failure, retaining its last snapshot and view choices.
@@ -924,6 +941,8 @@ class PlanningBoard extends ChangeNotifier {
     } else {
       _accept(reply, order: order, reconcile: reconcile);
     }
+    // The board shown is at least as new as the one the watch brought, so the watch has caught up.
+    deferred?.$3();
   }
 
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
@@ -953,10 +972,10 @@ class PlanningBoard extends ChangeNotifier {
       }
       if (reported == null) {
         _pending.remove(entry.key);
-        reconciled.add('${entry.key} is no longer reported by the planner.');
+        reconciled.add(planningShown('${entry.key} is no longer reported by the planner.', multiline: false));
       } else if (reported == entry.value.to) {
         _pending.remove(entry.key);
-        reconciled.add('${entry.key} was moved to ${entry.value.to} elsewhere.');
+        reconciled.add(planningShown('${entry.key} was moved to ${entry.value.to} elsewhere.', multiline: false));
       } else {
         entry.value.from = reported;
       }
@@ -972,7 +991,10 @@ class PlanningBoard extends ChangeNotifier {
     saving = false;
     final deferred = _deferredSnapshot;
     _deferredSnapshot = null;
-    if (deferred != null) _accept(deferred.$1, order: deferred.$2, reconcile: reconcile);
+    if (deferred != null) {
+      _accept(deferred.$1, order: deferred.$2, reconcile: reconcile);
+      deferred.$3();
+    }
     _changed();
     final queued = _queuedProject;
     _queuedProject = null;
@@ -1569,15 +1591,10 @@ class PlanningBoards extends ChangeNotifier {
   }
 }
 
-/// [words] without control characters and at most 4096 characters long, for the screen.
-String _shown(String words) {
-  final safe = words.replaceAll(RegExp(r'[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]'), '');
-  return safe.length > 4096 ? safe.substring(0, 4096) : safe;
-}
-
-/// Preserves a daemon refusal in its own detail words.
+/// Preserves a daemon refusal in its own detail words, on one line and at most 4096 characters long.
 String planningFailureWords(Object error) {
-  return _shown(_failureWords(error));
+  final safe = planningShown(_failureWords(error), multiline: false);
+  return safe.length > 4096 ? safe.substring(0, 4096) : safe;
 }
 
 String _failureWords(Object error) {
@@ -1591,19 +1608,17 @@ String _failureWords(Object error) {
     final retry = error.parameters['retryAfter'];
     if (words != null) return '$words${retry is int && retry > 0 ? ' — try again in $retry s' : ''}';
     if (error.name == 'PlanningAdapterError') {
-      return _shown('${error.parameters['error']}: ${error.parameters['parameters']}');
+      return '${error.parameters['error']}: ${error.parameters['parameters']}';
     }
     if (error.name == 'EnteredOnlyByWork') return '${error.parameters['to']} can be entered only by work.';
     if (error.name == 'PartlySaved') {
       final pushed = error.parameters['pushed'];
       final failed = error.parameters['failed'];
-      return _shown(
-        '${error.description.trim()}${pushed is String ? ' Pushed: $pushed.' : ''}'
-        '${failed is String ? ' Not pushed: $failed.' : ''}',
-      );
+      return '${error.description.trim()}${pushed is String ? ' Pushed: $pushed.' : ''}'
+          '${failed is String ? ' Not pushed: $failed.' : ''}';
     }
     // The planner's refusals carry their sentence here alone.
-    if (error.description.trim().isNotEmpty) return _shown(error.description);
+    if (error.description.trim().isNotEmpty) return error.description;
     return '${error.name}: ${error.parameters}';
   }
   if (error is StateError) return error.message.toString();

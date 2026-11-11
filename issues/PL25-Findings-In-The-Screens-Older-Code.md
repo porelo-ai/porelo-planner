@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL25",
   "title": "Findings In The Screen's Older Code",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 14,
@@ -15,76 +15,65 @@
 ```
 
 **Size:** M - four findings in the screen package alone, each with its own unit or widget test, the text stripping
-spread over five widget files, and a change to how a watch tells its reconnect in the package's public interface.
-Leaving out the staged moves after a rebind keeps the size: that step was one unit test and a field on a snapshot.
+spread over three widget files and the board, and a new, optional type in the package's public interface through
+which a watch tells its own reconnect.
 
 **What must be true.** Every text the screen shows that an agent or a repository wrote is shown without control
 characters and bidirectional overrides, as refusal words already are. That covers the workflow's faults, a reader's
 findings, a task's raw answer, a proposal's briefs and the names a Start answers. A board never stands as live on a
 board it has only held back: one that arrives during a reload or a save waits as stale until it is accepted, and
 catching up ends with it. Each watch of a source tells its own reconnect, so two boards on one source never hold each
-other in catching up. A board disposed or rebound inside its own notification opens no watch afterwards. A discussion whose Start the
-person cancelled shows no error.
+other in catching up. A board disposed or rebound inside its own notification opens no watch afterwards. A discussion
+whose Start the person cancelled shows no error.
 
 ## Plan
 
-Read in today's code, all in `screen/lib/src`; each step is one commit with its test, red first.
+As built, all in `screen/lib/src`. Moves staged on the board that survive a rebind of the project to another
+repository are left out: they go with [PL38](README.md#pl38), which saves each move at once, so nothing is staged.
 
-A further finding is left out: moves staged on the board survive a rebind of the project to another repository, and
-the next Save writes them there. It goes with [PL38](README.md#pl38), which saves each move at once, so nothing is
-staged, and holds its test.
+1. **No watch after dispose or rebind inside a notification** (`planning_board.dart`). `_listen` opens the watch first
+   and only then tells a source that already reconnects the project, so a listener that disposes the board or calls
+   `changeProject` on that first notification cancels the watch that stands. `changeProject` notifies only a board
+   that is not disposed. Unit tests in `planning_live_state_test.dart`: a board closed on its first notification
+   leaves no open watch; a board rebound on it keeps exactly one, the newer, open.
+2. **A held-back board is not live** (`planning_board.dart`). A board streamed while `saving` (a save or a reload) is
+   held in `_deferredSnapshot` with what its acceptance tells of the watch: its faults, the end of catching up and
+   `live`. Those apply only when the board is shown, by `_finishOperation`, or by `_acceptNewest` when a read newer
+   than it is shown. Unit test in `planning_live_state_test.dart`: a board arriving after a reconnect during a reload
+   leaves the board stale and catching up, with no move staged, until the reload ends.
+3. **Each watch its own reconnect** (`client.dart`, `http/planner_source.dart`, `planning_board.dart`). The new
+   `PlanningWatch` is a `StreamView` of the boards with a `ValueListenable<bool> reconnecting` of that watch alone.
+   `HttpPlanningSource.watchStories` answers one; `PlanningSource` and `PlanningReconnect` keep their signatures, so a
+   window's own source still works. The board follows a `PlanningWatch`'s own `reconnecting` and falls back to
+   `PlanningReconnect.isReconnecting(project)` for any other stream. Unit tests: two boards on one source, the first
+   one's watch reconnecting, the second turns live on its own board (`planning_live_state_test.dart`); the HTTP watch
+   tells each of its own reconnects (`planner_source_test.dart`).
+4. **Texts shown stripped** (`planning_board.dart`, `ui/planning_view.dart`,
+   `ui/story_work_dialog.dart`, `ui/story_work_attention.dart`). `planningShown` in `models.dart` is the one stripping
+   function: `_shown` is gone, and `planningFailureWords` strips with `planningShown` on one line and keeps its cap of
+   4096 characters. Stripped where shown, never where parsed or sent back: on the board the phase and state names and
+   their fold tooltips, the story and issue ids, titles, states, sizes, priorities, blockers, a card's tooltip and the
+   run's agent, model, mode and time; in the Start dialog the story, the states, the helper names, roles, agents,
+   models and briefs, the work orders and task names, the agent choices and the names a Start answers; in an attention
+   row and its story dialog the story's id, title and state and the issue's id and repository. Widget test
+   `shown_text_test.dart`: the board, the Start dialog after a Start, and an attention row with its story dialog,
+   pumped from a source whose every text carries U+202E and ESC, show no `Text`, `SelectableText` or tooltip holding a
+   control or bidirectional character.
+5. **A cancelled discussion is no error** (`planning_board.dart`). `discussIdea` takes a `PlanningRefusal` named
+   `NotStarted`, the person's cancelled Start, quietly: no `actionProblem`, and `DiscussIdea` stays offered. Unit test
+   in `planning_discuss_idea_test.dart`.
 
-1. **Texts shown stripped** (`ui/story_work_dialog.dart`, `ui/planning_view.dart`, `ui/story_work_attention.dart`,
-   `models.dart`, `planning_board.dart`). Already stripped through `planningShown`: the workflow's faults
-   (`PlanningBoard._listen` and `reload`), a reader's findings (`planning_issue_view.dart`,
-   `story_work_attention.dart`), a task's raw answer and its reason (`_endedReason`), and refusal words
-   (`planningFailureWords`). Not stripped: in the Start dialog the proposal's helper names, roles, agents, models
-   and briefs (`_sub`: `Text(sub.brief)`), the work orders and task names (`repo.workOrder`, `repo.task`), the
-   coordinator and the story's title, and the names a Start answers (`'Started ${started.task} in
-   ${started.container}'`); on the board the story and issue titles of the cards and their tooltip; in the
-   attention rows the story's title and description. Stripping happens where a text is shown, never where it is
-   parsed: `story_work_order.dart` sends a proposal's names and briefs back and the planner refuses any that changed.
-   `_shown` in `planning_board.dart` and `planningShown` in `models.dart` strip different sets (`_shown` keeps
-   U+2028 and U+2029); one function stays. Red first, widget test: the board, the Start dialog and an attention row
-   pumped from a source whose every text carries U+202E and ESC show no `Text` or `SelectableText` holding a character
-   of that class. Harm: a text that reorders what the person reads, such as a brief that reads as harmless and is not.
-2. **A held-back board is not live** (`planning_board.dart`). In `_listen`, while `saving` (a save or a reload) a
-   reply goes to `_deferredSnapshot`, yet `catchingUp` is cleared and `live` set as if it was accepted, and `problem`
-   takes its faults. The deferred board keeps its reconnect state with it, and `_finishOperation` sets `live` and
-   ends catching up only when it accepts it. Red first, unit in `planning_live_state_test.dart`: a board arriving
-   after a reconnect during a reload leaves the board stale and catching up until the reload ends. Harm: a move or a
-   Start offered on a board that is not the one shown.
-3. **Each watch its own reconnect** (`client.dart`, `http/planner_source.dart`, `planning_board.dart`).
-   `HttpPlanningSource.isReconnecting(project)` is true while any `_Watch` of the project reconnects, and the board
-   asks it by project name, so a board whose own watch delivered stays catching up while another watch of the same
-   project reconnects. `watchStories` answers a stream that also tells its own reconnect (a subtype of the stream, so
-   `PlanningSource` keeps its signature), and the board follows that; `PlanningReconnect` stays for whatever reads it
-   by project. Red first, unit: two boards on one source, one watch reconnecting, the other board turns live on its
-   board. Harm: a board held stale, its moves and Starts refused, with nothing wrong on its own watch.
-4. **No watch after dispose or rebind inside a notification** (`planning_board.dart`). On a source that already
-   reconnects the project, `_listen` calls `changed()`, and so `notifyListeners`, before it opens the watch; a
-   listener that disposes the board, or calls `changeProject`, runs first, and `_listen` then opens a watch on a
-   disposed board, or overwrites the newer generation's `_watching` so that watch is never cancelled. The watch is
-   opened before the first notification, and `_listen` returns without opening one when the generation moved. Red
-   first, unit: a listener disposing the board on its first notification leaves the source with no open watch.
-   Harm: a stream connection and its reconnect loop left running for nothing.
-5. **A cancelled discussion is no error** (`planning_board.dart`). When the person cancels the Start of a
-   discussion, the window refuses with `PlanningRefusal` named `NotStarted`, and `discussIdea`'s catch reports it
-   through `reportActionProblem` as an error banner. It takes `NotStarted` quietly, as the person's own choice: no
-   `actionProblem`, `DiscussIdea` stays offered. Red first, unit: a `start` that throws `NotStarted` leaves
-   `actionProblem` null. Harm: an error shown for the person's own choice, read as a fault of the planner.
-
-Order: 4, 2, 3, 1, 5.
+Within the package only `PlanningBoards` builds boards, one per provider and project; two boards on one source and
+project stand when two providers hand the same source, or when the window builds a `PlanningBoard` of its own, which
+the package exports.
 
 ## Acceptance
 
-- Each red-first test above seen red on today's code, then green; the screen's whole suite, as the module's Maven
-  build runs it, green.
+- Each test above seen red, then green: the dispose and rebind tests with the first notification told before the watch
+  is opened; the held-back test with the watch's state set while the board is held back; the two-board test with the
+  board following the source's project-wide reconnect; the HTTP test with a `PlanningWatch` whose `reconnecting` is
+  not the watch's; the text test on the code before the change, and again with a card title, a brief and the Started
+  line, and an attention row's story title left unstripped; the discussion test without the `NotStarted` case.
+- The screen's whole suite, as the module's Maven build runs it, green.
 - A text with U+202E or a control character in a brief, a Start's task name or a card title shows without it.
 - A discussion whose Start the person cancelled leaves no error on the board.
-
-## To be checked
-
-- Whether the window implements `PlanningSource` or `PlanningReconnect` itself, or builds a `PlanningBoard` of its
-  own, since `porelo_planning.dart` exports all three; the window's agent is asked before step 3 changes them.
-- Where, outside `PlanningBoards`, two boards share one source and project, so step 3's test stands for a real case.

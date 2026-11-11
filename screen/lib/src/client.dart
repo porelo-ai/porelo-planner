@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'models.dart';
@@ -109,6 +111,18 @@ abstract interface class PlanningClient implements Listenable {
 abstract interface class PlanningReconnect implements Listenable {
   /// Whether a watch of [project] is recovering from a lost connection and has not yet received its next board.
   bool isReconnecting(String project);
+}
+
+/// A watch of one project's boards that tells its own reconnect, apart from any other watch of the same project.
+///
+/// [PlanningSource.watchStories] may answer one; a board follows [reconnecting] rather than
+/// [PlanningReconnect.isReconnecting], which is true while any watch of the project reconnects.
+class PlanningWatch extends StreamView<PlanningSnapshot> {
+  /// Takes the watch's boards and whether this watch is recovering from a lost connection.
+  PlanningWatch(super.stream, this.reconnecting);
+
+  /// Whether this watch is recovering from a lost connection and has not yet received its next board.
+  final ValueListenable<bool> reconnecting;
 }
 
 /// One provider's planning calls, each answering with the provider's own records.

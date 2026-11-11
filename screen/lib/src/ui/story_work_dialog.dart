@@ -38,7 +38,9 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
     super.dispose();
   }
 
-  String _said(String text) => text.isEmpty ? 'not reported' : text;
+  /// What an agent or a repository wrote, as the screen shows it.
+  String _said(String text, {bool multiline = false}) =>
+      text.isEmpty ? 'not reported' : planningShown(text, multiline: multiline);
 
   @override
   Widget build(BuildContext context) {
@@ -56,8 +58,8 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('${work.story.id} — ${_said(work.story.title)}'),
-                Text('${_said(work.story.state)} → ${work.to}'),
+                Text('${_said(work.story.id)} — ${_said(work.story.title)}'),
+                Text('${_said(work.story.state)} → ${_said(work.to)}'),
                 DropdownButton<PlanningBoard>(
                   key: const Key('story-work-machine'),
                   value: work.board,
@@ -99,7 +101,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                   hint: const Text('Working state'),
                   items: [
                     for (final state in work.board.states.where((state) => state.kind == 'WORKING'))
-                      DropdownMenuItem(value: state.name, child: Text(state.name)),
+                      DropdownMenuItem(value: state.name, child: Text(_said(state.name))),
                   ],
                   onChanged: !work.sourceCurrent || work.busy || work.tasks.isNotEmpty
                       ? null
@@ -119,9 +121,9 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                   ),
                 ],
                 for (final task in work.tasks) ...[
-                  Text('${task.order.repository} · ${task.order.role} · ${task.order.issues.join(', ')}'),
-                  if (task.started case final started?) Text('Started ${started.task} in ${started.container}'),
-                  if (task.problem case final problem?) Text(problem),
+                  Text(_said('${task.order.repository} · ${task.order.role} · ${task.order.issues.join(', ')}')),
+                  if (task.started case final started?) Text(_said('Started ${started.task} in ${started.container}')),
+                  if (task.problem case final problem?) Text(_said(problem, multiline: true)),
                   if (task.started == null && task.problem == null)
                     Text(work.starting ? 'Waiting for Start' : 'Not started'),
                 ],
@@ -145,7 +147,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                     final started = await work.start();
                     if (context.mounted && started) Navigator.pop(context, true);
                   },
-            child: Text(work.startLabel),
+            child: Text(_said(work.startLabel)),
           ),
         ],
       ),
@@ -192,15 +194,17 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
           PlanningModelField(
             fieldKey: Key('story-work-main-model ${repo.repository}'),
             initialValue: work.repositories[repo.repository]!.model,
-            help: 'Model proposed for ${work.to}.',
+            help: 'Model proposed for ${_said(work.to)}.',
             hint: 'not reported',
             enabled: enabled,
             onChanged: (value) => work.chooseMain(repo.repository, model: value),
           ),
           for (final sub in repo.subAgents) _sub(repo.repository, sub, enabled && sub.role == 'BUILDER'),
           ExpansionTile(
-            title: Text('The work order for ${repo.task}'),
-            children: [SelectableText(_said(repo.workOrder), key: Key('story-work-order ${repo.repository}'))],
+            title: Text('The work order for ${_said(repo.task)}'),
+            children: [
+              SelectableText(_said(repo.workOrder, multiline: true), key: Key('story-work-order ${repo.repository}')),
+            ],
           ),
         ],
         if (proposal.manual.isNotEmpty) ...[
@@ -217,7 +221,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
           title: const Text('The work order the agent gets'),
           children: [
             SelectableText(
-              proposal.repositories.map((repo) => repo.workOrder).join('\n\n'),
+              planningShown(proposal.repositories.map((repo) => repo.workOrder).join('\n\n')),
               key: const Key('story-work-order'),
             ),
           ],
@@ -287,7 +291,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
 
   Widget _agentItem(String name) {
     final agent = work.agents.where((agent) => agent.name == name).firstOrNull;
-    return agent?.choice ?? Text(name);
+    return agent?.choice ?? Text(_said(name));
   }
 
   Widget _agentPicker({
@@ -326,7 +330,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('${_said(sub.name)} · ${_said(sub.role)} · ${_said(sub.agent)} · ${_said(sub.model)}'),
-          if (sub.brief.isNotEmpty) Text(sub.brief),
+          if (sub.brief.isNotEmpty) Text(_said(sub.brief, multiline: true)),
           Wrap(
             spacing: Space.small,
             children: [

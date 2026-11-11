@@ -252,7 +252,9 @@ class StoryWork extends ChangeNotifier {
       if (!valid()) return;
       agents = listed.agents;
       if (listed.failures.isNotEmpty) {
-        problem = listed.failures.entries.map((each) => '${each.key}: ${each.value}').join('\n');
+        problem = listed.failures.entries
+            .map((each) => planningShown('${each.key}: ${each.value}', multiline: false))
+            .join('\n');
       }
     } catch (error) {
       if (valid()) {

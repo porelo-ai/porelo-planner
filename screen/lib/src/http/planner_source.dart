@@ -329,7 +329,10 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   /// a lost connection until the watch is cancelled; a refusal, or a connection not restored within [silence], ends
   /// it with an error.
   @override
-  Stream<PlanningSnapshot> watchStories(String project) => _Watch(this, project).replies.stream;
+  Stream<PlanningSnapshot> watchStories(String project) {
+    final watch = _Watch(this, project);
+    return PlanningWatch(watch.replies.stream, watch.reconnecting);
+  }
 
   @override
   Future<PlanningSnapshot> planningWorkflow(String project) => _snapshot(project);
@@ -949,10 +952,14 @@ class _Watch {
   static const _cancelled = PlanningRefusal('Cancelled', {}, 'the watch was cancelled');
 
   bool _ended = false;
-  bool _reconnecting = false;
+
+  /// Whether this watch alone is recovering from a lost connection.
+  final ValueNotifier<bool> reconnecting = ValueNotifier(false);
+
+  bool get _reconnecting => reconnecting.value;
 
   void _reconnect(bool value) {
-    _reconnecting = value;
+    reconnecting.value = value;
     source._setReconnecting(this, value);
   }
 

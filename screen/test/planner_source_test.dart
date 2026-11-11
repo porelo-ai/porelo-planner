@@ -796,7 +796,12 @@ void main() {
     source.addListener(changed);
     addTearDown(() => source.removeListener(changed));
     final revisions = <String>[];
-    final watching = source.watchStories('demo').listen((reply) => revisions.add(reply.revision));
+    final watch = source.watchStories('demo');
+    expect(watch, isA<PlanningWatch>(), reason: 'the watch tells its own reconnect');
+    final own = (watch as PlanningWatch).reconnecting;
+    final ownStates = <bool>[];
+    own.addListener(() => ownStates.add(own.value));
+    final watching = watch.listen((reply) => revisions.add(reply.revision));
     addTearDown(watching.cancel);
     await _until(() => revisions.isNotEmpty, 'the first board');
     expect(source.isReconnecting('demo'), isFalse);
@@ -828,6 +833,7 @@ void main() {
     await watching.cancel();
     expect(source.isReconnecting('demo'), isFalse);
     expect(states, [true, false, true, false]);
+    expect(ownStates, [true, false, true, false], reason: 'the watch tells each of its own reconnects');
   });
 
   // Harm: a connection that died without a word leaves the board frozen while it looks live.

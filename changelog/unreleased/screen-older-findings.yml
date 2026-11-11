@@ -1,0 +1,2 @@
+title: The planning screen shows every text an agent or a repository wrote without control or bidirectional characters, keeps a board held back during a reload or save stale until it is shown, follows each watch's own reconnect, opens no watch for a board closed on its first notification, and shows no error when the person cancels a discussion's Start.
+type: fixed
