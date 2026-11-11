@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
+import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -67,9 +68,39 @@ public final class WorkRequests {
     /** Porelo's ended record with no outcome invented by the window. */
     public record TaskEnded(String at, boolean finished, String why, String answer, int unpushed) {}
 
-    /** One choice against a completed, stopped reading. */
+    /**
+     * One choice against a completed, stopped reading.
+     *
+     * @param story the story
+     * @param round the round the person saw
+     * @param choice the choice
+     * @param comment the person's words
+     * @param revision the board's revision the person saw
+     * @param mode a rework's mode, given with agent and model or not at all
+     * @param agent a rework's agent
+     * @param model a rework's model
+     */
     public record ReadingRequest(
-            String story, int round, String choice, String comment, String revision) {}
+            String story,
+            int round,
+            String choice,
+            String comment,
+            String revision,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String mode,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String agent,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String model) {
+
+        /**
+         * The rework's settings.
+         *
+         * @return the settings, or null for the Reworking rule's first mode and model
+         */
+        NextStep.@Nullable Settings settings() {
+            return mode == null || agent == null || model == null
+                    ? null
+                    : new NextStep.Settings(mode, agent, model);
+        }
+    }
 
     /**
      * A new issue's body as the window sends it, each member a text where it is given.
@@ -275,19 +306,34 @@ public final class WorkRequests {
     }
 
     static ReadingRequest reading(final JsonNode body) {
-        fields(body, Set.of("story", "round", "choice", "comment", "revision"));
+        fields(
+                body,
+                Set.of(
+                        "story",
+                        "round",
+                        "choice",
+                        "comment",
+                        "revision",
+                        "mode",
+                        "agent",
+                        "model"));
         final String choice = text(body, "choice");
         try {
             ReadingCycle.Choice.valueOf(choice);
         } catch (final IllegalArgumentException invalid) {
             throw WorkRefusal.invalidSettings();
         }
+        // Any one of the settings requires all three, so a part never leaves the rest guessed.
+        final boolean settings = body.has("mode") || body.has("agent") || body.has("model");
         return new ReadingRequest(
                 text(body, "story"),
                 integer(body, "round"),
                 choice,
                 text(body, "comment"),
-                text(body, "revision"));
+                text(body, "revision"),
+                settings ? text(body, "mode") : null,
+                settings ? text(body, "agent") : null,
+                settings ? text(body, "model") : null);
     }
 
     private static int integer(final JsonNode body, final String name) {

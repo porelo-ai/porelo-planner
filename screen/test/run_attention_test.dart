@@ -68,10 +68,11 @@ class _HeldResolve extends MockPlanningSource {
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   }) async {
     asked++;
     await held?.future;
-    return super.resolveIssueReading(project, story, issue, round, choice, revision, comment: comment);
+    return super.resolveIssueReading(project, story, issue, round, choice, revision, comment: comment, rework: rework);
   }
 }
 

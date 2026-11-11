@@ -148,7 +148,8 @@ public final class WorkRun {
             List<String> deferred,
             @Nullable SaveFailure refusal,
             boolean reviewAnyway,
-            String reworkComment) {
+            String reworkComment,
+            NextStep.@Nullable Settings rework) {
         /** Starts with no deferred operator override. */
         public Offer(
                 final String id,
@@ -179,7 +180,8 @@ public final class WorkRun {
                     deferred,
                     refusal,
                     false,
-                    "");
+                    "",
+                    null);
         }
 
         /** Keeps replay dispositions and deferred ownership immutable. */
@@ -659,17 +661,33 @@ public final class WorkRun {
                 .orElse(null);
     }
 
-    /** Records one reading choice before its offers can leave the record lock. */
+    /**
+     * Records one reading choice before its offers can leave the record lock.
+     *
+     * @param story the story
+     * @param issueId the issue whose reading stopped
+     * @param round the round the person saw
+     * @param choice the choice
+     * @param comment the person's words
+     * @param revision the board's revision the person saw
+     * @param rework the settings a rework runs with, null for the Reworking rule's first mode and
+     *     model; only a rework takes them
+     * @return the run and the offers that follow
+     */
     public Answer choose(
             final String story,
             final String issueId,
             final int round,
             final ReadingCycle.Choice choice,
             final String comment,
-            final String revision) {
+            final String revision,
+            final NextStep.@Nullable Settings rework) {
         Ids.story(story);
         Ids.issue(issueId);
         words(comment);
+        if (rework != null && choice != ReadingCycle.Choice.REWORK) {
+            throw WorkRefusal.invalidSettings();
+        }
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
@@ -704,7 +722,13 @@ public final class WorkRun {
                     }
                     final ReadingCycle.Counted counted;
                     try {
-                        counted = ReadingCycle.choose(previous.rounds(), round, choice, comment);
+                        counted =
+                                ReadingCycle.choose(
+                                        previous.rounds(),
+                                        round,
+                                        choice,
+                                        comment,
+                                        previous.findings());
                     } catch (final ReadingCycle.Refused refused) {
                         if ("ReadingRoundChanged".equals(refused.getMessage())) {
                             throw WorkRefusal.readingRoundChanged(
@@ -729,6 +753,10 @@ public final class WorkRun {
                             || !issue.state().equals(reading.binding().state())) {
                         throw WorkRefusal.readingNotStopped(issueId);
                     }
+                    final NextStep.Settings settings =
+                            counted.next() == ReadingCycle.Next.REWORK
+                                    ? reworkSettings(board, reading.binding().rule(), rework)
+                                    : null;
                     final Draft draft = new Draft(run);
                     draft.progress.put(
                             issueId,
@@ -771,7 +799,8 @@ public final class WorkRun {
                                                     List.of(issueId),
                                                     reading.refusal(),
                                                     true,
-                                                    comment));
+                                                    comment,
+                                                    null));
                                 } else {
                                     writes =
                                             NextStep.writes(
@@ -799,7 +828,8 @@ public final class WorkRun {
                                                 List.of(issueId),
                                                 reading.refusal(),
                                                 false,
-                                                comment));
+                                                comment,
+                                                settings));
                             } else {
                                 final WorkRule rule =
                                         WorkRules.check(board.workflow(), board.work())
@@ -818,7 +848,7 @@ public final class WorkRun {
                                                         issue,
                                                         target,
                                                         rule,
-                                                        run.mode(),
+                                                        settings,
                                                         run.comment(),
                                                         NextStep.findingText(previous.findings())
                                                                 + (comment.isEmpty()
@@ -919,8 +949,56 @@ public final class WorkRun {
                     final Set<String> stories = new HashSet<>();
                     moves.stream().filter(Moves.Move::story).forEach(m -> stories.add(m.id()));
                     refuseOwned(snapshot, affected, stories);
-                    return save.get();
+                    final T saved = save.get();
+                    final Board after = store.board();
+                    affected.removeIf(id -> manual(board, id) || !stateChanged(board, after, id));
+                    settled(session, snapshot, affected);
+                    return saved;
                 });
+    }
+
+    /** Whether a save changed an issue's state; a move to where it stood answers nothing. */
+    private static boolean stateChanged(final Board before, final Board after, final String id) {
+        final String was = before.issue(id).map(Issue::state).orElse(null);
+        final String is = after.issue(id).map(Issue::state).orElse(null);
+        return !java.util.Objects.equals(was, is);
+    }
+
+    /**
+     * Clears the attention of issues a person moved by hand, since the move is their answer to it
+     * and nothing else would ever clear it; a halted run keeps its refused save in view.
+     */
+    private static void settled(
+            final Session session, final Snapshot snapshot, final Set<String> moved) {
+        Snapshot next = snapshot;
+        for (final Run run : snapshot.runs().values()) {
+            if (run.halted() || run.pending()) {
+                continue;
+            }
+            final Draft draft = new Draft(run);
+            boolean changed = false;
+            for (final String id : moved) {
+                final NextStep.Progress p = draft.progress.get(id);
+                if (p != null && (p.needsYou() || p.rounds().stopped())) {
+                    draft.progress.put(
+                            id,
+                            new NextStep.Progress(
+                                    new ReadingCycle.Rounds(
+                                            p.rounds().rounds(), p.rounds().roundsMost(), false),
+                                    p.findings(),
+                                    false,
+                                    "NONE",
+                                    p.answer()));
+                    changed = true;
+                }
+            }
+            if (changed) {
+                next = replace(next, draft.freeze());
+            }
+        }
+        if (next != snapshot) {
+            session.write(next);
+        }
     }
 
     /** Refuses a change of a story or an issue that a run with a started task owns. */
@@ -1013,7 +1091,8 @@ public final class WorkRun {
                                                             ? partly.pushed()
                                                             : List.of()),
                                             o.reviewAnyway(),
-                                            o.reworkComment()));
+                                            o.reworkComment(),
+                                            o.rework()));
             session.write(replace(pending, draft.freeze()));
             throw refused;
         }
@@ -1066,7 +1145,8 @@ public final class WorkRun {
                             draft.comment,
                             store::storyState,
                             old.reviewAnyway(),
-                            old.reworkComment());
+                            old.reworkComment(),
+                            old.rework());
             draft.progress.putAll(next.progress());
             targets.putAll(next.writes().issues());
             final List<String> ids = new ArrayList<>(old.following());
@@ -1091,12 +1171,33 @@ public final class WorkRun {
                             next.deferred(),
                             old.refusal(),
                             old.reviewAnyway(),
-                            old.reworkComment()));
+                            old.reworkComment(),
+                            old.rework()));
         }
         if (targets.equals(first.issues())) {
             return first;
         }
         return NextStep.writes(board, draft.story, targets, null, store::storyState);
+    }
+
+    /**
+     * Checks a rework's settings against the Reworking rule before anything is saved; without that
+     * rule the rework cannot be built, so only no choice passes on to say so as attention.
+     */
+    private static NextStep.@Nullable Settings reworkSettings(
+            final Board board, final WorkRule reading, final NextStep.@Nullable Settings chosen) {
+        final String blocked = reading.blocked();
+        final WorkRule rule =
+                blocked == null
+                        ? null
+                        : WorkRules.check(board.workflow(), board.work()).rules().get(blocked);
+        if (rule == null) {
+            if (chosen != null) {
+                throw WorkRefusal.invalidSettings();
+            }
+            return null;
+        }
+        return NextStep.Settings.of(rule, chosen);
     }
 
     private NextStep.Result next(
@@ -1457,7 +1558,8 @@ public final class WorkRun {
                                             o.deferred(),
                                             o.refusal(),
                                             o.reviewAnyway(),
-                                            o.reworkComment()));
+                                            o.reworkComment(),
+                                            o.rework()));
         }
 
         private void compact(final String current) {
@@ -1506,7 +1608,8 @@ public final class WorkRun {
                                 o.deferred(),
                                 o.refusal(),
                                 o.reviewAnyway(),
-                                o.reworkComment());
+                                o.reworkComment(),
+                                o.rework());
                     });
         }
 
@@ -1530,7 +1633,8 @@ public final class WorkRun {
                                             List.of(),
                                             o.refusal(),
                                             o.reviewAnyway(),
-                                            o.reworkComment()));
+                                            o.reworkComment(),
+                                            o.rework()));
         }
 
         private Run freeze() {

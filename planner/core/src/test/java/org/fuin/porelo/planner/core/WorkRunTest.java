@@ -299,7 +299,8 @@ class WorkRunTest {
                 1,
                 ReadingCycle.Choice.REWORK,
                 "Rework the parent",
-                f.store.board().revision().value());
+                f.store.board().revision().value(),
+                null);
         final var child =
                 f.run.choose(
                                 "ST1",
@@ -307,7 +308,8 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "Rework the child",
-                                f.store.board().revision().value())
+                                f.store.board().revision().value(),
+                                null)
                         .tasks()
                         .getFirst();
         final var start =
@@ -352,6 +354,9 @@ class WorkRunTest {
                             "workstation",
                             ended("Findings:\n1. blocking | - | - | Preserve data")));
         }
+        f.store.current =
+                NextStepTest.withRule(
+                        f.store.board(), "Reworking", NextStepTest.choices("Reading"));
         final var waiting =
                 f.run.choose(
                         "ST1",
@@ -359,7 +364,8 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REWORK,
                         "Preserve bytes",
-                        f.store.board().revision().value());
+                        f.store.board().revision().value(),
+                        new NextStep.Settings("AGENT", "codex", "model"));
         assertThat(waiting.tasks()).as("the stopped child holds its parent's rework").isEmpty();
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("the deferred parent still waits in Reading")
@@ -371,7 +377,8 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REVIEW_ANYWAY,
                         "",
-                        f.store.board().revision().value());
+                        f.store.board().revision().value(),
+                        null);
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("settling the child resumes the parent's recorded rework choice")
                 .isEqualTo("Reworking");
@@ -382,6 +389,10 @@ class WorkRunTest {
         assertThat(chosen.tasks().getFirst().task().prompt())
                 .as("the resumed task keeps the parent's operator words")
                 .contains("Preserve bytes");
+        final WorkOrder.Task resumed = chosen.tasks().getFirst().task();
+        assertThat(List.of(resumed.mode(), resumed.agent(), resumed.model()))
+                .as("the resumed task keeps the parent's chosen settings, not the rule's first")
+                .containsExactly("AGENT", "codex", "model");
         assertThat(
                         java.util.Objects.requireNonNull(chosen.work().issues().get("AA1"))
                                 .rounds()
@@ -528,7 +539,8 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.ONE_MORE_ROUND,
                                         "",
-                                        revision))
+                                        revision,
+                                        null))
                 .as("no reader is started for the person's issue")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessageContaining("AA1");
@@ -716,7 +728,8 @@ class WorkRunTest {
                 1,
                 ReadingCycle.Choice.REWORK,
                 "Rework it",
-                f.store.board().revision().value());
+                f.store.board().revision().value(),
+                null);
 
         assertThat(f.record.checkedBoard)
                 .as("the reading choice's save is checked against a board")
@@ -774,7 +787,8 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.REVIEW_ANYWAY,
                                         "",
-                                        f.store.board().revision().value()))
+                                        f.store.board().revision().value(),
+                                        null))
                 .as("the refused choice save halts the run after a counted reading")
                 .isInstanceOf(StoreException.Busy.class);
         f.store.failure = null;
@@ -802,8 +816,8 @@ class WorkRunTest {
     }
 
     @Test
-    void blockingFindingsLeadThroughReworkAndAnotherReadingToReview() {
-        // Prevents Review before rework and the next reading finish.
+    void blockingFindingsLeadThroughThePersonsReworkAndAnotherReadingToReview() {
+        // Prevents Review before rework and the next reading finish, and rework nobody chose.
         final Fixture f = new Fixture();
         final var build =
                 f.run.order(
@@ -838,13 +852,30 @@ class WorkRunTest {
                                 "workstation",
                                 ended("Findings:\n1. blocking | - | - | Preserve data")));
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
-                .as("blocking findings use the remaining allowance for rework")
-                .isEqualTo("Reworking");
-        final var rework = blocked.tasks().getFirst();
+                .as("blocking findings with a reading left stay in Reading")
+                .isEqualTo("Reading");
+        assertThat(blocked.tasks()).as("no rework starts by itself").isEmpty();
+        assertThat(blocked.work().issues().get("AA1").reason())
+                .as("the person is asked for the findings")
+                .isEqualTo("BLOCKING_FINDINGS");
+        final var rework =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst();
         f.run.report(
                 "rework",
                 new WorkRun.Report(
                         rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the started rework moves the issue to Reworking")
+                .isEqualTo("Reworking");
         final var reworked =
                 f.run.report(
                         "rework",
@@ -881,6 +912,218 @@ class WorkRunTest {
                 .as("the latest notes remain available in review")
                 .isEqualTo(WorkEnds.Severity.NOTE);
         assertThat(reviewed.tasks()).as("review offers no further task").isEmpty();
+    }
+
+    @Test
+    void aHandMoveThatLeavesAnIssueWhereItStandsKeepsItsNeedsYou() {
+        // An issue stuck in a working state with its warning cleared is seen by nobody and worked
+        // on by nothing.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended("2026-01-01T00:00:00Z", false, "Died", "", 0)));
+        final String state = f.store.board().issue("AA1").orElseThrow().state();
+
+        f.run.moves(
+                List.of(new Moves.Move(false, "AA1", state)),
+                () -> f.store.save(f.store.board().revision(), writes("AA1", state)));
+
+        final NextStep.Progress progress =
+                java.util.Objects.requireNonNull(f.run.work("ST1")).issues().get("AA1");
+        assertThat(progress.needsYou()).as("the Needs-you row stays").isTrue();
+        assertThat(progress.reason()).as("the warning stays").isEqualTo("FAILED");
+    }
+
+    @Test
+    void aHandMoveOfAnIssueWhoseTaskFailedRetiresItsNeedsYou() {
+        // A Needs-you row nothing can clear would hold the story's work back for good.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final var failed =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                new WorkRun.Ended("2026-01-01T00:00:00Z", false, "Died", "", 0)));
+        assertThat(failed.work().issues().get("AA1").reason())
+                .as("the failed task raised the issue")
+                .isEqualTo("FAILED");
+
+        f.run.moves(
+                List.of(new Moves.Move(false, "AA1", "Backlog")),
+                () -> f.store.save(f.store.board().revision(), writes("AA1", "Backlog")));
+
+        final NextStep.Progress progress =
+                java.util.Objects.requireNonNull(f.run.work("ST1")).issues().get("AA1");
+        assertThat(progress.needsYou()).as("no Needs-you row stays").isFalse();
+        assertThat(progress.reason()).as("no warning stays").isEqualTo("NONE");
+    }
+
+    @Test
+    void aHandMoveOfAnIssueWhoseReadingStoppedRetiresTheStop() {
+        // A stop nothing can clear would refuse every later start of the story's work.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        for (final WorkRun.Offered reader : f.readers()) {
+            f.run.report(
+                    "reader-" + reader.task().issues().getFirst(),
+                    new WorkRun.Report(
+                            reader.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Findings:\n1. blocking | - | - | Preserve data")));
+        }
+
+        f.run.moves(
+                List.of(new Moves.Move(false, "AA1.1", "Review")),
+                () -> f.store.save(f.store.board().revision(), writes("AA1.1", "Review")));
+
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.issues().get("AA1.1").rounds().stopped())
+                .as("the moved issue's reading no longer waits")
+                .isFalse();
+        assertThat(run.issues().get("AA1").rounds().stopped())
+                .as("an issue not moved keeps its stop")
+                .isTrue();
+    }
+
+    @Test
+    void aReworkChoiceOutsideTheReworkingRulesSettingsIsRefusedAndSavesNothing() {
+        // A rework in a mode or with a model the work rules do not allow would run unchecked work.
+        for (final NextStep.Settings wrong :
+                List.of(
+                        new NextStep.Settings("UNATTENDED", "gemini", "opus"),
+                        new NextStep.Settings("UNATTENDED", "claude", "model"),
+                        new NextStep.Settings("SHELL", "claude", "opus"))) {
+            final Fixture f = stoppedOnFirstOfTwo();
+            final int saves = f.store.saves;
+            final String revision = f.store.board().revision().value();
+            assertThatThrownBy(
+                            () ->
+                                    f.run.choose(
+                                            "ST1",
+                                            "AA1",
+                                            1,
+                                            ReadingCycle.Choice.REWORK,
+                                            "",
+                                            revision,
+                                            wrong))
+                    .as("%s is refused", wrong)
+                    .isInstanceOf(WorkRefusal.class)
+                    .satisfies(
+                            e ->
+                                    assertThat(((WorkRefusal) e).name())
+                                            .as("the settings are named as invalid")
+                                            .isEqualTo("InvalidSettings"));
+            assertThat(f.store.saves).as("nothing is saved for %s", wrong).isEqualTo(saves);
+            assertThat(
+                            java.util.Objects.requireNonNull(f.run.work("ST1"))
+                                    .issues()
+                                    .get("AA1")
+                                    .rounds()
+                                    .stopped())
+                    .as("the reading still waits after %s", wrong)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void aReworkChoiceRunsWithTheChosenSettingsOrTheRulesFirst() {
+        // A rework with other settings than the person saw would run an agent they did not choose.
+        final Fixture chosen = stoppedOnFirstOfTwo();
+        final WorkOrder.Task task =
+                chosen.run
+                        .choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                chosen.store.board().revision().value(),
+                                new NextStep.Settings("AGENT", "codex", "model"))
+                        .tasks()
+                        .getFirst()
+                        .task();
+        assertThat(List.of(task.mode(), task.agent(), task.model()))
+                .as("the chosen mode, agent and model")
+                .containsExactly("AGENT", "codex", "model");
+        assertThat(task.prompt())
+                .as("the blocking findings go with a rework given no words")
+                .contains("Preserve data");
+
+        final Fixture first = stoppedOnFirstOfTwo();
+        final WorkOrder.Task defaulted =
+                first.run
+                        .choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                first.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst()
+                        .task();
+        assertThat(List.of(defaulted.mode(), defaulted.agent(), defaulted.model()))
+                .as("no choice takes the Reworking rule's first mode and model")
+                .containsExactly("UNATTENDED", "claude", "opus");
+    }
+
+    /** One issue whose first of two readings stopped on a blocking finding. */
+    private static Fixture stoppedOnFirstOfTwo() {
+        final Fixture f = new Fixture();
+        f.store.current =
+                NextStepTest.withRule(
+                        f.store.board(), "Reworking", NextStepTest.choices("Reading"));
+        final var build =
+                f.run.order(
+                                "ST1",
+                                "Building",
+                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                        .tasks()
+                        .getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        return f;
+    }
+
+    private static Writes writes(final String issue, final String state) {
+        return new Writes(Map.of(issue, state), Map.of(), List.of());
     }
 
     @Test
@@ -1049,7 +1292,8 @@ class WorkRunTest {
                         ended("Findings:\n1. blocking | - | - | Preserve data")));
         final String revision = f.store.board().revision().value();
         final var chosen =
-                f.run.choose("ST1", "AA1", 1, ReadingCycle.Choice.ONE_MORE_ROUND, "", revision);
+                f.run.choose(
+                        "ST1", "AA1", 1, ReadingCycle.Choice.ONE_MORE_ROUND, "", revision, null);
         assertThat(chosen.tasks()).as("one extra reader is offered").hasSize(1);
         assertThatThrownBy(
                         () ->
@@ -1059,7 +1303,8 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.ONE_MORE_ROUND,
                                         "",
-                                        revision))
+                                        revision,
+                                        null))
                 .as("the same stop cannot grant another choice")
                 .isInstanceOf(WorkRefusal.class)
                 .satisfies(
@@ -1173,7 +1418,8 @@ class WorkRunTest {
                     1,
                     choice,
                     "Preserve bytes, including ``` fences.",
-                    f.store.board().revision().value());
+                    f.store.board().revision().value(),
+                    null);
             assertThat(f.store.board().issue("AA1").orElseThrow().state())
                     .as("the parent waits while its child is reading")
                     .isEqualTo("Reading");

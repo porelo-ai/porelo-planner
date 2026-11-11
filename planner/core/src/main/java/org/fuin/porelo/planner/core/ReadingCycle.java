@@ -1,11 +1,12 @@
 package org.fuin.porelo.planner.core;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
  * Counts an issue's readings against its limit and decides where a reading leads: Review on a
- * reading without blocking findings, Reworking while readings are left, and on the last allowed
- * reading with blocking findings a stop in Reading under Needs you, where the operator chooses.
+ * reading without blocking findings, and on every reading with blocking findings a stop in Reading
+ * under Needs you, where the operator chooses; the limit only names why the reading stopped.
  */
 public final class ReadingCycle {
 
@@ -52,6 +53,17 @@ public final class ReadingCycle {
         }
     }
 
+    /**
+     * Names why a reading stopped.
+     *
+     * @param rounds the issue's rounds after the stopped reading
+     * @return {@code ROUND_LIMIT} when the readings allowed are used up, otherwise {@code
+     *     BLOCKING_FINDINGS}
+     */
+    public static String stopReason(final Rounds rounds) {
+        return rounds.rounds() >= rounds.roundsMost() ? "ROUND_LIMIT" : "BLOCKING_FINDINGS";
+    }
+
     /** Where a reading leads. */
     public enum Next {
         /** On to Review, the findings going with the issue. */
@@ -60,7 +72,7 @@ public final class ReadingCycle {
         REWORK,
         /** One more reading of the issue as it stands. */
         READ,
-        /** The limit is reached: the issue stays in Reading, nobody at work, under Needs you. */
+        /** Blocking findings: the issue stays in Reading, nobody at work, under Needs you. */
         STOP
     }
 
@@ -72,13 +84,13 @@ public final class ReadingCycle {
      */
     public record Counted(Rounds rounds, Next next) {}
 
-    /** The operator's choice for a reading stopped at its limit. */
+    /** The operator's choice for a stopped reading. */
     public enum Choice {
         /** Review anyway, the findings going with the issue. */
         REVIEW_ANYWAY,
         /** One more reading. */
         ONE_MORE_ROUND,
-        /** Rework with the operator's own words. */
+        /** Rework with the blocking findings and the operator's words, if any. */
         REWORK
     }
 
@@ -98,9 +110,6 @@ public final class ReadingCycle {
         if (!read.blocking()) {
             return new Counted(new Rounds(now, rounds.roundsMost(), false), Next.REVIEW);
         }
-        if (now < rounds.roundsMost()) {
-            return new Counted(new Rounds(now, rounds.roundsMost(), false), Next.REWORK);
-        }
         return new Counted(new Rounds(now, Math.max(now, rounds.roundsMost()), true), Next.STOP);
     }
 
@@ -110,13 +119,19 @@ public final class ReadingCycle {
      * @param rounds the issue's rounds
      * @param round the round the operator saw, which must still be the last one counted
      * @param choice the choice
-     * @param words the operator's words, required for a rework
+     * @param words the operator's words, required for a rework only without blocking findings
+     * @param findings the stopped reading's saved findings, never a request's word for them
      * @return the rounds after the choice and where the issue goes: Review, or work for one more
      *     reading or a rework; no reading is counted before it ends
-     * @throws Refused when the reading is not stopped, the round moved on, or a rework has no words
+     * @throws Refused when the reading is not stopped, the round moved on, or a rework has neither
+     *     words nor blocking findings to go with it
      */
     public static Counted choose(
-            final Rounds rounds, final int round, final Choice choice, final String words) {
+            final Rounds rounds,
+            final int round,
+            final Choice choice,
+            final String words,
+            final List<WorkEnds.Finding> findings) {
         Objects.requireNonNull(words, "words");
         if (!rounds.stopped()) {
             throw new Refused("ReadingNotStopped");
@@ -136,7 +151,7 @@ public final class ReadingCycle {
                             new Rounds(rounds.rounds(), rounds.roundsMost(), false), Next.REVIEW);
             case ONE_MORE_ROUND -> new Counted(granted, Next.READ);
             case REWORK -> {
-                if (words.isBlank()) {
+                if (words.isBlank() && !new WorkEnds.Read(findings).blocking()) {
                     throw new Refused("ReworkNeedsWords");
                 }
                 yield new Counted(granted, Next.REWORK);

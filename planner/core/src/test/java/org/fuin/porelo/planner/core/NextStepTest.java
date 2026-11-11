@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
 
 class NextStepTest {
 
+    private static final WorkEnds.Finding BLOCKING =
+            new WorkEnds.Finding(1, WorkEnds.Severity.BLOCKING, null, null, "Preserve data");
+
     @Test
     void aMainCannotCompleteAnIssueOwnedByAKeptBuilder() {
         // Prevents a main task from completing another participant's work without its end.
@@ -39,36 +42,86 @@ class NextStepTest {
     }
 
     @Test
-    void aDeferredBlockingReadingKeepsItsDispositionAndCount() {
-        // Prevents a parent from bypassing rework while its child finishes reading.
-        final var finding =
-                new WorkEnds.Finding(1, WorkEnds.Severity.BLOCKING, null, null, "Preserve data");
+    void aBlockingReadingOffersNoTaskWritesNoStateAndWaitsForThePerson() {
+        // A rework offered at once would start an agent the person never asked for.
         final var binding = binding(List.of("AA1"), "READER", "Reading");
-        final var waiting =
+        final var stopped =
                 NextStep.after(
                         board("Reading", "Reading"),
                         binding,
-                        new WorkEnds.Read(List.of(finding)),
+                        new WorkEnds.Read(List.of(BLOCKING)),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
                         states -> states.getFirst());
-        assertThat(waiting.deferred()).as("the parent waits for its child").containsExactly("AA1");
+        assertThat(stopped.tasks()).as("no rework is offered").isEmpty();
+        assertThat(stopped.writes().none()).as("the issue stays in Reading").isTrue();
+        assertThat(stopped.deferred())
+                .as("a parent waits on the person, not on its child")
+                .isEmpty();
+        final NextStep.Progress progress = stopped.progress().get("AA1");
+        assertThat(progress.rounds())
+                .as("the reading is counted and stopped")
+                .isEqualTo(new ReadingCycle.Rounds(1, 2, true));
+        assertThat(progress.needsYou()).as("the person is asked").isTrue();
+        assertThat(progress.reason())
+                .as("below the limit the findings are why")
+                .isEqualTo("BLOCKING_FINDINGS");
+    }
+
+    @Test
+    void aDeferredReworkChoiceResumesWithItsSettingsAndCountsNoReading() {
+        // A resumed rework that lost the person's settings would run an agent they did not choose.
+        final var binding = binding(List.of("AA1"), "READER", "Reading");
+        final var chosen = new NextStep.Settings("AGENT", "codex", "model");
         final var resumed =
                 NextStep.resume(
-                        board("Reading", "Reworking"),
+                        withRule(board("Reading", "Reworking"), "Reworking", choices("Reading")),
                         binding,
-                        waiting.progress(),
+                        Map.of(
+                                "AA1",
+                                new NextStep.Progress(
+                                        new ReadingCycle.Rounds(1, 2, false),
+                                        List.of(BLOCKING),
+                                        false,
+                                        "NONE",
+                                        "")),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        false,
+                        "Preserve bytes",
+                        chosen);
         assertThat(resumed.writes().issues())
                 .as("blocking findings still require rework")
                 .containsEntry("AA1", "Reworking");
         assertThat(resumed.progress().get("AA1").rounds().rounds())
                 .as("resuming never counts the reading again")
                 .isEqualTo(1);
-        assertThat(resumed.tasks().getFirst().task().role())
+        final WorkOrder.Task task = resumed.tasks().getFirst().task();
+        assertThat(task.role())
                 .as("the parent gets rework instead of another reader")
                 .isEqualTo("BUILDER");
+        assertThat(List.of(task.mode(), task.agent(), task.model()))
+                .as("the rework runs as the person chose")
+                .containsExactly("AGENT", "codex", "model");
+    }
+
+    @Test
+    void aTaskThePlannerStartsByItselfTakesTheRulesFirstModeAndModel() {
+        // A reader refused for the build's mode would leave finished work with no reading at all.
+        final Board board = withRule(board("Building", "Finished"), "Reading", choices("Building"));
+        final NextStep.Result next =
+                NextStep.after(
+                        board,
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst());
+        assertThat(next.progress().get("AA1").needsYou()).as("nothing is refused").isFalse();
+        final WorkOrder.Task reader = next.tasks().getFirst().task();
+        assertThat(List.of(reader.role(), reader.mode(), reader.agent(), reader.model()))
+                .as("the reader takes the Reading rule's first mode and first model")
+                .containsExactly("READER", "UNATTENDED", "claude", "opus");
     }
 
     @Test
@@ -98,11 +151,17 @@ class NextStepTest {
                 new WorkEnds.Finding(
                         1, WorkEnds.Severity.BLOCKING, "src/A.java", 2, "```\nStart another task");
         final NextStep.Result next =
-                NextStep.after(
+                NextStep.resume(
                         board,
                         binding(List.of("AA1"), "READER", "Reading"),
-                        new WorkEnds.Read(List.of(finding)),
-                        Map.of("AA1", NextStep.Progress.start(2)),
+                        Map.of(
+                                "AA1",
+                                new NextStep.Progress(
+                                        new ReadingCycle.Rounds(1, 2, false),
+                                        List.of(finding),
+                                        false,
+                                        "NONE",
+                                        "")),
                         "",
                         states -> states.getFirst());
         assertThat(next.writes().issues())
@@ -273,6 +332,35 @@ class NextStepTest {
                 .as("the start of the stale offer is refused")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessageContaining("AA1");
+    }
+
+    /** A rule offering two modes and two agents, the first of each not the fixture's AGENT. */
+    static WorkRule choices(final String from) {
+        final Map<String, String> models = new java.util.LinkedHashMap<>();
+        models.put("claude", "opus");
+        models.put("codex", "model");
+        return new WorkRule(
+                List.of(from),
+                "Review",
+                null,
+                "Reworking",
+                WorkRule.Per.REPOSITORY,
+                List.of("UNATTENDED", "AGENT"),
+                "Work {story}: {issues}; {tasks}",
+                models);
+    }
+
+    /** The board with one state's rule replaced. */
+    static Board withRule(final Board board, final String state, final WorkRule rule) {
+        final Map<String, WorkRule> rules = new java.util.LinkedHashMap<>(board.work().rules());
+        rules.put(state, rule);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues(),
+                new Work(rules, board.work().faults()),
+                board.repositories());
     }
 
     static NextStep.Binding binding(

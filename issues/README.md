@@ -51,12 +51,6 @@ left out.
 | <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | L | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -73,6 +67,7 @@ left out.
 | <a id="pl58"></a>[PL58](PL58-The-Store-Writes-An-Idea-As-A-Story-And-Its-Issues.md) | L | - | The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number; nothing stands on a fault before the answer, and a push that fails or is dropped after it is named in the board's faults |
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
+| <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | L | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog |
 
 ## Finished
 

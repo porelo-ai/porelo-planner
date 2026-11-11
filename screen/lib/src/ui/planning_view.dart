@@ -784,6 +784,29 @@ class _BoardViewState extends State<_BoardView> {
         : KeyedSubtree(key: key, child: lines);
   }
 
+  /// Whether an issue of the story was raised outside a stopped reading, such as by a task that failed.
+  bool _raised(PlanStory story) {
+    final stopped = {
+      for (final issue in story.issues)
+        if (issue.readingStopped == true) issue.id,
+    };
+    return story.issues.any((issue) => issue.needsYou == true && !stopped.contains(issue.id)) ||
+        (board.workOf(story)?.issues ?? const <PlanWorkIssue>[]).any(
+          (issue) =>
+              (planReasonNeedsAttention(issue.reason) || issue.needsYou == true) &&
+              issue.readingStopped != true &&
+              !stopped.contains(issue.issue),
+        );
+  }
+
+  /// A warning mark leading to Needs you, where the work stopped and needs the person.
+  Widget _warning(PlanStory story) => TextButton.icon(
+    key: Key('planning-warning ${story.id}'),
+    onPressed: widget.onNeedsYou,
+    icon: const Icon(Icons.warning_amber, size: PlanningStyle.mark),
+    label: const Text('needs you'),
+  );
+
   Future<void> _start(PlanStory story, {PlanState? target}) async {
     target ??=
         board.states.where((state) => state.kind == 'WORKING' && state.name != story.state).firstOrNull ??
@@ -972,6 +995,7 @@ class _BoardViewState extends State<_BoardView> {
                   (issue) => issue.state == 'Reading' || issue.state == 'Reworking' || issue.readingStopped == true,
                 ))
                   _reading(story),
+                if (_raised(story)) _warning(story),
                 if (!story.issuesReported)
                   const Text('Issues not reported')
                 else

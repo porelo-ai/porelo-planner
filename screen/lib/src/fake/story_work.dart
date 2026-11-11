@@ -117,12 +117,17 @@ class MockStoryWork {
         refuse('ReadingRoundChanged', {'issue': issue['id'], 'rounds': issue['rounds']});
       }
       final choice = parameters['choice'];
+      final settings = ['mode', 'agent', 'model'].where(parameters.containsKey).length;
+      if (settings != 0 && (settings != 3 || choice != 'REWORK')) refuse('InvalidSettings', {});
+      final blocking = (issue['findings'] as List? ?? const []).any(
+        (finding) => finding is Map && finding['severity'] == 'BLOCKING',
+      );
       if (!['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'].contains(choice) ||
-          choice == 'REWORK' && (parameters['comment'] as String? ?? '').trim().isEmpty) {
+          choice == 'REWORK' && !blocking && (parameters['comment'] as String? ?? '').trim().isEmpty) {
         refuse('WorkNotAllowed', {
           'from': issue['state'],
           'to': '',
-          'reason': 'Choose a reading decision; Rework needs a comment.',
+          'reason': 'Choose a reading decision; Rework needs a comment or blocking findings.',
         });
       }
       issue['readingStopped'] = false;
@@ -151,7 +156,11 @@ class MockStoryWork {
             'needsYou': item['needsYou'],
             'readingStopped': item['readingStopped'],
             'findings': item['findings'],
-            'reason': item['readingStopped'] == true ? 'ROUND_LIMIT' : 'NONE',
+            'reason': item['readingStopped'] != true
+                ? 'NONE'
+                : (item['rounds'] as int? ?? 0) < (item['roundsMost'] as int? ?? 0)
+                ? 'BLOCKING_FINDINGS'
+                : 'ROUND_LIMIT',
           },
       ];
       story['work'] = work;

@@ -1,0 +1,2 @@
+title: A task that fails or a reading with blocking findings now stops the work and asks the person through Needs you, which opens the failed task or the Reworking dialog, and a task the planner starts by itself takes its rule's first mode and model.
+type: changed

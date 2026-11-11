@@ -689,12 +689,29 @@ class ReadingDecision extends ChangeNotifier {
     }
   }
 
+  /// Whether the last findings hold a blocking one, which a rework takes without the person's words.
+  bool get blocking => detail?.findings.any((finding) => finding.severity == 'BLOCKING') == true;
+
+  /// The Reworking rule this reading's rework would run under, or null when the board reports none.
+  PlanWorkRule? get reworking {
+    final work = row.board.snapshot?.work ?? const <PlanWorkRule>[];
+    final state = row.board.stories
+        .where((story) => story.id == row.story.id)
+        .expand((story) => story.issues)
+        .where((issue) => issue.id == row.issue?.id)
+        .firstOrNull
+        ?.state;
+    final blocked = work.where((rule) => rule.state == state).firstOrNull?.blocked;
+    return blocked == null ? null : work.where((rule) => rule.state == blocked).firstOrNull;
+  }
+
   /// Sends one explicit reading decision and waits for the board to clear the stop.
-  Future<void> resolve(String choice, {String? comment}) async {
+  Future<void> resolve(String choice, {String? comment, PlanningRework? rework}) async {
     if (_disposed ||
         !canResolve ||
         !['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'].contains(choice) ||
-        choice == 'REWORK' && (comment == null || comment.trim().isEmpty) ||
+        choice == 'REWORK' && !blocking && (comment == null || comment.trim().isEmpty) ||
+        choice != 'REWORK' && rework != null ||
         (comment?.runes.length ?? 0) > 4000) {
       return;
     }
@@ -716,6 +733,7 @@ class ReadingDecision extends ChangeNotifier {
         choice,
         revision,
         comment: choice == 'REWORK' ? comment : '',
+        rework: rework,
       );
       answer.checkDecision(row.issue!.id, choice);
       run.observe(answer.work);

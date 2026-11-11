@@ -1076,7 +1076,12 @@ class PlanWorkRule {
       blocked = map['blocked'] is String ? map['blocked'] as String : null,
       per = _planText(map, 'per'),
       modes = _planStrings(map['modes']),
-      order = _planText(map, 'order');
+      order = _planText(map, 'order'),
+      models = {
+        if (map['models'] case final Map<String, dynamic> models)
+          for (final entry in models.entries)
+            if (entry.value case final String model) entry.key: model,
+      };
 
   /// The state, done, per, order reported by the daemon.
   final String state, done, per, order;
@@ -1086,6 +1091,9 @@ class PlanWorkRule {
 
   /// The from, modes reported by the daemon.
   final List<String> from, modes;
+
+  /// Each agent's model, in the rule's order of preference.
+  final Map<String, String> models;
 }
 
 /// The authoritative outcome of a reading decision.

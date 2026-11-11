@@ -192,7 +192,8 @@ abstract interface class PlanningSource {
   /// Reads the issue's last findings.
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue);
 
-  /// Sends a revision-bound decision for one stopped reading round.
+  /// Sends a revision-bound decision for one stopped reading round; only a rework takes [rework], and without it
+  /// the planner takes the Reworking rule's first mode and model.
   Future<ReadingResolution> resolveIssueReading(
     String project,
     String story,
@@ -201,7 +202,28 @@ abstract interface class PlanningSource {
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   });
+}
+
+/// How a rework runs: one of the Reworking rule's modes, and one of its agents with that agent's model.
+@immutable
+class PlanningRework {
+  /// Takes the mode, the agent and its model.
+  const PlanningRework(this.mode, this.agent, this.model);
+
+  /// The mode, the agent and the agent's model.
+  final String mode, agent, model;
+
+  /// The three as the planner's reading request names them.
+  Map<String, String> get wire => {'mode': mode, 'agent': agent, 'model': model};
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningRework && other.mode == mode && other.agent == agent && other.model == model;
+
+  @override
+  int get hashCode => Object.hash(mode, agent, model);
 }
 
 /// The priorities a story may have, the highest first, as the planner names them.

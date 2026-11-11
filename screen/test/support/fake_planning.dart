@@ -275,6 +275,7 @@ class FakePlanningSource implements PlanningSource {
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   }) async => _notServed('ResolveIssueReading');
 }
 

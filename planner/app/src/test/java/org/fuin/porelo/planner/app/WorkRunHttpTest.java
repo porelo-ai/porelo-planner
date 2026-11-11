@@ -455,6 +455,61 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aReworkChoiceWithSettingsTheReworkingRuleDoesNotOfferOrOnlyPartOfThemIsRefused()
+            throws Exception {
+        // A rework in settings the work rules do not allow would run an agent nobody checked.
+        final String build =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":2}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(build, "STARTED", ""), 200);
+        final String reader =
+                call("/tasks/build/events", event(build, "ENDED", "Built"), 200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/read/events", event(reader, "STARTED", ""), 200);
+        final JsonNode stopped =
+                call(
+                        "/tasks/read/events",
+                        event(reader, "ENDED", "Findings:\n1. blocking | - | - | Preserve data"),
+                        200);
+        assertThat(stopped.at("/work/issues/0/reason").asString())
+                .as("a reading left still stops on blocking findings")
+                .isEqualTo("BLOCKING_FINDINGS");
+        assertThat(stopped.path("tasks").size()).as("no rework starts by itself").isZero();
+        final String revision = store.board().revision().value();
+        final String choice =
+                "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"\",\"revision\":\""
+                        + revision
+                        + "\"";
+        for (final String settings :
+                List.of(
+                        ",\"mode\":\"SHELL\",\"agent\":\"codex\",\"model\":\"model\"",
+                        ",\"agent\":\"codex\",\"model\":\"model\"")) {
+            assertThat(
+                            call("/issues/AA1/reading", choice + settings + "}", 400)
+                                    .path("type")
+                                    .asString())
+                    .as("%s is refused", settings)
+                    .endsWith(":InvalidSettings");
+        }
+        assertThat(store.board().revision().value())
+                .as("a refused choice saves nothing")
+                .isEqualTo(revision);
+        final JsonNode rework = call("/issues/AA1/reading", choice + "}", 200);
+        assertThat(
+                        List.of(
+                                rework.at("/tasks/0/mode").asString(),
+                                rework.at("/tasks/0/agent").asString(),
+                                rework.at("/tasks/0/model").asString()))
+                .as("a choice without settings reworks in the rule's first mode and model")
+                .containsExactly("AGENT", "codex", "model");
+    }
+
+    @Test
     void anOversizedReadingAnswerCannotSaveBeforeItCanBeReturned() throws Exception {
         // Prevents an oversized issue envelope from changing planning before it can be answered.
         final var order =

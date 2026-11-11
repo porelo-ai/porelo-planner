@@ -630,6 +630,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   }) async {
     _checked('story', story, _storyId);
     final run = PlanningRun.on(this, project, story);
@@ -637,7 +638,14 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       final answer = await _write(
         project,
         ['issues', _checked('issue', issue, _issueId), 'reading'],
-        {'story': story, 'round': round, 'choice': choice, 'comment': comment ?? '', 'revision': revision},
+        {
+          'story': story,
+          'round': round,
+          'choice': choice,
+          'comment': comment ?? '',
+          'revision': revision,
+          ...?rework?.wire,
+        },
       );
       final resolution = ReadingResolution.from(answer);
       resolution.checkDecision(issue, choice);

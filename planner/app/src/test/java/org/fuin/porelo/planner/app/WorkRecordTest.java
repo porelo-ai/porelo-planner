@@ -66,7 +66,10 @@ class WorkRecordTest {
         final ObjectNode offer =
                 (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
         assertThat(offer.has("machine")).as("the reference record contains the new field").isTrue();
+        assertThat(offer.has("rework")).as("the reference record holds rework settings").isTrue();
         offer.remove("machine");
+        // A record written before rework settings were kept must still open.
+        offer.remove("rework");
         Files.writeString(file, json.writeValueAsString(document));
         try (WorkRecord records =
                 new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {

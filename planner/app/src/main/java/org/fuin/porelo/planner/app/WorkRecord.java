@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
@@ -356,9 +357,11 @@ public final class WorkRecord implements AutoCloseable {
             }
             for (final JsonNode run : tree.path("runs")) {
                 for (final JsonNode offer : run.path("offers")) {
-                    if (offer instanceof ObjectNode object && !object.has("machine")) {
-                        // Only the new field may be absent in older records.
-                        object.putNull("machine");
+                    // Only the newer fields may be absent in older records.
+                    for (final String newer : List.of("machine", "rework")) {
+                        if (offer instanceof ObjectNode object && !object.has(newer)) {
+                            object.putNull(newer);
+                        }
                     }
                 }
             }
@@ -631,6 +634,16 @@ public final class WorkRecord implements AutoCloseable {
                                                     .contains(offer.status())) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
+                                    }
+                                    final NextStep.Settings rework = offer.rework();
+                                    if (rework != null) {
+                                        present(rework.mode(), rework.agent(), rework.model());
+                                        if (rework.mode().length() > 128
+                                                || rework.agent().length() > 128
+                                                || rework.model().length() > 128) {
+                                            throw new IllegalArgumentException(
+                                                    "an offer fails its check");
+                                        }
                                     }
                                     if (Set.of("STARTED", "ENDED", "STOPPED")
                                             .contains(offer.status())) {

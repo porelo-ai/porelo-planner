@@ -739,7 +739,8 @@ public class BoardController {
                                     body.round(),
                                     ReadingCycle.Choice.valueOf(body.choice()),
                                     body.comment(),
-                                    body.revision());
+                                    body.revision(),
+                                    body.settings());
             final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
             return new WorkAnswers.ReadingReply(
                     issue(answer.board(), answer.board().issue(checked).orElseThrow(), snapshot),

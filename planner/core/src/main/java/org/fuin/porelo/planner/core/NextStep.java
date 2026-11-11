@@ -70,6 +70,37 @@ public final class NextStep {
         }
     }
 
+    /**
+     * How a task runs: its mode and its agent with that agent's model.
+     *
+     * @param mode the mode
+     * @param agent the agent
+     * @param model the agent's model
+     */
+    public record Settings(String mode, String agent, String model) {
+
+        /**
+         * The settings a task of the rule runs with.
+         *
+         * @param rule the rule the task works under
+         * @param chosen the person's choice, or null for the rule's first mode and first model
+         * @return the chosen settings, or the rule's first ones
+         * @throws WorkRefusal {@code InvalidSettings} when the choice is not one of the rule's
+         *     modes together with one of its agents and that agent's model
+         */
+        public static Settings of(final WorkRule rule, final @Nullable Settings chosen) {
+            if (chosen == null) {
+                final Map.Entry<String, String> first = rule.models().entrySet().iterator().next();
+                return new Settings(rule.modes().getFirst(), first.getKey(), first.getValue());
+            }
+            if (!rule.modes().contains(chosen.mode())
+                    || !chosen.model().equals(rule.models().get(chosen.agent()))) {
+                throw WorkRefusal.invalidSettings();
+            }
+            return chosen;
+        }
+    }
+
     /** An offer's Start arguments together with the working state it will enter. */
     public record Planned(WorkOrder.Task task, String state, WorkRule rule) {}
 
@@ -154,7 +185,7 @@ public final class NextStep {
             final Map<String, Progress> previous,
             final String comment,
             final Moves.StoryState derive) {
-        return after(board, binding, judgment, previous, comment, derive, true, "");
+        return after(board, binding, judgment, previous, comment, derive, true, "", null);
     }
 
     /** Resumes a deferred transition from its saved findings without judging or counting again. */
@@ -175,10 +206,13 @@ public final class NextStep {
             final String comment,
             final Moves.StoryState derive,
             final boolean reviewAnyway) {
-        return resume(board, binding, previous, comment, derive, reviewAnyway, "");
+        return resume(board, binding, previous, comment, derive, reviewAnyway, "", null);
     }
 
-    /** Retains the operator's rework words while a parent waits for its children. */
+    /**
+     * Retains the operator's rework words and settings while a parent waits for its children; a
+     * reading reaches this only by the operator's choice, so blocking findings rework at once.
+     */
     public static Result resume(
             final Board board,
             final Binding binding,
@@ -186,7 +220,8 @@ public final class NextStep {
             final String comment,
             final Moves.StoryState derive,
             final boolean reviewAnyway,
-            final String operatorWords) {
+            final String operatorWords,
+            final @Nullable Settings rework) {
         final WorkEnds.Judgment judgment =
                 binding.role().equals("READER")
                         ? new WorkEnds.Read(
@@ -195,7 +230,8 @@ public final class NextStep {
                                         : progress(previous, binding.issues().getFirst())
                                                 .findings())
                         : new WorkEnds.Done();
-        return after(board, binding, judgment, previous, comment, derive, false, operatorWords);
+        return after(
+                board, binding, judgment, previous, comment, derive, false, operatorWords, rework);
     }
 
     private static Result after(
@@ -206,7 +242,8 @@ public final class NextStep {
             final String comment,
             final Moves.StoryState derive,
             final boolean countReading,
-            final String operatorWords) {
+            final String operatorWords,
+            final @Nullable Settings rework) {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         binding.issues().forEach(id -> progress.putIfAbsent(id, Progress.start(2)));
         if (!owns(board, binding)) {
@@ -226,6 +263,7 @@ public final class NextStep {
             }
             String target = successState(binding.rule());
             String words = "";
+            Settings settings = null;
             if (judgment instanceof WorkEnds.Read read) {
                 final Progress before = progress(progress, id);
                 if (countReading && before.rounds().rounds() == Integer.MAX_VALUE
@@ -248,7 +286,7 @@ public final class NextStep {
                                 counted.rounds(),
                                 countReading ? read.findings() : before.findings(),
                                 stopped,
-                                stopped ? "ROUND_LIMIT" : "NONE",
+                                stopped ? ReadingCycle.stopReason(counted.rounds()) : "NONE",
                                 before.answer()));
                 if (stopped) {
                     continue;
@@ -258,6 +296,7 @@ public final class NextStep {
                     words =
                             findingText(read.findings())
                                     + (operatorWords.isEmpty() ? "" : "\n" + operatorWords);
+                    settings = rework;
                     if (target == null) {
                         progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
                         continue;
@@ -299,7 +338,7 @@ public final class NextStep {
                                     issue,
                                     target,
                                     next,
-                                    binding.mode(),
+                                    settings,
                                     comment,
                                     words,
                                     judgment instanceof WorkEnds.Read ? "BUILDER" : "READER"));
@@ -338,28 +377,26 @@ public final class NextStep {
         }
     }
 
-    /** Builds a single-issue reading or rework using the rule's default agent and model. */
+    /**
+     * Builds a single-issue reading or rework with the person's settings, or with the rule's first
+     * mode and first model when the planner starts it by itself.
+     */
     public static Planned task(
             final Board board,
             final String storyId,
             final Issue issue,
             final String state,
             final WorkRule rule,
-            final String mode,
+            final @Nullable Settings chosen,
             final String comment,
             final String words,
             final String role) {
-        if (!rule.modes().contains(mode)) {
-            throw WorkRefusal.invalidSettings();
-        }
+        final Settings settings = Settings.of(rule, chosen);
         final Story story =
                 board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));
-        final Map.Entry<String, String> model = rule.models().entrySet().iterator().next();
-        if (model.getKey().isBlank()
-                || model.getKey().length() > 128
-                || model.getValue().isBlank()
-                || model.getValue().length() > 128
-                || mode.length() > 128) {
+        if (settings.agent().length() > 128
+                || settings.model().length() > 128
+                || settings.mode().length() > 128) {
             throw WorkRefusal.invalidSettings();
         }
         String prompt =
@@ -383,9 +420,9 @@ public final class NextStep {
                         issue.repository(),
                         List.of(issue.id()),
                         role,
-                        model.getKey(),
-                        model.getValue(),
-                        mode,
+                        settings.agent(),
+                        settings.model(),
+                        settings.mode(),
                         prompt),
                 state,
                 rule);

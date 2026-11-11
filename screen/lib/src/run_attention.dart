@@ -4,6 +4,7 @@ import 'models.dart';
 
 /// A reported issue reason in words a person can act on; a reason without words shows its wire name.
 String planningReasonWords(String reason) => switch (reason) {
+  'BLOCKING_FINDINGS' => 'its reading found what blocks it',
   'ROUND_LIMIT' => 'its reading rounds ran out',
   'FAILED' => 'its work failed',
   'UNPUSHED' => 'its work was not pushed',
@@ -13,6 +14,32 @@ String planningReasonWords(String reason) => switch (reason) {
   'NEXT_STEP_UNAVAILABLE' => 'its next step is not available',
   _ => reason,
 };
+
+/// The reasons of a stopped reading, which the Reworking dialog answers.
+const planningStopReasons = {'BLOCKING_FINDINGS', 'ROUND_LIMIT'};
+
+/// The reasons of a task's end whose result the window can open: the task failed, left its work unpushed, or
+/// read without a findings block.
+const planningTaskEndReasons = {'FAILED', 'UNPUSHED', 'INVALID_FINDINGS'};
+
+/// Whether [task]'s end is one that raises [reason], so a row may open that task's result.
+bool planningEndRaised(String reason, PlanWorkTask task) {
+  final ended = task.ended;
+  if (ended == null) return false;
+  return switch (reason) {
+    'FAILED' => ended.finished == false,
+    'UNPUSHED' => ended.finished == true && (ended.unpushed ?? 0) > 0,
+    'INVALID_FINDINGS' => task.role == 'READER' && ended.finished == true && ended.unpushed == 0,
+    _ => false,
+  };
+}
+
+/// The task whose end raised [reason] for [issue]: the latest ended task of the issue, when its end is one that
+/// raises that reason; null where none can be told, such as an issue in a working state with no run.
+PlanWorkTask? planningRaisingTask(PlanWork? work, String issue, String reason) {
+  final latest = work?.tasks.reversed.where((task) => task.issues.contains(issue) && task.ended != null).firstOrNull;
+  return latest != null && planningEndRaised(reason, latest) ? latest : null;
+}
 
 /// One issue of a story's run that needs a person, with what the machine reported for it.
 @immutable
@@ -36,7 +63,7 @@ class PlanningIssueAttention {
   List<String> get causes {
     final words = [
       if (planReasonNeedsAttention(reason)) planningReasonWords(reason),
-      if (readingStopped && reason != 'ROUND_LIMIT') 'its reading stopped',
+      if (readingStopped && !planningStopReasons.contains(reason)) 'its reading stopped',
       if (needsYou) 'it needs you',
     ];
     return words.isEmpty ? const ['it needs attention'] : words;

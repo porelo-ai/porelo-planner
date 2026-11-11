@@ -2,12 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../client.dart';
+import '../hooks.dart';
 import '../models.dart';
+import '../run_attention.dart';
 import '../story_work.dart';
 import 'actions.dart';
 import 'style.dart';
 
 /// Story outcomes and reading stops retain the daemon's words until the board clears them.
+///
+/// A row of a task's end opens that task's result in the window; a row of a stopped reading opens the Reworking
+/// dialog. Where the task cannot be told or opened, the row says why in words.
 class StoryWorkAttentionView extends StatefulWidget {
   /// Keeps the source facts and choices for this view or decision.
   const StoryWorkAttentionView({
@@ -15,8 +21,13 @@ class StoryWorkAttentionView extends StatefulWidget {
     required this.resolved,
     required this.machine,
     this.openStory = true,
+    this.taskChanges,
     super.key,
   });
+
+  /// How the window opens a task, given where the planning screen may never have been shown; the row's board's
+  /// own hook otherwise.
+  final PlanningTaskChanges? taskChanges;
 
   /// The source facts retained by this attention row.
   final PlanningAttention row;
@@ -138,6 +149,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                 ),
             ],
             if (planReasonNeedsAttention(row.reason)) Text(planningShown(row.reason)),
+            if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) _taskEnd(issue),
             if (row.issue case final issue?) ...[
               Text('${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}'),
               if (!widget.resolved && reading?.detail == null && reading?.busy == true)
@@ -185,6 +197,37 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     );
   }
 
+  /// The task end that raised the issue, opened in the window, or the reason in words where it cannot be.
+  Widget _taskEnd(PlanIssue issue) {
+    final row = widget.row;
+    final reason = row.reason;
+    final words = planReasonNeedsAttention(reason) ? planningReasonWords(reason) : 'it needs you';
+    final task = planningTaskEndReasons.contains(reason)
+        ? planningRaisingTask(row.board.workOf(row.story), issue.id, reason)
+        : null;
+    if (task == null) return Text(words, key: Key('story-work-reason ${issue.id}'));
+    final changes = widget.taskChanges ?? row.board.taskChanges;
+    final unavailable = row.board.isDisposed
+        ? 'this source is no longer watched'
+        : changes == null
+        ? 'the window cannot open tasks here'
+        : changes.unavailable(row.board, task.task);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tooltip(
+          message: unavailable ?? 'Open the task that raised this',
+          child: TextButton(
+            key: Key('story-work-open-task ${issue.id}'),
+            onPressed: unavailable == null ? () => changes!.open(row.board, task.task) : null,
+            child: const Text('Open task'),
+          ),
+        ),
+        if (unavailable != null) Text('$words; $unavailable', key: Key('story-work-reason ${issue.id}')),
+      ],
+    );
+  }
+
   Widget _openStoryButton(BuildContext context, PlanningAction command) => Tooltip(
     message: command.unavailable ?? command.label,
     child: TextButton(onPressed: command.available ? command.run : null, child: const Text('Open story')),
@@ -197,9 +240,16 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
       unavailable: reading.unavailable,
       run: () async {
         if (choice == 'REWORK') {
-          final comment = await showDialog<String>(context: context, builder: (_) => const _ReworkDialog());
-          if (!mounted || comment == null || !identical(_reading, reading) || !reading.current) return;
-          await reading.resolve(choice, comment: comment);
+          final decided = await showDialog<_Decision>(
+            context: context,
+            builder: (_) => _ReworkingDialog(
+              findings: reading.detail?.blockingFirst ?? const [],
+              blocking: reading.blocking,
+              rule: reading.reworking,
+            ),
+          );
+          if (!mounted || decided == null || !identical(_reading, reading) || !reading.current) return;
+          await reading.resolve(decided.choice, comment: decided.comment, rework: decided.rework);
         } else {
           await reading.resolve(choice);
         }
@@ -222,31 +272,119 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   };
 }
 
-class _ReworkDialog extends StatefulWidget {
-  const _ReworkDialog();
-  @override
-  State<_ReworkDialog> createState() => _ReworkDialogState();
+/// What the Reworking dialog was closed with.
+class _Decision {
+  const _Decision(this.choice, {this.comment = '', this.rework});
+  final String choice, comment;
+  final PlanningRework? rework;
 }
 
-class _ReworkDialogState extends State<_ReworkDialog> {
-  String _comment = '';
+/// The Reworking dialog of a stopped reading: its findings, the Reworking rule's modes and agents with the first
+/// preselected, the person's words, and beside Rework the other two choices of a stopped reading.
+class _ReworkingDialog extends StatefulWidget {
+  /// Takes the findings, whether one blocks, and the Reworking rule, null where the board reports none.
+  const _ReworkingDialog({required this.findings, required this.blocking, required this.rule});
+
+  /// The stopped reading's findings, blocking ones first.
+  final List<PlanFinding> findings;
+
+  /// Whether a finding blocks, so a rework needs no words.
+  final bool blocking;
+
+  /// The rule the rework runs under.
+  final PlanWorkRule? rule;
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Rework'),
-    content: TextField(
-      key: const Key('reading-rework-comment'),
-      autofocus: true,
-      maxLines: null,
-      decoration: const InputDecoration(labelText: 'What needs rework'),
-      onChanged: (value) => setState(() => _comment = value),
-    ),
-    actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-      FilledButton(
-        key: const Key('reading-rework-send'),
-        onPressed: _comment.trim().isEmpty ? null : () => Navigator.pop(context, _comment),
-        child: const Text('Rework'),
+  State<_ReworkingDialog> createState() => _ReworkingDialogState();
+}
+
+class _ReworkingDialogState extends State<_ReworkingDialog> {
+  String _comment = '';
+  String? _mode;
+  String? _agent;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.rule?.modes.firstOrNull;
+    _agent = widget.rule?.models.keys.firstOrNull;
+  }
+
+  PlanningRework? get _rework {
+    final model = widget.rule?.models[_agent];
+    return _mode == null || _agent == null || model == null ? null : PlanningRework(_mode!, _agent!, model);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rule = widget.rule;
+    final ready = (widget.blocking || _comment.trim().isNotEmpty) && (rule == null || _rework != null);
+    return AlertDialog(
+      title: const Text('Rework'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final finding in widget.findings)
+              Text('${planningShown(finding.severity, multiline: false)}: ${planningShown(finding.text)}'),
+            if (rule == null)
+              const Text('The Reworking rule was not reported; the planner takes its first mode and model.')
+            else ...[
+              DropdownButton<String>(
+                key: const Key('reading-rework-mode'),
+                value: _mode,
+                items: [
+                  for (final mode in rule.modes)
+                    DropdownMenuItem(value: mode, child: Text(planningShown(mode, multiline: false))),
+                ],
+                onChanged: (value) => setState(() => _mode = value),
+              ),
+              DropdownButton<String>(
+                key: const Key('reading-rework-agent'),
+                value: _agent,
+                items: [
+                  for (final entry in rule.models.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(planningShown('${entry.key} · ${entry.value}', multiline: false)),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _agent = value),
+              ),
+            ],
+            TextField(
+              key: const Key('reading-rework-comment'),
+              autofocus: true,
+              maxLines: null,
+              decoration: InputDecoration(
+                labelText: widget.blocking ? 'What else needs rework (optional)' : 'What needs rework',
+              ),
+              onChanged: (value) => setState(() => _comment = value),
+            ),
+          ],
+        ),
       ),
-    ],
-  );
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          key: const Key('reading-rework-review'),
+          onPressed: () => Navigator.pop(context, const _Decision('REVIEW_ANYWAY')),
+          child: const Text('Review anyway'),
+        ),
+        TextButton(
+          key: const Key('reading-rework-more'),
+          onPressed: () => Navigator.pop(context, const _Decision('ONE_MORE_ROUND')),
+          child: const Text('One more reading'),
+        ),
+        FilledButton(
+          key: const Key('reading-rework-send'),
+          onPressed: ready
+              ? () => Navigator.pop(context, _Decision('REWORK', comment: _comment, rework: _rework))
+              : null,
+          child: const Text('Rework'),
+        ),
+      ],
+    );
+  }
 }

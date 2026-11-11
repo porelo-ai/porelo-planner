@@ -366,6 +366,7 @@ class MockPlanningSource implements PlanningSource {
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   }) async => ReadingResolution.from(
     work.call('ResolveIssueReading', {
       'project': project,
@@ -375,6 +376,7 @@ class MockPlanningSource implements PlanningSource {
       'choice': choice,
       'revision': revision,
       'comment': comment ?? '',
+      ...?rework?.wire,
     }),
   );
 }

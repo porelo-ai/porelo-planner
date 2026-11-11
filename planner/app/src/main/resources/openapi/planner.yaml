@@ -765,7 +765,9 @@ paths:
       description: >-
         Checks story membership, stopped status, exact completed round and revision. The choice clears the stop
         before an offer leaves. REVIEW_ANYWAY retains findings and saves the rule's done state. ONE_MORE_ROUND
-        grants an allowance and offers a reader; REWORK requires nonblank operator words and offers rework.
+        offers a reader in the Reading rule's first mode and model, granting one more reading only at the limit;
+        REWORK offers rework with the saved blocking findings and the operator's words, which it requires only
+        when no saved finding blocks, in the given mode, agent and model or else the Reworking rule's first ones.
         Neither counts a reading. Stopped or halted runs refuse choices. The body is at most 65536 bytes.
       tags: [work]
       requestBody:
@@ -2000,6 +2002,25 @@ components:
           maxLength: 4000
         revision:
           $ref: '#/components/schemas/Revision'
+        mode:
+          type: string
+          maxLength: 128
+          description: >-
+            The rework's mode, one of the Reworking rule's modes. mode, agent and model come together or not at
+            all; without them a rework takes the rule's first mode and first model, and another choice refuses
+            them as InvalidSettings.
+        agent:
+          type: string
+          maxLength: 128
+          description: The rework's agent, one of the Reworking rule's agents.
+        model:
+          type: string
+          maxLength: 128
+          description: The rework's model, the Reworking rule's model for that agent.
+      dependentRequired:
+        mode: [agent, model]
+        agent: [mode, model]
+        model: [mode, agent]
     StoryWorkReply:
       type: object
       required: [work]
@@ -2116,10 +2137,12 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
-            of the run takes it and it needs nobody's attention.
+            of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
+            reading with blocking findings, readingStopped true: below the readings granted and at them. A move of
+            the issue by hand clears its reason and its stop.
         rounds:
           type: integer
           minimum: 0

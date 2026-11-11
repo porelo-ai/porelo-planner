@@ -95,6 +95,7 @@ class _Source extends FakePlanningSource {
     String choice,
     String revision, {
     String? comment,
+    PlanningRework? rework,
   }) async {
     decisions.add({
       'project': project,
@@ -104,6 +105,7 @@ class _Source extends FakePlanningSource {
       'choice': choice,
       'revision': revision,
       'comment': comment,
+      'rework': rework,
     });
     if (decisionError case final error?) throw error;
     return decisionGate?.future ?? ReadingResolution.from({...reply, 'issue': servedReadingIssue(stopped: false)});
@@ -608,11 +610,9 @@ void main() {
     }
   });
 
-  // Harm: Rework without instructions is sent or a follow-up is lost after the reading choice is accepted.
-  test('reading decisions require words and track only returned follow-ups before submission', () async {
+  // Harm: a follow-up is lost after the reading choice is accepted.
+  test('reading decisions track only returned follow-ups before submission', () async {
     final decision = await reading();
-    await decision.resolve('REWORK', comment: '  ');
-    expect(source.decisions, isEmpty);
     source.reply['tasks'] = [servedFollowUp(10, role: 'BUILDER')];
     await decision.resolve('REWORK', comment: '  Keep the key inside.\n');
     expect(source.decisions.single, {
@@ -623,6 +623,7 @@ void main() {
       'choice': 'REWORK',
       'revision': 'r1',
       'comment': '  Keep the key inside.\n',
+      'rework': null,
     });
     expect(starts.single.$4.offer, servedOffer(10));
     expect(changes.tracked.single.$4.single.$1.offer, servedOffer(10));

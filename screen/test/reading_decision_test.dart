@@ -75,9 +75,17 @@ void main() {
   });
 
   // Harm: empty rework instructions are submitted or refusal detail is lost.
-  test('rework requires text and a refusal remains actionable', () async {
+  test('rework without blocking findings requires text and a refusal remains actionable', () async {
+    backend.work.findings[issue] = [
+      {'number': 1, 'severity': 'NOTE', 'text': 'A small concern.'},
+    ];
+    await reading.load();
     await reading.resolve('REWORK', comment: '  ');
-    expect(backend.work.calls.where((call) => call.$1 == 'ResolveIssueReading'), isEmpty);
+    expect(
+      backend.work.calls.where((call) => call.$1 == 'ResolveIssueReading'),
+      isEmpty,
+      reason: 'notes alone give a rework nothing to fix',
+    );
     backend.work.refusal = 'The round changed on this machine.';
     await reading.resolve('REWORK', comment: 'Keep the credential inside.');
     expect(reading.problem, 'The round changed on this machine.');
@@ -86,6 +94,19 @@ void main() {
     backend.work.refusal = null;
     await reading.load();
     expect(reading.canResolve, isTrue);
+  });
+
+  // Harm: a rework the person sent without words is dropped, or runs in settings they did not choose.
+  test('a rework with blocking findings needs no words and sends the chosen settings', () async {
+    backend.work.deferEcho = true;
+    await reading.resolve('REWORK', comment: '', rework: const PlanningRework('AGENT', 'claude', 'opus'));
+    final sent = backend.work.calls.where((call) => call.$1 == 'ResolveIssueReading').map((call) => call.$2);
+    expect(sent, hasLength(1), reason: 'the blocking findings go with the rework');
+    expect(
+      [sent.single['mode'], sent.single['agent'], sent.single['model']],
+      ['AGENT', 'claude', 'opus'],
+      reason: 'the planner gets the settings the person chose',
+    );
   });
 
   // Harm: a lost planning watch authorizes an action based on stale findings.
