@@ -81,6 +81,18 @@ final class FixtureProject implements AutoCloseable {
                                 + "  \"title\": \"Served\",\n  \"gain\": \"Something.\",\n"
                                 + "  \"test\": \"A test.\",\n  \"priority\": \"High\",\n"
                                 + "  \"issues\": [\"porelo-store#XY07\"],\n  \"tested\": null\n}\n```\n",
+                        "issues/workflow.yml",
+                        """
+                        states:
+                          - {name: Backlog, closed: false}
+                          - {name: Implementing, closed: false}
+                          - {name: Review, closed: false}
+                          - {name: Finished, closed: true}
+                        phases:
+                          - {name: Open, states: [Backlog]}
+                          - {name: Build, states: [Implementing, Review]}
+                          - {name: Done, states: [Finished]}
+                        """,
                         "issues/README.md",
                         "# Issues\n",
                         "issues/XY07-Served.md",
@@ -90,10 +102,21 @@ final class FixtureProject implements AutoCloseable {
                                 + "  \"priority\": \"Medium\",\n  \"rank\": 1,\n"
                                 + "  \"blockedBy\": [],\n  \"covers\": \"Something.\"\n}\n```\n\n"
                                 + "**What must be true.** It is served.\n"));
-        final Path home = Files.createDirectories(dir.resolve("home"));
+        // An owner-only home, whatever the machine's umask: the work record refuses a replaceable
+        // one.
+        final Path home =
+                Files.createDirectory(
+                        dir.resolve("home"),
+                        java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                                java.nio.file.attribute.PosixFilePermissions.fromString(
+                                        "rwx------")));
         final GitHttpsServer server = GitHttpsServer.start(repositories.served(), dir, null);
         final Path config = dir.resolve("gitconfig");
-        Files.writeString(config, "[http]\n\tsslCAInfo = " + server.ca() + "\n");
+        Files.writeString(
+                config,
+                "[http]\n\tsslCAInfo = "
+                        + server.ca()
+                        + "\n[user]\n\tname = A Person\n\temail = person@example.org\n");
         final Map<String, String> environment = new HashMap<>();
         environment.put("PATH", "/usr/bin:/bin");
         environment.put("HOME", home.toString());

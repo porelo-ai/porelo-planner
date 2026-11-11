@@ -128,7 +128,7 @@ public final class Answers {
      * @param priority its priority
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
-     * @param work its work, always null until the run records work
+     * @param work its current recorded run, or null
      */
     public record Story(
             String id,
@@ -138,7 +138,7 @@ public final class Answers {
             String priority,
             @Nullable String link,
             List<Issue> issues,
-            @Nullable Object work) {}
+            WorkAnswers.@Nullable PlanWork work) {}
 
     /**
      * A story with its description.
@@ -150,7 +150,7 @@ public final class Answers {
      * @param priority its priority
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
-     * @param work its work, always null until the run records work
+     * @param work its current recorded run, or null
      * @param description its body
      */
     public record StoryDetail(
@@ -161,7 +161,7 @@ public final class Answers {
             String priority,
             @Nullable String link,
             List<Issue> issues,
-            @Nullable Object work,
+            WorkAnswers.@Nullable PlanWork work,
             String description) {}
 
     /**
@@ -191,6 +191,12 @@ public final class Answers {
      * @param blockedBy the issues it waits on
      * @param parent its parent, for a sub-issue
      * @param link where a person reads it, if known
+     * @param rounds completed readings, absent without a record
+     * @param roundsMost granted allowance, absent without a record
+     * @param atWork whether a bound task is active
+     * @param needsYou whether attention is needed
+     * @param readingStopped whether a reading waits for a choice
+     * @param findings latest findings, absent without a record
      */
     public record Issue(
             String id,
@@ -200,7 +206,14 @@ public final class Answers {
             @Nullable String size,
             List<String> blockedBy,
             @Nullable String parent,
-            @Nullable String link) {}
+            @Nullable String link,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer rounds,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer roundsMost,
+            boolean atWork,
+            boolean needsYou,
+            boolean readingStopped,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+                    @Nullable List<WorkAnswers.Finding> findings) {}
 
     /**
      * An issue with its text.
@@ -216,6 +229,12 @@ public final class Answers {
      * @param text its body
      * @param subIssues its sub-issues' ids
      * @param whatMustBeTrue its paragraph of that name, left out when it has none
+     * @param rounds completed readings, absent without a record
+     * @param roundsMost granted allowance, absent without a record
+     * @param atWork whether a bound task is active
+     * @param needsYou whether attention is needed
+     * @param readingStopped whether a reading waits for a choice
+     * @param findings latest findings, absent without a record
      */
     public record IssueDetail(
             String id,
@@ -228,5 +247,12 @@ public final class Answers {
             @Nullable String link,
             String text,
             List<String> subIssues,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String whatMustBeTrue) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String whatMustBeTrue,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer rounds,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer roundsMost,
+            boolean atWork,
+            boolean needsYou,
+            boolean readingStopped,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+                    @Nullable List<WorkAnswers.Finding> findings) {}
 }

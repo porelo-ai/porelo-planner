@@ -84,7 +84,7 @@
       ],
       "done": "Review",
       "then": null,
-      "blocked": "Reworking",
+      "blocked": null,
       "per": "repository",
       "modes": [
         "UNATTENDED",
@@ -107,7 +107,7 @@
       ],
       "done": "Review",
       "then": null,
-      "blocked": "Reworking",
+      "blocked": null,
       "per": "repository",
       "modes": [
         "UNATTENDED",
@@ -130,7 +130,7 @@
       ],
       "done": "Review",
       "then": null,
-      "blocked": "Reworking",
+      "blocked": null,
       "per": "repository",
       "modes": [
         "UNATTENDED",
@@ -176,7 +176,7 @@
       ],
       "done": "Review",
       "then": null,
-      "blocked": "Reworking",
+      "blocked": null,
       "per": "repository",
       "modes": [
         "UNATTENDED",
@@ -199,7 +199,7 @@
       ],
       "done": "Review",
       "then": null,
-      "blocked": "Reworking",
+      "blocked": null,
       "per": "repository",
       "modes": [
         "UNATTENDED",

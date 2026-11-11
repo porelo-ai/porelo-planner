@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -32,7 +33,7 @@ public final class Projects {
 
     private record Source(String repository, @Nullable String branch) {}
 
-    private record Entry(Source source, PlanningStore store) {}
+    private record Entry(Source source, PlanningStore store, WorkRun work) {}
 
     private final Map<String, Entry> projects = new ConcurrentHashMap<>();
 
@@ -46,6 +47,8 @@ public final class Projects {
 
     private final int most;
 
+    private final WorkRecord records;
+
     /**
      * Makes a registry.
      *
@@ -53,8 +56,14 @@ public final class Projects {
      * @param most the most projects kept
      */
     public Projects(final Opener opener, final int most) {
+        this(opener, most, new WorkRecord(Map.of(), true));
+    }
+
+    /** Creates a registry using the supplied durable or mock work records. */
+    public Projects(final Opener opener, final int most, final WorkRecord records) {
         this.opener = opener;
         this.most = most;
+        this.records = records;
     }
 
     /**
@@ -77,6 +86,7 @@ public final class Projects {
                 if (known != null) {
                     projects.remove(project);
                     known.store().retire();
+                    records.forget(project);
                     retired.forEach(listener -> listener.accept(project));
                 }
                 if (projects.size() + opening.size() >= most) {
@@ -91,7 +101,14 @@ public final class Projects {
             try {
                 final PlanningStore store =
                         Objects.requireNonNull(opener.open(project, repository, branch), "store");
-                projects.put(project, new Entry(source, store));
+                final WorkRun.Record record = records.open(project, repository, branch);
+                record.locked(session -> session.read());
+                projects.put(
+                        project,
+                        new Entry(
+                                source,
+                                store,
+                                new WorkRun(store, record, java.time.Clock.systemUTC())));
             } finally {
                 opening.remove(project);
             }
@@ -103,6 +120,7 @@ public final class Projects {
         final List<String> names = List.copyOf(projects.keySet());
         projects.values().forEach(entry -> entry.store().retire());
         projects.clear();
+        names.forEach(records::forget);
         names.forEach(name -> retired.forEach(listener -> listener.accept(name)));
     }
 
@@ -113,6 +131,16 @@ public final class Projects {
      */
     public void onRetired(final Consumer<String> listener) {
         retired.add(listener);
+    }
+
+    /** Answers a known project's work service with the same lifetime as its store. */
+    public WorkRun work(final String project) {
+        final Entry entry = projects.get(project);
+        if (entry == null) {
+            store(project);
+            throw new IllegalStateException("The project was retired");
+        }
+        return entry.work();
     }
 
     /**

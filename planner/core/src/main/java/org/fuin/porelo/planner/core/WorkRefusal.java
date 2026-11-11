@@ -53,6 +53,43 @@ public final class WorkRefusal extends RuntimeException {
                 "WorkNotAllowed", reason, Map.of("from", from, "to", to, "reason", reason));
     }
 
+    /** Refuses an offer not issued by this project's current run. */
+    public static WorkRefusal taskNotAnswered(final String task, final String offer) {
+        return new WorkRefusal(
+                "TaskNotAnswered",
+                "No current offer answers this task.",
+                Map.of("task", task, "offer", offer));
+    }
+
+    /** Refuses a report contradicting its established task binding. */
+    public static WorkRefusal eventConflict(
+            final String task, final String event, final String reason) {
+        return new WorkRefusal(
+                "TaskEventConflict",
+                reason,
+                Map.of("task", task, "event", event, "reason", reason));
+    }
+
+    /** Refuses a reading choice whose stop has already been cleared. */
+    public static WorkRefusal readingNotStopped(final String issue) {
+        return new WorkRefusal(
+                "ReadingNotStopped", "The reading is not stopped.", Map.of("issue", issue));
+    }
+
+    /** Refuses a choice based on another completed round. */
+    public static WorkRefusal readingRoundChanged(final String issue, final int rounds) {
+        return new WorkRefusal(
+                "ReadingRoundChanged",
+                "The completed reading changed.",
+                Map.of("issue", issue, "rounds", rounds));
+    }
+
+    /** Refuses an unavailable record using fixed, non-sensitive words. */
+    public static WorkRefusal recordUnavailable(final String project, final String reason) {
+        return new WorkRefusal(
+                "WorkRecordUnavailable", reason, Map.of("project", project, "reason", reason));
+    }
+
     /** Refuses unreadable input without echoing its contents. */
     public static WorkRefusal invalidSettings() {
         final String detail = "The work request is invalid.";

@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
 import org.fuin.porelo.planner.core.Changes;
-import org.fuin.porelo.planner.store.Board;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
@@ -22,7 +21,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @RestController
 // The board goes out through SseEmitter, so no return type tells the native image of it.
-@RegisterReflectionForBinding(Answers.Board.class)
+@RegisterReflectionForBinding({Answers.Board.class, WorkAnswers.PlanWork.class})
 public class EventsController {
 
     private static final Logger LOG = LoggerFactory.getLogger(EventsController.class);
@@ -78,10 +77,10 @@ public class EventsController {
         try {
             // A project given anew in the meantime has closed it; its old board is not sent.
             if (subscription.open()) {
-                board(emitter, subscription.first());
+                board(emitter, subscription.firstFrame());
             }
             while (subscription.open()) {
-                final Optional<Board> next = subscription.next(keepAlive);
+                final Optional<Changes.Frame> next = subscription.nextFrame(keepAlive);
                 if (next.isPresent()) {
                     board(emitter, next.get());
                 } else if (subscription.open()) {
@@ -99,11 +98,14 @@ public class EventsController {
         }
     }
 
-    private static void board(final SseEmitter emitter, final Board board) throws IOException {
+    private static void board(final SseEmitter emitter, final Changes.Frame frame)
+            throws IOException {
         emitter.send(
                 SseEmitter.event()
                         .name("board")
-                        .id(board.revision().value())
-                        .data(BoardController.boardOf(board), MediaType.APPLICATION_JSON));
+                        .id(frame.board().revision().value())
+                        .data(
+                                BoardController.boardOf(frame.board(), frame.work()),
+                                MediaType.APPLICATION_JSON));
     }
 }

@@ -164,7 +164,14 @@ class StoryWorkHttpTest {
         assertThat(order.get("tasks").get(0).propertyNames())
                 .as("each entry is the complete Start argument record")
                 .containsExactlyInAnyOrder(
-                        "repository", "issues", "role", "agent", "model", "mode", "prompt");
+                        "offer",
+                        "repository",
+                        "issues",
+                        "role",
+                        "agent",
+                        "model",
+                        "mode",
+                        "prompt");
         assertThat(order.get("tasks").get(1).get("prompt").asString())
                 .as("the selected operator comment reaches helpers")
                 .contains("Keep the proposal.", "Keep the data.")
@@ -371,7 +378,9 @@ class StoryWorkHttpTest {
             final String path = "/projects/any/stories/ST14";
             final HttpResponse<String> proposal =
                     http(address, "POST", path + "/proposal", "{\"to\":\"Implementing\"}");
-            assertThat(proposal.statusCode()).as("mock proposal over real HTTP").isEqualTo(200);
+            assertThat(proposal.statusCode())
+                    .as("mock proposal over real HTTP: %s", proposal.body())
+                    .isEqualTo(200);
             final HttpResponse<String> order =
                     http(
                             address,

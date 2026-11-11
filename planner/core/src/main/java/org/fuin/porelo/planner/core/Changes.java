@@ -18,6 +18,8 @@ public final class Changes {
 
     private final PlanningStore store;
 
+    private final @Nullable WorkRun work;
+
     private final Object fetching = new Object();
 
     private final Runnable whenIdle;
@@ -31,8 +33,25 @@ public final class Changes {
      * @param whenIdle runs once each time the last subscription is closed
      */
     public Changes(final PlanningStore store, final Runnable whenIdle) {
+        this(store, whenIdle, null);
+    }
+
+    /** Publishes work generations together with the board they decorate. */
+    public Changes(
+            final PlanningStore store, final Runnable whenIdle, final @Nullable WorkRun work) {
         this.store = store;
         this.whenIdle = whenIdle;
+        this.work = work;
+    }
+
+    /** One board and local work generation observed under the record lock. */
+    public record Frame(Board board, WorkRun.Snapshot work) {}
+
+    private Frame frame() {
+        final WorkRun run = work;
+        return run == null
+                ? new Frame(store.board(), new WorkRun.Snapshot(0, java.util.Map.of()))
+                : run.view(Frame::new);
     }
 
     /**
@@ -43,7 +62,7 @@ public final class Changes {
     public Subscription subscribe() {
         synchronized (this) {
             // Under the lock that telling takes, so no board is told between the read and the add.
-            final Subscription subscription = new Subscription(store.board());
+            final Subscription subscription = new Subscription(frame());
             subscriptions.add(subscription);
             return subscription;
         }
@@ -59,7 +78,7 @@ public final class Changes {
         // One fetch at a time, so a slow one never tells an older board after a newer one.
         synchronized (fetching) {
             final Board board = store.refresh();
-            tell(board);
+            tell(frame());
             return board;
         }
     }
@@ -70,7 +89,7 @@ public final class Changes {
      */
     public void saved() {
         synchronized (fetching) {
-            tell(store.board());
+            tell(frame());
         }
     }
 
@@ -90,7 +109,7 @@ public final class Changes {
         return subscriptions.size();
     }
 
-    private synchronized void tell(final Board board) {
+    private synchronized void tell(final Frame board) {
         for (final Subscription subscription : subscriptions) {
             subscription.offer(board);
         }
@@ -109,17 +128,17 @@ public final class Changes {
     /** One window's subscription: the board it started with, then only ever the newest. */
     public final class Subscription implements AutoCloseable {
 
-        private final Board first;
+        private final Frame first;
 
-        private @Nullable Board pending;
+        private @Nullable Frame pending;
 
         private String last;
 
         private boolean closed;
 
-        private Subscription(final Board first) {
+        private Subscription(final Frame first) {
             this.first = first;
-            this.last = first.revision().value();
+            this.last = identity(first);
         }
 
         /**
@@ -128,6 +147,11 @@ public final class Changes {
          * @return the board
          */
         public Board first() {
+            return first.board();
+        }
+
+        /** Answers the initial board with its work generation. */
+        public Frame firstFrame() {
             return first;
         }
 
@@ -140,6 +164,12 @@ public final class Changes {
          * @throws InterruptedException if the waiting thread is interrupted
          */
         public synchronized Optional<Board> next(final Duration wait) throws InterruptedException {
+            return nextFrame(wait).map(Frame::board);
+        }
+
+        /** Waits for a store revision or work generation, preserving their shared snapshot. */
+        public synchronized Optional<Frame> nextFrame(final Duration wait)
+                throws InterruptedException {
             final long end = System.nanoTime() + wait.toNanos();
             while (pending == null && !closed) {
                 final long left = end - System.nanoTime();
@@ -148,19 +178,23 @@ public final class Changes {
                 }
                 TimeUnit.NANOSECONDS.timedWait(this, left);
             }
-            final Board board = closed ? null : pending;
+            final Frame board = closed ? null : pending;
             pending = null;
             return Optional.ofNullable(board);
         }
 
-        private synchronized void offer(final Board board) {
-            // The revision this subscription already holds is never told again.
-            final String revision = board.revision().value();
+        private synchronized void offer(final Frame board) {
+            // A work-only change must reach followers even when no store head changed.
+            final String revision = identity(board);
             if (!closed && !revision.equals(last)) {
                 last = revision;
                 pending = board;
                 notifyAll();
             }
+        }
+
+        private static String identity(final Frame frame) {
+            return frame.board().revision().value() + "/" + frame.work().generation();
         }
 
         /**

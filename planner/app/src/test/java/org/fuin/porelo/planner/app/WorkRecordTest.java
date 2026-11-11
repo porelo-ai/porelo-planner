@@ -1,0 +1,305 @@
+package org.fuin.porelo.planner.app;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.WorkEnds;
+import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.core.WorkRun;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class WorkRecordTest {
+    @TempDir Path directory;
+
+    @Test
+    void aRecordSurvivesRestartAndIsReplacedWhenItsSourceChanges() throws Exception {
+        // Prevents lost work on restart and runs inherited from another store.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", "main")
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(9, Map.of()));
+                                return null;
+                            });
+        }
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final long generation =
+                    records.open("project", "https://example.org/store.git", "main")
+                            .locked(s -> s.read().generation());
+            assertThat(generation).as("the durable generation survives a new service").isEqualTo(9);
+            final long reset =
+                    records.open("project", "https://example.org/other.git", "main")
+                            .locked(s -> s.read().generation());
+            assertThat(reset).as("a different planning source has no old runs").isZero();
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        assertThat(Files.getPosixFilePermissions(file))
+                .as("only the owner can read or write task reports")
+                .isEqualTo(PosixFilePermissions.fromString("rw-------"));
+    }
+
+    @Test
+    void completedReadingsFindingsAndGrantedAllowancesSurviveRestart() throws Exception {
+        // Prevents lost findings or reset reading allowances after restart.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var finding =
+                new WorkEnds.Finding(
+                        1, WorkEnds.Severity.BLOCKING, "src/A.java", 7, "Preserve data");
+        final var progress =
+                new NextStep.Progress(
+                        new ReadingCycle.Rounds(13, 13, true),
+                        List.of(finding),
+                        true,
+                        "ROUND_LIMIT",
+                        "Findings:\n1. blocking | src/A.java | 7 | Preserve data");
+        final var run =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        "ST1",
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        2,
+                        List.of(),
+                        List.of(),
+                        "2026-01-01T00:00:00Z",
+                        List.of(),
+                        Map.of("AA1", progress),
+                        false,
+                        false,
+                        false);
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(2, Map.of("ST1", run)));
+                                return null;
+                            });
+        }
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(s -> s.read().runs().get("ST1"));
+            assertThat(restored).as("the complete reading state is durable").isEqualTo(run);
+            assertThat(restored.issues().get("AA1").rounds().roundsMost())
+                    .as("extensions beyond the initial bound are retained")
+                    .isEqualTo(13);
+            final Path file = directory.resolve("porelo-planner/project/work.json");
+            final String saved = Files.readString(file);
+            assertThat(saved)
+                    .as("the stopped reading is present in the reference record")
+                    .contains("\"stopped\":true");
+            for (final String invalid :
+                    List.of(
+                            saved.replace("\"stopped\":true", "\"stopped\":null"),
+                            saved.replace("\"stopped\":true", "\"stopped\":\"false\""),
+                            saved.replace("\"rounds\":13", "\"rounds\":1.5"))) {
+                Files.writeString(file, invalid);
+                assertThatThrownBy(
+                                () ->
+                                        records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)
+                                                .locked(s -> s.read()))
+                        .as("a missing primitive cannot silently clear the stop")
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    @Test
+    void aSecondPlannerCannotWriteUntilTheFirstCloses() {
+        // Prevents competing planner processes from overwriting each other's counts and offers.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord first = new WorkRecord(environment, false);
+                WorkRecord second = new WorkRecord(environment, false)) {
+            first.open("project", "https://example.org/store.git", null).locked(s -> s.read());
+            assertThatThrownBy(
+                            () ->
+                                    second.open("project", "https://example.org/store.git", null)
+                                            .locked(s -> s.read()))
+                    .as("the stable file lock refuses a competing writer without waiting")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void requestsInOnePlannerWaitForTheSameRecordAndThenSucceed() throws Exception {
+        // Prevents concurrent requests from returning 503 after another request commits a write.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false);
+                var executor = Executors.newFixedThreadPool(2)) {
+            final var record = records.open("project", "https://example.org/store.git", null);
+            final var held = new CompletableFuture<Boolean>();
+            final var release = new CompletableFuture<Boolean>();
+            final var calling = new CountDownLatch(1);
+            final var first =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                session.write(new WorkRun.Snapshot(1, Map.of()));
+                                                held.complete(true);
+                                                release.join();
+                                                return session.read().generation();
+                                            }));
+            final java.util.concurrent.Future<Long> second;
+            try {
+                assertThat(held.get(5, TimeUnit.SECONDS))
+                        .as("the first request has committed while holding the project lock")
+                        .isTrue();
+                second =
+                        executor.submit(
+                                () -> {
+                                    calling.countDown();
+                                    return record.locked(session -> session.read().generation());
+                                });
+                assertThat(calling.await(5, TimeUnit.SECONDS))
+                        .as("the second request reaches the same record before release")
+                        .isTrue();
+                assertThatThrownBy(() -> second.get(100, TimeUnit.MILLISECONDS))
+                        .as("the second request waits instead of refusing the local writer")
+                        .isInstanceOf(TimeoutException.class);
+            } finally {
+                release.complete(true);
+            }
+            assertThat(first.get(5, TimeUnit.SECONDS))
+                    .as("the first request finishes its committed generation")
+                    .isEqualTo(1);
+            assertThat(second.get(5, TimeUnit.SECONDS))
+                    .as("the waiting request succeeds and observes the committed generation")
+                    .isEqualTo(1);
+            records.forget("project");
+            assertThatThrownBy(() -> record.locked(session -> session.read()))
+                    .as("forget closes the old record after the waiting requests finish")
+                    .isInstanceOf(WorkRefusal.class);
+            try (WorkRecord another = new WorkRecord(environment, false)) {
+                final Long generation =
+                        another.open("project", "https://example.org/store.git", null)
+                                .locked(session -> Long.valueOf(session.read().generation()));
+                assertThat(generation)
+                        .as("forget releases the file lock for another planner")
+                        .isEqualTo(1L);
+            }
+        }
+    }
+
+    @Test
+    void linkedOrOversizedRecordsAreRefusedBeforeReading() throws Exception {
+        // Prevents following a planted link and allocating an unbounded local record.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            s -> {
+                                s.write(new WorkRun.Snapshot(1, Map.of()));
+                                return null;
+                            });
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        Files.delete(file);
+        final Path secret = Files.writeString(directory.resolve("private"), "never read");
+        Files.createSymbolicLink(file, secret);
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(s -> s.read()))
+                    .as("a symlink cannot become the record")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+        Files.delete(file);
+        try (var out =
+                java.nio.channels.FileChannel.open(
+                        file,
+                        java.nio.file.StandardOpenOption.CREATE_NEW,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+            out.position(WorkRecord.MOST_RECORD);
+            out.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+        }
+        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(s -> s.read()))
+                    .as("size is bounded before JSON is read")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void relativeOrParentTraversingStatePathsAreRefused() {
+        // Prevents environment paths from redirecting private records.
+        for (final String path : new String[] {"", "relative", directory + "/../elsewhere"}) {
+            try (WorkRecord records = new WorkRecord(Map.of("XDG_STATE_HOME", path), false)) {
+                assertThatThrownBy(
+                                () ->
+                                        records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)
+                                                .locked(s -> s.read()))
+                        .as("state roots must be absolute without parent traversal")
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    @Test
+    void aWritableAncestorCannotRedirectTheRecord() throws Exception {
+        // Prevents another account from replacing a record ancestor during a save.
+        final Path shared = Files.createDirectory(directory.resolve("shared"));
+        Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwxrwxrwx"));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", shared.toString()), false)) {
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(s -> s.read()))
+                    .as("unprotected writable ancestors cannot hold private work")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+        assertThat(shared.resolve("porelo-planner/project/work.json"))
+                .as("no record is published through the unsafe path")
+                .doesNotExist();
+    }
+
+    @Test
+    void unreadableOrLostRecordsNeverInventAZeroCountRun() throws Exception {
+        // Prevents record loss or corruption from silently granting a fresh reading allowance.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final var record = records.open("project", "https://example.org/store.git", null);
+            final Map<String, WorkRun.Run> runs = record.locked(s -> s.read().runs());
+            assertThat(runs).as("a missing record means unknown work").isEmpty();
+            record.locked(
+                    s -> {
+                        s.write(new WorkRun.Snapshot(1, Map.of()));
+                        return null;
+                    });
+            Files.writeString(
+                    directory.resolve("porelo-planner/project/work.json"),
+                    "{\"version\":1,\"version\":1}");
+            assertThatThrownBy(() -> record.locked(s -> s.read()))
+                    .as("duplicate or unreadable JSON cannot reset the record")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+}

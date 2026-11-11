@@ -90,6 +90,134 @@ class NativeStartIT {
     }
 
     @Test
+    void theNativeExecutablePersistsOffersAndReportsAgainstARealStore(@TempDir final Path dir)
+            throws Exception {
+        // Prevents missing native JSON bindings from losing offers, task bindings or accepted ends.
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        final Path runtime = RuntimeDirectories.create();
+        final Path output = Files.createTempFile("porelo-planner-work", ".log");
+        final tools.jackson.databind.json.JsonMapper json =
+                tools.jackson.databind.json.JsonMapper.builder().build();
+        try (FixtureProject project = FixtureProject.serve(dir)) {
+            final ProcessBuilder builder =
+                    new ProcessBuilder(executable.toString())
+                            .redirectErrorStream(true)
+                            .redirectOutput(output.toFile());
+            builder.environment().clear();
+            builder.environment().putAll(project.environment());
+            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            builder.environment().put("GIT_AUTHOR_NAME", "A Person");
+            builder.environment().put("GIT_AUTHOR_EMAIL", "person@example.org");
+            builder.environment().put("GIT_COMMITTER_NAME", "A Person");
+            builder.environment().put("GIT_COMMITTER_EMAIL", "person@example.org");
+            final Process planner = builder.start();
+            try {
+                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                assertThat(call(address, "PUT", "/projects/alpha", project.source()))
+                        .as("the test's own planning store")
+                        .startsWith("204 ");
+                final String stories = call(address, "GET", "/projects/alpha/stories", null);
+                final String revision =
+                        json.readTree(stories.substring(4)).path("revision").asString();
+                assertThat(
+                                call(
+                                        address,
+                                        "POST",
+                                        "/projects/alpha/moves",
+                                        json.writeValueAsString(
+                                                java.util.Map.of(
+                                                        "revision",
+                                                        revision,
+                                                        "moves",
+                                                        java.util.List.of(
+                                                                java.util.Map.of(
+                                                                        "issue", "XY07", "to",
+                                                                        "Backlog"))))))
+                        .as("preparing work uses the real move contract")
+                        .startsWith("200 ");
+                final String prepared = call(address, "GET", "/projects/alpha/stories", null);
+                final String base =
+                        json.readTree(prepared.substring(4)).path("revision").asString();
+                final String order =
+                        call(
+                                address,
+                                "POST",
+                                "/projects/alpha/stories/ST7/work",
+                                json.writeValueAsString(
+                                        java.util.Map.of(
+                                                "project",
+                                                "alpha",
+                                                "story",
+                                                "ST7",
+                                                "to",
+                                                "Implementing",
+                                                "mode",
+                                                "UNATTENDED",
+                                                "revision",
+                                                base)));
+                assertThat(order).as("the offer is persisted before answering").startsWith("200 ");
+                final String offer =
+                        json.readTree(order.substring(4)).at("/tasks/0/offer").asString();
+                final String started =
+                        call(
+                                address,
+                                "POST",
+                                "/projects/alpha/tasks/build/events",
+                                json.writeValueAsString(
+                                        java.util.Map.of(
+                                                "offer",
+                                                offer,
+                                                "event",
+                                                "STARTED",
+                                                "container",
+                                                "build-box")));
+                assertThat(started)
+                        .as("a native start reads the saved offer and binds it")
+                        .startsWith("200 ")
+                        .contains("\"atWork\":true");
+                final String ended =
+                        call(
+                                address,
+                                "POST",
+                                "/projects/alpha/tasks/build/events",
+                                json.writeValueAsString(
+                                        java.util.Map.of(
+                                                "offer",
+                                                offer,
+                                                "event",
+                                                "ENDED",
+                                                "container",
+                                                "build-box",
+                                                "ended",
+                                                java.util.Map.of(
+                                                        "at",
+                                                        "2026-01-01T00:00:00Z",
+                                                        "finished",
+                                                        true,
+                                                        "why",
+                                                        "",
+                                                        "answer",
+                                                        "Built",
+                                                        "unpushed",
+                                                        0))));
+                assertThat(ended)
+                        .as("an accepted native end saves and serializes its disposition")
+                        .startsWith("200 ")
+                        .contains("\"finished\":true", "\"tasks\":[]");
+                assertThat(call(address, "GET", "/projects/alpha/stories/ST7/work", null))
+                        .as("a later call reads the final record from disk")
+                        .startsWith("200 ")
+                        .contains("Built", "\"atWork\":false");
+            } finally {
+                stop(planner);
+            }
+        } finally {
+            Files.deleteIfExists(output);
+            RuntimeDirectories.delete(runtime);
+        }
+    }
+
+    @Test
     void theNativeExecutableServesTheMockBoardWithMock() throws Exception {
         // The mock board is a resource and its records are read by reflection; a native image
         // told of neither starts and leaves the window's tests without a board.
@@ -113,7 +241,8 @@ class NativeStartIT {
                                         address,
                                         "PUT",
                                         "/projects/any",
-                                        "{\"repository\": \"https://example.org/porelo/porelo.git\"}"))
+                                        "{\"repository\":"
+                                                + " \"https://example.org/porelo/porelo.git\"}"))
                         .as("a project given in the mock mode" + log)
                         .startsWith("204 ");
                 assertThat(call(address, "GET", "/projects/any/stories", null))

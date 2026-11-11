@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL09",
   "title": "The Run From Building To Review",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 8,
@@ -26,6 +26,12 @@ finding. Counts, limits and findings survive a restart of the planner.
 
 ## Plan
 
+- **The window's report, as agreed:** `taskEvent(project, task, event, {offer, container, ended?})`, where `task` is
+  Porelo's task name, `container` the container's name, `offer` the identity the work answer gave, kept by the window,
+  and `ended` Porelo's record of the agent's end passed unmapped: `{at, finished, why, answer, unpushed}`. Porelo
+  says no "blocked": an unfinished run is FAILED, a finished one with commits left unpushed needs the operator as
+  UNPUSHED, and only a finished, fully pushed end is DONE. Where the points below name `outcome` or BLOCKED, this
+  holds instead.
 - **Contract first:** extend `planner/app/src/main/resources/openapi/planner.yaml`; preserve screen fields and
   envelopes. `P` means `/projects/{project}`. Only the window calls Porelo's `Start` and reports task changes.
 - **Preparing work:** retain `POST P/stories/{story}/proposal`, `{to}` ->
@@ -121,15 +127,71 @@ finding. Counts, limits and findings survive a restart of the planner.
   (harm: wrong starts or hidden Needs you); exercise native bindings in `NativeStartIT`. See each guard fail first;
   the complete cycle uses fakes, without Porelo or a VM.
 
+
+### Taken from the plan reading
+
+These hold over the points above where they differ.
+
+- **Ownership.** A MAIN task owns its repository's issues except those of the builders kept beside it; a builder its
+  one sub-issue. Every reader, and every rework that follows one reader's blocking findings or the REWORK choice,
+  owns exactly that one issue, in `issue.repository()`, with the target rule's default agent and model. Before any
+  write, every owned issue must still belong to the bound story and repository on the current board; only the bound
+  story is stated or unstated; a parent goes on only once its participating sub-issues have.
+- **Readings come only from the run.** A target whose rule names `blocked` is a reading state; the proposal and the
+  work call refuse it as `WorkNotAllowed`. Blocking findings under a reading rule without `blocked` stop in Needs you.
+- **Agent text is fenced.** Findings and the operator's words go into a rework prompt inside a fence longer than any
+  backtick run in them, as `WorkOrder` fences an issue's brief. A finding's file label may not start with `/` or `\`
+  nor hold a `..` segment.
+- **A choice takes effect at once.** REVIEW_ANYWAY, ONE_MORE_ROUND and REWORK clear the stop when recorded, before
+  any offer leaves, so a second choice on the same round is `ReadingNotStopped`; a grant past the largest count is
+  refused.
+- **A run halts on any refusal of its save.** Any `StoreException` from a save keeps the judgment, sets
+  SAVE_REFUSED and Needs you, voids every unstarted offer of the run and gives no new one; ends and stops of tasks
+  already started are still recorded. After a stop, a late `ENDED` is recorded and clears `atWork`, without a save,
+  a count, findings or an offer; a reading choice on a stopped or halted run is refused. The work call is refused
+  while the story's run is halted or a reading of it waits for a choice; a new run keeps the counts, allowances and
+  findings of the one before.
+- **A report is never refused for what follows it.** When the next step cannot be built - an unsound or missing
+  rule, a prompt over its bound - the end is still recorded and saved and the issue stops in Needs you without an
+  offer.
+- **Moves and work do not race.** A window's move of an item a run owns while it is at work is refused as
+  `WorkRunning`, checked under the record's lock.
+- **A lost record never restarts counting.** A story standing in a working state without a run in the record
+  refuses the proposal and the work call, and its issues read `needsYou`.
+- **The record.** `$XDG_STATE_HOME` and `$HOME` must be absolute, without `..`; the directories are created owner-only,
+  no part of the path may be a link, the temporary sibling is created new. The record is read and checked inside the
+  lock, names its project's repository and branch, and is cleared when `PUT /projects/{project}` changes them; in
+  mock mode it is kept in memory and reset with the mock. It keeps only each story's current run and each issue's
+  latest reading answer; its size is checked before it is read, and a stop or a task's end always fits, since it
+  replaces what it ends. `WorkRecordUnavailable` carries fixed words only; a refusal names a task, offer or event
+  only once it is checked. The stop call takes an empty body.
+- **Cut.** A story's work without an open issue is refused where a reading would follow. A save in flight is
+  recorded as a single marker; found at start-up, it reads as SAVE_REFUSED. A repeated work call replaces the
+  unstarted order instead of reusing it. One planner writes a project's record: an in-process lock and a file lock
+  taken without waiting, which refuses a second planner.
+
+### Taken from the code reading
+
+- **Fixed:**
+  - A replayed STARTED answers the follow-ups the first one made.
+  - The issue's progress is read from the run at work on it, otherwise from the one with the most readings.
+  - A reading choice resumes a parent deferred behind the child it settles.
+  - A story move is refused while any of its issues is at work in another story's run.
+  - A halted run takes a new order once the person has stopped it.
+  - Requests of one planner wait for each other on the record's lock instead of refusing.
+  - An older reading's answer is kept until the newer reading ends.
+- **Declined:**
+  - A new order over an issue that already had readings keeps that issue's allowance, as planned: a new run keeps
+    the counts, allowances and findings of the one before.
+  - Ordering again over a run whose task failed, or between a task's end and the next start, replaces its unstarted
+    offers: that is the person's own choice, and the tasks at work are refused as before.
+
 ## Acceptance
 
 - The red-first tests seen red, then green; a whole cycle run over fakes in seconds.
 
 ## To be checked
 
-- The window's report of a task's change carries today only the event. The plan needs with every report the offer
-  the work answer gave, the Porelo task's name and its container, and with an end Porelo's ended record; that change
-  of the screen package's interface waits on agreement with the window's agent.
 - `screen/lib/src/models.dart` makes `StoryWorkStarted.started` require `{work}` with `atWork:true` and tasks;
   `fake/story_work.dart` changes story/issue states and returns that running work from StartStoryWork. The settled
   work call instead returns `{revision,tasks}` and starts/moves nothing. The screen's own work must follow that

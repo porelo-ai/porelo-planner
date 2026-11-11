@@ -9,6 +9,7 @@ import org.fuin.porelo.planner.app.mock.MockStore;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.GitProjects;
 import org.jspecify.annotations.Nullable;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
@@ -119,6 +120,17 @@ public class StoreConfiguration {
         return MockStore.fromClassPath();
     }
 
+    /** Creates private disk records outside mock mode and memory records within it. */
+    @Bean(destroyMethod = "close")
+    @RegisterReflectionForBinding({
+        WorkRecord.Document.class,
+        WorkAnswers.TaskEventReply.class,
+        WorkAnswers.ReadingReply.class
+    })
+    public WorkRecord workRecord(final ObjectProvider<MockMode> mode) {
+        return new WorkRecord(System.getenv(), mode.getIfAvailable() != null);
+    }
+
     /**
      * The registry of projects, each opened from a checked source, or in the mock mode each served
      * from the mock board.
@@ -126,13 +138,15 @@ public class StoreConfiguration {
      * @param mode present only in the mock mode
      * @param gits opens a project from Git, made only outside the mock mode
      * @param mocks the mock store, made only in the mock mode
+     * @param records the project's durable or mock work records
      * @return the registry
      */
     @Bean
     public Projects projects(
             final ObjectProvider<MockMode> mode,
             final ObjectProvider<GitProjects> gits,
-            final ObjectProvider<MockStore> mocks) {
+            final ObjectProvider<MockStore> mocks,
+            final WorkRecord records) {
         // Decided at run time, not by @Profile: a native image fixes its beans when it is built.
         if (mode.getIfAvailable() != null) {
             final MockStore mock = mocks.getObject();
@@ -142,9 +156,10 @@ public class StoreConfiguration {
                         checkedSource(project, repository, branch);
                         return mock;
                     },
-                    MOST_PROJECTS);
+                    MOST_PROJECTS,
+                    records);
         }
-        return fromGit(gits.getObject());
+        return fromGit(gits.getObject(), records);
     }
 
     /**
@@ -154,6 +169,10 @@ public class StoreConfiguration {
      * @return the registry
      */
     static Projects fromGit(final GitProjects git) {
+        return fromGit(git, new WorkRecord(Map.of(), true));
+    }
+
+    private static Projects fromGit(final GitProjects git, final WorkRecord records) {
         return new Projects(
                 (project, repository, branch) -> {
                     final CloneUrl url = checkedSource(project, repository, branch);
@@ -163,7 +182,8 @@ public class StoreConfiguration {
                         throw notACloneUrl(project, String.valueOf(e.getMessage()));
                     }
                 },
-                MOST_PROJECTS);
+                MOST_PROJECTS,
+                records);
     }
 
     private static CloneUrl checkedSource(

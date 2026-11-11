@@ -60,7 +60,17 @@ class ApiMatchesDescriptionTest {
                     Map.entry("PlanWorker", WorkAnswers.Worker.class),
                     Map.entry("PlanAssignment", WorkAnswers.Assignment.class),
                     Map.entry("IssueReadingRounds", WorkAnswers.IssueRounds.class),
-                    Map.entry("PlanningStartTask", WorkAnswers.StartTask.class));
+                    Map.entry("PlanningStartTask", WorkAnswers.StartTask.class),
+                    Map.entry("TaskEventRequest", WorkRequests.TaskEventRequest.class),
+                    Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
+                    Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class),
+                    Map.entry("StoryWorkReply", WorkAnswers.StoryWorkReply.class),
+                    Map.entry("TaskEventReply", WorkAnswers.TaskEventReply.class),
+                    Map.entry("ReadingReply", WorkAnswers.ReadingReply.class),
+                    Map.entry("PlanWork", WorkAnswers.PlanWork.class),
+                    Map.entry("PlanWorkTask", WorkAnswers.PlanWorkTask.class),
+                    Map.entry("PlanWorkIssue", WorkAnswers.PlanWorkIssue.class),
+                    Map.entry("Finding", WorkAnswers.Finding.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
@@ -204,8 +214,10 @@ class ApiMatchesDescriptionTest {
                     .as("documented answers for %s", suffix)
                     .isEqualTo(
                             suffix.equals("proposal")
-                                    ? Set.of("200", "400", "401", "404", "502", "504")
-                                    : Set.of("200", "400", "401", "404", "409", "502", "504"));
+                                    ? Set.of("200", "400", "401", "404", "409", "502", "503", "504")
+                                    : Set.of(
+                                            "200", "400", "401", "404", "409", "502", "503",
+                                            "504"));
         }
         assertThat(
                         description
@@ -237,10 +249,20 @@ class ApiMatchesDescriptionTest {
                         WorkAnswers.Worker.class,
                         WorkAnswers.Assignment.class,
                         WorkAnswers.IssueRounds.class,
-                        WorkAnswers.StartTask.class);
+                        WorkAnswers.StartTask.class,
+                        WorkRequests.TaskEventRequest.class,
+                        WorkRequests.TaskEnded.class,
+                        WorkRequests.ReadingRequest.class,
+                        WorkAnswers.StoryWorkReply.class,
+                        WorkAnswers.TaskEventReply.class,
+                        WorkAnswers.ReadingReply.class,
+                        WorkAnswers.PlanWork.class,
+                        WorkAnswers.PlanWorkTask.class,
+                        WorkAnswers.PlanWorkIssue.class,
+                        WorkAnswers.Finding.class);
         assertThat(workTypes)
                 .as("every work request, response and nested wire record participates")
-                .hasSize(9)
+                .hasSize(19)
                 .isSubsetOf(SCHEMAS.values());
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
@@ -267,6 +289,15 @@ class ApiMatchesDescriptionTest {
 
     private static void wireType(
             final JsonNode schemas, final JsonNode field, final Type type, final String name) {
+        if (field.has("oneOf")) {
+            final JsonNode value =
+                    java.util.stream.StreamSupport.stream(field.get("oneOf").spliterator(), false)
+                            .filter(option -> !option.path("type").asText().equals("null"))
+                            .findFirst()
+                            .orElseThrow();
+            wireType(schemas, value, type, name);
+            return;
+        }
         if (type instanceof ParameterizedType parameterized
                 && parameterized.getRawType() == List.class) {
             assertThat(field.path("type").asText()).as("%s is a list", name).isEqualTo("array");
@@ -293,9 +324,45 @@ class ApiMatchesDescriptionTest {
                         ? schemas.get(
                                 field.get("$ref").asText().replace("#/components/schemas/", ""))
                         : field;
-        assertThat(resolved.path("type").asText())
+        final JsonNode declared = resolved.path("type");
+        final String primitive = declared.isArray() ? declared.get(0).asText() : declared.asText();
+        assertThat(primitive)
                 .as("%s has the correct primitive wire type", name)
-                .isEqualTo(raw == int.class || raw == Number.class ? "integer" : "string");
+                .isEqualTo(
+                        raw == int.class || raw == Integer.class || raw == Number.class
+                                ? "integer"
+                                : raw == boolean.class ? "boolean" : "string");
+    }
+
+    @Test
+    void lifecycleBodiesAndAllNamedRefusalsArePartOfTheContract() {
+        // Prevents a window from treating an unknown report or lost record as permission to start
+        // work.
+        for (final String path :
+                List.of(
+                        "/projects/{project}/tasks/{task}/events",
+                        "/projects/{project}/issues/{issue}/reading")) {
+            final JsonNode operation = description.path("paths").path(path).path("post");
+            final Set<String> statuses = new TreeSet<>();
+            operation.path("responses").fieldNames().forEachRemaining(statuses::add);
+            assertThat(statuses)
+                    .as("every lifecycle refusal at %s is documented", path)
+                    .containsExactlyInAnyOrder(
+                            "200", "400", "401", "404", "409", "422", "501", "502", "503", "504");
+        }
+        final JsonNode stop =
+                description
+                        .path("paths")
+                        .path("/projects/{project}/stories/{story}/work/stop")
+                        .path("post");
+        assertThat(stop.has("requestBody")).as("stop takes no JSON object").isFalse();
+        final JsonNode event = description.path("components").path("schemas").path("TaskEnded");
+        assertThat(event.path("properties").has("outcome"))
+                .as("the window sends Porelo's end unmapped")
+                .isFalse();
+        assertThat(event.path("required").toString())
+                .as("all of Porelo's facts are required")
+                .contains("at", "finished", "why", "answer", "unpushed");
     }
 
     private static String answer(final JsonNode operation) {

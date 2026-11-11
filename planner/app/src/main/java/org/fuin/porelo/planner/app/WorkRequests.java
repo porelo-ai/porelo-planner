@@ -6,9 +6,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
@@ -47,13 +49,31 @@ public final class WorkRequests {
     /** An explicitly supplied reading bound, kept numeric until core validation. */
     public record IssueLimit(String issue, Number rounds) {}
 
+    /** The checked lifecycle request; ended is present only for ENDED. */
+    public record TaskEventRequest(
+            String offer,
+            String event,
+            String container,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskEnded ended) {}
+
+    /** Porelo's ended record with no outcome invented by the window. */
+    public record TaskEnded(String at, boolean finished, String why, String answer, int unpushed) {}
+
+    /** One choice against a completed, stopped reading. */
+    public record ReadingRequest(
+            String story, int round, String choice, String comment, String revision) {}
+
     static JsonNode read(final HttpServletRequest request) {
+        return read(request, 65536);
+    }
+
+    static JsonNode read(final HttpServletRequest request, final int most) {
         try {
-            if (request.getContentLengthLong() > 65536) {
+            if (request.getContentLengthLong() > most) {
                 throw WorkRefusal.invalidSettings();
             }
-            final byte[] bytes = request.getInputStream().readNBytes(65537);
-            if (bytes.length > 65536) {
+            final byte[] bytes = request.getInputStream().readNBytes(most + 1);
+            if (bytes.length > most) {
                 throw WorkRefusal.invalidSettings();
             }
             final JsonNode body = JSON.readTree(bytes);
@@ -64,6 +84,70 @@ public final class WorkRequests {
         } catch (final IOException | JacksonException invalid) {
             throw WorkRefusal.invalidSettings();
         }
+    }
+
+    static void empty(final HttpServletRequest request) {
+        try {
+            if (request.getInputStream().readNBytes(1).length != 0) {
+                throw WorkRefusal.invalidSettings();
+            }
+        } catch (final IOException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+    }
+
+    static WorkRun.Report event(final JsonNode body) {
+        fields(body, Set.of("offer", "event", "container", "ended"));
+        final WorkRun.Event event;
+        try {
+            event = WorkRun.Event.valueOf(text(body, "event"));
+        } catch (final IllegalArgumentException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+        WorkRun.Ended ended = null;
+        if (body.has("ended")) {
+            final JsonNode end = body.path("ended");
+            fields(end, Set.of("at", "finished", "why", "answer", "unpushed"));
+            if (!end.path("finished").isBoolean()) {
+                throw WorkRefusal.invalidSettings();
+            }
+            ended =
+                    new WorkRun.Ended(
+                            text(end, "at"),
+                            end.path("finished").asBoolean(),
+                            text(end, "why"),
+                            text(end, "answer"),
+                            integer(end, "unpushed"));
+        }
+        return new WorkRun.Report(text(body, "offer"), event, text(body, "container"), ended);
+    }
+
+    static ReadingRequest reading(final JsonNode body) {
+        fields(body, Set.of("story", "round", "choice", "comment", "revision"));
+        final String choice = text(body, "choice");
+        try {
+            ReadingCycle.Choice.valueOf(choice);
+        } catch (final IllegalArgumentException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return new ReadingRequest(
+                text(body, "story"),
+                integer(body, "round"),
+                choice,
+                text(body, "comment"),
+                text(body, "revision"));
+    }
+
+    private static int integer(final JsonNode body, final String name) {
+        final JsonNode number = body.path(name);
+        if (!number.isIntegralNumber()
+                || number.bigIntegerValue().signum() < 0
+                || number.bigIntegerValue()
+                                .compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE))
+                        > 0) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return number.intValue();
     }
 
     static Proposal proposal(final JsonNode body) {

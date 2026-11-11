@@ -78,7 +78,8 @@ public final class ChangesRegistry implements AutoCloseable {
         if (known != null) {
             return known.changes().subscribe();
         }
-        final Changes changes = new Changes(projects.store(project), () -> idle(project));
+        final Changes changes =
+                new Changes(projects.store(project), () -> idle(project), projects.work(project));
         // Subscribed before it is followed, so a board that cannot be read leaves no polling.
         final Changes.Subscription subscription = changes.subscribe();
         followed.put(

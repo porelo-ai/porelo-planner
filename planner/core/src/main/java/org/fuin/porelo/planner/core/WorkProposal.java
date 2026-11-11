@@ -78,8 +78,14 @@ public record WorkProposal(
             final Board board, final String id, final String to, final RunningWork running) {
         final Story story = story(board, id);
         final WorkRule rule = rule(board, story, to);
+        if (rule.blocked() != null) {
+            throw WorkRefusal.notAllowed(story.state(), to, "Readings are offered only by a run.");
+        }
         bounded(story, to, rule.order());
         final List<Issue> issues = issues(board, story, to);
+        if (issues.isEmpty() && rule.then() != null) {
+            throw WorkRefusal.notAllowed(story.state(), to, "A reading needs an open issue.");
+        }
         final Map<String, List<Issue>> groups = new LinkedHashMap<>();
         if (rule.per() == WorkRule.Per.STORY) {
             if (board.repositories().isEmpty()) {

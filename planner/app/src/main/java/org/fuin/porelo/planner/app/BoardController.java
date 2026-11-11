@@ -10,10 +10,10 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Moves;
-import org.fuin.porelo.planner.core.WorkOrder;
-import org.fuin.porelo.planner.core.WorkProposal;
+import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -100,6 +100,15 @@ public class BoardController {
             @PathVariable("project") final String project, @RequestBody final MovesBody body) {
         final String name = name(project);
         final List<Moves.Move> moves = moves(name, body);
+        try {
+            return projects.work(name).moves(moves, () -> saveMoves(name, body, moves));
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    private Answers.Moved saveMoves(
+            final String name, final MovesBody body, final List<Moves.Move> moves) {
         final String revision = body.revision();
         if (revision == null) {
             throw notAllowed("", "", "The body names no revision.");
@@ -127,7 +136,6 @@ public class BoardController {
                             new Writes(planned.issues(), planned.stories(), planned.unstated()));
         } catch (final StoreException.PartlySaved e) {
             // The repositories pushed first hold the save, and every window shows what they hold.
-            changes.saved(name);
             throw e;
         } catch (final StoreException.NotSavable e) {
             final String item = e.subject();
@@ -150,7 +158,6 @@ public class BoardController {
                     "This planner does not save moves.",
                     Map.of("project", name));
         }
-        changes.saved(name);
         return new Answers.Moved(saved.revision().value(), planned.moved());
     }
 
@@ -268,6 +275,10 @@ public class BoardController {
      * @return the workflow's answer and every story in one
      */
     static Answers.Board boardOf(final Board board) {
+        return boardOf(board, new WorkRun.Snapshot(0, Map.of()));
+    }
+
+    static Answers.Board boardOf(final Board board, final WorkRun.Snapshot snapshot) {
         final Answers.Workflow workflow = workflowOf(board);
         return new Answers.Board(
                 workflow.revision(),
@@ -275,7 +286,7 @@ public class BoardController {
                 workflow.phases(),
                 workflow.work(),
                 workflow.faults(),
-                board.stories().stream().map(story -> story(board, story)).toList());
+                board.stories().stream().map(story -> story(board, story, snapshot)).toList());
     }
 
     /**
@@ -289,17 +300,20 @@ public class BoardController {
     public Answers.StoryList stories(
             @PathVariable("project") final String project,
             @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
-        final Board board = board(project);
-        return new Answers.StoryList(
-                board.revision().value(),
-                board.stories().stream()
-                        .filter(
-                                story ->
-                                        states == null
-                                                || states.isEmpty()
-                                                || states.contains(story.state()))
-                        .map(story -> story(board, story))
-                        .toList());
+        return projects.work(name(project))
+                .view(
+                        (board, snapshot) ->
+                                new Answers.StoryList(
+                                        board.revision().value(),
+                                        board.stories().stream()
+                                                .filter(
+                                                        story ->
+                                                                states == null
+                                                                        || states.isEmpty()
+                                                                        || states.contains(
+                                                                                story.state()))
+                                                .map(story -> story(board, story, snapshot))
+                                                .toList()));
     }
 
     /**
@@ -313,7 +327,12 @@ public class BoardController {
     public Answers.StoryReply story(
             @PathVariable("project") final String project, @PathVariable("story") final String id) {
         final String checked = storyId(project, id);
-        final Board board = board(project);
+        return projects.work(name(project))
+                .view((board, snapshot) -> storyDetail(board, snapshot, checked));
+    }
+
+    private static Answers.StoryReply storyDetail(
+            final Board board, final WorkRun.Snapshot snapshot, final String checked) {
         final Story story = found(board, checked);
         return new Answers.StoryReply(
                 board.revision().value(),
@@ -324,8 +343,8 @@ public class BoardController {
                         story.stateGiven(),
                         story.priority(),
                         link(story.link()),
-                        issues(board, story),
-                        null,
+                        issues(board, story, snapshot),
+                        WorkAnswers.work(snapshot.runs().get(checked)),
                         story.description()));
     }
 
@@ -340,9 +359,12 @@ public class BoardController {
     public Answers.IssueList storyIssues(
             @PathVariable("project") final String project, @PathVariable("story") final String id) {
         final String checked = storyId(project, id);
-        final Board board = board(project);
-        return new Answers.IssueList(
-                board.revision().value(), issues(board, found(board, checked)));
+        return projects.work(name(project))
+                .view(
+                        (board, snapshot) ->
+                                new Answers.IssueList(
+                                        board.revision().value(),
+                                        issues(board, found(board, checked), snapshot)));
     }
 
     /**
@@ -356,10 +378,16 @@ public class BoardController {
     public Answers.IssueReply issue(
             @PathVariable("project") final String project, @PathVariable("issue") final String id) {
         final String checked = checked(project, () -> Ids.issue(id), "issue");
-        final Board board = board(project);
+        return projects.work(name(project))
+                .view((board, snapshot) -> issueDetail(board, snapshot, checked));
+    }
+
+    private static Answers.IssueReply issueDetail(
+            final Board board, final WorkRun.Snapshot snapshot, final String checked) {
         final Issue issue =
                 board.issue(checked).orElseThrow(() -> new StoreException.NoSuchIssue(checked));
         final Matcher what = WHAT_MUST_BE_TRUE.matcher(issue.text());
+        final Answers.Issue view = issue(board, issue, snapshot);
         return new Answers.IssueReply(
                 board.revision().value(),
                 new Answers.IssueDetail(
@@ -376,7 +404,13 @@ public class BoardController {
                                 .filter(other -> checked.equals(other.parent()))
                                 .map(Issue::id)
                                 .toList(),
-                        what.find() ? what.group(1).strip() : null));
+                        what.find() ? what.group(1).strip() : null,
+                        view.rounds(),
+                        view.roundsMost(),
+                        view.atWork(),
+                        view.needsYou(),
+                        view.readingStopped(),
+                        view.findings()));
     }
 
     /** Computes the proposal from one board without starting or recording work. */
@@ -387,8 +421,7 @@ public class BoardController {
             final HttpServletRequest request) {
         final String checked = storyId(project, id);
         final WorkRequests.Proposal body = WorkRequests.proposal(WorkRequests.read(request));
-        final Board board = board(project);
-        return WorkAnswers.proposal(WorkProposal.propose(board, checked, body.to()));
+        return WorkAnswers.proposal(projects.work(name(project)).propose(checked, body.to()));
     }
 
     /**
@@ -411,11 +444,109 @@ public class BoardController {
         if (!project.equals(body.project()) || !checked.equals(body.story())) {
             throw WorkRefusal.invalidSettings();
         }
-        return WorkAnswers.order(WorkOrder.accept(board, checked, to, WorkRequests.decision(body)));
+        try {
+            return WorkAnswers.order(
+                    projects.work(name(project)).order(checked, to, WorkRequests.decision(body)));
+        } finally {
+            changes.saved(name(project));
+        }
+    }
+
+    /** Records a report against its saved offer and answers still-valid next Start arguments. */
+    @PostMapping("/projects/{project}/tasks/{task}/events")
+    public WorkAnswers.TaskEventReply taskEvent(
+            @PathVariable("project") final String project,
+            @PathVariable("task") final String task,
+            final HttpServletRequest request) {
+        final String name = name(project);
+        final WorkRun.Report report = WorkRequests.event(WorkRequests.read(request, 131072));
+        WorkRun.checkedReport(task, report);
+        try {
+            final WorkRun.Answer answer = projects.work(name).report(task, report);
+            return new WorkAnswers.TaskEventReply(
+                    answer.revision(),
+                    WorkAnswers.knownWork(answer.work()),
+                    WorkAnswers.starts(answer.tasks()));
+        } catch (final UnsupportedOperationException unavailable) {
+            throw notOffered(name);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    /** Reads the current run, preserving null when no local record exists. */
+    @GetMapping("/projects/{project}/stories/{story}/work")
+    public WorkAnswers.StoryWorkReply getStoryWork(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String story) {
+        final String checked = storyId(project, story);
+        return projects.work(name(project))
+                .view(
+                        (board, snapshot) -> {
+                            found(board, checked);
+                            return new WorkAnswers.StoryWorkReply(
+                                    WorkAnswers.work(snapshot.runs().get(checked)));
+                        });
+    }
+
+    /** Cancels follow-ups while leaving active tasks for the window to stop and report. */
+    @PostMapping("/projects/{project}/stories/{story}/work/stop")
+    public WorkAnswers.StoryWorkReply stopStoryWork(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String story,
+            final HttpServletRequest request) {
+        final String checked = storyId(project, story);
+        WorkRequests.empty(request);
+        try {
+            return new WorkAnswers.StoryWorkReply(
+                    WorkAnswers.work(projects.work(name(project)).stop(checked)));
+        } finally {
+            changes.saved(name(project));
+        }
+    }
+
+    /** Applies a choice to the exact stopped reading the window saw. */
+    @PostMapping("/projects/{project}/issues/{issue}/reading")
+    public WorkAnswers.ReadingReply chooseReading(
+            @PathVariable("project") final String project,
+            @PathVariable("issue") final String issue,
+            final HttpServletRequest request) {
+        final String checked = checked(project, () -> Ids.issue(issue), "issue");
+        final WorkRequests.ReadingRequest body = WorkRequests.reading(WorkRequests.read(request));
+        final String story = storyId(project, body.story());
+        final String name = name(project);
+        try {
+            final WorkRun.Answer answer =
+                    projects.work(name)
+                            .choose(
+                                    story,
+                                    checked,
+                                    body.round(),
+                                    ReadingCycle.Choice.valueOf(body.choice()),
+                                    body.comment(),
+                                    body.revision());
+            final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
+            return new WorkAnswers.ReadingReply(
+                    issue(answer.board(), answer.board().issue(checked).orElseThrow(), snapshot),
+                            WorkAnswers.knownWork(answer.work()),
+                    answer.revision(), WorkAnswers.starts(answer.tasks()));
+        } catch (final UnsupportedOperationException unavailable) {
+            throw notOffered(name);
+        } finally {
+            changes.saved(name);
+        }
     }
 
     private Board board(final String project) {
         return projects.store(name(project)).board();
+    }
+
+    private static Refusal notOffered(final String project) {
+        return new Refusal(
+                "NotOffered",
+                HttpStatus.NOT_IMPLEMENTED,
+                "This store does not save work.",
+                Map.of("project", project));
     }
 
     /**
@@ -473,7 +604,8 @@ public class BoardController {
                 rule.models());
     }
 
-    private static Answers.Story story(final Board board, final Story story) {
+    private static Answers.Story story(
+            final Board board, final Story story, final WorkRun.Snapshot snapshot) {
         return new Answers.Story(
                 story.id(),
                 story.title(),
@@ -481,28 +613,22 @@ public class BoardController {
                 story.stateGiven(),
                 story.priority(),
                 link(story.link()),
-                issues(board, story),
-                null);
+                issues(board, story, snapshot),
+                WorkAnswers.work(snapshot.runs().get(story.id())));
     }
 
-    private static List<Answers.Issue> issues(final Board board, final Story story) {
+    private static List<Answers.Issue> issues(
+            final Board board, final Story story, final WorkRun.Snapshot snapshot) {
         final List<Answers.Issue> issues = new ArrayList<>();
         for (final String id : story.issues()) {
-            board.issue(id).ifPresent(issue -> issues.add(issue(issue)));
+            board.issue(id).ifPresent(issue -> issues.add(issue(board, issue, snapshot)));
         }
         return issues;
     }
 
-    private static Answers.Issue issue(final Issue issue) {
-        return new Answers.Issue(
-                issue.id(),
-                issue.repository(),
-                issue.title(),
-                issue.state(),
-                issue.size(),
-                issue.blockedBy(),
-                issue.parent(),
-                link(issue.link()));
+    private static Answers.Issue issue(
+            final Board board, final Issue issue, final WorkRun.Snapshot snapshot) {
+        return WorkAnswers.issue(board, issue, snapshot);
     }
 
     private static @Nullable String link(final @Nullable URI link) {

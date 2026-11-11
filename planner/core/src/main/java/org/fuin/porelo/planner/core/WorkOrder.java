@@ -297,7 +297,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
         }
     }
 
-    private static String issueText(
+    static String issueText(
             final Board board, final Story story, final String to, final List<String> ids) {
         final List<String> pieces = new ArrayList<>();
         for (final String id : ids) {
@@ -322,7 +322,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
         return String.join("\n\n", pieces);
     }
 
-    private static String prompt(
+    static String prompt(
             final WorkRule rule,
             final Story story,
             final String issues,

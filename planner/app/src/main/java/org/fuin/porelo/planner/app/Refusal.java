@@ -65,8 +65,14 @@ public final class Refusal extends RuntimeException {
     public static Refusal work(final WorkRefusal refusal) {
         final HttpStatus status =
                 switch (refusal.name()) {
-                    case "NoSuchStory" -> HttpStatus.NOT_FOUND;
-                    case "StaleRevision", "WorkRunning" -> HttpStatus.CONFLICT;
+                    case "NoSuchStory", "NoSuchIssue", "TaskNotAnswered" -> HttpStatus.NOT_FOUND;
+                    case "StaleRevision",
+                            "WorkRunning",
+                            "ReadingNotStopped",
+                            "ReadingRoundChanged",
+                            "TaskEventConflict" ->
+                            HttpStatus.CONFLICT;
+                    case "WorkRecordUnavailable" -> HttpStatus.SERVICE_UNAVAILABLE;
                     default -> HttpStatus.BAD_REQUEST;
                 };
         return new Refusal(

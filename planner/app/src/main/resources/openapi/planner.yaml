@@ -72,6 +72,8 @@ paths:
           $ref: '#/components/responses/TooManyProjects'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -109,8 +111,9 @@ paths:
       summary: Follow the board's changes
       description: >-
         Streams the project's board as Server-Sent Events: event `board`, its `id` the revision and its `data` one
-        `Board` object, first at once and then whenever the revision changes - by the planner's own save, by a poll of
-        the repositories, or after `refresh`. A comment line `: keep-alive` comes every 15 s while nothing changes; a
+        `Board` object, first at once and then whenever the store revision or local work generation changes. Work-only
+        changes retain the revision, including a cancellation or Needs you. Saves, polls and `refresh` publish the
+        current board and work snapshot. A comment line `: keep-alive` comes every 15 s while nothing changes; a
         reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
         current board first. An unknown project is refused before the stream starts.
       tags: [board]
@@ -136,6 +139,8 @@ paths:
           $ref: '#/components/responses/NoSuchProject'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -164,6 +169,8 @@ paths:
           $ref: '#/components/responses/NoSuchProject'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -201,6 +208,8 @@ paths:
           $ref: '#/components/responses/NoSuchProject'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -228,6 +237,8 @@ paths:
           $ref: '#/components/responses/NoSuchStory'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -255,6 +266,8 @@ paths:
           $ref: '#/components/responses/NoSuchStory'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -290,8 +303,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/WorkConflict'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -299,6 +316,32 @@ paths:
     parameters:
       - $ref: '#/components/parameters/Project'
       - $ref: '#/components/parameters/Story'
+    get:
+      operationId: getStoryWork
+      summary: Read the current run
+      description: Returns null when no run is recorded; working states never recreate a lost record.
+      tags: [work]
+      responses:
+        '200':
+          description: The current work and any still-valid offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryWorkReply'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/RunConflict'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
     post:
       operationId: orderStoryWork
       summary: Prepare the tasks the window starts
@@ -310,8 +353,8 @@ paths:
         task. CHANGE and DROP need a nonblank comment. OTHER may only be dropped. No prompt comes from the body.
         Expands order placeholders once per task, with repository text delimited by longer backtick fences.
         Refuses any brief over 4000 characters or task prompt over 65536 UTF-8 bytes. The JSON body is at most 65536
-        bytes. Answers tasks only: starts nothing, saves no running record, and changes neither state nor revision.
-        Running work is checked only when the run supplies records; no running record exists yet.
+        bytes. Persists scoped opaque offers before answering, without starting or moving anything. Repeating this
+        call replaces unstarted offers. Halted runs, readings waiting for a choice, and lost working records refuse work.
       tags: [work]
       requestBody:
         required: true
@@ -336,6 +379,8 @@ paths:
           $ref: '#/components/responses/WorkConflict'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -363,6 +408,8 @@ paths:
           $ref: '#/components/responses/NoSuchIssue'
         '502':
           $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -405,7 +452,135 @@ paths:
         '501':
           $ref: '#/components/responses/NotOffered'
         '503':
-          $ref: '#/components/responses/Busy'
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/tasks/{task}/events:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - name: task
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/TaskLabel'
+    post:
+      operationId: taskEvent
+      summary: Report the lifecycle of an offered task
+      description: >-
+        Accepts STARTED, ENDED or STOPPED against an offer. Only ENDED carries Porelo's unmapped ended record.
+        STARTED binds task and container once. Unknown, void or foreign offers and contradictory bindings are refused.
+        Identical reports replay their disposition after restart, without saving or counting twice, and return only
+        still-valid offers. The report is at most 131072 bytes, its answer at most 65536 UTF-8 bytes. Every save
+        refusal halts the run and voids unstarted work. A late end after cancellation only clears activity.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskEventRequest'
+      responses:
+        '200':
+          description: The current work and any still-valid offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskEventReply'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/RunConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/stories/{story}/work/stop:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    post:
+      operationId: stopStoryWork
+      summary: Cancel the run
+      description: >-
+        Takes an empty body. Records cancellation and voids unstarted offers, retaining states, counts and findings.
+        Active tasks stay at work until the window stops them and reports STOPPED or a late ENDED. Repeatable.
+      tags: [work]
+      responses:
+        '200':
+          description: The current work and any still-valid offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryWorkReply'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/RunConflict'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/reading:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    post:
+      operationId: chooseReading
+      summary: Choose how a stopped reading continues
+      description: >-
+        Checks story membership, stopped status, exact completed round and revision. The choice clears the stop
+        before an offer leaves. REVIEW_ANYWAY retains findings and saves the rule's done state. ONE_MORE_ROUND
+        grants an allowance and offers a reader; REWORK requires nonblank operator words and offers rework.
+        Neither counts a reading. Stopped or halted runs refuse choices. The body is at most 65536 bytes.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadingRequest'
+      responses:
+        '200':
+          description: The current work and any still-valid offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadingReply'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/RunConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -440,6 +615,21 @@ components:
         $ref: '#/components/schemas/IssueId'
 
   responses:
+    RunConflict:
+      description: >-
+        StaleRevision(revision), WorkRunning(story,tasks[]), ReadingNotStopped(issue),
+        ReadingRoundChanged(issue,rounds) or TaskEventConflict(task,event,reason). Subjects are checked before echoing.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RecordUnavailable:
+      description: >-
+        Busy(repository) or WorkRecordUnavailable(project,reason). The record reason contains fixed words only.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     WorkRefused:
       description: >-
         InvalidName for an invalid path id (only a checked project may be echoed); InvalidSettings for malformed JSON,
@@ -627,7 +817,7 @@ components:
               repository: example
 
     NoSuchItem:
-      description: The project is not known (NoSuchProject), or a move names a story (NoSuchStory) or an issue (NoSuchIssue) it does not have.
+      description: NoSuchProject(project), NoSuchStory(story), NoSuchIssue(issue), or TaskNotAnswered(task,offer) for an unknown, void or foreign offer.
       content:
         application/problem+json:
           schema:
@@ -651,7 +841,8 @@ components:
                   issue: PL9
     MoveConflict:
       description: >-
-        The board moved since the given revision (StaleRevision, naming the current one), or a story would stand where
+        WorkRunning(story,tasks[]) when a move touches an item currently owned by active work. The board moved since
+        the given revision (StaleRevision, naming the current one), or a story would stand where
         its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that does not fit
         with its state).
       content:
@@ -1027,8 +1218,10 @@ components:
           items:
             $ref: '#/components/schemas/Issue'
         work:
-          type: 'null'
-          description: The story's work, null until the run records work.
+          oneOf:
+            - $ref: '#/components/schemas/PlanWork'
+            - type: 'null'
+          description: The current recorded run, null without a record.
     StoryDetail:
       description: One story with its description.
       allOf:
@@ -1063,7 +1256,7 @@ components:
     Issue:
       description: One issue of a story.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link]
+      required: [id, repository, title, state, size, blockedBy, parent, link, atWork, needsYou, readingStopped]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -1090,6 +1283,26 @@ components:
           type: [string, 'null']
           format: uri
           description: The issue's web page, or null when it has none.
+        rounds:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: Absent when no reading record is known.
+        roundsMost:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        atWork:
+          type: boolean
+        needsYou:
+          type: boolean
+        readingStopped:
+          type: boolean
+        findings:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Finding'
     IssueDetail:
       description: One issue with its text and sub-issues.
       allOf:
@@ -1266,8 +1479,11 @@ components:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanningStartTask:
       type: object
-      required: [repository, issues, role, agent, model, mode, prompt]
+      required: [offer, repository, issues, role, agent, model, mode, prompt]
       properties:
+        offer:
+          type: string
+          format: uuid
         repository:
           $ref: '#/components/schemas/Name'
         issues:
@@ -1276,7 +1492,7 @@ components:
             $ref: '#/components/schemas/IssueId'
         role:
           type: string
-          enum: [MAIN, BUILDER]
+          enum: [MAIN, BUILDER, READER]
         agent:
           type: string
         model:
@@ -1286,6 +1502,214 @@ components:
         prompt:
           type: string
           description: The complete starting prompt, at most 65536 UTF-8 bytes.
+
+    TaskLabel:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'
+    TaskEventRequest:
+      type: object
+      additionalProperties: false
+      required: [offer, event, container]
+      properties:
+        offer:
+          type: string
+          format: uuid
+        event:
+          type: string
+          enum: [STARTED, ENDED, STOPPED]
+        container:
+          $ref: '#/components/schemas/TaskLabel'
+        ended:
+          $ref: '#/components/schemas/TaskEnded'
+      description: ended is required only for ENDED and forbidden for STARTED and STOPPED.
+    TaskEnded:
+      type: object
+      additionalProperties: false
+      required: [at, finished, why, answer, unpushed]
+      properties:
+        at:
+          type: string
+          format: date-time
+          maxLength: 128
+        finished:
+          type: boolean
+        why:
+          type: string
+          maxLength: 4000
+        answer:
+          type: string
+          description: The agent's unmapped answer, at most 65536 UTF-8 bytes.
+        unpushed:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    ReadingRequest:
+      type: object
+      additionalProperties: false
+      required: [story, round, choice, comment, revision]
+      properties:
+        story:
+          $ref: '#/components/schemas/StoryId'
+        round:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        choice:
+          type: string
+          enum: [REVIEW_ANYWAY, ONE_MORE_ROUND, REWORK]
+        comment:
+          type: string
+          maxLength: 4000
+        revision:
+          $ref: '#/components/schemas/Revision'
+    StoryWorkReply:
+      type: object
+      required: [work]
+      properties:
+        work:
+          oneOf:
+            - $ref: '#/components/schemas/PlanWork'
+            - type: 'null'
+    TaskEventReply:
+      type: object
+      required: [revision, work, tasks]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        work:
+          $ref: '#/components/schemas/PlanWork'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanningStartTask'
+    ReadingReply:
+      type: object
+      required: [issue, work, revision, tasks]
+      properties:
+        issue:
+          $ref: '#/components/schemas/Issue'
+        work:
+          $ref: '#/components/schemas/PlanWork'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanningStartTask'
+    PlanWork:
+      type: object
+      required: [tasks, coordinator, since, atWork, repositories, comment, readingRounds, issueReadingRounds, issues]
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanWorkTask'
+        coordinator:
+          type: [string, 'null']
+        since:
+          type: string
+        atWork:
+          type: boolean
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanRepositoryWork'
+        comment:
+          type: string
+        readingRounds:
+          type: integer
+        issueReadingRounds:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueReadingRounds'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanWorkIssue'
+    PlanWorkTask:
+      type: object
+      required: [task, containerId, repository, issues, state, done, mode, agent, model, role, since, atWork, ended]
+      properties:
+        task:
+          type: string
+        containerId:
+          type: string
+        repository:
+          $ref: '#/components/schemas/Name'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        state:
+          type: string
+        done:
+          type: string
+        mode:
+          type: string
+        agent:
+          type: string
+        model:
+          type: string
+        role:
+          type: string
+          enum: [MAIN, BUILDER, READER]
+        since:
+          type: string
+        atWork:
+          type: boolean
+        ended:
+          oneOf:
+            - $ref: '#/components/schemas/TaskEnded'
+            - type: 'null'
+    PlanWorkIssue:
+      type: object
+      required: [issue, reason, rounds, roundsMost, atWork, needsYou, readingStopped, findings]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        reason:
+          type: string
+          enum: [NONE, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
+        rounds:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        roundsMost:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        atWork:
+          type: boolean
+        needsYou:
+          type: boolean
+        readingStopped:
+          type: boolean
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+    Finding:
+      type: object
+      required: [number, severity, text]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+          maximum: 100
+        severity:
+          type: string
+          enum: [BLOCKING, NOTE]
+        file:
+          type: string
+          maxLength: 512
+          description: A display-only relative label, without a leading slash or backslash or any parent segment.
+        line:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        text:
+          type: string
+          maxLength: 4000
 
     Problem:
       description: A refusal; the last part of its type is the refusal's name.
@@ -1334,6 +1758,16 @@ components:
               type: string
             detail:
               type: string
+            task:
+              type: string
+            offer:
+              type: string
+              format: uuid
+            event:
+              type: string
+              enum: [STARTED, ENDED, STOPPED]
+            rounds:
+              type: integer
             tasks:
               type: array
               items:
