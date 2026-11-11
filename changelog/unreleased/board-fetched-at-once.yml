@@ -1,0 +1,2 @@
+title: A window that follows a project gets the board fetched from its repositories at once, not after the first poll.
+type: fixed

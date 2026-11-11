@@ -220,6 +220,7 @@ class _BoardView extends StatefulWidget {
 class _BoardViewState extends State<_BoardView> {
   late final _search = TextEditingController(text: board.preferences.search);
   Key _project = UniqueKey();
+  bool _faultsOpen = false;
   PlanningBoard get board => widget.board;
   late final _vertical = ScrollController(
     initialScrollOffset: board.preferences.verticalOffset,
@@ -358,11 +359,7 @@ class _BoardViewState extends State<_BoardView> {
             if (board.problem case final problem?)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: Space.small),
-                child: Text(
-                  problem,
-                  key: const Key('planning-error'),
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
+                child: _problem(problem, theme),
               ),
             if (board.snapshot != null && !board.snapshot!.complete)
               const Text('The planner did not report the complete planning workflow and story list.'),
@@ -383,7 +380,7 @@ class _BoardViewState extends State<_BoardView> {
             if (board.snapshot != null || board.problem != null)
               TextButton.icon(
                 key: const Key('planning-reload'),
-                onPressed: board.saving ? null : () => unawaited(board.reload()),
+                onPressed: board.saving ? null : () => unawaited(board.reload(fetch: true)),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Reload planning'),
               ),
@@ -396,37 +393,39 @@ class _BoardViewState extends State<_BoardView> {
               child: board.snapshot == null
                   ? const SizedBox.shrink()
                   // The sideways bar sits at the view's foot, not under the tallest column, so it can be seen.
-                  : Scrollbar(
-                      key: const Key('planning-board-sideways'),
-                      controller: _horizontal,
-                      thumbVisibility: true,
-                      notificationPredicate: (notification) => notification.depth == 1,
-                      child: SingleChildScrollView(
-                        key: const Key('planning-board-scroll'),
-                        controller: _vertical,
+                  : LayoutBuilder(
+                      builder: (context, room) => Scrollbar(
+                        key: const Key('planning-board-sideways'),
+                        controller: _horizontal,
+                        thumbVisibility: true,
+                        notificationPredicate: (notification) => notification.depth == 1,
                         child: SingleChildScrollView(
-                          controller: _horizontal,
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (final phase in board.phases)
-                                if (board.statesIn(phase).isNotEmpty) _phase(context, phase),
-                              if (board.unplaced.isNotEmpty)
-                                SizedBox(
-                                  width: PlanningStyle.column,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('Stories outside the reported workflow'),
-                                      for (final story in board.unplaced) ...[
-                                        Text('State: ${story.state.isEmpty ? 'not reported' : story.state}'),
-                                        _card(context, story),
+                          key: const Key('planning-board-scroll'),
+                          controller: _vertical,
+                          child: SingleChildScrollView(
+                            controller: _horizontal,
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final phase in board.phases)
+                                  if (board.statesIn(phase).isNotEmpty) _phase(context, phase, room.maxHeight),
+                                if (board.unplaced.isNotEmpty)
+                                  SizedBox(
+                                    width: PlanningStyle.column,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Stories outside the reported workflow'),
+                                        for (final story in board.unplaced) ...[
+                                          Text('State: ${story.state.isEmpty ? 'not reported' : story.state}'),
+                                          _card(context, story),
+                                        ],
                                       ],
-                                    ],
+                                    ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -438,13 +437,43 @@ class _BoardViewState extends State<_BoardView> {
     },
   );
 
-  Widget _phase(BuildContext context, PlanPhase phase) {
+  /// Several faults of the stories and issues take one line until the person opens them, so they never push the board
+  /// out of sight; any other problem is shown whole.
+  Widget _problem(String problem, ThemeData theme) {
+    final faults = board.snapshot?.faults ?? const <String>[];
+    final style = TextStyle(color: theme.colorScheme.error);
+    final full = Text(problem, key: const Key('planning-error'), style: style);
+    if (faults.length < 2 || problem != planningShown(faults.join('\n'))) return full;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          key: const Key('planning-faults'),
+          onTap: () => setState(() => _faultsOpen = !_faultsOpen),
+          child: Text(
+            '${faults.length} problems in the stories and issues — ${_faultsOpen ? 'hide' : 'show'}',
+            style: style,
+          ),
+        ),
+        if (_faultsOpen)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
+            child: SingleChildScrollView(child: full),
+          ),
+      ],
+    );
+  }
+
+  /// A phase reaches at least the foot of the board's [room], so the board fills the height left below what stands
+  /// above it.
+  Widget _phase(BuildContext context, PlanPhase phase, double room) {
     final folded = board.preferences.foldedPhases.contains(phase.name);
     final states = board.statesIn(phase);
     final count = states.fold<int>(0, (count, state) => count + board.cards(state.name).length);
     return Container(
       key: Key('planning-phase ${phase.name}'),
       width: folded ? PlanningStyle.foldedColumn : PlanningStyle.column,
+      constraints: BoxConstraints(minHeight: room.isFinite ? room : 0),
       margin: const EdgeInsets.only(right: Space.normal),
       padding: const EdgeInsets.all(Space.small),
       decoration: BoxDecoration(

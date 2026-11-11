@@ -127,6 +127,9 @@ abstract interface class PlanningSource {
   /// Reads a project's stories and revision.
   Future<PlanningSnapshot> stories(String project);
 
+  /// Has the provider fetch [project]'s repositories now instead of at its next poll; answers the revision after it.
+  Future<String> refreshProject(String project);
+
   /// Saves the entire reviewed batch in one atomic call.
   Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision);
 

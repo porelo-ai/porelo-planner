@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL63",
   "title": "A Fresh Board At Once And Its Faults Folded",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 1,

@@ -355,6 +355,20 @@ void main() {
     expect((await _refusal(source.startStoryWork(request))).name, 'BadAnswer');
   });
 
+  // Harm: a refresh that the planner never got, or refused, is taken for a fetch, and an old board for the current one.
+  test('a refresh posts to the project and answers only a reported revision', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, {'revision': 'r2'});
+    expect(await source.refreshProject('demo'), 'r2', reason: 'the revision after the fetch');
+    expect(planner.targets.last, 'POST /projects/demo/refresh', reason: 'the contract names this call');
+    planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, <String, dynamic>{});
+    expect((await _refusal(source.refreshProject('demo'))).name, 'BadAnswer', reason: 'no revision, no fetch');
+    planner.routes['POST /projects/demo/refresh'] = () =>
+        _Reply.problem('Unreachable', {}, 'The remote cannot be reached.', 504);
+    expect((await _refusal(source.refreshProject('demo'))).name, 'Unreachable', reason: 'a refusal keeps its name');
+    expect((await _refusal(source.refreshProject('../demo'))).name, 'InvalidName', reason: 'checked before it is sent');
+  });
+
   // Harm: a story's task answered for an idea reaches Start, or a refused idea is taken for an offer.
   test('a discussion posts the idea and accepts only a discussion answered without a revision', () async {
     final (planner, source) = await _started();

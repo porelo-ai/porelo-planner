@@ -742,13 +742,16 @@ class PlanningBoard extends ChangeNotifier {
     if (queued != null) unawaited(changeProject(queued.$1, queued.$2));
   }
 
-  /// Reloads and reconciles pending destinations while retaining their individual refusals.
-  Future<void> reload() async {
+  /// Reloads and reconciles pending destinations while retaining their individual refusals; with [fetch], the
+  /// provider first fetches the repositories, so the board read is what they hold now, not what it last polled.
+  Future<void> reload({bool fetch = false}) async {
     if (_disposed || saving) return;
     saving = true;
     final generation = _generation;
     _changed();
     try {
+      if (fetch) await backend.refreshProject(project);
+      if (_disposed || generation != _generation) return;
       final reply = await _read();
       if (_disposed || generation != _generation) return;
       moveProblem = null;

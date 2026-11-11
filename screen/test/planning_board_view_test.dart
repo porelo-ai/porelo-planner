@@ -102,6 +102,25 @@ void main() {
     expect(boards.selected!.pending, isEmpty);
   });
 
+  // Harm: Reload planning shows the board the planner last polled, which the repositories may no longer hold, and
+  // the person moves stories on it.
+  testWidgets('Reload planning has the planner fetch the repositories and says when it cannot', (tester) async {
+    final (backend, _) = await _showBoard(tester);
+    expect(backend.refreshes, isEmpty, reason: 'nothing asked for a fetch yet');
+    await tester.tap(find.byKey(const Key('planning-reload')));
+    await settle(tester);
+    expect(backend.refreshes, ['checkout'], reason: 'Reload planning asks the planner to fetch the project');
+    backend.failure = mockRefusal('org.fuin.porelo.Planner.Unreachable', {'detail': 'The remote cannot be reached.'});
+    await tester.tap(find.byKey(const Key('planning-reload')));
+    await settle(tester);
+    expect(backend.refreshes, ['checkout'], reason: 'the refused fetch is not counted as done');
+    expect(
+      tester.widget<Text>(find.byKey(const Key('planning-move-error'))).data,
+      'The remote cannot be reached.',
+      reason: 'a refused fetch is said, not taken for a fresh board',
+    );
+  });
+
   // Harm: dropping a card back on its own state requests another start or offers a misleading drop.
   testWidgets('a card over its current waiting or working state has no hint or start request', (tester) async {
     final (backend, _) = await _showBoard(tester);

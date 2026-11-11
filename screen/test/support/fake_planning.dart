@@ -153,6 +153,10 @@ class FakePlanningSource implements PlanningSource {
   @override
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async => _notServed('StartStoryWork');
 
+  /// Its [board] is what the repositories hold, so a fetch only answers its revision.
+  @override
+  Future<String> refreshProject(String project) async => board['revision'] as String;
+
   @override
   Future<PlanningTaskOrder> discussIdea(String project, String idea) async => _notServed('DiscussIdea');
 

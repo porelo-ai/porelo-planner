@@ -99,6 +99,16 @@ class MockPlanningSource implements PlanningSource {
     return StoryWorkOrder.from(work.call('StartStoryWork', request.toMap()), request: request, proposal: proposal);
   }
 
+  /// The projects asked to fetch their repositories, in order.
+  final List<String> refreshes = [];
+
+  @override
+  Future<String> refreshProject(String project) async {
+    final current = board(project);
+    refreshes.add(project);
+    return current['revision'] as String? ?? '';
+  }
+
   /// The ideas offered a discussion, each with its project, in order.
   final List<(String, String)> ideas = [];
 

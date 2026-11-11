@@ -430,6 +430,12 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<String> refreshProject(String project) async {
+    final answer = await _write(project, ['refresh'], null);
+    return answer['revision'] as String;
+  }
+
+  @override
   Future<PlanningTaskOrder> discussIdea(String project, String idea) async {
     // The offer is not bound to the store, so its answer carries no revision.
     final answer = await _write(project, ['ideas', 'discussion'], {'idea': idea}, revision: false);
