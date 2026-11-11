@@ -100,3 +100,18 @@ On Windows, the POSIX mode is replaced by the owner and the discretionary access
 - On `windows-2025` the three tests on real files pass in the runner's temporary directory, so the ancestors of that
   directory, as the runner sets them, pass the rule. Which directory that is, and the owner and DACL of the profile's
   `AppData\Local`, the run did not print; the executable's first run on the runner reads them.
+
+## Reading
+
+The code was read by another model against this repository's skills. What it found was fixed, each with a test
+seen to fail first: Git's input is closed instead of taken from `/dev/null`, which Windows reads as `C:\dev\null`;
+an existing step that is a link or junction is refused before anything is made behind it; a language variable in
+any case cannot turn Git's messages from English; PowerShell's output is read on threads of its own and the program
+is stopped when the call is cut off; the work record's directories are checked once while its lock is held; the
+work record is replaced again while a scanner holds it open. Declined, with the reason:
+
+- A file inside the checked directories is not checked for its own entries: that was decided above, since no other
+  account can make or change one there.
+- A relative `XDG_STATE_HOME` is ignored and the home directory's default used, as the XDG specification asks.
+- A refusal may name a Windows path with the account's name: it reaches only the person's own window, over the
+  loopback with the owner's token, and names nothing secret.
