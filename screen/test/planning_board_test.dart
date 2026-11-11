@@ -311,7 +311,7 @@ void main() {
     addTearDown(board.dispose);
     backend.controllers['project']!.add(_snapshot('old'));
     await Future<void>.delayed(Duration.zero);
-    expect(board.workingCount, 1);
+    expect(board.workingCount, isNull);
     backend.controllers['project']!.add(
       PlanningSnapshot.from({
         'states': <Map<String, dynamic>>[],

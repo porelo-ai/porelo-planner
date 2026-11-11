@@ -139,7 +139,7 @@ class PlanningStoryView extends StatelessWidget {
                 null => 'Work status not reported',
               }),
               if (story.work!.coordinator case final coordinator? when coordinator.trim().isNotEmpty)
-                Text('Coordinator: $coordinator'),
+                Text('Coordinator: ${planningShown(coordinator, multiline: false)}'),
               Text('Agent: ${planningValue(story.work!.agent)} · Model: ${planningValue(story.work!.model)}'),
               Text('Mode: ${planningWorkMode(story.work!.mode)}'),
               if (story.work!.since.isNotEmpty) Text('Since ${story.work!.since}'),

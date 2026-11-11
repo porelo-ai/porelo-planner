@@ -35,6 +35,12 @@ abstract interface class PlanningTaskChanges {
     String story,
     List<(PlanningTaskOrder, PlanningTaskStarted)> tasks,
   );
+
+  /// Stops these runtime tasks on their originating source without reporting task events.
+  ///
+  /// Completion means the window has requested each stop. A task may arrive after cancellation when its Start
+  /// was already in flight; the planner voided its offer, so it cannot accept any report for that task.
+  Future<void> stop(PlanningSource source, String project, String story, List<PlanningTaskStarted> tasks);
 }
 
 /// An agent a start may choose, with what the window shows for it.

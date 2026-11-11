@@ -33,6 +33,8 @@ class MockStoryWork {
   /// Whether a scenario holds back the watch publication.
   bool deferEcho = false;
   int _revision = 0;
+  int _offer = 0;
+  String nextOffer() => '00000000-0000-4000-8000-${(++_offer).toRadixString(16).padLeft(12, "0")}';
   final _orders = <(String, String), Map<String, dynamic>>{};
 
   /// Applies one action to a copy and publishes only after validation.
@@ -59,6 +61,28 @@ class MockStoryWork {
         'issue': {...issue, 'findings': findings[issue['id']] ?? issue['findings'] ?? <dynamic>[]},
         'revision': board['revision'],
       };
+    }
+    if (method == 'TaskEvent') {
+      final owner = stories
+          .where(
+            (item) =>
+                item['work'] is Map &&
+                ((item['work'] as Map)['tasks'] as List).any((task) => (task as Map)['task'] == parameters['task']),
+          )
+          .firstOrNull;
+      if (owner == null) refuse('TaskEventConflict', {'task': parameters['task']});
+      final work = owner['work'] as Map<String, dynamic>;
+      final task = (work['tasks'] as List).cast<Map<String, dynamic>>().singleWhere(
+        (task) => task['task'] == parameters['task'],
+      );
+      task['machine'] = parameters['machine'];
+      if (parameters['event'] != 'STARTED') {
+        task['atWork'] = false;
+        if (parameters['event'] == 'ENDED') task['ended'] = parameters['ended'];
+      }
+      work['atWork'] = (work['tasks'] as List).any((task) => (task as Map)['atWork'] == true);
+      if (!deferEcho) changed(project, board);
+      return {'revision': board['revision'], 'work': work, 'tasks': <dynamic>[]};
     }
     if (story == null) refuse('NoSuchStory', {'story': parameters['story']});
     void checkRevision() {
@@ -113,7 +137,10 @@ class MockStoryWork {
         issue['state'] = choice == 'REWORK' ? 'Reworking' : 'Reading';
         if (choice == 'ONE_MORE_ROUND') issue['rounds'] = rounds + 1;
       }
-      final work = story['work'] is Map ? story['work'] as Map<String, dynamic> : emptyWork();
+      final work = <String, dynamic>{
+        ...emptyWork(),
+        if (story['work'] is Map) ...story['work'] as Map<String, dynamic>,
+      };
       work['issues'] = [
         for (final item in (story['issues'] as List).cast<Map<String, dynamic>>())
           {
@@ -129,7 +156,7 @@ class MockStoryWork {
       ];
       story['work'] = work;
       publish();
-      return {'issue': issue, 'work': work, 'revision': board['revision']};
+      return {'issue': issue, 'work': work, 'revision': board['revision'], 'tasks': <dynamic>[]};
     }
     if (method == 'GetStoryWork') return statuses[story['id']] ?? {'work': story['work']};
     if (method == 'ProposeStoryWork') {
@@ -200,17 +227,10 @@ class MockStoryWork {
     if (method == 'StopStoryWork') {
       final work = story['work'];
       if (work is Map<String, dynamic>) {
-        work['atWork'] = false;
-        for (final task in (work['tasks'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
-          task['atWork'] = false;
-        }
-        for (final item in (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
-          item['atWork'] = false;
-        }
         for (final item in (work['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
-          item['atWork'] = false;
+          item['reason'] = 'STOPPED';
         }
-        publish();
+        if (!deferEcho) changed(project, board);
       }
       return {'work': work};
     }
@@ -279,6 +299,7 @@ class MockStoryWork {
       'tasks': [
         for (final repo in repos) ...[
           {
+            'offer': nextOffer(),
             'repository': repo['repository'],
             'issues': repo['issues'],
             'role': 'MAIN',
@@ -290,6 +311,7 @@ class MockStoryWork {
           for (final sub in (repo['subAgents'] as List).cast<Map<String, dynamic>>())
             if (sub['kind'] == 'BUILDER' && sub['choice'] != 'DROP')
               {
+                'offer': nextOffer(),
                 'repository': repo['repository'],
                 'issues': [sub['issue']],
                 'role': 'BUILDER',
@@ -313,25 +335,25 @@ class MockStoryWork {
     final name =
         '${id.toLowerCase()}-${task.repository}-${task.role.toLowerCase()}-${task.issues.join('-').toLowerCase()}';
     final container = 'mock-$name';
-    final work =
-        story['work'] as Map<String, dynamic>? ??
-        <String, dynamic>{
-          'repositories': parameters['repositories'],
-          'comment': parameters['comment'] ?? '',
-          'readingRounds': rounds,
-          'issueReadingRounds': overrides,
-          'coordinator': null,
-          'since': 'mock-start',
-          'atWork': true,
-          'tasks': <Map<String, dynamic>>[],
-          'issues': <Map<String, dynamic>>[],
-        };
+    final work = <String, dynamic>{
+      'repositories': parameters['repositories'],
+      'comment': parameters['comment'] ?? '',
+      'readingRounds': rounds,
+      'issueReadingRounds': overrides,
+      'coordinator': null,
+      'since': 'mock-start',
+      'atWork': true,
+      'tasks': <Map<String, dynamic>>[],
+      'issues': <Map<String, dynamic>>[],
+      if (story['work'] is Map<String, dynamic>) ...story['work'] as Map<String, dynamic>,
+    };
     work['atWork'] = true;
     work['tasks'] = [
       ...work['tasks'] as List? ?? <dynamic>[],
       {
         'task': name,
         'containerId': container,
+        'machine': null,
         'repository': task.repository,
         'issues': task.issues,
         'state': parameters['to'],

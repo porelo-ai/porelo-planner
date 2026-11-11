@@ -394,7 +394,12 @@ class StoryWork extends ChangeNotifier {
           if (each.value.isNotEmpty) each.key: _rounds(each.value)!,
       },
     );
+    Object? token;
+    final run = origin.runOf(id)..startTask = startTask;
+    run.onStarted = onStarted;
+    final epoch = run.epoch;
     bool valid() =>
+        run.epoch == epoch &&
         !_disposed &&
         generation == _generation &&
         identical(board, origin) &&
@@ -403,8 +408,9 @@ class StoryWork extends ChangeNotifier {
         project == name &&
         story.id == id &&
         revision == request.revision &&
-        current;
-    final token = origin.beginStoryStart(story);
+        current &&
+        origin.startUnavailable(story, ownStart: token, ownTasks: [for (final task in startedTasks) task.$2]) == null;
+    token = origin.beginStoryStart(story);
     if (token == null) return false;
     busy = true;
     starting = true;
@@ -417,13 +423,8 @@ class StoryWork extends ChangeNotifier {
       _changed();
       for (final task in tasks) {
         if (!valid()) return false;
-        final offer = task.order.offer;
-        if (offer != null && !origin.takeStoryOffer(source, name, id, offer)) {
-          task.error = StateError('This offer has already been handed to Start.');
-          return false;
-        }
         try {
-          task.started = await startTask(source, name, id, task.order);
+          task.started = await run.start(task.order, startTask, epoch);
         } catch (error) {
           task.error = error;
           return false;
@@ -443,9 +444,9 @@ class StoryWork extends ChangeNotifier {
     } finally {
       origin.endStoryStart(source, name, id, token, accepted: startedTasks.isNotEmpty);
       final started = startedTasks;
-      if (onStarted case final hook? when started.isNotEmpty) {
+      if (started.isNotEmpty) {
         try {
-          await hook(source, name, id, started);
+          await run.confirmed(started, epoch, onStarted: onStarted);
         } catch (error) {
           if (!_disposed && generation == _generation) problem = planningFailureWords(error);
         }
@@ -474,7 +475,7 @@ class StoryWork extends ChangeNotifier {
 /// The last source facts for a story outcome or a stopped reading.
 class PlanningAttention {
   /// Keeps the source facts and choices for this view or decision.
-  PlanningAttention(this.board, this.story, {this.issue, this.ended})
+  PlanningAttention(this.board, this.story, {this.issue, this.ended, this.reason = ''})
     : project = board.project,
       source = board.backend,
       revision = board.snapshot?.revision ?? '';
@@ -499,6 +500,9 @@ class PlanningAttention {
 
   /// The machine’s reported reason and instant for an ended story run.
   final WorkEnded? ended;
+
+  /// The durable issue reason, independent of the agent’s finished flag.
+  final String reason;
 }
 
 /// Findings and a revision-bound reading decision. A success waits for the board's echo.
@@ -531,7 +535,9 @@ class ReadingDecision extends ChangeNotifier {
 
   /// Whether a decision was accepted and is awaiting the board’s echo.
   bool submitted = false;
+  bool _resolving = false;
   bool _disposed = false;
+  int _generation = 0;
   late final VoidCallback _stopFollowing;
 
   /// Whether this decision still belongs to a live board at its original revision.
@@ -544,10 +550,13 @@ class ReadingDecision extends ChangeNotifier {
       row.board.live &&
       row.board.snapshot?.complete == true &&
       row.board.snapshot?.revision == revision &&
+      row.issue?.readingStopped == true &&
       row.board.stories.any(
-        (story) => story.issues.any(
-          (issue) => issue.id == row.issue?.id && issue.readingStopped == true && issue.rounds == row.issue?.rounds,
-        ),
+        (story) =>
+            story.id == row.story.id &&
+            PlanningBoards.attentionIssues(row.board, story).any(
+              (issue) => issue.id == row.issue?.id && issue.readingStopped == true && issue.rounds == row.issue?.rounds,
+            ),
       );
 
   /// Why the decision cannot run, retained beside the disabled choices.
@@ -574,20 +583,30 @@ class ReadingDecision extends ChangeNotifier {
       current &&
       problem == null &&
       detail?.findingsReported == true &&
+      detail?.revision == revision &&
+      detail?.issue.id == row.issue?.id &&
+      detail?.issue.readingStopped == true &&
+      detail?.issue.rounds == row.issue?.rounds &&
       !busy &&
       !submitted &&
       row.issue?.rounds != null;
 
   /// Reads the proposal or findings from the captured machine.
   Future<void> load() async {
-    if (_disposed || busy || row.issue?.readingStopped != true) return;
+    if (_disposed || _resolving || submitted || row.issue?.readingStopped != true) return;
+    final generation = ++_generation;
+    bool valid() => !_disposed && generation == _generation;
     busy = true;
     problem = null;
     _changed();
     try {
       final answer = await backend.getPlanningIssue(project, row.issue!.id);
-      if (!_disposed) {
-        if (answer.findingsReported) {
+      if (valid()) {
+        if (answer.findingsReported &&
+            answer.revision == revision &&
+            answer.issue.id == row.issue!.id &&
+            answer.issue.readingStopped == true &&
+            answer.issue.rounds == row.issue!.rounds) {
           detail = answer;
         } else {
           detail ??= answer;
@@ -595,15 +614,23 @@ class ReadingDecision extends ChangeNotifier {
         }
       }
     } catch (error) {
-      if (!_disposed) {
+      if (!_disposed && generation == _generation) {
         problem = planningFailureWords(error);
-        if (planningRefused(error, 'NotYetBuilt')) {
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
           row.board.unavailableActions['ResolveIssueReading'] = problem!;
         }
-        if (planningRefused(error, 'StaleRevision')) unawaited(row.board.reload());
+        if (planningRefused(error, 'SaveRefused')) row.board.runOf(row.story.id).cancel();
+        if ([
+          'StaleRevision',
+          'ReadingNotStopped',
+          'ReadingRoundChanged',
+          'SaveRefused',
+        ].any((name) => planningRefused(error, name))) {
+          unawaited(row.board.reload());
+        }
       }
     } finally {
-      if (!_disposed) {
+      if (!_disposed && generation == _generation) {
         busy = false;
         _changed();
       }
@@ -615,22 +642,29 @@ class ReadingDecision extends ChangeNotifier {
     if (_disposed ||
         !canResolve ||
         !['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'].contains(choice) ||
-        choice == 'REWORK' && (comment == null || comment.trim().isEmpty)) {
+        choice == 'REWORK' && (comment == null || comment.trim().isEmpty) ||
+        (comment?.runes.length ?? 0) > 4000) {
       return;
     }
     busy = true;
     problem = null;
     _changed();
+    _resolving = true;
+    final run = row.board.runOf(row.story.id);
+    final epoch = run.epoch;
     try {
-      await backend.resolveIssueReading(
+      final answer = await backend.resolveIssueReading(
         project,
         row.story.id,
         row.issue!.id,
         row.issue!.rounds!,
         choice,
         revision,
-        comment: comment?.trim(),
+        comment: choice == 'REWORK' ? comment : '',
       );
+      answer.checkDecision(row.issue!.id, choice);
+      run.observe(answer.work);
+      await run.follow(answer.tasks, epoch);
       if (!_disposed) {
         submitted = true;
         await row.board.reload();
@@ -638,12 +672,21 @@ class ReadingDecision extends ChangeNotifier {
     } catch (error) {
       if (!_disposed) {
         problem = planningFailureWords(error);
-        if (planningRefused(error, 'NotYetBuilt')) {
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
           row.board.unavailableActions['ResolveIssueReading'] = problem!;
         }
-        if (planningRefused(error, 'StaleRevision')) unawaited(row.board.reload());
+        if (planningRefused(error, 'SaveRefused')) row.board.runOf(row.story.id).cancel();
+        if ([
+          'StaleRevision',
+          'ReadingNotStopped',
+          'ReadingRoundChanged',
+          'SaveRefused',
+        ].any((name) => planningRefused(error, name))) {
+          unawaited(row.board.reload());
+        }
       }
     } finally {
+      _resolving = false;
       if (!_disposed) {
         busy = false;
         _changed();
@@ -658,6 +701,7 @@ class ReadingDecision extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _generation++;
     _stopFollowing();
     super.dispose();
   }

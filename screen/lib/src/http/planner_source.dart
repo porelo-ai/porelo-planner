@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import '../client.dart';
 import '../models.dart';
 import '../story_work_order.dart';
+import '../task_runs.dart';
+import '../work_reply.dart';
 
 /// Where a project's planning is kept, as the planner is told it before its first read.
 class PlannerProject {
@@ -415,14 +417,89 @@ class HttpPlanningSource implements PlanningSource {
   }
 
   @override
-  Future<StoryWorkStatus> getStoryWork(String project, String story) => _unsupported('reading story work');
+  Future<StoryWorkStatus> getStoryWork(String project, String story) async {
+    final answer = await _runRead(project, ['stories', _checked('story', story, _storyId), 'work']);
+    final status = _status(answer, nullable: true);
+    PlanningRun.on(this, project, story).observe(status.work);
+    return status;
+  }
 
   @override
-  Future<StoryWorkStatus> stopStoryWork(String project, String story) => _unsupported('stopping story work');
+  Future<StoryWorkStatus> stopStoryWork(String project, String story) async {
+    _checked('story', story, _storyId);
+    final run = PlanningRun.on(this, project, story)..cancel();
+    final answer = await _write(project, ['stories', story, 'work', 'stop'], null, revision: false);
+    final status = _status(answer, nullable: true);
+    run.observe(status.work);
+    return status;
+  }
+
+  StoryWorkStatus _status(Map<String, dynamic> answer, {required bool nullable}) {
+    try {
+      if (!answer.containsKey('work') || !nullable && answer['work'] == null) {
+        throw const FormatException('The work record was not reported.');
+      }
+      if (answer['work'] != null) readWork(answer['work']);
+      return StoryWorkStatus.from(answer);
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    }
+  }
 
   @override
-  Future<PlanningIssueDetail> getPlanningIssue(String project, String issue) =>
-      _unsupported('reading an issue\'s findings');
+  Future<PlanningIssueDetail> getPlanningIssue(String project, String issue) async {
+    final answer = await _runRead(project, ['issues', _checked('issue', issue, _issueId)], revision: true);
+    if (answer['issue'] is! Map<String, dynamic> || (answer['issue'] as Map)['id'] != issue) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner answered a different issue.');
+    }
+    return PlanningIssueDetail.from(answer);
+  }
+
+  Future<Map<String, dynamic>> _runRead(String project, List<String> path, {bool revision = false}) async {
+    final given = await _bound(project);
+    Map<String, dynamic> answer;
+    try {
+      answer = await _call('GET', _uri(project, path), null, revision: revision);
+    } on PlanningRefusal catch (error) {
+      if (error.name != 'NoSuchProject') rethrow;
+      await _stillBound(project, given);
+      await _retell(project, given);
+      await _stillBound(project, given);
+      answer = await _call('GET', _uri(project, path), null, revision: revision);
+    }
+    await _stillBound(project, given);
+    return answer;
+  }
+
+  @override
+  Future<TaskEventResolution> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  }) async {
+    // A task is a URL component; the machine is only a JSON value and is preserved verbatim.
+    if (!validTaskLabel(task)) throw const PlanningRefusal('InvalidName', {}, 'The task name is invalid.');
+    final answer = await _write(
+      project,
+      ['tasks', task, 'events'],
+      {
+        'offer': offer,
+        'event': event.name.toUpperCase(),
+        'container': container,
+        'machine': machine,
+        if (ended != null) 'ended': ended.toMap(),
+      },
+    );
+    try {
+      return TaskEventResolution.from(answer);
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    }
+  }
 
   @override
   Future<ReadingResolution> resolveIssueReading(
@@ -433,9 +510,26 @@ class HttpPlanningSource implements PlanningSource {
     String choice,
     String revision, {
     String? comment,
-  }) => _unsupported('deciding a reading round');
-
-  Future<T> _unsupported<T>(String what) async => throw PlanningUnsupported('the planner does not offer $what yet');
+  }) async {
+    _checked('story', story, _storyId);
+    final run = PlanningRun.on(this, project, story);
+    try {
+      final answer = await _write(
+        project,
+        ['issues', _checked('issue', issue, _issueId), 'reading'],
+        {'story': story, 'round': round, 'choice': choice, 'comment': comment ?? '', 'revision': revision},
+      );
+      final resolution = ReadingResolution.from(answer);
+      resolution.checkDecision(issue, choice);
+      run.observe(resolution.work);
+      return resolution;
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    } on PlanningRefusal catch (error) {
+      if (error.name == 'SaveRefused') run.cancel();
+      rethrow;
+    }
+  }
 
   /// The workflow and the stories read at one revision, read once more when the store moved between the two.
   Future<PlanningSnapshot> _snapshot(String project) async {
@@ -460,11 +554,11 @@ class HttpPlanningSource implements PlanningSource {
     final given = await _told(project);
     final uri = _uri(project, path);
     try {
-      return await _call('GET', uri);
+      return await _call('GET', uri, null);
     } on PlanningRefusal catch (refusal) {
       if (refusal.name != 'NoSuchProject') rethrow;
       await _retell(project, given);
-      return _call('GET', uri);
+      return _call('GET', uri, null);
     }
   }
 
@@ -486,19 +580,25 @@ class HttpPlanningSource implements PlanningSource {
     }
   }
 
-  Future<Map<String, dynamic>> _write(String project, List<String> path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _write(
+    String project,
+    List<String> path,
+    Map<String, dynamic>? body, {
+    bool revision = true,
+    int? most,
+  }) async {
     final given = await _bound(project);
     final uri = _uri(project, path);
     final Map<String, dynamic> answer;
     try {
-      answer = await _call('POST', uri, body);
+      answer = await _call('POST', uri, body, revision: revision, most: most);
     } on PlanningRefusal catch (refusal) {
       // Only this explicit refusal proves the planner did not execute the write.
       if (refusal.name != 'NoSuchProject') rethrow;
       await _stillBound(project, given);
       await _retell(project, given);
       await _stillBound(project, given);
-      final retried = await _call('POST', uri, body);
+      final retried = await _call('POST', uri, body, revision: revision, most: most);
       await _stillBound(project, given);
       return retried;
     }
@@ -546,7 +646,13 @@ class HttpPlanningSource implements PlanningSource {
 
   Uri _uri(String project, List<String> path) => base.replace(pathSegments: ['projects', project, ...path]);
 
-  Future<Map<String, dynamic>> _call(String method, Uri uri, [Map<String, dynamic>? body]) async {
+  Future<Map<String, dynamic>> _call(
+    String method,
+    Uri uri,
+    Map<String, dynamic>? body, {
+    bool revision = true,
+    int? most,
+  }) async {
     HttpClientRequest? request;
     try {
       return await () async {
@@ -560,8 +666,8 @@ class HttpPlanningSource implements PlanningSource {
           sent.write(jsonEncode(body));
         }
         final response = await sent.close();
-        final bytes = await _bytes(response);
-        return _answer(method, response, bytes);
+        final bytes = await _bytes(response, most: most);
+        return _answer(method, response, bytes, revision: revision);
       }().timeout(timeout);
     } on TimeoutException {
       request?.abort();
@@ -577,25 +683,26 @@ class HttpPlanningSource implements PlanningSource {
     }
   }
 
-  Future<List<int>> _bytes(HttpClientResponse response) async {
-    if (response.contentLength > maxBody) {
+  Future<List<int>> _bytes(HttpClientResponse response, {int? most}) async {
+    final limit = most == null || most > maxBody ? maxBody : most;
+    if (response.contentLength > limit) {
       // Cancelling the unread answer closes its connection; aborting the request no longer does once it answered.
       await response.listen(null).cancel();
-      throw _tooLarge();
+      throw _tooLarge(limit);
     }
     final bytes = BytesBuilder(copy: false);
     // Leaving the loop cancels the answer, which closes its connection.
     await for (final chunk in response) {
       bytes.add(chunk);
-      if (bytes.length > maxBody) throw _tooLarge();
+      if (bytes.length > limit) throw _tooLarge(limit);
     }
     return bytes.takeBytes();
   }
 
-  PlanningRefusal _tooLarge() =>
-      PlanningRefusal('AnswerTooLarge', const {}, 'the planner answered more than $maxBody bytes');
+  PlanningRefusal _tooLarge([int? limit]) =>
+      PlanningRefusal('AnswerTooLarge', const {}, 'the planner answered more than ${limit ?? maxBody} bytes');
 
-  Map<String, dynamic> _answer(String method, HttpClientResponse response, List<int> bytes) {
+  Map<String, dynamic> _answer(String method, HttpClientResponse response, List<int> bytes, {bool revision = true}) {
     final status = response.statusCode;
     final String? type;
     try {
@@ -609,11 +716,14 @@ class HttpPlanningSource implements PlanningSource {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner answered HTTP $status to naming a project, not 204');
       }
       final json = type == 'application/json' ? _json(bytes) : null;
-      if (json == null || json['revision'] is! String || json['type'] != null || json['error'] != null) {
+      if (json == null ||
+          revision && (json['revision'] is! String || (json['revision'] as String).trim().isEmpty) ||
+          json.containsKey('type') ||
+          json.containsKey('error')) {
         throw PlanningRefusal(
           'BadAnswer',
           const {},
-          'the planner\'s answer is not a JSON object with a revision (HTTP $status)',
+          'the planner\'s answer is not a JSON object${revision ? ' with a revision' : ''} (HTTP $status)',
         );
       }
       return json;
@@ -702,6 +812,7 @@ class _Watch {
 
   /// The revision answered last, null before the first board or after the project moved to another repository.
   String? _last;
+  String? _lastBoard;
   PlannerProject? _watched;
   HttpClientRequest? _request;
   StreamSubscription<List<int>>? _reading;
@@ -777,6 +888,7 @@ class _Watch {
       // Another repository or branch: its revisions say nothing of the last one.
       _watched = given.source;
       _last = null;
+      _lastBoard = null;
     }
     HttpClientResponse response;
     try {
@@ -963,8 +1075,10 @@ class _Watch {
       boards++;
       first?.cancel();
       final revision = json['revision'] as String;
-      if (revision == _last) return;
+      final boardText = jsonEncode(json);
+      if (revision == _last && boardText == _lastBoard) return;
       _last = revision;
+      _lastBoard = boardText;
       renewed = true;
       source._readSources[project] = _watched!;
       replies.add(snapshot);

@@ -1,6 +1,9 @@
 /// The planning records as the planning service reports them; an absent field stays absent.
 library;
 
+import 'story_work_order.dart';
+import 'work_reply.dart';
+
 String _planText(Map<String, dynamic> map, String key) => map[key] is String ? map[key] as String : '';
 List<String> _planStrings(Object? value) =>
     value is List ? value.whereType<String>().where((text) => text.trim().isNotEmpty).toList() : const [];
@@ -9,6 +12,16 @@ bool _planStringsReported(Object? value) =>
     value is List && value.every((entry) => entry is String && entry.trim().isNotEmpty);
 List<T> _planList<T>(Object? value, T Function(Map<String, dynamic>) read) =>
     value is List ? value.whereType<Map<String, dynamic>>().map(read).toList() : <T>[];
+
+/// Removes directional and control characters only for display; wire records remain unchanged.
+String planningShown(String text, {bool multiline = true}) => text.replaceAll(
+  RegExp(
+    multiline
+        ? r'[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]'
+        : r'[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]',
+  ),
+  '',
+);
 
 /// One state, with the machine's kind preserved even when unknown.
 class PlanState {
@@ -77,8 +90,11 @@ class PlanWork {
   final List<PlanWorkIssue> issues;
 
   /// The first recorded outcome requiring attention, if any.
-  WorkEnded? get ended =>
-      tasks.map((task) => task.ended).whereType<WorkEnded>().where((end) => end.outcome != 'DONE').firstOrNull;
+  WorkEnded? get ended => tasks
+      .map((task) => task.ended)
+      .whereType<WorkEnded>()
+      .where((end) => end.finished != true || (end.unpushed ?? 0) > 0)
+      .firstOrNull;
 
   /// The reported value presented to the window.
   bool get tasksReported => _tasksReported;
@@ -102,6 +118,7 @@ class PlanWorkTask {
   PlanWorkTask.from(Map<String, dynamic> map)
     : task = _planText(map, 'task'),
       containerId = _planText(map, 'containerId'),
+      machine = map['machine'] is String ? map['machine'] as String : null,
       repository = _planText(map, 'repository'),
       issues = _planStrings(map['issues']),
       state = _planText(map, 'state'),
@@ -116,6 +133,9 @@ class PlanWorkTask {
 
   /// The task, containerId, repository, state, done, mode, agent, model, role, since reported by the daemon.
   final String task, containerId, repository, state, done, mode, agent, model, role, since;
+
+  /// The machine name as reported, preserved verbatim.
+  final String? machine;
 
   /// The issues reported by the daemon.
   final List<String> issues;
@@ -132,7 +152,7 @@ class PlanIssueReadingRounds {
   /// Reads the fields reported by the daemon.
   PlanIssueReadingRounds.from(Map<String, dynamic> map)
     : issue = _planText(map, 'issue'),
-      rounds = map['rounds'] is int ? map['rounds'] as int : null;
+      rounds = validRound(map['rounds']) ? map['rounds'] as int : null;
 
   /// The issue reported by the daemon.
   final String issue;
@@ -146,8 +166,8 @@ class PlanWorkIssue {
   /// Reads the fields reported by the daemon.
   PlanWorkIssue.from(Map<String, dynamic> map)
     : issue = _planText(map, 'issue'),
-      rounds = map['rounds'] is int ? map['rounds'] as int : null,
-      roundsMost = map['roundsMost'] is int ? map['roundsMost'] as int : null,
+      rounds = validRound(map['rounds']) ? map['rounds'] as int : null,
+      roundsMost = validRound(map['roundsMost'], minimum: 1) ? map['roundsMost'] as int : null,
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
       needsYou = map['needsYou'] is bool ? map['needsYou'] as bool : null,
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
@@ -197,8 +217,8 @@ class PlanIssue {
       blockedBy = _planStrings(map['blockedBy']),
       blockedByReported = _planStringsReported(map['blockedBy']),
       link = _planText(map, 'link'),
-      rounds = map['rounds'] is int ? map['rounds'] as int : null,
-      roundsMost = map['roundsMost'] is int ? map['roundsMost'] as int : null,
+      rounds = validRound(map['rounds']) ? map['rounds'] as int : null,
+      roundsMost = validRound(map['roundsMost'], minimum: 1) ? map['roundsMost'] as int : null,
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
       needsYou = map['needsYou'] is bool ? map['needsYou'] as bool : null,
@@ -645,12 +665,15 @@ class WorkEnded {
   /// Reads the fields reported by the daemon.
   WorkEnded.from(Map<String, dynamic> map)
     : at = _planText(map, 'at'),
-      outcome = _planText(map, 'outcome'),
+      finished = map['finished'] is bool ? map['finished'] as bool : null,
+      unpushed = map['unpushed'] is int ? map['unpushed'] as int : null,
       why = _planText(map, 'why'),
       answer = _planText(map, 'answer');
 
-  /// The at, outcome, why, answer reported by the daemon.
-  final String at, outcome, why, answer;
+  /// The original end record, without mapping the agent’s result.
+  final String at, why, answer;
+  final bool? finished;
+  final int? unpushed;
 
   /// The reported value presented to the window.
   String get reason => [why, answer].where((text) => text.isNotEmpty).join('\n');
@@ -925,15 +948,18 @@ class StoryWorkStatus {
 /// The findings returned by GetIssue, separate from the compact board summary.
 class PlanningIssueDetail {
   /// Reads the machine’s reported fields.
-  factory PlanningIssueDetail.from(Map<String, dynamic> map) =>
-      PlanningIssueDetail._(map['issue'] is Map<String, dynamic> ? map['issue'] as Map<String, dynamic> : {});
-  PlanningIssueDetail._(Map<String, dynamic> map)
-    : findings = _planList(map['findings'], PlanFinding.from),
-      findingsReported =
-          _planMapsReported(map['findings']) &&
-          (map['findings'] as List).every(
-            (entry) => (entry as Map<String, dynamic>)['severity'] is String && entry['text'] is String,
-          );
+  factory PlanningIssueDetail.from(Map<String, dynamic> map) => PlanningIssueDetail._(
+    map['issue'] is Map<String, dynamic> ? map['issue'] as Map<String, dynamic> : {},
+    _planText(map, 'revision'),
+  );
+  PlanningIssueDetail._(Map<String, dynamic> map, this.revision)
+    : issue = PlanIssue.from(map),
+      findings = _planList(map['findings'], PlanFinding.from),
+      findingsReported = reportedFindings(map['findings']);
+
+  /// The exact revision and issue whose findings were read.
+  final String revision;
+  final PlanIssue issue;
 
   /// Whether the reply supplied a complete, correctly shaped findings list.
   final bool findingsReported;
@@ -977,7 +1003,25 @@ class ReadingResolution {
   ReadingResolution.from(Map<String, dynamic> map)
     : issue = map['issue'] is Map<String, dynamic> ? PlanIssue.from(map['issue'] as Map<String, dynamic>) : null,
       work = map['work'] is Map<String, dynamic> ? PlanWork.from(map['work'] as Map<String, dynamic>) : null,
-      revision = _planText(map, 'revision');
+      revision = _planText(map, 'revision'),
+      tasks = readFollowUps(map, readWork(map['work']));
+
+  /// Checks the exact issue and role authorized by the reading choice before Start.
+  void checkDecision(String decidedIssue, String choice) {
+    final role = switch (choice) {
+      'ONE_MORE_ROUND' => 'READER',
+      'REWORK' => 'BUILDER',
+      _ => null,
+    };
+    if (issue?.id != decidedIssue ||
+        issue?.readingStopped != false ||
+        tasks.any((task) => task.role != role || task.issues.single != decidedIssue)) {
+      throw const FormatException('The reading answer does not confirm this decision.');
+    }
+  }
+
+  /// All checked follow-up Start arguments.
+  final List<PlanningTaskOrder> tasks;
 
   /// The issue record returned by the daemon.
   final PlanIssue? issue;
@@ -987,4 +1031,34 @@ class ReadingResolution {
 
   /// The revision reported by the daemon.
   final String revision;
+}
+
+/// Porelo's original end record, sent without interpreting or rewriting any field.
+class PlanningTaskEnded {
+  const PlanningTaskEnded({
+    required this.at,
+    required this.finished,
+    required this.why,
+    required this.answer,
+    required this.unpushed,
+  });
+
+  final String at, why, answer;
+  final bool finished;
+  final int unpushed;
+
+  /// The exact fields Porelo supplied.
+  Map<String, dynamic> toMap() => {'at': at, 'finished': finished, 'why': why, 'answer': answer, 'unpushed': unpushed};
+}
+
+/// A checked task report answer, including every still-valid follow-up offer.
+class TaskEventResolution {
+  TaskEventResolution.from(Map<String, dynamic> map)
+    : revision = _planText(map, 'revision'),
+      work = readWork(map['work']),
+      tasks = readFollowUps(map, readWork(map['work']));
+
+  final String revision;
+  final PlanWork work;
+  final List<PlanningTaskOrder> tasks;
 }

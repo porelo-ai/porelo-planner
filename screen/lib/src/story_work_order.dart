@@ -138,7 +138,7 @@ class StoryWorkOrder {
     final tasks = [for (final task in _records(map['tasks'])) PlanningTaskOrder._read(task)];
     final offers = <String>{};
     for (final task in tasks) {
-      if (task.offer != null && !offers.add(task.offer!)) _invalid('The order repeats an offer.');
+      if (!offers.add(task.offer!)) _invalid('The order repeats an offer.');
       final index = expected.indexWhere(task._matches);
       if (index < 0) _invalid('The order changes a requested task.');
       expected.removeAt(index);
@@ -196,20 +196,27 @@ class PlanningTaskOrder {
     this.prompt,
   );
 
+  /// Reads one served offer without inventing missing Start arguments.
+  factory PlanningTaskOrder.from(Map<String, dynamic> map) => PlanningTaskOrder._read(map);
+
   factory PlanningTaskOrder._read(Map<String, dynamic> map) {
     final repository = _text(map, 'repository');
     if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
     final issues = _strings(map['issues'], pattern: _issueName);
     final role = _text(map, 'role');
+    if (!{'MAIN', 'BUILDER', 'READER'}.contains(role)) _invalid('The task role is invalid.');
     final mode = _text(map, 'mode');
     if (!_modes.contains(mode)) _invalid('The task mode is invalid.');
     final prompt = _text(map, 'prompt', blank: true);
     if (utf8.encode(prompt).length > 65536) _invalid('The task prompt exceeds 64 KiB.');
-    final offer = map.containsKey('offer') ? _text(map, 'offer', most: 200) : null;
+    final offer = _text(map, 'offer');
+    if (!RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$').hasMatch(offer)) {
+      _invalid('The task offer is not a UUID.');
+    }
     return PlanningTaskOrder._(offer, repository, issues, role, _text(map, 'agent'), _text(map, 'model'), mode, prompt);
   }
 
-  /// The offer identity, when the planner supplies one.
+  /// The required offer identity in a checked order.
   final String? offer;
 
   /// The repository whose work the task owns.

@@ -160,6 +160,17 @@ class FakePlanningSource implements PlanningSource {
   Future<StoryWorkStatus> stopStoryWork(String project, String story) async => _notServed('StopStoryWork');
 
   @override
+  Future<TaskEventResolution> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  }) async => _notServed('TaskEvent');
+
+  @override
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue) async => _notServed('GetIssue');
 
   @override
@@ -175,14 +186,14 @@ class FakePlanningSource implements PlanningSource {
 }
 
 /// A client with the providers a test gives it, telling its boards when they change.
-class FakePlanningClient extends ChangeNotifier implements PlanningClient {
+class FakePlanningClient extends ChangeNotifier with PlanningTaskReports {
   /// Starts with [providers], the first one current.
   FakePlanningClient(this._providers) : currentProvider = _providers.firstOrNull?.name;
 
   List<PlanningProvider> _providers;
 
   /// Every task change the window reported.
-  final List<(String, String, PlanningTaskEvent)> events = [];
+  final List<(String, String, PlanningTaskEvent, String, String, String, PlanningTaskEnded?)> events = [];
 
   @override
   List<PlanningProvider> get providers => _providers;
@@ -200,8 +211,18 @@ class FakePlanningClient extends ChangeNotifier implements PlanningClient {
   String? chosenProject;
 
   @override
-  Future<void> taskEvent(String project, String task, PlanningTaskEvent event) async =>
-      events.add((project, task, event));
+  Future<void> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  }) async {
+    events.add((project, task, event, offer, container, machine, ended));
+    await super.taskEvent(project, task, event, offer: offer, container: container, machine: machine, ended: ended);
+  }
 }
 
 /// One connected provider named [name] serving [source] for [project].

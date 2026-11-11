@@ -221,7 +221,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
         const SizedBox(height: Space.normal),
         TextFormField(
           key: const Key('story-work-comment'),
-          initialValue: work.comment,
+          initialValue: planningShown(work.comment),
           maxLines: null,
           enabled: enabled,
           decoration: InputDecoration(

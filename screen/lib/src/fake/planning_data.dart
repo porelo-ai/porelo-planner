@@ -1021,6 +1021,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-one",
             "containerId": "mock-build-one",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1036,6 +1037,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-two",
             "containerId": "mock-build-two",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1192,6 +1194,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-one",
             "containerId": "mock-build-one",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1207,6 +1210,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-two",
             "containerId": "mock-build-two",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1346,6 +1350,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-one",
             "containerId": "mock-build-one",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1361,6 +1366,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-two",
             "containerId": "mock-build-two",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1415,6 +1421,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-one",
             "containerId": "mock-build-one",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1430,6 +1437,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-two",
             "containerId": "mock-build-two",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1466,6 +1474,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-one",
             "containerId": "mock-build-one",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",
@@ -1481,6 +1490,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           {
             "task": "build-two",
             "containerId": "mock-build-two",
+            "machine": null,
             "repository": "",
             "issues": [],
             "state": "Implementing",

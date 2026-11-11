@@ -1,3 +1,5 @@
+import '../models.dart';
+
 import 'package:flutter/material.dart';
 
 import '../planning_detail.dart';
@@ -132,7 +134,7 @@ class PlanningIssueView extends StatelessWidget {
                   if (finding.file != null || finding.line != null)
                     SelectableText(
                       [
-                        if (finding.file != null) finding.file!,
+                        if (finding.file != null) planningShown(finding.file!, multiline: false),
                         if (finding.line != null) 'line ${finding.line}',
                       ].join(' · '),
                     ),

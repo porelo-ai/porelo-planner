@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL24",
   "title": "Following And Stopping Story Work In The Screen",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 10,
@@ -54,11 +54,33 @@ planner answers to the window's Start hook once.
   returned follow-up tasks to Start, once. The guards seen red, then green; the screen's checks and the document checks
   pass.
 
-## To be checked
+## Taken from the plan reading
 
-- Compare the served paths, envelopes, refusals, offers, stop and report order and the same-revision events with the
-  plan above once the planner serves the run.
-- The window's adapter passes the offer, Porelo's task name, the container's name and the unmapped end record, keeps
-  the originating source and story, and starts a returned offer once.
-- Work without issues and a lost record: missing rounds and findings stay unknown, granted readings may exceed 10, and
-  activity or permission to go on is never read from planning states alone.
+- **Kept on the planner's side, not checked again in the screen:**
+  - the bounds of an end record, its timestamp, and whether `ended` fits the event;
+  - the container's form and the size of a request;
+  - the number of findings, their numbers, the length of their texts and the meaning of their paths.
+
+  The screen keeps the record whole and checks identities before it acts. It shows paths only as text.
+- **A received machine name is not checked again.** The screen only shows it. A machine is checked once, when the
+  first STARTED report binds it.
+- **A reading's choice may carry a comment with a choice other than Rework**, because the served contract allows it.
+  The screen sends an empty comment for those choices.
+- **The reason in Needs you has no test of its own.** The planner sends a reason other than NONE only together with
+  `needsYou`, so `needsYou` alone already keeps such an issue visible. A test with a reason but without `needsYou`
+  would state what the planner never sends.
+
+## Taken from the code reading
+
+- **Follow-ups are not gated on `atWork`.** The planner marks work as at work only while a task has started. After the
+  last task ends, it answers with the next offer and `atWork` false. A stop is read from the issues' reason `STOPPED`
+  and from the screen's own stop.
+- **Answers are bounded like the work read.** A report's or a decision's answer carries the whole work, every task's
+  end answer and the follow-ups' prompts, so 64 KiB is too little for a valid answer.
+- **A stop with no recorded run answers `{"work": null}`**, and that is a valid answer.
+- **A task whose Start finished after a stop is stopped and not reported.** The stop voided its offer, so the planner
+  refuses any report on it. A failed STARTED report binds no machine.
+- **A follow-up is checked for its role, its issue and the run's mode** before it goes to Start. A decision's
+  follow-up must also be for the decided issue, with the role its choice makes.
+- **Declined: holding a large end answer.** Every answer stays under the response's size bound, and the screen
+  shortens it for display.

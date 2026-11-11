@@ -13,7 +13,7 @@ void main() {
       (answer) => answer['tasks'] = [false],
       (answer) => (answer['tasks'] as List).removeLast(),
       (answer) => (answer['tasks'] as List).add((answer['tasks'] as List).first),
-      for (final field in ['repository', 'issues', 'role', 'agent', 'model', 'mode', 'prompt'])
+      for (final field in ['offer', 'repository', 'issues', 'role', 'agent', 'model', 'mode', 'prompt'])
         (answer) => ((answer['tasks'] as List).last as Map).remove(field),
       for (final value in [null, false, 4, ' ', 'other'])
         (answer) => ((answer['tasks'] as List).last as Map)['model'] = value,
@@ -53,7 +53,7 @@ void main() {
   // Harm: strict decoding rewrites Start arguments or treats a prepared order as running work.
   test('an accepted order preserves every Start argument and remains immutable', () {
     final answer = servedOrder();
-    ((answer['tasks'] as List).first as Map)['offer'] = 'offer-one';
+    ((answer['tasks'] as List).first as Map)['offer'] = servedOffer(1);
     ((answer['tasks'] as List).last as Map)['prompt'] = 'é' * 32768;
     final order = StoryWorkOrder.from(
       answer,
@@ -64,7 +64,7 @@ void main() {
     expect(
       [task.offer, task.repository, task.issues, task.role, task.agent, task.model, task.mode, task.prompt],
       [
-        'offer-one',
+        servedOffer(1),
         'repo',
         ['PR1', 'PR1.1'],
         'MAIN',

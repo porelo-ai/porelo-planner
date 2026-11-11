@@ -46,7 +46,7 @@ void main() {
     expect(reported.readingStopped, isTrue);
     final zero = PlanIssue.from({'rounds': 0, 'roundsMost': 0, 'readingStopped': false});
     expect(zero.rounds, 0);
-    expect(zero.roundsMost, 0);
+    expect(zero.roundsMost, isNull); // The allowance has a minimum of one; completed rounds can be zero.
     expect(zero.readingStopped, isFalse);
   });
 }

@@ -90,7 +90,15 @@ abstract interface class PlanningClient implements Listenable {
   String? get chosenProject;
 
   /// Reports a change of a task the window started for [project].
-  Future<void> taskEvent(String project, String task, PlanningTaskEvent event);
+  Future<void> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  });
 }
 
 /// One provider's planning calls, each answering with the provider's own records.
@@ -132,6 +140,17 @@ abstract interface class PlanningSource {
 
   /// Stops the story's work without changing its planning state.
   Future<StoryWorkStatus> stopStoryWork(String project, String story);
+
+  /// Reports a bound task and returns checked follow-up offers without starting them.
+  Future<TaskEventResolution> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  });
 
   /// Reads the issue's last findings.
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue);

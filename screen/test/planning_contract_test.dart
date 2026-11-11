@@ -10,7 +10,13 @@ void main() {
         'tasks': [
           {
             'task': 'story-repo',
-            'ended': {'outcome': 'BLOCKED', 'why': 'Need access', 'answer': 'Please grant access', 'at': 'instant'},
+            'ended': {
+              'finished': false,
+              'unpushed': 0,
+              'why': 'Need access',
+              'answer': 'Please grant access',
+              'at': 'instant',
+            },
           },
         ],
       },

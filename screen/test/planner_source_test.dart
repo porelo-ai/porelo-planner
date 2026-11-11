@@ -141,7 +141,7 @@ class _Planner {
       }
       if (reply.body != null) {
         request.response.headers.contentType = ContentType.parse(reply.type);
-        request.response.write(reply.body is String ? reply.body : jsonEncode(reply.body));
+        request.response.add(utf8.encode(reply.body is String ? reply.body as String : jsonEncode(reply.body)));
       }
       await request.response.close();
     });
@@ -1009,21 +1009,440 @@ void main() {
     expect(refusal.toString(), isNot(contains(_token)));
   });
 
-  // Harm: the screen offers a feature the planner cannot do, and the person's change is lost.
-  test('what the planner does not offer is unsupported', () async {
+  // Harm: no run is confused with a damaged record, or Stop clears activity before a runtime report.
+  test('run reads and stop use work envelopes and empty request bodies', () async {
     final (planner, source) = await _started();
+    final work = servedWork()..['tasks'] = [servedRunTask()];
+    planner.routes['GET /projects/demo/stories/ST1/work'] = () => _Reply(200, {'work': null});
+    expect((await source.getStoryWork('demo', 'ST1')).work, isNull);
+    planner.routes['GET /projects/demo/stories/ST1/work'] = () => _Reply(200, {'work': work});
+    planner.routes['POST /projects/demo/stories/ST1/work/stop'] = () => _Reply(200, {'work': work});
+    final running = (await source.getStoryWork('demo', 'ST1')).work!;
+    expect(running.tasks.single.atWork, isTrue);
+    expect(running.tasks.single.machine, 'Machine 🚀');
+    final stopped = await source.stopStoryWork('demo', 'ST1');
+    expect(stopped.work!.tasks.single.atWork, isTrue);
+    expect(planner.targets, [
+      'PUT /projects/demo',
+      'GET /projects/demo/stories/ST1/work',
+      'GET /projects/demo/stories/ST1/work',
+      'POST /projects/demo/stories/ST1/work/stop',
+    ]);
+    expect(planner.calls.skip(1).map((call) => call.body), everyElement(isEmpty));
+  });
 
-    final calls = <Future<Object?> Function()>[
-      () => source.getStoryWork('demo', 'ST1'),
-      () => source.stopStoryWork('demo', 'ST1'),
-      () => source.getPlanningIssue('demo', 'PR1'),
-      () => source.resolveIssueReading('demo', 'ST1', 'PR1', 1, 'accept', 'r1'),
-    ];
-
-    for (final call in calls) {
-      await expectLater(call(), throwsA(isA<PlanningUnsupported>()));
+  // Harm: a malformed work envelope is accepted as no run or as a successful cancellation.
+  test('work reads and stops refuse malformed success answers', () async {
+    final (planner, source) = await _started();
+    for (final body in <Object?>[
+      <String, dynamic>{},
+      {'work': false},
+      for (final field in [
+        'tasks',
+        'atWork',
+        'repositories',
+        'issues',
+        'issueReadingRounds',
+        'coordinator',
+        'since',
+        'comment',
+        'readingRounds',
+      ])
+        {'work': servedWork()..remove(field)},
+      for (final field in ['task', 'containerId', 'machine', 'atWork', 'ended'])
+        {
+          'work': servedWork()..['tasks'] = [servedRunTask()..remove(field)],
+        },
+      {
+        'work': servedWork()..['tasks'] = [servedRunTask()..['task'] = '../foreign'],
+      },
+      {'work': <String, dynamic>{}},
+      {
+        'work': {
+          'atWork': false,
+          'tasks': [false],
+        },
+      },
+      {'work': servedWork(), 'type': null},
+      {'work': servedWork(), 'error': null},
+    ]) {
+      planner.routes['GET /projects/demo/stories/ST1/work'] = () => _Reply(200, body);
+      planner.routes['POST /projects/demo/stories/ST1/work/stop'] = () => _Reply(200, body);
+      expect((await _refusal(source.getStoryWork('demo', 'ST1'))).name, 'BadAnswer');
+      expect((await _refusal(source.stopStoryWork('demo', 'ST1'))).name, 'BadAnswer');
     }
-    expect(planner.calls, isEmpty, reason: 'nothing unsupported reaches the planner');
+    planner.routes['GET /projects/demo/stories/ST1/work'] = () => _Reply(200, {'work': null}, 'text/plain');
+    expect((await _refusal(source.getStoryWork('demo', 'ST1'))).name, 'BadAnswer');
+  });
+
+  // Harm: stopping a story with no recorded run is reported as a failed cancellation.
+  test('stop accepts the planner null work answer for an unrecorded run', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/stories/ST1/work/stop'] = () => _Reply(200, {'work': null});
+    expect((await source.stopStoryWork('demo', 'ST1')).work, isNull);
+    expect(planner.calls.last.method, 'POST');
+    expect(planner.calls.last.target, '/projects/demo/stories/ST1/work/stop');
+  });
+
+  // Harm: findings from another issue or an omitted report authorize the wrong reading decision.
+  test('reading findings retain the issue round and revision and leave bad findings unknown', () async {
+    final (planner, source) = await _started();
+    final issue = servedReadingIssue();
+    planner.routes['GET /projects/demo/issues/PR1'] = () => _Reply(200, {'revision': 'r1', 'issue': issue});
+    final detail = await source.getPlanningIssue('demo', 'PR1');
+    expect(
+      [detail.revision, detail.issue.id, detail.issue.rounds, detail.issue.readingStopped],
+      ['r1', 'PR1', 2, true],
+    );
+    expect(detail.findingsReported, isTrue);
+    expect(detail.findings.single.severity, 'BLOCKING');
+    expect(planner.calls.last.body, isEmpty);
+    for (final findings in <Object?>[
+      null,
+      false,
+      [false],
+      [
+        {'severity': 'BLOCKING'},
+      ],
+    ]) {
+      planner.routes['GET /projects/demo/issues/PR1'] = () => _Reply(200, {
+        'revision': 'r1',
+        'issue': {...issue, 'findings': findings},
+      });
+      expect((await source.getPlanningIssue('demo', 'PR1')).findingsReported, isFalse);
+    }
+    for (final body in <Map<String, dynamic>>[
+      {'revision': 'r1'},
+      {
+        'revision': 'r1',
+        'issue': {...issue, 'id': 'PR2'},
+      },
+      {'issue': issue},
+      {'revision': ' ', 'issue': issue},
+    ]) {
+      planner.routes['GET /projects/demo/issues/PR1'] = () => _Reply(200, body);
+      expect((await _refusal(source.getPlanningIssue('demo', 'PR1'))).name, 'BadAnswer');
+    }
+  });
+
+  // Harm: the decision sent does not name the reviewed story, issue, round, revision or rework instructions.
+  test('all reading choices send the served request and return checked follow-ups', () async {
+    final (planner, source) = await _started();
+    for (final choice in ['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK']) {
+      final tasks = [
+        if (choice != 'REVIEW_ANYWAY') servedFollowUp(10, role: choice == 'REWORK' ? 'BUILDER' : 'READER'),
+      ];
+      planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {
+        'revision': 'r2',
+        'issue': servedReadingIssue(stopped: false),
+        'work': servedContinuationWork(),
+        'tasks': tasks,
+      });
+      final answer = await source.resolveIssueReading(
+        'demo',
+        'ST1',
+        'PR1',
+        2,
+        choice,
+        'r1',
+        comment: choice == 'REWORK' ? '  Keep the key inside.\n' : null,
+      );
+      expect(jsonDecode(planner.calls.last.body), {
+        'story': 'ST1',
+        'round': 2,
+        'choice': choice,
+        'comment': choice == 'REWORK' ? '  Keep the key inside.\n' : '',
+        'revision': 'r1',
+      });
+      expect(planner.calls.last.target, '/projects/demo/issues/PR1/reading');
+      expect(answer.tasks.length, choice == 'REVIEW_ANYWAY' ? 0 : 1);
+      expect(answer.revision, 'r2');
+    }
+  });
+
+  // Harm: one invalid follow-up starts alongside a valid one or a refused decision appears accepted.
+  test('reading replies are refused whole before any follow-up is accepted', () async {
+    final (planner, source) = await _started();
+    final changes = <void Function(Map<String, dynamic>)>[
+      for (final field in ['revision', 'work', 'issue', 'tasks']) (answer) => answer.remove(field),
+      (answer) => answer['revision'] = ' ',
+      (answer) => answer['issue'] = servedReadingIssue(stopped: false)..['id'] = 'PR2',
+      (answer) => answer['issue'] = servedReadingIssue(),
+      (answer) => answer['tasks'] = [false],
+      (answer) => (answer['tasks'] as List).add((answer['tasks'] as List).first),
+      for (final field in ['offer', 'repository', 'issues', 'role', 'prompt'])
+        (answer) => ((answer['tasks'] as List).last as Map).remove(field),
+      (answer) => ((answer['tasks'] as List).last as Map)['repository'] = 'foreign',
+      (answer) => ((answer['tasks'] as List).last as Map)['issues'] = ['PR9'],
+      (answer) => ((answer['tasks'] as List).last as Map)['role'] = 'FOREIGN',
+    ];
+    for (final (index, change) in changes.indexed) {
+      final answer = {
+        'revision': 'r2',
+        'work': servedContinuationWork(),
+        'issue': servedReadingIssue(stopped: false),
+        'tasks': [servedFollowUp(10)],
+      };
+      change(answer);
+      planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, answer);
+      expect(
+        (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'))).name,
+        'BadAnswer',
+        reason: 'mutation $index',
+      );
+    }
+    planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {
+      'revision': 'r2',
+      'work': servedContinuationWork(),
+      'issue': servedReadingIssue(stopped: false),
+      'tasks': [servedFollowUp(10)],
+    });
+    expect(
+      (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', 'r1'))).name,
+      'BadAnswer',
+    );
+  });
+
+  // Harm: a reading response authorizes a different worker or issue than the recorded decision.
+  test('HTTP reading decisions refuse mismatched roles and decided issues', () async {
+    final (planner, source) = await _started();
+    for (final (choice, task) in [
+      ('ONE_MORE_ROUND', servedFollowUp(10, role: 'BUILDER')),
+      ('ONE_MORE_ROUND', servedFollowUp(10)..['issues'] = ['PR1.1']),
+      ('REWORK', servedFollowUp(10)),
+      ('REWORK', servedFollowUp(10, role: 'BUILDER')..['issues'] = ['PR1.1']),
+      ('REVIEW_ANYWAY', servedFollowUp(10)),
+    ]) {
+      planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {
+        'revision': 'r2',
+        'work': servedContinuationWork(anotherAtWork: true),
+        'issue': servedReadingIssue(stopped: false),
+        'tasks': [task],
+      });
+      expect(
+        (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, choice, 'r1', comment: 'Fix the finding.')))
+            .name,
+        'BadAnswer',
+        reason: '$choice $task',
+      );
+    }
+  });
+
+  // Harm: task reports lose Porelo's original end record or use the visible machine name as a URL component.
+  test('task events send exact names and the unmapped end record', () async {
+    final (planner, source) = await _started();
+    final machine = '  Machine / 🚀 ${'🌍' * 110}  ';
+    const ended = PlanningTaskEnded(
+      at: '2026-01-01T00:00:00Z',
+      finished: true,
+      why: '  Raw why.\n',
+      answer: 'é\n{answer}',
+      unpushed: 3,
+    );
+    planner.routes['POST /projects/demo/tasks/main-task/events'] = () => _Reply(200, {
+      'revision': 'r1',
+      'work': servedContinuationWork(),
+      'tasks': [servedFollowUp(10)],
+    });
+    for (final event in PlanningTaskEvent.values) {
+      final answer = await source.taskEvent(
+        'demo',
+        'main-task',
+        event,
+        offer: servedOffer(1),
+        container: 'container-main-task',
+        machine: machine,
+        ended: event == PlanningTaskEvent.ended ? ended : null,
+      );
+      expect(jsonDecode(planner.calls.last.body), {
+        'offer': servedOffer(1),
+        'event': event.name.toUpperCase(),
+        'container': 'container-main-task',
+        'machine': machine,
+        if (event == PlanningTaskEvent.ended) 'ended': ended.toMap(),
+      });
+      expect(planner.calls.last.target, '/projects/demo/tasks/main-task/events');
+      expect(answer.tasks.map((task) => task.offer), [servedOffer(10)]);
+    }
+  });
+
+  // Harm: a damaged report answer or an oversized raw answer is retained as permission to start more work.
+  test('task event answers reject incomplete envelopes invalid offers and excessive bytes', () async {
+    final (planner, source) = await _started(maxBody: 128 * 1024);
+    Future<TaskEventResolution> report() => source.taskEvent(
+      'demo',
+      'main-task',
+      PlanningTaskEvent.started,
+      offer: servedOffer(1),
+      container: 'container-main-task',
+      machine: 'Machine',
+    );
+    for (final change in <void Function(Map<String, dynamic>)>[
+      for (final field in ['revision', 'work', 'tasks']) (answer) => answer.remove(field),
+      (answer) => answer['tasks'] = [false],
+      (answer) => ((answer['tasks'] as List).last as Map)['offer'] = '',
+      (answer) => ((answer['tasks'] as List).last as Map)['issues'] = ['PR9'],
+      (answer) => answer['error'] = 'refused',
+    ]) {
+      final answer = {
+        'revision': 'r1',
+        'work': servedContinuationWork(),
+        'tasks': [
+          servedFollowUp(10),
+          servedFollowUp(11)..['issues'] = ['PR1.1'],
+        ],
+      };
+      change(answer);
+      planner.routes['POST /projects/demo/tasks/main-task/events'] = () => _Reply(200, answer);
+      expect((await _refusal(report())).name, 'BadAnswer');
+    }
+    planner.routes['POST /projects/demo/tasks/main-task/events'] = () => _Reply(200, {
+      'revision': 'r1',
+      'work': servedWork(atWork: false)
+        ..['tasks'] = [
+          for (var number = 0; number < 3; number++)
+            servedRunTask(
+              task: 'reader-$number',
+              active: false,
+              ended: {'at': '', 'finished': true, 'why': '', 'answer': 'é' * 32768, 'unpushed': 0},
+            ),
+        ],
+      'tasks': <dynamic>[],
+    });
+    expect((await _refusal(report())).name, 'AnswerTooLarge');
+  });
+
+  // Harm: a committed task report is refused because its valid run and follow-up exceed 64 KiB together.
+  test('task reports and reading decisions accept work answers over 64 KiB', () async {
+    final (planner, source) = await _started();
+    final work = servedContinuationWork();
+    final rawAnswer = '${'é' * 32762}\nFindings:\n';
+    (((work['tasks'] as List).single as Map)['ended'] as Map)['answer'] = rawAnswer;
+    final followUp = servedFollowUp(10)..['prompt'] = 'x' * 65536;
+    final answer = {
+      'revision': 'r2',
+      'work': work,
+      'tasks': [followUp],
+      'issue': servedReadingIssue(stopped: false),
+    };
+    expect(utf8.encode(jsonEncode(answer)).length, greaterThan(65536));
+    planner.routes['GET /projects/demo/stories/ST1/work'] = () => _Reply(200, {'work': work});
+    planner.routes['POST /projects/demo/tasks/main-task/events'] = () => _Reply(200, answer);
+    planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, answer);
+    final read = await source.getStoryWork('demo', 'ST1');
+    final report = await source.taskEvent(
+      'demo',
+      'main-task',
+      PlanningTaskEvent.ended,
+      offer: servedOffer(1),
+      container: 'container-main-task',
+      machine: 'Machine 🚀',
+      ended: PlanningTaskEnded(at: '', finished: true, why: '', answer: rawAnswer, unpushed: 0),
+    );
+    final decision = await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1');
+    for (final result in [report.work, decision.work!]) {
+      expect(result.tasks.single.ended!.answer, read.work!.tasks.single.ended!.answer);
+    }
+    expect(report.tasks.single.prompt, followUp['prompt']);
+    expect(decision.tasks.single.prompt, followUp['prompt']);
+  });
+
+  // Harm: a planner refusal on a read, stop, report or decision is taken as successful work.
+  test('every run call preserves served refusal names and details', () async {
+    final (planner, source) = await _started();
+    final cases = <(String, Future<Object?> Function())>[
+      ('GET /projects/demo/stories/ST1/work', () => source.getStoryWork('demo', 'ST1')),
+      ('POST /projects/demo/stories/ST1/work/stop', () => source.stopStoryWork('demo', 'ST1')),
+      ('GET /projects/demo/issues/PR1', () => source.getPlanningIssue('demo', 'PR1')),
+      (
+        'POST /projects/demo/issues/PR1/reading',
+        () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'),
+      ),
+      (
+        'POST /projects/demo/tasks/main-task/events',
+        () => source.taskEvent(
+          'demo',
+          'main-task',
+          PlanningTaskEvent.started,
+          offer: servedOffer(1),
+          container: 'container-main-task',
+          machine: 'Machine',
+        ),
+      ),
+    ];
+    for (final (route, call) in cases) {
+      for (final (status, name) in [
+        (400, 'InvalidSettings'),
+        (401, 'Unauthorized'),
+        (404, 'NoSuchStory'),
+        (409, 'ReadingRoundChanged'),
+        (422, 'WorkNotAllowed'),
+        (501, 'NotOffered'),
+        (502, 'SaveRefused'),
+        (503, 'RecordUnavailable'),
+        (504, 'Unreachable'),
+      ]) {
+        planner.routes[route] = () => _Reply.problem(name, {'rounds': 2}, 'Refused detail.', status);
+        final refusal = await _refusal(call());
+        expect(refusal.name, name);
+        expect(refusal.parameters, {'rounds': 2});
+        expect(refusal.description, 'Refused detail.');
+        expect(planningUnsupported(refusal), name == 'NotOffered');
+      }
+    }
+  });
+
+  // Harm: a run read or report silently retells a project for another repository.
+  test('run calls refuse a changed repository instead of replacing the project', () async {
+    var repository = const PlannerProject('https://example.org/first.git', 'main');
+    final (planner, source) = await _started(projects: (_) => repository);
+    await source.stories('demo');
+    final before = planner.calls.length;
+    repository = const PlannerProject('https://example.org/second.git', 'main');
+    for (final call in <Future<Object?> Function()>[
+      () => source.getStoryWork('demo', 'ST1'),
+      () => source.getPlanningIssue('demo', 'PR1'),
+      () => source.stopStoryWork('demo', 'ST1'),
+      () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'),
+      () => source.taskEvent(
+        'demo',
+        'main-task',
+        PlanningTaskEvent.started,
+        offer: servedOffer(1),
+        container: 'c',
+        machine: 'Machine',
+      ),
+    ]) {
+      expect((await _refusal(call())).name, 'ProjectChanged');
+    }
+    expect(planner.calls.length, before);
+  });
+
+  // Harm: task-only changes at an unchanged Git revision leave the board showing obsolete activity.
+  test('watch delivers changed runs at the same revision and suppresses identical repeats', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner);
+    final replies = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(replies.add);
+    addTearDown(watching.cancel);
+    await _until(() => replies.length == 1, 'first board');
+    final board = {
+      ..._workflow('r1'),
+      'stories': [
+        {
+          ..._story('ST1', 'Building'),
+          'work': servedWork()..['tasks'] = [servedRunTask()],
+        },
+      ],
+    };
+    final event = utf8.encode('event:board\nid:r1\ndata:${jsonEncode(board)}\n\n');
+    streams.opened.last.add(event);
+    await _until(() => replies.length == 2, 'changed run at the same revision');
+    expect(replies.last.stories.single.work!.tasks.single.atWork, isTrue);
+    streams.opened.last.add(event);
+    streams.send('r2');
+    await _until(() => replies.last.revision == 'r2', 'next revision');
+    expect(replies, hasLength(3));
   });
 
   // Harm: the token is sent to another computer, which can then act on the person's planning.

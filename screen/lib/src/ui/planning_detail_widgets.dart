@@ -1,3 +1,5 @@
+import '../models.dart';
+
 import 'package:flutter/material.dart';
 
 import '../planning_board.dart';
@@ -5,7 +7,7 @@ import 'actions.dart';
 import 'style.dart';
 
 /// An absent value is not an empty successful report.
-String planningValue(String value) => value.isEmpty ? 'Not reported' : value;
+String planningValue(String value) => value.isEmpty ? 'Not reported' : planningShown(value);
 
 /// The common section surface used by planning details.
 Widget planningSection(BuildContext context, String title, List<Widget> children) => Card(

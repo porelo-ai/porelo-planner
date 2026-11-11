@@ -9,6 +9,16 @@ void main() {
       {'findings': null},
       {'findings': 'none'},
       {
+        'findings': [
+          {'severity': 'BLOCKING', 'text': 'Missing number'},
+        ],
+      },
+      {
+        'findings': [
+          {'number': 1, 'severity': 'NOTE', 'text': 'Bad location', 'line': 'first'},
+        ],
+      },
+      {
         'findings': [false],
       },
       {
@@ -36,14 +46,14 @@ void main() {
     final detail = PlanningIssueDetail.from({
       'issue': {
         'findings': [
-          {'severity': 'FUTURE', 'text': 'a'},
-          {'severity': 'BLOCKING', 'text': 'b'},
-          {'severity': 'NOTE', 'text': 'c'},
-          {'severity': 'BLOCKING', 'text': 'd'},
+          {'number': 1, 'severity': 'FUTURE', 'text': 'a'},
+          {'number': 2, 'severity': 'BLOCKING', 'text': 'b'},
+          {'number': 3, 'severity': 'NOTE', 'text': 'c'},
+          {'number': 4, 'severity': 'BLOCKING', 'text': 'd'},
         ],
       },
     });
-    expect(detail.findingsReported, isTrue);
+    expect(detail.findingsReported, isFalse);
     expect(detail.blockingFirst.map((each) => each.text), ['b', 'd', 'a', 'c']);
     expect(detail.blockingFirst.last.severity, 'NOTE');
   });

@@ -89,6 +89,9 @@ class NoTasks implements PlanningTaskChanges {
   void open(PlanningBoard board, String task) {}
 
   @override
+  Future<void> stop(PlanningSource source, String project, String story, List<PlanningTaskStarted> tasks) async {}
+
+  @override
   Future<void> started(
     PlanningSource source,
     String project,

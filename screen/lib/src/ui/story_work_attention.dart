@@ -24,6 +24,10 @@ class StoryWorkAttentionView extends StatefulWidget {
   State<StoryWorkAttentionView> createState() => _StoryWorkAttentionViewState();
 }
 
+String _endedReason(WorkEnded ended) => planningShown(
+  [ended.why, String.fromCharCodes(ended.answer.runes.take(65536))].where((text) => text.isNotEmpty).join('\n'),
+);
+
 class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   ReadingDecision? _reading;
   @override
@@ -33,7 +37,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   }
 
   void _follow({PlanningIssueDetail? retained}) {
-    if (widget.row.issue != null && !widget.resolved) {
+    if (widget.row.issue?.readingStopped == true && !widget.resolved) {
       _reading = ReadingDecision(widget.row)..detail = retained;
       _reading!.addListener(_changed);
       unawaited(_reading!.load());
@@ -47,6 +51,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         old.row.board != widget.row.board ||
         !identical(old.row.source, widget.row.source) ||
         old.row.project != widget.row.project ||
+        old.row.issue?.readingStopped != widget.row.issue?.readingStopped ||
         old.row.issue?.id != widget.row.issue?.id ||
         old.row.issue?.rounds != widget.row.issue?.rounds) {
       _release();
@@ -84,14 +89,16 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${widget.resolved ? 'Resolved' : 'Needs you'} · ${row.project} · ${widget.machine}'),
+            Text(
+              '${widget.resolved ? 'Resolved' : 'Needs you'} · ${row.project} · ${planningShown(widget.machine, multiline: false)}',
+            ),
             Text('${row.story.id} — ${row.story.title}'),
             if (row.ended case final ended?) ...[
               Text(
-                ended.reason.isEmpty ? 'Reason not reported' : ended.reason,
+                ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended),
                 key: Key('story-work-ended ${row.story.id}'),
               ),
-              if (ended.at.isNotEmpty) Text(ended.at),
+              if (ended.at.isNotEmpty) Text(planningShown(ended.at, multiline: false)),
               _openStoryButton(
                 context,
                 PlanningAction(
@@ -108,7 +115,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                       title: Text('${row.story.id} — ${row.story.title}'),
                       content: SingleChildScrollView(
                         child: Text(
-                          '${row.story.state}\n${row.story.description}\n${ended.reason.isEmpty ? 'Reason not reported' : ended.reason}',
+                          '${row.story.state}\n${row.story.description}\n${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
                         ),
                       ),
                       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
@@ -117,11 +124,13 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                 ),
               ),
             ],
+            if (row.reason.isNotEmpty && row.reason != 'NONE') Text(planningShown(row.reason)),
             if (row.issue case final issue?) ...[
               Text('${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}'),
               if (!widget.resolved && reading?.detail == null && reading?.busy == true)
                 const Text('Reading the last findings…'),
-              for (final finding in reading?.detail?.blockingFirst ?? []) Text('${finding.severity}: ${finding.text}'),
+              for (final finding in reading?.detail?.blockingFirst ?? <PlanFinding>[])
+                Text('${planningShown(finding.severity, multiline: false)}: ${planningShown(finding.text)}'),
               if (reading?.problem case final problem?) Text(problem, key: Key('reading-error ${issue.id}')),
               if (!widget.resolved && reading != null) ...[
                 if (reading.problem != null)

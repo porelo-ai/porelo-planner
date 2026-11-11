@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import 'client.dart';
 import 'models.dart';
+import 'hooks.dart';
+import 'task_runs.dart';
 import 'story_work.dart';
 
 /// The priority limits offered above a board.
@@ -140,7 +142,6 @@ class PlanningBoard extends ChangeNotifier {
   int get generation => _generation;
 
   static final _storyStarts = Expando<Map<(String, String), _StoryStart>>();
-  static final _storyOffers = Expando<Set<(String, String, String)>>();
 
   Map<(String, String), _StoryStart> _startsOn(PlanningSource source) => _storyStarts[source] ??= {};
 
@@ -164,9 +165,17 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
-  /// A refused or unanswered Start may already have consumed its offer.
-  bool takeStoryOffer(PlanningSource source, String project, String story, String offer) =>
-      (_storyOffers[source] ??= {}).add((project, story, offer));
+  /// Window hooks retained for follow-up tasks and stopping this board's runs.
+  PlanningStartTask? startTask;
+  PlanningTaskChanges? taskChanges;
+
+  /// All forms and task reports share the same origin and stop epoch.
+  PlanningRun runOf(String story) {
+    final run = PlanningRun.on(backend, project, story);
+    if (startTask != null) run.startTask = startTask;
+    if (taskChanges != null) run.changes = taskChanges;
+    return run;
+  }
 
   void _acknowledgeStoryStart(PlanStory story) {
     final key = (project, story.id);
@@ -279,19 +288,12 @@ class PlanningBoard extends ChangeNotifier {
   /// Stories whose older daemon cannot supply missing watch fields.
   final Set<String> workUnsupported = {};
 
-  /// Work from the watch, or the fallback only when that field was not supplied.
-  PlanWork? workOf(PlanStory story) => story.work != null && story.work!.tasksReported
-      ? story.work
-      : identical(_workSnapshots[story.id], snapshot)
-      ? storyWork[story.id]?.work ?? story.work
-      : story.work;
+  /// The latest explicit call for this snapshot, otherwise the work from its watch.
+  PlanWork? workOf(PlanStory story) =>
+      identical(_workSnapshots[story.id], snapshot) ? storyWork[story.id]?.work : story.work;
 
   /// Task outcomes are authoritative only after a complete work read.
-  WorkEnded? endedOf(PlanStory story) => !_needsWorkRead(story)
-      ? story.work?.ended
-      : identical(_workSnapshots[story.id], snapshot)
-      ? storyWork[story.id]?.ended
-      : null;
+  WorkEnded? endedOf(PlanStory story) => workOf(story)?.ended;
 
   bool _needsWorkRead(PlanStory story) =>
       state(story.state)?.kind == 'WORKING' &&
@@ -305,11 +307,14 @@ class PlanningBoard extends ChangeNotifier {
           !workUnsupported.contains(story.id);
 
   /// Why a story cannot start, preserving unknown work as unknown.
-  String? startUnavailable(PlanStory story) {
+  String? startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
     final reported = stories.where((each) => each.id == story.id).firstOrNull;
     if (reported == null) return 'the story is no longer reported';
     story = reported;
-    if (_startsOn(backend).containsKey((project, story.id))) return 'a story start is awaiting confirmation';
+    if (_startsOn(backend).containsKey((project, story.id)) &&
+        !identical(_startsOn(backend)[(project, story.id)], ownStart)) {
+      return 'a story start is awaiting confirmation';
+    }
     if (unavailableActions['StartStoryWork'] ?? unavailableActions['ProposeStoryWork'] case final reason?) {
       return reason;
     }
@@ -317,7 +322,6 @@ class PlanningBoard extends ChangeNotifier {
     if (snapshot!.revision.isEmpty) return 'the planning revision was not reported';
     final kind = state(story.state)?.kind;
     if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(kind)) return 'the story state does not permit starting work';
-    if (story.work == null && (kind == 'WAITING' || kind == 'CLOSED')) return null;
     if (_needsWorkRead(story) && !identical(_workSnapshots[story.id], snapshot)) {
       return workProblems[story.id] ??
           (workUnsupported.contains(story.id)
@@ -328,9 +332,29 @@ class PlanningBoard extends ChangeNotifier {
       if (workProblems[story.id] case final problem?) return problem;
       if (workUnsupported.contains(story.id)) return 'the machine does not offer story work status';
     }
-    return switch (workOf(story)?.atWork) {
+    final work = workOf(story);
+    if (work?.ended != null ||
+        work?.issues.any(
+              (issue) =>
+                  issue.reason.isNotEmpty && issue.reason != 'NONE' ||
+                  issue.needsYou == true ||
+                  issue.readingStopped == true,
+            ) ==
+            true ||
+        story.issues.any((issue) => issue.needsYou == true || issue.readingStopped == true)) {
+      return 'the run needs attention';
+    }
+    if (work == null && (kind == 'WAITING' || kind == 'CLOSED')) return null;
+    return switch (work?.atWork) {
       false => null,
-      true => 'work is already running',
+      true =>
+        ownStart != null &&
+                work!.tasks.any((task) => task.atWork == true) &&
+                work.tasks
+                    .where((task) => task.atWork == true)
+                    .every((task) => ownTasks.any((own) => own.task == task.task && own.container == task.containerId))
+            ? null
+            : 'work is already running',
       null => 'work status not reported',
     };
   }
@@ -362,6 +386,7 @@ class PlanningBoard extends ChangeNotifier {
         if (answer.work != null && !answer.work!.tasksReported) {
           throw const FormatException('The machine did not report the work tasks.');
         }
+        runOf(story.id).observe(answer.work);
         storyWork[story.id] = answer;
         _workSnapshots[story.id] = reply;
         _acknowledgeStoryStart(story);
@@ -398,28 +423,33 @@ class PlanningBoard extends ChangeNotifier {
   }) async {
     if (_disposed || actionBusy) return;
     if (!live ||
-        revision.isEmpty ||
         !identical(backend, source) ||
         project != sourceProject ||
         snapshot?.complete != true ||
-        snapshot?.revision != revision ||
         !stories.any((each) => each.id == story && workOf(each)?.atWork == true)) {
       actionProblem = 'The board changed while Stop work was open. Open it again for the current run.';
       _changed();
       return;
     }
+    final run = runOf(story)..cancel();
     actionBusy = true;
     actionProblem = null;
     final generation = _generation;
     final name = sourceProject;
     _changed();
     try {
-      await source.stopStoryWork(name, story);
+      final answer = await source.stopStoryWork(name, story);
+      run.observe(answer.work);
+      if (!_disposed && generation == _generation) applyWork(story, answer);
+      await run.changes?.stop(source, name, story, [
+        for (final task in answer.work?.tasks ?? <PlanWorkTask>[])
+          if (task.atWork == true) PlanningTaskStarted(task: task.task, container: task.containerId),
+      ]);
       if (!_disposed && generation == _generation) await reload();
     } catch (error) {
       if (!_disposed && generation == _generation) {
         reportActionProblem(error);
-        if (planningRefused(error, 'NotYetBuilt')) {
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
           unavailableActions['StopStoryWork'] = planningFailureWords(error);
         }
       }
@@ -429,6 +459,14 @@ class PlanningBoard extends ChangeNotifier {
         _changed();
       }
     }
+  }
+
+  /// Applies a run reply immediately, independently of a subsequent board reload.
+  void applyWork(String story, StoryWorkStatus status) {
+    if (_disposed) return;
+    storyWork[story] = status;
+    if (snapshot case final current?) _workSnapshots[story] = current;
+    _changed();
   }
 
   /// Replaces the source, canceling its silent watch before accepting another project's replies.
@@ -581,6 +619,9 @@ class PlanningBoard extends ChangeNotifier {
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
     if (order <= _snapshotOrder) return;
     snapshot = reply;
+    for (final story in reply.stories) {
+      runOf(story.id).observe(story.work);
+    }
     _snapshotOrder = order;
     storyWork.clear();
     _workSnapshots.clear();
@@ -777,11 +818,20 @@ class PlanningBoard extends ChangeNotifier {
   /// The reported stories, independent of the filters.
   List<PlanStory> get stories => snapshot?.stories ?? const [];
 
-  /// Stories in states the daemon calls WORKING, or null before a snapshot or after losing the watch.
-  int? get workingCount =>
-      snapshot?.complete != true || !live || stories.any((story) => state(story.state)?.kind.isEmpty ?? true)
-      ? null
-      : stories.where((story) => state(story.state)?.kind == 'WORKING').length;
+  /// Stories with reported active tasks; lost working records keep the count unknown.
+  int? get workingCount {
+    if (snapshot?.complete != true || !live || stories.any((story) => state(story.state)?.kind.isEmpty ?? true)) {
+      return null;
+    }
+    for (final story in stories) {
+      final work = workOf(story);
+      if (work == null && state(story.state)?.kind == 'WORKING' ||
+          work != null && (!work.tasksReported || work.tasks.any((task) => task.atWork == null))) {
+        return null;
+      }
+    }
+    return stories.where((story) => workOf(story)?.tasks.any((task) => task.atWork == true) == true).length;
+  }
 
   /// The reported state with this name, if any.
   PlanState? state(String name) => states.where((state) => state.name == name).firstOrNull;
@@ -904,6 +954,7 @@ class PlanningBoards extends ChangeNotifier {
 
   void _sync() {
     if (_disposed) return;
+    if (client case final PlanningTaskReports reports) reports.retainPlanningSources();
     final providers = client.providers;
     final wanted = <(String, String), PlanningSource>{
       for (final provider in providers)
@@ -965,14 +1016,54 @@ class PlanningBoards extends ChangeNotifier {
             machineOf(board),
             PlanningAttention(board, story, ended: ended),
           ),
-        for (final issue in story.issues.where((issue) => issue.readingStopped == true))
+        for (final issue in attentionIssues(board, story))
           PlanningNeedsYou(
             'reading ${machineOf(board)}/${board.project}/${issue.id}',
             machineOf(board),
-            PlanningAttention(board, story, issue: issue),
+            PlanningAttention(
+              board,
+              story,
+              issue: issue,
+              ended: issueEnd(board, story, issue.id),
+              reason: board.workOf(story)?.issues.where((item) => item.issue == issue.id).firstOrNull?.reason ?? '',
+            ),
           ),
       ],
   ];
+
+  /// Every durable issue reason remains visible, including successful readers whose findings could not save.
+  static List<PlanIssue> attentionIssues(PlanningBoard board, PlanStory story) {
+    final work = board.workOf(story);
+    final ids = <String>{
+      for (final issue in story.issues)
+        if (issue.readingStopped == true || issue.needsYou == true) issue.id,
+      for (final issue in work?.issues ?? <PlanWorkIssue>[])
+        if (issue.reason.isNotEmpty && issue.reason != 'NONE' || issue.needsYou == true || issue.readingStopped == true)
+          issue.issue,
+    };
+    return [for (final id in ids) _attentionIssue(story, work, id)];
+  }
+
+  static PlanIssue _attentionIssue(PlanStory story, PlanWork? work, String id) {
+    final issue = story.issues.where((issue) => issue.id == id).firstOrNull;
+    final result = work?.issues.where((issue) => issue.issue == id).firstOrNull;
+    return PlanIssue.from({
+      'id': id,
+      'repository': issue?.repository ?? '',
+      'rounds': result?.rounds ?? issue?.rounds,
+      'roundsMost': result?.roundsMost ?? issue?.roundsMost,
+      'readingStopped': result?.readingStopped ?? issue?.readingStopped,
+    });
+  }
+
+  /// Pairs the issue with its latest raw task result, even when finished is true.
+  static WorkEnded? issueEnd(PlanningBoard board, PlanStory story, String issue) => board
+      .workOf(story)
+      ?.tasks
+      .reversed
+      .where((task) => task.issues.contains(issue) && task.ended != null)
+      .firstOrNull
+      ?.ended;
 
   /// The machine identity owning this exact source.
   String machineOf(PlanningBoard board) =>

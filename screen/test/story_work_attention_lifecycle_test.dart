@@ -50,7 +50,7 @@ void main() {
     await settle(tester);
     final row = _row(board);
     backend.work.findings['item'] = [
-      {'severity': 'BLOCKING', 'text': 'Keep the key inside.'},
+      {'number': 1, 'severity': 'BLOCKING', 'text': 'Keep the key inside.'},
     ];
     board.dispose();
     await tester.pumpWidget(
@@ -155,7 +155,7 @@ void main() {
     _desktop(tester);
     final backend = _ReadingBackend()..boards['demo'] = _snapshot(3);
     backend.work.findings['item'] = [
-      {'severity': 'BLOCKING', 'text': 'Keep the key inside.'},
+      {'number': 1, 'severity': 'BLOCKING', 'text': 'Keep the key inside.'},
     ];
     final board = PlanningBoard(backend, 'demo');
     await settle(tester);
@@ -199,10 +199,10 @@ void main() {
     _desktop(tester);
     final backend = MockPlanningSource()..boards['demo'] = _snapshot(3);
     backend.work.findings['item'] = [
-      {'severity': 'BLOCKING', 'text': 'First issue finding.'},
+      {'number': 1, 'severity': 'BLOCKING', 'text': 'First issue finding.'},
     ];
     backend.work.findings['other'] = [
-      {'severity': 'NOTE', 'text': 'Other issue finding.'},
+      {'number': 1, 'severity': 'NOTE', 'text': 'Other issue finding.'},
     ];
     final board = PlanningBoard(backend, 'demo');
     await settle(tester);

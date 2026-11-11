@@ -6,6 +6,7 @@ import '../client.dart';
 import '../hooks.dart';
 import '../models.dart';
 import '../story_work_order.dart';
+import '../task_runs.dart';
 import 'planning_data.dart';
 import 'planning_moves.dart';
 import 'refusal.dart';
@@ -208,6 +209,27 @@ class MockPlanningSource implements PlanningSource {
       StoryWorkStatus.from(work.call('StopStoryWork', {'project': project, 'story': story}));
 
   @override
+  Future<TaskEventResolution> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  }) async => TaskEventResolution.from(
+    work.call('TaskEvent', {
+      'project': project,
+      'task': task,
+      'event': event.name.toUpperCase(),
+      'offer': offer,
+      'container': container,
+      'machine': machine,
+      if (ended != null) 'ended': ended.toMap(),
+    }),
+  );
+
+  @override
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue) async =>
       PlanningIssueDetail.from(work.call('GetIssue', {'project': project, 'issue': issue}));
 
@@ -242,7 +264,7 @@ Future<PlanningTaskStarted> mockStartTask(
 ) => (source as MockPlanningSource).simulateStart(project, story, task);
 
 /// A planning client whose providers a test supplies, recording what the window tells them.
-class MockPlanningClient extends ChangeNotifier implements PlanningClient {
+class MockPlanningClient extends ChangeNotifier with PlanningTaskReports {
   /// Answers [providers] as they are now; [changes] says when they changed, as [notifyListeners] also does.
   MockPlanningClient(
     this._providers, {
@@ -270,7 +292,18 @@ class MockPlanningClient extends ChangeNotifier implements PlanningClient {
   final Listenable? changes;
 
   /// The task events the window told, in order.
-  final List<(String project, String task, PlanningTaskEvent event)> events = [];
+  final List<
+    (
+      String project,
+      String task,
+      PlanningTaskEvent event,
+      String offer,
+      String container,
+      String machine,
+      PlanningTaskEnded? ended,
+    )
+  >
+  events = [];
 
   @override
   void addListener(VoidCallback listener) {
@@ -297,6 +330,16 @@ class MockPlanningClient extends ChangeNotifier implements PlanningClient {
   String? get chosenProject => _chosen?.call();
 
   @override
-  Future<void> taskEvent(String project, String task, PlanningTaskEvent event) async =>
-      events.add((project, task, event));
+  Future<void> taskEvent(
+    String project,
+    String task,
+    PlanningTaskEvent event, {
+    required String offer,
+    required String container,
+    required String machine,
+    PlanningTaskEnded? ended,
+  }) async {
+    events.add((project, task, event, offer, container, machine, ended));
+    await super.taskEvent(project, task, event, offer: offer, container: container, machine: machine, ended: ended);
+  }
 }

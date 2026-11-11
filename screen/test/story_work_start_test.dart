@@ -36,7 +36,9 @@ class _Source extends MockPlanningSource {
     orders++;
     final answer = servedOrder();
     for (final (index, task) in (answer['tasks'] as List).indexed) {
-      (task as Map<String, dynamic>)['offer'] = '$offerPrefix-$index';
+      (task as Map<String, dynamic>)['offer'] = servedOffer(
+        offerPrefix.codeUnits.fold<int>(0, (sum, unit) => sum + unit) * 10 + index,
+      );
     }
     order = StoryWorkOrder.from(answer, request: request, proposal: StoryWorkOrder.readProposal(servedProposal()));
     if (orderGate case final gate?) await gate.future;
@@ -245,7 +247,10 @@ void main() {
     expect(calls.map((call) => (call.$1, call.$2, call.$3)), [(source, 'demo', 'ST1'), (source, 'demo', 'ST1')]);
     expect(calls.map((call) => _fields(call.$4)), [
       for (final (index, task) in (servedOrder()['tasks'] as List).indexed)
-        {...task as Map<String, dynamic>, 'offer': 'offer-$index'},
+        {
+          ...task as Map<String, dynamic>,
+          'offer': servedOffer('offer'.codeUnits.fold<int>(0, (sum, unit) => sum + unit) * 10 + index),
+        },
     ]);
     expect(work.startedTasks.map((task) => (task.$2.task, task.$2.container)), [
       ('main-task', 'main-container'),

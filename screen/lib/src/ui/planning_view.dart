@@ -103,6 +103,10 @@ class PlanningScreen extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([boards, host]),
     builder: (context, _) {
+      for (final board in boards.sources) {
+        board.startTask = startTask;
+        board.taskChanges = taskChanges;
+      }
       final place = host.place;
       final detailBoard = boards.at(place.source, place.project);
       final pinned = place.story != null;
@@ -625,7 +629,7 @@ class _BoardViewState extends State<_BoardView> {
     if (work.atWork == false) return working ? 'nobody at work' : null;
     return [
       if (work.atWork == null) 'Work status not reported',
-      if (work.coordinator?.isNotEmpty ?? false) work.coordinator!,
+      if (work.coordinator?.isNotEmpty ?? false) planningShown(work.coordinator!, multiline: false),
       if (mainTasks > 0) '$mainTasks ${mainTasks == 1 ? 'task' : 'tasks'}',
       work.agent.isEmpty ? 'Agent not reported' : work.agent,
       work.model.isEmpty ? 'Model not reported' : work.model,

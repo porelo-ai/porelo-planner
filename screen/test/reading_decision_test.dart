@@ -20,8 +20,8 @@ void main() {
     stopped.addAll({'state': 'Reading', 'rounds': 3, 'roundsMost': 3, 'readingStopped': true});
     backend.boards['checkout'] = snapshot;
     backend.work.findings[issue] = [
-      {'severity': 'NOTE', 'text': 'A small concern.'},
-      {'severity': 'BLOCKING', 'text': 'A credential would escape.'},
+      {'number': 1, 'severity': 'NOTE', 'text': 'A small concern.'},
+      {'number': 2, 'severity': 'BLOCKING', 'text': 'A credential would escape.'},
     ];
     board = PlanningBoard(backend, 'checkout');
     await Future<void>.delayed(Duration.zero);
