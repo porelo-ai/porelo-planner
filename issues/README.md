@@ -12,6 +12,14 @@ left out.
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 
+## Accepted
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl72"></a>[PL72](PL72-The-Boards-Search-Finds-Issues-Too.md) | - | - | The board's search matches an issue's number and title too; the story holding a matching issue is shown with its issue list open, the issue marked, and scrolled into view in its column |
+| <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | - | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
+| <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | - | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
+
 ## Estimated
 
 | # | Size | Blocked by | What it covers |
