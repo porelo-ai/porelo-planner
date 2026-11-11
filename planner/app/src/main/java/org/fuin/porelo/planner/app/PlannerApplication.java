@@ -15,12 +15,17 @@ public class PlannerApplication {
     public static final String MOCK = "--mock";
 
     /**
-     * Starts the planner and serves it until it is stopped.
+     * Runs a work tool and exits with its code when the first argument is {@code issues} or {@code
+     * stories}; otherwise starts the planner and serves it until it is stopped.
      *
-     * @param args Spring Boot's command line arguments, such as {@code --server.port=0}, and {@code
-     *     --mock} for the mock mode
+     * @param args {@code issues} or {@code stories} and their arguments, or Spring Boot's command
+     *     line arguments, such as {@code --server.port=0}, and {@code --mock} for the mock mode
      */
     public static void main(final String[] args) {
+        // Before Spring: a repository's check starts no server and reads no planner configuration.
+        if (WorkCommands.named(args)) {
+            System.exit(WorkCommands.run(Arrays.asList(args), System.out, System.err));
+        }
         run(args);
     }
 

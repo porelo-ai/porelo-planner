@@ -1,0 +1,8 @@
+project:
+    name: "sample"
+    central: "git@github.com:porelo-ai/porelo-sample.git"
+
+repositories:
+    alpha:
+        central: "git@github.com:porelo-ai/porelo-alpha.git"
+        issues: ["AB"]

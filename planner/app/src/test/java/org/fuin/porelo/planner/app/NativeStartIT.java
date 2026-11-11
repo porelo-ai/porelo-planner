@@ -10,6 +10,9 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -139,7 +142,7 @@ class NativeStartIT {
                                                         "revision",
                                                         revision,
                                                         "moves",
-                                                        java.util.List.of(
+                                                        List.of(
                                                                 java.util.Map.of(
                                                                         "issue", "XY07", "to",
                                                                         "Backlog"))))))
@@ -368,6 +371,77 @@ class NativeStartIT {
         final HttpResponse<String> answer =
                 HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
         return answer.statusCode() + " " + answer.body();
+    }
+
+    // Prevents a repository's check from passing or failing in the native executable otherwise
+    // than in the JVM: schemas, YAML and JSON are read where only the image can lack metadata.
+    @Test
+    void theNativeExecutableRunsTheWorkToolsAsTheJvmDoes(@TempDir final Path dir) throws Exception {
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        assertThat(executable).as("the native executable the build wrote").isExecutable();
+        final List<String> commands =
+                List.of(
+                        "issues check porelo-alpha/issues",
+                        "issues index porelo-alpha/issues",
+                        "stories check porelo-sample/stories",
+                        "stories index porelo-sample/stories",
+                        "stories cut 1.2.0 porelo-sample/stories --after 2026-10-31");
+        for (int i = 0; i < commands.size(); i++) {
+            final Path jvm = WorkFixture.copy(dir.resolve("jvm-" + i));
+            final Path image = WorkFixture.copy(dir.resolve("native-" + i));
+            for (final Path root : List.of(jvm, image)) {
+                // Stale, so the index commands write and the checks refuse.
+                Files.writeString(
+                        root.resolve("porelo-alpha/issues/README.md"),
+                        "# Issues\n\nThe issues of porelo-alpha.\n");
+                Files.delete(root.resolve("porelo-sample/stories/README.md"));
+            }
+            final WorkFixture.Answer expected =
+                    WorkFixture.planner(arguments(jvm, commands.get(i)));
+            final Path out = dir.resolve("out-" + i);
+            final Path err = dir.resolve("err-" + i);
+            final List<String> command = new ArrayList<>();
+            command.add(executable.toString());
+            command.addAll(List.of(arguments(image, commands.get(i))));
+            final Process process =
+                    new ProcessBuilder(command)
+                            .redirectOutput(out.toFile())
+                            .redirectError(err.toFile())
+                            .start();
+            try {
+                assertThat(process.waitFor(60, TimeUnit.SECONDS))
+                        .as("%s ends by itself", commands.get(i))
+                        .isTrue();
+                assertThat(process.exitValue())
+                        .as("the exit code of %s, %s", commands.get(i), Files.readString(err))
+                        .isEqualTo(expected.code());
+                assertThat(Files.readString(out).replace(image.toString(), "<root>"))
+                        .as("the answer of %s", commands.get(i))
+                        .isEqualTo(expected.out().replace(jvm.toString(), "<root>"));
+                assertThat(Files.readString(err).replace(image.toString(), "<root>"))
+                        .as("the faults of %s", commands.get(i))
+                        .isEqualTo(expected.err().replace(jvm.toString(), "<root>"));
+            } finally {
+                process.destroyForcibly();
+            }
+            assertThat(Files.readString(image.resolve("porelo-alpha/issues/README.md")))
+                    .as("the issues index after %s", commands.get(i))
+                    .isEqualTo(Files.readString(jvm.resolve("porelo-alpha/issues/README.md")));
+            assertThat(storiesIndex(image))
+                    .as("the stories index after %s", commands.get(i))
+                    .isEqualTo(storiesIndex(jvm));
+        }
+    }
+
+    private static String storiesIndex(final Path root) throws IOException {
+        final Path index = root.resolve("porelo-sample/stories/README.md");
+        return Files.exists(index) ? Files.readString(index) : "(none)";
+    }
+
+    private static String[] arguments(final Path root, final String command) {
+        return Arrays.stream(command.split(" "))
+                .map(arg -> arg.startsWith("porelo-") ? root.resolve(arg).toString() : arg)
+                .toArray(String[]::new);
     }
 
     /** Starts the planner, calls it with and without its token, stops it; returns the token. */

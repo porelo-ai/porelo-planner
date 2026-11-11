@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL59",
   "title": "The Work Tools Run From The Planner",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -26,64 +26,48 @@ CI downloads that executable pinned by version and sha256, and nothing of the pl
 
 ## Plan
 
-What stands today, read in the code:
+What was built:
 
-- The work format lives in `planner/store/git`, package `org.fuin.porelo.planner.store.git.stories`: `IssuesIndex`
-  (`write`, `check`), `StoriesIndex` (`write`, `check` over an `IssueSource`, `LocalIssues` reading the checkouts
-  beside the project's own), `IssueLinks`, `IssueHead`, `IssueIndexes`, `Workflow`, `Project`, `Story`,
-  `StageRecords`, and the schemas `issue-1.json` and the story schema. `GitStore` and `StoreReader` call it.
-  `stories/api/PublicReadersTest` holds the readers a program outside the package uses.
-- The planner ships one native executable, the server, inside a `.deb` and an `.rpm` that the Build publishes to the
-  snapshots or releases channel of the project's Artifactory; `PlannerApplication.main` starts Spring at once, with
-  `--mock` as its only argument of its own. Nothing of this repository is published to Maven Central.
-- The build tools' commands this replaces: `issues index|check <dir>` and `stories index|check <dir>` print `OK ...`
-  and exit 0, print each fault and exit 1, or exit 2 when something cannot be read or written; `stories cut
-  <version> <dir> --after <date>` writes release notes from the stories tested after a date. porelo-project's
-  `stories-check.sh` runs `stories check`; agents run `issues index` and `issues check` before a push.
-- Three refusal texts and the stories index's own heading name `porelo-release` as the command to run.
+- **The command line in the executable.** `PlannerApplication.main` hands its arguments to `WorkCommands` in `app`
+  when the first one is `issues` or `stories`, and exits with its code before Spring starts, so a check starts no
+  server, opens no port and reads no planner configuration. `issues index|check <dir>`, `stories index|check <dir>`
+  and `stories cut <version> <dir> --after <yyyy-mm-dd>` call the Git store's `IssuesIndex`, `StoriesIndex` and
+  `IssueSource.local`, with the build tools' arguments, output lines and exit codes (0, 1, 2), and a usage line with
+  exit 2 for anything else; `issues convert` is not carried over. The work format stays in `planner/store/git`, one
+  copy.
+- **The stories commands read the issue indexes from the checkouts beside the project's own**, found as the nearest
+  directory above `<dir>` holding `project.yml`, never over the network, as porelo-project's check clones them there.
+- **`stories cut` links each story on the host and under the owner `project.yml` names** (`Project.web`), which for
+  a project on github.com under porelo-ai is the build tools' fixed link.
+- **Every line said has a repository's control, format and line separator characters escaped** as `\uXXXX`; that is
+  the one place the planner's answer may differ from the build tools'.
+- **The texts that name `porelo-release`** - three refusal texts and the stories index's heading - stay until the
+  repository whose check reads them runs the planner's command.
+- `AGENTS.md`'s rules on the stories index and the hand-over's issue checks, `doc/index.md`'s *The work tools*,
+  `planner/app/README.md`, and a changelog entry.
 
-The steps:
+Publishing the bare executable for the CI, and this repository's hand-over checks running the downloaded one, are
+left to [PL78](README.md#pl78), which waits on its place in Artifactory.
 
-1. **The command line in the executable.** `PlannerApplication.main` hands its arguments to a small `WorkCommands`
-   in `app` first when the first one is `issues` or `stories`, and starts Spring only otherwise, so a check starts no
-   server, opens no port and reads no planner configuration. `issues index <dir>`, `issues check <dir>`, `stories
-   index <dir>`, `stories check <dir>` and `stories cut <version> <dir> --after <date>` call the Git store's own
-   `IssuesIndex`, `StoriesIndex` and their readers, with the build tools' arguments, output lines and exit codes (0,
-   1, 2), and a usage line with exit 2 for anything else. `issues convert` is not carried over. The work format stays
-   in `planner/store/git`, one copy.
-2. **The bare executable published.** The Build publishes the executable on its own, with its sha256 beside it, to
-   the same channel and under the same version as the packages, so a workflow downloads it with `curl -L` and checks
-   the digest before it runs it. A release never replaces a published file, as for the packages.
-3. **The texts that name the command** change to the planner's command only together with the switch of the
-   repository whose check reads them: porelo-project's stories index heading is checked by its own `stories check`,
-   so the heading changes once porelo-project runs the planner's check, never before.
-4. `AGENTS.md`'s rule on the stories index, `doc/` on the commands, `planner/app/README.md`, and a changelog entry.
+Tests:
 
-Tests, red first:
-
-- Unit, in `app`: `WorkCommandsTest` runs `issues check` on a fixture tree whose index the heads refuse and asserts
-  the fault lines and exit 1; on a tree it cannot read, exit 2; `issues index` on a fixture writes the same index the
-  build tools write (fixture compared with the build tools' output once, kept as a file). The harm: a repository's
-  check that passes what the build tools refused.
-- Unit: `stories check` over a project fixture with sibling checkouts gives the same faults and exit code; `stories
-  cut` writes the same release notes.
-- Unit: `main` with `issues check` starts no Spring context and binds no port.
-- Integration, test scope only while the build tools still carry the commands: the fixture run by both
-  `porelo-release` (already a test dependency) and the planner's command line, outputs and exit codes equal.
-- The native start test runs `issues check` on a fixture through the native executable, since the commands read
-  schemas and YAML through reflection that only the image can miss.
+- Unit, `WorkCommandsTest`, over a fixture the build tools indexed once (`src/test/resources/work`: the project
+  `porelo-sample` and the repository `porelo-alpha` beside it): `issues check` on an index the heads refuse says the
+  fault and the count and exits 1; on a directory it cannot read exits 2; `issues index` writes the build tools'
+  index; `stories check` refuses a story whose issue the sibling's index lacks and passes the fixture; `stories index`
+  writes the build tools' story texts and index; `stories cut` writes their notes and links on the project's own host
+  and owner; anything else is a usage with exit 2; a control character in a file name reaches no terminal; and `main`
+  with `issues check`, in a JVM of its own, answers, exits 0 by itself and writes nothing under its home or runtime
+  directory.
+- Integration, test scope only while the build tools still carry the commands: `WorkCommandsMatchBuildToolsTest`
+  runs `porelo-release` (a test dependency) and the planner's command line on copies of the fixture in ten cases -
+  passes, refusals, a stale index, a stale story, an unreadable directory, the cut - and asserts the same standard
+  output, standard error, exit code and files.
+- Native, `NativeStartIT`: the five commands run by the native executable on a stale fixture answer as the JVM does,
+  with the same files written, since the commands read schemas, YAML and JSON where only the image can lack metadata.
 
 ## Acceptance
 
-- The unit tests above, each seen red first; the full build green, the native build among it.
-- The Build of a push to main publishes the bare executable and its sha256; downloaded with `curl -L`, its digest
-  matches, and `porelo-planner issues check issues` exits 0 on this repository.
-- This repository's own hand-over checks `issues index` and `issues check` run with the planner's executable.
-
-## To be checked
-
-- Whether `stories cut` builds its links from `project.yml`'s host and owner, as the planner's `Project` reads
-  them, instead of the fixed owner the build tools use.
-- The executable's published name and path on the channel, agreed in the channel with the build tools' agent, since
-  every repository's workflow downloads it.
-- Whether the commands' reflection on the schemas and YAML needs more reachability metadata in the image.
+- The unit and integration tests above, each seen red under a deliberate break of `WorkCommands` or
+  `PlannerApplication`; the full build green, the native build and its `NativeStartIT` among it.
+- `porelo-planner issues check issues` exits 0 on this repository, as `porelo-release issues check issues` does.

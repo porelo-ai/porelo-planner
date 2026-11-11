@@ -374,3 +374,16 @@ planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/SaveFilesTest.
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StoryHeadTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/LogLinesTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/WorkAnswersTest.java
+# The work tools' tests and their fixture, a project and a repository beside it as the build tools indexed them: their
+# made-up issues and stories name ids of that shape on purpose.
+planner/app/src/test/java/org/fuin/porelo/planner/app/WorkCommandsTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/WorkCommandsMatchBuildToolsTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/WorkFixture.java
+planner/app/src/test/resources/work/porelo-alpha/issues/AB01-The-First-Step.md
+planner/app/src/test/resources/work/porelo-alpha/issues/AB02-The-Second-Step.md
+planner/app/src/test/resources/work/porelo-alpha/issues/AB03-The-Third-Step.md
+planner/app/src/test/resources/work/porelo-alpha/issues/README.md
+planner/app/src/test/resources/work/porelo-sample/stories/README.md
+planner/app/src/test/resources/work/porelo-sample/stories/ST1-The-First-Release.md
+planner/app/src/test/resources/work/porelo-sample/stories/ST2-The-Second-Release.md
+planner/app/src/test/resources/work/porelo-sample/stories/ST3-An-Earlier-Release.md

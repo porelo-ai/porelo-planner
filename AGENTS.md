@@ -14,8 +14,13 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
 - **The flow - story states, moves, work rules, the work proposal, reading rounds - is plain Java in `core`**, without
   Spring, proven by unit tests over fakes; the app only wires it to HTTP.
 - **The OpenAPI description is the contract with the window**, written first; the app serves exactly what it describes.
-- **After a change, the Git store writes the stories index itself**, as `porelo-release stories index` would write
-  it.
+- **After a change, the Git store writes the stories index itself**, as the planner's own `stories index` writes it.
+- **The work format has one copy, in `store/git`**: the executable's `issues` and `stories` commands call it, and give
+  the build tools' lines and exit codes for as long as those still carry the commands; a test runs both on one
+  fixture.
+- **Before a hand-over, this repository's issues are indexed and checked with the planner's own command**,
+  `issues index issues` and `issues check issues`, run by the native executable or by `PlannerApplication` on the
+  app's runtime classpath.
 - **The window's planning screen is a Flutter package in `screen/`**, because the window is Flutter and embeds it by a
   Git ref and the path `screen`. Maven drives Flutter there as the window's build does; the module is listed only
   under the root's profile `all`, so a Java build needs no Flutter, and the Build workflow runs it in a job of its own.

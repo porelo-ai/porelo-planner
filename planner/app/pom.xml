@@ -66,6 +66,13 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <!-- While the build tools still carry the work tools, a test runs both on one fixture. -->
+        <dependency>
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-release</artifactId>
+            <version>${porelo.buildtools.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>

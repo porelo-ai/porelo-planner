@@ -22,6 +22,30 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
   license and notice texts, those of what it embeds, the standard text of each license its POM names, and the Java
   runtime's.
 
+## The work tools
+
+The same executable indexes and checks a repository's issues and the project's stories when its first argument is
+`issues` or `stories`. It then starts no server, opens no port and reads no planner configuration; it answers and
+exits. Each command is run from the repository's root:
+
+| Command | What it does |
+|---|---|
+| `issues index <dir>` | Writes each directory's `README.md` under `<dir>` from its issues' heads. |
+| `issues check <dir>` | Checks every head by `issue-1.json` and the workflow, each wait and parent, and each index against what the heads give; writes nothing. |
+| `stories index <dir>` | Writes each story's text above `## Data` and the stories' `README.md` from the heads, the issues read from the checkouts beside the project's own. |
+| `stories check <dir>` | Checks every story's head, the issues it names in their repositories' indexes, each story's text and the stories' `README.md`; writes nothing. |
+| `stories cut <version> <dir> --after <yyyy-mm-dd>` | Prints a release's notes: the stories tested after that day, each linked on the host and under the owner `project.yml` names for the project. |
+
+- **Exit 0** is a pass, with one `OK` line on standard output. **Exit 1** is a refusal: each fault on standard error,
+  then their count. **Exit 2** is no answer: something could not be read or written, or the arguments are no command,
+  in which case the usage is said.
+- **The stories commands read the issue indexes from the checkouts beside the project's own**, named as
+  `project.yml` names the repositories, and never over the network; the project's checkout is the nearest directory
+  above `<dir>` that holds `project.yml`.
+- **A character from a repository that could steer a terminal** - a control, format or line separator character - is
+  written as its `\uXXXX` escape in every line the tools say.
+- From the packages it is `/usr/libexec/porelo/planner issues check issues`.
+
 ## How the window reaches it
 
 - **Only its owner reaches it.** It listens on the loopback address alone, on a port the system chooses, and refuses

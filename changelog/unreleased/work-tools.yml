@@ -1,0 +1,2 @@
+title: The planner's executable indexes and checks a repository's issues and the project's stories, and cuts a release's notes, with `issues index|check <dir>`, `stories index|check <dir>` and `stories cut <version> <dir> --after <day>`, starting no server.
+type: added
