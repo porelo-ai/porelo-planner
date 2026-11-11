@@ -20,7 +20,7 @@
 
 ## Plan
 
-- A field `worker` in the issue head, `Agent` or `Manual`, in the issue schema the Git store holds; an issue without it counts as Manual, so no agent is started for an issue nobody chose that for.
+- A field `worker` in the issue head, `Agent` or `Manual`, in the issue schema the Git store holds; an issue without it counts as Manual, so no agent is started for an issue nobody chose that for. Creating an issue asks the person to choose Manual or Agent on purpose: the idea form and every other way the planner creates an issue ask, and none fills it in silently.
 - The board's `Issue` carries it, a call sets it as a move does, and the screen shows it on the issue's row and lets the person switch it.
 - Every start the planner makes for an issue - today a story's work, later the starts by state - leaves out a Manual issue and says so.
 - Red first: a story's work over one Agent and one Manual issue starts a task for the Agent issue alone.
