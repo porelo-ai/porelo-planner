@@ -5,28 +5,83 @@
   "$schema": "issue-1.json",
   "id": "PL61",
   "title": "The Work Numbers Come From Porelo's Own Record Of Each Task",
-  "state": "Idea",
-  "size": "-",
+  "state": "Analyzed",
+  "size": "L",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "The project's velocity and an issue's stages are read from the record Porelo keeps of each task, its start, end and tokens, and an agent's own stage line counts only until that record exists"
+  "covers": "The project's velocity and an issue's stages are read from the record Porelo keeps of each task, its start, end and tokens, and an agent's own stage line counts only until that record exists",
+  "openQuestions": 2
 }
 ```
+
+**Size:** L - it crosses repositories: the task's issue and phase go through the window's contract into Porelo's
+start, and the planner reads Porelo's records through an interface it does not call today.
 
 **What must be true.** The time and tokens an issue's work cost are those Porelo itself measured for the tasks that
 worked it, never what an agent wrote about itself, and the velocity an estimate is given comes from them.
 
 ## Plan
 
-- A task works one issue in one phase, so a task's record is one stage: its stage is the phase, its minutes the
-  task's start to end, its tokens and model those Porelo counted. A person's move on the board stays a record of its
-  own, written by the planner.
-- The planner starts each task with the issue it works and its phase: the working state of the project's workflow the
-  task works the issue in, such as Implementing, Reading or Reworking, as the work rules name it.
-- The planner reads a project's task records, removed tasks among them, through Porelo's own interface (a call on the
-  daemon or its command line, never its files), and answers the velocity from them: a stage's minutes are the task's
-  wall time, its start to its end, as the stage lines count today. Until then it takes the stage lines agents write,
-  in the format they write today.
-- Red first: a task record of two hours on an issue of size M gives a velocity of 120 minutes for M, and an agent's
-  own line for the same issue and phase is not counted twice.
+What stands today, read in the code:
+
+- The velocity is `GitStore.velocity(repository, size)`: `StageRecords.statistic` over `stats/seed.csv` and the
+  repository's `stats/*.jsonl`, the seed's minutes plus, per finished issue, the sum of the agent's measured stages
+  of that size; a person's moves are left out.
+- The planner never starts a task and never talks to Porelo's daemon: it answers `PlanningStartTask` (offer,
+  repository, issues, role MAIN, BUILDER, READER or DISCUSSION, agent, model, mode, prompt) and the window starts
+  it with Porelo's `Start`, then reports STARTED, ENDED or STOPPED with the container's label.
+- **Correction:** a task does not always work one issue. A MAIN task works every issue of a story in its repository
+  (`WorkProposal`); a BUILDER and a READER work one. The record must carry the issues a task worked.
+- Porelo answers a single task's token totals today (`Usage`, by task); a record per task listed for a project since
+  a time is not there yet.
+
+The contract the planner builds against, in words: Porelo keeps one record per task - task, project, repository,
+the issues it works and its phase, agent, model, effort, start, end, how it ended, token totals - kept after the task
+is removed, and answers a project's records since a time through its daemon's socket or `porelo task records
+--project <p> --since <t> --json`.
+
+The steps:
+
+1. **The phase at the start.** `PlanningStartTask` gains `phase`, the working state of the project's workflow the
+   task works in (Implementing, Reading, Reworking), as the work rules name it; the window hands issues and phase to
+   Porelo's `Start`. A change to the window's contract in `openapi/planner.yaml`, `core` (`WorkProposal`,
+   `NextStep`) and the screen package.
+2. **The records read.** A port in `store/api` or `core`, `TaskRecords.since(project, instant)`, with an adapter in
+   `app` that calls Porelo's command line (the socket only if the command line cannot serve), validating every
+   field before use and failing closed with the reason when Porelo cannot answer.
+3. **The velocity from them.** `StageRecords.statistic` takes the task records beside the stage lines: a record is a
+   stage whose phase is its state, whose minutes are its start to its end, whose tokens and model are Porelo's. An
+   agent's own line for the same issue and phase is left out once a record covers it, so nothing is counted twice;
+   an issue without records keeps its stage lines. A person's move stays a record of its own.
+
+Tests, red first:
+
+- Unit, `StageRecordsTest`: a task record of two hours on an issue of size M, finished, gives a velocity sample of
+  120 minutes for M; an agent's own line for the same issue and phase beside it is not counted twice.
+- Unit, the adapter over a fake command: a record with a negative duration, an unknown phase or a project other
+  than the one asked is refused with the field named; Porelo unreachable fails the velocity with the reason, never
+  an answer from less.
+- Unit, `WorkProposalTest`: each planned task carries the phase it starts in.
+
+## Acceptance
+
+- The tests above, each seen red first; the full build green.
+- On a local VM with Porelo's records available, one issue built by a task through Reading to Review gives a velocity
+  sample equal to the task's wall time as Porelo shows it.
+
+## Open questions
+
+- How is a task that works several issues counted - its minutes and tokens split evenly among them, or counted only
+  where it worked one issue, or does the planner start one task per issue?
+- Porelo's records stay on the computer the tasks ran on, while stage lines in `stats/` are shared through Git: does
+  the velocity count only this computer's tasks, or are the records written into the store when an issue is
+  finished ([PL44](README.md#pl44) plans that for tokens)?
+
+## To be checked
+
+- The names and form of Porelo's records answer, agreed in the channel, and whether the daemon's socket reaches the
+  planner on Windows.
+- How an agent's stage name (`implement`, `review`, ...) maps to the workflow state a task record names, so the same
+  work is recognized.
+- Whether the window already hands Porelo's `Start` an issue, and what it must add for the phase.
