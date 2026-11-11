@@ -49,6 +49,8 @@ final class IdeaFile {
 
     private static final Pattern NO_WORD = Pattern.compile("[^A-Za-z0-9]+");
 
+    private static final Pattern BREAKS = Pattern.compile("[\\p{Cntrl}\\u0085\\u2028\\u2029]");
+
     private IdeaFile() {}
 
     /**
@@ -81,6 +83,11 @@ final class IdeaFile {
         if (!workflow.states().contains(STATE)) {
             throw new IllegalArgumentException(
                     "the project's workflow has no state " + STATE + " for a new issue");
+        }
+        // The heading repeats the title unquoted, so a line break there could add a head above it.
+        if (BREAKS.matcher(issue.title()).find()) {
+            throw new IllegalArgumentException(
+                    "the title of a new issue holds a line break or a control character");
         }
         final Path issues = root.resolve("issues");
         final List<Path> files = files(issues);

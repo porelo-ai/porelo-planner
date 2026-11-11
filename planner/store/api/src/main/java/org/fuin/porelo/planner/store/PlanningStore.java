@@ -77,6 +77,22 @@ public interface PlanningStore {
     }
 
     /**
+     * Adds an idea against the revision the window shows: its story and every issue it names in one
+     * save, all of them or none. The answer means saved here; the pushes follow, and one that fails
+     * or is dropped is named in the board's faults.
+     *
+     * @param revision the revision the window showed when the idea was checked
+     * @param idea the idea
+     * @return the story's id, the issues' ids and the board after the save
+     * @throws StoreException.StaleRevision if the store moved since that revision
+     * @throws StoreException.NotSavable if a part of it cannot be written in its repository
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     */
+    default NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
+        throw new UnsupportedOperationException("This store does not add ideas");
+    }
+
+    /**
      * Derives a story's state from its issues' states, as the store's stories index does.
      *
      * @param issueStates the states of the story's issues

@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
@@ -43,6 +44,7 @@ import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
+import org.fuin.porelo.planner.store.git.stories.StoryHead;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -58,6 +60,14 @@ public final class GitStore implements PlanningStore {
 
     /** How long a save waits for a check or another save of the project. */
     private static final Duration LOCK_WAIT = Duration.ofSeconds(30);
+
+    /** A story's or an issue's file, its id the first group. */
+    private static final java.util.regex.Pattern ADDED =
+            java.util.regex.Pattern.compile(
+                    "(?:stories/(ST[0-9]+)|issues/(?:[^/]+/)?([A-Z]{1,3}[0-9]{2,3}))-[^/]*\\.md");
+
+    /** The writes of a save that only adds. */
+    private static final Writes NO_WRITES = new Writes(Map.of(), Map.of(), List.of());
 
     private final List<Repository> repositories;
 
@@ -259,12 +269,12 @@ public final class GitStore implements PlanningStore {
      */
     @Override
     public Board save(final Revision revision, final Writes writes) {
-        return saved(revision, writes, null).board();
+        return saved(revision, writes, List.of(), null).board();
     }
 
     /**
      * Adds the issue as a move is saved: its file and its repository's index in one commit, read
-     * back before it is pushed.
+     * back before it stands.
      */
     @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
@@ -272,26 +282,71 @@ public final class GitStore implements PlanningStore {
             throw new StoreException.NotSavable(
                     "", issue.repository() + " is no repository of the project");
         }
-        final Saved saved = saved(revision, new Writes(Map.of(), Map.of(), List.of()), issue);
-        final String id = saved.added();
+        final Saved saved = saved(revision, NO_WRITES, List.of(issue), null);
+        return new NewIssue.Added(addedId(saved, issue.repository()), saved.board());
+    }
+
+    /**
+     * Adds the idea as one save: its story in the own repository and each of its issues in its
+     * repository, every commit built and read back before any stands; the story and an issue of the
+     * own repository share its one commit.
+     */
+    @Override
+    public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
+        final Set<String> named = new HashSet<>();
+        for (final NewIssue issue : idea.issues()) {
+            if (repositories.stream().noneMatch(r -> r.name().equals(issue.repository()))) {
+                throw new StoreException.NotSavable(
+                        "", issue.repository() + " is no repository of the project");
+            }
+            if (!named.add(issue.repository())) {
+                throw new StoreException.NotSavable(
+                        "", "the idea names " + issue.repository() + " twice");
+            }
+        }
+        final Saved saved = saved(revision, NO_WRITES, idea.issues(), idea);
+        final String story = saved.story();
+        if (story == null) {
+            throw new IllegalStateException("a save of an idea gave its story no id");
+        }
+        return new NewIdea.Added(
+                story,
+                idea.issues().stream().map(issue -> addedId(saved, issue.repository())).toList(),
+                saved.board());
+    }
+
+    private static String addedId(final Saved saved, final String repository) {
+        final String id = saved.added().get(repository);
         if (id == null) {
             throw new IllegalStateException("a save of a new issue gave it no id");
         }
-        return new NewIssue.Added(id, saved.board());
+        return id;
     }
 
-    /** A save's board, and the id it gave a new issue, if it added one. */
-    private record Saved(Board board, @Nullable String added) {}
+    /**
+     * A save's board, and the ids it gave what it added.
+     *
+     * @param board the board after the save
+     * @param added each new issue's id, by its repository
+     * @param story the new story's id, if it added one
+     */
+    private record Saved(Board board, Map<String, String> added, @Nullable String story) {}
 
     private Saved saved(
-            final Revision revision, final Writes writes, final @Nullable NewIssue idea) {
-        final Saved saved = committed(revision, writes, idea);
+            final Revision revision,
+            final Writes writes,
+            final List<NewIssue> ideas,
+            final @Nullable NewIdea story) {
+        final Saved saved = committed(revision, writes, ideas, story);
         saves.push();
         return saved;
     }
 
     private Saved committed(
-            final Revision revision, final Writes writes, final @Nullable NewIssue idea) {
+            final Revision revision,
+            final Writes writes,
+            final List<NewIssue> ideas,
+            final @Nullable NewIdea story) {
         final String own = repositories.get(0).name();
         final ProjectLock.Held held =
                 lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own));
@@ -310,8 +365,9 @@ public final class GitStore implements PlanningStore {
                     && stories.isEmpty()
                     && workers.isEmpty()
                     && priorities.isEmpty()
-                    && idea == null) {
-                return new Saved(snapshot.board(), null);
+                    && ideas.isEmpty()
+                    && story == null) {
+                return new Saved(snapshot.board(), Map.of(), null);
             }
             final Path scratch;
             try {
@@ -322,7 +378,7 @@ public final class GitStore implements PlanningStore {
             try {
                 return commitLocally(
                         snapshot,
-                        new Edits(writes, idea, issues, stories, workers, priorities),
+                        new Edits(writes, ideas, story, issues, stories, workers, priorities),
                         scratch);
             } catch (final GitFailure | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
@@ -469,10 +525,12 @@ public final class GitStore implements PlanningStore {
     }
 
     /**
-     * What one save edits: the writes asked for, a new issue, and the files they change.
+     * What one save edits: the writes asked for, new issues and a new story, and the files they
+     * change.
      *
      * @param writes the writes asked for
-     * @param idea the new issue, if one is added
+     * @param ideas the new issues, each of another repository
+     * @param story the idea whose story is added, if one is
      * @param issues each moved issue's file and new state, by repository
      * @param stories each story's file and new stated state, empty where it goes
      * @param workers each changed worker's issue file and worker, by repository
@@ -480,7 +538,8 @@ public final class GitStore implements PlanningStore {
      */
     private record Edits(
             Writes writes,
-            @Nullable NewIssue idea,
+            List<NewIssue> ideas,
+            @Nullable NewIdea story,
             Map<String, Map<String, String>> issues,
             Map<String, String> stories,
             Map<String, Map<String, Worker>> workers,
@@ -530,7 +589,6 @@ public final class GitStore implements PlanningStore {
 
     private Saved commitLocally(final Snapshot snapshot, final Edits edits, final Path scratch) {
         final Writes writes = edits.writes();
-        final @Nullable NewIssue idea = edits.idea();
         final Map<String, Map<String, String>> issues = edits.issues();
         final Map<String, String> stories = edits.stories();
         final Map<String, Map<String, Worker>> workers = edits.workers();
@@ -551,7 +609,14 @@ public final class GitStore implements PlanningStore {
                 throw refusal(name, e);
             }
         }
-        final IdeaFile.Written added = idea == null ? null : idea(snapshot, idea, scratch);
+        final Map<String, IdeaFile.Written> added = new LinkedHashMap<>();
+        final Map<String, Worker> addedWorkers = new LinkedHashMap<>();
+        for (final NewIssue idea : edits.ideas()) {
+            added.put(idea.repository(), idea(snapshot, idea, scratch));
+            addedWorkers.put(idea.repository(), idea.worker());
+        }
+        final NewIdea newStory = edits.story();
+        final StoryFile.Written story = newStory == null ? null : story(newStory, added, scratch);
         // Written before the indexes, which read the heads; a worker leaves every index alone.
         workers.forEach(
                 (name, heads) ->
@@ -564,9 +629,7 @@ public final class GitStore implements PlanningStore {
                                                 path,
                                                 worker)));
         final Set<String> indexed = new java.util.LinkedHashSet<>(issues.keySet());
-        if (idea != null) {
-            indexed.add(idea.repository());
-        }
+        indexed.addAll(added.keySet());
         final Map<String, List<String>> rewritten = new LinkedHashMap<>();
         for (final String name : indexed) {
             final Map<String, String> moved = issues.getOrDefault(name, Map.of());
@@ -579,7 +642,7 @@ public final class GitStore implements PlanningStore {
                         head.getKey(),
                         text -> HeadEdit.issueState(text, head.getValue()));
             }
-            final List<String> heads = written(moved.keySet(), added, idea, name);
+            final List<String> heads = written(moved.keySet(), added, name);
             heads.addAll(workers.getOrDefault(name, Map.of()).keySet());
             final List<String> written =
                     new ArrayList<>(writeIndex(snapshot, name, root, scratch, heads));
@@ -615,7 +678,8 @@ public final class GitStore implements PlanningStore {
                     });
         }
         // A worker alone changes no row of the stories index, so it leaves the own repository be.
-        final boolean storiesIndexed = !issues.isEmpty() || !storyFiles.isEmpty() || idea != null;
+        final boolean storiesIndexed =
+                !issues.isEmpty() || !storyFiles.isEmpty() || !added.isEmpty() || story != null;
         if (storiesIndexed && Files.isDirectory(ownRoot.resolve("stories"))) {
             final org.fuin.porelo.planner.store.git.stories.StoriesIndex.Result index;
             try {
@@ -633,13 +697,17 @@ public final class GitStore implements PlanningStore {
             final List<String> edited = new ArrayList<>(storyFiles);
             issues.values().forEach(heads -> edited.addAll(heads.keySet()));
             workers.values().forEach(heads -> edited.addAll(heads.keySet()));
-            if (added != null) {
-                edited.add(added.path());
+            added.values().forEach(issue -> edited.add(issue.path()));
+            if (story != null) {
+                edited.add(story.path());
             }
             refuseFaults(snapshot, own, edited, index.faults());
             rewritten
                     .computeIfAbsent(own, key -> new ArrayList<>())
                     .addAll(relative(ownRoot, index.written()));
+        }
+        if (story != null) {
+            storyReadsBack(snapshot, ownRoot, story);
         }
         final Map<String, String> subjects = new LinkedHashMap<>();
         final Map<String, List<String>> changed = new LinkedHashMap<>();
@@ -648,11 +716,14 @@ public final class GitStore implements PlanningStore {
             final Map<String, String> edited = issues.getOrDefault(name, Map.of());
             // The heads edited and every file the index library rewrote, the story texts too.
             final Map<String, Worker> set = workers.getOrDefault(name, Map.of());
-            final List<String> heads = written(edited.keySet(), added, idea, name);
+            final List<String> heads = written(edited.keySet(), added, name);
             heads.addAll(set.keySet());
             heads.addAll(rewritten.getOrDefault(name, List.of()));
             if (name.equals(own)) {
                 heads.addAll(storyFiles);
+                if (story != null) {
+                    heads.add(story.path());
+                }
             }
             final List<String> paths =
                     SaveFiles.changed(scratch.resolve(name), of(before, name), heads);
@@ -677,7 +748,7 @@ public final class GitStore implements PlanningStore {
                             movedStories,
                             set.size(),
                             name.equals(own) ? priorities.size() : 0,
-                            added != null,
+                            added.containsKey(name) || (name.equals(own) && story != null),
                             paths));
             changed.put(name, paths);
         }
@@ -699,8 +770,12 @@ public final class GitStore implements PlanningStore {
                                 repository(name),
                                 commit,
                                 own(repository(name)) ? null : project(of(snapshot.parts(), own)));
-                if (added != null && idea != null && name.equals(idea.repository())) {
-                    readsBack(name, part, added.id(), idea.worker());
+                final IdeaFile.Written issue = added.get(name);
+                if (issue != null) {
+                    readsBack(name, part, issue.id(), of(addedWorkers, name));
+                }
+                if (story != null && name.equals(own)) {
+                    storyReadsBack(name, part, story);
                 }
                 workersReadBack(snapshot, name, part, workers.getOrDefault(name, Map.of()));
                 after.put(name, part);
@@ -719,8 +794,12 @@ public final class GitStore implements PlanningStore {
         if (!saves.record(parents, made)) {
             throw new StoreException.StaleRevision(revision(tips()));
         }
+        final Map<String, String> ids = new LinkedHashMap<>();
+        added.forEach((name, issue) -> ids.put(name, issue.id()));
         return new Saved(
-                swapAfter(snapshot, all, after).board(), added == null ? null : added.id());
+                swapAfter(snapshot, all, after).board(),
+                ids,
+                story == null ? null : story.head().id());
     }
 
     /**
@@ -802,14 +881,82 @@ public final class GitStore implements PlanningStore {
     /** The heads a save wrote in a repository: those it edited, and a new issue's file. */
     private static List<String> written(
             final java.util.Collection<String> edited,
-            final IdeaFile.@Nullable Written added,
-            final @Nullable NewIssue idea,
+            final Map<String, IdeaFile.Written> added,
             final String name) {
         final List<String> heads = new ArrayList<>(edited);
-        if (added != null && idea != null && name.equals(idea.repository())) {
-            heads.add(added.path());
+        final IdeaFile.Written issue = added.get(name);
+        if (issue != null) {
+            heads.add(issue.path());
         }
         return heads;
+    }
+
+    /**
+     * Writes the new story's file in the save's copy of the own repository, naming each new issue,
+     * a reference the story's schema would refuse refused before anything is committed.
+     */
+    private StoryFile.Written story(
+            final NewIdea idea, final Map<String, IdeaFile.Written> added, final Path scratch) {
+        final String own = repositories.get(0).name();
+        final List<String> references = new ArrayList<>();
+        try {
+            for (final NewIssue issue : idea.issues()) {
+                references.add(
+                        StoryHead.reference(
+                                issue.repository(), of(added, issue.repository()).id()));
+            }
+            return StoryFile.write(scratch.resolve(own), idea, references);
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable("", local(e, scratch));
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(own, local(e, scratch));
+        }
+    }
+
+    /**
+     * A new story is committed only once its file, as the stories index completed it, reads back
+     * with the head it was written with, its free text unchanged.
+     */
+    private void storyReadsBack(
+            final Snapshot snapshot, final Path ownRoot, final StoryFile.Written story) {
+        final String id = story.head().id();
+        final StoryHead read;
+        try {
+            read =
+                    StoryHead.read(
+                            Files.readString(ownRoot.resolve(story.path()), StandardCharsets.UTF_8),
+                            project(of(snapshot.parts(), repositories.get(0).name())));
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(
+                    repositories.get(0).name(), id + " could not be read");
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable(
+                    id, "its head is refused: " + GitRunner.scrubbed(e.getMessage()));
+        }
+        if (!read.equals(story.head())) {
+            throw new StoreException.NotSavable(id, "its head does not read back as written");
+        }
+    }
+
+    /**
+     * A new story is pushed only once its commit reads it back naming each new issue, as the board
+     * reads it.
+     */
+    private static void storyReadsBack(
+            final String name, final Part part, final StoryFile.Written story) {
+        final StoryHead head = story.head();
+        if (!story.path().equals(part.paths().get(Part.story(head.id())))
+                || part.stories().stream()
+                        .noneMatch(
+                                read ->
+                                        read.id().equals(head.id())
+                                                && read.title().equals(head.title())
+                                                && read.issues().equals(head.issues())
+                                                && java.util.Objects.equals(
+                                                        read.state(), head.state()))) {
+            throw new StoreException.Unreadable(
+                    name, "the new story " + head.id() + " does not read back from its commit");
+        }
     }
 
     /**
@@ -1246,12 +1393,14 @@ public final class GitStore implements PlanningStore {
 
     /** The items whose files a dropped save changed, or its files where they name none. */
     private static String dropped(final @Nullable Part part, final List<String> paths) {
-        final List<String> items = new ArrayList<>();
+        final Set<String> items = new java.util.TreeSet<>();
+        final Set<String> known = new HashSet<>();
         if (part != null) {
             part.paths()
                     .forEach(
                             (key, path) -> {
                                 if (paths.contains(path)) {
+                                    known.add(path);
                                     items.add(
                                             key.startsWith(Part.story(""))
                                                     ? key.substring(Part.story("").length())
@@ -1259,7 +1408,14 @@ public final class GitStore implements PlanningStore {
                                 }
                             });
         }
-        items.sort(null);
+        // A file the dropped save added is on no board; its name still tells its item.
+        for (final String path : paths) {
+            final java.util.regex.Matcher added = ADDED.matcher(path);
+            if (!known.contains(path) && added.matches()) {
+                final String story = added.group(1);
+                items.add(story != null ? story : added.group(2));
+            }
+        }
         return items.isEmpty() ? String.join(", ", paths) : String.join(", ", items);
     }
 

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Worker;
@@ -930,6 +931,280 @@ class GitStoreSaveTest {
         assertThat(store.board().faults())
                 .as("the board tells the idea dropped")
                 .anySatisfy(fault -> assertThat(fault).as("the fault").startsWith(OTHER + ": "));
+    }
+
+    @Test
+    void anIdeaIsReadBackFromFreshClonesAsAStoryInIdeaNamingItsNewIssueInAnotherRepository()
+            throws Exception {
+        // A story lost, numbered twice or naming an issue that is not there would plan work nobody
+        // can find.
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final NewIdea.Added added =
+                store.createIdea(
+                        board.revision(),
+                        idea("A new story", new NewIssue(OTHER, "Its issue", "It is there.", "S")));
+
+        assertThat(List.of(added.story(), added.issues()))
+                .as("the next story number without a leading zero, the next issue number")
+                .containsExactly("ST4", List.of("CD02"));
+        assertThat(names(OWN, head(OWN)))
+                .as("one commit adds the story and rewrites the stories index")
+                .containsExactlyInAnyOrder("stories/ST4-A-new-story.md", "stories/README.md");
+        assertThat(names(OTHER, head(OTHER)))
+                .as("one commit adds the issue and rewrites its index")
+                .containsExactlyInAnyOrder("issues/CD02-Its-issue.md", "issues/README.md");
+        assertThat(freshBoard())
+                .as("a fresh clone reads both back")
+                .satisfies(
+                        fresh -> {
+                            final org.fuin.porelo.planner.store.Story story =
+                                    fresh.story("ST4").orElseThrow();
+                            assertThat(List.of(story.state(), story.issues()))
+                                    .as("the story in Idea naming its issue")
+                                    .containsExactly("Idea", List.of("CD02"));
+                            assertThat(fresh.issue("CD02").orElseThrow().state())
+                                    .as("the issue in Idea")
+                                    .isEqualTo("Idea");
+                        });
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+        assertThat(List.of(log(OWN, head(OWN), "%s"), log(OTHER, head(OTHER), "%s")))
+                .as("subjects starting no build")
+                .allSatisfy(
+                        subject ->
+                                assertThat(subject)
+                                        .as("marked")
+                                        .singleElement()
+                                        .satisfies(
+                                                line ->
+                                                        assertThat(line)
+                                                                .as("its end")
+                                                                .endsWith(" [skip ci]")));
+    }
+
+    @Test
+    void anIdeaNamingTheOwnRepositoryWritesItsStoryAndItsIssueThereInOneCommit() throws Exception {
+        // A story pushed in a commit apart from its own issue could stand without it.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final NewIdea.Added added =
+                store.createIdea(
+                        board.revision(),
+                        idea(
+                                "Both",
+                                new NewIssue(OWN, "Own part", "Own.", null),
+                                new NewIssue(OTHER, "Other part", "Other.", null)));
+
+        assertThat(added.issues()).as("an id in each repository").containsExactly("AB03", "CD02");
+        assertThat(git(OWN, "rev-list", "--count", own + "..refs/heads/main").strip())
+                .as("one commit in the own repository")
+                .isEqualTo("1");
+        assertThat(names(OWN, head(OWN)))
+                .as("holding the story, the issue and both indexes")
+                .containsExactlyInAnyOrder(
+                        "stories/ST4-Both.md",
+                        "stories/README.md",
+                        "issues/AB03-Own-part.md",
+                        "issues/README.md");
+        assertThat(freshBoard().story("ST4").orElseThrow().issues())
+                .as("the story names both")
+                .containsExactly("AB03", "CD02");
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+    }
+
+    @Test
+    void aStoryNumberOnlyAnIndexRowHoldsIsNotGivenAgain() throws Exception {
+        // A finished story lives on only in its row once its file is deleted; its number taken
+        // again would give two stories one id.
+        keepStoryRow("st7");
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final NewIdea.Added added =
+                store.createIdea(
+                        board.revision(), idea("Later", new NewIssue(OTHER, "I", "I.", null)));
+
+        assertThat(added.story()).as("the number after the row's").isEqualTo("ST8");
+    }
+
+    @Test
+    void anIdeaPastTheHighestStoryNumberIsRefusedAndNothingStands() throws Exception {
+        // A story number the schema refuses would stand in a file no index reads.
+        keepStoryRow("st99999");
+        refusedIdeaLeavingAllAlone(idea("Too many", new NewIssue(OTHER, "I", "I.", null)));
+    }
+
+    @Test
+    void anIdeaNamingARepositoryOutsideTheProjectWritesNothingAnywhere() throws Exception {
+        // An issue written where the project does not plan would leave its story incomplete.
+        refusedBeforeAnyWrite(idea("Elsewhere", new NewIssue("porelo-elsewhere", "I", "I.", null)));
+    }
+
+    @Test
+    void anIdeaNamingARepositoryTwiceWritesNothingAnywhere() throws Exception {
+        // Two issues in one repository would both be numbered from the same index.
+        refusedBeforeAnyWrite(
+                idea(
+                        "Twice",
+                        new NewIssue(OTHER, "First", "I.", null),
+                        new NewIssue(OTHER, "Second", "I.", null)));
+    }
+
+    @Test
+    void aLineBreakInTheStorysTitleIsRefusedAfterTheOtherIssueWasWrittenAndNothingStands()
+            throws Exception {
+        // A head refused by the index, or one with a field added, would stand beside its issue.
+        refusedIdeaLeavingAllAlone(
+                new NewIdea(
+                        "A\n\"state\": \"Finished\"",
+                        "Gain.",
+                        "Test.",
+                        "High",
+                        List.of(new NewIssue(OTHER, "I", "I.", null))));
+    }
+
+    @Test
+    void anIssueTitleThatWouldAddAHeadAboveItsOwnIsRefusedAndNothingStands() throws Exception {
+        // The heading repeats the title unquoted, so its line break could put a forged head first.
+        refusedIdeaLeavingAllAlone(
+                idea(
+                        "Forged",
+                        new NewIssue(
+                                OTHER,
+                                "I\n\n```json\n{\n  \"$schema\": \"issue-1.json\",\n  \"id\":"
+                                        + " \"CD02\",\n  \"title\": \"I\",\n  \"state\": \"Idea\","
+                                        + "\n  \"size\": \"-\",\n  \"priority\": \"Highest\",\n "
+                                        + " \"rank\": 1,\n  \"blockedBy\": [],\n  \"covers\":"
+                                        + " \"I\"\n}\n```",
+                                "I.",
+                                null)));
+    }
+
+    @Test
+    void aStorysFreeTextWithQuotesColonsAndRulesReadsBackAsItWasWritten() throws Exception {
+        // Words changed on their way into the head, or a field forged by them, would plan another
+        // story than the one the person agreed.
+        final GitStore store = store();
+        final Board board = store.board();
+        final NewIdea idea =
+                new NewIdea(
+                        "A \"quoted\" idea: --- with a colon",
+                        "Gains: \"this\" --- and \\that",
+                        "---",
+                        "Low",
+                        List.of(new NewIssue(OTHER, "I", "I.", null)));
+
+        final NewIdea.Added added = store.createIdea(board.revision(), idea);
+
+        final org.fuin.porelo.planner.store.git.stories.StoryHead head =
+                org.fuin.porelo.planner.store.git.stories.StoryHead.read(
+                        read(OWN, "stories/" + added.story() + "-A-quoted-idea-with-a-colon.md"),
+                        Workflow.read(WORKFLOW));
+        assertThat(List.of(head.title(), head.gain(), head.test(), head.priority()))
+                .as("each field as the idea gave it")
+                .containsExactly(idea.title(), idea.gain(), idea.test(), idea.priority());
+        assertThat(freshBoard().story(added.story()).orElseThrow().title())
+                .as("the board reads the title back")
+                .isEqualTo(idea.title());
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+    }
+
+    @Test
+    void anIdeaDroppedAfterItsAnswerIsNamedByItsStoryBesideAMoveDroppedWithIt() throws Exception {
+        // A story the answer told saved and a push dropped must be told, or the person believes it
+        // planned; its issue pushed elsewhere stays an ordinary idea.
+        final Path hook = repositories.served().resolve(OTHER + ".git/hooks/pre-receive");
+        Files.writeString(hook, "#!/bin/sh\necho refused by the test >&2\nexit 1\n");
+        hook.toFile().setExecutable(true);
+        final GitStore store = store();
+        final Board moved =
+                store.save(
+                        store.board().revision(),
+                        writes(Map.of("CD01", "Review"), Map.of("ST2", "Backlog"), List.of()));
+        final NewIdea.Added added =
+                store.createIdea(
+                        moved.revision(), idea("Dropped", new NewIssue(OTHER, "I", "I.", null)));
+        Files.delete(hook);
+        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "Idea")));
+        store.refresh();
+
+        // The next check reads the remotes, which hold no file of the dropped story.
+        store.refresh();
+
+        assertThat(store.board().faults())
+                .as("the own repository's drop names the new story and the moved one")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the fault")
+                                        .startsWith(OWN + ": ")
+                                        .contains(added.story(), "ST2"));
+        assertThat(read(OWN, "stories/README.md"))
+                .as("the story never reached the remote")
+                .doesNotContain(added.story());
+    }
+
+    /** Saves the idea, expects a refusal, and checks no repository moved, here or remote. */
+    private void refusedIdeaLeavingAllAlone(final NewIdea idea) throws Exception {
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () -> store.createIdea(board.revision(), idea));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(store.board().revision())
+                .as("no save stands in the planner's clones")
+                .isEqualTo(board.revision());
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed")
+                .containsExactly(own, other);
+    }
+
+    /** Saves the idea, expects a refusal before a save begins, and checks nothing moved. */
+    private void refusedBeforeAnyWrite(final NewIdea idea) throws Exception {
+        final java.util.concurrent.atomic.AtomicBoolean begun =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final GitStore store = store(real -> remote(real, "scratch", () -> begun.set(true)));
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () -> store.createIdea(board.revision(), idea));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(begun.get()).as("refused before a save begins to write").isFalse();
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed")
+                .containsExactly(own, other);
+    }
+
+    /** Leaves a story's row in the served stories index with no file behind it. */
+    private void keepStoryRow(final String anchor) throws Exception {
+        final Path index = repositories.work(OWN).resolve("stories/README.md");
+        Files.writeString(
+                index,
+                Files.readString(index)
+                        + "\n## Finished\n\n| <a id=\""
+                        + anchor
+                        + "\"></a>"
+                        + anchor.toUpperCase(java.util.Locale.ROOT)
+                        + " Gone |\n");
+        repositories.commit(OWN);
+    }
+
+    private static NewIdea idea(final String title, final NewIssue... issues) {
+        return new NewIdea(title, "Something gained.", "A test runs.", "High", List.of(issues));
     }
 
     @Test

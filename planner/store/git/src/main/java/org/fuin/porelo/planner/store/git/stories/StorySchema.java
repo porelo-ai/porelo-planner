@@ -15,8 +15,7 @@ final class StorySchema {
             List.of("id", "title", "priority", "gain", "test", "issues", "tested", "state");
     private static final String ID = "^ST[1-9][0-9]{0,4}$";
     private static final String LINE = "^[^\\s](.*[^\\s])?$";
-    private static final String ISSUE =
-            "^porelo(-[a-z0-9]+)*(\\.github\\.io)?#[A-Z]{1,3}[0-9]{2,5}$";
+    static final String ISSUE = "^porelo(-[a-z0-9]+)*(\\.github\\.io)?#[A-Z]{1,3}[0-9]{2,5}$";
     private static final String DAY = "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$";
     private static final List<String> PRIORITIES =
             List.of("Highest", "High", "Medium", "Low", "Lowest");

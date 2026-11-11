@@ -155,7 +155,41 @@ class LocalSavesTest {
                                 LocalSaves.Kind.DROPPED, "", List.of("a.md", "c.md")));
     }
 
+    // Prevents two stories under one number when both sides added a story under other names.
+    @Test
+    void aPushOverAStoryAddedElsewhereDropsTheSaveThatAddedOneToo() throws Exception {
+        final LocalSaves saves = new LocalSaves(repositories, remote, refs, Runnable::run);
+        save(saves, OWN, Map.of("stories/ST2-Mine.md", "mine\n"));
+        final String theirs = change(OWN, "stories/ST2-Theirs.md", "theirs\n");
+
+        saves.push();
+
+        assertThat(remoteHead(OWN)).as("the other's story stays the remote's").isEqualTo(theirs);
+        assertThat(saves.pending(OWN)).as("the save is dropped").isFalse();
+        assertThat(saves.state().get(OWN))
+                .as("told with the story dropped")
+                .isEqualTo(
+                        new LocalSaves.PushState(
+                                LocalSaves.Kind.DROPPED, "", List.of("stories/ST2-Mine.md")));
+    }
+
     // Prevents a stories index pushed naming states its repositories do not hold.
+    @Test
+    void aPushOverAFileWithoutANumberAddedElsewhereIsMadeAgainNotDropped() throws Exception {
+        // Prevents a person's save from being thrown away over a file whose name no number can
+        // collide in.
+        final LocalSaves saves = new LocalSaves(repositories, remote, refs, Runnable::run);
+        save(saves, OWN, Map.of("stories/ST2-Mine.md", "mine\n"));
+        change(OWN, "stories/NOTES.md", "theirs\n");
+
+        saves.push();
+
+        assertThat(saves.pending(OWN)).as("the save is pushed").isFalse();
+        assertThat(saves.state().get(OWN).kind())
+                .as("made again on the remote's commit, not dropped")
+                .isEqualTo(LocalSaves.Kind.PUSHED);
+    }
+
     @Test
     void theOwnRepositoryIsPushedLastAndNotWhileAnotherIsNot() throws Exception {
         final List<String> order = new ArrayList<>();

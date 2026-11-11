@@ -371,3 +371,4 @@ planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueL
 planner/app/src/test/java/org/fuin/porelo/planner/app/WorkerEndpointTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueHeadTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/SaveFilesTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StoryHeadTest.java

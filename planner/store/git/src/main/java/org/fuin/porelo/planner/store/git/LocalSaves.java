@@ -14,6 +14,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -23,8 +25,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A save waits on a repository's {@link LocalRefs#local local ref} until it is pushed; a restart
  * finds it there. A push the remote rejects is made again on the remote's new commit when the
- * remote changed none of the paths the saves changed and the two did not both add an issue;
- * otherwise the saves are dropped and told, and the own repository's with them.
+ * remote changed none of the paths the saves changed and the two did not both add an issue or both
+ * a story; otherwise the saves are dropped and told, and the own repository's with them.
  */
 public final class LocalSaves {
 
@@ -57,6 +59,10 @@ public final class LocalSaves {
 
     /** How often a push the remote rejects is made again on its new commit. */
     private static final int ATTEMPTS = 3;
+
+    /** A story's or an issue's file, whose name carries a number each repository gives once. */
+    private static final Pattern NUMBERED =
+            Pattern.compile("(?:issues|stories)/[A-Z]{1,3}[0-9]+-[^/]*\\.md");
 
     private final List<Repository> repositories;
 
@@ -446,16 +452,20 @@ public final class LocalSaves {
     }
 
     /**
-     * Whether both sides added an issue file, which may carry the number the other took, even where
-     * the files' names differ.
+     * Whether both sides added an issue file, or both a story file, which may carry the number the
+     * other took, even where the files' names differ.
      */
     private boolean issueAddedOnBoth(
             final String name, final String base, final String tip, final String head) {
-        return issueAdded(refs.added(name, base, tip)) && issueAdded(refs.added(name, base, head));
+        final List<String> mine = refs.added(name, base, tip);
+        final List<String> theirs = refs.added(name, base, head);
+        return Stream.of("issues/", "stories/")
+                .anyMatch(directory -> added(mine, directory) && added(theirs, directory));
     }
 
-    private static boolean issueAdded(final List<String> added) {
-        return added.stream().anyMatch(path -> path.startsWith("issues/"));
+    private static boolean added(final List<String> added, final String directory) {
+        return added.stream()
+                .anyMatch(path -> path.startsWith(directory) && NUMBERED.matcher(path).matches());
     }
 
     /** Whether another repository than the own has a save waiting; called under the monitor. */
