@@ -11,8 +11,6 @@ left out.
 |---|---|---|---|
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
-| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | - | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
-| <a id="pl51"></a>[PL51](PL51-Work-Moves-On-Without-A-Window.md) | L | [PL49](README.md#pl49) | The chain the work rules give - build, reading, rework, review - goes on while no window is open: the planner learns a task's end and starts the next task itself |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
@@ -31,6 +29,7 @@ left out.
 |---|---|---|---|
 | <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | - | - | A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react |
 | <a id="pl41"></a>[PL41](PL41-The-Git-Store-Alone-Handles-Stories-And-Issues.md) | XL | - | Stories and issues kept as files in Git are read, checked, indexed and written by the planner's Git store alone - the shared stories library's code taken into store/git, a broken head and a broken issue link shown as faults on the board, a new idea written through the planner, every repository's issues checked against the project's one workflow, and each issue's stages recorded so the project's velocity goes to an estimate - so the build tools can drop the library and their story, issue, stage and link commands |
+| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | - | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 
 ## Analyzed
 
@@ -90,3 +89,4 @@ left out.
 |---|---|---|
 | <a id="pl22"></a>PL22 | The Planner Records The Stage Of An Issue It Moves | The Git store records every moved issue's stage as part of handling stories and issues alone ([PL41](README.md#pl41)). |
 | <a id="pl40"></a>PL40 | A Story's Work History Kept In The Store | A story's run is worth keeping only while it works, and Git's commits are its history; what must be kept is a task's results, a story of its own across the repositories |
+| <a id="pl51"></a>PL51 | Work Moves On Without A Window | Work goes on without a window once the planner runs as a service of the system, and is built with it. |
