@@ -22,7 +22,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | - | - | A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react |
-| <a id="pl41"></a>[PL41](PL41-The-Git-Store-Alone-Handles-Stories-And-Issues.md) | XL | - | Stories and issues kept as files in Git are read, checked, indexed and written by the planner's Git store alone, with the code of the shared stories library taken into store/git, a broken head shown as a fault on the board and a new idea written through the planner, so the build tools can drop the library and their story and issue commands |
+| <a id="pl41"></a>[PL41](PL41-The-Git-Store-Alone-Handles-Stories-And-Issues.md) | XL | - | Stories and issues kept as files in Git are read, checked, indexed and written by the planner's Git store alone - the shared stories library's code taken into store/git, a broken head and a broken issue link shown as faults on the board, a new idea written through the planner, every repository's issues checked against the project's one workflow, and each issue's stages recorded so the project's velocity goes to an estimate - so the build tools can drop the library and their story, issue, stage and link commands |
 
 ## Backlog
 
