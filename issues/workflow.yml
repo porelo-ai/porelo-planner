@@ -14,7 +14,6 @@ states:
   - {name: Reworking, closed: false, measured: true}
   - {name: Review, closed: false, measured: true}
   - {name: Rework, closed: false}
-  - {name: Finishing, closed: false, measured: true}
   - {name: Finished, closed: true, measured: true}
   - {name: Rejected, closed: true}
 phases:
@@ -23,4 +22,4 @@ phases:
   - {name: Estimation, states: [Under estimation, Estimated]}
   - {name: Backlog, states: [Backlog]}
   - {name: Build, states: [Implementing, Reading, Reworking, Review, Rework]}
-  - {name: Done, states: [Finishing, Finished, Rejected]}
+  - {name: Done, states: [Finished, Rejected]}
