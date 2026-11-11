@@ -50,6 +50,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl32"></a>[PL32](PL32-The-Planner-Run-From-The-Source-With-Restarts.md) | XS | - | A Maven profile dev runs the planner from the source on the JVM with Spring Boot DevTools, restarted within a second whenever any module compiles anew, for testing against real projects with the window |
 | <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | S | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |
 | <a id="pl24"></a>[PL24](PL24-Following-And-Stopping-Story-Work-In-The-Screen.md) | M | [PL09](README.md#pl09) | The screen package's calls for a story's run: following and stopping work, the window's task reports, an issue's findings and a reading round's decision, each follow-up task handed to the window's Start once |
 | <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | M | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |

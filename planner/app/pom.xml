@@ -60,6 +60,36 @@
     </dependencies>
 
     <profiles>
+        <!-- The planner from the source, for a person who works on it: DevTools restarts it in a moment when any
+             module's classes change, and nothing of it reaches a package, which never has this profile. It writes the
+             account's own address file, so the window on this computer uses it once no other planner runs. -->
+        <profile>
+            <id>dev</id>
+            <properties>
+                <spring-boot.run.skip>false</spring-boot.run.skip>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-devtools</artifactId>
+                    <version>${spring-boot.version}</version>
+                    <optional>true</optional>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <version>${spring-boot.version}</version>
+                        <configuration>
+                            <mainClass>org.fuin.porelo.planner.app.PlannerApplication</mainClass>
+                            <jvmArguments>-Dspring.devtools.livereload.enabled=false</jvmArguments>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- The executable the window starts: -Pnative verify writes target/porelo-planner, checks it asks for exactly
              x86-64 v1, and starts it once. -->
         <profile>
