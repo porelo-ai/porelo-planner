@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** XL - it splits into two L, three M and two S of this repository, below; dropping the library, the
+**Size:** XL - it splits into one L, three M and three S of this repository, below; dropping the library, the
 story and issue commands, `stage` and the issue part of `check-citations` from the build tools, and the checks from
 every build, is other repositories' work.
 
@@ -31,6 +31,8 @@ on the board; each issue's stages are recorded, and the project's velocity reach
   leave the build tools; with a store kept in an outside tool, that tool keeps them. The planner hands the
   project's velocity to the task when it starts an estimate.
 - Until this issue is done, the stories library's code may stand both here and in the build tools.
+- The library's code moves as it is; taking the central's host and link pattern from `project.yml` and reading a
+  project's repositories from any clone URL is its own issue ([PL42](README.md#pl42)).
 - A repository's own `issues/workflow.yml` goes; every repository's issues are checked against the project's
   `stories/workflow.yml`.
 - Which issue prefixes a repository owns stays in `project.yml` (`repositories[].issues`): they mark the project,
@@ -47,13 +49,12 @@ its own `issues/workflow.yml`, else its own `stories/workflow.yml`. A broken hea
 repository with `stats/seed.csv` is refused before anything is written. In the build tools, `stage` is about 1050
 lines with its tokens and as many of tests; the issue-link check of `check-citations` about 600.
 
-1. **The library's code taken into `store/git`** (L). The classes, schemas, reachability metadata and tests move
-   to a package of `store/git` that is not exported, with the planner's own names; the dependency on
-   `porelo-stories` goes, and with it the rule in `AGENTS.md` and `doc/` that the index is rewritten by that
-   library. Two open changes come with it: the link pattern and the central's host are taken from `project.yml`,
-   not fixed to one owner, and a project's repositories are read from any clone URL - `https://`, `ssh://` and
-   scp-like, on any host and under any owner. Red first: a `project.yml` whose centrals live on another host and
-   owner is read with the right names and links. Unit tests over files in a temporary directory.
+1. **The library's code taken into `store/git`** (S). The classes, schemas, reachability metadata and tests move
+   unchanged in content to a package of `store/git` that is not exported; the dependency on `porelo-stories` goes,
+   and with it the rule in `AGENTS.md` and `doc/` that the index is rewritten by that library. No behavior
+   changes, so no test goes red first: the moved tests and the store's own tests prove the move, on the JVM and in
+   the native executable. About 3600 lines of code and 3000 of tests to move may take longer than the median of
+   an S.
 2. **One workflow for every repository's issues** (S). `StoreReader` reads the project's `stories/workflow.yml`
    once and checks every repository's issues against it; a repository's own `issues/workflow.yml` is no longer
    read. Red first: a repository whose own `issues/workflow.yml` names a state the project's lacks has that issue
@@ -84,7 +85,7 @@ lines with its tokens and as many of tests; the issue-link check of `check-citat
    reader takes back. Unit tests over files; one controller test for the estimate's start.
 
 Order: 1, 2, 3, 4, 5, 6, 7. Steps 4, 5, 6 and 7 change the window's contract and are agreed before they are
-built. Sum by the medians: 2 L, 3 M, 2 S = 226 + 201 + 66 = 493 minutes.
+built. Sum by the medians: 1 L, 3 M, 3 S = 113 + 201 + 99 = 413 minutes.
 
 ## Acceptance
 
