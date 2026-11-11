@@ -13,17 +13,15 @@
     "PL64",
     "PL65"
   ],
-  "covers": "Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk",
-  "openQuestions": 1
+  "covers": "Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk"
 }
 ```
 
 **Size:** L - a move that starts work crosses the core's proposal, the board's contract and the screen; beside it a
-reading started by hand, and model and effort chosen by phase and risk.
+reading started by hand.
 
-**Estimate:** 113 min, the measured median of L. Uncertain: the effort Porelo's `Start` takes is not yet known, and
-model and effort by phase and risk may leave this issue (see the open question); the issue waits on two others of
-this repository.
+**Estimate:** 113 min, the measured median of L. Uncertain: the two parts sum to 100 minutes by the medians, between M
+and L; the issue waits on two others of this repository.
 
 **What must be true.** A person moves an Agent issue, or a story, into a working state on the board, and the planner
 does the rest as the project's work rules say: the start dialog opens filled with the rule's first mode and the first
@@ -64,17 +62,12 @@ What is missing:
 2. **A reading started by hand** (S). A proposal for a rule with `blocked` offers one reader per issue, each issue
    alone, with the readings counted on from the issue's run. Red first, unit, in `WorkProposalTest`: a Reading for an
    issue in Review offers one reader for it; in `NextStepTest`: its clean end leads to Review.
-3. **Model and effort by phase and risk** (M). An issue's head may carry `risk`: `harm`, `ordinary` (when none is
-   set) or `small`. The work rules give per working state the effort for each risk, and a start hands agent, model
-   and effort to the window and names where the choice came from. The effort's meaning per agent is Porelo's. Writing
-   `risk` into a head waits until the build tools' issue schema takes it, as the worker field does. Red first, unit:
-   a Reading task for a `harm` issue carries the rule's effort for `harm`.
-
-Not part of this issue: a reading limit in the work rules, since the work rules set no cap on reading
+Not part of this issue: model and effort chosen by phase and risk, an issue of its own
+([PL66](README.md#pl66)); a reading limit in the work rules, since the work rules set no cap on reading
 rounds for now and the start dialog's reading rounds stay as they are; and asking to stop a running task before a
 move out of a working state, which belongs to the warnings before a move ([PL38](README.md#pl38)).
 
-Order: 2, 1, 3. Sum by the medians: 2 M, 1 S = 67 + 67 + 33 = 167 minutes, an L.
+Order: 2, 1. Sum by the medians: 1 M, 1 S = 67 + 33 = 100 minutes, an L.
 
 ## Acceptance
 
@@ -87,12 +80,3 @@ Order: 2, 1, 3. Sum by the medians: 2 M, 1 S = 67 + 67 + 33 = 167 minutes, an L.
 Work moves on only while a window is open: the window, not the planner, starts every task with Porelo's `Start`, and
 reports each end. When no window was open as a task ended, the board is read again and the next step taken once a
 window starts again; the planner as a service of the system does not change that, since it starts no task itself.
-
-## Open questions
-
-- Does model and effort by phase and risk stay in this issue, or become an issue of its own, since it needs `risk` in
-  the issue's head, which the build tools' schema must take first?
-
-## To be checked
-
-- What the window's Start takes today for an effort, and whether Porelo maps one effort scale per agent.

@@ -10,6 +10,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
+| <a id="pl66"></a>[PL66](PL66-Model-And-Effort-Chosen-By-Phase-And-Risk.md) | - | - | An issue's head may say how much harm its change can do, and the work rules give per working state the model and effort for each risk, which a start hands to the window |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
@@ -36,13 +37,13 @@ left out.
 
 ## Estimated
 
-| # | Size | Blocked by | What it covers | Open questions |
-|---|---|---|---|---|
-| <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work | - |
-| <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format | - |
-| <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists | - |
-| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL64](README.md#pl64), [PL65](README.md#pl65) | Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk | 1 |
-| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | L | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes | 1 |
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
+| <a id="pl60"></a>[PL60](PL60-The-Commit-And-Push-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format |
+| <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists |
+| <a id="pl49"></a>[PL49](PL49-Work-Moves-On-By-Itself-From-A-Move-On-The-Board.md) | L | [PL64](README.md#pl64), [PL65](README.md#pl65) | Moving an issue or a story into a working state on the board opens the Start dialog filled with the project's defaults, one tab per task, and the chain the work rules give - build, reading, review - runs on by itself, asking the person where a reading blocks; a reading can be started by hand; the model and effort follow the task's phase and the issue's risk |
+| <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL46](README.md#pl46), [PL64](README.md#pl64) | The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 
 ## Backlog
 

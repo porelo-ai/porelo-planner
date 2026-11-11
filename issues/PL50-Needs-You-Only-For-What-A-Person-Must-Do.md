@@ -6,23 +6,22 @@
   "id": "PL50",
   "title": "Needs You Only For What A Person Must Do",
   "state": "Estimated",
-  "size": "L",
+  "size": "M",
   "priority": "High",
   "rank": 25,
   "blockedBy": [
     "PL46",
     "PL64"
   ],
-  "covers": "The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes",
-  "openQuestions": 1
+  "covers": "The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes"
 }
 ```
 
-**Size:** L - three steps across the board's contract, the work record's file, the app and the screen package: a
-contract change, a stored format change and a new request.
+**Size:** M - one contract change across the app and the screen package, and an action on every row; a row put away
+is kept by the window, not here.
 
-**Estimate:** 113 min, the measured median of L. Uncertain: where a row put away is kept (the open question) may move
-its third step into the window, which makes it smaller here.
+**Estimate:** 67 min, the measured median of M. Uncertain: the window's own part, keeping a row put away, is built in
+the window's repository and must land with the screen package's action.
 
 **What must be true.** Every row the planner raises in *Needs you* asks the person for something they can do, and says
 what; what is only information is shown on the board, not raised; and a person can put a row away.
@@ -54,20 +53,17 @@ working state is worked by hand and has no run by design, so it is never counted
    `NEXT_STEP_UNAVAILABLE` and `SAVE_REFUSED` look at the failure and start again or stop; `STOPPED` move the issue on
    or start again; `UNPUSHED` open the task to push its commits; `INVALID_FINDINGS` read again or go to Review. Red
    first, widget test of the screen package: a `STOPPED` row offers its two actions.
-3. **A raised row can be put away** (M). A new request `POST .../issues/{issue}/attention/dismissed` with the reason
-   and state shown; `WorkRecord` keeps the dismissal per issue with them, and `WorkAnswers` answers `needsYou` false
-   while both are unchanged. The screen package gets the action on every row. Red first, integration in `app`: a
-   dismissed `ROUND_LIMIT` issue answers `needsYou` false; the same issue after a new reading answers true again; a
-   dismissal naming another state is refused.
+3. **A raised row can be put away** (XS). A row put away is kept by the window alone, as a seen story end is kept
+   today: it keeps the issue with the reason and state shown, and shows the row again once either changes. The
+   screen package gives `StoryWorkAttentionView` a put-away action that hands the issue, its reason and its state to
+   a callback of the window's, and `PlanningBoards.needsYou` leaves out what the window names as put away. Nothing
+   is stored in the planner and no request is added. Red first, widget test of the screen package: a row put away is
+   left out while its reason and state are unchanged and shown again when the reason changes.
 
-Order: 1, 2, 3, after [PL64](README.md#pl64). Sum by the medians: 2 S + 1 M = 33 + 33 + 67 = 133 minutes, an L.
+Order: 1, 2, 3, after [PL64](README.md#pl64). Sum by the medians: 2 S + 1 XS = 33 + 33 + 15 = 81 minutes, an M.
 
 ## Acceptance
 
-- *Needs you* holds only issues with a reason and an action; dismissing one keeps it away until its state or reason
-  changes; an issue with no run here shows on the board and is not raised, and a Manual issue is neither.
-
-## Open questions
-
-- Is a row put away kept by the planner, for every window of the account and across restarts (step 3), or by the
-  window alone, as a seen story end is kept today, which would move step 3 into the window?
+- *Needs you* holds only issues with a reason and an action; putting one away keeps it away in that window until its
+  state or reason changes; an issue with no run here shows on the board and is not raised, and a Manual issue is
+  neither.
