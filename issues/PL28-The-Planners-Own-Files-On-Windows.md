@@ -43,62 +43,59 @@ says which path and why.
 
 ## Owner-only through access control lists
 
-On Windows, the POSIX mode is replaced by the file's owner and its discretionary access control list (DACL):
+On Windows, the POSIX mode is replaced by the owner and the discretionary access control list (DACL):
 
 - **Trusted principals** are the account itself, `SYSTEM` (S-1-5-18) and the local Administrators group
-  (S-1-5-32-544). Like root on Linux, they can read everything anyway.
-- **What the planner creates** - each directory, `planner.json`, the locks and the record files - gets an explicit
-  DACL with one entry, full control for the account. Directories also get the inheritance flags, so new files get the
-  same entry.
-- **A directory or file of the planner's own** is accepted only if:
-  - its owner is the account;
-  - no entry grants any right to a principal other than the trusted three;
-  - it is no reparse point (no symbolic link and no junction);
-  - a file has exactly one link.
-- **An ancestor** (`%LOCALAPPDATA%` and every directory above it) is accepted only if:
-  - its owner is a trusted principal or `TrustedInstaller`;
-  - no other principal holds `DELETE`, `WRITE_DAC` or `WRITE_OWNER` on it, or `FILE_DELETE_CHILD` on it.
-
-  This is the counterpart of "root's or mine, and others may write only where it is sticky": the root of a drive lets
-  every account create folders, but no account can rename or delete another's.
-- The account is read from the process's own token, never looked up by `user.name`, which another domain's account
-  of the same name could match.
+  (S-1-5-32-544). Like root on Linux, they can read everything anyway; an elevated process makes what it creates the
+  Administrators' own.
+- **What the planner creates** - each of its directories - gets an explicit DACL of one entry, full control for the
+  account, inherited by directories and files made in it and by nothing from above. Its files take that one entry.
+- **A directory of the planner's own, and the base `%LOCALAPPDATA%`,** is accepted only if:
+  - its owner is a trusted principal;
+  - no entry grants any right to another principal, even one that applies only to what is made below;
+  - it is no reparse point (no symbolic link, junction or mount);
+  - for the planner's own, the account's full control passes to everything made in it.
+- **An ancestor** (every directory above the base) is accepted only if its owner is trusted or `TrustedInstaller`, it
+  is no reparse point, and no other principal holds `DELETE`, `WRITE_DAC`, `WRITE_OWNER`, `FILE_DELETE_CHILD`,
+  `GENERIC_ALL` or `GENERIC_WRITE` on it itself. This is the counterpart of "root's or mine, and others may write only
+  where it is sticky": the root of a drive lets every account create folders, but none rename or delete another's.
+- **Files are not checked one by one**, and a second link is not refused on Windows: no other account can make, link
+  or replace an entry in a directory that is the account's alone, and a hard link needs write access to its target.
+- **Read by SID, never by name.** Java names accounts and groups only in the system's language. One Windows
+  PowerShell call, taken by its full path from the system directory, sets the DACLs and prints each path's owner and
+  entries by SID, with the account's own SID from the process's token. The paths reach it through its environment,
+  never as code. A file system without DACLs, such as FAT32, fails that call, and the planner refuses to start.
 
 ## Plan
 
-- **One type for both platforms.** A `PrivateFiles` interface in `store/git` (which `app` already depends on), with a
-  POSIX and an ACL implementation chosen from the file system's supported attribute views. It offers creating an
-  owner-only directory or file, checking one, and checking an ancestor.
-  - `AddressFile`, `WorkRecord` and `CacheDirectory` each carry their own copy of today's POSIX checks. These copies
-    move into the POSIX implementation unchanged, and the three classes call the interface.
-  - The base directories are chosen in one place: `XDG_*` and `HOME` on Linux, `LOCALAPPDATA` on Windows.
-- **Git on Windows.** `GitCall` sets `GIT_ASKPASS=/bin/false`, `GIT_EDITOR=:` and an `ssh` command. Git for Windows
-  must still fail a login prompt at once, without a dialog of Git Credential Manager. The values that do so are
-  measured on the Windows runner (see below) and set per platform. `git` is found on `PATH` as today.
-- **Locks.** `FileChannel.lock` is mandatory on Windows, and replacing or deleting an open file fails there. The
-  address file's replace (`ATOMIC_MOVE`) and delete on stop, and the work record's replace, are retried briefly on a
-  sharing violation and then fail loud.
+- **One type for both platforms.** `PrivateFiles` in `store/git`, with `PosixPrivateFiles` (today's checks, moved
+  unchanged) and `WindowsPrivateFiles` (the PowerShell call) beside `WindowsAccess` (the answer's form and the rules
+  above). `AddressFile`, `WorkRecord` and `CacheDirectory` call it; the bases are chosen in one place: `XDG_*` and
+  `HOME` on Linux, `LOCALAPPDATA` on Windows.
+- **Git on Windows.** `GitCall` removes every `GIT_*` variable, `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE` and
+  `GCM_INTERACTIVE` in any case, and points `core.hooksPath` and `GIT_ASKPASS` at
+  `%LOCALAPPDATA%\porelo-planner\none`, a name no other account can create, so no hook runs and a login prompt fails
+  at once. `git` is found on `PATH` as today.
+- **Locks.** Replacing or deleting an open file fails on Windows; the address file's delete at start, its replace
+  and its delete on stop, and the work record's replace are retried for two seconds on a sharing violation, then
+  fail loud. The work record skips the directory's `fsync`, which Windows does not offer.
 - **Tests, red first.**
-  - **Unit tests over the ACL implementation** run on Linux through a fake view, since an `AclFileAttributeView` is an
-    interface. They cover a foreign entry, a foreign owner, a reparse point, a second link, an ancestor that another
-    account may rename, and the trusted three accepted.
-  - **The same cases on real files** are tagged `windows` and run on the Windows runner, which the Windows build
-    issue adds.
-  - Today's POSIX tests are tagged `linux` where they need POSIX, so the Windows run skips them by name.
+  - Unit tests on Linux over a fake PowerShell answer: a foreign entry, an inherit-only one, a foreign owner, an
+    Administrators' owner, a reparse point, an entry that does not pass on, an ancestor another account may
+    re-permission or delete below, a base another account may add to, an answer out of its form; the drive path's
+    form; Git's variables in any case.
+  - The same rules on real files, tagged `windows`: the directories made and passing again, an entry for Users
+    refused, a junction refused. They run on the Windows runner through the workflow *Windows trial*, on a branch under
+    `windows/`, until the Windows build's job runs them on every push.
+  - Tagging today's POSIX tests `linux`, so a Windows run skips them by name, belongs to the Windows build.
 
 ## Acceptance
 
-- On the Windows runner, the planner starts, writes `%LOCALAPPDATA%\porelo-planner\planner.json` with the DACL above,
-  and refuses to start when `porelo-planner` grants another account read access. Each refusal is seen in a test.
+- The tests tagged `windows` pass on the Windows runner, and each refusal is seen there.
 - Every Linux test that ran before still runs and passes on Linux, unchanged in what it asserts.
 - Each new guard is seen red by a break that compiles.
 
 ## To be checked
 
-- The default owner and DACL of `C:\`, `C:\Users`, the profile, `AppData` and `AppData\Local` on the runner's
-  `windows-2025`, so that the ancestor rule accepts a fresh account and refuses a changed one.
-- Whether `AclFileAttributeView.setAcl` writes a DACL without inherited entries in native image too, and whether a
-  later change of the parent's DACL adds inherited entries back (the check then refuses, loud).
-- Which `GIT_ASKPASS` and `GIT_SSH_COMMAND` values make Git for Windows refuse a prompt at once.
-- How the process's own account SID is read in Java without a lookup by name (the owner of a file it has just created,
-  or `whoami /user` by full path).
+- The default owner and DACL of `C:\`, `C:\Users`, the profile, `AppData` and `AppData\Local` on `windows-2025`,
+  read by the first trial run: the ancestor rule must accept them.

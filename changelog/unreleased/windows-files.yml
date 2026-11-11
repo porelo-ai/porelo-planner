@@ -1,0 +1,2 @@
+title: On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, closed to other accounts by owner and access control list, and points Git's hooks and login prompt at a place no other account can fill.
+type: added

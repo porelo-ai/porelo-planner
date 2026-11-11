@@ -6,22 +6,22 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Where the window finds the planner: {@code porelo-planner/planner.json} in the account's runtime
- * directory, with the port and the token, readable by the account alone.
+ * directory on Linux, in {@code %LOCALAPPDATA%} on Windows, with the port and the token, readable
+ * by the account alone.
  *
  * <p>One planner per account: it holds a lock on {@code planner.lock} beside the file for as long
  * as it runs, which the kernel lets go when it dies, so a file found while holding the lock is a
@@ -37,17 +37,10 @@ public final class AddressFile implements AutoCloseable {
 
     private static final String LOCK = "planner.lock";
 
-    private static final Set<PosixFilePermission> OWNER_ONLY_DIRECTORY =
-            PosixFilePermissions.fromString("rwx------");
+    /** How long a step refused because the file is open elsewhere is taken again. */
+    private static final java.time.Duration SHARED_FOR = java.time.Duration.ofSeconds(2);
 
-    private static final Set<PosixFilePermission> OWNER_ONLY_FILE =
-            PosixFilePermissions.fromString("rw-------");
-
-    /** Group or others may write. */
-    private static final int OTHERS_WRITE = 0022;
-
-    /** Only an entry's owner may rename or remove it. */
-    private static final int STICKY = 01000;
+    private static final java.time.Duration SHARED_PAUSE = java.time.Duration.ofMillis(50);
 
     /** The lock files this process holds. */
     private static final Set<Path> HELD = ConcurrentHashMap.newKeySet();
@@ -60,11 +53,15 @@ public final class AddressFile implements AutoCloseable {
 
     private final FileLock lock;
 
+    private final PrivateFiles files;
+
     private AddressFile(
             final Path directory,
             final Path lockFile,
             final FileChannel lockChannel,
-            final FileLock lock) {
+            final FileLock lock,
+            final PrivateFiles files) {
+        this.files = files;
         this.directory = directory;
         this.lockFile = lockFile;
         this.lockChannel = lockChannel;
@@ -75,13 +72,24 @@ public final class AddressFile implements AutoCloseable {
      * Checks the runtime directory and takes this account's one planner lock.
      *
      * @param runtimeDirectory The account's runtime directory, {@code XDG_RUNTIME_DIR}; may be
-     *     empty when it is not set.
+     *     empty when it is not set, and is then {@code %LOCALAPPDATA%} on Windows.
      * @return The address file, not yet written.
      * @throws IllegalStateException When the directory is not the account's alone, or a planner
      *     already runs.
      */
     public static AddressFile open(final String runtimeDirectory) {
-        return open(runtimeDirectory, Path.of("/run/user"));
+        return open(runtimeDirectory, Path.of("/run/user"), PrivateFiles.of(System.getenv()));
+    }
+
+    /**
+     * Checks the runtime directory and takes the lock with this platform's files.
+     *
+     * @param runtimeDirectory The account's runtime directory; may be empty when it is not set.
+     * @param runUser Where the system makes each account's runtime directory, named by its uid.
+     * @return The address file, not yet written.
+     */
+    static AddressFile open(final String runtimeDirectory, final Path runUser) {
+        return open(runtimeDirectory, runUser, PrivateFiles.of(System.getenv()));
     }
 
     /**
@@ -93,14 +101,35 @@ public final class AddressFile implements AutoCloseable {
      * @throws IllegalStateException when none is given or it is the account's own
      */
     static void requireApartFromTheAccount(final String runtimeDirectory, final Path runUser) {
+        requireApartFromTheAccount(
+                runtimeDirectory, runUser, PrivateFiles.of(System.getenv()), System.getenv());
+    }
+
+    /**
+     * Refuses the account's own runtime directory on the platform the files are of.
+     *
+     * @param runtimeDirectory The runtime directory given; may be empty when it is not set.
+     * @param runUser Where the system makes each account's runtime directory on Linux.
+     * @param files The platform's private files.
+     * @param environment The planner's environment, for {@code LOCALAPPDATA} on Windows.
+     * @throws IllegalStateException when none is given or it is the account's own
+     */
+    static void requireApartFromTheAccount(
+            final String runtimeDirectory,
+            final Path runUser,
+            final PrivateFiles files,
+            final Map<String, String> environment) {
         final Path own;
-        try {
-            own = runUser.resolve(String.valueOf(ownUid()));
-        } catch (IOException e) {
-            throw new IllegalStateException("this account's uid cannot be read: " + e, e);
+        if (files.windows()) {
+            own = files.base(PrivateFiles.Kind.RUNTIME, environment);
+        } else {
+            try {
+                own = runUser.resolve(String.valueOf(ownUid()));
+            } catch (IOException e) {
+                throw new IllegalStateException("this account's uid cannot be read: " + e, e);
+            }
         }
-        if (runtimeDirectory.isBlank()
-                || Path.of(runtimeDirectory).toAbsolutePath().normalize().equals(own)) {
+        if (runtimeDirectory.isBlank() || same(Path.of(runtimeDirectory), own)) {
             throw new IllegalStateException(
                     "--mock needs a runtime directory of its own: XDG_RUNTIME_DIR is '"
                             + runtimeDirectory
@@ -115,31 +144,36 @@ public final class AddressFile implements AutoCloseable {
      *
      * @param runtimeDirectory The account's runtime directory; may be empty when it is not set.
      * @param runUser Where the system makes each account's runtime directory, named by its uid.
+     * @param files The platform's private files.
      * @return The address file, not yet written.
      */
-    static AddressFile open(final String runtimeDirectory, final Path runUser) {
-        final int uid;
-        try {
-            uid = ownUid();
-        } catch (IOException e) {
-            throw new IllegalStateException("this account's uid cannot be read: " + e, e);
+    static AddressFile open(
+            final String runtimeDirectory, final Path runUser, final PrivateFiles files) {
+        final Path runtime;
+        if (!runtimeDirectory.isBlank()) {
+            runtime = Path.of(runtimeDirectory);
+        } else if (files.windows()) {
+            runtime = files.base(PrivateFiles.Kind.RUNTIME, System.getenv());
+        } else {
+            // The window reads the same place when XDG_RUNTIME_DIR is unset; the checks below
+            // still hold for it.
+            try {
+                runtime = runUser.resolve(String.valueOf(ownUid()));
+            } catch (IOException e) {
+                throw new IllegalStateException("this account's uid cannot be read: " + e, e);
+            }
         }
-        // The window reads the same place when XDG_RUNTIME_DIR is unset; the checks below still
-        // hold for it.
-        final Path runtime =
-                runtimeDirectory.isBlank()
-                        ? runUser.resolve(String.valueOf(uid))
-                        : Path.of(runtimeDirectory);
         if (!runtime.isAbsolute()) {
             throw new IllegalStateException(
                     "XDG_RUNTIME_DIR is '" + runtimeDirectory + "', not an absolute path");
         }
         try {
-            requireOwnersAlone(runtime, uid);
-            requireNoWayRound(runtime, uid);
-            final Path directory = runtime.resolve(DIRECTORY);
-            createOwnerOnlyDirectory(directory);
-            requireOwnersAlone(directory, uid);
+            final Path directory =
+                    files.directories(
+                            runtime,
+                            false,
+                            PrivateFiles.Kind.RUNTIME,
+                            files.steps(PrivateFiles.Kind.RUNTIME));
             final Path lockFile = directory.resolve(LOCK);
             // A second channel on the lock file, even one closed at once, would let go of this
             // process's lock; so a start here is refused before it opens one.
@@ -147,19 +181,19 @@ public final class AddressFile implements AutoCloseable {
                 throw alreadyRuns(directory);
             }
             try {
-                final FileChannel channel = openLock(lockFile, uid);
+                final FileChannel channel = openLock(lockFile, files);
                 final FileLock lock = lockOrClose(channel);
                 if (lock == null) {
                     throw alreadyRuns(directory);
                 }
                 // Held, so a file here is a dead planner's; gone before a window reads its port.
-                Files.deleteIfExists(directory.resolve(FILE));
-                return new AddressFile(directory, lockFile, channel, lock);
+                whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+                return new AddressFile(directory, lockFile, channel, lock, files);
             } catch (IOException | RuntimeException e) {
                 HELD.remove(lockFile);
                 throw e;
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             throw new IllegalStateException(
                     "the planner's runtime directory " + runtime + " cannot be used: " + e, e);
         }
@@ -184,17 +218,20 @@ public final class AddressFile implements AutoCloseable {
                                     StandardOpenOption.CREATE_NEW,
                                     StandardOpenOption.WRITE,
                                     LinkOption.NOFOLLOW_LINKS),
-                            PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE))) {
+                            files.ownerOnlyFile())) {
                 final ByteBuffer bytes = ByteBuffer.wrap(json.getBytes(StandardCharsets.UTF_8));
                 while (bytes.hasRemaining()) {
                     out.write(bytes);
                 }
             }
-            Files.move(
-                    temporary,
-                    directory.resolve(FILE),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
+            final Path written = temporary;
+            whileShared(
+                    () ->
+                            Files.move(
+                                    written,
+                                    directory.resolve(FILE),
+                                    StandardCopyOption.ATOMIC_MOVE,
+                                    StandardCopyOption.REPLACE_EXISTING));
         } catch (IOException e) {
             throw new IllegalStateException(
                     "the address file " + directory.resolve(FILE) + " cannot be written: " + e, e);
@@ -212,7 +249,7 @@ public final class AddressFile implements AutoCloseable {
     @Override
     public void close() {
         try {
-            Files.deleteIfExists(directory.resolve(FILE));
+            whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
         } catch (IOException e) {
             throw new IllegalStateException(
                     "the address file " + directory.resolve(FILE) + " cannot be deleted: " + e, e);
@@ -228,54 +265,56 @@ public final class AddressFile implements AutoCloseable {
         }
     }
 
-    private static int ownUid() throws IOException {
-        return (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:uid");
+    /**
+     * Whether two paths name one directory: by the file system where both exist, so a short name, a
+     * link or another spelling of the account's own directory is told for what it is.
+     */
+    private static boolean same(final Path given, final Path own) {
+        final Path plain = given.toAbsolutePath().normalize();
+        if (plain.equals(own)) {
+            return true;
+        }
+        try {
+            return Files.exists(plain) && Files.exists(own) && Files.isSameFile(plain, own);
+        } catch (IOException e) {
+            // Not told apart: refused as the account's own.
+            return true;
+        }
     }
 
-    private static void requireOwnersAlone(final Path path, final int uid) throws IOException {
-        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IllegalStateException(path + " is not a directory, or is a link");
-        }
-        final int owner = (Integer) Files.getAttribute(path, "unix:uid", LinkOption.NOFOLLOW_LINKS);
-        if (owner != uid) {
-            throw new IllegalStateException(
-                    path + " belongs to account " + owner + ", not to this one (" + uid + ")");
-        }
-        final Set<PosixFilePermission> mode =
-                Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS);
-        if (!mode.equals(OWNER_ONLY_DIRECTORY)) {
-            throw new IllegalStateException(
-                    path + " has mode " + PosixFilePermissions.toString(mode) + ", not rwx------");
-        }
+    /** A step on the address file. */
+    private interface FileStep {
+
+        /** Takes it. */
+        void take() throws IOException;
     }
 
     /**
-     * Refuses a runtime directory that is not in its plain form, is reached through a link anywhere
-     * on its way, or lies under a directory another account could rename it out of: each lets the
-     * place be swapped between the check and the write.
+     * Takes a step again for a short while when Windows refuses it because a window has the file
+     * open, then fails with the last refusal.
      */
-    private static void requireNoWayRound(final Path runtime, final int uid) throws IOException {
-        if (!runtime.equals(runtime.normalize())) {
-            throw new IllegalStateException(runtime + " is not in its plain form");
-        }
-        final Path real = runtime.toRealPath();
-        if (!real.equals(runtime)) {
-            throw new IllegalStateException(runtime + " is reached through a link, as " + real);
-        }
-        for (Path above = runtime.getParent(); above != null; above = above.getParent()) {
-            final int owner =
-                    (Integer) Files.getAttribute(above, "unix:uid", LinkOption.NOFOLLOW_LINKS);
-            final int mode =
-                    (Integer) Files.getAttribute(above, "unix:mode", LinkOption.NOFOLLOW_LINKS);
-            if (owner != 0 && owner != uid) {
-                throw new IllegalStateException(
-                        above + " belongs to account " + owner + ", neither root nor this one");
-            }
-            if ((mode & OTHERS_WRITE) != 0 && (mode & STICKY) == 0) {
-                throw new IllegalStateException(
-                        above + " is a directory others can write, without the sticky bit");
+    private static void whileShared(final FileStep step) throws IOException {
+        final long end = System.nanoTime() + SHARED_FOR.toNanos();
+        while (true) {
+            try {
+                step.take();
+                return;
+            } catch (final java.nio.file.FileSystemException e) {
+                if (System.nanoTime() > end || e instanceof java.nio.file.NoSuchFileException) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(SHARED_PAUSE.toMillis());
+                } catch (final InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
             }
         }
+    }
+
+    private static int ownUid() throws IOException {
+        return (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:uid");
     }
 
     private static IllegalStateException alreadyRuns(final Path directory) {
@@ -284,19 +323,8 @@ public final class AddressFile implements AutoCloseable {
                         + directory.resolve(FILE));
     }
 
-    /** Makes the directory owner-only unless it exists; one made by a racing start is checked. */
-    private static void createOwnerOnlyDirectory(final Path directory) throws IOException {
-        try {
-            Files.createDirectory(
-                    directory, PosixFilePermissions.asFileAttribute(OWNER_ONLY_DIRECTORY));
-        } catch (FileAlreadyExistsException exists) {
-            return;
-        }
-        // The umask may have taken bits the attribute asked for; owner-only is set again exactly.
-        Files.setPosixFilePermissions(directory, OWNER_ONLY_DIRECTORY);
-    }
-
-    private static FileChannel openLock(final Path file, final int uid) throws IOException {
+    private static FileChannel openLock(final Path file, final PrivateFiles files)
+            throws IOException {
         final FileChannel channel =
                 FileChannel.open(
                         file,
@@ -304,15 +332,11 @@ public final class AddressFile implements AutoCloseable {
                                 StandardOpenOption.CREATE,
                                 StandardOpenOption.WRITE,
                                 LinkOption.NOFOLLOW_LINKS),
-                        PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE));
+                        files.ownerOnlyFile());
         try {
-            final int owner =
-                    (Integer) Files.getAttribute(file, "unix:uid", LinkOption.NOFOLLOW_LINKS);
-            if (owner != uid) {
-                throw new IllegalStateException(file + " belongs to another account");
-            }
+            files.requireOwnFile(file, false);
             return channel;
-        } catch (IOException | RuntimeException e) {
+        } catch (RuntimeException e) {
             channel.close();
             throw e;
         }

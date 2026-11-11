@@ -325,4 +325,20 @@ class AddressFileTest {
                 .isInstanceOf(IllegalStateException.class);
         AddressFile.requireApartFromTheAccount(runUser.resolve("test").toString(), runUser);
     }
+
+    @Test
+    void theMockModeRefusesTheAccountsOwnRuntimeDirectoryReachedThroughALink(
+            @TempDir final Path runUser, @TempDir final Path elsewhere) throws Exception {
+        // A mock started there would replace and then delete the person's own planner.json.
+        final Path own =
+                Files.createDirectory(
+                        runUser.resolve(
+                                String.valueOf(
+                                        Files.getAttribute(Path.of("/proc/self"), "unix:uid"))));
+        final Path link = Files.createSymbolicLink(elsewhere.resolve("runtime"), own);
+        assertThatThrownBy(() -> AddressFile.requireApartFromTheAccount(link.toString(), runUser))
+                .as("the account's own directory under another name")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("--mock needs a runtime directory of its own");
+    }
 }

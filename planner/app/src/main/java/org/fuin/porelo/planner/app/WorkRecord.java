@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -10,11 +11,10 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.PosixFilePermissions;
-import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
@@ -37,10 +38,6 @@ public final class WorkRecord implements AutoCloseable {
 
     static final int MOST_RECORD = 16 * 1024 * 1024;
     private static final int END_RESERVE = 2 * 1024 * 1024;
-    private static final Set<java.nio.file.attribute.PosixFilePermission> DIRECTORY =
-            PosixFilePermissions.fromString("rwx------");
-    private static final Set<java.nio.file.attribute.PosixFilePermission> FILE =
-            PosixFilePermissions.fromString("rw-------");
     private static final JsonMapper JSON =
             JsonMapper.builder()
                     .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
@@ -52,13 +49,21 @@ public final class WorkRecord implements AutoCloseable {
                     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
                     .build();
     private final Map<String, String> environment;
+    private final PrivateFiles files;
     private final boolean memory;
     private final Map<String, Entry> entries = new HashMap<>();
 
     /** Keeps mock records in memory and resolves real state paths only when a project is used. */
     public WorkRecord(final Map<String, String> environment, final boolean memory) {
+        this(environment, memory, PrivateFiles.of(environment));
+    }
+
+    /** Keeps records with the given platform's private files. */
+    WorkRecord(
+            final Map<String, String> environment, final boolean memory, final PrivateFiles files) {
         this.environment = Map.copyOf(environment);
         this.memory = memory;
+        this.files = files;
     }
 
     /** The versioned on-disk envelope binds runs to their planning source. */
@@ -104,100 +109,25 @@ public final class WorkRecord implements AutoCloseable {
     }
 
     private Path directory(final String project) throws IOException {
-        final String home = environment.get("HOME");
-        if (home != null) {
-            absolute(home);
-        }
-        final String xdg = environment.get("XDG_STATE_HOME");
-        final Path root;
-        if (xdg != null) {
-            root = absolute(xdg);
-        } else if (home != null) {
-            root = absolute(home).resolve(".local/state");
-        } else {
-            throw unavailable(project);
-        }
-        final Path directory = root.resolve("porelo-planner").resolve(project);
-        Path current = directory.getRoot();
-        if (current == null) {
-            throw unavailable(project);
-        }
-        for (final Path piece : directory) {
-            current = current.resolve(piece);
-            if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
-                try {
-                    Files.createDirectory(current, PosixFilePermissions.asFileAttribute(DIRECTORY));
-                } catch (final java.nio.file.FileAlreadyExistsException raced) {
-                    /* Another owner operation may have created the ancestor. */
-                }
-            }
-            if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)
-                    || Files.isSymbolicLink(current)) {
-                throw unavailable(project);
-            }
-            safeAncestor(current);
-        }
-        privatePath(java.util.Objects.requireNonNull(directory.getParent()), true);
-        privatePath(directory, true);
-        return directory;
-    }
-
-    private static Path absolute(final String value) {
-        final Path path = Path.of(value);
-        if (!path.isAbsolute()) {
-            throw new IllegalArgumentException("A state root must be absolute");
-        }
-        for (final Path piece : path) {
-            if (piece.toString().equals("..")) {
-                throw new IllegalArgumentException("A state root cannot traverse parents");
-            }
-        }
-        return path;
-    }
-
-    private static void safeAncestor(final Path path) throws IOException {
-        final int mode =
-                ((Number) Files.getAttribute(path, "unix:mode", LinkOption.NOFOLLOW_LINKS))
-                        .intValue();
-        final int uid =
-                ((Number) Files.getAttribute(path, "unix:uid", LinkOption.NOFOLLOW_LINKS))
-                        .intValue();
-        final String account = System.getProperty("user.name");
-        if (account == null) {
-            throw new IOException("The owner identity is unavailable");
-        }
-        final UserPrincipal owner =
-                path.getFileSystem().getUserPrincipalLookupService().lookupPrincipalByName(account);
-        // Sticky system directories protect our own entries; other writable ancestors do not.
-        if (uid != 0 && !Files.getOwner(path, LinkOption.NOFOLLOW_LINKS).equals(owner)
-                || (mode & 0022) != 0 && (mode & 01000) == 0) {
-            throw new IOException("The work path can be replaced by another account");
+        try {
+            final List<String> steps = new ArrayList<>(files.steps(PrivateFiles.Kind.STATE));
+            steps.add(project);
+            return files.directories(
+                    files.base(PrivateFiles.Kind.STATE, environment),
+                    true,
+                    PrivateFiles.Kind.STATE,
+                    steps);
+        } catch (final IllegalStateException | UncheckedIOException refused) {
+            throw new IOException(refused.getMessage(), refused);
         }
     }
 
-    private static void privatePath(final Path path, final boolean directory) throws IOException {
-        final BasicFileAttributes attrs =
-                Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        final String account = System.getProperty("user.name");
-        if (account == null) {
-            throw new IOException("The owner identity is unavailable");
-        }
-        final UserPrincipal owner =
-                path.getFileSystem().getUserPrincipalLookupService().lookupPrincipalByName(account);
-        if (attrs.isSymbolicLink()
-                || (directory ? !attrs.isDirectory() : !attrs.isRegularFile())
-                || !Files.getOwner(path, LinkOption.NOFOLLOW_LINKS).equals(owner)
-                || !Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS)
-                        .equals(directory ? DIRECTORY : FILE)
-                || !directory
-                        && ((Number)
-                                                Files.getAttribute(
-                                                        path,
-                                                        "unix:nlink",
-                                                        LinkOption.NOFOLLOW_LINKS))
-                                        .intValue()
-                                != 1) {
-            throw new IOException("The work path is not private");
+    /** Refuses a record file that is a link, another account's, open to others or linked twice. */
+    private void privateFile(final Path path) throws IOException {
+        try {
+            files.requireOwnFile(path, true);
+        } catch (final IllegalStateException | UncheckedIOException refused) {
+            throw new IOException(refused.getMessage(), refused);
         }
     }
 
@@ -256,11 +186,11 @@ public final class WorkRecord implements AutoCloseable {
                 }
                 final Path path = dir.resolve("work.lock");
                 try {
-                    Files.createFile(path, PosixFilePermissions.asFileAttribute(FILE));
+                    Files.createFile(path, files.ownerOnlyFile());
                 } catch (final java.nio.file.FileAlreadyExistsException exists) {
                     /* The stable lock name survives record replacement. */
                 }
-                privatePath(path, false);
+                privateFile(path);
                 final FileChannel channel =
                         FileChannel.open(path, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
                 final FileLock acquired;
@@ -299,7 +229,7 @@ public final class WorkRecord implements AutoCloseable {
                 if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                     return new WorkRun.Snapshot(0, Map.of());
                 }
-                privatePath(path, false);
+                privateFile(path);
                 if (Files.size(path) > MOST_RECORD) {
                     throw unavailable(project);
                 }
@@ -442,7 +372,7 @@ public final class WorkRecord implements AutoCloseable {
             try {
                 final Path target = dir.resolve("work.json");
                 if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-                    privatePath(target, false);
+                    privateFile(target);
                 }
                 temporary = dir.resolve("work-" + UUID.randomUUID() + ".tmp");
                 try (FileChannel channel =
@@ -452,7 +382,7 @@ public final class WorkRecord implements AutoCloseable {
                                         StandardOpenOption.CREATE_NEW,
                                         StandardOpenOption.WRITE,
                                         LinkOption.NOFOLLOW_LINKS),
-                                PosixFilePermissions.asFileAttribute(FILE))) {
+                                files.ownerOnlyFile())) {
                     final ByteBuffer buffer = ByteBuffer.wrap(bytes);
                     while (buffer.hasRemaining()) {
                         channel.write(buffer);
@@ -465,9 +395,13 @@ public final class WorkRecord implements AutoCloseable {
                         StandardCopyOption.ATOMIC_MOVE,
                         StandardCopyOption.REPLACE_EXISTING);
                 temporary = null;
-                try (FileChannel channel =
-                        FileChannel.open(dir, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-                    channel.force(true);
+                // Windows opens no directory as a file; its move is durable once it returns.
+                if (!files.windows()) {
+                    try (FileChannel channel =
+                            FileChannel.open(
+                                    dir, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                        channel.force(true);
+                    }
                 }
             } catch (final IOException | UnsupportedOperationException failed) {
                 throw unavailable(project);

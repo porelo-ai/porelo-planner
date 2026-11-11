@@ -1,0 +1,35 @@
+name: Windows trial
+
+# A trial of the planner's Windows code on GitHub's Windows runner, for a branch under `windows/` only, so it is seen
+# there before it reaches `main`. It publishes nothing, and its name says so: the Windows build that publishes is a job
+# of the Build itself.
+#
+# Every wait is bounded: the steps have their own limits, well under the job's.
+on:
+    push:
+        branches: ['windows/**']
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    windows:
+        name: The tests marked windows
+        runs-on: windows-2025
+        timeout-minutes: 30
+        steps:
+            # Without the job's token in .git/config: nothing here pushes with git.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            # The runner's own Java 25 runs the JVM tests; the pinned GraalVM is the Build's. The formatting is checked
+            # in the Build on Linux, where shfmt and the checkout's line ends are the ones it checks.
+            - name: The tests marked windows
+              timeout-minutes: 20
+              shell: bash
+              run: |
+                  export JAVA_HOME="$JAVA_HOME_25_X64"
+                  ./mvnw -B -s settings.xml -pl planner/store/git,planner/app -am test -Dgroups=windows \
+                      -Dsurefire.failIfNoSpecifiedTests=false -Dspotless.check.skip=true
