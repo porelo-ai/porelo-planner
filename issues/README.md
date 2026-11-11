@@ -11,7 +11,6 @@ left out.
 |---|---|---|---|
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
-| <a id="pl40"></a>[PL40](PL40-A-Storys-Work-History-Kept-In-The-Store.md) | - | - | A story's runs - order, tasks, each issue's progress, the reading rounds spent and the tasks' outcomes - are kept by the store's adapter beside the story, so the history survives another machine, a reinstall and reaches everyone who plans the project |
 | <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | - | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
@@ -69,3 +68,9 @@ left out.
 | <a id="pl07"></a>[PL07](PL07-The-Work-Rules-Read-From-The-Workflow.md) | S | [PL03](README.md#pl03) | Which state starts which work read from `stories/work.yml` and checked, its faults answered beside the workflow |
 | <a id="pl04"></a>[PL04](PL04-The-Board-Read-Over-REST.md) | M | [PL03](README.md#pl03) | The board's reads in the OpenAPI description and served over REST; a story's own state over its issues' derived one |
 | <a id="pl16"></a>[PL16](PL16-The-Planners-HTTP-Client-In-The-Screen-Package.md) | M | [PL04](README.md#pl04) | A PlanningSource over HTTP in the screen package: planner.json read, the project PUT, the board reads, problem+json as PlanningRefusal; the window wraps it and hands it in |
+
+## Rejected
+
+| # | Title | Why |
+|---|---|---|
+| <a id="pl40"></a>PL40 | A Story's Work History Kept In The Store | A story's run is worth keeping only while it works, and Git's commits are its history; what must be kept is a task's results, a story of its own across the repositories |
