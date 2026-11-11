@@ -5,17 +5,21 @@
   "$schema": "issue-1.json",
   "id": "PL48",
   "title": "Sizes, Folded Boxes And Folded Cards On The Board",
-  "state": "Accepted",
+  "state": "Analyzed",
   "size": "M",
   "priority": "Medium",
   "rank": 31,
-  "blockedBy": [],
+  "blockedBy": ["PL47"],
+  "openQuestions": 1,
   "covers": "Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority"
 }
 ```
 
-**Size:** M - three changes in the screen package alone, each with its widget test; the story's size comes from the
-board's answer once a story carries one.
+**Size:** M - three changes in the screen package's board view and its preferences, each with its widget test, and
+the story's size read from a member the board's answer gains first; no contract of its own.
+
+**Estimate:** 67 min, the measured median of M. Uncertain: whether a size badge fits the 136-pixel tiles of a narrowed
+column beside mark, number and menu; existing tests that find cards of a box folded by default.
 
 **What must be true.** A person sees each story's and issue's size as a badge beside its priority, and can fold away
 what they do not need: a state's box down to its heading, and a single story card down to its number and priority,
@@ -23,21 +27,52 @@ without the column changing its width.
 
 ## Plan
 
-- **The size badge.** Today an issue row shows its size as plain text after its state, and a story shows none. A
-  badge, XS to XL, stands beside the priority chip on a story card, on an issue row inside a card and on the compact
-  tiles of a narrowed column; `-` shows no badge. A story's size is read from the board's answer once it carries one
-  ([PL47](README.md#pl47)).
-- **A folded box.** Today a state's chevron (`foldState` in `planning_board.dart`, drawn in `planning_view.dart`)
-  turns its tiles into the compact one-line rows a narrowed column shows. It folds the box to its heading instead,
-  name and count kept, its tiles and issues hidden; the column keeps its width. Only the column's own chevron
-  narrows the column.
-- **A folded card.** A story card gets a control of its own that folds it to its heading, number and priority; its
-  text, issue list and progress bar are hidden, the cards beside it stay open. The board keeps which cards are folded
-  as it keeps folded boxes.
-- Red first: a widget test that folds a box finds none of its cards and the column at its full width; one that folds
-  a card finds its number and not its text, and the card beside it open.
+Everything is in `screen/`; the planner's Java side is untouched. Blocked by [PL47](README.md#pl47), which gives the
+board's `Story` its `size` in `planner.yaml`; until then a story has no size to show.
+
+- **The size badge.** Today `_buildCard` in `screen/lib/src/ui/planning_view.dart` shows a story's number, the
+  `_priority` chip and the menu, no size; an issue row inside an open card shows `issue.size` as plain text after
+  `issue.state`; the compact tile of a narrowed column (the `folded` branch of `_state`) shows the priority mark,
+  number and menu. `PlanStory` in `screen/lib/src/models.dart` has no `size`; `PlanIssue.size` is read with
+  `_planText` and is empty when unsaid. Steps: `PlanStory.size` read as `PlanIssue.size` is (empty when absent, and
+  carried by `PlanStory.withMoves`); a `_size` badge styled as `_priority`, shown on the story card beside the
+  priority chip, on the issue row in place of the plain text (an issue carries no priority; the badge stands beside
+  its state), and on the compact tile beside the mark. An empty size or `-` shows no badge.
+- **A folded box.** Today `foldState` (`PlanningBoard` in `screen/lib/src/planning_board.dart`) toggles
+  `PlanningPreferences.foldedStates`, and `_state` draws a folded state as compact tiles; the column's width already
+  depends only on `foldedPhases` (`_phase`). Change: a state folded by its own chevron shows its heading row only
+  (name, count, chevron) and no tile; a state inside a folded phase keeps the compact tiles, so only the column's
+  chevron narrows the column and shows tiles. The box stays a `DragTarget`, so a story can still be dropped on it.
+- **A folded card.** `PlanningPreferences` gains `foldedStories` and `PlanningBoard` a `foldStory(id)`, as
+  `expandedStories` and `expand`. The card's top row gets a fold button (`planning-fold-story <id>`); folded, the card
+  shows number, priority, size, menu and a pending move or its refusal, and hides title, work line, reading line,
+  issue list and progress bar. The fold flag joins the inputs of `_card`'s cache, or a folded card is served stale.
+- Tests, all widget tests in `screen/test` over `FakePlanningSource` (`screen/test/support/fake_planning.dart`),
+  red first:
+  - Folding a box finds none of its cards and the phase at `PlanningStyle.column` width; harm: a fold that hides
+    nothing or narrows the column, so work in that state is lost from sight or the board reflows.
+  - Folding one card finds its number and not its title, and the card beside it with its title; harm: a fold that
+    reaches other cards hides their work. A second assertion that the folded card's own rebuild returns the folded
+    card guards the cache.
+  - A story and an issue of size M each show an M badge; a size `-` shows none. Harm: a wrong size is planned on.
+  - `planning_board_rebuild_test.dart` keeps passing: folding a box builds no card of another state.
 
 ## Acceptance
 
-- A folded box shows its heading only, at the column's width; a folded card shows its number and priority only; every
-  card and issue row with a size shows it as a badge.
+- A folded box shows its heading only, at the column's width; a narrowed column still shows its compact tiles.
+- A folded card shows its number, priority and size only, and the cards beside it stay open.
+- Every story card, issue row and compact tile with a size shows it as a badge; each new test has been seen red.
+- The screen module's Maven build passes locally: `dart format`, `dart analyze --fatal-infos` and `flutter test`.
+
+## Open questions
+
+- `PlanningPreferences.foldedStates` starts with `In analysis` folded, which today shows its stories as compact
+  tiles. Under this change a folded box shows no story at all. Should `In analysis` still start folded, now hiding
+  its stories until the person opens it, or start open?
+
+## To be checked
+
+- Whether a size badge fits the narrowed column's tile (`PlanningStyle.foldedColumn`, 136) beside the mark of
+  `PlanningStyle.foldedMark` width, the number and the dense menu, measured with the longest number of the mock board.
+- Which existing tests in `screen/test` and which of the window's planning tests over the mock board find a card in
+  a box folded by default; the window's ones are asked of the window's agent before the change.
