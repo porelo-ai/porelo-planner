@@ -15,8 +15,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 /**
@@ -249,36 +251,73 @@ final class WindowsPrivateFiles implements PrivateFiles {
         builder.environment().put("PORELO_PROTECT", protect);
         builder.environment().put("PORELO_PATHS", paths);
         builder.redirectInput(ProcessBuilder.Redirect.from(Path.of("NUL").toFile()));
+        return answer(builder, program, LIMIT);
+    }
+
+    /**
+     * Runs a program and answers what it printed, refusing a failure or an answer that is late.
+     *
+     * @param builder the program, ready to start
+     * @param program its name for a refusal
+     * @param limit how long it may take
+     * @return its standard output
+     */
+    static String answer(final ProcessBuilder builder, final String program, final Duration limit) {
+        final Process process;
         try {
-            final Process process = builder.start();
-            final CompletableFuture<String> out = read(process.getInputStream());
-            final CompletableFuture<String> err = read(process.getErrorStream());
-            if (!process.waitFor(LIMIT.toSeconds(), TimeUnit.SECONDS)) {
-                process.destroyForcibly();
+            process = builder.start();
+        } catch (final IOException e) {
+            throw new UncheckedIOException(program + " cannot be run: " + e.getMessage(), e);
+        }
+        try {
+            // Each output on a thread of its own: a reader queued behind busy work leaves the
+            // program blocked on a full pipe.
+            final FutureTask<String> out = read(process.getInputStream());
+            final FutureTask<String> err = read(process.getErrorStream());
+            final long deadline = System.nanoTime() + limit.toNanos();
+            if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
                 throw new IllegalStateException(
-                        program + " did not answer within " + LIMIT.toSeconds() + " s");
+                        program + " did not answer within " + limit.toSeconds() + " s");
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(
-                        program + " exited " + process.exitValue() + ": " + err.join().strip());
+                        program
+                                + " exited "
+                                + process.exitValue()
+                                + ": "
+                                + rest(err, deadline, program).strip());
             }
-            return out.join();
-        } catch (final IOException e) {
-            throw new UncheckedIOException(program + " cannot be run: " + e.getMessage(), e);
+            return rest(out, deadline, program);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(program + " was interrupted", e);
+        } finally {
+            process.destroyForcibly();
         }
     }
 
-    private static CompletableFuture<String> read(final InputStream stream) {
-        return CompletableFuture.supplyAsync(
-                () -> {
-                    try (stream) {
-                        return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-                    } catch (final IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                });
+    private static String rest(
+            final FutureTask<String> output, final long deadline, final String program)
+            throws InterruptedException {
+        try {
+            return output.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+        } catch (final ExecutionException e) {
+            throw new IllegalStateException(
+                    program + "'s output cannot be read: " + String.valueOf(e.getCause()), e);
+        } catch (final TimeoutException e) {
+            throw new IllegalStateException(program + "'s output did not end in time", e);
+        }
+    }
+
+    private static FutureTask<String> read(final InputStream stream) {
+        final FutureTask<String> task =
+                new FutureTask<>(
+                        () -> {
+                            try (stream) {
+                                return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+                            }
+                        });
+        Thread.ofVirtual().start(task);
+        return task;
     }
 }
