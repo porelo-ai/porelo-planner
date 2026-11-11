@@ -86,9 +86,11 @@ public final class ChangesRegistry implements AutoCloseable {
                 project,
                 new Followed(
                         changes,
+                        // At once first: the store may answer its clones as an earlier run left
+                        // them.
                         scheduler.scheduleWithFixedDelay(
                                 () -> poll(project, changes),
-                                interval.toMillis(),
+                                0,
                                 interval.toMillis(),
                                 TimeUnit.MILLISECONDS)));
         return subscription;

@@ -120,6 +120,19 @@ class ChangesRegistryTest {
     }
 
     @Test
+    void aProjectIsFetchedAsSoonAsAWindowFollowsIt() throws Exception {
+        // A planner just started answers its clones as an earlier run left them; waiting a whole
+        // interval for the first fetch shows the person faults that are long fixed.
+        projects.put("alpha", "one", null);
+        remote.put("one", "two");
+        final Changes.Subscription one = registry.subscribe("alpha");
+        assertThat(one.next(Duration.ofSeconds(5)).map(board -> board.revision().value()))
+                .as("the remote's board, long before the hour's poll")
+                .contains("two");
+        one.close();
+    }
+
+    @Test
     void aFollowedProjectIsPolledUntilItsLastStreamEnds() throws Exception {
         // A push elsewhere would never show, or Git would be called for nobody forever.
         try (ChangesRegistry polled =
