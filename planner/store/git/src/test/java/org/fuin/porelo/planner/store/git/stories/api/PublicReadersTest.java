@@ -171,7 +171,7 @@ class PublicReadersTest {
         assertThatThrownBy(() -> Project.read("project: []\nrepositories: {}\n", Set.of()))
                 .as("the index's own refusal of a project without a central remote")
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("project: missing required field upstream");
+                .hasMessage("project.yml project: missing required field upstream");
         assertThatThrownBy(
                         () ->
                                 Project.read(

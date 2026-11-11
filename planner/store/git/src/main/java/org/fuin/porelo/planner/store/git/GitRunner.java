@@ -35,12 +35,16 @@ public final class GitRunner {
                     "\\[rejected\\]|\\(stale info\\)|\\(fetch first\\)|\\(non-fast-forward\\)");
 
     /**
-     * User info in a URL, a slash in it too, and the token forms forges hand out, which Git may
-     * echo in an error.
+     * User info in a URL up to its last {@code @}, so a slash or an {@code @} in a password goes
+     * too; a user and password before an scp-like host; a query; and the token forms forges hand
+     * out, which Git may echo in an error.
      */
     private static final Pattern SECRET =
             Pattern.compile(
-                    "(?<=://)[^@\\s'\"]+@|\\b(gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_-]+"
+                    "(?<=://)[^\\s'\"]*@"
+                            + "|(?<![\\w.~/-])[\\w.~-]+:(?!//)[^\\s'\"]*@(?=[^\\s'\"@/]+:)"
+                            + "|(?<=[\\w/.~-])\\?[^\\s'\"]*=[^\\s'\"]*"
+                            + "|\\b(gh[pousr]_|github_pat_|glpat-)[A-Za-z0-9_-]+"
                             + "|(?i)(authorization:\\s*\\S+\\s+)\\S+");
 
     /** A local path, absolute, home-relative or a file URL; never a URL's path after its host. */

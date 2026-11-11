@@ -112,6 +112,42 @@ class StoriesIndexTest {
         return java.util.List.of(text.substring(start, text.lastIndexOf("```")).split("\n", -1));
     }
 
+    // Prevents a story's issue links from pointing at a host and owner its project does not use.
+    @Test
+    void aStoryOnAnotherHostAndOwnerLinksItsIssuesOnThatHost() throws IOException {
+        final Path dir = fixture("elsewhere");
+        Files.writeString(
+                dir.getParent().resolve("project.yml"),
+                """
+                project:
+                  central: "git@git.example.org:acme/porelo-plans.git"
+                repositories:
+                  widget:
+                    central: "ssh://git@git.example.org:2222/acme/team/porelo-widget.git"
+                    issues: [AB]
+                """);
+        final Path story = dir.resolve("ST1.md");
+        Files.writeString(
+                story,
+                Files.readString(story)
+                        .replace("\"issues\":[]", "\"issues\":[\"porelo-widget#AB01\"]"));
+        final IssueSource source =
+                repository ->
+                        repository.equals("porelo-widget")
+                                ? "# Issues\n\n## Review\n| AB01 | S | - | A widget. |\n"
+                                : "# Issues\n";
+
+        assertThat(StoriesIndex.write(dir, source).faults())
+                .as("a project on another host is indexed")
+                .isEmpty();
+        assertThat(Files.readString(story))
+                .as("the story links its issue on its repository's own host and owner")
+                .contains(
+                        "[porelo-widget#AB01](https://git.example.org/acme/team/porelo-widget"
+                                + "/blob/main/issues/README.md#ab01)")
+                .doesNotContain("github.com");
+    }
+
     // Prevents a writer from truncating content held by an existing reader or hard link.
     @Test
     void replacesChangedFilesWithoutChangingTheirPreviousInodes() throws IOException {

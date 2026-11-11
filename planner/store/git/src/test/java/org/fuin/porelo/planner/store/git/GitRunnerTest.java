@@ -13,6 +13,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class GitRunnerTest {
@@ -136,6 +137,34 @@ class GitRunnerTest {
                 .hasMessageNotContaining("ABCdef123")
                 .hasMessageNotContaining("abc.def")
                 .hasMessageContaining("https://***git.example.org");
+    }
+
+    // Prevents a credential in any clone URL shape Git echoes from reaching the window or the log.
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "me:s3cret@git.example.org:acme/x.git | s3cret",
+                "https://me:pa@ssword@git.example.org/acme/x.git | ssword",
+                "https://me:pa/ssword@git.example.org/acme/x.git | ssword",
+                "https://ghp_x@git.example.org/acme/x.git | ghp_x",
+                "https://my-token@git.example.org/acme/x.git | my-token",
+                "https://git.example.org/acme/x.git?access_token=s3cret | s3cret"
+            })
+    void aCredentialInAnyUrlShapeGitEchoesNeverReachesTheFailure(
+            final String url, final String secret) {
+        assertThatThrownBy(
+                        () ->
+                                RUNNER.run(
+                                        shell(
+                                                "echo \"fatal: unable to access '$1': refused\" >&2;"
+                                                        + " exit 128",
+                                                "sh",
+                                                url),
+                                        null))
+                .as("a failure quoting %s", url)
+                .hasMessageContaining("git.example.org")
+                .hasMessageNotContaining(secret);
     }
 
     @Test

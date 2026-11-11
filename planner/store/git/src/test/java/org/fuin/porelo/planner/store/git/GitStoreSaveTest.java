@@ -32,6 +32,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Saves moves into two repositories served over HTTPS, as the planner saves a project's moves: one
@@ -240,6 +242,44 @@ class GitStoreSaveTest {
         assertThat(saved.issue("CD01").orElseThrow().state())
                 .as("the move is saved against the project's workflow")
                 .isEqualTo("Idea");
+    }
+
+    // Prevents a credential in a central the saved project.yml names from reaching the window.
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "me:s3cret@git.example.org:porelo-ai/porelo-other.git | s3cret",
+                "https://me:pa@ssword@git.example.org/porelo-ai/porelo-other.git | ssword",
+                "https://ghp_secretToken@git.example.org/porelo-ai/porelo-other.git | secretToken",
+                "https://git.example.org/porelo-ai/porelo-other.git?access_token=s3cret | s3cret"
+            })
+    void aSaveOverACentralWithACredentialIsRefusedWithoutIt(
+            final String central, final String secret) throws Exception {
+        final Path file = repositories.work(OWN).resolve("project.yml");
+        Files.writeString(
+                file,
+                Files.readString(file)
+                        .replace("git@github.com:porelo-ai/porelo-other.git", central));
+        repositories.commit(OWN);
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final StoreException refused =
+                catchThrowableOfType(
+                        StoreException.class,
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        writes(Map.of("AB01", "Review"), Map.of(), List.of())));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.getMessage())
+                .as("the refusal never shows the credential %s", secret)
+                .contains("central")
+                .doesNotContain(secret);
+        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
     }
 
     @Test

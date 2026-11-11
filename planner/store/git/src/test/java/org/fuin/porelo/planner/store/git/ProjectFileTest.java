@@ -10,6 +10,8 @@ import java.util.Optional;
 import org.fuin.porelo.planner.store.StoreException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class ProjectFileTest {
 
@@ -140,6 +142,28 @@ class ProjectFileTest {
                 .as("a broken project.yml")
                 .isInstanceOf(StoreException.Unreadable.class)
                 .hasMessageContaining("porelo-project");
+    }
+
+    // Prevents a credential in a central project.yml names from reaching the window or the log.
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "me:s3cret@git.example.org:porelo-ai/porelo.git | s3cret",
+                "https://me:pa@ssword@git.example.org/porelo-ai/porelo.git | ssword",
+                "https://me:pa/ssword@git.example.org/porelo-ai/porelo.git | ssword",
+                "https://ghp_secretToken@git.example.org/porelo-ai/porelo.git | secretToken",
+                "https://git.example.org/porelo-ai/porelo.git?access_token=s3cret | s3cret"
+            })
+    void aRefusedCentralsCredentialNeverReachesTheRefusal(
+            final String central, final String secret) {
+        final Files remote = with(PROJECT.replace("git@github.com:porelo-ai/porelo.git", central));
+
+        assertThatThrownBy(() -> ProjectFile.repositories(remote, OWN, null, 10))
+                .as("refused naming the key, never the credential %s", secret)
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("central")
+                .hasMessageNotContaining(secret);
     }
 
     @Test

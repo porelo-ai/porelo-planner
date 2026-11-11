@@ -272,7 +272,14 @@ public final class StoriesIndex {
                     faults.add(name + ": " + issue + " is in no issue index of " + repository);
                     continue;
                 }
-                issues.add("- [" + issue + "](" + row.link(repository) + ") (" + row.state() + ")");
+                issues.add(
+                        "- ["
+                                + issue
+                                + "]("
+                                + row.link(project.web(repository))
+                                + ") ("
+                                + row.state()
+                                + ")");
                 issueStates.add(row.state());
                 issuesWithStates.add(issue + " " + row.state());
             }

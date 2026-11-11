@@ -58,15 +58,10 @@ public record IssueIndex(
     /**
      * Links to this row's durable anchor on the repository's main branch.
      *
-     * @param repository the repository name
+     * @param web where the repository's pages are, as {@link Project#web(String)} gives it
      * @return the row URL
      */
-    String link(String repository) {
-        return "https://github.com/porelo-ai/"
-                + repository
-                + "/blob/main/"
-                + path
-                + "#"
-                + number.toLowerCase(Locale.ROOT);
+    String link(String web) {
+        return web + "/blob/main/" + path + "#" + number.toLowerCase(Locale.ROOT);
     }
 }

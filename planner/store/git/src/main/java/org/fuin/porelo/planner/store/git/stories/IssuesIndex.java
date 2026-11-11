@@ -109,6 +109,9 @@ public final class IssuesIndex {
      */
     private final boolean project;
 
+    /** Where each repository's pages are, by name, as the project's {@code project.yml} says. */
+    private final Map<String, String> webs;
+
     private IssuesIndex(Path root, Workflow workflow) throws IOException {
         this.root = root;
         this.workflow = workflow;
@@ -116,6 +119,34 @@ public final class IssuesIndex {
         this.project =
                 parent != null && Files.isRegularFile(parent.resolve("stories/workflow.yml"));
         scan();
+        this.webs =
+                project && parent != null && waitsElsewhere()
+                        ? webs(parent.resolve("project.yml"))
+                        : Map.of();
+    }
+
+    // Only a wait on another repository needs project.yml, so a project converted from prose
+    // heads, which name no wait yet, is read without one.
+    private boolean waitsElsewhere() {
+        for (final Issue issue : all()) {
+            final IssueHead.Located located = issue.head();
+            if (located != null
+                    && located.head().blockedBy().stream().anyMatch(wait -> wait.contains("#")))
+                return true;
+        }
+        return false;
+    }
+
+    /**
+     * Each repository's pages, so a wait on another repository links its own host and owner; a
+     * project without its {@code project.yml} fails, since none of its waits could be linked.
+     */
+    private static Map<String, String> webs(Path file) throws IOException {
+        StoriesIndex.refuseSymlink(file);
+        final Project read = Project.read(file);
+        final Map<String, String> webs = new HashMap<>();
+        for (final String name : read.repositories().keySet()) webs.put(name, read.web(name));
+        return Map.copyOf(webs);
     }
 
     private static IssuesIndex of(Path root) throws IOException {
@@ -344,6 +375,12 @@ public final class IssuesIndex {
                                         + wait
                                         + " is another repository's issue; only"
                                         + " porelo-project's issues wait on one");
+                    else if (!webs.containsKey(wait.substring(0, wait.indexOf('#'))))
+                        faults.add(
+                                name
+                                        + ": /blockedBy: "
+                                        + wait
+                                        + " names a repository project.yml does not");
                 } else if (wait.equals(head.id()))
                     faults.add(name + ": /blockedBy: " + wait + " is the issue itself");
                 else if (!known.contains(wait))
@@ -646,16 +683,21 @@ public final class IssuesIndex {
             else {
                 final String repository = wait.substring(0, hash);
                 final String id = wait.substring(hash + 1);
+                final String web = webs.get(repository);
+                // A repository project.yml does not name is a fault already; its wait gets no link.
                 waits.add(
                         "`"
                                 + repository
-                                + "` ["
-                                + id
-                                + "](https://github.com/porelo-ai/"
-                                + repository
-                                + "/blob/main/issues/README.md#"
-                                + id.toLowerCase(Locale.ROOT)
-                                + ")");
+                                + "` "
+                                + (web == null
+                                        ? id
+                                        : "["
+                                                + id
+                                                + "]("
+                                                + web
+                                                + "/blob/main/issues/README.md#"
+                                                + id.toLowerCase(Locale.ROOT)
+                                                + ")"));
             }
         }
         return first(located)

@@ -26,11 +26,6 @@ import java.util.regex.Pattern;
  */
 public final class IssueLinks {
 
-    /** Where the repositories' indexes are published. */
-    private static final Pattern GITHUB =
-            Pattern.compile(
-                    "^https://github\\.com/porelo-ai/([\\w.-]+)/blob/main/([^#\\s]+)#([a-z]{1,3}\\d{2,3})$");
-
     /** An anchor anywhere on a page. */
     private static final Pattern ANCHOR = Pattern.compile("<a id=\"([^\"]+)\"></a>");
 
@@ -231,7 +226,7 @@ public final class IssueLinks {
             faults.add(where + named.group(1) + " links to " + target + ", another number's row");
             return;
         }
-        if (GITHUB.matcher(target).matches() || target.contains("://")) {
+        if (target.contains("://")) {
             // Another repository's index is not read here.
             return;
         }

@@ -18,8 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The repositories a project names in its {@code project.yml}: its own, under {@code project}, and
@@ -43,9 +41,6 @@ public record Project(
     private static final ObjectMapper YAML =
             new ObjectMapper(
                     new YAMLFactory().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION));
-    private static final Pattern UPSTREAM =
-            Pattern.compile(
-                    "^(?:git@github\\.com:|https://github\\.com/)porelo-ai/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\\.git)?$");
 
     /**
      * Refuses a project that does not hold its own repository or whose centrals name other
@@ -92,8 +87,22 @@ public record Project(
     public String central(String name) {
         final String central = centrals.get(name);
         if (central == null)
-            throw new IllegalArgumentException(name + " is not among the repositories");
+            throw new IllegalArgumentException(
+                    Central.shown(name) + " is not among the repositories");
         return central;
+    }
+
+    /**
+     * Where a repository's pages are linked: {@code https://}, its central's host and its path
+     * without {@code .git}, so a link names the project's own host and owner.
+     *
+     * @param name the name of a repository of the project
+     * @return the repository's address on the web, without a trailing slash
+     * @throws IllegalArgumentException when the project names no repository {@code name}, or its
+     *     central is no clone URL
+     */
+    public String web(String name) {
+        return Central.read("centrals." + Central.shown(name), "central", central(name)).web();
     }
 
     /** The prefixes in the order given, since a new issue takes a repository's first one. */
@@ -105,7 +114,7 @@ public record Project(
     private record Repository(String name, String central) {}
 
     static String own(Path file) throws IOException {
-        return repository(required(yaml(file), "project", FILE), "project").name();
+        return own(yaml(file)).name();
     }
 
     /**
@@ -123,6 +132,22 @@ public record Project(
         Objects.requireNonNull(ownPrefixes, "ownPrefixes");
         final JsonNode project = yaml(text, FILE);
         return of(project, own(project), ownPrefixes);
+    }
+
+    /**
+     * Reads a project from its {@code project.yml} as the stories index does, from the file's
+     * bytes, without the own repository's prefixes.
+     *
+     * @param file the project's {@code project.yml}
+     * @return the project
+     * @throws NoSuchFileException when there is no such file
+     */
+    static Project read(Path file) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            throw new NoSuchFileException(file.toString(), null, "project.yml is missing");
+        }
+        final JsonNode project = yaml(file);
+        return of(project, own(project), Set.of());
     }
 
     static Project read(Path file, Indexes indexes) throws IOException {
@@ -143,7 +168,7 @@ public record Project(
     }
 
     private static Repository own(JsonNode project) {
-        return repository(required(project, "project", FILE), "project");
+        return repository(required(project, "project", FILE), FILE + " project");
     }
 
     private static Project of(JsonNode project, Repository own, Set<String> ownPrefixes) {
@@ -158,7 +183,7 @@ public record Project(
         final var entries = declared.properties().iterator();
         while (entries.hasNext()) {
             final var entry = entries.next();
-            final String where = "project.yml repositories." + entry.getKey();
+            final String where = "project.yml repositories." + Central.shown(entry.getKey());
             final Repository repository = repository(entry.getValue(), where);
             final String name = repository.name();
             final Set<String> prefixes =
@@ -255,11 +280,6 @@ public record Project(
         // A project.yml not yet renamed still names the central remote "upstream".
         final String key = data.has("central") ? "central" : "upstream";
         final String central = string(data, key, where);
-        final Matcher match = UPSTREAM.matcher(central);
-        if (!match.matches()) {
-            throw new IllegalArgumentException(
-                    where + ": unsupported repository " + key + " " + central);
-        }
-        return new Repository(match.group(1), central);
+        return new Repository(Central.read(where, key, central).name(), central);
     }
 }

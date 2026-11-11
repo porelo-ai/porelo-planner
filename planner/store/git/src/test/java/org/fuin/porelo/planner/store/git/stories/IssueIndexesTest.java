@@ -238,7 +238,7 @@ class IssueIndexesTest {
                                 Workflow.read(
                                         java.nio.file.Path.of("src/test/resources/workflow.yml")))
                         .get("AB01");
-        assertThat(row.link("porelo-sample"))
+        assertThat(row.link("https://github.com/porelo-ai/porelo-sample"))
                 .as("the row link is made only from repository, safe path and number")
                 .isEqualTo(
                         "https://github.com/porelo-ai/porelo-sample/blob/main/issues/base/README.md#ab01");

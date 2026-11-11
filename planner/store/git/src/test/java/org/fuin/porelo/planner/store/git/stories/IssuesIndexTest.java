@@ -669,12 +669,115 @@ class IssuesIndexTest {
 
         Files.createDirectories(work.resolve("stories"));
         Files.copy(issues.resolve("workflow.yml"), work.resolve("stories/workflow.yml"));
+        Files.writeString(
+                work.resolve("project.yml"),
+                "project:\n  central: git@github.com:porelo-ai/porelo-project.git\n"
+                        + "repositories:\n  core:\n"
+                        + "    central: git@github.com:porelo-ai/porelo.git\n    issues: [B]\n");
         assertThat(IssuesIndex.write(issues).faults()).as("in porelo-project").isEmpty();
         assertThat(IssuesIndex.check(issues).faults()).isEmpty();
         assertThat(Files.readString(issues.resolve("README.md")))
                 .contains(
                         "| [EX12](README.md#ex12), `porelo` [B539](https://github.com/porelo-ai/"
                                 + "porelo/blob/main/issues/README.md#b539) |");
+    }
+
+    // Prevents a wait on another repository from linking a host and owner the project does not use.
+    @Test
+    void theProjectLinksAWaitOnAnotherRepositoryOnThatRepositorysHost() throws IOException {
+        IssuesIndex.convert(issues);
+        final Path ten = issues.resolve("EX10-Ten.md");
+        Files.writeString(
+                ten, Files.readString(ten).replace("[\"EX12\"]", "[\"EX12\", \"porelo#B539\"]"));
+        Files.createDirectories(work.resolve("stories"));
+        Files.copy(issues.resolve("workflow.yml"), work.resolve("stories/workflow.yml"));
+        Files.writeString(
+                work.resolve("project.yml"),
+                """
+                project:
+                  central: "git@git.example.org:acme/porelo-project.git"
+                repositories:
+                  core:
+                    central: "https://git.example.org/acme/porelo.git"
+                    issues: [B]
+                """);
+
+        assertThat(IssuesIndex.write(issues).faults()).as("the waits are known").isEmpty();
+        assertThat(Files.readString(issues.resolve("README.md")))
+                .as("the wait linked on its repository's own host and owner")
+                .contains(
+                        "`porelo` [B539](https://git.example.org/acme/porelo/blob/main/issues/"
+                                + "README.md#b539)")
+                .doesNotContain("github.com");
+    }
+
+    // Prevents a wait on a repository project.yml does not name from being linked by a guess.
+    @Test
+    void theProjectRefusesAWaitOnARepositoryProjectYmlDoesNotName() throws IOException {
+        IssuesIndex.convert(issues);
+        final Path ten = issues.resolve("EX10-Ten.md");
+        Files.writeString(
+                ten,
+                Files.readString(ten).replace("[\"EX12\"]", "[\"EX12\", \"porelo-other#B539\"]"));
+        Files.createDirectories(work.resolve("stories"));
+        Files.copy(issues.resolve("workflow.yml"), work.resolve("stories/workflow.yml"));
+        Files.writeString(
+                work.resolve("project.yml"),
+                "project:\n  central: git@git.example.org:acme/porelo-project.git\n"
+                        + "repositories: {}\n");
+
+        assertThat(IssuesIndex.write(issues).faults())
+                .as("the wait has no repository to be linked in")
+                .containsExactly(
+                        "EX10-Ten.md: /blockedBy: porelo-other#B539 names a repository"
+                                + " project.yml does not");
+        assertThat(Files.readString(issues.resolve("README.md")))
+                .as("nothing is written for a wait that cannot be linked")
+                .doesNotContain("B539");
+    }
+
+    // Prevents a project.yml saved with a byte order mark from failing the index it links.
+    @Test
+    void theProjectReadsAProjectFileOpeningWithAByteOrderMark() throws IOException {
+        IssuesIndex.convert(issues);
+        final Path ten = issues.resolve("EX10-Ten.md");
+        Files.writeString(
+                ten, Files.readString(ten).replace("[\"EX12\"]", "[\"EX12\", \"porelo#B539\"]"));
+        Files.createDirectories(work.resolve("stories"));
+        Files.copy(issues.resolve("workflow.yml"), work.resolve("stories/workflow.yml"));
+        Files.writeString(
+                work.resolve("project.yml"),
+                "\uFEFFproject:\n  central: git@git.example.org:acme/porelo-project.git\n"
+                        + "repositories:\n  core:\n"
+                        + "    central: https://git.example.org/acme/porelo.git\n"
+                        + "    issues: [B]\n");
+
+        assertThat(IssuesIndex.write(issues).faults()).as("the waits are known").isEmpty();
+        assertThat(Files.readString(issues.resolve("README.md")))
+                .as("the wait linked on its repository's host")
+                .contains("https://git.example.org/acme/porelo/blob/main/issues/README.md#b539");
+    }
+
+    // Prevents a project without project.yml from writing waits it cannot link or blaming a wait.
+    @Test
+    void theProjectWithoutAProjectFileIsRefusedNamingTheMissingFile() throws IOException {
+        IssuesIndex.convert(issues);
+        final Path ten = issues.resolve("EX10-Ten.md");
+        Files.writeString(
+                ten, Files.readString(ten).replace("[\"EX12\"]", "[\"EX12\", \"porelo#B539\"]"));
+        Files.createDirectories(work.resolve("stories"));
+        Files.copy(issues.resolve("workflow.yml"), work.resolve("stories/workflow.yml"));
+        final String before = Files.readString(issues.resolve("README.md"));
+
+        assertThatThrownBy(() -> IssuesIndex.write(issues))
+                .as("the write fails naming project.yml as missing")
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("project.yml")
+                .hasMessageContaining("missing")
+                .hasMessageNotContaining("B539");
+        assertThat(Files.readString(issues.resolve("README.md")))
+                .as("no index written")
+                .isEqualTo(before);
     }
 
     // Prevents porelo-project's conversion from losing which repository a wait belongs to.

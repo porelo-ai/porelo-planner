@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL42",
   "title": "A Project On Any Host And Owner",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Medium",
   "rank": 20,
@@ -29,6 +29,23 @@ repository's central from its clone URL and writes links that name the project's
   `project.yml`, not from a host and owner written into the code.
 - Red first: a `project.yml` whose centrals live on another host and owner is read with the right names, and the
   index written for it links to that host. Unit tests over files in a temporary directory.
+
+## Reading
+
+The code was read by another model. Fixed, each with a test seen red first:
+- A refused central never shows a credential: the refusal names the key and the value without its user information,
+  query or fragment, and a value that cannot be split safely is not shown; the scrub of Git's own messages takes the
+  same shapes (a password in the scp form, a password holding `@` or `/`, a token without a colon, a token in the
+  query).
+- A repository name follows the planner's own name rule, so an accepted central never fails later.
+- A central is accepted only where the clone URL check accepts it too, one rule rather than two.
+- The host is written in lower case and a port outside 1 to 65535 is refused.
+- An echoed value is cut and its separators escaped.
+- The planning repository's `project.yml` is read as the project's own reading reads it, and a missing one is named.
+- `Project`'s refusals name the file and pass names through the safe form.
+
+The rest, which only reads wrong or reaches beyond host and owner, is an issue of its own,
+[PL68](README.md#pl68).
 
 ## Acceptance
 

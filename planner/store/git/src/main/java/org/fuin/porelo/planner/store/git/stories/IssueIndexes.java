@@ -47,14 +47,7 @@ public final class IssueIndexes {
         final Map<String, IssueIndex> result = new LinkedHashMap<>();
         if (!index.startsWith(MARKER)) {
             refuseMarkers(index, "issues/README.md");
-            rows(
-                    index,
-                    "issues/README.md",
-                    "https://raw.githubusercontent.com/porelo-ai/"
-                            + repository
-                            + "/main/issues/README.md",
-                    result,
-                    workflow);
+            rows(index, "issues/README.md", repository + "/issues/README.md", result, workflow);
             return Collections.unmodifiableMap(result);
         }
         int offset = 0;
