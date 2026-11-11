@@ -5,18 +5,21 @@
   "$schema": "issue-1.json",
   "id": "PL35",
   "title": "A Test App For The Planning Screen",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "High",
   "rank": 22,
   "blockedBy": [],
-  "covers": "A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react",
-  "openQuestions": 1
+  "covers": "A small Flutter app, run only from the source, that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react"
 }
 ```
 
 **Size:** M - one new Flutter module beside `screen/` with its widget tests and its place in the build; no contract
-changes, since the app uses only what the screen package exports.
+changes, since the app uses only what the screen package exports. Dropping the build of a Linux app leaves the size:
+it was one Maven step, and the work lies in the forms, the recording hooks and the events fired by hand.
+
+**Estimate:** 67 min, the measured median of M. Uncertain: the drawn design is not yet read against the plan, and its
+forms may hold more than the plan names.
 
 **What must be true.** The planning screen can be tried alone, without the window, against a mock. Everything the
 window normally hands the screen can be entered by hand; every call the screen makes toward the window can be seen
@@ -46,6 +49,7 @@ A proposed design is drawn on a canvas; the operator reads it before the analysi
 - The data behind the screen can be switched in the app: the in-package fake, which needs no process, or the
   planner's mock mode over HTTP, which shows the real contract.
 - The app is a module of its own beside `screen/`, embedding the screen package by path.
+- The app is only run from the source by whoever tests the screen; it is never built as a package or shipped.
 
 ## Plan
 
@@ -56,8 +60,9 @@ Read in today's code: the screen package exports the view (`PlanningView`), the 
 (`planning_embedding.dart`, `planning_reports.dart` in the window) is the pattern; nothing of it is copied.
 
 - A module `screen-app/` beside `screen/`: a Flutter Linux desktop app with `porelo_planning` as a path dependency,
-  a `pom.xml` driving `flutter test` and `flutter build linux` as `screen/pom.xml` drives Flutter, listed only under
-  the root's profile `all` and run in the Build workflow's Flutter job; a `README.md` as every module has.
+  run with `flutter run -d linux` from the source; a `pom.xml` driving only `flutter test` as `screen/pom.xml` drives
+  Flutter, with no build of the app and nothing deployed or packaged, listed only under the root's profile `all` and
+  run in the Build workflow's Flutter job; a `README.md` as every module has, saying how to run it.
 - Recording hooks: a host, task changes, a Start hook and an agent list, each writing every call with its time and
   arguments into one log the app shows, copies and clears; the Start hook answers as the form says - a task and a
   container, a refusal with words, or a future that never completes.
@@ -75,11 +80,7 @@ Read in today's code: the screen package exports the view (`PlanningView`), the 
 
 - Run from the source with the fake and with a `--mock` planner: each of the hooks above appears in the log with its
   arguments when the screen calls it, each event fired by hand changes the board as the window's event would, and the
-  app's widget tests run in the Build workflow's Flutter job.
-
-## Open questions
-
-- Is the app only run from the source by whoever tests the screen, or built and shipped as a package too?
+  app's widget tests run in the Build workflow's Flutter job; no build publishes or packages the app.
 
 ## To be checked
 

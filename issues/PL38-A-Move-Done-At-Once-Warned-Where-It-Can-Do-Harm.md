@@ -5,13 +5,12 @@
   "$schema": "issue-1.json",
   "id": "PL38",
   "title": "A Move Done At Once, Warned Where It Can Do Harm",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 25,
   "blockedBy": [],
-  "covers": "A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel",
-  "openQuestions": 1
+  "covers": "A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel"
 }
 ```
 
@@ -19,8 +18,12 @@
 flow rewritten from a list of unsaved moves to one save per move behind a warning; which move warns of what is
 decided first.
 
+**Estimate:** 113 min, the measured median of L. Uncertain: step 3 may find further kinds of move that need a warning,
+each a new warning kind in the core, the contract and the screen.
+
 **What must be true.** What the person does on the board happens at once: there is no list of unsaved moves and no
-Save or Undo. Before a move that can do harm, the screen warns and the person confirms or cancels.
+Save or Undo. A move with no warning is pushed the moment it is dropped, with no wait and no time to take it back.
+Before a move that can do harm, the screen warns and the person confirms or cancels.
 
 - **Running work.** A story or issue with agent tasks still running - in Implementing, Reading, Reworking or any
   working state - asks first: stop the tasks and move, or cancel the move.
@@ -65,11 +68,15 @@ naming the story and its tasks); the answer names the issues moved only after th
    an issue of another repository in Implementing previews that issue with its repository, `Implementing` and
    `Review`, and `ISSUES_ALONG`; integration in `app`: a preview leaves every repository's commits unchanged.
 2. **One save per move** (`screen`). A drop or a move action previews first; with no warning it saves at once, with
-   warnings the screen shows them and saves only on confirmation, `confirm` set where the story does not fit. For
-   `RUNNING_WORK` the choice is stop and move - the story's stop as *Stop* sends it today, then the move - or cancel.
-   The list of unsaved moves, *Undo*, *Undo all* and *Save* go, and with them the reconciling of staged moves. Red
-   first, widget tests: a drop with a warning shows the issue that moves along and sends no save when cancelled; a
-   drop without one saves once.
+   no wait before the save, with warnings the screen shows them and saves only on confirmation, `confirm` set where
+   the story does not fit. For `RUNNING_WORK` the choice is stop and move - the story's stop as *Stop* sends it
+   today, then the move - or cancel. The list of unsaved moves, *Undo*, *Undo all* and *Save* go, and with them the
+   reconciling of staged moves. That also settles a move staged before the window rebinds the project to another
+   repository: nothing is staged, and `HttpPlanningSource._bound` refuses a save racing a rebind with
+   `ProjectChanged`. Red first, widget tests: a drop with a warning shows the issue that moves along and sends no save
+   when cancelled; a drop without one saves once; unit: a move dropped while the project is rebound to another
+   repository before its save goes out writes nothing to the new repository. Harm: a move written to a repository it
+   was never meant for.
 3. **Every other kind of move** is checked against the workflow and the work rules - a parent closed over its open
    sub-issues (refused today), a move out of a state an issue's stage record measures, a move back past Review - and
    each that can do harm gets its warning in step 1.
@@ -80,15 +87,10 @@ Order: 1, 3, 2.
 
 - A story with an issue of another repository behind it, dragged forward, shows that issue with its repository and
   states before anything is saved, and cancelling leaves every repository unchanged; a story with a running task asks
-  to stop it first; a move with no warning is pushed at once; the board shows no Save or Undo.
-
-## Open questions
-
-- A move that needs no warning is pushed the moment it is dropped: is a short wait before the push, during which the
-  drop can still be cancelled, wanted, or is the push at once?
+  to stop it first; a move with no warning is pushed at once, with no wait; the board shows no Save or Undo; a move
+  racing a rebind of the project reaches no other repository.
 
 ## To be checked
 
 - Whether the screen's watch already shows a saved move's new revision fast enough that the card does not jump back
   while the save is out, or whether the card keeps its new place until the answer.
-- Which findings of the screen's older code about staged moves are moot once nothing is staged.

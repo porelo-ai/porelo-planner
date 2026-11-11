@@ -10,16 +10,15 @@
   "priority": "Medium",
   "rank": 3,
   "blockedBy": [],
-  "covers": "`--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests"
+  "covers": "`--mock` serves the window's mock board through the same API and SSE, a reset between tests"
 }
 ```
 
-**Why this size.** the window's mock board as data, a store that serves it and takes moves in memory, and the start
-switch.
+**Why this size.** the window's mock board as data, a store that serves it, and the start switch.
 
 **What must be true.** `porelo-planner --mock` serves the window's mock board through the same REST API and SSE,
-with no Git and no network: the stories, issues, work and reading states the window's planning tests expect, moves
-taken in memory and told over SSE, and a reset between tests.
+with no Git and no network: the stories, issues, work and reading states the window's planning tests expect, and a
+reset between tests. Moves taken in memory are built in [PL26](README.md#pl26).
 
 ## Plan
 
@@ -30,10 +29,11 @@ taken in memory and told over SSE, and a reset between tests.
   turns the mode on. In it every project is served from `MockStore` after the same source checks as a real start,
   `POST /mock/reset` restores the board and forgets every project given, and the start is refused unless the runtime
   directory is given and is not the account's own, so the person's window never finds a mock.
-- **Built:** the reads, the reset and the guard, in the JVM and the native executable. **Still to build:** moves in
-  memory (with the moves' own API) and the event stream (with the changes' own), each once the real planner offers it.
-- **Red first:** `MockModeTest` - the board answers the mock's stories; a move is seen in the next read and over SSE;
-  reset restores it; without `--mock` `/mock/reset` is not found.
+- **Built:** the reads, the reset and the guard, in the JVM and the native executable. **Still to build:** the event
+  stream (with the changes' own API), once the real planner offers it. Moves in memory are built in
+  [PL26](README.md#pl26), not here.
+- **Red first:** `MockModeTest` - the board answers the mock's stories; reset restores it; without `--mock`
+  `/mock/reset` is not found.
 
 - **Code reading of the reads:** read by another model; every finding is fixed with a test seen red, but one.
   Declined: a malformed `mock/board.json` read past the JSON check - the board is a resource of the build, read on

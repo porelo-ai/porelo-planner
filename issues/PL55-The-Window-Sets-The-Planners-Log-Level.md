@@ -5,20 +5,22 @@
   "$schema": "issue-1.json",
   "id": "PL55",
   "title": "The Window Sets The Planner's Log Level",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "High",
   "rank": 28,
   "blockedBy": [
     "PL54"
   ],
-  "covers": "The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too",
-  "openQuestions": 0
+  "covers": "The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too"
 }
 ```
 
 **Size:** M - a change to the contract with the window: a new resource in the OpenAPI description, its controller,
 the mock mode's answer, and the level kept in the planner's state.
+
+**Estimate:** 67 min, the measured median of M. Uncertain: it builds on the log file of [PL54](README.md#pl54), and
+whether `LoggingSystem` sets a level in the native image as on the JVM is known only from the native build.
 
 **What must be true.** A person who raises the level in the window's settings gets more lines in the planner's log at
 once, without restarting anything, and the level holds after the planner starts again.

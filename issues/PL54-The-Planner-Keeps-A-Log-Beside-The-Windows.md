@@ -5,19 +5,21 @@
   "$schema": "issue-1.json",
   "id": "PL54",
   "title": "The Planner Keeps A Log Beside The Window's",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "High",
   "rank": 27,
   "blockedBy": [],
-  "covers": "The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it",
-  "openQuestions": 0
+  "covers": "The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it"
 }
 ```
 
 **Size:** M - the log directory checked as the planner's own, the logging set up for the native executable on Linux
 and Windows, entries at the planner's main steps in `app` and `store/git`, one field in the address file the window
 reads, and a guard that no credential reaches the file.
+
+**Estimate:** 67 min, the measured median of M. Uncertain: whether Logback's rolling file needs reachability metadata
+in the native image, known only from the native build; the Windows executable's log is seen only on Windows.
 
 **What must be true.** A person who wants to know what the planner did - why a board was read with faults, when a
 save went out, why a task did not follow - finds it in the planner's log file, which keeps its newest lines within a

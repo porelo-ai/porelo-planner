@@ -5,27 +5,31 @@
   "$schema": "issue-1.json",
   "id": "PL64",
   "title": "A Failed Task Or A Blocking Reading Asks The Person",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "L",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog",
-  "openQuestions": 2
+  "covers": "A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog"
 }
 ```
 
 **Size:** L - three changes across the core's next step, one contract change (a new reason and the Rework choice's
 mode and model), the app and the screen package's card and Needs-you row; the window draws the row unchanged.
 
+**Estimate:** 113 min, the measured median of L. Uncertain: whether the window still lists a task after it ended, so
+the row reaches its result, is read in the window's code only; where it does not, the row's fallback grows.
+
 **What must be true.** A person sees at once where the work stopped and needs them, and gets there in one step; the
 work goes on by itself only where the project's work rules say so.
 
 - **A task that fails** leaves its card in the working state it was started for, marked with a warning, and adds a
   Needs-you entry that opens the failed task's result directly. This holds for every working state of the project's
-  workflow.
+  workflow. A task that finished but left commits unpushed, and a reader whose answer held no findings block, count
+  as failed: the same warning mark and a row to its result.
 - **A reading that blocks** adds a Needs-you entry that opens the Reworking dialog directly. Reworking does not start
-  by itself, and the work rules set no cap on reading rounds; the dialog's reading rounds stay as they are.
+  by itself, and the work rules set no cap on reading rounds; the dialog's reading rounds stay as they are. The
+  dialog keeps all three choices a stopped reading offers today: *Rework*, *Review anyway* and *One more reading*.
 - **A task that starts by itself** through a rule's `then:` takes the rule's first mode and first model, with no
   dialog. A move by hand opens the start dialog with the first mode and model preselected, and the person may change
   them.
@@ -67,12 +71,14 @@ Steps:
    `NextStepTest`: it offers no task and writes no state; integration in `app` (`WorkRunHttpTest`): a Rework choice
    naming a mode the Reworking rule does not offer is refused.
 3. **The card and the row** (`screen`). A card with an issue raised in a working state shows a warning mark, a button
-   to *Needs you* as a stopped reading has today. A row whose reason is `FAILED` opens the failed task's result
-   directly through `PlanningTaskChanges.open`, and says the window's reason where it cannot; a row whose reason is
+   to *Needs you* as a stopped reading has today. A row whose reason is `FAILED`, `UNPUSHED` or `INVALID_FINDINGS`
+   (each already raised with its own reason by `WorkEnds.judge`) opens the task's result directly through
+   `PlanningTaskChanges.open`, and says the window's reason where it cannot; a row whose reason is
    `BLOCKING_FINDINGS` or `ROUND_LIMIT` opens the Reworking dialog directly: the blocking findings, the Reworking
-   rule's modes and agents with the first preselected, words optional. Red first, widget tests of the screen package:
-   a `FAILED` row's action calls `open` with the failed task's name; a `BLOCKING_FINDINGS` row's dialog sends a Rework
-   choice with the first mode and model.
+   rule's modes and agents with the first preselected, words optional, and beside *Rework* the choices *Review
+   anyway* and *One more reading* as a stopped reading offers them today. Red first, widget tests of the screen
+   package: a `FAILED` row's action calls `open` with the failed task's name, and an `UNPUSHED` row's does the same;
+   a `BLOCKING_FINDINGS` row's dialog sends a Rework choice with the first mode and model.
 
 Order: 1, 2, 3. Every test runs over fakes in seconds; no VM.
 
@@ -81,15 +87,9 @@ Order: 1, 2, 3. Every test runs over fakes in seconds; no VM.
 - With today's work rules: a build in `AGENT` mode that ends done gets its reader in `UNATTENDED`; a reading with
   blocking findings leaves the issue in Reading with no task and one Needs-you row, whose dialog starts the rework
   with the first mode and model preselected; a task that did not finish leaves its card in its working state with a
-  warning, and its row opens that task in the window. Seen failing first: today's reader offer refused for its mode,
-  and today's rework offered at once.
-
-## Open questions
-
-- Does the Reworking dialog keep *Review anyway* and *One more reading* beside *Rework*, as a stopped reading offers
-  today, or offer only Rework?
-- Is a task that finished but left commits unpushed (`UNPUSHED`), or a reader whose answer held no findings block
-  (`INVALID_FINDINGS`), shown as a failed task too - a warning and a row to its result?
+  warning, and its row opens that task in the window, as does the row of a task that left commits unpushed and of a
+  reader whose answer held no findings block; the Reworking dialog offers *Rework*, *Review anyway* and *One more
+  reading*. Seen failing first: today's reader offer refused for its mode, and today's rework offered at once.
 
 ## To be checked
 
