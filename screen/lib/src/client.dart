@@ -145,6 +145,11 @@ abstract interface class PlanningSource {
   /// Prepares a checked order without starting tasks or recording running work.
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request);
 
+  /// Offers one DISCUSSION task over [project]'s repositories for [idea], the person's first words.
+  ///
+  /// The offer belongs to no story: the planner records no run for it and takes no task events for it.
+  Future<PlanningTaskOrder> discussIdea(String project, String idea);
+
   /// Reads current work and any ended outcome for a story.
   Future<StoryWorkStatus> getStoryWork(String project, String story);
 

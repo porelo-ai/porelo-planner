@@ -327,6 +327,20 @@ class _BoardViewState extends State<_BoardView> {
                   selected: board.preferences.showClosed,
                   onSelected: (_) => board.toggleClosed(),
                 ),
+                PlanningActionMenu(
+                  key: const Key('planning-board-menu'),
+                  tooltip: 'Planning of ${board.project}',
+                  actions: [
+                    PlanningAction(
+                      id: 'planning-discuss-idea',
+                      label: 'Discuss an idea…',
+                      unavailable:
+                          board.unavailableActions['DiscussIdea'] ??
+                          (board.discussing ? 'waiting for the planner' : null),
+                      run: () => unawaited(_discuss()),
+                    ),
+                  ],
+                ),
               ],
             ),
             for (final problem in widget.providerProblems)
@@ -706,6 +720,12 @@ class _BoardViewState extends State<_BoardView> {
     }
   }
 
+  Future<void> _discuss() async {
+    final idea = await showDialog<String>(context: context, builder: (_) => const _IdeaDialog());
+    if (!mounted || idea == null) return;
+    await board.discussIdea(idea, widget.startTask);
+  }
+
   Future<void> _stop(PlanStory story) async {
     final source = board;
     final backend = source.backend;
@@ -1003,5 +1023,53 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
         ],
       ),
     ),
+  );
+}
+
+/// Asks for the first words of an idea, as many as the planner takes.
+class _IdeaDialog extends StatefulWidget {
+  const _IdeaDialog();
+
+  @override
+  State<_IdeaDialog> createState() => _IdeaDialogState();
+}
+
+class _IdeaDialogState extends State<_IdeaDialog> {
+  static const _most = 4000;
+  final _words = TextEditingController();
+
+  // The planner counts characters, not what the field shows as one.
+  bool get _sendable => _words.text.trim().isNotEmpty && _words.text.runes.length <= _most;
+
+  @override
+  void dispose() {
+    _words.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Discuss an idea'),
+    content: SizedBox(
+      width: PlanningStyle.column * 2,
+      child: TextField(
+        key: const Key('planning-idea-words'),
+        controller: _words,
+        autofocus: true,
+        minLines: 4,
+        maxLines: 12,
+        maxLength: _most,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(labelText: 'Your idea', hintText: 'What you have in mind, in your own words'),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        key: const Key('planning-idea-discuss'),
+        onPressed: _sendable ? () => Navigator.pop(context, _words.text) : null,
+        child: const Text('Discuss'),
+      ),
+    ],
   );
 }

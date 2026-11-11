@@ -271,6 +271,45 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/ideas/discussion:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: discussIdea
+      summary: Offer a task that discusses an idea
+      description: >-
+        Answers one task for Porelo's Start that discusses an idea with the person: role DISCUSSION, no repository,
+        no issues, mode AGENT, and as agent and model the first agent and model of the first sound work rule whose
+        names are 1 to 128 UTF-16 code units, as defaults the person may change. The window starts it with every
+        repository of the project read only, and the task hands back the file named by result, in the idea format
+        the brief carries. Records, saves and announces nothing, and no task events are taken for its offer. The
+        JSON body is at most 65536 bytes; the idea is 1 to 4000 characters and not blank, else InvalidSettings.
+        NoDiscussion (reason) when no sound work rule offers an agent or the brief would exceed 65536 UTF-8 bytes.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdeaDiscussionRequest'
+      responses:
+        '200':
+          description: The one task to pass to Porelo's Start.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningStartTask'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/stories/{story}/proposal:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -634,7 +673,8 @@ components:
       description: >-
         InvalidName for an invalid path id (only a checked project may be echoed); InvalidSettings for malformed JSON,
         an oversized body, path/body disagreement or an unknown target state, with a fixed detail; WorkNotAllowed for
-        a missing or unsound rule, disallowed from or mode, altered proposal facts, invalid choices or limits, or bounds.
+        a missing or unsound rule, disallowed from or mode, altered proposal facts, invalid choices or limits, or bounds;
+        NoDiscussion for a discussion no sound rule offers an agent for, or whose brief is too long, with reason.
         WorkNotAllowed parameters are from, to and reason; to is always a known workflow state. A changed helper
         identity or brief has reason 'A helper identity or brief was changed.'. InvalidSettings parameters contain detail.
       content:
@@ -1486,9 +1526,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlanningStartTask'
+    IdeaDiscussionRequest:
+      type: object
+      additionalProperties: false
+      required: [idea]
+      properties:
+        idea:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: The person's first words of the idea, not blank, counted in Unicode code points.
     PlanningStartTask:
       type: object
-      required: [offer, repository, issues, role, agent, model, mode, prompt]
+      required: [offer, issues, role, agent, model, mode, prompt]
+      description: >-
+        repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present for
+        DISCUSSION alone.
       properties:
         offer:
           type: string
@@ -1501,7 +1554,7 @@ components:
             $ref: '#/components/schemas/IssueId'
         role:
           type: string
-          enum: [MAIN, BUILDER, READER]
+          enum: [MAIN, BUILDER, READER, DISCUSSION]
         agent:
           type: string
         model:
@@ -1511,6 +1564,10 @@ components:
         prompt:
           type: string
           description: The complete starting prompt, at most 65536 UTF-8 bytes.
+        result:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          description: The plain name of the file the task hands back, without a directory.
 
     TaskLabel:
       type: string

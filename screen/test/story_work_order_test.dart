@@ -3,7 +3,90 @@ import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/served_story_work.dart';
 
+Map<String, dynamic> _discussion() => {
+  'offer': servedOffer(7),
+  'issues': <String>[],
+  'role': 'DISCUSSION',
+  'agent': 'codex',
+  'model': 'idea-model',
+  'mode': 'AGENT',
+  'prompt': 'Discuss the idea.\n',
+  'result': 'idea.json',
+};
+
 void main() {
+  // Harm: the window cannot start a discussion the planner offered, or starts it with altered arguments.
+  test('a discussion order reads without a repository and keeps its result', () {
+    final task = PlanningTaskOrder.from(_discussion());
+    expect(
+      [
+        task.offer,
+        task.repository,
+        task.issues,
+        task.role,
+        task.agent,
+        task.model,
+        task.mode,
+        task.prompt,
+        task.result,
+      ],
+      [
+        servedOffer(7),
+        null,
+        <String>[],
+        'DISCUSSION',
+        'codex',
+        'idea-model',
+        'AGENT',
+        'Discuss the idea.\n',
+        'idea.json',
+      ],
+      reason: 'every Start argument must come through as served',
+    );
+  });
+
+  // Harm: a task reaches Start over one repository it should not own, unattended, over issues, or hands back a
+  // file outside its result directory.
+  test('a discussion or task order that breaks the discussion rules is refused', () {
+    expect(
+      [PlanningTaskOrder.from(_discussion()).role, PlanningTaskOrder.from(servedFollowUp(1, role: 'MAIN')).role],
+      ['DISCUSSION', 'MAIN'],
+      reason: 'the unchanged fixtures must read, so each refusal below is its change\'s',
+    );
+    final changes = <String, Map<String, dynamic>>{
+      'discussion with a repository': _discussion()..['repository'] = 'repo',
+      'discussion with a null repository': _discussion()..['repository'] = null,
+      'discussion unattended': _discussion()..['mode'] = 'UNATTENDED',
+      'discussion in a shell': _discussion()..['mode'] = 'SHELL',
+      'discussion over issues': _discussion()..['issues'] = ['PR1'],
+      'discussion without a result': _discussion()..remove('result'),
+      for (final name in ['../idea.json', 'a/idea.json', '..', '.', '.idea.json', '', ' idea.json', 'a\\b'])
+        'discussion result $name': _discussion()..['result'] = name,
+      'main without a repository': (servedFollowUp(1, role: 'MAIN')..remove('repository')),
+      'main with a result': servedFollowUp(1, role: 'MAIN')..['result'] = 'idea.json',
+      'reader with a result': servedFollowUp(1)..['result'] = 'idea.json',
+      'discussion with an overlong agent': _discussion()..['agent'] = 'a' * 129,
+      'discussion with an overlong model': _discussion()..['model'] = 'm' * 129,
+    };
+    for (final MapEntry(key: name, value: map) in changes.entries) {
+      expect(() => PlanningTaskOrder.from(map), throwsFormatException, reason: name);
+    }
+  });
+
+  // Harm: a story's work order smuggles a discussion or a result file into a story's Start.
+  test('a story order refuses a task that carries a result', () {
+    final answer = servedOrder();
+    ((answer['tasks'] as List).last as Map)['result'] = 'idea.json';
+    expect(
+      () => StoryWorkOrder.from(
+        answer,
+        request: servedRequest(),
+        proposal: StoryWorkOrder.readProposal(servedProposal()),
+      ),
+      throwsFormatException,
+    );
+  });
+
   // Harm: an altered task is accepted alongside valid tasks and reaches the wrong Start.
   test('an order rejects the whole answer when any task or envelope is invalid', () {
     final proposal = StoryWorkOrder.readProposal(servedProposal());

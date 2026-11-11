@@ -430,6 +430,19 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<PlanningTaskOrder> discussIdea(String project, String idea) async {
+    // The offer is not bound to the store, so its answer carries no revision.
+    final answer = await _write(project, ['ideas', 'discussion'], {'idea': idea}, revision: false);
+    try {
+      final task = PlanningTaskOrder.from(answer);
+      if (task.role != 'DISCUSSION') throw const FormatException('The planner answered a task that is no discussion.');
+      return task;
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAnswer', const {}, error.message);
+    }
+  }
+
+  @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) async {
     final answer = await _runRead(project, ['stories', _checked('story', story, _storyId), 'work']);
     final status = _status(answer, nullable: true);

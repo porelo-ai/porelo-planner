@@ -159,6 +159,17 @@ public final class WorkRequests {
         return new Proposal(text(body, "to"));
     }
 
+    /**
+     * The words a discussion of an idea starts from, the body's one field.
+     *
+     * @param body the request's body
+     * @return the words, checked further by the discussion
+     */
+    static String idea(final JsonNode body) {
+        fields(body, Set.of("idea"));
+        return text(body, "idea");
+    }
+
     static String target(final JsonNode body) {
         return text(body, "to");
     }

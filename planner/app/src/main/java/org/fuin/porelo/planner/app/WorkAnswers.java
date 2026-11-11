@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
@@ -53,16 +55,33 @@ public final class WorkAnswers {
     /** An issue's proposed reading limit. */
     public record IssueRounds(String issue, int rounds) {}
 
-    /** The arguments passed individually to Porelo's Start. */
+    /**
+     * The arguments passed individually to Porelo's Start: a story's task names its repository, a
+     * discussion reads every repository and names the file it hands back instead.
+     */
     public record StartTask(
             String offer,
-            String repository,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String repository,
             List<String> issues,
             String role,
             String agent,
             String model,
             String mode,
-            String prompt) {}
+            String prompt,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String result) {}
+
+    static StartTask discussion(final IdeaDiscussion discussion) {
+        return new StartTask(
+                UUID.randomUUID().toString(),
+                null,
+                List.of(),
+                "DISCUSSION",
+                discussion.agent(),
+                discussion.model(),
+                discussion.mode(),
+                discussion.prompt(),
+                IdeaDiscussion.RESULT);
+    }
 
     static Proposal proposal(final WorkProposal proposal) {
         return new Proposal(
@@ -152,7 +171,8 @@ public final class WorkAnswers {
                                     task.agent(),
                                     task.model(),
                                     task.mode(),
-                                    task.prompt());
+                                    task.prompt(),
+                                    null);
                         })
                 .toList();
     }

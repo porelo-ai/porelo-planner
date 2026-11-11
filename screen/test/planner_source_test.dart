@@ -355,6 +355,36 @@ void main() {
     expect((await _refusal(source.startStoryWork(request))).name, 'BadAnswer');
   });
 
+  // Harm: a story's task answered for an idea reaches Start, or a refused idea is taken for an offer.
+  test('a discussion posts the idea and accepts only a discussion answered without a revision', () async {
+    final (planner, source) = await _started();
+    final served = {
+      'offer': servedOffer(9),
+      'issues': <String>[],
+      'role': 'DISCUSSION',
+      'agent': 'codex',
+      'model': 'idea-model',
+      'mode': 'AGENT',
+      'prompt': 'Discuss the idea.\n',
+      'result': 'idea.json',
+    };
+    planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, served);
+    final task = await source.discussIdea('demo', 'A board that\nremembers.');
+    expect(planner.targets.last, 'POST /projects/demo/ideas/discussion', reason: 'the contract names this call');
+    expect(jsonDecode(planner.calls.last.body), {'idea': 'A board that\nremembers.'}, reason: 'the idea goes as typed');
+    expect([task.role, task.repository, task.result], ['DISCUSSION', null, 'idea.json'], reason: 'as served');
+    planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, servedFollowUp(1, role: 'MAIN'));
+    expect(
+      (await _refusal(source.discussIdea('demo', 'An idea'))).name,
+      'BadAnswer',
+      reason: 'a story task is no discussion',
+    );
+    planner.routes['POST /projects/demo/ideas/discussion'] = () =>
+        _Reply.problem('NoDiscussion', {}, 'The project has no sound work rule.', 400);
+    final refusal = await _refusal(source.discussIdea('demo', 'An idea'));
+    expect([refusal.name, refusal.description], ['NoDiscussion', 'The project has no sound work rule.']);
+  });
+
   // Harm: default choices accept tasks that differ from the proposal the person reviewed.
   test('an order with omitted repositories still checks the proposed defaults', () async {
     final (planner, source) = await _started();

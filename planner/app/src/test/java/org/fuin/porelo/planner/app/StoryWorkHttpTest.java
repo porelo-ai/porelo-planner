@@ -186,6 +186,74 @@ class StoryWorkHttpTest {
     }
 
     @Test
+    void aDiscussionIsOneTaskOverEveryRepositoryThatNamesNoneAndHandsBackTheIdea()
+            throws Exception {
+        // A discussion that named a repository would start in one checkout and miss the others.
+        final JsonNode task =
+                json(
+                        call(
+                                "/projects/project/ideas/discussion",
+                                "{\"idea\":\"Let people tag stories\"}"),
+                        200);
+
+        assertThat(task.propertyNames())
+                .as("a Start argument record without a repository, with the file it hands back")
+                .containsExactlyInAnyOrder(
+                        "offer", "issues", "role", "agent", "model", "mode", "prompt", "result");
+        assertThat(
+                        List.of(
+                                task.get("role").asString(),
+                                task.get("mode").asString(),
+                                task.get("agent").asString(),
+                                task.get("model").asString(),
+                                task.get("result").asString()))
+                .as("a conversation with the rule's agent, handing back the idea")
+                .containsExactly("DISCUSSION", "AGENT", "codex", "model-a", "idea.json");
+        assertThat(task.get("issues").size()).as("no issue is the discussion's").isZero();
+        assertThat(task.get("prompt").asString())
+                .as("the brief names both repositories and the person's words")
+                .contains("/workspace/project/", "/workspace/alpha/", "Let people tag stories");
+        assertThat(board.stories()).as("nothing on the board changes").hasSize(1);
+    }
+
+    @Test
+    void aDiscussionsWordsAreCheckedAndAnUnknownProjectIsNotFound() throws Exception {
+        // Unchecked words would start an agent with no topic, or a body of any size.
+        for (final String body :
+                List.of(
+                        "{\"idea\":\"\"}",
+                        "{\"idea\":\" \\n \"}",
+                        "{\"idea\":\"" + "x".repeat(4001) + "\"}",
+                        "{\"idea\":1}",
+                        "{\"idea\":\"An idea\",\"repository\":\"alpha\"}",
+                        "[]",
+                        "{\"idea\":\"" + "x".repeat(70000) + "\"}")) {
+            assertThat(
+                            json(call("/projects/project/ideas/discussion", body), 400)
+                                    .get("type")
+                                    .asString())
+                    .as("the refusal of %s", body.length() > 80 ? body.length() + " chars" : body)
+                    .isEqualTo("urn:porelo-planner:InvalidSettings");
+        }
+        assertThat(
+                        json(
+                                        call(
+                                                "/projects/other/ideas/discussion",
+                                                "{\"idea\":\"An idea\"}"),
+                                        404)
+                                .get("type")
+                                .asString())
+                .as("a project the planner does not hold")
+                .isEqualTo("urn:porelo-planner:NoSuchProject");
+        assertThat(
+                        json(call("/projects/BAD%20name/ideas/discussion", "{"), 400)
+                                .get("type")
+                                .asString())
+                .as("the path is checked before the body, as every work call does")
+                .isEqualTo("urn:porelo-planner:InvalidName");
+    }
+
+    @Test
     void forgedFactsChoicesAndLimitsAreRefusedAsTypedProblems() throws Exception {
         // A refused decision must not turn into successful or unreviewed work over HTTP.
         for (final String body :

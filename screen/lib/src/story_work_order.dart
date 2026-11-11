@@ -7,6 +7,8 @@ import 'models.dart';
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
 final _issueName = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
 const _modes = {'SHELL', 'AGENT', 'UNATTENDED'};
+// A plain file name: the window takes it from the task's result directory, so it must not leave that directory.
+final _resultName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
 
 Never _invalid(String reason) => throw FormatException(reason);
 
@@ -107,6 +109,7 @@ class StoryWorkOrder {
           main['model'] as String,
           request.mode,
           '',
+          null,
         ),
       );
       for (final sub in helpers) {
@@ -130,6 +133,7 @@ class StoryWorkOrder {
             sub['model'] as String,
             request.mode,
             '',
+            null,
           ),
         );
       }
@@ -194,38 +198,61 @@ class PlanningTaskOrder {
     this.model,
     this.mode,
     this.prompt,
+    this.result,
   );
 
   /// Reads one served offer without inventing missing Start arguments.
   factory PlanningTaskOrder.from(Map<String, dynamic> map) => PlanningTaskOrder._read(map);
 
   factory PlanningTaskOrder._read(Map<String, dynamic> map) {
-    final repository = _text(map, 'repository');
-    if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
-    final issues = _strings(map['issues'], pattern: _issueName);
     final role = _text(map, 'role');
-    if (!{'MAIN', 'BUILDER', 'READER'}.contains(role)) _invalid('The task role is invalid.');
+    if (!{'MAIN', 'BUILDER', 'READER', 'DISCUSSION'}.contains(role)) _invalid('The task role is invalid.');
+    final discussion = role == 'DISCUSSION';
+    final issues = _strings(map['issues'], pattern: _issueName);
     final mode = _text(map, 'mode');
     if (!_modes.contains(mode)) _invalid('The task mode is invalid.');
+    String? repository;
+    String? result;
+    if (discussion) {
+      // A discussion reads every repository of the project; one named here would narrow or redirect its Start.
+      if (map.containsKey('repository')) _invalid('A discussion names no repository.');
+      if (mode != 'AGENT' || issues.isNotEmpty) _invalid('A discussion is an agent task over no issue.');
+      result = _text(map, 'result');
+      if (!_resultName.hasMatch(result)) _invalid('The task result is not a plain file name.');
+    } else {
+      repository = _text(map, 'repository');
+      if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
+      if (map.containsKey('result')) _invalid('Only a discussion hands back a result.');
+    }
     final prompt = _text(map, 'prompt', blank: true);
     if (utf8.encode(prompt).length > 65536) _invalid('The task prompt exceeds 64 KiB.');
     final offer = _text(map, 'offer');
     if (!RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$').hasMatch(offer)) {
       _invalid('The task offer is not a UUID.');
     }
-    return PlanningTaskOrder._(offer, repository, issues, role, _text(map, 'agent'), _text(map, 'model'), mode, prompt);
+    return PlanningTaskOrder._(
+      offer,
+      repository,
+      issues,
+      role,
+      _text(map, 'agent', most: 128),
+      _text(map, 'model', most: 128),
+      mode,
+      prompt,
+      result,
+    );
   }
 
   /// The required offer identity in a checked order.
   final String? offer;
 
-  /// The repository whose work the task owns.
-  final String repository;
+  /// The repository whose work the task owns; null for a discussion, which reads every repository of the project.
+  final String? repository;
 
   /// The exact ordered issue scope chosen for this task.
   final List<String> issues;
 
-  /// MAIN or BUILDER for an initial order.
+  /// MAIN or BUILDER for an initial order, READER or BUILDER for a follow-up, DISCUSSION for an idea's discussion.
   final String role;
 
   /// The chosen agent identifier.
@@ -240,11 +267,15 @@ class PlanningTaskOrder {
   /// The complete prompt as served, preserved without trimming or rewriting.
   final String prompt;
 
+  /// The plain file name a discussion hands back from its result directory; null for every other role.
+  final String? result;
+
   bool _matches(PlanningTaskOrder other) =>
       repository == other.repository &&
       listEquals(issues, other.issues) &&
       role == other.role &&
       agent == other.agent &&
       model == other.model &&
-      mode == other.mode;
+      mode == other.mode &&
+      result == other.result;
 }

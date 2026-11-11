@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL57",
   "title": "Discuss An Idea From The Board",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 30,
@@ -36,8 +36,9 @@ concerns.
 - `PlanningStartTask` in the contract: role `DISCUSSION` added, `repository` required for every other role and
   absent for it, `result` an optional plain file name.
 - The brief (`IdeaDiscussion` in `core`) names the project's repositories and where they are, asks the agent to
-  discuss the idea with the person, read what it needs, change nothing, and once the person agrees write
-  `/run/porelo/result/idea.json` in the idea format: the story's title, gain, test and priority, and per repository
+  discuss the idea with the person, read what it needs, change nothing, and once the person agrees write the idea as
+  the task's result, `idea.json`, at most 64 KiB, in the idea format; Porelo's start adds the line naming where the
+  result file goes. The idea format: the story's title, gain, test and priority, and per repository
   it concerns an issue's title, what must be true, its size if known, and `worker` - `Agent` or `Manual`, asked of
   the person, never filled in. The format is a JSON schema the planner holds, `idea-1.json`, and the brief carries it.
 - The screen package: `PlanningTaskOrder` reads role `DISCUSSION` with no repository and a `result`; a source's
@@ -61,3 +62,26 @@ its own clones to commit and push a move or a new idea with the person's own Git
 and Core would tie the board to a running window and a reachable machine, and on Windows or a Mac the window and the
 planner run without Porelo's machine, so the checkout is not there at all. Only the discussion task reads the
 project's repositories as one, since an agent needs one tree.
+
+## Reading
+
+- The plan, read by another model, found no grave point. Taken into the build:
+  - the idea fenced against its own backticks;
+  - the screen's checks binding role, repository, mode, issues and result together;
+  - a 64 KiB bound on the brief and on the idea;
+  - one-line titles in the format;
+  - agent names checked;
+  - the body read with its bound;
+  - no change announced;
+  - a second click guarded.
+- Declined from the plan reading:
+  - Recording the offer: whoever holds the planner's token may create a story anyway, so an unknown offer does no harm. The next step takes an idea once by its offer.
+  - Task events for the offer: the window starts a discussion through its own start and reports none, as agreed.
+- The code, read by another model against spring-boot-patterns 2026.906.3, graal 2026.910.3 and api-contract-review 2026.906.3, found five small points and no grave one. Fixed, each with a test seen red first:
+  - a discussion answered after the board was switched or closed started nothing;
+  - the path checked before the body;
+  - a project naming no repository refused;
+  - agent and model bounded in the screen.
+- The resource hint for the idea format was dropped: the image takes the file by its constant name, and the native test showed it red when the name was not constant.
+- Declined from the code reading:
+  - Pinning the new call's refusal list in the contract test: the served path, its answer schema and the record's fields are already held by the contract tests.

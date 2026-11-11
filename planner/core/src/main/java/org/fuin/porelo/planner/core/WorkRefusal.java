@@ -47,6 +47,11 @@ public final class WorkRefusal extends RuntimeException {
                 Map.of("story", story, "tasks", List.copyOf(tasks)));
     }
 
+    /** Refuses a discussion of an idea the project's rules offer no agent for. */
+    public static WorkRefusal noDiscussion(final String reason) {
+        return new WorkRefusal("NoDiscussion", reason, Map.of("reason", reason));
+    }
+
     /** Refuses a choice against checked workflow states. */
     public static WorkRefusal notAllowed(final String from, final String to, final String reason) {
         return new WorkRefusal(

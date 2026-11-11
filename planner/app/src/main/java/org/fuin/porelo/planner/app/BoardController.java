@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -412,6 +413,18 @@ public class BoardController {
                         view.needsYou(),
                         view.readingStopped(),
                         view.findings()));
+    }
+
+    /**
+     * Offers one task that discusses an idea over every repository of the project; it records,
+     * saves and announces nothing.
+     */
+    @PostMapping("/projects/{project}/ideas/discussion")
+    public WorkAnswers.StartTask discussIdea(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = name(project);
+        final String idea = WorkRequests.idea(WorkRequests.read(request));
+        return WorkAnswers.discussion(IdeaDiscussion.offer(board(name), idea));
     }
 
     /** Computes the proposal from one board without starting or recording work. */

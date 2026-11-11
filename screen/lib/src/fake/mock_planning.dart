@@ -99,8 +99,31 @@ class MockPlanningSource implements PlanningSource {
     return StoryWorkOrder.from(work.call('StartStoryWork', request.toMap()), request: request, proposal: proposal);
   }
 
+  /// The ideas offered a discussion, each with its project, in order.
+  final List<(String, String)> ideas = [];
+
+  @override
+  Future<PlanningTaskOrder> discussIdea(String project, String idea) async {
+    board(project);
+    ideas.add((project, idea));
+    return PlanningTaskOrder.from({
+      'offer': work.nextOffer(),
+      'issues': <String>[],
+      'role': 'DISCUSSION',
+      'agent': 'codex',
+      'model': 'mock-model',
+      'mode': 'AGENT',
+      'prompt': 'Discuss this idea with the person, change nothing, and once they agree write idea.json.\n\n$idea',
+      'result': 'idea.json',
+    });
+  }
+
   /// Simulates the window's confirmed starts separately from preparing a planner order.
   Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) async {
+    // A discussion belongs to no story, so no run on the board records it.
+    if (task.role == 'DISCUSSION') {
+      return PlanningTaskStarted(task: 'discussion-${task.offer}', container: 'mock-discussion-${task.offer}');
+    }
     final result = work.startTask(project, story, task);
     onStarted?.call(project, result['work'] as Map<String, dynamic>);
     return PlanningTaskStarted(task: result['task'] as String, container: result['container'] as String);

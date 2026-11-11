@@ -451,6 +451,40 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
+  /// Whether a discussion of an idea is being asked for or handed to Start.
+  bool discussing = false;
+
+  /// Asks the planner for a discussion of [idea] and hands its order to [start] with an empty story.
+  ///
+  /// The task belongs to no story: no run is started or told of it, and no task event is reported for it.
+  Future<void> discussIdea(String idea, PlanningStartTask start) async {
+    if (_disposed || discussing) return;
+    final source = backend;
+    final name = project;
+    final generation = _generation;
+    discussing = true;
+    actionProblem = null;
+    _changed();
+    try {
+      final task = await source.discussIdea(name, idea);
+      // A board closed or switched meanwhile starts nothing the person no longer sees.
+      if (_disposed || generation != _generation) return;
+      await start(source, name, '', task);
+    } catch (error) {
+      if (!_disposed && generation == _generation) {
+        reportActionProblem(error);
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
+          unavailableActions['DiscussIdea'] = planningFailureWords(error);
+        }
+      }
+    } finally {
+      if (!_disposed && generation == _generation) {
+        discussing = false;
+        _changed();
+      }
+    }
+  }
+
   /// Stops work without moving the story locally.
   Future<void> stopWork(
     String story, {
@@ -535,6 +569,7 @@ class PlanningBoard extends ChangeNotifier {
       unavailableActions.clear();
     }
     actionBusy = false;
+    discussing = false;
     problem = null;
     unsupported = false;
     live = false;

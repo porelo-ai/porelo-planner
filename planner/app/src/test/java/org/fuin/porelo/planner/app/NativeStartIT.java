@@ -116,6 +116,16 @@ class NativeStartIT {
                 assertThat(call(address, "PUT", "/projects/alpha", project.source()))
                         .as("the test's own planning store")
                         .startsWith("204 ");
+                // The idea format is a resource; an image without it cannot build the brief.
+                assertThat(
+                                call(
+                                        address,
+                                        "POST",
+                                        "/projects/alpha/ideas/discussion",
+                                        "{\"idea\":\"An idea\"}"))
+                        .as("a discussion's brief carries the idea format from the image")
+                        .startsWith("200 ")
+                        .contains("\"role\":\"DISCUSSION\"", "idea-1.json");
                 final String stories = call(address, "GET", "/projects/alpha/stories", null);
                 final String revision =
                         json.readTree(stories.substring(4)).path("revision").asString();
