@@ -10,7 +10,7 @@
   "priority": "Medium",
   "rank": 14,
   "blockedBy": [],
-  "covers": "Every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch"
+  "covers": "Every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch; a discussion whose Start the person cancelled shows no error"
 }
 ```
 
@@ -23,7 +23,8 @@ characters and bidirectional overrides, as refusal words already are. That cover
 findings, a task's raw answer, a proposal's briefs and the names a Start answers. A board never stands as live on a
 board it has only held back: one that arrives during a reload or a save waits as stale until it is accepted, and
 catching up ends with it. Each watch of a source tells its own reconnect, so two boards on one source never hold each
-other in catching up. A board disposed or rebound inside its own notification opens no watch afterwards.
+other in catching up. A board disposed or rebound inside its own notification opens no watch afterwards. A discussion whose Start the
+person cancelled shows no error.
 
 ## Plan
 
@@ -67,14 +68,20 @@ staged, and holds its test.
    opened before the first notification, and `_listen` returns without opening one when the generation moved. Red
    first, unit: a listener disposing the board on its first notification leaves the source with no open watch.
    Harm: a stream connection and its reconnect loop left running for nothing.
+5. **A cancelled discussion is no error** (`planning_board.dart`). When the person cancels the Start of a
+   discussion, the window refuses with `PlanningRefusal` named `NotStarted`, and `discussIdea`'s catch reports it
+   through `reportActionProblem` as an error banner. It takes `NotStarted` quietly, as the person's own choice: no
+   `actionProblem`, `DiscussIdea` stays offered. Red first, unit: a `start` that throws `NotStarted` leaves
+   `actionProblem` null. Harm: an error shown for the person's own choice, read as a fault of the planner.
 
-Order: 4, 2, 3, 1.
+Order: 4, 2, 3, 1, 5.
 
 ## Acceptance
 
 - Each red-first test above seen red on today's code, then green; the screen's whole suite, as the module's Maven
   build runs it, green.
 - A text with U+202E or a control character in a brief, a Start's task name or a card title shows without it.
+- A discussion whose Start the person cancelled leaves no error on the board.
 
 ## To be checked
 
