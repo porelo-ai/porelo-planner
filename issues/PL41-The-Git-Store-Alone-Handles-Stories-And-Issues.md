@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL41",
   "title": "The Git Store Alone Handles Stories And Issues",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 23,
