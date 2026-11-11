@@ -57,6 +57,8 @@ class IssueSchemaTest {
                         "{\"blockedBy\": [\"porelo#B539\", \"porelo-frontend#F12.1\"]}",
                         "{\"id\": \"BT56.1\", \"parent\": \"BT56\", \"role\": \"builder\"}",
                         "{\"severity\": \"Major\", \"kind\": \"Bug\", \"openQuestions\": 0}",
+                        "{\"worker\": \"Agent\"}",
+                        "{\"worker\": \"Manual\"}",
                         "{\"state\": \"Not in the workflow\"}",
                         "{\"title\": \"" + "x".repeat(120) + "\"}")) {
             final ObjectNode head = valid.deepCopy();
@@ -105,6 +107,10 @@ class IssueSchemaTest {
                         "{\"severity\": \"High\"}",
                         "{\"kind\": \"Story\"}",
                         "{\"openQuestions\": -1}",
+                        "{\"worker\": \"agent\"}",
+                        "{\"worker\": \"MANUAL\"}",
+                        "{\"worker\": \"Robot\"}",
+                        "{\"worker\": null}",
                         "{\"title\": \"" + "x".repeat(121) + "\"}",
                         "{\"covers\": \"line\\nline\"}")) {
             final ObjectNode head = valid.deepCopy();
@@ -113,8 +119,8 @@ class IssueSchemaTest {
         }
         for (final String faulty : List.of("null", "[]", "42", "{}"))
             bad.add(JSON.readTree(faulty));
-        assertThat(good).as("the valid reference set").hasSize(13);
-        assertThat(bad).as("the faulty reference set").hasSize(9 * 7 - 1 + 22 + 4);
+        assertThat(good).as("the valid reference set").hasSize(15);
+        assertThat(bad).as("the faulty reference set").hasSize(9 * 7 - 1 + 26 + 4);
 
         for (final JsonNode head : good) {
             assertThat(schema.validate(head)).as("the schema takes %s", head).isEmpty();

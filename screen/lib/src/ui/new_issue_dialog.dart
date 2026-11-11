@@ -73,7 +73,9 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('The issue is written in state Idea and pushed at once, as a move is saved.'),
+            const Text(
+              'The issue is written in state Idea, worked by an agent, and pushed at once, as a move is saved.',
+            ),
             const SizedBox(height: Space.normal),
             DropdownButtonFormField<String>(
               key: const Key('new-issue-repository'),

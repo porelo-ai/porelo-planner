@@ -17,6 +17,7 @@ import org.jspecify.annotations.Nullable;
  * @param parent its parent's id, for a sub-issue
  * @param link where a person reads it on the forge, if known
  * @param text its body, the text below the head
+ * @param worker who works it; a head that names none is worked by an agent
  */
 public record Issue(
         String id,
@@ -27,7 +28,8 @@ public record Issue(
         List<String> blockedBy,
         @Nullable String parent,
         @Nullable URI link,
-        String text) {
+        String text,
+        Worker worker) {
 
     /** Checks the ids and the repository's name and copies the list. */
     public Issue {
@@ -42,5 +44,31 @@ public record Issue(
                         "Sub-issue " + id + " does not carry its parent's id " + parent);
             }
         }
+    }
+
+    /**
+     * An issue whose head names no worker, so an agent works it.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its body
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text) {
+        this(id, repository, title, state, size, blockedBy, parent, link, text, Worker.AGENT);
     }
 }

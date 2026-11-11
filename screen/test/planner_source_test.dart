@@ -51,6 +51,10 @@ Map<String, dynamic> _issue(String id, String state) => {
   'blockedBy': <String>[],
   'parent': null,
   'link': null,
+  'worker': 'AGENT',
+  'atWork': false,
+  'needsYou': false,
+  'readingStopped': false,
 };
 
 Map<String, dynamic> _story(String id, String state) => {
@@ -535,7 +539,7 @@ void main() {
       'title': 'An idea',
       'mustBeTrue': 'It holds.',
       'revision': 'r1',
-    }, reason: 'no size member when none is known');
+    }, reason: 'no size member when none is known, and no worker, which the planner takes as an agent');
     expect((added.id, added.revision), ('PR3', 'r2'));
     await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1');
     expect(jsonDecode(planner.calls.last.body)['size'], 'S', reason: 'a known size is sent');
@@ -1093,6 +1097,91 @@ void main() {
     expect([for (final each in issues.issues) '${each.id}:${each.state}'], ['PR1:Backlog', 'PR2:Finished']);
     expect(issue.issue?.size, 'S');
     expect(issue.whatMustBeTrue, ['It works.'], reason: 'the criteria reach the issue view');
+  });
+
+  // Harm: an answer the contract does not allow is shown as if sound.
+  // Harm: a planner older than the screen leaves the person without a board.
+  test('an issue answered with a worker the description does not name is refused, one without any is read', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final changes = <String, void Function(Map<String, dynamic>)>{
+      'no worker': (issue) => issue.remove('worker'),
+      'a null worker': (issue) => issue['worker'] = null,
+      'a worker in lower case': (issue) => issue['worker'] = 'agent',
+      'an unknown worker': (issue) => issue['worker'] = 'NOBODY',
+      'a worker that is no text': (issue) => issue['worker'] = 1,
+    };
+    for (final MapEntry(key: what, value: change) in changes.entries) {
+      Map<String, dynamic> changed(Map<String, dynamic> issue) {
+        change(issue);
+        return issue;
+      }
+
+      Map<String, dynamic> issue(String id, String state) => changed(_issue(id, state));
+      final story = {
+        ..._story('ST1', 'Backlog'),
+        'issues': [issue('PR1', 'Backlog')],
+      };
+      planner.routes['GET /projects/demo/stories'] = () => _Reply(200, {
+        'revision': 'r1',
+        'stories': [story],
+      });
+      planner.routes['GET /projects/demo/stories/ST1'] = () => _Reply(200, {
+        'revision': 'r1',
+        'story': {...story, 'description': 'The story text.'},
+      });
+      planner.routes['GET /projects/demo/stories/ST1/issues'] = () => _Reply(200, {
+        'revision': 'r1',
+        'issues': [_issue('PR2', 'Finished'), issue('PR1', 'Backlog')],
+      });
+      planner.routes['GET /projects/demo/issues/PR1'] = () => _Reply(200, {
+        'revision': 'r1',
+        'issue': {...issue('PR1', 'Backlog'), 'text': 'The issue text.', 'subIssues': <String>[]},
+      });
+      planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {
+        'revision': 'r2',
+        'issue': changed(servedReadingIssue(stopped: false)),
+        'work': servedContinuationWork(),
+        'tasks': <Map<String, dynamic>>[],
+      });
+      final absent = what == 'no worker';
+      final calls = <String, Future<IssueWorker?> Function()>{
+        'the board': () async => (await source.stories('demo')).stories.single.issues.single.worker,
+        'a story': () async => (await source.getStory('demo', 'ST1')).story!.issues.single.worker,
+        'a story\'s issues': () async => (await source.listStoryIssues('demo', 'ST1')).issues.last.worker,
+        'an issue': () async => (await source.getIssue('demo', 'PR1')).issue!.worker,
+        'an issue read for its work': () async => (await source.getPlanningIssue('demo', 'PR1')).issue.worker,
+        'a reading choice': () async =>
+            (await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', 'r1')).issue!.worker,
+      };
+      for (final MapEntry(key: call, value: answer) in calls.entries) {
+        if (absent) {
+          expect(await answer(), isNull, reason: '$call answered with $what is read, its worker unknown');
+        } else {
+          expect((await _refusal(answer())).name, 'BadAnswer', reason: '$call answered with $what is refused');
+        }
+      }
+      final watched = source.watchStories('demo').first;
+      await _until(() => streams.opened.length == changes.keys.toList().indexOf(what) + 1, 'the stream');
+      streams.opened.last.add(
+        utf8.encode(
+          'event:board\nid:r1\ndata:${jsonEncode({
+            ..._workflow('r1'),
+            'stories': [story],
+            'repositories': ['porelo-project'],
+          })}\n\n',
+        ),
+      );
+      if (absent) {
+        expect(
+          (await watched).stories.single.issues.single.worker,
+          isNull,
+          reason: 'a streamed board with $what is read, its worker unknown',
+        );
+      } else {
+        expect((await _refusal(watched)).name, 'BadAnswer', reason: 'a streamed board with $what ends the watch');
+      }
+    }
   });
 
   // Harm: a refusal reaches the screen without its name, so the screen cannot say what the planner said.

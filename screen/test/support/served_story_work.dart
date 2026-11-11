@@ -117,6 +117,7 @@ Map<String, dynamic> servedReadingIssue({bool stopped = true, int round = 2}) =>
   'readingStopped': stopped,
   'atWork': false,
   'needsYou': stopped,
+  'worker': 'AGENT',
   'findings': [
     {'number': 1, 'severity': 'BLOCKING', 'text': 'Keep credentials inside.'},
   ],

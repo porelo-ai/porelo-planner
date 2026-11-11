@@ -114,3 +114,10 @@ String planningWorkMode(String mode) => switch (mode) {
   'AGENT' => 'shell with you',
   _ => planningValue(mode),
 };
+
+/// Who works an issue, in a word.
+String planningWorker(IssueWorker? worker) => switch (worker) {
+  IssueWorker.agent => 'Agent',
+  IssueWorker.manual => 'Manual',
+  null => 'Not reported',
+};

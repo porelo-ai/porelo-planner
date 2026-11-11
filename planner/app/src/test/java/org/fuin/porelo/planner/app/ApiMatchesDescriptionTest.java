@@ -53,6 +53,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Refreshed", Answers.Refreshed.class),
                     Map.entry("Moved", Answers.Moved.class),
                     Map.entry("IssueAdded", Answers.IssueAdded.class),
+                    Map.entry("WorkerRequest", WorkRequests.WorkerRequest.class),
+                    Map.entry("WorkerSaved", Answers.WorkerSaved.class),
                     Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
                     Map.entry("StoryWorkRequest", WorkRequests.Request.class),
                     Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),
@@ -135,7 +137,9 @@ class ApiMatchesDescriptionTest {
                             schemaOf(method.getReturnType()));
                 }
                 if (put != null) {
-                    served.put("PUT " + path(put.value(), put.path()), "");
+                    served.put(
+                            "PUT " + path(put.value(), put.path()),
+                            schemaOf(method.getReturnType()));
                 }
                 if (post != null) {
                     served.put(

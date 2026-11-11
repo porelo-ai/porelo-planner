@@ -112,6 +112,13 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 999
+    },
+    "worker": {
+      "description": "Who works it: Agent through the tasks the planner starts, Manual by a person; a head without it is worked by an agent. Written last.",
+      "enum": [
+        "Agent",
+        "Manual"
+      ]
     }
   },
   "$defs": {

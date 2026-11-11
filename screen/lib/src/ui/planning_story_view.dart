@@ -103,7 +103,7 @@ class PlanningStoryView extends StatelessWidget {
                 child: DataTable(
                   dataRowMaxHeight: double.infinity,
                   columns: [
-                    for (final label in ['Issue', 'Title', 'Repository', 'Size', 'State'])
+                    for (final label in ['Issue', 'Title', 'Repository', 'Size', 'Worker', 'State'])
                       DataColumn(label: Text(label)),
                   ],
                   rows: [
@@ -120,6 +120,7 @@ class PlanningStoryView extends StatelessWidget {
                           DataCell(Text(planningValue(issue.title))),
                           DataCell(Text(planningValue(issue.repository))),
                           DataCell(Text(planningValue(issue.size))),
+                          DataCell(Text(planningWorker(issue.worker))),
                           DataCell(_issueState(context, issue)),
                         ],
                       ),

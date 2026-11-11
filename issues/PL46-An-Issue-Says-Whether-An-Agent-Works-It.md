@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL46",
   "title": "An Issue Says Whether An Agent Works It",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 29,
@@ -32,7 +32,8 @@ head and saves it as it saves a move, and a person sees it on the board.
   head, leaves the index alone, skips an unchanged one, and commits and pushes it as a move, in the same commit as
   moves of the same save, with a subject that says so. A worker set on a sub-issue, or on an issue the same save
   closes, is refused. `IdeaFile` writes a new issue's worker.
-- `core`: a worker change of an issue a run's task owns is refused, as a move is, under the work record's lock.
+- `core`: a worker change of an issue a run's task owns, itself or through one of its sub-issues, is refused, as a
+  move is, under the work record's lock.
   `NewIssues` takes the new issue's worker, `AGENT` when none is given.
 - The contract, written first: `Issue.worker`; `NewIssueRequest.worker`, optional, `AGENT` by default; and
   `PUT /projects/{project}/issues/{issue}/worker` with `{worker, revision}`, answered as a move is, with the
@@ -48,6 +49,13 @@ head and saves it as it saves a move, and a person sees it on the board.
   worker.
 - Shipping: writing `worker` into a head waits until the build tools publish the schema that takes it; the planner's
   build then takes that snapshot.
+
+## Reading
+
+The final code was read by another model. Its four findings are fixed, the first three each with a test seen red
+first: a worker change while a running task owns a sub-issue of the issue is refused; a save that changes only a
+worker leaves the stories index and the own repository alone; the board a save checks keeps each issue's worker; and
+the contract names `worker` among a new issue's refused fields and among what a store may not save (wording only).
 
 ## Acceptance
 

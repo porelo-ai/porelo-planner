@@ -13,6 +13,8 @@ import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
@@ -73,6 +75,7 @@ public final class WorkRequests {
      * @param title the title
      * @param mustBeTrue what must be true
      * @param size the size
+     * @param worker who works it
      * @param revision the board's revision the person saw
      */
     public record IssueRequest(
@@ -80,10 +83,21 @@ public final class WorkRequests {
             @Nullable String title,
             @Nullable String mustBeTrue,
             @Nullable String size,
+            @Nullable String worker,
             @Nullable String revision) {}
 
     private static final Set<String> ISSUE_MEMBERS =
-            Set.of("repository", "title", "mustBeTrue", "size", "revision");
+            Set.of("repository", "title", "mustBeTrue", "size", "worker", "revision");
+
+    /**
+     * An issue's new worker as the window sends it.
+     *
+     * @param worker who is to work it
+     * @param revision the board's revision the person saw
+     */
+    public record WorkerRequest(Worker worker, String revision) {}
+
+    private static final Set<String> WORKER_MEMBERS = Set.of("worker", "revision");
 
     /**
      * Reads a new issue's body strictly: at most 65536 bytes, one JSON object, no other member,
@@ -108,7 +122,37 @@ public final class WorkRequests {
                 member(body, "title"),
                 member(body, "mustBeTrue"),
                 member(body, "size"),
+                member(body, "worker"),
                 member(body, "revision"));
+    }
+
+    /**
+     * Reads an issue's new worker strictly: at most 65536 bytes, one JSON object with exactly a
+     * worker the contract names and a revision; a refusal never repeats what was sent.
+     *
+     * @param request the request
+     * @param issue the issue's checked id, which a refusal names
+     * @return the worker and the revision
+     * @throws Moves.Refused {@code MoveNotAllowed} for a body that is no worker change
+     */
+    static WorkerRequest worker(final HttpServletRequest request, final String issue) {
+        final JsonNode body;
+        try {
+            body = read(request);
+        } catch (final WorkRefusal invalid) {
+            throw Workers.refused(issue, "The body is no worker change.");
+        }
+        if (!WORKER_MEMBERS.equals(Set.copyOf(body.propertyNames()))
+                || !body.get("revision").isString()) {
+            throw Workers.refused(issue, "The body is no worker change.");
+        }
+        final JsonNode worker = body.get("worker");
+        for (final Worker known : Worker.values()) {
+            if (worker.isString() && known.name().equals(worker.asString())) {
+                return new WorkerRequest(known, body.get("revision").asString());
+            }
+        }
+        throw Workers.refused(issue, "The worker must be AGENT or MANUAL.");
     }
 
     private static @Nullable String member(final JsonNode body, final String name) {

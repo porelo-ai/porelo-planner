@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.git;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.fuin.porelo.planner.store.Worker;
 import org.junit.jupiter.api.Test;
 
 /** A head's state edited in place, and nowhere else in the file. */
@@ -91,5 +92,34 @@ class HeadEditTest {
     void aStoryWithoutItsDataSectionIsRefused() {
         assertThatThrownBy(() -> HeadEdit.storyState(STORY.replace("## Data\n\n", ""), "Rejected"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void anIssuesWorkerIsInsertedLastAndReplacedLeavingTheRestOfTheFileByteForByte() {
+        // A worker written elsewhere, or a body touched, would change more than who works it.
+        final String manual = HeadEdit.issueWorker(ISSUE, Worker.MANUAL);
+        assertThat(manual)
+                .as("inserted after covers, the last member gaining its comma")
+                .isEqualTo(
+                        ISSUE.replace(
+                                "  \"covers\": \"Something.\"\n}",
+                                "  \"covers\": \"Something.\",\n  \"worker\": \"Manual\"\n}"));
+        assertThat(HeadEdit.issueWorker(manual, Worker.AGENT))
+                .as("replaced in its place")
+                .isEqualTo(manual.replace("\"Manual\"", "\"Agent\""));
+    }
+
+    @Test
+    void aHeadWithTwoWorkersIsRefused() {
+        // Which of two a reader takes is not certain, so setting one would save nothing sure.
+        final String twice =
+                HeadEdit.issueWorker(ISSUE, Worker.MANUAL)
+                        .replace(
+                                "  \"size\": \"S\",\n",
+                                "  \"worker\": \"Manual\",\n  \"size\": \"S\",\n");
+        assertThatThrownBy(() -> HeadEdit.issueWorker(twice, Worker.AGENT))
+                .as("two worker members")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("worker");
     }
 }

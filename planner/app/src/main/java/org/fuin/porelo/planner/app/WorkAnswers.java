@@ -303,6 +303,7 @@ public final class WorkAnswers {
                 issue.blockedBy(),
                 issue.parent(),
                 link == null ? null : link.toString(),
+                issue.worker().name(),
                 progress == null ? null : progress.rounds().rounds(),
                 progress == null ? null : progress.rounds().roundsMost(),
                 atWork(snapshot, issue.id()),

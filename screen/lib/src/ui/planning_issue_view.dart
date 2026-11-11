@@ -60,6 +60,7 @@ class PlanningIssueView extends StatelessWidget {
             Text(planningShown(issue.id, multiline: false)),
             Chip(label: Text(planningValue(issue.state))),
             Text(planningValue(issue.repository)),
+            Text('Worker: ${planningWorker(issue.worker)}'),
           ],
         ),
         Text(planningValue(issue.title), style: Theme.of(context).textTheme.headlineSmall),

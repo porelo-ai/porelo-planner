@@ -153,6 +153,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -170,6 +171,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -187,6 +189,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -204,6 +207,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -221,6 +225,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -238,6 +243,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -365,6 +371,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -413,6 +420,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -461,6 +469,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -495,7 +504,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "roundsMost": 2,
           "atWork": false,
           "needsYou": false,
-          "readingStopped": false
+          "readingStopped": false,
+          "worker": "AGENT"
         },
         {
           "id": "B542",
@@ -510,6 +520,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -527,6 +538,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -544,6 +556,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -561,6 +574,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -578,6 +592,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -595,6 +610,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -612,6 +628,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -629,6 +646,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -646,6 +664,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -663,6 +682,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -680,6 +700,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -697,6 +718,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -714,6 +736,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -742,6 +765,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -759,6 +783,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -776,6 +801,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -795,6 +821,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -812,6 +839,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -829,6 +857,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -848,6 +877,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -867,6 +897,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -905,6 +936,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -922,6 +954,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -939,6 +972,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -956,6 +990,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "MANUAL",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -973,6 +1008,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1011,6 +1047,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1082,6 +1119,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1099,6 +1137,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1116,6 +1155,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1133,6 +1173,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1150,6 +1191,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1167,6 +1209,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1184,6 +1227,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1255,6 +1299,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1272,6 +1317,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1289,6 +1335,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1306,6 +1353,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1323,6 +1371,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1340,6 +1389,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1411,6 +1461,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1535,6 +1586,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1552,6 +1604,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1569,6 +1622,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1586,6 +1640,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1603,6 +1658,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1620,6 +1676,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1637,6 +1694,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1665,6 +1723,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1693,6 +1752,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1721,6 +1781,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1738,6 +1799,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1755,6 +1817,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1803,6 +1866,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
@@ -1820,6 +1884,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "atWork": false,
           "needsYou": false,
           "readingStopped": false,
+          "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []

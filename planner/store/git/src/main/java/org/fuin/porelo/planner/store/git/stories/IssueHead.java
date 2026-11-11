@@ -27,6 +27,7 @@ import org.jspecify.annotations.Nullable;
  * @param severity a defect's severity, else null
  * @param kind what the work is, else null
  * @param openQuestions the questions waiting on the operator, else null
+ * @param worker who works it, {@code Agent} or {@code Manual}, else null, read as {@code Agent}
  */
 public record IssueHead(
         String id,
@@ -41,7 +42,8 @@ public record IssueHead(
         @Nullable String role,
         @Nullable String severity,
         @Nullable String kind,
-        @Nullable Integer openQuestions) {
+        @Nullable Integer openQuestions,
+        @Nullable String worker) {
 
     /** The fence that opens a head. */
     static final String FENCE = "```json";
@@ -54,6 +56,54 @@ public record IssueHead(
     /** Copies the waits to keep the head immutable. */
     public IssueHead {
         blockedBy = List.copyOf(blockedBy);
+    }
+
+    /**
+     * A head that names no worker.
+     *
+     * @param id the issue's id, a sub-issue's with its dot
+     * @param title the title its heading repeats
+     * @param state a state of the workflow
+     * @param size {@code XS} to {@code XL}, or a dash
+     * @param priority Jira's priority, {@code Highest} to {@code Lowest}
+     * @param rank the order within one priority of one state
+     * @param blockedBy the ids of the same repository it waits on
+     * @param covers what its index row says it covers
+     * @param parent a sub-issue's parent, else null
+     * @param role a sub-issue's role, else null
+     * @param severity a defect's severity, else null
+     * @param kind what the work is, else null
+     * @param openQuestions the questions waiting on the operator, else null
+     */
+    public IssueHead(
+            String id,
+            String title,
+            String state,
+            String size,
+            String priority,
+            int rank,
+            List<String> blockedBy,
+            String covers,
+            @Nullable String parent,
+            @Nullable String role,
+            @Nullable String severity,
+            @Nullable String kind,
+            @Nullable Integer openQuestions) {
+        this(
+                id,
+                title,
+                state,
+                size,
+                priority,
+                rank,
+                blockedBy,
+                covers,
+                parent,
+                role,
+                severity,
+                kind,
+                openQuestions,
+                null);
     }
 
     /**
@@ -220,7 +270,8 @@ public record IssueHead(
                         text(data, "role"),
                         text(data, "severity"),
                         text(data, "kind"),
-                        data.has("openQuestions") ? data.get("openQuestions").intValue() : null);
+                        data.has("openQuestions") ? data.get("openQuestions").intValue() : null,
+                        text(data, "worker"));
         return new Located(head, lines.getFirst(), lines, close + 1);
     }
 
@@ -276,6 +327,7 @@ public record IssueHead(
         if (kind != null) fields.add(field("kind", quoted(kind)));
         if (openQuestions != null)
             fields.add(field("openQuestions", Integer.toString(openQuestions)));
+        if (worker != null) fields.add(field("worker", quoted(worker)));
         return "{\n" + String.join(",\n", fields) + "\n}";
     }
 

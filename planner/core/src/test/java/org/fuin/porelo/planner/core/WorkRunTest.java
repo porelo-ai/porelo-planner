@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -437,6 +438,155 @@ class WorkRunTest {
                                             .isEqualTo("WorkRunning"));
             assertThat(saved).as("a refused move never reaches the save").isFalse();
         }
+    }
+
+    @Test
+    void aWorkerChangeOfAnIssueARunningTaskOwnsIsRefused() {
+        // A worker changed under a running task would hand a person an issue an agent still works.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        f.start(f.order().tasks().getFirst());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThatThrownBy(
+                        () ->
+                                f.run.worker(
+                                        "AA1",
+                                        () -> {
+                                            saved.set(true);
+                                            return f.store.board();
+                                        }))
+                .as("a running task owns AA1, so its worker stays")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("the owning run refuses the change")
+                                        .isEqualTo("WorkRunning"));
+        assertThat(saved).as("a refused change never reaches the save").isFalse();
+    }
+
+    @Test
+    void aWorkerChangeOfAParentWhoseSubIssueARunningTaskOwnsIsRefused() {
+        // A parent's worker is its sub-issues' worker, so the change would reach a running task.
+        final Fixture f = new Fixture();
+        final Board board = NextStepTest.board("Backlog", "Backlog");
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Backlog",
+                                        false,
+                                        "High",
+                                        List.of("AA1.1"),
+                                        "",
+                                        null)),
+                        board.issues(),
+                        board.work(),
+                        board.repositories());
+        final WorkRun.Order order = f.order();
+        assertThat(order.tasks().stream().flatMap(t -> t.task().issues().stream()))
+                .as("the story names only the sub-issue, so no task binds its parent")
+                .doesNotContain("AA1")
+                .contains("AA1.1");
+        f.start(order.tasks().getFirst());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThatThrownBy(
+                        () ->
+                                f.run.worker(
+                                        "AA1",
+                                        () -> {
+                                            saved.set(true);
+                                            return f.store.board();
+                                        }))
+                .as("a running task owns AA1.1, which takes AA1's worker")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("the run owning the sub-issue refuses the change")
+                                        .isEqualTo("WorkRunning"));
+        assertThat(saved).as("a refused change never reaches the save").isFalse();
+    }
+
+    @Test
+    void aReadingChoiceChecksItsSaveAgainstABoardThatKeepsEveryIssuesWorker() {
+        // A checked board that turns a person's issue into an agent's would plan work for it.
+        final Fixture f = new Fixture();
+        final Board board = f.store.current;
+        final List<Issue> issues = new java.util.ArrayList<>(board.issues());
+        issues.add(
+                new Issue(
+                        "AA2",
+                        "alpha",
+                        "By hand",
+                        "Backlog",
+                        null,
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        Worker.MANUAL));
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        issues,
+                        board.work(),
+                        board.repositories());
+        final WorkRun.Offered builder = f.order().tasks().getFirst();
+        f.start(builder);
+        final WorkRun.Offered reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        builder.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        f.run.choose(
+                "ST1",
+                "AA1",
+                1,
+                ReadingCycle.Choice.REWORK,
+                "Rework it",
+                f.store.board().revision().value());
+
+        assertThat(f.record.checkedBoard)
+                .as("the reading choice's save is checked against a board")
+                .isNotNull();
+        assertThat(f.record.checkedBoard.issue("AA2").orElseThrow().worker())
+                .as("the checked board keeps the issue a person works")
+                .isEqualTo(Worker.MANUAL);
+    }
+
+    @Test
+    void aWorkerChangeOfAnIssueNoRunOwnsIsSavedUnderTheRecordsLock() {
+        // A save beside the record's would move the board under a run's save, which then halts.
+        final Fixture f = new Fixture();
+
+        assertThat(f.run.worker("AA1", () -> f.record.held))
+                .as("the save runs while the record is held")
+                .isTrue();
     }
 
     @Test
@@ -1065,6 +1215,7 @@ class WorkRunTest {
         WorkRun.Snapshot value = new WorkRun.Snapshot(0, Map.of());
         boolean refuseReaders;
         boolean held;
+        @Nullable Board checkedBoard;
 
         /** Serializes actions as a disk record must. */
         @Override
@@ -1107,6 +1258,16 @@ class WorkRunTest {
                                 throw WorkRefusal.recordUnavailable(
                                         "project", "The work record is full.");
                             }
+                        }
+
+                        /** Keeps the board a decision's save is checked against. */
+                        @Override
+                        public void preflightIssue(
+                                final WorkRun.Snapshot snapshot,
+                                final Board board,
+                                final String issue) {
+                            checkedBoard = board;
+                            preflight(snapshot);
                         }
                     });
         }
@@ -1227,7 +1388,8 @@ class WorkRunTest {
                                                     i.blockedBy(),
                                                     i.parent(),
                                                     i.link(),
-                                                    i.text()))
+                                                    i.text(),
+                                                    i.worker()))
                             .toList();
             final List<Story> stories =
                     current.stories().stream()

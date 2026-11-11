@@ -120,15 +120,42 @@ final class SaveFiles {
     }
 
     /**
-     * Words a commit's subject: what moved and where to, never which item, so it names no
-     * requirement number.
+     * Words a commit's subject: what moved and where to, and how many issues' workers it sets,
+     * never which item, so it names no requirement number.
+     *
+     * @param issues the issues the commit moves, with their new states
+     * @param stories the stories whose head the commit changes, with their new stated states, or an
+     *     empty text where the stated state goes
+     * @param workers how many issues' workers the commit sets
+     * @return the subject
+     */
+    static String subject(
+            final Map<String, String> issues,
+            final Map<String, String> stories,
+            final int workers) {
+        if (workers == 0) {
+            return moved(issues, stories);
+        }
+        final String whom = workers == 1 ? "an issue" : workers + " issues";
+        if (issues.isEmpty() && stories.isEmpty()) {
+            return "Set who works " + whom;
+        }
+        final String both = moved(issues, stories) + " and set who works " + whom;
+        return both.length() <= SUBJECT
+                ? both
+                : "Move " + (issues.size() + stories.size()) + " items and set who works " + whom;
+    }
+
+    /**
+     * Words what a commit moves.
      *
      * @param issues the issues the commit moves, with their new states
      * @param stories the stories whose head the commit changes, with their new stated states, or an
      *     empty text where the stated state goes
      * @return the subject
      */
-    static String subject(final Map<String, String> issues, final Map<String, String> stories) {
+    private static String moved(
+            final Map<String, String> issues, final Map<String, String> stories) {
         final int count = issues.size() + stories.size();
         if (count == 0) {
             return "Rewrite the planning indexes";

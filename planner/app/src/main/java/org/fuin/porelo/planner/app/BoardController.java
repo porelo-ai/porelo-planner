@@ -17,6 +17,7 @@ import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.core.Workers;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -208,8 +209,59 @@ public class BoardController {
         }
         final NewIssue issue =
                 NewIssues.check(
-                        board, body.repository(), body.title(), body.mustBeTrue(), body.size());
+                        board,
+                        body.repository(),
+                        body.title(),
+                        body.mustBeTrue(),
+                        body.size(),
+                        body.worker());
         return store.createIssue(board.revision(), issue);
+    }
+
+    /**
+     * Sets who works an issue, saved as a move is saved.
+     *
+     * @param project the project's name
+     * @param issue the issue's id
+     * @param request the request, whose body is the new worker and the revision
+     * @return the revision after the save, unchanged when the issue had that worker already
+     */
+    @PutMapping("/projects/{project}/issues/{issue}/worker")
+    public Answers.WorkerSaved setWorker(
+            @PathVariable("project") final String project,
+            @PathVariable("issue") final String issue,
+            final HttpServletRequest request) {
+        final String checked = checked(project, () -> Ids.issue(issue), "issue");
+        final String name = name(project);
+        final WorkRequests.WorkerRequest body = WorkRequests.worker(request, checked);
+        try {
+            return projects.work(name).worker(checked, () -> saveWorker(name, checked, body));
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    private Answers.WorkerSaved saveWorker(
+            final String name, final String issue, final WorkRequests.WorkerRequest body) {
+        final PlanningStore store = projects.store(name);
+        final Board board = store.board();
+        if (!board.revision().value().equals(body.revision())) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        final Writes writes = Workers.check(board, issue, body.worker());
+        if (writes.none()) {
+            // Nothing changes, so no repository is locked or asked.
+            return new Answers.WorkerSaved(board.revision().value());
+        }
+        try {
+            return new Answers.WorkerSaved(store.save(board.revision(), writes).revision().value());
+        } catch (final UnsupportedOperationException e) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not save workers.",
+                    Map.of("project", name));
+        }
     }
 
     private static List<Moves.Move> moves(final String project, final MovesBody body) {
@@ -451,6 +503,7 @@ public class BoardController {
                         issue.blockedBy(),
                         issue.parent(),
                         link(issue.link()),
+                        issue.worker().name(),
                         issue.text(),
                         board.issues().stream()
                                 .filter(other -> checked.equals(other.parent()))

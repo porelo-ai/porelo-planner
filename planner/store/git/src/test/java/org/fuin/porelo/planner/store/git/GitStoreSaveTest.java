@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueSource;
@@ -857,6 +858,226 @@ class GitStoreSaveTest {
         assertThat(stale).as("refused as stale").isNotNull();
         assertThat(List.of(head(OWN), head(OTHER)))
                 .as("nothing pushed")
+                .containsExactly(own, other);
+    }
+
+    @Test
+    void aWorkerSavedAloneCommitsItsHeadAloneAndIsReadBackFromAFreshClone() throws Exception {
+        // A worker lost, or written with an index rewritten around it, would start work nobody
+        // chose or change files nobody touched.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        new Writes(Map.of(), Map.of(), List.of(), Map.of("CD01", Worker.MANUAL)));
+
+        assertThat(saved.issue("CD01").orElseThrow().worker())
+                .as("the board after the save shows the worker")
+                .isEqualTo(Worker.MANUAL);
+        assertThat(git(OTHER, "rev-parse", head(OTHER) + "^").strip())
+                .as("one commit on the one read")
+                .isEqualTo(other);
+        assertThat(names(OTHER, head(OTHER)))
+                .as("the issue's file alone, the index as it was")
+                .containsExactly("issues/CD01-Other.md");
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the worker written last in the head")
+                .contains("  \"covers\": \"Something.\",\n  \"worker\": \"Manual\"\n}\n```");
+        assertThat(head(OWN)).as("the own repository is left alone").isEqualTo(own);
+        assertThat(log(OTHER, head(OTHER), "%s"))
+                .as("a subject saying a worker changed")
+                .containsExactly("Set who works an issue");
+        assertThat(freshBoard().issue("CD01").orElseThrow().worker())
+                .as("a fresh clone reads the worker back")
+                .isEqualTo(Worker.MANUAL);
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+
+        final String after = head(OTHER);
+        store.save(
+                saved.revision(),
+                new Writes(Map.of(), Map.of(), List.of(), Map.of("CD01", Worker.MANUAL)));
+
+        assertThat(head(OTHER)).as("an unchanged worker commits nothing").isEqualTo(after);
+    }
+
+    @Test
+    void aWorkerSavedInAnotherRepositoryLeavesTheOwnRepositoryAloneThoughItsStoriesIndexIsStale()
+            throws Exception {
+        // A worker's save that rewrote a stale stories index would push a commit nobody asked for.
+        Files.writeString(
+                repositories.work(OWN).resolve("stories/ST4-Unindexed.md"),
+                story("ST4", "  \"state\": \"Idea\",\n", ""));
+        repositories.commit(OWN);
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        new Writes(Map.of(), Map.of(), List.of(), Map.of("CD01", Worker.MANUAL)));
+
+        assertThat(saved.issue("CD01").orElseThrow().worker())
+                .as("the worker is saved")
+                .isEqualTo(Worker.MANUAL);
+        assertThat(git(OTHER, "rev-parse", head(OTHER) + "^").strip())
+                .as("one commit on the repository whose head changed")
+                .isEqualTo(other);
+        assertThat(head(OWN))
+                .as("the own repository's stale stories index is left as it was")
+                .isEqualTo(own);
+    }
+
+    @Test
+    void aWorkerAndAMoveOfOneSaveGoInOneCommitWhoseSubjectSaysBoth() throws Exception {
+        // Split over two commits, a push failing between them would save half of what was asked.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String other = head(OTHER);
+
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        new Writes(
+                                Map.of("CD01", "Idea"),
+                                Map.of(),
+                                List.of(),
+                                Map.of("CD01", Worker.MANUAL)));
+
+        assertThat(git(OTHER, "rev-parse", head(OTHER) + "^").strip())
+                .as("one commit holds both")
+                .isEqualTo(other);
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the head carries the state and the worker")
+                .contains("\"state\": \"Idea\"")
+                .contains("\"worker\": \"Manual\"");
+        assertThat(saved.issue("CD01").orElseThrow())
+                .as("the board shows both")
+                .extracting(
+                        org.fuin.porelo.planner.store.Issue::state,
+                        org.fuin.porelo.planner.store.Issue::worker)
+                .containsExactly("Idea", Worker.MANUAL);
+        assertThat(log(OTHER, head(OTHER), "%s"))
+                .as("a subject naming the move and the worker")
+                .containsExactly("Move an issue to Idea and set who works an issue");
+        assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
+    }
+
+    @Test
+    void aWorkerOnASubIssueIsRefusedNamingItAndPushesNothing() throws Exception {
+        // A sub-issue is worked as its parent is; its own worker would be saved but never read.
+        final Path issues = repositories.work(OTHER).resolve("issues");
+        Files.writeString(
+                issues.resolve("CD01.1-Part.md"),
+                issue("CD01.1", "Backlog")
+                        .replace(
+                                "\"Something.\"\n}",
+                                "\"Something.\",\n  \"parent\": \"CD01\",\n  \"role\": \"builder\"\n}"));
+        IssuesIndex.write(issues);
+        repositories.commit(OTHER);
+
+        refusedPushingNothing(
+                new Writes(
+                        Map.of("CD01", "Idea"),
+                        Map.of(),
+                        List.of(),
+                        Map.of("CD01.1", Worker.MANUAL)),
+                "CD01.1");
+    }
+
+    @Test
+    void aWorkerOnAnIssueTheSameSaveClosesIsRefusedNamingItAndPushesNothing() throws Exception {
+        // A closed issue's file is deleted, so the worker would be written into a file that goes.
+        refusedPushingNothing(
+                new Writes(
+                        Map.of("AB01", "Finished"),
+                        Map.of(),
+                        List.of(),
+                        Map.of("AB01", Worker.MANUAL)),
+                "AB01");
+    }
+
+    @Test
+    void aWorkerOnAnIssueNotOnTheBoardIsRefusedNamingItAndPushesNothing() throws Exception {
+        // A worker for an issue nobody reads would be dropped while the rest of the save went out.
+        refusedPushingNothing(
+                new Writes(
+                        Map.of("CD01", "Idea"), Map.of(), List.of(), Map.of("CD09", Worker.MANUAL)),
+                "CD09");
+    }
+
+    @Test
+    void aWorkerTheHeadEditCannotPlaceIsRefusedNamingTheIssueAndPushesNothing() throws Exception {
+        // A head with the worker twice no longer reads, and the issue would drop off every board.
+        final Path issues = repositories.work(OTHER).resolve("issues");
+        Files.writeString(
+                issues.resolve("CD01-Other.md"),
+                issue("CD01", "Backlog")
+                        .replace("\"Something.\"\n}", "\"Something.\", \"worker\": \"Agent\"\n}"));
+        repositories.commit(OTHER);
+
+        refusedPushingNothing(
+                new Writes(Map.of(), Map.of(), List.of(), Map.of("CD01", Worker.MANUAL)), "CD01");
+    }
+
+    @Test
+    void anIdeaWorkedByAPersonIsReadBackManualAndOneWorkedByAnAgentNamesNoWorker()
+            throws Exception {
+        // A new issue started under the wrong worker would be worked by whom nobody chose, and a
+        // head naming Agent would fail the build tools' schema until they publish the field.
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final NewIssue.Added manual =
+                store.createIssue(
+                        board.revision(),
+                        new NewIssue(OTHER, "By hand", "A person works it.", null, Worker.MANUAL));
+        final NewIssue.Added agent =
+                store.createIssue(
+                        manual.board().revision(),
+                        new NewIssue(OWN, "By an agent", "An agent works it.", null, Worker.AGENT));
+
+        assertThat(read(OTHER, "issues/CD02-By-hand.md"))
+                .as("the person's worker written last in the head")
+                .contains("\"covers\": \"By hand\",\n  \"worker\": \"Manual\"\n}");
+        assertThat(read(OWN, "issues/AB03-By-an-agent.md"))
+                .as("an agent's issue names no worker")
+                .doesNotContain("worker");
+        assertThat(freshBoard())
+                .as("a fresh clone reads both back")
+                .satisfies(
+                        fresh -> {
+                            assertThat(fresh.issue("CD02").orElseThrow().worker())
+                                    .as("the person's")
+                                    .isEqualTo(Worker.MANUAL);
+                            assertThat(fresh.issue("AB03").orElseThrow().worker())
+                                    .as("the agent's")
+                                    .isEqualTo(Worker.AGENT);
+                        });
+        assertThat(agent.id()).as("the own issue's id").isEqualTo("AB03");
+    }
+
+    /** Saves the writes, expects a refusal naming the issue, and checks nothing was pushed. */
+    private void refusedPushingNothing(final Writes writes, final String issue) throws Exception {
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () -> store.save(board.revision(), writes));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.subject()).as("naming the issue").isEqualTo(issue);
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed to either repository")
                 .containsExactly(own, other);
     }
 

@@ -84,6 +84,55 @@ class MockModeTest {
     }
 
     @Test
+    void everyIssueOfTheMockBoardNamesItsWorkerAndSomeArePeoples() throws Exception {
+        // A mock issue without a worker, or none a person works, leaves the window's tests of a
+        // person's issue nothing to show.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final List<String> workers = new ArrayList<>();
+        json(call(runtime, "GET", "/projects/any/stories", null))
+                .get("stories")
+                .forEach(
+                        story ->
+                                story.get("issues")
+                                        .forEach(
+                                                issue ->
+                                                        workers.add(
+                                                                String.valueOf(
+                                                                        issue.path("worker")
+                                                                                .asString(null)))));
+        assertThat(workers)
+                .as("the workers of the mock board's issues")
+                .isNotEmpty()
+                .containsOnly("AGENT", "MANUAL")
+                .contains("AGENT", "MANUAL");
+    }
+
+    @Test
+    void theMockAnswersAWorkerChangeAsItAnswersAMove() throws Exception {
+        // The window tests its handling of a save against the mock; a different answer hides it.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> move =
+                call(
+                        runtime,
+                        "POST",
+                        "/projects/any/moves",
+                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"PJ74\", \"to\":"
+                                + " \"Estimated\"}]}");
+        final HttpResponse<String> worker =
+                call(
+                        runtime,
+                        "PUT",
+                        "/projects/any/issues/PJ74/worker",
+                        "{\"worker\": \"MANUAL\", \"revision\": \"mock@1\"}");
+        assertThat(worker.statusCode())
+                .as("the status of a worker change, against a move's: %s", worker.body())
+                .isEqualTo(move.statusCode());
+        assertThat(JSON.readTree(worker.body()).path("type").asString())
+                .as("the refusal of a worker change, against a move's")
+                .isEqualTo(JSON.readTree(move.body()).path("type").asString());
+    }
+
+    @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
         // Projects kept across the window's tests would leak a test's project into the next and
         // run into the planner's bound on projects after a few tests.

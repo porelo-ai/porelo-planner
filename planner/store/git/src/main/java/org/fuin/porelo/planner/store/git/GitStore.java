@@ -39,6 +39,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
@@ -259,7 +260,8 @@ public final class GitStore implements PlanningStore {
             }
             final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
             final Map<String, String> stories = storyHeads(snapshot, writes);
-            if (issues.isEmpty() && stories.isEmpty() && idea == null) {
+            final Map<String, Map<String, Worker>> workers = workerHeads(snapshot, writes);
+            if (issues.isEmpty() && stories.isEmpty() && workers.isEmpty() && idea == null) {
                 return new Saved(snapshot.board(), null);
             }
             final Path scratch;
@@ -269,7 +271,8 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.Unreadable(own, "no directory for the save");
             }
             try {
-                return commitAndPush(snapshot, writes, idea, issues, stories, scratch);
+                return commitAndPush(
+                        snapshot, new Edits(writes, idea, issues, stories, workers), scratch);
             } catch (final GitFailure | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
             } finally {
@@ -373,6 +376,63 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
+    /**
+     * Each changed worker's issue file and its worker, by repository; every one checked savable
+     * before anything is written, an unchanged one left out.
+     */
+    private Map<String, Map<String, Worker>> workerHeads(
+            final Snapshot snapshot, final Writes writes) {
+        final org.fuin.porelo.planner.store.git.stories.Workflow workflow =
+                project(of(snapshot.parts(), repositories.get(0).name()));
+        final Map<String, Map<String, Worker>> files = new LinkedHashMap<>();
+        for (final Map.Entry<String, Worker> write : writes.workers().entrySet()) {
+            final String id = write.getKey();
+            final Issue issue =
+                    snapshot.board()
+                            .issue(id)
+                            .orElseThrow(
+                                    () ->
+                                            new StoreException.NotSavable(
+                                                    id, "it is not on the board"));
+            if (issue.parent() != null) {
+                throw new StoreException.NotSavable(
+                        id, "a sub-issue is worked as its parent " + issue.parent() + " is");
+            }
+            final String state = writes.issues().get(id);
+            if (state != null && workflow.states().contains(state) && workflow.closed(state)) {
+                throw new StoreException.NotSavable(
+                        id, "the same save closes it, and its file goes");
+            }
+            if (issue.worker() == write.getValue()) {
+                continue;
+            }
+            final String name = issue.repository();
+            final String path = of(snapshot.parts(), name).paths().get(id);
+            if (path == null) {
+                throw new StoreException.NotSavable(
+                        id, "its file is gone and only its index row is left");
+            }
+            files.computeIfAbsent(name, key -> new LinkedHashMap<>()).put(path, write.getValue());
+        }
+        return files;
+    }
+
+    /**
+     * What one save edits: the writes asked for, a new issue, and the files they change.
+     *
+     * @param writes the writes asked for
+     * @param idea the new issue, if one is added
+     * @param issues each moved issue's file and new state, by repository
+     * @param stories each story's file and new stated state, empty where it goes
+     * @param workers each changed worker's issue file and worker, by repository
+     */
+    private record Edits(
+            Writes writes,
+            @Nullable NewIssue idea,
+            Map<String, Map<String, String>> issues,
+            Map<String, String> stories,
+            Map<String, Map<String, Worker>> workers) {}
+
     /** Each written story's file and its new stated state, empty where it goes. */
     private Map<String, String> storyHeads(final Snapshot snapshot, final Writes writes) {
         final Part own = of(snapshot.parts(), repositories.get(0).name());
@@ -390,13 +450,12 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
-    private Saved commitAndPush(
-            final Snapshot snapshot,
-            final Writes writes,
-            final @Nullable NewIssue idea,
-            final Map<String, Map<String, String>> issues,
-            final Map<String, String> stories,
-            final Path scratch) {
+    private Saved commitAndPush(final Snapshot snapshot, final Edits edits, final Path scratch) {
+        final Writes writes = edits.writes();
+        final @Nullable NewIssue idea = edits.idea();
+        final Map<String, Map<String, String>> issues = edits.issues();
+        final Map<String, String> stories = edits.stories();
+        final Map<String, Map<String, Worker>> workers = edits.workers();
         final String own = repositories.get(0).name();
         final Map<String, Map<String, String>> before = new LinkedHashMap<>();
         for (final Repository repository : repositories) {
@@ -414,6 +473,17 @@ public final class GitStore implements PlanningStore {
             }
         }
         final IdeaFile.Written added = idea == null ? null : idea(snapshot, idea, scratch);
+        // Written before the indexes, which read the heads; a worker leaves every index alone.
+        workers.forEach(
+                (name, heads) ->
+                        heads.forEach(
+                                (path, worker) ->
+                                        setWorker(
+                                                snapshot,
+                                                name,
+                                                scratch.resolve(name),
+                                                path,
+                                                worker)));
         final Set<String> indexed = new java.util.LinkedHashSet<>(issues.keySet());
         if (idea != null) {
             indexed.add(idea.repository());
@@ -431,6 +501,7 @@ public final class GitStore implements PlanningStore {
                         text -> HeadEdit.issueState(text, head.getValue()));
             }
             final List<String> heads = written(moved.keySet(), added, idea, name);
+            heads.addAll(workers.getOrDefault(name, Map.of()).keySet());
             final List<String> written =
                     new ArrayList<>(writeIndex(snapshot, name, root, scratch, heads));
             written.addAll(recordMoves(snapshot, writes, name, root, moved));
@@ -454,7 +525,9 @@ public final class GitStore implements PlanningStore {
                     head.getKey(),
                     text -> HeadEdit.storyState(text, state.isEmpty() ? null : state));
         }
-        if (Files.isDirectory(ownRoot.resolve("stories"))) {
+        // A worker alone changes no row of the stories index, so it leaves the own repository be.
+        final boolean storiesIndexed = !issues.isEmpty() || !stories.isEmpty() || idea != null;
+        if (storiesIndexed && Files.isDirectory(ownRoot.resolve("stories"))) {
             final org.fuin.porelo.planner.store.git.stories.StoriesIndex.Result index;
             try {
                 index =
@@ -470,6 +543,7 @@ public final class GitStore implements PlanningStore {
             }
             final List<String> edited = new ArrayList<>(stories.keySet());
             issues.values().forEach(heads -> edited.addAll(heads.keySet()));
+            workers.values().forEach(heads -> edited.addAll(heads.keySet()));
             if (added != null) {
                 edited.add(added.path());
             }
@@ -484,7 +558,9 @@ public final class GitStore implements PlanningStore {
             final String name = repository.name();
             final Map<String, String> edited = issues.getOrDefault(name, Map.of());
             // The heads edited and every file the index library rewrote, the story texts too.
+            final Map<String, Worker> set = workers.getOrDefault(name, Map.of());
             final List<String> heads = written(edited.keySet(), added, idea, name);
+            heads.addAll(set.keySet());
             heads.addAll(rewritten.getOrDefault(name, List.of()));
             if (name.equals(own)) {
                 heads.addAll(stories.keySet());
@@ -509,7 +585,7 @@ public final class GitStore implements PlanningStore {
                     name,
                     added != null && movedIssues.isEmpty() && movedStories.isEmpty()
                             ? "Add an idea"
-                            : SaveFiles.subject(movedIssues, movedStories));
+                            : SaveFiles.subject(movedIssues, movedStories, set.size()));
             changed.put(name, paths);
         }
         final Map<String, String> made = new LinkedHashMap<>();
@@ -531,8 +607,9 @@ public final class GitStore implements PlanningStore {
                                 commit,
                                 own(repository(name)) ? null : project(of(snapshot.parts(), own)));
                 if (added != null && idea != null && name.equals(idea.repository())) {
-                    readsBack(name, part, added.id());
+                    readsBack(name, part, added.id(), idea.worker());
                 }
+                workersReadBack(snapshot, name, part, workers.getOrDefault(name, Map.of()));
                 after.put(name, part);
                 made.put(name, commit);
             } catch (final GitFailure e) {
@@ -679,13 +756,68 @@ public final class GitStore implements PlanningStore {
         return heads;
     }
 
-    /** A new issue is pushed only once its commit reads it back in the state it was written in. */
-    private static void readsBack(final String name, final Part part, final String id) {
+    /**
+     * A new issue is pushed only once its commit reads it back in the state and with the worker it
+     * was written with.
+     */
+    private static void readsBack(
+            final String name, final Part part, final String id, final Worker worker) {
         if (part.issues().stream()
                 .noneMatch(
-                        issue -> issue.id().equals(id) && issue.state().equals(IdeaFile.STATE))) {
+                        issue ->
+                                issue.id().equals(id)
+                                        && issue.state().equals(IdeaFile.STATE)
+                                        && issue.worker() == worker)) {
             throw new StoreException.Unreadable(
                     name, "the new issue " + id + " does not read back from its commit");
+        }
+    }
+
+    /** A worker is pushed only once its commit reads the issue back with it. */
+    private static void workersReadBack(
+            final Snapshot snapshot,
+            final String name,
+            final Part part,
+            final Map<String, Worker> workers) {
+        for (final Map.Entry<String, Worker> set : workers.entrySet()) {
+            final String id = item(snapshot, name, set.getKey());
+            if (part.issues().stream()
+                    .noneMatch(
+                            issue -> issue.id().equals(id) && issue.worker() == set.getValue())) {
+                throw new StoreException.Unreadable(
+                        name, "the worker of " + id + " does not read back from its commit");
+            }
+        }
+    }
+
+    /**
+     * Sets who works an issue in the save's copy of its file, refusing a head that does not read
+     * back with it, such as one written several members a line.
+     */
+    private void setWorker(
+            final Snapshot snapshot,
+            final String name,
+            final Path root,
+            final String path,
+            final Worker worker) {
+        edit(snapshot, name, root, path, text -> HeadEdit.issueWorker(text, worker));
+        final org.fuin.porelo.planner.store.git.stories.IssueHead head;
+        try {
+            head =
+                    org.fuin.porelo.planner.store.git.stories.IssueHead.read(
+                            Files.readString(root.resolve(path), StandardCharsets.UTF_8),
+                            project(of(snapshot.parts(), repositories.get(0).name())));
+        } catch (final IOException e) {
+            throw new StoreException.Unreadable(
+                    name, item(snapshot, name, path) + " could not be read");
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.NotSavable(
+                    item(snapshot, name, path),
+                    "its head does not take the worker: " + e.getMessage());
+        }
+        if (head == null || !worker.name().equalsIgnoreCase(String.valueOf(head.worker()))) {
+            throw new StoreException.NotSavable(
+                    item(snapshot, name, path), "its head does not take the worker");
         }
     }
 

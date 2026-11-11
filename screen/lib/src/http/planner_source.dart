@@ -338,16 +338,37 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   Future<PlanningSnapshot> stories(String project) => _snapshot(project);
 
   @override
-  Future<PlanStoryDetail> getStory(String project, String story) async =>
-      PlanStoryDetail.from(await _read(project, ['stories', _checked('story', story, _storyId)]));
+  Future<PlanStoryDetail> getStory(String project, String story) async {
+    final detail = PlanStoryDetail.from(await _read(project, ['stories', _checked('story', story, _storyId)]));
+    _workersNamed(detail.story?.issues ?? const []);
+    return detail;
+  }
 
   @override
-  Future<PlanIssueList> listStoryIssues(String project, String story) async =>
-      PlanIssueList.from(await _read(project, ['stories', _checked('story', story, _storyId), 'issues']));
+  Future<PlanIssueList> listStoryIssues(String project, String story) async {
+    final list = PlanIssueList.from(await _read(project, ['stories', _checked('story', story, _storyId), 'issues']));
+    _workersNamed(list.issues);
+    return list;
+  }
 
   @override
-  Future<PlanIssueDetail> getIssue(String project, String issue) async =>
-      PlanIssueDetail.from(await _read(project, ['issues', _checked('issue', issue, _issueId)]));
+  Future<PlanIssueDetail> getIssue(String project, String issue) async {
+    final detail = PlanIssueDetail.from(await _read(project, ['issues', _checked('issue', issue, _issueId)]));
+    _workersNamed([?detail.issue]);
+    return detail;
+  }
+
+  /// Refuses an answer naming an issue's worker other than the description names; a planner older than the screen
+  /// names none, and its issues are read with their worker unknown.
+  static void _workersNamed(Iterable<PlanIssue> issues) {
+    if (issues.any((issue) => issue.workerMalformed)) {
+      throw const PlanningRefusal(
+        'BadAnswer',
+        {},
+        'the planner answered an issue\'s worker other than AGENT or MANUAL',
+      );
+    }
+  }
 
   @override
   Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
@@ -386,6 +407,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'title': title,
         'mustBeTrue': mustBeTrue,
         'size': ?size,
+        // No worker is sent: the planner takes an agent, and one older than this screen refuses the member.
         'revision': revision,
       },
     );
@@ -522,7 +544,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     if (answer['issue'] is! Map<String, dynamic> || (answer['issue'] as Map)['id'] != issue) {
       throw const PlanningRefusal('BadAnswer', {}, 'The planner answered a different issue.');
     }
-    return PlanningIssueDetail.from(answer);
+    final detail = PlanningIssueDetail.from(answer);
+    _workersNamed([detail.issue]);
+    return detail;
   }
 
   Future<Map<String, dynamic>> _runRead(String project, List<String> path, {bool revision = false}) async {
@@ -591,6 +615,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       );
       final resolution = ReadingResolution.from(answer);
       resolution.checkDecision(issue, choice);
+      _workersNamed([?resolution.issue]);
       run.observe(resolution.work);
       return resolution;
     } on FormatException catch (error) {
@@ -615,7 +640,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     }
     await _stillBound(project, given);
     _readSources[project] = given.source;
-    return PlanningSnapshot.from({...workflow, 'stories': board['stories']});
+    final snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories']});
+    _workersNamed(snapshot.stories.expand((story) => story.issues));
+    return snapshot;
   }
 
   /// Reads `projects/{project}/<path>`, telling the planner the project first, again whenever the window names
@@ -1151,6 +1178,7 @@ class _Watch {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner streamed a board that cannot be read: $error');
       }
       if (!snapshot.complete) throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed an incomplete board');
+      HttpPlanningSource._workersNamed(snapshot.stories.expand((story) => story.issues));
       if (!snapshot.repositoriesReported ||
           snapshot.repositories.any((name) => !HttpPlanningSource._name.hasMatch(name))) {
         throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board without its repositories');

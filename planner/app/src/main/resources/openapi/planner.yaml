@@ -452,6 +452,51 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/issues/{issue}/worker:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    put:
+      operationId: setWorker
+      summary: Set who works an issue
+      description: >-
+        Writes the issue's worker into its head against the board at the given revision, saved as a move is saved: one
+        commit pushed under the person's own Git login, or nothing at all. A worker equal to the issue's is saved as
+        nothing. A sub-issue takes its parent's worker and is refused one of its own; an issue a task of a running work
+        owns, itself or through one of its sub-issues, is refused, as a move of it is.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerRequest'
+      responses:
+        '200':
+          description: The worker is saved, or was the issue's already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/MoveConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/moves:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1036,9 +1081,9 @@ components:
     IssueRefused:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 65536 bytes (field
-        empty), or a field is out of bounds (field repository, title, mustBeTrue, size or revision), or the store cannot
-        write it in its repository, such as a repository whose issues give no prefix (field empty). What was sent is
-        never repeated.
+        empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker or revision), or the
+        store cannot write it in its repository, such as a repository whose issues give no prefix (field empty). What
+        was sent is never repeated.
       content:
         application/problem+json:
           schema:
@@ -1052,7 +1097,8 @@ components:
               field: title
               reason: The title must have 1 to 120 characters.
     NotOffered:
-      description: This planner's store saves no moves or adds no issues, as in mock mode (NotOffered).
+      description: >-
+        This planner's store saves no moves, adds no issues or saves no workers, as in mock mode (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -1298,6 +1344,27 @@ components:
           items:
             $ref: '#/components/schemas/IssueId'
 
+    Worker:
+      description: Who works an issue, an agent through the tasks the planner starts or a person by hand.
+      type: string
+      enum: [AGENT, MANUAL]
+    WorkerRequest:
+      description: An issue's new worker, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [worker, revision]
+      properties:
+        worker:
+          $ref: '#/components/schemas/Worker'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    WorkerSaved:
+      description: The board's revision after the save.
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
     NewIssueRequest:
       description: An idea a person wrote, against the board at a revision; no other member is taken.
       type: object
@@ -1321,6 +1388,10 @@ components:
         size:
           type: string
           enum: [XS, S, M, L, XL]
+        worker:
+          description: Who works the new issue; AGENT when it is left out.
+          allOf:
+            - $ref: '#/components/schemas/Worker'
         revision:
           $ref: '#/components/schemas/Revision'
     IssueAdded:
@@ -1424,7 +1495,7 @@ components:
     Issue:
       description: One issue of a story.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link, atWork, needsYou, readingStopped]
+      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -1451,6 +1522,10 @@ components:
           type: [string, 'null']
           format: uri
           description: The issue's web page, or null when it has none.
+        worker:
+          description: Who works it. A head that names none is worked by an agent; a sub-issue is worked as its parent is.
+          allOf:
+            - $ref: '#/components/schemas/Worker'
         rounds:
           type: integer
           minimum: 0

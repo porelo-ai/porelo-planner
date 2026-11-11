@@ -12,6 +12,7 @@ import '../story_work.dart';
 import '../story_work_order.dart';
 import 'actions.dart';
 import 'new_issue_dialog.dart';
+import 'planning_detail_widgets.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
 import 'story_work_dialog.dart';
@@ -950,6 +951,7 @@ class _BoardViewState extends State<_BoardView> {
                             children: [
                               if (issue.state.isNotEmpty) Text(issue.state),
                               if (issue.size.isNotEmpty) Text(issue.size),
+                              if (issue.worker case final worker?) Text(planningWorker(worker)),
                             ],
                           ),
                           if (!issue.blockedByReported)

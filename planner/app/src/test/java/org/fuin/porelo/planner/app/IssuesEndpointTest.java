@@ -18,6 +18,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
@@ -119,6 +120,28 @@ class IssuesEndpointTest {
     }
 
     @Test
+    void anIdeaIsWorkedByAnAgentUnlessItNamesAPerson() throws Exception {
+        // A new issue given to the wrong worker starts work a person did not ask for, or none.
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"revision\": \"r1\"}")
+                .andExpect(status().isCreated());
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"worker\": \"MANUAL\", \"revision\": \"r2\"}")
+                .andExpect(status().isCreated());
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"worker\": \"AGENT\", \"revision\": \"r2\"}")
+                .andExpect(status().isCreated());
+
+        assertThat(added)
+                .as("the worker each new issue is handed to the store with")
+                .extracting(NewIssue::worker)
+                .containsExactly(Worker.AGENT, Worker.MANUAL, Worker.AGENT);
+    }
+
+    @Test
     void anIdeaAgainstAnotherRevisionIsRefusedAsStaleAndAddsNothing() throws Exception {
         // An idea numbered on a board the window no longer shows could take a number taken since.
         issue(
@@ -153,6 +176,18 @@ class IssuesEndpointTest {
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
                         + " \"revision\": \"r1\", \"token123secret\": 1}",
                 "");
+        refused(
+                "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                        + " \"worker\": \"manual\", \"revision\": \"r1\"}",
+                "worker");
+        refused(
+                "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                        + " \"worker\": \"token123secret\", \"revision\": \"r1\"}",
+                "worker");
+        refused(
+                "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                        + " \"worker\": 1, \"revision\": \"r1\"}",
+                "worker");
         refused("{\"revision\": token123secret}", "");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \""

@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -41,6 +42,7 @@ public final class NewIssues {
      * @param title the title
      * @param mustBeTrue what must be true
      * @param size the size, or null
+     * @param worker who works it, {@code AGENT} or {@code MANUAL}; null for {@code AGENT}
      * @return the issue, its title without the spaces around it
      * @throws Moves.Refused {@code IssueNotAllowed} naming the first field out of bounds
      */
@@ -49,7 +51,8 @@ public final class NewIssues {
             final @Nullable String repository,
             final @Nullable String title,
             final @Nullable String mustBeTrue,
-            final @Nullable String size) {
+            final @Nullable String size,
+            final @Nullable String worker) {
         if (repository == null || !board.repositories().contains(repository)) {
             throw refused("repository", "The repository is no repository of the project.");
         }
@@ -67,7 +70,19 @@ public final class NewIssues {
         if (size != null && !SIZES.contains(size)) {
             throw refused("size", "The size must be one of " + String.join(", ", SIZES) + ".");
         }
-        return new NewIssue(repository, line, mustBeTrue, size);
+        return new NewIssue(repository, line, mustBeTrue, size, worker(worker));
+    }
+
+    private static Worker worker(final @Nullable String worker) {
+        if (worker == null) {
+            return Worker.AGENT;
+        }
+        for (final Worker known : Worker.values()) {
+            if (known.name().equals(worker)) {
+                return known;
+            }
+        }
+        throw refused("worker", "The worker must be AGENT or MANUAL.");
     }
 
     /**

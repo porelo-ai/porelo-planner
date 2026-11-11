@@ -846,6 +846,43 @@ public final class WorkRun {
         return record.locked(session -> save.get());
     }
 
+    /**
+     * Serializes a change of who works an issue with the runs' saves, refused as a move of the
+     * issue is while a run with a started task owns it.
+     *
+     * @param issue the issue's id
+     * @param save the save
+     * @param <T> what the save answers
+     * @return what the save answered
+     * @throws WorkRefusal {@code WorkRunning} while a running work owns the issue or one of its
+     *     sub-issues, which take its worker
+     */
+    public <T> T worker(final String issue, final Supplier<T> save) {
+        Ids.issue(issue);
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    refuseOwned(snapshot, withSubIssues(store.board(), issue), Set.of());
+                    return save.get();
+                });
+    }
+
+    /** The issue and every issue below it, since a sub-issue takes its parent's worker. */
+    private static Set<String> withSubIssues(final Board board, final String issue) {
+        final Set<String> found = new HashSet<>(Set.of(issue));
+        boolean grown = true;
+        while (grown) {
+            grown = false;
+            for (final Issue each : board.issues()) {
+                final String parent = each.parent();
+                if (parent != null && found.contains(parent) && found.add(each.id())) {
+                    grown = true;
+                }
+            }
+        }
+        return found;
+    }
+
     /** Serializes a window move with report ownership checks and the store save itself. */
     public <T> T moves(final List<Moves.Move> moves, final Supplier<T> save) {
         return record.locked(
@@ -870,25 +907,32 @@ public final class WorkRun {
                             }
                         }
                     }
-                    for (final Run run : snapshot.runs().values()) {
-                        final List<Offer> started =
-                                run.offers().stream()
-                                        .filter(o -> o.status().equals("STARTED"))
-                                        .toList();
-                        final List<String> active =
-                                started.stream().map(o -> String.valueOf(o.task())).toList();
-                        if (active.isEmpty()) {
-                            continue;
-                        }
-                        if (moves.stream().anyMatch(m -> m.story() && m.id().equals(run.story()))
-                                || run.offers().stream()
-                                        .flatMap(o -> o.binding().issues().stream())
-                                        .anyMatch(affected::contains)) {
-                            throw WorkRefusal.workRunning(run.story(), active);
-                        }
-                    }
+                    final Set<String> stories = new HashSet<>();
+                    moves.stream().filter(Moves.Move::story).forEach(m -> stories.add(m.id()));
+                    refuseOwned(snapshot, affected, stories);
                     return save.get();
                 });
+    }
+
+    /** Refuses a change of a story or an issue that a run with a started task owns. */
+    private static void refuseOwned(
+            final Snapshot snapshot, final Set<String> issues, final Set<String> stories) {
+        for (final Run run : snapshot.runs().values()) {
+            final List<String> active =
+                    run.offers().stream()
+                            .filter(o -> o.status().equals("STARTED"))
+                            .map(o -> String.valueOf(o.task()))
+                            .toList();
+            if (active.isEmpty()) {
+                continue;
+            }
+            if (stories.contains(run.story())
+                    || run.offers().stream()
+                            .flatMap(o -> o.binding().issues().stream())
+                            .anyMatch(issues::contains)) {
+                throw WorkRefusal.workRunning(run.story(), active);
+            }
+        }
     }
 
     private Run save(
@@ -1210,7 +1254,8 @@ public final class WorkRun {
                                                 i.blockedBy(),
                                                 i.parent(),
                                                 i.link(),
-                                                i.text()))
+                                                i.text(),
+                                                i.worker()))
                         .toList(),
                 board.work(),
                 board.repositories());

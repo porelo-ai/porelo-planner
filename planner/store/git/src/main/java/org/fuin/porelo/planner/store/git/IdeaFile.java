@@ -14,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueIndex;
 import org.fuin.porelo.planner.store.git.stories.IssueIndexes;
@@ -105,7 +106,9 @@ final class IdeaFile {
                         null,
                         null,
                         null,
-                        null);
+                        null,
+                        // An agent's issue names none, so its head holds to the schema before it.
+                        issue.worker() == Worker.MANUAL ? "Manual" : null);
         final String path = "issues/" + id + "-" + words(issue.title()) + ".md";
         final Path file = root.resolve(RepoPath.checked(path));
         Files.createDirectories(issues);

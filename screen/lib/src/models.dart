@@ -187,6 +187,23 @@ class PlanWorkIssue {
   final List<PlanFinding> findings;
 }
 
+/// Who works an issue: an agent through the tasks the planner starts, or a person by hand.
+enum IssueWorker {
+  /// An agent, through the tasks the planner starts.
+  agent('AGENT'),
+
+  /// A person, by hand.
+  manual('MANUAL');
+
+  const IssueWorker(this.wire);
+
+  /// The planner's name for it.
+  final String wire;
+
+  /// The worker the planner names, or null for anything else.
+  static IssueWorker? read(Object? value) => values.where((worker) => worker.wire == value).firstOrNull;
+}
+
 /// One issue belonging to a story.
 class PlanIssue {
   /// Applies destinations explicitly confirmed by the save answer.
@@ -203,6 +220,8 @@ class PlanIssue {
       readingStopped = source.readingStopped,
       atWork = source.atWork,
       needsYou = source.needsYou,
+      worker = source.worker,
+      workerMalformed = source.workerMalformed,
       findings = source.findings,
       whatMustBeTrue = source.whatMustBeTrue,
       subAgents = source.subAgents;
@@ -222,6 +241,8 @@ class PlanIssue {
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
       needsYou = map['needsYou'] is bool ? map['needsYou'] as bool : null,
+      worker = IssueWorker.read(map['worker']),
+      workerMalformed = map.containsKey('worker') && IssueWorker.read(map['worker']) == null,
       findings = _planList(map['findings'], PlanFinding.from),
       whatMustBeTrue = map['whatMustBeTrue'] is String ? map['whatMustBeTrue'] as String : null,
       subAgents = map['subAgents'] is List ? _planList(map['subAgents'], PlanWorker.from) : null;
@@ -249,6 +270,12 @@ class PlanIssue {
 
   /// The atWork, needsYou reported by the daemon.
   final bool? atWork, needsYou;
+
+  /// Who works it, or null when the planner named no worker it describes.
+  final IssueWorker? worker;
+
+  /// Whether the planner named a worker that is neither `AGENT` nor `MANUAL`; an older planner names none at all.
+  final bool workerMalformed;
 
   /// The findings reported by the daemon.
   final List<PlanFinding> findings;

@@ -32,7 +32,14 @@ Map<String, dynamic> smallBoard({String revision = 'r1'}) => {
       'state': 'Backlog',
       'priority': 'High',
       'issues': [
-        {'id': 'I1', 'repository': 'repo', 'title': 'First issue', 'state': 'Backlog', 'blockedBy': <String>[]},
+        {
+          'id': 'I1',
+          'repository': 'repo',
+          'title': 'First issue',
+          'state': 'Backlog',
+          'blockedBy': <String>[],
+          'worker': 'AGENT',
+        },
       ],
     },
     {
@@ -41,7 +48,14 @@ Map<String, dynamic> smallBoard({String revision = 'r1'}) => {
       'state': 'Review',
       'priority': 'Medium',
       'issues': [
-        {'id': 'I2', 'repository': 'repo', 'title': 'Second issue', 'state': 'Review', 'blockedBy': <String>[]},
+        {
+          'id': 'I2',
+          'repository': 'repo',
+          'title': 'Second issue',
+          'state': 'Review',
+          'blockedBy': <String>[],
+          'worker': 'AGENT',
+        },
       ],
     },
   ],

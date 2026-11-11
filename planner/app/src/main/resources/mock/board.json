@@ -644,7 +644,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PJ74",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "FC03",
@@ -655,7 +656,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/FC03",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "MANUAL"
     },
     {
       "id": "FC09",
@@ -666,7 +668,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/FC09",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "FC10",
@@ -677,7 +680,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/FC10",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "FC11",
@@ -688,7 +692,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/FC11",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "FC13",
@@ -699,7 +704,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/FC13",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "PJ58",
@@ -710,7 +716,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PJ58",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "SI05",
@@ -721,7 +728,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/SI05",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B540",
@@ -732,7 +740,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B540",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B541",
@@ -745,7 +754,8 @@
       ],
       "parent": null,
       "link": "https://example.org/issues/B541",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B542",
@@ -756,7 +766,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B542",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B543",
@@ -767,7 +778,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B543",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B544",
@@ -778,7 +790,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B544",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B545",
@@ -789,7 +802,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B545",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B546",
@@ -800,7 +814,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B546",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B547",
@@ -811,7 +826,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B547",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B548",
@@ -822,7 +838,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B548",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B549",
@@ -833,7 +850,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B549",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B550",
@@ -844,7 +862,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B550",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B551",
@@ -855,7 +874,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B551",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B552",
@@ -866,7 +886,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B552",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO156",
@@ -877,7 +898,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO156",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO157",
@@ -888,7 +910,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO157",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B553",
@@ -899,7 +922,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B553",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "B554",
@@ -910,7 +934,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B554",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "F444",
@@ -921,7 +946,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/F444",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "F445",
@@ -934,7 +960,8 @@
       ],
       "parent": null,
       "link": "https://example.org/issues/F445",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO158",
@@ -945,7 +972,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO158",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX89",
@@ -956,7 +984,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/MX89",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX90",
@@ -969,7 +998,8 @@
       ],
       "parent": null,
       "link": "https://example.org/issues/MX90",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX91",
@@ -982,7 +1012,8 @@
       ],
       "parent": null,
       "link": "https://example.org/issues/MX91",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX24",
@@ -993,7 +1024,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/MX24",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX36",
@@ -1004,7 +1036,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/MX36",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "MX39",
@@ -1015,7 +1048,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/MX39",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO07",
@@ -1026,7 +1060,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO07",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "MANUAL"
     },
     {
       "id": "B231",
@@ -1037,7 +1072,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B231",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "IJ14",
@@ -1048,7 +1084,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/IJ14",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT35",
@@ -1059,7 +1096,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT35",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT36",
@@ -1070,7 +1108,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT36",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT38",
@@ -1081,7 +1120,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT38",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT43",
@@ -1092,7 +1132,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT43",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT44",
@@ -1103,7 +1144,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT44",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT45",
@@ -1114,7 +1156,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT45",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT46",
@@ -1125,7 +1168,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT46",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "PI43",
@@ -1136,7 +1180,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PI43",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "OM44",
@@ -1147,7 +1192,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/OM44",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "CC45",
@@ -1158,7 +1204,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/CC45",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "PI39",
@@ -1169,7 +1216,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PI39",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "OM36",
@@ -1180,7 +1228,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/OM36",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "CC39",
@@ -1191,7 +1240,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/CC39",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "PJ106",
@@ -1202,7 +1252,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PJ106",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT42",
@@ -1213,7 +1264,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT42",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT39",
@@ -1224,7 +1276,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT39",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO52",
@@ -1235,7 +1288,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO52",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "SL36",
@@ -1246,7 +1300,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/SL36",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT40",
@@ -1257,7 +1312,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT40",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT41",
@@ -1268,7 +1324,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT41",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO53",
@@ -1279,7 +1336,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO53",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "SL35",
@@ -1290,7 +1348,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/SL35",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "MANUAL"
     },
     {
       "id": "B306",
@@ -1301,7 +1360,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B306",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "HO12",
@@ -1312,7 +1372,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/HO12",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT24",
@@ -1323,7 +1384,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT24",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "BT25",
@@ -1334,7 +1396,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/BT25",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "PJ62",
@@ -1345,7 +1408,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/PJ62",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     },
     {
       "id": "GH18",
@@ -1356,7 +1420,8 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/GH18",
-      "text": "**What must be true.** The work meets the story description.\n"
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
     }
   ]
 }

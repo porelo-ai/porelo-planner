@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store.git;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueIndex;
 import org.fuin.porelo.planner.store.git.stories.IssueIndexes;
@@ -157,9 +159,10 @@ public final class StoreReader implements PartReader {
             }
             faults.addAll(mentions(name, commit, settled));
         }
+        final List<Issue> issues = parentsWorkers(read);
         faults.addAll(records(name, commit, workflow));
         if (!own) {
-            return new Part(null, List.of(), read, null, paths, faults);
+            return new Part(null, List.of(), issues, null, paths, faults);
         }
         final Map<String, Story> stories = new LinkedHashMap<>();
         final Set<String> twice = new HashSet<>();
@@ -195,10 +198,44 @@ public final class StoreReader implements PartReader {
         return new Part(
                 workflow,
                 List.copyOf(stories.values()),
-                read,
+                issues,
                 WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
                 paths,
                 faults);
+    }
+
+    /**
+     * Gives each sub-issue its parent's worker, whatever its own head says; a sub-issue whose
+     * parent was not read is worked by an agent, as a head naming none is.
+     */
+    private static List<Issue> parentsWorkers(final List<Issue> read) {
+        final Map<String, Worker> workers = new HashMap<>();
+        for (final Issue issue : read) {
+            if (issue.parent() == null) {
+                workers.put(issue.id(), issue.worker());
+            }
+        }
+        final List<Issue> issues = new ArrayList<>(read.size());
+        for (final Issue issue : read) {
+            final String parent = issue.parent();
+            if (parent == null) {
+                issues.add(issue);
+                continue;
+            }
+            issues.add(
+                    new Issue(
+                            issue.id(),
+                            issue.repository(),
+                            issue.title(),
+                            issue.state(),
+                            issue.size(),
+                            issue.blockedBy(),
+                            parent,
+                            issue.link(),
+                            issue.text(),
+                            workers.getOrDefault(parent, Worker.AGENT)));
+        }
+        return issues;
     }
 
     /**
@@ -388,7 +425,19 @@ public final class StoreReader implements PartReader {
                 head.blockedBy(),
                 head.parent(),
                 null,
-                text);
+                text,
+                worker(head.worker()));
+    }
+
+    /** The worker a head names; the schema took only these spellings, or none. */
+    private static Worker worker(final @Nullable String worker) {
+        if (worker == null || worker.equals("Agent")) {
+            return Worker.AGENT;
+        }
+        if (worker.equals("Manual")) {
+            return Worker.MANUAL;
+        }
+        throw new IllegalArgumentException("/worker: " + worker + " is no worker");
     }
 
     private String text(final String repository, final String commit, final String file) {

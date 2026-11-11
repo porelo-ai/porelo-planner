@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -282,6 +283,106 @@ class StoreReaderTest {
         assertThat(part.faults())
                 .as("a sub-issue's number names the sub-issue, not the settled one")
                 .isEmpty();
+    }
+
+    @Test
+    void anIssueIsWorkedByAnAgentUnlessItsHeadNamesManualAndASettledRowByAnAgent() {
+        // A head without a worker read as Manual would stop every agent's work on the board.
+        final Tree tree = new Tree();
+        tree.files.put(
+                "issues/README.md",
+                """
+                # Issues
+
+                ## Finished
+
+                | # | Title | What was built |
+                |---|---|---|
+                | <a id="xy03"></a>XY03 | Done Long Ago | It was built. |
+                """);
+        tree.files.put("issues/XY01-One.md", issue("XY01", "Idea"));
+        tree.files.put("issues/XY02-Two.md", worked(issue("XY02", "Idea"), "Manual"));
+        tree.files.put("issues/XY04-Four.md", worked(issue("XY04", "Idea"), "Agent"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("each issue's worker")
+                .extracting(Issue::id, Issue::worker)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("XY01", Worker.AGENT),
+                        org.assertj.core.groups.Tuple.tuple("XY02", Worker.MANUAL),
+                        org.assertj.core.groups.Tuple.tuple("XY03", Worker.AGENT),
+                        org.assertj.core.groups.Tuple.tuple("XY04", Worker.AGENT));
+    }
+
+    @Test
+    void aWorkerOtherThanAgentOrManualIsAFaultNamingTheFileAndLeavesTheIssueOut() {
+        // A worker misspelled and read as either would start or hold work nobody chose.
+        final Tree tree = new Tree();
+        tree.files.put("issues/XY01-One.md", worked(issue("XY01", "Idea"), "agent"));
+        tree.files.put("issues/XY02-Two.md", worked(issue("XY02", "Idea"), "Robot"));
+        tree.files.put("issues/XY03-Three.md", issue("XY03", "Idea"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.issues())
+                .as("only the issue whose head the schema takes")
+                .extracting(Issue::id)
+                .containsExactly("XY03");
+        assertThat(part.faults())
+                .as("each faulty head named with its file and its worker")
+                .hasSize(2)
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the first")
+                                        .startsWith("porelo-other: issues/XY01-One.md: ")
+                                        .contains("/worker"))
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the second")
+                                        .startsWith("porelo-other: issues/XY02-Two.md: ")
+                                        .contains("/worker"));
+    }
+
+    @Test
+    void aSubIssueIsWorkedAsItsParentIsWhateverItsOwnHeadSays() {
+        // A sub-issue worked otherwise than its parent would let an agent into a person's work.
+        final Tree tree = new Tree();
+        tree.files.put("issues/XY01-One.md", worked(issue("XY01", "Idea"), "Manual"));
+        tree.files.put("issues/XY01.1-Part.md", worked(sub("XY01.1", "XY01"), "Agent"));
+        tree.files.put("issues/XY01.2-Part.md", sub("XY01.2", "XY01"));
+        tree.files.put("issues/XY02-Two.md", issue("XY02", "Idea"));
+        tree.files.put("issues/XY02.1-Part.md", worked(sub("XY02.1", "XY02"), "Manual"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("each sub-issue's worker is its parent's")
+                .extracting(Issue::id, Issue::worker)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("XY01", Worker.MANUAL),
+                        org.assertj.core.groups.Tuple.tuple("XY01.1", Worker.MANUAL),
+                        org.assertj.core.groups.Tuple.tuple("XY01.2", Worker.MANUAL),
+                        org.assertj.core.groups.Tuple.tuple("XY02", Worker.AGENT),
+                        org.assertj.core.groups.Tuple.tuple("XY02.1", Worker.AGENT));
+    }
+
+    /** The issue's head with a worker as its last member. */
+    private static String worked(final String text, final String worker) {
+        return last(text, "worker", worker);
+    }
+
+    private static String sub(final String id, final String parent) {
+        return last(issue(id, "Idea"), "parent", parent);
+    }
+
+    private static String last(final String text, final String field, final String value) {
+        return text.replace("\n}\n```", ",\n  \"" + field + "\": \"" + value + "\"\n}\n```");
     }
 
     private static String issue(final String id, final String state) {

@@ -65,6 +65,13 @@ public final class Answers {
     public record Moved(String revision, List<String> moved) {}
 
     /**
+     * The answer to a saved worker.
+     *
+     * @param revision the board's revision after the save
+     */
+    public record WorkerSaved(String revision) {}
+
+    /**
      * A new issue added.
      *
      * @param id the id the store gave it
@@ -201,6 +208,7 @@ public final class Answers {
      * @param blockedBy the issues it waits on
      * @param parent its parent, for a sub-issue
      * @param link where a person reads it, if known
+     * @param worker who works it, {@code AGENT} or {@code MANUAL}
      * @param rounds completed readings, absent without a record
      * @param roundsMost granted allowance, absent without a record
      * @param atWork whether a bound task is active
@@ -217,6 +225,7 @@ public final class Answers {
             List<String> blockedBy,
             @Nullable String parent,
             @Nullable String link,
+            String worker,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer rounds,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer roundsMost,
             boolean atWork,
@@ -236,6 +245,7 @@ public final class Answers {
      * @param blockedBy the issues it waits on
      * @param parent its parent, for a sub-issue
      * @param link where a person reads it, if known
+     * @param worker who works it, {@code AGENT} or {@code MANUAL}
      * @param text its body
      * @param subIssues its sub-issues' ids
      * @param whatMustBeTrue its paragraph of that name, left out when it has none
@@ -255,6 +265,7 @@ public final class Answers {
             List<String> blockedBy,
             @Nullable String parent,
             @Nullable String link,
+            String worker,
             String text,
             List<String> subIssues,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String whatMustBeTrue,

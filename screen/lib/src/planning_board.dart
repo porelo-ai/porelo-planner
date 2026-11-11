@@ -1221,6 +1221,7 @@ class PlanningBoards extends ChangeNotifier {
       'rounds': result?.rounds ?? issue?.rounds,
       'roundsMost': result?.roundsMost ?? issue?.roundsMost,
       'readingStopped': result?.readingStopped ?? issue?.readingStopped,
+      'worker': ?issue?.worker?.wire,
     });
   }
 

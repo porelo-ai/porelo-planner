@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import java.time.Duration;
 import java.util.List;
@@ -121,6 +122,37 @@ class WorkRunHttpTest {
         assertThat(choice.at("/issue/findings").size())
                 .as("review retains the reading")
                 .isEqualTo(1);
+    }
+
+    @Test
+    void aWorkerChangeOfAnIssueARunningTaskOwnsIsRefusedAndSavesNothing() throws Exception {
+        // A worker changed under a running task would hand a person an issue an agent still works.
+        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final String revision = store.board().revision().value();
+        final var response =
+                mvc.perform(
+                                put("/projects/project/issues/AA1/worker")
+                                        .contentType("application/json")
+                                        .content(
+                                                "{\"worker\":\"MANUAL\",\"revision\":\""
+                                                        + revision
+                                                        + "\"}"))
+                        .andReturn()
+                        .getResponse();
+        assertThat(response.getStatus())
+                .as("the answer to the change: %s", response.getContentAsString())
+                .isEqualTo(409);
+        final JsonNode refused = JSON.readTree(response.getContentAsString());
+        assertThat(refused.path("type").asString())
+                .as("active ownership protects the issue's worker")
+                .endsWith(":WorkRunning");
+        assertThat(refused.at("/parameters/story").asString())
+                .as("the refusal names the running story")
+                .isEqualTo("ST1");
+        assertThat(store.board().revision().value())
+                .as("the refused change saves nothing")
+                .isEqualTo(revision);
     }
 
     @Test
@@ -312,7 +344,8 @@ class WorkRunHttpTest {
                                         old.blockedBy(),
                                         old.parent(),
                                         old.link(),
-                                        old.text())),
+                                        old.text(),
+                                        old.worker())),
                         board.work(),
                         board.repositories());
         final var refused =
@@ -562,7 +595,8 @@ class WorkRunHttpTest {
                                             List.of(),
                                             null,
                                             null,
-                                            "")),
+                                            "",
+                                            old.worker())),
                             current.work(),
                             current.repositories());
             return current;
