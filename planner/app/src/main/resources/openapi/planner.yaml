@@ -800,7 +800,10 @@ components:
             $ref: '#/components/schemas/Problem'
     RecordUnavailable:
       description: >-
-        Busy(repository) or WorkRecordUnavailable(project,reason). The record reason contains fixed words only.
+        Busy(repository) or WorkRecordUnavailable(project,reason). The record reason says why in words: fixed
+        words and, where a directory or file was refused, that path named relative to the home directory (~/...)
+        or to the state directory ($XDG_STATE_HOME/... or %LOCALAPPDATA%\...), never as an absolute path, and
+        never the record's content.
       content:
         application/problem+json:
           schema:

@@ -89,7 +89,9 @@ public final class WorkRefusal extends RuntimeException {
                 Map.of("issue", issue, "rounds", rounds));
     }
 
-    /** Refuses an unavailable record using fixed, non-sensitive words. */
+    /**
+     * Refuses an unavailable record, saying why without an absolute path or the record's content.
+     */
     public static WorkRefusal recordUnavailable(final String project, final String reason) {
         return new WorkRefusal(
                 "WorkRecordUnavailable", reason, Map.of("project", project, "reason", reason));

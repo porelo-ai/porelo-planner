@@ -20,7 +20,7 @@ public final class Refusal extends RuntimeException {
      *
      * @param name its name, such as {@code NoSuchProject}
      * @param status its HTTP status
-     * @param detail its words, free of any credential or local path
+     * @param detail its words, free of any credential or absolute local path
      * @param parameters what it names: a project, story, issue or repository
      */
     public Refusal(

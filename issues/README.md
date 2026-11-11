@@ -9,6 +9,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 
@@ -57,7 +58,6 @@ left out.
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl64"></a>[PL64](PL64-A-Failed-Task-Or-A-Blocking-Reading-Asks-The-Person.md) | L | - | A task that fails keeps its card in its working state with a warning and a Needs-you entry to its result, a blocking reading asks for Reworking through a Needs-you entry, and a task that starts by itself takes the first mode and model without a dialog |
 | <a id="pl58"></a>[PL58](PL58-The-Store-Writes-An-Idea-As-A-Story-And-Its-Issues.md) | L | - | The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix, nothing pushed on a fault before the first push and the pushed repositories named on one after |
-| <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | S | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
 
 ## Review
 
@@ -71,6 +71,7 @@ left out.
 | <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
+| <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | S | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
 
 ## Finished
 

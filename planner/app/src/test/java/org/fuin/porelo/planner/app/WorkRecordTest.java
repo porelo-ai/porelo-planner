@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
@@ -263,12 +264,18 @@ class WorkRecordTest {
         try (WorkRecord first = new WorkRecord(environment, false);
                 WorkRecord second = new WorkRecord(environment, false)) {
             first.open("project", "https://example.org/store.git", null).locked(s -> s.read());
-            assertThatThrownBy(
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
                             () ->
                                     second.open("project", "https://example.org/store.git", null)
-                                            .locked(s -> s.read()))
+                                            .locked(s -> s.read()));
+            assertThat(refused)
                     .as("the stable file lock refuses a competing writer without waiting")
-                    .isInstanceOf(WorkRefusal.class);
+                    .isNotNull();
+            assertThat(reason(refused))
+                    .as("the person learns that another planner holds this project's record")
+                    .contains("planner", "project");
         }
     }
 
@@ -402,12 +409,19 @@ class WorkRecordTest {
         Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwxrwxrwx"));
         try (WorkRecord records =
                 new WorkRecord(Map.of("XDG_STATE_HOME", shared.toString()), false)) {
-            assertThatThrownBy(
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
-                                            .locked(s -> s.read()))
+                                            .locked(s -> s.read()));
+            assertThat(refused)
                     .as("unprotected writable ancestors cannot hold private work")
-                    .isInstanceOf(WorkRefusal.class);
+                    .isNotNull();
+            assertThat(reason(refused))
+                    .as("the reason names the writable state directory by its variable alone")
+                    .contains("$XDG_STATE_HOME")
+                    .doesNotContain(directory.toString());
         }
         assertThat(shared.resolve("porelo-planner/project/work.json"))
                 .as("no record is published through the unsafe path")
@@ -430,10 +444,44 @@ class WorkRecordTest {
             Files.writeString(
                     directory.resolve("porelo-planner/project/work.json"),
                     "{\"version\":1,\"version\":1}");
-            assertThatThrownBy(() -> record.locked(s -> s.read()))
+            final WorkRefusal refused =
+                    catchThrowableOfType(WorkRefusal.class, () -> record.locked(s -> s.read()));
+            assertThat(refused)
                     .as("duplicate or unreadable JSON cannot reset the record")
-                    .isInstanceOf(WorkRefusal.class);
+                    .isNotNull();
+            assertThat(reason(refused))
+                    .as("the reason says the record is not valid JSON, quoting none of it")
+                    .contains("JSON")
+                    .doesNotContain("version");
         }
+    }
+
+    @Test
+    void aGroupWritableHomeIsNamedFromTheHomeAndNeverByItsAbsolutePath() throws Exception {
+        // Prevents a stopped project with no way to find what to fix, and the account's home
+        // path reaching whatever reads or logs the answer.
+        final Path home = Files.createDirectory(directory.resolve("home"));
+        Files.setPosixFilePermissions(home, PosixFilePermissions.fromString("rwxrwx---"));
+        try (WorkRecord records = new WorkRecord(Map.of("HOME", home.toString()), false)) {
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(s -> s.read()));
+            assertThat(refused).as("a home its group can write holds no record").isNotNull();
+            assertThat(reason(refused))
+                    .as("the reason names the home as ~ and says who can write it")
+                    .contains("~", "group")
+                    .doesNotContain(directory.toString());
+            assertThat(refused.getMessage())
+                    .as("the refusal's own words carry no absolute path either")
+                    .doesNotContain(directory.toString());
+        }
+    }
+
+    private static String reason(final WorkRefusal refused) {
+        return String.valueOf(refused.parameters().get("reason"));
     }
 
     @Test

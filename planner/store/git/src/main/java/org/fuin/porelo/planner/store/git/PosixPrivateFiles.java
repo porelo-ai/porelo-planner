@@ -210,7 +210,10 @@ final class PosixPrivateFiles implements PrivateFiles {
             }
             if ((mode & writable) != 0 && (mode & STICKY) == 0) {
                 throw new IllegalStateException(
-                        dir + " is a directory others can write, without the sticky bit");
+                        dir
+                                + " is a directory "
+                                + (writable == OTHERS_WRITE ? "others" : "its group or others")
+                                + " can write, without the sticky bit");
             }
         }
     }

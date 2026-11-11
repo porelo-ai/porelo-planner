@@ -52,6 +52,7 @@ public final class WorkRecord implements AutoCloseable {
     private final PrivateFiles files;
     private final boolean memory;
     private final Replace replace;
+    private final LocalPaths paths;
     private final Map<String, Entry> entries = new HashMap<>();
 
     /** Puts a written record in place of the one before. */
@@ -97,6 +98,7 @@ public final class WorkRecord implements AutoCloseable {
         this.memory = memory;
         this.files = files;
         this.replace = replace;
+        this.paths = LocalPaths.of(environment, files.windows());
     }
 
     /** The versioned on-disk envelope binds runs to their planning source. */
@@ -164,8 +166,22 @@ public final class WorkRecord implements AutoCloseable {
         }
     }
 
-    private static WorkRefusal unavailable(final String project) {
-        return WorkRefusal.recordUnavailable(project, "The work record is unavailable.");
+    /** Refuses the record with the reason in words, every local path relative to its base. */
+    private WorkRefusal unavailable(final String project, final String why) {
+        return WorkRefusal.recordUnavailable(project, paths.relative(why));
+    }
+
+    /** Refuses the record for a failed step, with the check's or the system's own words. */
+    private WorkRefusal unavailable(
+            final String project, final String step, final Exception failed) {
+        final String words = failed.getMessage();
+        return unavailable(
+                project,
+                step
+                        + ": "
+                        + (words == null || words.isBlank()
+                                ? failed.getClass().getSimpleName()
+                                : words));
     }
 
     private static void present(final @Nullable Object... values) {
@@ -198,7 +214,7 @@ public final class WorkRecord implements AutoCloseable {
             mutex.lock();
             try {
                 if (closed) {
-                    throw unavailable(project);
+                    throw unavailable(project, "The work record of " + project + " was closed.");
                 }
                 if (!memory) {
                     acquire();
@@ -215,7 +231,12 @@ public final class WorkRecord implements AutoCloseable {
                 if (held != null && held.isValid() && directory != null) {
                     return;
                 }
-                final Path dir = WorkRecord.this.directory(project);
+                final Path dir;
+                try {
+                    dir = WorkRecord.this.directory(project);
+                } catch (final IOException | IllegalArgumentException failed) {
+                    throw unavailable(project, "The work record's directory is refused", failed);
+                }
                 directory = dir;
                 final Path path = dir.resolve("work.lock");
                 try {
@@ -229,22 +250,29 @@ public final class WorkRecord implements AutoCloseable {
                 final FileLock acquired;
                 try {
                     acquired = channel.tryLock();
-                } catch (final IOException | OverlappingFileLockException failed) {
+                } catch (final IOException failed) {
                     channel.close();
                     throw failed;
+                } catch (final OverlappingFileLockException inThisProcess) {
+                    channel.close();
+                    throw heldElsewhere();
                 }
                 if (acquired == null) {
                     channel.close();
-                    throw unavailable(project);
+                    throw heldElsewhere();
                 }
                 lockChannel = channel;
                 fileLock = acquired;
             } catch (final IOException
                     | IllegalArgumentException
-                    | UnsupportedOperationException
-                    | OverlappingFileLockException failed) {
-                throw unavailable(project);
+                    | UnsupportedOperationException failed) {
+                throw unavailable(project, "The work record's lock cannot be taken", failed);
             }
+        }
+
+        private WorkRefusal heldElsewhere() {
+            return unavailable(
+                    project, "Another planner holds the work record of " + project + ".");
         }
 
         /** Reads only after checking type, ownership and size, and refuses unreadable history. */
@@ -253,20 +281,37 @@ public final class WorkRecord implements AutoCloseable {
             if (memory) {
                 return stored;
             }
+            final Path dir = opened();
+            final Path path = dir.resolve("work.json");
+            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                return new WorkRun.Snapshot(0, Map.of());
+            }
+            final Document doc = document(tree(recorded(path)));
+            if (!repository.equals(doc.repository())
+                    || !java.util.Objects.equals(branch, doc.branch())) {
+                final WorkRun.Snapshot reset = new WorkRun.Snapshot(0, Map.of());
+                write(reset);
+                return reset;
+            }
+            return new WorkRun.Snapshot(doc.generation(), doc.runs());
+        }
+
+        private Path opened() {
             final Path dir = directory;
             if (dir == null) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record of " + project + " is not open.");
             }
-            final Path path = dir.resolve("work.json");
+            return dir;
+        }
+
+        /** Reads the record's bytes only once it is checked as the account's and bounded. */
+        private byte[] recorded(final Path path) {
+            final byte[] bytes;
             try {
-                if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
-                    return new WorkRun.Snapshot(0, Map.of());
-                }
                 privateFile(path);
                 if (Files.size(path) > MOST_RECORD) {
-                    throw unavailable(project);
+                    throw tooLarge();
                 }
-                final byte[] bytes;
                 try (var in =
                         java.nio.channels.Channels.newInputStream(
                                 FileChannel.open(
@@ -275,37 +320,65 @@ public final class WorkRecord implements AutoCloseable {
                                         LinkOption.NOFOLLOW_LINKS))) {
                     bytes = in.readNBytes(MOST_RECORD + 1);
                 }
-                if (bytes.length > MOST_RECORD) {
-                    throw unavailable(project);
-                }
-                final JsonNode tree = JSON.readTree(bytes);
-                if (tree == null) {
-                    throw unavailable(project);
-                }
-                for (final JsonNode run : tree.path("runs")) {
-                    for (final JsonNode offer : run.path("offers")) {
-                        if (offer instanceof ObjectNode object && !object.has("machine")) {
-                            // Only the new field may be absent in older records.
-                            object.putNull("machine");
-                        }
+            } catch (final IOException | IllegalArgumentException failed) {
+                throw unavailable(project, "The work record cannot be read", failed);
+            }
+            if (bytes.length > MOST_RECORD) {
+                throw tooLarge();
+            }
+            return bytes;
+        }
+
+        private WorkRefusal tooLarge() {
+            return unavailable(project, "The work record is larger than 16 MB.");
+        }
+
+        // A parser's own words can quote the record's content, so they are never passed on.
+        private JsonNode tree(final byte[] bytes) {
+            final JsonNode tree;
+            try {
+                tree = JSON.readTree(bytes);
+            } catch (final JacksonException invalid) {
+                throw unavailable(project, "The work record is not valid JSON.");
+            }
+            if (tree == null || tree.isMissingNode()) {
+                throw unavailable(project, "The work record is not valid JSON.");
+            }
+            for (final JsonNode run : tree.path("runs")) {
+                for (final JsonNode offer : run.path("offers")) {
+                    if (offer instanceof ObjectNode object && !object.has("machine")) {
+                        // Only the new field may be absent in older records.
+                        object.putNull("machine");
                     }
                 }
-                final Document doc = JSON.treeToValue(tree, Document.class);
+            }
+            return tree;
+        }
+
+        private Document document(final JsonNode tree) {
+            final Document doc;
+            try {
+                doc = JSON.treeToValue(tree, Document.class);
+            } catch (final JacksonException | IllegalArgumentException | NullPointerException e) {
+                throw unavailable(project, "The work record does not have the record's form.");
+            }
+            if (doc.version() != 1
+                    || !project.equals(doc.project())
+                    || doc.generation() < 0
+                    || doc.repository().isBlank()) {
+                throw unavailable(
+                        project,
+                        "The work record is not a record of version 1 for " + project + ".");
+            }
+            try {
                 validate(doc);
-                if (!repository.equals(doc.repository())
-                        || !java.util.Objects.equals(branch, doc.branch())) {
-                    final WorkRun.Snapshot reset = new WorkRun.Snapshot(0, Map.of());
-                    write(reset);
-                    return reset;
-                }
-                return new WorkRun.Snapshot(doc.generation(), doc.runs());
-            } catch (final IOException
-                    | JacksonException
+            } catch (final JacksonException
                     | IllegalArgumentException
                     | NullPointerException
                     | WorkRefusal invalid) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record has a run that fails its check.");
             }
+            return doc;
         }
 
         /**
@@ -353,7 +426,7 @@ public final class WorkRecord implements AutoCloseable {
                     }
                 }
             } catch (final JacksonException failed) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record cannot be written as JSON.");
             }
         }
 
@@ -387,7 +460,7 @@ public final class WorkRecord implements AutoCloseable {
                     }
                 }
             } catch (final JacksonException failed) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record cannot be written as JSON.");
             }
         }
 
@@ -401,16 +474,15 @@ public final class WorkRecord implements AutoCloseable {
                 stored = snapshot;
                 return;
             }
-            final Path dir = directory;
-            if (dir == null) {
-                throw unavailable(project);
-            }
+            final Path dir = opened();
             Path temporary = null;
+            String step = "The work record cannot be replaced";
             try {
                 final Path target = dir.resolve("work.json");
                 if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
                     privateFile(target);
                 }
+                step = "The work record cannot be written";
                 temporary = dir.resolve("work-" + UUID.randomUUID() + ".tmp");
                 try (FileChannel channel =
                         FileChannel.open(
@@ -427,10 +499,12 @@ public final class WorkRecord implements AutoCloseable {
                     channel.force(true);
                 }
                 final Path written = temporary;
+                step = "The work record cannot be put in place";
                 SharedFiles.whileShared(() -> replace.move(written, target));
                 temporary = null;
                 // Windows opens no directory as a file; its move is durable once it returns.
                 if (!files.windows()) {
+                    step = "The work record's directory cannot be synced";
                     try (FileChannel channel =
                             FileChannel.open(
                                     dir, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
@@ -438,13 +512,14 @@ public final class WorkRecord implements AutoCloseable {
                     }
                 }
             } catch (final IOException | UnsupportedOperationException failed) {
-                throw unavailable(project);
+                throw unavailable(project, step, failed);
             } finally {
                 if (temporary != null) {
                     try {
                         Files.deleteIfExists(temporary);
-                    } catch (final IOException failed) {
-                        throw unavailable(project);
+                    } catch (final IOException ignored) {
+                        // A temporary file is left only after a failed write, whose own reason is
+                        // the one the person must see.
                     }
                 }
             }
@@ -466,17 +541,11 @@ public final class WorkRecord implements AutoCloseable {
                 }
                 return bytes;
             } catch (final JacksonException failed) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record cannot be written as JSON.");
             }
         }
 
         private void validate(final Document doc) {
-            if (doc.version() != 1
-                    || !project.equals(doc.project())
-                    || doc.generation() < 0
-                    || doc.repository().isBlank()) {
-                throw unavailable(project);
-            }
             final Set<String> ids = new HashSet<>();
             doc.runs()
                     .forEach(
@@ -491,7 +560,7 @@ public final class WorkRecord implements AutoCloseable {
                                 if (!story.equals(run.story())
                                         || !UUID.fromString(run.id()).toString().equals(run.id())
                                         || run.readingRounds() < 1) {
-                                    throw unavailable(project);
+                                    throw new IllegalArgumentException("a run fails its check");
                                 }
                                 run.issues()
                                         .forEach(
@@ -507,7 +576,8 @@ public final class WorkRecord implements AutoCloseable {
                                                     if (progress.rounds().rounds() < 0
                                                             || progress.rounds().roundsMost() < 1
                                                             || progress.findings().size() > 100) {
-                                                        throw unavailable(project);
+                                                        throw new IllegalArgumentException(
+                                                                "an issue fails its check");
                                                     }
                                                 });
                                 for (final WorkRun.Offer offer : run.offers()) {
@@ -549,7 +619,8 @@ public final class WorkRecord implements AutoCloseable {
                                                             "OFFERED", "STARTED", "ENDED",
                                                             "STOPPED", "VOID")
                                                     .contains(offer.status())) {
-                                        throw unavailable(project);
+                                        throw new IllegalArgumentException(
+                                                "an offer fails its check");
                                     }
                                     if (Set.of("STARTED", "ENDED", "STOPPED")
                                             .contains(offer.status())) {
@@ -584,7 +655,7 @@ public final class WorkRecord implements AutoCloseable {
                     channel.close();
                 }
             } catch (final IOException failed) {
-                throw unavailable(project);
+                throw unavailable(project, "The work record's lock cannot be released", failed);
             } finally {
                 mutex.unlock();
             }
