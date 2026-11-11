@@ -9,9 +9,21 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
+| <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
+| <a id="pl40"></a>[PL40](PL40-A-Storys-Work-History-Kept-In-The-Store.md) | - | - | A story's runs - order, tasks, each issue's progress, the reading rounds spent and the tasks' outcomes - are kept by the store's adapter beside the story, so the history survives another machine, a reinstall and reaches everyone who plans the project |
+| <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | - | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
+| <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
+| <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | - | - | Planning a project whose own repository and project.yml repositories are absolute local paths, such as Porelo's Default project or a local checkout |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | - | - | The planner's answer records, and possibly its controller interfaces, generated from openapi/planner.yaml instead of written by hand |
+
+## Accepted
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | - | - | A small Flutter app that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react |
 
 ## Backlog
 
@@ -28,6 +40,8 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl34"></a>[PL34](PL34-The-Board-Laid-Out-As-It-Is-Used.md) | XS | - | A folded column shows each story in one even row of mark, number and menu; the board's sideways scrollbar stays at the foot of the view, so a wide column's controls can be reached; the list of unsaved moves takes only the height it needs |
+| <a id="pl31"></a>[PL31](PL31-A-Short-Event-Id-For-Any-Number-Of-Repositories.md) | S | - | The Git store's revision is a fixed-length digest of its repositories' commits, at most 200 characters as the screen accepts, so a project with many repositories keeps its live board |
 | <a id="pl28"></a>[PL28](PL28-The-Planners-Own-Files-On-Windows.md) | M | - | On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, each closed to other accounts through its access control list, with the same refusals as on Linux |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
