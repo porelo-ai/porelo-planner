@@ -8,7 +8,7 @@
   "state": "Backlog",
   "size": "M",
   "priority": "Medium",
-  "rank": 26,
+  "rank": 11,
   "blockedBy": [],
   "covers": "Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized"
 }
