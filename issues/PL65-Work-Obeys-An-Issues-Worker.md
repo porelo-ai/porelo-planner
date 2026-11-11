@@ -9,7 +9,7 @@
   "size": "L",
   "priority": "Medium",
   "rank": 1,
-  "blockedBy": ["PL46"],
+  "blockedBy": [],
   "covers": "Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue"
 }
 ```

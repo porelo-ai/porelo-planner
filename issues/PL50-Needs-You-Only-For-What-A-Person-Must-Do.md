@@ -10,7 +10,6 @@
   "priority": "High",
   "rank": 25,
   "blockedBy": [
-    "PL46",
     "PL64"
   ],
   "covers": "The planner marks an issue as needing the person only where they must act, and says what to do; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes"
@@ -40,7 +39,7 @@ ended run as seen, kept in the window alone.
 
 [PL64](README.md#pl64) gives the rows of a failed task (open its result) and of a blocking reading (`BLOCKING_FINDINGS`
 and `ROUND_LIMIT`, open the Reworking dialog) their action; this issue gives every other reason its own. With the
-worker field of [PL46](README.md#pl46) and the work that obeys it ([PL65](README.md#pl65)), a Manual issue in a
+issue's worker field and the work that obeys it ([PL65](README.md#pl65)), a Manual issue in a
 working state is worked by hand and has no run by design, so it is never counted as worked outside this planner.
 
 1. **No run here is information** (S). `lost` no longer sets `needsYou`; the board's `Issue` gets `noRunHere`

@@ -9,9 +9,7 @@
   "size": "L",
   "priority": "Medium",
   "rank": 31,
-  "blockedBy": [
-    "PL46"
-  ],
+  "blockedBy": [],
   "covers": "The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number of that repository's prefix, nothing pushed on a fault before the first push and the pushed repositories named on one after"
 }
 ```

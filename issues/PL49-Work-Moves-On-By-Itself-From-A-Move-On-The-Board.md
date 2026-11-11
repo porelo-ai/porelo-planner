@@ -47,8 +47,8 @@ What stands today, read in the code:
   `NextStep` plans the next state and tasks along `then`, and the screen starts them at once (`task_runs.dart`,
   `follow`). How a blocking reading and a task's mode are handled changes with
   [PL64](README.md#pl64): a blocking reading asks the person instead of starting Reworking, and a task that starts by
-  itself takes the rule's first mode. A Manual issue gets no task in any start ([PL65](README.md#pl65), on the worker
-  field of [PL46](README.md#pl46)).
+  itself takes the rule's first mode. A Manual issue gets no task in any start ([PL65](README.md#pl65), on the issue's
+  worker field).
 
 What is missing:
 

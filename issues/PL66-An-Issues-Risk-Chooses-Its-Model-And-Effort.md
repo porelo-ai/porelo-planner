@@ -9,7 +9,7 @@
   "size": "L",
   "priority": "Medium",
   "rank": 1,
-  "blockedBy": ["PL46"],
+  "blockedBy": [],
   "covers": "An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself"
 }
 ```
@@ -66,8 +66,7 @@ Steps:
    rule's effort for `harm`; in `WorkProposalTest`, a story of a `small` and a `harm` issue in one repository is
    proposed with `harm`'s model. Harm prevented: work that can do harm proposed with a light model or effort.
 
-Order: 1, 2. Built after the worker field of [PL46](README.md#pl46), which changes the same head reading, schema copy
-and `Issue`.
+Order: 1, 2. Built on the issue's worker field, which changed the same head reading, schema copy and `Issue`.
 
 Needs from other repositories, in words:
 
