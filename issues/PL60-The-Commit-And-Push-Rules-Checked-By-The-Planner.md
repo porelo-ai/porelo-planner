@@ -10,8 +10,7 @@
   "priority": "High",
   "rank": 1,
   "blockedBy": ["PL59"],
-  "covers": "The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format",
-  "openQuestions": 1
+  "covers": "The rules on commit messages and pushes are checked by the planner's command line, so the build tools hold none of the work format"
 }
 ```
 
@@ -38,7 +37,12 @@ What stands today, read in the code:
   (`actor: person`, `stage: move`) among the records, and writes such a move from `GitStore`.
 - This repository's `build.yml` and `shared-rules.yml` run `check-commits` through `exec:exec@release`.
 
-The steps, all in the work tools' module and its command line:
+The commands join the planner's own command line in its executable, beside `issues` and `stories`; the checks that
+read Git live in `planner/store/git`, so nothing outside it knows Git, and `WorkCommands` in `app` only calls them.
+`stage` moves here too and serves until the record Porelo keeps of each task takes the agents' own stage lines'
+place.
+
+The steps:
 
 1. **`check-commits <range> [--outside]`**: the rules above taken over with their tests; the stage-record part reads
    through `StageRecords`, so a person's move passes as the planner writes it; the issue prefixes from the
@@ -47,10 +51,9 @@ The steps, all in the work tools' module and its command line:
 2. **`check-pushes --since <hours>`**: GitHub's activity read with `java.net.http`, the token from the environment
    only, never printed, never in an argument or an error; pages, the push kinds and the refusal of a full page as
    today.
-3. **`stage begin|end <issue> <stage> ...` and `stage median|p80 <size>`**, if the operator moves it here: the
-   options, the one open stage per agent, the session file's tokens and the refusal of `begin ... move` as today.
-4. This repository's workflows run the planner's own command; `AGENTS.md` says that the work tools' module knows
-   Git besides `store/git`, for the commit checks; a changelog entry.
+3. **`stage begin|end <issue> <stage> ...` and `stage median|p80 <size>`**: the options, the one open stage per
+   agent, the session file's tokens and the refusal of `begin ... move` as today.
+4. This repository's workflows run the planner's own command; a changelog entry.
 
 Tests, red first:
 
@@ -67,14 +70,8 @@ Tests, red first:
 - The tests above, each seen red first; the full build green.
 - This repository's Build and shared-rules workflow run the planner's `check-commits` and are green on it; a
   deliberately long subject on a branch turns them red.
-- A published snapshot of the work tools gives `check-commits`, `check-pushes` (and `stage`) with the build tools'
-  exit codes.
-
-## Open questions
-
-- Does `stage begin|end|median|p80`, with which an agent writes its own stage lines, move into the planner's
-  command line here? It is proposed to move it, since the build tools drop it and the stage lines count until the
-  record Porelo keeps of each task takes their place.
+- The planner's executable, downloaded from the channel a push to main published it to, gives `check-commits`,
+  `check-pushes` and `stage` with the build tools' exit codes.
 
 ## To be checked
 

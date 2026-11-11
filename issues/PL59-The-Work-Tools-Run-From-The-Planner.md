@@ -6,21 +6,20 @@
   "id": "PL59",
   "title": "The Work Tools Run From The Planner",
   "state": "Analyzed",
-  "size": "L",
+  "size": "M",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work",
-  "openQuestions": 2
+  "covers": "A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work"
 }
 ```
 
-**Size:** L - the repository's first module published to Maven Central, with a contract other repositories build and
-run against, and the package that holds the work format moved out of the Git store.
+**Size:** M - one command line in the planner's own executable over code that is already there, and one more file
+the Build publishes; no new module, no Maven Central and no contract another repository builds against in Java.
 
-**What must be true.** Every repository builds its issue and story indexes and checks them with a command line the
-planner publishes, built from the Git store's own code, with the same results and exit codes as the build tools'
-`issues` and `stories` commands give today; a repository changes only which artifact its build runs.
+**What must be true.** Every repository indexes and checks its issues and stories with the planner's own executable,
+with the same results and exit codes as the build tools' `issues` and `stories` commands give today; a repository's
+CI downloads that executable pinned by version and sha256, and nothing of the planner is published as a library.
 
 ## Plan
 
@@ -31,7 +30,9 @@ What stands today, read in the code:
   beside the project's own), `IssueLinks`, `IssueHead`, `IssueIndexes`, `Workflow`, `Project`, `Story`,
   `StageRecords`, and the schemas `issue-1.json` and the story schema. `GitStore` and `StoreReader` call it.
   `stories/api/PublicReadersTest` holds the readers a program outside the package uses.
-- Nothing of this repository is published to Maven Central yet; the Build publishes only the `.deb` and `.rpm`.
+- The planner ships one native executable, the server, inside a `.deb` and an `.rpm` that the Build publishes to the
+  snapshots or releases channel of the project's Artifactory; `PlannerApplication.main` starts Spring at once, with
+  `--mock` as its only argument of its own. Nothing of this repository is published to Maven Central.
 - The build tools' commands this replaces: `issues index|check <dir>` and `stories index|check <dir>` print `OK ...`
   and exit 0, print each fault and exit 1, or exit 2 when something cannot be read or written; `stories cut
   <version> <dir> --after <date>` writes release notes from the stories tested after a date. porelo-project's
@@ -40,59 +41,46 @@ What stands today, read in the code:
 
 The steps:
 
-1. **A module of its own for the work format.** `planner/work` (artifact `porelo-planner-work`), a plain Java module
-   with Jackson and no Spring, takes the package `stories` from `store/git` by a move, renamed to
-   `org.fuin.porelo.planner.work`, with its tests, fixtures, schemas and the native test; `store/git` depends on it.
-   One copy, never two. Its public readers (`Workflow.read`, `IssueHead`, `IssueIndexes.read`, `IssueLinks`,
-   `Project.read`, `Story.read`) stay public, since a check outside the planner reads issue rows, links, story files
-   and the workflow through them; `PublicReadersTest` guards that.
-2. **The command line.** `org.fuin.porelo.planner.work.Main` in the same module: `issues index <dir>`, `issues check
-   <dir>`, `stories index <dir>`, `stories check <dir>`, and `stories cut` if the operator keeps it, each with the
-   build tools' arguments, output lines and exit codes (0, 1, 2), and a usage line with exit 2 for anything else.
-   Run as `exec:exec` with the module as executable dependency, the way a repository runs the build tools today;
-   this repository's root pom gets that execution as `work`.
-3. **Published to Maven Central.** The root declares `flatten-maven-plugin`; only `porelo-planner-work` opts in.
-   The Build gets the deploy job and the deploy dry run read by `check-deploy`, as the build tools' Build does, with
-   the Sonatype credentials from the organization's secrets.
-4. **The texts that name the command** change to the planner's command only together with the switch of the
+1. **The command line in the executable.** `PlannerApplication.main` hands its arguments to a small `WorkCommands`
+   in `app` first when the first one is `issues` or `stories`, and starts Spring only otherwise, so a check starts no
+   server, opens no port and reads no planner configuration. `issues index <dir>`, `issues check <dir>`, `stories
+   index <dir>`, `stories check <dir>` and `stories cut <version> <dir> --after <date>` call the Git store's own
+   `IssuesIndex`, `StoriesIndex` and their readers, with the build tools' arguments, output lines and exit codes (0,
+   1, 2), and a usage line with exit 2 for anything else. `issues convert` is not carried over. The work format stays
+   in `planner/store/git`, one copy.
+2. **The bare executable published.** The Build publishes the executable on its own, with its sha256 beside it, to
+   the same channel and under the same version as the packages, so a workflow downloads it with `curl -L` and checks
+   the digest before it runs it. A release never replaces a published file, as for the packages.
+3. **The texts that name the command** change to the planner's command only together with the switch of the
    repository whose check reads them: porelo-project's stories index heading is checked by its own `stories check`,
    so the heading changes once porelo-project runs the planner's check, never before.
-5. `AGENTS.md`'s rule on the stories index and `planner/store/git/README.md` name the new module; a `README.md` for
-   `planner/work`; a changelog entry.
+4. `AGENTS.md`'s rule on the stories index, `doc/` on the commands, `planner/app/README.md`, and a changelog entry.
 
 Tests, red first:
 
-- Unit, in `planner/work`: `MainTest` runs `issues check` on a fixture tree whose index the heads refuse and
-  asserts the fault lines and exit 1; on a tree it cannot read, exit 2; `issues index` on a fixture writes the same
-  index the build tools write (fixture compared with the build tools' output once, kept as a file).
-- Unit: `stories check` over a project fixture with sibling checkouts gives the same faults and exit code.
+- Unit, in `app`: `WorkCommandsTest` runs `issues check` on a fixture tree whose index the heads refuse and asserts
+  the fault lines and exit 1; on a tree it cannot read, exit 2; `issues index` on a fixture writes the same index the
+  build tools write (fixture compared with the build tools' output once, kept as a file). The harm: a repository's
+  check that passes what the build tools refused.
+- Unit: `stories check` over a project fixture with sibling checkouts gives the same faults and exit code; `stories
+  cut` writes the same release notes.
+- Unit: `main` with `issues check` starts no Spring context and binds no port.
 - Integration, test scope only while the build tools still carry the commands: the fixture run by both
-  `porelo-release` (already a test dependency of `store/git`) and the planner's `Main`, outputs and exit codes
-  equal.
-- The existing `store/git` tests stay green after the move, unchanged but for imports.
+  `porelo-release` (already a test dependency) and the planner's command line, outputs and exit codes equal.
+- The native start test runs `issues check` on a fixture through the native executable, since the commands read
+  schemas and YAML through reflection that only the image can miss.
 
 ## Acceptance
 
 - The unit tests above, each seen red first; the full build green, the native build among it.
-- The deploy dry run of the Build read green by `check-deploy`; a snapshot of `porelo-planner-work` published and
-  visible in the index at its exact version.
-- This repository runs `issues index`, `issues check` from its own published snapshot, and the three commands of
-  the hand-over exit 0 with it.
-- `porelo-release` is no longer needed by this repository's work commands; it stays only for the shared checks.
-
-## Open questions
-
-- Does `stories cut` (release notes from the stories tested after a date) move into the planner's command line, or
-  is it dropped? It is proposed to move with `stories check`.
-- Is the one-time `issues convert` (a head written from prose lines and the index row) dropped rather than moved?
-  It is proposed to drop it.
+- The Build of a push to main publishes the bare executable and its sha256; downloaded with `curl -L`, its digest
+  matches, and `porelo-planner issues check issues` exits 0 on this repository.
+- This repository's own hand-over checks `issues index` and `issues check` run with the planner's executable.
 
 ## To be checked
 
-- The coordinate `org.fuin.porelo:porelo-planner-work` and the command names, agreed in the channel with the build
-  tools' agent, since other repositories build and run against them.
-- Before the first publish, the operator verifies that this repository may read every organization secret the
-  deploy needs, the publication credential among them.
 - Whether `stories cut` builds its links from `project.yml`'s host and owner, as the planner's `Project` reads
   them, instead of the fixed owner the build tools use.
-- Whether the native test of the moved package still needs its own reachability metadata in the new module.
+- The executable's published name and path on the channel, agreed in the channel with the build tools' agent, since
+  every repository's workflow downloads it.
+- Whether the commands' reflection on the schemas and YAML needs more reachability metadata in the image.

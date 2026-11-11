@@ -10,8 +10,7 @@
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists",
-  "openQuestions": 1
+  "covers": "The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists"
 }
 ```
 
@@ -36,6 +35,10 @@ What stands today, read in the code:
   it with Porelo's `Start`, then reports STARTED, ENDED or STOPPED with the container's label.
 - A task does not always work one issue. A MAIN task works every issue of a story in its repository
   (`WorkProposal`); a BUILDER and a READER work one. The record must carry the issues a task worked.
+- Inside a task, each issue is worked by a sub-agent of its own, named by the issue's id, as the work rules' orders
+  say. Porelo's record joins each call of a sub-agent to the issue its name gives, and a call outside any such
+  sub-agent to no issue. An issue's time is its sub-agent's span plus an even share of the task's own time outside
+  every sub-agent; its tokens are counted the same way.
 - Porelo answers a single task's token totals today (`Usage`, by task); a record per task listed for a project since
   a time is not there yet.
 
@@ -58,9 +61,9 @@ The steps:
    Porelo's command line (the socket only if the command line cannot serve), validating every field before use and
    failing closed with the reason when Porelo cannot answer.
 3. **The velocity in `core`.** `Velocity.of(repository, size)` in `core` over the task records and the store's
-   issues (size, finished), with no Git: a finished issue's sample is the sum of its records' minutes. The `Store`
-   interface gains only what the computation needs and every backend can answer; `GitStore.velocity` and its
-   caller go, and the app asks `core`.
+   issues (size, finished), with no Git: a finished issue's sample is the sum, over the tasks that worked it, of its
+   sub-agent's span and its even share of the task's own time. The `Store` interface gains only what the
+   computation needs and every backend can answer; `GitStore.velocity` and its caller go, and the app asks `core`.
 4. **The Git store's copy.** The `Store` interface gains an optional keeping of an issue's numbers when it is
    finished, which the Git store implements by writing the records' lines into `stats/<ID>.jsonl` and another store
    leaves empty. Where Porelo's records are gone (another computer, an issue finished before them), `core` reads
@@ -70,8 +73,9 @@ The steps:
 Tests, red first:
 
 - Unit, `core`, over a fake store and fake records: a task record of two hours on a finished issue of size M gives
-  a velocity sample of 120 minutes for M; a stage line the store kept for the same issue and phase is not counted
-  twice; a store that keeps nothing still gives the velocity from the records alone.
+  a velocity sample of 120 minutes for M; a task of two issues whose sub-agents ran 50 and 30 minutes and whose own
+  time outside them was 20 minutes gives samples of 60 and 40 minutes; a stage line the store kept for the same
+  issue and phase is not counted twice; a store that keeps nothing still gives the velocity from the records alone.
 - Unit, the adapter over a fake command: a record with a negative duration, an unknown phase or a project other
   than the one asked is refused with the field named; Porelo unreachable fails the velocity with the reason, never
   an answer from less.
@@ -83,14 +87,6 @@ Tests, red first:
 - The tests above, each seen red first; the full build green.
 - On a local VM with Porelo's records available, one issue built by a task through Reading to Review gives a velocity
   sample equal to the task's wall time as Porelo shows it.
-
-## Open questions
-
-- How is a task that works several issues counted - its minutes and tokens split evenly among them, or counted only
-  where it worked one issue, or does the planner start one task per issue? A MAIN task works every issue of a story
-  in its repository, so its time cannot be told apart per issue from Porelo's record alone; splitting evenly is
-  simple but wrong for issues of different sizes, counting only one-issue tasks loses the MAIN tasks' samples, and
-  one task per issue changes how work is started.
 
 ## To be checked
 
