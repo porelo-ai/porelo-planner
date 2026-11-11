@@ -61,7 +61,6 @@ left out.
 | <a id="pl41"></a>[PL41](PL41-The-Git-Store-Alone-Handles-Stories-And-Issues.md) | L | - | Stories and issues kept as files in Git are read, checked, indexed and written by the planner's Git store alone - the shared stories library's code taken into store/git, a broken head and a broken issue link shown as faults on the board, a new idea written through the planner, every repository's issues checked against the project's one workflow, and each issue's stages recorded so the project's velocity goes to an estimate - so the build tools can drop the library and their story, issue, stage and link commands |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
-| <a id="pl52"></a>[PL52](PL52-Every-Outside-Download-Of-The-Build-Comes-From-A-Cache.md) | S | - | The Build and Windows workflows take every outside download from a cache keyed by its version or digest, and keep only the newest entry of each, so an outside registry's outage does not turn a build red |
 
 ## Review
 
@@ -92,6 +91,7 @@ left out.
 | <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | M | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
 | <a id="pl23"></a>[PL23](PL23-A-Board-Says-When-It-Is-Not-Live.md) | S | - | The planning board stands as live only while its changes stream is open, says that it is catching up while it reconnects and that Reload shows the current state once it is not; an issue's screen shows its sub-issues |
 | <a id="pl28"></a>[PL28](PL28-The-Planners-Own-Files-On-Windows.md) | M | - | On Windows the planner keeps its address file, work record and clones under %LOCALAPPDATA%\porelo-planner, each closed to other accounts through its access control list, with the same refusals as on Linux |
+| <a id="pl52"></a>[PL52](PL52-Every-Outside-Download-Of-The-Build-Comes-From-A-Cache.md) | S | - | The Build and Windows workflows take every outside download from a cache keyed by its version or digest, and an entry nobody reads any more goes after a set time, so an outside registry's outage does not turn a build red |
 | <a id="pl57"></a>[PL57](PL57-Discuss-An-Idea-From-The-Board.md) | M | - | A person chooses Discuss an idea on the board, and the planner answers one task for the window's Start over the project's repositories read as one: a brief that has the agent discuss the idea with the person and write it to a file in the planner's idea format |
 
 ## Rejected

@@ -35,9 +35,32 @@ jobs:
             - name: The pinned GraalVM
               uses: ./.github/actions/pinned-jdk
 
+            # The runner image's own packages, kept per image, so the Ubuntu archive being down does not stop a build.
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/porelo-apt/rpm
+                  key: apt-rpm-${{ env.ImageVersion }}
+
             # check-package-version reads the built .rpm with rpm, which the runner is not promised to have.
             - name: rpm, to read the built package
-              run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+              run: |
+                  set -eu
+                  cache="$HOME/.cache/porelo-apt/rpm"
+                  if compgen -G "$cache/*.deb" >/dev/null && sudo dpkg -i "$cache"/*.deb; then
+                      exit 0
+                  fi
+                  rm -rf "$cache"
+                  mkdir -p "$cache"
+                  if sudo apt-get update -qq \
+                      && packages="$(LC_ALL=C apt-get -s install rpm | awk '/^Inst / {print $2}')" \
+                      && [ -n "$packages" ] \
+                      && (cd "$cache" && apt-get download $packages) \
+                      && compgen -G "$cache/*.deb" >/dev/null \
+                      && sudo dpkg -i "$cache"/*.deb; then
+                      exit 0
+                  fi
+                  rm -rf "$cache"
+                  sudo apt-get update -qq && sudo apt-get install -y -qq rpm
 
             # Not -DskipTests: the native start test needs the executable, and the dist profile's checks need it and
             # the packages it is packed into - the C library and zlib both declare, and the version both carry.
@@ -268,3 +291,4 @@ jobs:
 
             - name: The screen's analysis and tests
               run: ./mvnw -B -U -s settings.xml -Pall -pl screen verify
+

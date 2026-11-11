@@ -28,6 +28,19 @@ jobs:
               with:
                   persist-credentials: false
 
+            # Cached as in pinned-jdk on Linux, so a trial run does not depend on Maven Central staying up.
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.m2/repository
+                  key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+                  restore-keys: maven-${{ runner.os }}-
+
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.m2/wrapper
+                  key: maven-wrapper-${{ runner.os }}-${{ hashFiles('.mvn/wrapper/maven-wrapper.properties') }}
+                  restore-keys: maven-wrapper-${{ runner.os }}-
+
             # The runner's own Java 25 runs the JVM tests; the pinned GraalVM is the Build's. The formatting is checked
             # in the Build on Linux, where shfmt and the checkout's line ends are the ones it checks.
             - name: The tests marked windows
