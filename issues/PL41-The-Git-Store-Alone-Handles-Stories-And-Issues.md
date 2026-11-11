@@ -84,11 +84,11 @@ lines with its tokens and as many of tests; the issue-link check of `check-citat
    ([PL22](README.md#pl22)). Red first: a move of an issue without a record writes a stage line that the record's
    reader takes back. Unit tests over files; one controller test for the estimate's start.
 
-8. **An issue settled when it is Finished** (M). Setting an issue Finished through the planner deletes its file and
-   keeps its row in the index, in one commit; the planner refuses it while the repository still mentions the
-   number outside `issues/` or links to the file, naming each place. Every reading of the board shows such a
-   mention of a settled or unknown number of the repository as a fault. Red first: setting Finished an issue whose
-   number a document still names is refused with the document and line, and nothing is committed. Unit and store
+8. **An issue settled when it is Finished** (M). A person sets an issue Finished, and that is always taken: the
+   Git store settles it in the same commit, deleting its file and keeping its row in the index. Any mention of the
+   number left outside `issues/`, or a link to the file, shows as a fault on the board naming each place, on that
+   reading and every one after. Red first: setting Finished an issue whose number a document still names commits
+   the file's deletion with its row kept, and the next board names the document and line as a fault. Unit and store
    tests over a local bare repository.
 
 Order: 1, 2, 3, 4, 5, 6, 7, 8. Steps 4 to 8 change what the window is answered and are agreed before they are
@@ -97,7 +97,8 @@ built. Sum by the medians: 1 L, 4 M, 3 S = 113 + 268 + 99 = 480 minutes.
 ## The checks that leave, and when the Git store runs them
 
 All of them live in `store/git`. A reading of the board names what it finds as a fault on the board and serves the
-rest; a write of the planner refuses before it commits anything and names why. What another person or an agent
+rest; a write of the planner refuses before it commits anything and names why. The rule that a commit message
+names no issue number is struck, not taken over. What another person or an agent
 commits in a repository is found on the next reading, since the planner is not asked before such a commit.
 
 | Check that leaves | Still needed | When in the life of an issue or story | On failure | Piece |
@@ -116,9 +117,8 @@ commits in a repository is found on the next reading, since the planner is not a
 | velocity from `stats/` | yes | when the planner starts a task for an estimate | no velocity yet: the estimate is started without one, and the task is told so | 7 |
 | `check-citations`: a number in `issues/` a link to its index row, the row anchored, the link reaching an anchor | yes | every reading; a write of an issue page | reading: fault naming page and line; write: refused | 5 |
 | `check-citations`: an own number in `issues/` names an issue that exists | yes | every reading | fault naming page and line | 5 |
-| `check-citations`: no issue number outside `issues/`, no link to an issue's file | yes | setting an issue Finished; every reading | Finished: refused naming each place; reading: fault | 8 |
-| `check-citations`: an issue's file deleted when it is settled, its row kept | yes | setting an issue Finished | the planner does it, in one commit | 8 |
-| `check-commits`: a commit message names no issue number | open, see below | - | - | - |
+| `check-citations`: no issue number outside `issues/`, no link to an issue's file | yes | setting an issue Finished; every reading | fault naming each place; Finished is still taken | 8 |
+| `check-citations`: an issue's file deleted when it is settled, its row kept | yes | setting an issue Finished | the Git store does it in the same commit | 8 |
 
 ## Acceptance
 
@@ -129,12 +129,6 @@ commits in a repository is found on the next reading, since the planner is not a
 - A broken head and a broken issue link each show as a fault on the board naming the file, and the rest of the
   board is served.
 - A task started for an estimate carries the project's velocity.
-
-## Open questions
-
-- A commit message that names an issue number is a rule on commits people and agents make, not on issues; the
-  planner sees such a commit only after it is pushed. Does the rule stay with `check-commits`, reading the prefixes
-  from `project.yml`, or does it go, or should the planner show such a commit as a fault on the board?
 
 ## To be checked
 
