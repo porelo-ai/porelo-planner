@@ -18,6 +18,7 @@ class PlanningAction {
     required this.run,
     this.unavailable,
     this.danger = false,
+    this.wayOn,
   });
 
   /// Stable identifier.
@@ -35,8 +36,23 @@ class PlanningAction {
   /// Whether it takes something away.
   final bool danger;
 
+  /// Where the person goes to settle what holds it, offered only while it cannot run; never runs the action.
+  final PlanningWayOn? wayOn;
+
   /// Whether it can be run now.
   bool get available => unavailable == null;
+}
+
+/// A step that leads to what holds an unavailable action, such as the run that needs attention.
+class PlanningWayOn {
+  /// Takes what it is called and what it does.
+  const PlanningWayOn({required this.label, required this.run});
+
+  /// What it is called.
+  final String label;
+
+  /// What it does.
+  final VoidCallback run;
 }
 
 /// Opens a planning destination on the provider that supplied it.
@@ -149,10 +165,15 @@ PlanningAction planningWebAction(
 /// The actions one story offers, as one menu; what cannot run stays in it, grayed, with its reason.
 class PlanningActionMenu extends StatelessWidget {
   /// Takes what to offer and what to say it is for.
-  const PlanningActionMenu({required this.actions, required this.tooltip, this.dense = false, super.key});
+  const PlanningActionMenu({required this.actions, required this.tooltip, this.dense = false, this.current, super.key});
 
   /// What this story can do, runnable or not.
   final List<PlanningAction> actions;
+
+  /// The actions as they stand now, read when the menu opens and again when an entry is chosen.
+  final List<PlanningAction> Function()? current;
+
+  static const _wayOn = ' way-on';
 
   /// Whether the button takes only its icon's room, as in a folded column.
   final bool dense;
@@ -175,12 +196,13 @@ class PlanningActionMenu extends StatelessWidget {
             )
           : null,
       onSelected: (id) {
-        for (final action in actions) {
+        for (final action in current?.call() ?? actions) {
           if (action.id == id && action.available) action.run();
+          if ('${action.id}$_wayOn' == id && !action.available) action.wayOn?.run();
         }
       },
       itemBuilder: (context) => <PopupMenuEntry<String>>[
-        for (final action in actions)
+        for (final action in current?.call() ?? actions) ...[
           PopupMenuItem<String>(
             key: ValueKey<String>(action.id),
             value: action.id,
@@ -196,6 +218,18 @@ class PlanningActionMenu extends StatelessWidget {
               subtitle: action.available ? null : Text('Unavailable: ${action.unavailable}'),
             ),
           ),
+          if (action.wayOn case final wayOn? when !action.available)
+            PopupMenuItem<String>(
+              key: ValueKey<String>('${action.id}$_wayOn'),
+              value: '${action.id}$_wayOn',
+              child: ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: Space.normal),
+                leading: const Icon(Icons.arrow_forward, size: PlanningStyle.rowIcon),
+                title: Text(wayOn.label),
+              ),
+            ),
+        ],
       ],
     );
   }

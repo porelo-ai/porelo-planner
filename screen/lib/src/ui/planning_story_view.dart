@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import '../planning_board.dart';
 import '../planning_detail.dart';
+import '../story_work.dart';
 import 'actions.dart';
 import 'planning_detail_widgets.dart';
+import 'story_work_attention.dart';
 import 'style.dart';
 
 /// The machine's standalone story and separately read issue list.
@@ -152,8 +155,30 @@ class PlanningStoryView extends StatelessWidget {
                 ),
             ],
           ]),
+        ListenableBuilder(listenable: detail.board, builder: (context, _) => _attention(context)),
       ],
     );
+  }
+
+  /// The run's attention for this story, from its own board, each row read only once it is opened.
+  Widget _attention(BuildContext context) {
+    final board = detail.board;
+    final story = board.stories.where((story) => story.id == detail.storyId).firstOrNull;
+    final rows = story == null ? const <PlanningAttention>[] : PlanningBoards.storyAttention(board, story);
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final causes = {for (final issue in board.runAttention(story!)?.issues ?? const []) issue.issue: issue.causes};
+    return planningSection(context, 'Needs attention', [
+      for (final row in rows)
+        ExpansionTile(
+          key: row.issue == null ? const Key('planning-story-ended') : Key('planning-story-attention ${row.issue!.id}'),
+          title: Text(
+            row.issue == null
+                ? 'The run ended'
+                : '${row.issue!.id}: ${(causes[row.issue!.id] ?? const ['it needs attention']).join(', ')}',
+          ),
+          children: [StoryWorkAttentionView(row: row, resolved: false, machine: board.backend.label, openStory: false)],
+        ),
+    ]);
   }
 
   String? _moveUnavailable(PlanIssue issue) =>

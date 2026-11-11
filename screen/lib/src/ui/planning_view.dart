@@ -853,21 +853,27 @@ class _BoardViewState extends State<_BoardView> {
     key: Key('planning-menu ${story.id}'),
     dense: dense,
     tooltip: 'Work on ${story.id}',
-    actions: [
-      PlanningAction(
-        id: 'planning-start ${story.id}',
-        label: 'Start work…',
-        unavailable: _startUnavailable(story),
-        run: () => unawaited(_start(story)),
-      ),
-      PlanningAction(
-        id: 'planning-stop ${story.id}',
-        label: 'Stop work',
-        unavailable: _stopUnavailable(story),
-        run: () => unawaited(_stop(story)),
-      ),
-    ],
+    actions: _actions(story),
+    current: () => _actions(story),
   );
+
+  List<PlanningAction> _actions(PlanStory story) => [
+    PlanningAction(
+      id: 'planning-start ${story.id}',
+      label: 'Start work…',
+      unavailable: _startUnavailable(story),
+      run: () => unawaited(_start(story)),
+      wayOn: board.startHold(story)?.attention == null
+          ? null
+          : PlanningWayOn(label: 'Open the run that needs attention', run: () => widget.onStory(story.id)),
+    ),
+    PlanningAction(
+      id: 'planning-stop ${story.id}',
+      label: 'Stop work',
+      unavailable: _stopUnavailable(story),
+      run: () => unawaited(_stop(story)),
+    ),
+  ];
 
   String? _startUnavailable(PlanStory story) =>
       board.startUnavailable(story) ??
@@ -900,6 +906,7 @@ class _BoardViewState extends State<_BoardView> {
       board.saving,
       board.live,
       _startUnavailable(story),
+      board.startHold(story)?.attention,
       _stopUnavailable(story),
     ];
     final built = _cards[story.id];

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL74",
   "title": "A Disabled Action Names The Run And Leads There",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -62,7 +62,12 @@ Taken from the plan's reading:
 - Start work on a story whose run needs attention names the issue and the reason, and one step opens the story's page
   where that attention is shown and can be settled. Seen failing first: today's "the run needs attention".
 
-## To be checked
+## Code reading
 
-- How the window's command palette renders a `PlanningAction`, so the added way on shows there too or is left out
-  there knowingly (asked of the window's agent).
+- Fixed, each with a test seen red first: a view opened after a refused decision read the findings again and cleared
+  the refusal in every view; a decision or a read in flight lost its shared state when its last view went, so a view
+  mounted again could send the decision a second time and a refusal was never shown. A read or a decision now holds
+  the shared state until it settles, and a new view never clears a refusal.
+- Added: tapping a disabled Start work runs nothing, and a way on whose attention was settled meanwhile runs nothing.
+- Declined: two windows' boards share no decision state; the planner refuses the second decision by its revision.
+- The window's command finder lists every `PlanningAction` and ignores the way on until it shows one itself.

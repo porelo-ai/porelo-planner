@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'client.dart';
 import 'models.dart';
 import 'hooks.dart';
+import 'run_attention.dart';
 import 'task_runs.dart';
 import 'story_work.dart';
 
@@ -344,7 +345,48 @@ class PlanningBoard extends ChangeNotifier {
           !workUnsupported.contains(story.id);
 
   /// Why a story cannot start, preserving unknown work as unknown.
-  String? startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
+  String? startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) =>
+      startHold(story, ownStart: ownStart, ownTasks: ownTasks)?.words;
+
+  /// Why a story cannot start, with the run's attention when that is what holds it.
+  PlanningStartHold? startHold(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
+    return switch (_startUnavailable(story, ownStart: ownStart, ownTasks: ownTasks)) {
+      final PlanningRunAttention attention => PlanningStartHold(attention.words, attention: attention),
+      final String words => PlanningStartHold(words),
+      _ => null,
+    };
+  }
+
+  /// What in the story's run needs a person: its end and each issue with its reason, or null when nothing does.
+  PlanningRunAttention? runAttention(PlanStory story) {
+    final work = workOf(story);
+    final reported = <String, PlanWorkIssue>{for (final issue in work?.issues ?? <PlanWorkIssue>[]) issue.issue: issue};
+    final issues = [
+      for (final id in <String>{
+        for (final issue in story.issues)
+          if (issue.needsYou == true || issue.readingStopped == true) issue.id,
+        for (final issue in work?.issues ?? <PlanWorkIssue>[])
+          if (issue.reason.isNotEmpty && issue.reason != 'NONE' ||
+              issue.needsYou == true ||
+              issue.readingStopped == true)
+            issue.issue,
+      })
+        _issueAttention(id, reported[id], story.issues.where((issue) => issue.id == id).firstOrNull),
+    ];
+    if (work?.ended == null && issues.isEmpty) return null;
+    return PlanningRunAttention(ended: work?.ended != null, issues: issues);
+  }
+
+  static PlanningIssueAttention _issueAttention(String id, PlanWorkIssue? work, PlanIssue? issue) =>
+      PlanningIssueAttention(
+        id,
+        reason: work?.reason ?? '',
+        readingStopped: work?.readingStopped == true || issue?.readingStopped == true,
+        needsYou: work?.needsYou == true || issue?.needsYou == true,
+      );
+
+  /// A reason in words, or the run's attention when that is what holds the start.
+  Object? _startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
     final reported = stories.where((each) => each.id == story.id).firstOrNull;
     if (reported == null) return 'the story is no longer reported';
     story = reported;
@@ -370,17 +412,7 @@ class PlanningBoard extends ChangeNotifier {
       if (workUnsupported.contains(story.id)) return 'the planner does not offer story work status';
     }
     final work = workOf(story);
-    if (work?.ended != null ||
-        work?.issues.any(
-              (issue) =>
-                  issue.reason.isNotEmpty && issue.reason != 'NONE' ||
-                  issue.needsYou == true ||
-                  issue.readingStopped == true,
-            ) ==
-            true ||
-        story.issues.any((issue) => issue.needsYou == true || issue.readingStopped == true)) {
-      return 'the run needs attention';
-    }
+    if (runAttention(story) case final attention?) return attention;
     if (work == null && (kind == 'WAITING' || kind == 'CLOSED')) return null;
     return switch (work?.atWork) {
       false => null,
@@ -1205,26 +1237,28 @@ class PlanningBoards extends ChangeNotifier {
   /// Ended story runs and stopped readings that need a person, from every source including stale ones.
   List<PlanningNeedsYou> get needsYou => [
     for (final board in sources)
-      for (final story in board.stories) ...[
-        if (board.endedOf(story) case final ended?)
+      for (final story in board.stories)
+        for (final row in storyAttention(board, story))
           PlanningNeedsYou(
-            'story ended ${machineOf(board)}/${board.project}/${story.id}',
+            row.issue == null
+                ? 'story ended ${machineOf(board)}/${board.project}/${story.id}'
+                : 'reading ${machineOf(board)}/${board.project}/${row.issue!.id}',
             machineOf(board),
-            PlanningAttention(board, story, ended: ended),
+            row,
           ),
-        for (final issue in attentionIssues(board, story))
-          PlanningNeedsYou(
-            'reading ${machineOf(board)}/${board.project}/${issue.id}',
-            machineOf(board),
-            PlanningAttention(
-              board,
-              story,
-              issue: issue,
-              ended: issueEnd(board, story, issue.id),
-              reason: board.workOf(story)?.issues.where((item) => item.issue == issue.id).firstOrNull?.reason ?? '',
-            ),
-          ),
-      ],
+  ];
+
+  /// The rows of one story that need a person, from its own board: the run's end, then each issue.
+  static List<PlanningAttention> storyAttention(PlanningBoard board, PlanStory story) => [
+    if (board.endedOf(story) case final ended?) PlanningAttention(board, story, ended: ended),
+    for (final issue in attentionIssues(board, story))
+      PlanningAttention(
+        board,
+        story,
+        issue: issue,
+        ended: issueEnd(board, story, issue.id),
+        reason: board.workOf(story)?.issues.where((item) => item.issue == issue.id).firstOrNull?.reason ?? '',
+      ),
   ];
 
   /// Every durable issue reason remains visible, including successful readers whose findings could not save.

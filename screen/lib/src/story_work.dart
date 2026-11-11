@@ -505,12 +505,52 @@ class PlanningAttention {
   final String reason;
 }
 
+/// The state of one stopped reading's decision, shared by every view of it on one board.
+class _SharedReading extends ChangeNotifier {
+  _SharedReading(this._key, this._all);
+
+  final (String, int?, String) _key;
+  final Map<(String, int?, String), _SharedReading> _all;
+  PlanningIssueDetail? detail;
+  String? problem;
+  bool busy = false;
+  bool submitted = false;
+  bool resolving = false;
+  int generation = 0;
+  int holders = 0;
+  bool gone = false;
+
+  void changed() {
+    if (!gone) notifyListeners();
+  }
+
+  void release() {
+    if (--holders > 0) return;
+    if (identical(_all[_key], this)) _all.remove(_key);
+    gone = true;
+    dispose();
+  }
+}
+
+/// Each board's shared reading decisions, by issue, reading round and revision.
+final _sharedReadings = Expando<Map<(String, int?, String), _SharedReading>>();
+
 /// Findings and a revision-bound reading decision. A success waits for the board's echo.
+///
+/// Every decision of one board's issue, round and revision shares its findings, its answer and whether it was sent,
+/// so two views of one stopped reading cannot both send a decision.
 class ReadingDecision extends ChangeNotifier {
   /// Keeps the source facts and choices for this view or decision.
   ReadingDecision(this.row) : revision = row.revision, backend = row.source, project = row.project {
-    _stopFollowing = row.board.follow(_changed);
+    final all = _sharedReadings[row.board] ??= {};
+    final key = (row.issue?.id ?? '', row.issue?.rounds, row.revision);
+    _shared = all[key] ??= _SharedReading(key, all);
+    _shared.holders++;
+    _shared.addListener(_notify);
+    _stopFollowing = row.board.follow(_notify);
   }
+
+  late final _SharedReading _shared;
 
   /// The source facts retained by this attention row.
   final PlanningAttention row;
@@ -525,19 +565,26 @@ class ReadingDecision extends ChangeNotifier {
   final String project;
 
   /// The last findings returned by GetIssue.
-  PlanningIssueDetail? detail;
+  PlanningIssueDetail? get detail => _shared.detail;
+  set detail(PlanningIssueDetail? value) => _shared.detail = value;
 
   /// The daemon’s refusal or an incomplete-answer explanation.
-  String? problem;
+  String? get problem => _shared.problem;
+  set problem(String? value) => _shared.problem = value;
 
   /// Whether a request is awaiting its answer.
-  bool busy = false;
+  bool get busy => _shared.busy;
+  set busy(bool value) => _shared.busy = value;
 
   /// Whether a decision was accepted and is awaiting the board’s echo.
-  bool submitted = false;
-  bool _resolving = false;
+  bool get submitted => _shared.submitted;
+  set submitted(bool value) => _shared.submitted = value;
+
+  bool get _resolving => _shared.resolving;
+  set _resolving(bool value) => _shared.resolving = value;
+  int get _generation => _shared.generation;
+  set _generation(int value) => _shared.generation = value;
   bool _disposed = false;
-  int _generation = 0;
   late final VoidCallback _stopFollowing;
 
   /// Whether this decision still belongs to a live board at its original revision.
@@ -595,7 +642,11 @@ class ReadingDecision extends ChangeNotifier {
   Future<void> load() async {
     if (_disposed || _resolving || submitted || row.issue?.readingStopped != true) return;
     final generation = ++_generation;
-    bool valid() => !_disposed && generation == _generation;
+    // A read nobody watches any more is dropped quietly; one a view remounted meanwhile still lands.
+    bool valid() => !_shared.gone && _shared.holders > 1 && generation == _generation;
+    // The read holds the shared state until it settles, so a view mounted meanwhile takes its answer.
+    final shared = _shared;
+    shared.holders++;
     busy = true;
     problem = null;
     _changed();
@@ -614,7 +665,7 @@ class ReadingDecision extends ChangeNotifier {
         }
       }
     } catch (error) {
-      if (!_disposed && generation == _generation) {
+      if (valid()) {
         problem = planningFailureWords(error);
         if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
           row.board.unavailableActions['ResolveIssueReading'] = problem!;
@@ -630,10 +681,11 @@ class ReadingDecision extends ChangeNotifier {
         }
       }
     } finally {
-      if (!_disposed && generation == _generation) {
+      if (valid()) {
         busy = false;
         _changed();
       }
+      shared.release();
     }
   }
 
@@ -646,6 +698,9 @@ class ReadingDecision extends ChangeNotifier {
         (comment?.runes.length ?? 0) > 4000) {
       return;
     }
+    // The decision holds the shared state until it settles, so no view mounted meanwhile can send it again.
+    final shared = _shared;
+    shared.holders++;
     busy = true;
     problem = null;
     _changed();
@@ -665,12 +720,12 @@ class ReadingDecision extends ChangeNotifier {
       answer.checkDecision(row.issue!.id, choice);
       run.observe(answer.work);
       await run.follow(answer.tasks, epoch);
-      if (!_disposed) {
+      if (!_shared.gone) {
         submitted = true;
         await row.board.reload();
       }
     } catch (error) {
-      if (!_disposed) {
+      if (!_shared.gone) {
         problem = planningFailureWords(error);
         if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
           row.board.unavailableActions['ResolveIssueReading'] = problem!;
@@ -687,21 +742,25 @@ class ReadingDecision extends ChangeNotifier {
       }
     } finally {
       _resolving = false;
-      if (!_disposed) {
+      if (!_shared.gone) {
         busy = false;
         _changed();
       }
+      shared.release();
     }
   }
 
-  void _changed() {
+  void _changed() => _shared.changed();
+
+  void _notify() {
     if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
-    _generation++;
+    _shared.removeListener(_notify);
+    _shared.release();
     _stopFollowing();
     super.dispose();
   }

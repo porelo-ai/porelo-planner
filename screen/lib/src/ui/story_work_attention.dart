@@ -10,7 +10,13 @@ import 'style.dart';
 /// Story outcomes and reading stops retain the daemon's words until the board clears them.
 class StoryWorkAttentionView extends StatefulWidget {
   /// Keeps the source facts and choices for this view or decision.
-  const StoryWorkAttentionView({required this.row, required this.resolved, required this.machine, super.key});
+  const StoryWorkAttentionView({
+    required this.row,
+    required this.resolved,
+    required this.machine,
+    this.openStory = true,
+    super.key,
+  });
 
   /// The source facts retained by this attention row.
   final PlanningAttention row;
@@ -20,6 +26,9 @@ class StoryWorkAttentionView extends StatefulWidget {
 
   /// Whether this row is retained only as a resolved outcome.
   final bool resolved;
+
+  /// Whether an ended run offers to open its story, left out where the story is already open.
+  final bool openStory;
   @override
   State<StoryWorkAttentionView> createState() => _StoryWorkAttentionViewState();
 }
@@ -36,11 +45,14 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     _follow();
   }
 
-  void _follow({PlanningIssueDetail? retained}) {
+  void _follow({PlanningIssueDetail? retained, bool read = false}) {
     if (widget.row.issue?.readingStopped == true && !widget.resolved) {
-      _reading = ReadingDecision(widget.row)..detail = retained;
-      _reading!.addListener(_changed);
-      unawaited(_reading!.load());
+      final reading = _reading = ReadingDecision(widget.row);
+      if (retained != null && reading.detail == null) reading.detail = retained;
+      reading.addListener(_changed);
+      // Another view may hold this reading's findings or its refusal; only the person's own request reads again.
+      final unread = reading.detail?.revision != reading.revision && reading.problem == null;
+      if ((read || unread) && !reading.busy && !reading.submitted) unawaited(reading.load());
     }
   }
 
@@ -99,30 +111,31 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                 key: Key('story-work-ended ${row.story.id}'),
               ),
               if (ended.at.isNotEmpty) Text(planningShown(ended.at, multiline: false)),
-              _openStoryButton(
-                context,
-                PlanningAction(
-                  id: 'planning.open-story',
-                  label: 'Open story',
-                  unavailable: widget.resolved
-                      ? 'this row is resolved'
-                      : row.board.isDisposed
-                      ? 'this source is no longer watched'
-                      : null,
-                  run: () => showDialog<void>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: Text('${row.story.id} — ${row.story.title}'),
-                      content: SingleChildScrollView(
-                        child: Text(
-                          '${row.story.state}\n${row.story.description}\n${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
+              if (widget.openStory)
+                _openStoryButton(
+                  context,
+                  PlanningAction(
+                    id: 'planning.open-story',
+                    label: 'Open story',
+                    unavailable: widget.resolved
+                        ? 'this row is resolved'
+                        : row.board.isDisposed
+                        ? 'this source is no longer watched'
+                        : null,
+                    run: () => showDialog<void>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text('${row.story.id} — ${row.story.title}'),
+                        content: SingleChildScrollView(
+                          child: Text(
+                            '${row.story.state}\n${row.story.description}\n${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
+                          ),
                         ),
+                        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
                       ),
-                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
                     ),
                   ),
                 ),
-              ),
             ],
             if (row.reason.isNotEmpty && row.reason != 'NONE') Text(planningShown(row.reason)),
             if (row.issue case final issue?) ...[
@@ -150,7 +163,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                       } else {
                         final retained = reading.detail;
                         _release();
-                        _follow(retained: retained);
+                        _follow(retained: retained, read: true);
                         setState(() {});
                       }
                     },
