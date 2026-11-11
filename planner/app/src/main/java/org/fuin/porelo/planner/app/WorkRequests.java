@@ -54,6 +54,7 @@ public final class WorkRequests {
             String offer,
             String event,
             String container,
+            String machine,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskEnded ended) {}
 
     /** Porelo's ended record with no outcome invented by the window. */
@@ -97,7 +98,9 @@ public final class WorkRequests {
     }
 
     static WorkRun.Report event(final JsonNode body) {
-        fields(body, Set.of("offer", "event", "container", "ended"));
+        fields(body, Set.of("offer", "event", "container", "machine", "ended"));
+        final String machine = text(body, "machine");
+        WorkRun.checkedMachine(machine);
         final WorkRun.Event event;
         try {
             event = WorkRun.Event.valueOf(text(body, "event"));
@@ -119,7 +122,8 @@ public final class WorkRequests {
                             text(end, "answer"),
                             integer(end, "unpushed"));
         }
-        return new WorkRun.Report(text(body, "offer"), event, text(body, "container"), ended);
+        return new WorkRun.Report(
+                text(body, "offer"), event, text(body, "container"), machine, ended);
     }
 
     static ReadingRequest reading(final JsonNode body) {

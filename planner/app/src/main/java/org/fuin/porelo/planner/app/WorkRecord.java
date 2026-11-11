@@ -27,8 +27,10 @@ import org.jspecify.annotations.Nullable;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Owns the private, bounded work record and refuses writers from another planner process. */
 public final class WorkRecord implements AutoCloseable {
@@ -313,7 +315,19 @@ public final class WorkRecord implements AutoCloseable {
                 if (bytes.length > MOST_RECORD) {
                     throw unavailable(project);
                 }
-                final Document doc = JSON.readValue(bytes, Document.class);
+                final JsonNode tree = JSON.readTree(bytes);
+                if (tree == null) {
+                    throw unavailable(project);
+                }
+                for (final JsonNode run : tree.path("runs")) {
+                    for (final JsonNode offer : run.path("offers")) {
+                        if (offer instanceof ObjectNode object && !object.has("machine")) {
+                            // Only the new field may be absent in older records.
+                            object.putNull("machine");
+                        }
+                    }
+                }
+                final Document doc = JSON.treeToValue(tree, Document.class);
                 validate(doc);
                 if (!repository.equals(doc.repository())
                         || !java.util.Objects.equals(branch, doc.branch())) {
@@ -529,6 +543,10 @@ public final class WorkRecord implements AutoCloseable {
                                                     }
                                                 });
                                 for (final WorkRun.Offer offer : run.offers()) {
+                                    final String machine = offer.machine();
+                                    if (machine != null) {
+                                        WorkRun.checkedMachine(machine);
+                                    }
                                     present(
                                             offer.arguments().role(),
                                             offer.arguments().agent(),
@@ -578,6 +596,7 @@ public final class WorkRecord implements AutoCloseable {
                                                                 ? WorkRun.Event.ENDED
                                                                 : WorkRun.Event.STARTED,
                                                         String.valueOf(offer.containerId()),
+                                                        machine == null ? "unknown" : machine,
                                                         offer.ended()));
                                     }
                                 }

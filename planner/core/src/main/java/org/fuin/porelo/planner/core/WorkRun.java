@@ -101,7 +101,8 @@ public final class WorkRun {
     public record Ended(String at, boolean finished, String why, String answer, int unpushed) {}
 
     /** A report carries no ownership or state; both come from the saved offer. */
-    public record Report(String offer, Event event, String container, @Nullable Ended ended) {}
+    public record Report(
+            String offer, Event event, String container, String machine, @Nullable Ended ended) {}
 
     /** The immutable arguments and identity offered to the window. */
     public record Offered(String offer, WorkOrder.Task task) {}
@@ -138,6 +139,7 @@ public final class WorkRun {
             String status,
             @Nullable String task,
             @Nullable String containerId,
+            @Nullable String machine,
             @Nullable String since,
             @Nullable Ended ended,
             String fingerprint,
@@ -154,6 +156,7 @@ public final class WorkRun {
                 final String status,
                 final @Nullable String task,
                 final @Nullable String containerId,
+                final @Nullable String machine,
                 final @Nullable String since,
                 final @Nullable Ended ended,
                 final String fingerprint,
@@ -167,6 +170,7 @@ public final class WorkRun {
                     status,
                     task,
                     containerId,
+                    machine,
                     since,
                     ended,
                     fingerprint,
@@ -429,7 +433,9 @@ public final class WorkRun {
                     }
                     if (known.task() != null
                             && (!task.equals(known.task())
-                                    || !report.container().equals(known.containerId()))) {
+                                    || !report.container().equals(known.containerId())
+                                    || known.machine() != null
+                                            && !report.machine().equals(known.machine()))) {
                         throw conflict(
                                 task, report.event(), "The report contradicts the task binding.");
                     }
@@ -494,6 +500,7 @@ public final class WorkRun {
                                         "STARTED",
                                         task,
                                         report.container(),
+                                        report.machine(),
                                         clock.instant().toString(),
                                         null,
                                         "",
@@ -509,6 +516,7 @@ public final class WorkRun {
                                         report.event().name(),
                                         task,
                                         report.container(),
+                                        report.machine(),
                                         known.since(),
                                         report.ended(),
                                         fingerprint(report),
@@ -579,6 +587,7 @@ public final class WorkRun {
                                             accepted.status(),
                                             accepted.task(),
                                             accepted.containerId(),
+                                            accepted.machine(),
                                             accepted.since(),
                                             accepted.ended(),
                                             accepted.fingerprint(),
@@ -742,6 +751,7 @@ public final class WorkRun {
                                                     reading.status(),
                                                     reading.task(),
                                                     reading.containerId(),
+                                                    reading.machine(),
                                                     reading.since(),
                                                     reading.ended(),
                                                     reading.fingerprint(),
@@ -769,6 +779,7 @@ public final class WorkRun {
                                                 reading.status(),
                                                 reading.task(),
                                                 reading.containerId(),
+                                                reading.machine(),
                                                 reading.since(),
                                                 reading.ended(),
                                                 reading.fingerprint(),
@@ -915,6 +926,7 @@ public final class WorkRun {
                                             o.status(),
                                             o.task(),
                                             o.containerId(),
+                                            o.machine(),
                                             o.since(),
                                             o.ended(),
                                             o.fingerprint(),
@@ -1004,6 +1016,7 @@ public final class WorkRun {
                             old.status(),
                             old.task(),
                             old.containerId(),
+                            old.machine(),
                             old.since(),
                             old.ended(),
                             old.fingerprint(),
@@ -1144,6 +1157,7 @@ public final class WorkRun {
                 null,
                 null,
                 null,
+                null,
                 "",
                 List.of(),
                 List.of(),
@@ -1190,6 +1204,7 @@ public final class WorkRun {
 
     /** Checks opaque and display labels before they can occur in any refusal. */
     public static void checkedReport(final String task, final Report report) {
+        checkedMachine(report.machine());
         try {
             if (!LABEL.matcher(task).matches()
                     || !LABEL.matcher(report.container()).matches()
@@ -1214,6 +1229,21 @@ public final class WorkRun {
         }
     }
 
+    /** Checks a verbatim display name without interpreting it as a machine address. */
+    public static void checkedMachine(final String machine) {
+        final int length = machine.codePointCount(0, machine.length());
+        if (length < 1
+                || length > 128
+                || machine.codePoints()
+                        .anyMatch(
+                                point ->
+                                        Character.isISOControl(point)
+                                                || point == 0x2028
+                                                || point == 0x2029)) {
+            throw WorkRefusal.invalidSettings();
+        }
+    }
+
     private static void words(final String words) {
         if (words.codePointCount(0, words.length()) > WorkEnds.MOST_TEXT) {
             throw WorkRefusal.invalidSettings();
@@ -1230,10 +1260,11 @@ public final class WorkRun {
             final Ended end = report.ended();
             final List<String> fields =
                     end == null
-                            ? List.of(report.event().name(), report.container())
+                            ? List.of(report.event().name(), report.container(), report.machine())
                             : List.of(
                                     report.event().name(),
                                     report.container(),
+                                    report.machine(),
                                     end.at(),
                                     Boolean.toString(end.finished()),
                                     end.why(),
@@ -1323,6 +1354,7 @@ public final class WorkRun {
                                             o.status(),
                                             o.task(),
                                             o.containerId(),
+                                            o.machine(),
                                             o.since(),
                                             o.ended(),
                                             o.fingerprint(),
@@ -1364,6 +1396,7 @@ public final class WorkRun {
                                 o.status(),
                                 o.task(),
                                 o.containerId(),
+                                o.machine(),
                                 o.since(),
                                 end == null || !olderReading
                                         ? end
@@ -1394,6 +1427,7 @@ public final class WorkRun {
                                             "VOID",
                                             o.task(),
                                             o.containerId(),
+                                            o.machine(),
                                             o.since(),
                                             o.ended(),
                                             o.fingerprint(),

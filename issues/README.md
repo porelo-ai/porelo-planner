@@ -28,7 +28,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | M | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 
@@ -36,6 +35,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl19"></a>[PL19](PL19-A-Storys-Tasks-Name-Their-Machine.md) | M | [PL09](README.md#pl09) | The window's report of a task it started names the machine it runs on, and a story's work answers it per task, so a task opened from the board opens on its machine |
 | <a id="pl09"></a>[PL09](PL09-The-Run-From-Building-To-Review.md) | L | [PL08](README.md#pl08) | The run from building through Reading and Reworking to Review: the reading limit, Needs you and its three choices, findings, a local record; task changes told by the window |
 | <a id="pl18"></a>[PL18](PL18-Moves-And-Story-Work-In-The-Screen-Package.md) | L | [PL05](README.md#pl05), [PL08](README.md#pl08) | The screen package's HTTP calls for saving moves, proposing story work and ordering it, and the window's Start hook taking each checked task once, so the window can start a story's work |
 | <a id="pl08"></a>[PL08](PL08-The-Work-Proposal.md) | L | [PL07](README.md#pl07) | The work proposal: main agent per repository, each sub-issue a task of its own, the operator's choices, comment and reading limit, and the prompts the window starts each task with |

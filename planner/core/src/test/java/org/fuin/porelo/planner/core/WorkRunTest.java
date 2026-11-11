@@ -23,6 +23,128 @@ import org.junit.jupiter.api.Test;
 class WorkRunTest {
 
     @Test
+    void aStartedTaskKeepsItsMachineAndAnEndCannotRebindIt() {
+        // Prevents a later report from directing a bound task to another machine.
+        final Fixture f = new Fixture();
+        final var offer = f.order().tasks().getFirst();
+        assertThat(f.record.value.runs().values().iterator().next().offers().getFirst().machine())
+                .as("an offer has no machine before a report binds it")
+                .isNull();
+        final String machine = "WSL Ubuntu Äpfel";
+        final var started =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                offer.offer(), WorkRun.Event.STARTED, "box", machine, null));
+        assertThat(started.work().offers().getFirst().machine())
+                .as("STARTED binds the person's machine name verbatim")
+                .isEqualTo(machine);
+        final var snapshot = f.record.value;
+        final var board = f.store.current;
+        final int saves = f.store.saves;
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "Other machine",
+                                                ended("Built"))))
+                .as("another machine contradicts the saved task binding")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refusal ->
+                                assertThat(((WorkRefusal) refusal).name())
+                                        .as("a machine contradiction is an event conflict")
+                                        .isEqualTo("TaskEventConflict"));
+        assertThat(f.record.value)
+                .as("the refused end changes no work generation or offers")
+                .isEqualTo(snapshot);
+        assertThat(f.store.current)
+                .as("the refused end changes no planning state")
+                .isEqualTo(board);
+        assertThat(f.store.saves).as("the refused end writes nothing").isEqualTo(saves);
+    }
+
+    @Test
+    void aTaskFromAnOlderRecordLearnsItsMachineWhenItEnds() {
+        // Prevents unknown legacy machines from stranding work or allowing rebinding.
+        final Fixture f = new Fixture();
+        final var offer = f.order().tasks().getFirst();
+        final var started =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final var run = started.work();
+        final var bound = run.offers().getFirst();
+        final var legacyOffer =
+                new WorkRun.Offer(
+                        bound.id(),
+                        bound.arguments(),
+                        bound.binding(),
+                        bound.status(),
+                        bound.task(),
+                        bound.containerId(),
+                        null,
+                        bound.since(),
+                        bound.ended(),
+                        bound.fingerprint(),
+                        bound.following(),
+                        bound.deferred(),
+                        bound.refusal());
+        final var legacyRun =
+                new WorkRun.Run(
+                        run.id(),
+                        run.story(),
+                        run.to(),
+                        run.mode(),
+                        run.comment(),
+                        run.coordinator(),
+                        run.readingRounds(),
+                        run.issueReadingRounds(),
+                        run.repositories(),
+                        run.since(),
+                        List.of(legacyOffer),
+                        run.issues(),
+                        run.stopped(),
+                        run.halted(),
+                        run.pending());
+        f.record.value =
+                new WorkRun.Snapshot(f.record.value.generation(), Map.of(run.story(), legacyRun));
+        final var ended =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                offer.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "WSL Ubuntu Äpfel",
+                                ended("Built")));
+        assertThat(ended.work().offers().getFirst().machine())
+                .as("the first accepted terminal report names an unknown legacy machine")
+                .isEqualTo("WSL Ubuntu Äpfel");
+        final var snapshot = f.record.value;
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "Other machine",
+                                                ended("Built"))))
+                .as("a replay cannot replace the newly recorded machine")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(f.record.value)
+                .as("a contradictory replay preserves the complete record")
+                .isEqualTo(snapshot);
+    }
+
+    @Test
     void reportsCannotForgeScopeOrRebindATask() {
         // Prevents a window report from changing another story or claiming another task's offer.
         final Fixture f = new Fixture();
@@ -35,6 +157,7 @@ class WorkRunTest {
                                                 "00000000-0000-0000-0000-000000000000",
                                                 WorkRun.Event.STARTED,
                                                 "box",
+                                                "workstation",
                                                 null)))
                 .as("an offer never given cannot write")
                 .isInstanceOf(WorkRefusal.class);
@@ -47,6 +170,7 @@ class WorkRunTest {
                                                 offer.offer(),
                                                 WorkRun.Event.ENDED,
                                                 "box",
+                                                "workstation",
                                                 ended(""))))
                 .as("the first binding wins")
                 .isInstanceOf(WorkRefusal.class);
@@ -94,6 +218,7 @@ class WorkRunTest {
                                                 second.offer(),
                                                 WorkRun.Event.STARTED,
                                                 "box",
+                                                "workstation",
                                                 null)))
                 .as("an active issue already has an owner")
                 .isInstanceOf(WorkRefusal.class)
@@ -112,7 +237,8 @@ class WorkRunTest {
         final WorkRun.Offered builder = f.order().tasks().getFirst();
         f.start(builder);
         final WorkRun.Report end =
-                new WorkRun.Report(builder.offer(), WorkRun.Event.ENDED, "box", ended("Built"));
+                new WorkRun.Report(
+                        builder.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built"));
         final WorkRun.Answer first = f.run.report("task", end);
         final WorkRun restarted = new WorkRun(f.store, f.record, f.clock);
         assertThat(restarted.report("task", end).tasks())
@@ -121,10 +247,16 @@ class WorkRunTest {
                 .hasSize(1);
         final WorkRun.Offered reader = first.tasks().getFirst();
         f.run.report(
-                "reader", new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         final WorkRun.Report read =
                 new WorkRun.Report(
-                        reader.offer(), WorkRun.Event.ENDED, "box", ended("Findings:\n"));
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n"));
         f.run.report("reader", read);
         restarted.report("reader", read);
         assertThat(restarted.work("ST1").issues().get("AA1").rounds().rounds())
@@ -147,6 +279,7 @@ class WorkRunTest {
                             reader.offer(),
                             WorkRun.Event.ENDED,
                             "box",
+                            "workstation",
                             ended("Findings:\n1. blocking | - | - | Preserve data")));
         }
         f.run.choose(
@@ -166,7 +299,9 @@ class WorkRunTest {
                                 f.store.board().revision().value())
                         .tasks()
                         .getFirst();
-        final var start = new WorkRun.Report(child.offer(), WorkRun.Event.STARTED, "box", null);
+        final var start =
+                new WorkRun.Report(
+                        child.offer(), WorkRun.Event.STARTED, "box", "workstation", null);
         final var first = f.run.report("child-rework", start);
         assertThat(first.tasks())
                 .as("starting the child's rework releases the parent's deferred rework")
@@ -181,7 +316,11 @@ class WorkRunTest {
         f.run.report(
                 "parent-rework",
                 new WorkRun.Report(
-                        first.tasks().getFirst().offer(), WorkRun.Event.STARTED, "box", null));
+                        first.tasks().getFirst().offer(),
+                        WorkRun.Event.STARTED,
+                        "box",
+                        "workstation",
+                        null));
         assertThat(restarted.report("child-rework", start).tasks())
                 .as("a follow-up that has already started is no longer offered")
                 .isEmpty();
@@ -199,6 +338,7 @@ class WorkRunTest {
                             reader.offer(),
                             WorkRun.Event.ENDED,
                             "box",
+                            "workstation",
                             ended("Findings:\n1. blocking | - | - | Preserve data")));
         }
         final var waiting =
@@ -302,17 +442,21 @@ class WorkRunTest {
                                         builder.offer(),
                                         WorkRun.Event.ENDED,
                                         "box",
+                                        "workstation",
                                         ended("Built")))
                         .tasks()
                         .getFirst();
         f.run.report(
-                "reader", new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         f.run.report(
                 "reader",
                 new WorkRun.Report(
                         reader.offer(),
                         WorkRun.Event.ENDED,
                         "box",
+                        "workstation",
                         ended("Findings:\n1. blocking | - | - | Preserve data")));
         f.store.failure = new StoreException.Busy("alpha");
         assertThatThrownBy(
@@ -366,11 +510,17 @@ class WorkRunTest {
                 f.run.report(
                                 "task",
                                 new WorkRun.Report(
-                                        build.offer(), WorkRun.Event.ENDED, "box", ended("Built")))
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
                         .tasks()
                         .getFirst();
         f.run.report(
-                "reader", new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         final var blocked =
                 f.run.report(
                         "reader",
@@ -378,25 +528,33 @@ class WorkRunTest {
                                 reader.offer(),
                                 WorkRun.Event.ENDED,
                                 "box",
+                                "workstation",
                                 ended("Findings:\n1. blocking | - | - | Preserve data")));
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("blocking findings use the remaining allowance for rework")
                 .isEqualTo("Reworking");
         final var rework = blocked.tasks().getFirst();
         f.run.report(
-                "rework", new WorkRun.Report(rework.offer(), WorkRun.Event.STARTED, "box", null));
+                "rework",
+                new WorkRun.Report(
+                        rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         final var reworked =
                 f.run.report(
                         "rework",
                         new WorkRun.Report(
-                                rework.offer(), WorkRun.Event.ENDED, "box", ended("Reworked")));
+                                rework.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Reworked")));
         assertThat(reworked.work().issues().get("AA1").rounds().rounds())
                 .as("rework is not a completed reading")
                 .isEqualTo(1);
         final var last = reworked.tasks().getFirst();
         f.run.report(
                 "last-reader",
-                new WorkRun.Report(last.offer(), WorkRun.Event.STARTED, "box", null));
+                new WorkRun.Report(
+                        last.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         final var reviewed =
                 f.run.report(
                         "last-reader",
@@ -404,6 +562,7 @@ class WorkRunTest {
                                 last.offer(),
                                 WorkRun.Event.ENDED,
                                 "box",
+                                "workstation",
                                 ended("Findings:\n1. note | - | - | Follow up later")));
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("notes on the last allowed reading reach review")
@@ -444,6 +603,7 @@ class WorkRunTest {
                                                     offer.offer(),
                                                     WorkRun.Event.ENDED,
                                                     "box",
+                                                    "workstation",
                                                     ended("Built"))))
                     .as("a save refusal reaches the caller")
                     .isSameAs(refusal);
@@ -475,7 +635,9 @@ class WorkRunTest {
                         .orElseThrow();
         f.start(main);
         f.run.report(
-                "child", new WorkRun.Report(child.offer(), WorkRun.Event.STARTED, "box", null));
+                "child",
+                new WorkRun.Report(
+                        child.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         f.store.failure = new StoreException.Busy("alpha");
         assertThatThrownBy(
                         () ->
@@ -485,6 +647,7 @@ class WorkRunTest {
                                                 child.offer(),
                                                 WorkRun.Event.ENDED,
                                                 "box",
+                                                "workstation",
                                                 ended("Built"))))
                 .as("a refused save halts the run")
                 .isInstanceOf(StoreException.Busy.class);
@@ -494,7 +657,11 @@ class WorkRunTest {
                 f.run.report(
                         "task",
                         new WorkRun.Report(
-                                main.offer(), WorkRun.Event.ENDED, "box", ended("Built")));
+                                main.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
         assertThat(late.tasks()).as("a late end releases no continuation").isEmpty();
         assertThat(f.run.active("ST1")).as("accepted late ends clear actual activity").isEmpty();
         assertThat(f.store.saves).as("a halted run performs no further save").isEqualTo(saves);
@@ -512,7 +679,11 @@ class WorkRunTest {
                 f.run.report(
                         "task",
                         new WorkRun.Report(
-                                builder.offer(), WorkRun.Event.ENDED, "box", ended("Built")));
+                                builder.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
         assertThat(late.tasks()).as("a cancelled run releases no work").isEmpty();
         assertThat(f.store.saves).as("a late end preserves planning states").isEqualTo(saves);
         assertThat(f.run.active("ST1")).as("only the actual end clears activity").isEmpty();
@@ -531,17 +702,21 @@ class WorkRunTest {
                                         builder.offer(),
                                         WorkRun.Event.ENDED,
                                         "box",
+                                        "workstation",
                                         ended("Built")))
                         .tasks()
                         .getFirst();
         f.run.report(
-                "reader", new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         f.run.report(
                 "reader",
                 new WorkRun.Report(
                         reader.offer(),
                         WorkRun.Event.ENDED,
                         "box",
+                        "workstation",
                         ended("Findings:\n1. blocking | - | - | Preserve data")));
         final String revision = f.store.board().revision().value();
         final var chosen =
@@ -608,10 +783,17 @@ class WorkRunTest {
                             .orElseThrow();
             f.start(main);
             f.run.report(
-                    "child", new WorkRun.Report(child.offer(), WorkRun.Event.STARTED, "box", null));
+                    "child",
+                    new WorkRun.Report(
+                            child.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
             f.run.report(
                     "task",
-                    new WorkRun.Report(main.offer(), WorkRun.Event.ENDED, "box", ended("Built")));
+                    new WorkRun.Report(
+                            main.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Built")));
             final var readers =
                     f.run.report(
                                     "child",
@@ -619,6 +801,7 @@ class WorkRunTest {
                                             child.offer(),
                                             WorkRun.Event.ENDED,
                                             "box",
+                                            "workstation",
                                             ended("Built")))
                             .tasks();
             final var parentReader =
@@ -633,16 +816,27 @@ class WorkRunTest {
                             .orElseThrow();
             f.run.report(
                     "parent-reader",
-                    new WorkRun.Report(parentReader.offer(), WorkRun.Event.STARTED, "box", null));
+                    new WorkRun.Report(
+                            parentReader.offer(),
+                            WorkRun.Event.STARTED,
+                            "box",
+                            "workstation",
+                            null));
             f.run.report(
                     "child-reader",
-                    new WorkRun.Report(childReader.offer(), WorkRun.Event.STARTED, "box", null));
+                    new WorkRun.Report(
+                            childReader.offer(),
+                            WorkRun.Event.STARTED,
+                            "box",
+                            "workstation",
+                            null));
             f.run.report(
                     "parent-reader",
                     new WorkRun.Report(
                             parentReader.offer(),
                             WorkRun.Event.ENDED,
                             "box",
+                            "workstation",
                             ended("Findings:\n1. blocking | - | - | Preserve data")));
             f.run.choose(
                     "ST1",
@@ -661,6 +855,7 @@ class WorkRunTest {
                                     childReader.offer(),
                                     WorkRun.Event.ENDED,
                                     "box",
+                                    "workstation",
                                     ended("Findings:\n")));
             assertThat(f.store.board().issue("AA1").orElseThrow().state())
                     .as("the recorded choice takes effect after the child")
@@ -745,16 +940,23 @@ class WorkRunTest {
                                             build.offer(),
                                             WorkRun.Event.ENDED,
                                             "box",
+                                            "workstation",
                                             ended("Built")))
                             .tasks()
                             .getFirst();
             f.run.report(
                     "reader",
-                    new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                    new WorkRun.Report(
+                            reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
             final var answer =
                     f.run.report(
                             "reader",
-                            new WorkRun.Report(reader.offer(), WorkRun.Event.ENDED, "box", end));
+                            new WorkRun.Report(
+                                    reader.offer(),
+                                    WorkRun.Event.ENDED,
+                                    "box",
+                                    "workstation",
+                                    end));
             final var progress = answer.work().issues().get("AA1");
             assertThat(progress.rounds().rounds())
                     .as("only successful parsed readings count")
@@ -775,7 +977,11 @@ class WorkRunTest {
                 f.run.report(
                         "task",
                         new WorkRun.Report(
-                                build.offer(), WorkRun.Event.ENDED, "box", ended("Built")));
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
         assertThat(answer.tasks()).as("unpublishable readers are not released").isEmpty();
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("the valid transition is still saved")
@@ -880,7 +1086,9 @@ class WorkRunTest {
 
         void start(final WorkRun.Offered offer) {
             run.report(
-                    "task", new WorkRun.Report(offer.offer(), WorkRun.Event.STARTED, "box", null));
+                    "task",
+                    new WorkRun.Report(
+                            offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
         }
 
         List<WorkRun.Offered> readers() {
@@ -897,10 +1105,17 @@ class WorkRunTest {
                             .orElseThrow();
             start(main);
             run.report(
-                    "child", new WorkRun.Report(child.offer(), WorkRun.Event.STARTED, "box", null));
+                    "child",
+                    new WorkRun.Report(
+                            child.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
             run.report(
                     "task",
-                    new WorkRun.Report(main.offer(), WorkRun.Event.ENDED, "box", ended("Built")));
+                    new WorkRun.Report(
+                            main.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Built")));
             final var readers =
                     run.report(
                                     "child",
@@ -908,12 +1123,14 @@ class WorkRunTest {
                                             child.offer(),
                                             WorkRun.Event.ENDED,
                                             "box",
+                                            "workstation",
                                             ended("Built")))
                             .tasks();
             for (final WorkRun.Offered reader : readers) {
                 run.report(
                         "reader-" + reader.task().issues().getFirst(),
-                        new WorkRun.Report(reader.offer(), WorkRun.Event.STARTED, "box", null));
+                        new WorkRun.Report(
+                                reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
             }
             return readers;
         }

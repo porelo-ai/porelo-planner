@@ -335,6 +335,61 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
+    void taskReportsRequireAMachineAndWorkTasksKeepAnExplicitNullableMachine() {
+        // Prevents missing machine routing and confusing an unknown machine with a name.
+        final JsonNode schemas = description.path("components").path("schemas");
+        for (final String name : List.of("TaskEventRequest", "PlanWorkTask")) {
+            final JsonNode schema = schemas.path(name);
+            final Set<String> required = new TreeSet<>();
+            schema.path("required").forEach(field -> required.add(field.asText()));
+            assertThat(required)
+                    .as("%s always carries the machine field", name)
+                    .contains("machine");
+            final JsonNode machine = schema.path("properties").path("machine");
+            assertThat(machine.path("minLength").asInt())
+                    .as("%s excludes an empty machine name", name)
+                    .isEqualTo(1);
+            assertThat(machine.path("maxLength").asInt())
+                    .as("%s bounds the machine name in characters", name)
+                    .isEqualTo(128);
+            final var pattern = java.util.regex.Pattern.compile(machine.path("pattern").asText());
+            for (final String valid :
+                    List.of("WSL Ubuntu Äpfel", "😀".repeat(128), " ", "../machine")) {
+                assertThat(pattern.matcher(valid).find())
+                        .as("%s permits a verbatim display name", name)
+                        .isTrue();
+            }
+            for (final String invalid :
+                    List.of(
+                            "line\nbreak",
+                            "line\rbreak",
+                            "tab\tname",
+                            "nul\u0000name",
+                            "delete\u007fname",
+                            "control\u0085name",
+                            "line\u2028break",
+                            "paragraph\u2029break",
+                            "trailing\n",
+                            "trailing\r",
+                            "trailing\u2028",
+                            "trailing\u2029")) {
+                assertThat(pattern.matcher(invalid).find())
+                        .as("%s excludes controls and line breaks", name)
+                        .isFalse();
+            }
+        }
+        assertThat(schemas.at("/TaskEventRequest/properties/machine/type").asText())
+                .as("reports require a string machine name")
+                .isEqualTo("string");
+        final Set<String> types = new TreeSet<>();
+        schemas.at("/PlanWorkTask/properties/machine/type")
+                .forEach(type -> types.add(type.asText()));
+        assertThat(types)
+                .as("a work task always answers either a machine name or null")
+                .containsExactlyInAnyOrder("string", "null");
+    }
+
+    @Test
     void lifecycleBodiesAndAllNamedRefusalsArePartOfTheContract() {
         // Prevents a window from treating an unknown report or lost record as permission to start
         // work.

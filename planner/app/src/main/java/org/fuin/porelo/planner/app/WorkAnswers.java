@@ -93,6 +93,7 @@ public final class WorkAnswers {
     public record PlanWorkTask(
             String task,
             String containerId,
+            @Nullable String machine,
             String repository,
             List<String> issues,
             String state,
@@ -169,6 +170,7 @@ public final class WorkAnswers {
                                         new PlanWorkTask(
                                                 String.valueOf(o.task()),
                                                 String.valueOf(o.containerId()),
+                                                o.machine(),
                                                 o.arguments().repository(),
                                                 o.binding().issues(),
                                                 o.binding().state(),

@@ -1509,7 +1509,7 @@ components:
     TaskEventRequest:
       type: object
       additionalProperties: false
-      required: [offer, event, container]
+      required: [offer, event, container, machine]
       properties:
         offer:
           type: string
@@ -1519,6 +1519,15 @@ components:
           enum: [STARTED, ENDED, STOPPED]
         container:
           $ref: '#/components/schemas/TaskLabel'
+        machine:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+(?![\s\S])'
+          description: >-
+            The machine's name as the person sees it, 1 to 128 Unicode code points
+            (not UTF-16 code units), without control characters or line breaks.
+            Kept and answered back verbatim, never used as a path, a file name or a URL.
         ended:
           $ref: '#/components/schemas/TaskEnded'
       description: ended is required only for ENDED and forbidden for STARTED and STOPPED.
@@ -1628,12 +1637,21 @@ components:
             $ref: '#/components/schemas/PlanWorkIssue'
     PlanWorkTask:
       type: object
-      required: [task, containerId, repository, issues, state, done, mode, agent, model, role, since, atWork, ended]
+      required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, role, since, atWork, ended]
       properties:
         task:
           type: string
         containerId:
           type: string
+        machine:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+          pattern: '^[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+(?![\s\S])'
+          description: >-
+            The machine's name as the person sees it, kept and answered back verbatim,
+            never used as a path, a file name or a URL. Null until a report names it.
+            Length is measured in Unicode code points, not UTF-16 code units.
         repository:
           $ref: '#/components/schemas/Name'
         issues:

@@ -176,12 +176,84 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void invalidMachineNamesChangeNeitherTheBoardNorTheWorkRecord() throws Exception {
+        // Prevents malformed machine names from starting work or consuming an offer.
+        final String story = store.board().stories().getFirst().id();
+        final JsonNode order = offerWork(story);
+        final String offer = order.at("/tasks/0/offer").asString();
+        final var work = projects.work("project");
+        final var snapshot = work.snapshot();
+        final Board board = store.board();
+        final var valid =
+                (tools.jackson.databind.node.ObjectNode) JSON.readTree(event(offer, "STARTED", ""));
+        final var missing = valid.deepCopy();
+        missing.remove("machine");
+        final List<JsonNode> invalid = new java.util.ArrayList<>();
+        invalid.add(missing);
+        invalid.add(valid.deepCopy().putNull("machine"));
+        invalid.add(valid.deepCopy().put("machine", 1));
+        for (final String machine :
+                List.of(
+                        "",
+                        "x".repeat(129),
+                        "😀".repeat(129),
+                        "line\nbreak",
+                        "line\rbreak",
+                        "tab\tname",
+                        "nul\u0000name",
+                        "delete\u007fname",
+                        "control\u0085name",
+                        "line\u2028break",
+                        "paragraph\u2029break")) {
+            invalid.add(valid.deepCopy().put("machine", machine));
+        }
+        for (final JsonNode body : invalid) {
+            final JsonNode refused = call("/tasks/build/events", body.toString(), 400);
+            assertThat(refused.path("type").asString())
+                    .as("an invalid machine has the same refusal as other invalid report fields")
+                    .endsWith(":InvalidSettings");
+            assertThat(work.snapshot())
+                    .as("a refused machine changes no generation, binding or offers")
+                    .isEqualTo(snapshot);
+            assertThat(store.board())
+                    .as("a refused machine changes neither planning state nor revision")
+                    .isEqualTo(board);
+        }
+    }
+
+    @Test
+    void theStoryAnswersTheReportedMachineAndCountsItsNameInCodePoints() throws Exception {
+        // Prevents lost machine routing and rejection of valid supplementary Unicode names.
+        final String story = store.board().stories().getFirst().id();
+        final String offer = offerWork(story).at("/tasks/0/offer").asString();
+        final String machine = "😀".repeat(128);
+        final var body =
+                (tools.jackson.databind.node.ObjectNode) JSON.readTree(event(offer, "STARTED", ""));
+        body.put("machine", machine);
+        final JsonNode started = call("/tasks/build/events", body.toString(), 200);
+        assertThat(started.at("/work/tasks/0/machine").asString())
+                .as("the report answer preserves the full name at the code point limit")
+                .isEqualTo(machine);
+        final var response =
+                mvc.perform(get("/projects/project/stories/" + story + "/work"))
+                        .andReturn()
+                        .getResponse();
+        assertThat(response.getStatus()).as("the story's work can be read").isEqualTo(200);
+        assertThat(
+                        JSON.readTree(response.getContentAsString())
+                                .at("/work/tasks/0/machine")
+                                .asString())
+                .as("the story's work answers the machine verbatim")
+                .isEqualTo(machine);
+    }
+
+    @Test
     void invalidReportsAreBoundedAndNeverEchoUncheckedSubjects() throws Exception {
         // Prevents malformed reports or unchecked subjects from reaching tasks or refusals.
         for (final String body :
                 List.of(
-                        "{\"offer\":\"bad-secret\",\"event\":\"ENDED\",\"container\":\"box\"}",
-                        "{\"offer\":\"00000000-0000-0000-0000-000000000000\",\"event\":\"STARTED\",\"container\":\"box\",\"event\":\"ENDED\"}",
+                        "{\"offer\":\"bad-secret\",\"event\":\"ENDED\",\"container\":\"box\",\"machine\":\"workstation\"}",
+                        "{\"offer\":\"00000000-0000-0000-0000-000000000000\",\"event\":\"STARTED\",\"container\":\"box\",\"machine\":\"workstation\",\"event\":\"ENDED\"}",
                         "{\"unknown\":\"" + "x".repeat(131073) + "\"}",
                         event("00000000-0000-0000-0000-000000000000", "ENDED", "Built")
                                 .replace("00:00:00Z", "00:00Z"),
@@ -304,6 +376,7 @@ class WorkRunHttpTest {
                                                         offer.status(),
                                                         offer.task(),
                                                         offer.containerId(),
+                                                        offer.machine(),
                                                         offer.since(),
                                                         offer.ended(),
                                                         offer.fingerprint(),
@@ -330,6 +403,19 @@ class WorkRunHttpTest {
                 false);
     }
 
+    private JsonNode offerWork(final String story) throws Exception {
+        return call(
+                "/stories/" + story + "/work",
+                JSON.writeValueAsString(
+                        Map.of(
+                                "project", "project",
+                                "story", story,
+                                "to", "Building",
+                                "mode", "AGENT",
+                                "revision", store.board().revision().value())),
+                200);
+    }
+
     private JsonNode call(final String path, final String body, final int status) throws Exception {
         final var response =
                 mvc.perform(
@@ -349,6 +435,7 @@ class WorkRunHttpTest {
         body.put("offer", offer);
         body.put("event", event);
         body.put("container", "box-" + offer);
+        body.put("machine", "workstation");
         if (event.equals("ENDED")) {
             body.put(
                     "ended",

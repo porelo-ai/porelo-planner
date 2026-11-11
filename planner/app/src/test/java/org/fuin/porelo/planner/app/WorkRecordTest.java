@@ -16,13 +16,139 @@ import java.util.concurrent.TimeoutException;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkEnds;
+import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 class WorkRecordTest {
     @TempDir Path directory;
+
+    @Test
+    void aTasksMachineNameSurvivesRestartVerbatim() {
+        // Prevents a restart from losing or normalizing the machine needed to open a task.
+        final String machine = "WSL Ubuntu Äpfel";
+        final WorkRun.Run saved = writeTaskRecord(machine);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored)
+                    .as("the task binding survives a new record service")
+                    .isEqualTo(saved);
+            assertThat(restored.offers().getFirst().machine())
+                    .as("spaces and non-ASCII letters are retained verbatim")
+                    .isEqualTo(machine);
+            assertThat(WorkAnswers.knownWork(restored).tasks().getFirst().machine())
+                    .as("the restored story answers the original machine name")
+                    .isEqualTo(machine);
+        }
+    }
+
+    @Test
+    void aRecordWithoutAMachineKeepsTheTaskAndAnswersNull() throws Exception {
+        // Prevents older records from losing task bindings or inventing a machine on restart.
+        writeTaskRecord("WSL Ubuntu Äpfel");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        assertThat(offer.has("machine")).as("the reference record contains the new field").isTrue();
+        offer.remove("machine");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored.offers()).as("the older record retains its bound task").hasSize(1);
+            assertThat(restored.offers().getFirst().machine())
+                    .as("an absent machine remains unknown")
+                    .isNull();
+            final var answer =
+                    json.readTree(json.writeValueAsString(WorkAnswers.knownWork(restored)));
+            assertThat(answer.at("/tasks/0").has("machine"))
+                    .as("the story's task always includes the machine field")
+                    .isTrue();
+            assertThat(answer.at("/tasks/0/machine").isNull())
+                    .as("the wire answer preserves the unknown machine as null")
+                    .isTrue();
+            offer.remove("containerId");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("backward compatibility does not excuse other missing binding fields")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    private WorkRun.Run writeTaskRecord(final String machine) {
+        final String story = String.format("ST%d", 1);
+        final var rule =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Build",
+                        Map.of("codex", "model"));
+        final var task =
+                new WorkOrder.Task("alpha", List.of(), "MAIN", "codex", "model", "AGENT", "Build");
+        final String since = java.time.Instant.EPOCH.toString();
+        final var offer =
+                new WorkRun.Offer(
+                        "00000000-0000-0000-0000-000000000002",
+                        task,
+                        new NextStep.Binding(
+                                story, "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                        "STARTED",
+                        "task",
+                        "box",
+                        machine,
+                        since,
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final var run =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        story,
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        2,
+                        List.of(),
+                        List.of(),
+                        since,
+                        List.of(offer),
+                        Map.of(),
+                        false,
+                        false,
+                        false);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(1, Map.of(story, run)));
+                                return true;
+                            });
+        }
+        return run;
+    }
 
     @Test
     void aRecordSurvivesRestartAndIsReplacedWhenItsSourceChanges() throws Exception {

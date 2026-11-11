@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL19",
   "title": "A Story's Tasks Name Their Machine",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 10,
@@ -41,6 +41,13 @@ answered back verbatim, never parsed and never put into a path, a file name or a
   - loopback HTTP: `WorkRunHttpTest`, a missing, empty, 129-character or line-breaking name refused before any change,
     and the name answered in the story's work;
   - `ApiMatchesDescriptionTest` holds the field in both schemas.
+
+### Taken from the code reading
+
+- **Declined:** a STARTED replayed onto a task recorded without a machine leaves the machine unknown, and a replayed
+  end of a task recorded without one is refused as a contradiction. Both need a run record written before the field
+  existed that already holds a started or ended task. None can exist: the window reports tasks only once its screen
+  sends the machine.
 
 ## Acceptance
 

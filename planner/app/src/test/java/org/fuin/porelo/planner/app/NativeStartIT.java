@@ -170,7 +170,9 @@ class NativeStartIT {
                                                 "event",
                                                 "STARTED",
                                                 "container",
-                                                "build-box")));
+                                                "build-box",
+                                                "machine",
+                                                "Build box")));
                 assertThat(started)
                         .as("a native start reads the saved offer and binds it")
                         .startsWith("200 ")
@@ -188,6 +190,8 @@ class NativeStartIT {
                                                 "ENDED",
                                                 "container",
                                                 "build-box",
+                                                "machine",
+                                                "Build box",
                                                 "ended",
                                                 java.util.Map.of(
                                                         "at",
