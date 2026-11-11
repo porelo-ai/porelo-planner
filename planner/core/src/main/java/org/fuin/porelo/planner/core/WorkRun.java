@@ -639,8 +639,11 @@ public final class WorkRun {
         return record.locked(
                         session -> {
                             final Snapshot snapshot = read(session);
-                            WorkProposal.story(store.board(), story);
                             final Run run = snapshot.runs().get(story);
+                            // A running story left off the board must still be stoppable.
+                            if (run == null) {
+                                WorkProposal.story(store.board(), story);
+                            }
                             if (run == null || run.stopped()) {
                                 return java.util.Optional.ofNullable(run);
                             }

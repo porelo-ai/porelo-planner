@@ -74,6 +74,7 @@ public final class StoreReader implements PartReader {
         }
         final List<Issue> read = new ArrayList<>();
         final Map<String, String> paths = new LinkedHashMap<>();
+        final List<String> faults = new ArrayList<>();
         if (!issueFiles.isEmpty() || !pages.isEmpty()) {
             // An issues directory is checked against its own workflow, or else the project's
             // beside its stories.
@@ -86,58 +87,133 @@ public final class StoreReader implements PartReader {
                                             new IllegalArgumentException(
                                                     "neither issues/workflow.yml nor"
                                                             + " stories/workflow.yml"));
+            // An issue whose file is there but cannot be read is never taken from its index row.
             final Set<String> headed = new HashSet<>();
+            final Map<String, Issue> byId = new LinkedHashMap<>();
+            final Set<String> twice = new HashSet<>();
             for (final String file : issueFiles) {
-                final Issue issue = issue(name, commit, file, issues);
+                final String number = number(file);
+                headed.add(number);
+                final Issue issue;
+                try {
+                    issue = issue(name, commit, file, issues);
+                } catch (final IllegalArgumentException e) {
+                    // One file a person got wrong leaves out that file, not the project's board.
+                    faults.add(name + ": " + file + ": " + e.getMessage());
+                    continue;
+                }
                 headed.add(issue.id());
-                read.add(issue);
+                if (byId.containsKey(issue.id()) || twice.contains(issue.id())) {
+                    twice.add(issue.id());
+                    faults.add(
+                            name
+                                    + ": "
+                                    + issue.id()
+                                    + " is read from two files, "
+                                    + paths.getOrDefault(issue.id(), "")
+                                    + " and "
+                                    + file
+                                    + ", and is left out");
+                    byId.remove(issue.id());
+                    continue;
+                }
+                byId.put(issue.id(), issue);
                 paths.put(issue.id(), file);
             }
+            twice.forEach(paths::remove);
+            read.addAll(byId.values());
             // A finished or rejected issue's file is deleted; its index row is all that is left.
-            for (final IssueIndex row : rows(name, pages, issues).values()) {
+            for (final IssueIndex row : rows(name, pages, issues, faults).values()) {
                 if (!headed.contains(row.number())) {
-                    read.add(issue(name, row));
+                    try {
+                        read.add(issue(name, row));
+                    } catch (final IllegalArgumentException e) {
+                        faults.add(
+                                name
+                                        + ": the index row of "
+                                        + row.number()
+                                        + ": "
+                                        + e.getMessage());
+                    }
                 }
             }
         }
         if (!own) {
-            return new Part(null, List.of(), read, null, paths);
+            return new Part(null, List.of(), read, null, paths, faults);
         }
         final Workflow board = Workflow.read(storiesWorkflow.orElseThrow());
-        final List<Story> stories = new ArrayList<>();
+        final Map<String, Story> stories = new LinkedHashMap<>();
+        final Set<String> twice = new HashSet<>();
         for (final String file : bounded(remote.list(name, commit, "stories"))) {
             if (STORY_FILE.matcher(file.substring(file.lastIndexOf('/') + 1)).matches()) {
-                final Story story = Story.read(text(name, commit, file), board);
-                stories.add(story);
+                final Story story;
+                try {
+                    story = Story.read(text(name, commit, file), board);
+                } catch (final IllegalArgumentException e) {
+                    faults.add(name + ": " + file + ": " + e.getMessage());
+                    continue;
+                }
+                if (stories.containsKey(story.id()) || twice.contains(story.id())) {
+                    // Kept as one, a move would write whichever file was read last.
+                    twice.add(story.id());
+                    faults.add(
+                            name
+                                    + ": "
+                                    + story.id()
+                                    + " is read from two files, "
+                                    + paths.getOrDefault(Part.story(story.id()), "")
+                                    + " and "
+                                    + file
+                                    + ", and is left out");
+                    stories.remove(story.id());
+                    continue;
+                }
+                stories.put(story.id(), story);
                 paths.put(Part.story(story.id()), file);
             }
         }
+        twice.forEach(id -> paths.remove(Part.story(id)));
         return new Part(
                 board,
-                stories,
+                List.copyOf(stories.values()),
                 read,
                 WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
-                paths);
+                paths,
+                faults);
     }
 
     private static Map<String, IssueIndex> rows(
-            final String repository, final Map<String, String> pages, final Workflow workflow) {
+            final String repository,
+            final Map<String, String> pages,
+            final Workflow workflow,
+            final List<String> faults) {
         final Map<String, IssueIndex> rows = new LinkedHashMap<>();
         for (final Map.Entry<String, String> page : pages.entrySet()) {
             final Map<String, IssueIndex> read;
             try {
                 read = IssueIndexes.read(page.getValue(), repository, workflow);
-            } catch (final IOException e) {
-                throw new IllegalArgumentException(page.getKey() + ": " + e.getMessage(), e);
+            } catch (final IOException | IllegalArgumentException e) {
+                // An index that cannot be read leaves out the closed issues it alone names.
+                faults.add(repository + ": " + page.getKey() + ": " + e.getMessage());
+                continue;
             }
             for (final IssueIndex row : read.values()) {
                 if (rows.putIfAbsent(row.number(), row) != null) {
-                    throw new IllegalArgumentException(
-                            row.number() + " has a row in two of the repository's indexes");
+                    faults.add(
+                            repository
+                                    + ": "
+                                    + row.number()
+                                    + " has a row in two of the repository's indexes");
                 }
             }
         }
         return rows;
+    }
+
+    /** The issue number a file's name starts with. */
+    private static String number(final String file) {
+        final String name = file.substring(file.lastIndexOf('/') + 1);
+        return name.substring(0, name.indexOf('-'));
     }
 
     private static Issue issue(final String repository, final IssueIndex row) {
@@ -167,7 +243,7 @@ public final class StoreReader implements PartReader {
         final String text = text(repository, commit, file);
         final IssueHead head = IssueHead.read(text, workflow);
         if (head == null) {
-            throw new IllegalArgumentException(file + " has no JSON head");
+            throw new IllegalArgumentException("it has no JSON head");
         }
         return new Issue(
                 head.id(),

@@ -20,7 +20,7 @@ public final class Answers {
      * @param states each state and its kind
      * @param phases the board's columns
      * @param work the sound work rules
-     * @param faults why rules were dropped or could not be read
+     * @param faults why rules were dropped, and each story, issue or reference left out, in words
      */
     public record Workflow(
             String revision,
@@ -36,7 +36,7 @@ public final class Answers {
      * @param states each state and its kind
      * @param phases the board's columns
      * @param work the sound work rules
-     * @param faults why rules were dropped or could not be read
+     * @param faults why rules were dropped, and each story, issue or reference left out, in words
      * @param stories every story, without its description
      */
     public record Board(

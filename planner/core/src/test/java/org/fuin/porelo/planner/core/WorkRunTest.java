@@ -668,6 +668,28 @@ class WorkRunTest {
     }
 
     @Test
+    void aRunningStoryLeftOffTheBoardCanStillBeStopped() {
+        // A story whose file broke while its task ran would otherwise run on with nobody able to
+        // stop it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered builder = f.order().tasks().getFirst();
+        f.start(builder);
+        final Board board = f.store.current;
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        List.of(),
+                        board.issues(),
+                        board.work(),
+                        board.repositories());
+
+        assertThat(java.util.Objects.requireNonNull(f.run.stop("ST1")).stopped())
+                .as("the run is stopped though its story is no longer on the board")
+                .isTrue();
+    }
+
+    @Test
     void aLateEndAfterStopCannotCountSaveOrReleaseWork() {
         // Prevents cancellation racing with an end from restarting work or consuming a reading.
         final Fixture f = new Fixture();

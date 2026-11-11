@@ -185,29 +185,141 @@ class GitStoreReadTest {
     }
 
     @Test
-    void anIssueWithoutAJsonHeadIsAFaultNamingItsFile() throws Exception {
-        // A board that skipped it would show a project with an issue missing.
+    void anIssueWithoutAJsonHeadIsAFaultNamingItsFileAndTheBoardIsStillRead() throws Exception {
+        // One file a person got wrong must not take the whole project's board away.
         repositories.repository(
                 "porelo-other",
                 Map.of("issues/CD02-Headless.md", "# CD02 — Headless\n\n**Status:** Idea\n"));
-        assertThatThrownBy(() -> store(null).board())
-                .as("an issue file with no head")
-                .isInstanceOf(StoreException.Unreadable.class)
-                .hasMessageContaining("porelo-other")
-                .hasMessageContaining("issues/CD02-Headless.md has no JSON head");
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the file is named with its repository and why it was left out")
+                .contains("porelo-other: issues/CD02-Headless.md: it has no JSON head");
+        assertThat(board.issues())
+                .as("the other issues are read")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("AB01", "AB01.1", "CD01");
     }
 
     @Test
-    void aStoryNamingAnIssueUnderAnotherRepositoryIsAFault() throws Exception {
+    void aStoryNamingAnIssueUnderAnotherRepositoryIsAFaultAndTheStoryIsShownWithout()
+            throws Exception {
         // Read by its number alone, the story would show another repository's issue as its own.
         repositories.repository(
                 "porelo-store",
-                Map.of("stories/ST3-Wrong.md", story("ST3", "Wrong", "", "\"porelo-other#AB01\"")));
-        assertThatThrownBy(() -> store(null).board())
-                .as("a story naming AB01 under the wrong repository")
-                .isInstanceOf(StoreException.Unreadable.class)
-                .hasMessageContaining(
-                        "ST3: porelo-other#AB01 is no issue of the project's repositories");
+                Map.of(
+                        "stories/ST3-Wrong.md",
+                        story(
+                                "ST3",
+                                "Wrong",
+                                "\"state\": \"Idea\",",
+                                "\"porelo-other#AB01\", \"porelo-other#CD01\"")));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the reference is named and left out")
+                .contains(
+                        "ST3: porelo-other#AB01 is no issue of the project's repositories, and"
+                                + " is left out");
+        assertThat(board.stories())
+                .as("the story keeps its sound references, and the other stories stand")
+                .extracting(Story::id, Story::issues)
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("ST3", List.of("CD01")),
+                        org.assertj.core.groups.Tuple.tuple("ST1", List.of("AB01")));
+    }
+
+    @Test
+    void aStoryWhoseFileCannotBeReadIsAFaultAndTheOtherStoriesAreShown() throws Exception {
+        repositories.repository(
+                "porelo-store", Map.of("stories/ST4-Broken.md", "# ST4 — Broken\n\nNo data.\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the story's file is named")
+                .anyMatch(fault -> fault.startsWith("porelo-store: stories/ST4-Broken.md: "));
+        assertThat(board.stories())
+                .as("the other stories are read")
+                .extracting(Story::id)
+                .containsExactly("ST1", "ST2");
+    }
+
+    @Test
+    void anIssueWhoseHeadBrokeIsLeftOutAndNotShownFromItsIndexRow() throws Exception {
+        // Shown from its row, the issue would hand an agent an empty brief and refuse every move.
+        repositories.repository(
+                "porelo-other",
+                Map.of(
+                        "issues/README.md",
+                        "# Issues\n\n## Review\n\n| # | Size | Blocked by | What it covers |\n|---|---|---|---|\n"
+                                + "| <a id=\"cd01\"></a>[CD01](base/CD01-Grouped.md) | S | - | Something. |\n",
+                        "issues/base/CD01-Grouped.md",
+                        "# CD01 — Grouped\n\n```json\n{ broken\n```\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the broken file is named, and the index itself is read")
+                .anyMatch(fault -> fault.startsWith("porelo-other: issues/base/CD01-Grouped.md: "))
+                .noneMatch(fault -> fault.contains("README.md"));
+        assertThat(board.issues())
+                .as("the issue is left out, not taken from its row")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("AB01", "AB01.1");
+    }
+
+    @Test
+    void twoFilesOfOneIdAreAFaultAndBothAreLeftOut() throws Exception {
+        // Kept as one, a move would write whichever file was read last.
+        repositories.repository(
+                "porelo-store",
+                Map.of(
+                        "stories/ST1-Copy.md",
+                        story("ST1", "Copy", "\"state\": \"Idea\",", "\"porelo-store#AB01\""),
+                        "issues/AB01-Copy.md",
+                        issue("AB01", "Copy", "Backlog", "")));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("each id read from two files is named")
+                .anyMatch(fault -> fault.contains("ST1") && fault.contains("two files"))
+                .anyMatch(fault -> fault.contains("AB01") && fault.contains("two files"));
+        assertThat(board.stories())
+                .as("neither copy of the story is shown")
+                .extracting(Story::id)
+                .doesNotContain("ST1");
+        assertThat(board.issues())
+                .as("neither copy of the issue is shown")
+                .extracting(Issue::id)
+                .doesNotContain("AB01");
+    }
+
+    @Test
+    void anIssueInAStateTheBoardDoesNotKnowIsAFault() throws Exception {
+        repositories.repository(
+                "porelo-other",
+                Map.of(
+                        "issues/workflow.yml",
+                        WORKFLOW.replace("Backlog", "Waiting"),
+                        "issues/CD02-Waiting.md",
+                        issue("CD02", "Waiting", "Waiting", "")));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the issue and its state are named")
+                .anyMatch(fault -> fault.contains("CD02") && fault.contains("Waiting"));
+        assertThat(board.issues()).as("the others stand").extracting(Issue::id).contains("CD01");
+    }
+
+    @Test
+    void anIndexThatCannotBeReadIsAFaultAndTheIssueFilesAreStillRead() throws Exception {
+        repositories.repository(
+                "porelo-other",
+                Map.of(
+                        "issues/README.md",
+                        "# Issues\n\n## Nowhere\n\n| # | Size | Blocked by | What it covers |\n|---|---|---|---|\n"
+                                + "| <a id=\"cd09\"></a>CD09 | S | - | Something. |\n"));
+        final Board board = store(null).board();
+        assertThat(board.faults())
+                .as("the index is named")
+                .anyMatch(fault -> fault.startsWith("porelo-other: issues/README.md: "));
+        assertThat(board.issues())
+                .as("the issue files are read")
+                .extracting(Issue::id)
+                .contains("CD01");
     }
 
     @Test

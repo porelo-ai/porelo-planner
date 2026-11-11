@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -265,7 +266,7 @@ public class BoardController {
                         .map(phase -> new Answers.Phase(phase.name(), phase.states()))
                         .toList(),
                 work,
-                checked.faults());
+                Stream.concat(board.faults().stream(), checked.faults().stream()).toList());
     }
 
     /**

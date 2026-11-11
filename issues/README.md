@@ -55,7 +55,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl53"></a>[PL53](PL53-A-Fault-In-The-Data-Leaves-Out-Only-What-It-Concerns.md) | S | - | An issue file without a head, a story file that cannot be read, a story naming an issue no repository has, or a story whose state cannot be told is left out and answered among the board's faults; the rest of the board is read and shown, and moves stay possible |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
 | <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | M | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
@@ -64,6 +63,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl53"></a>[PL53](PL53-A-Fault-In-The-Data-Leaves-Out-Only-What-It-Concerns.md) | M | - | An issue file without a head, a story file that cannot be read, a story naming an issue no repository has, or a story whose state cannot be told is left out and answered among the board's faults; the rest of the board is read and shown, and a move that would rewrite an index the fault breaks is refused with the fault named |
 | <a id="pl16"></a>[PL16](PL16-The-Planners-HTTP-Client-In-The-Screen-Package.md) | M | [PL04](README.md#pl04) | A PlanningSource over HTTP in the screen package: planner.json read, the project PUT, the board reads, problem+json as PlanningRefusal; the window wraps it and hands it in |
 | <a id="pl20"></a>[PL20](PL20-Three-Findings-In-The-Screen-Package.md) | S | - | The board shows a refusal's own words; a board that failed loads again when its provider changes; the planner's address is trusted only from directories and a file this account owns and others cannot open |
 | <a id="pl31"></a>[PL31](PL31-A-Short-Event-Id-For-Any-Number-Of-Repositories.md) | S | - | The Git store's revision is a fixed-length digest of its repositories' commits, at most 200 characters as the screen accepts, so a project with many repositories keeps its live board |

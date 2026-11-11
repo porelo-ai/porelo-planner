@@ -19,19 +19,40 @@ import org.jspecify.annotations.Nullable;
  * @param work the work rules, from the project's own repository alone
  * @param paths the file of each issue with a head, by its id, and of each story, by {@link
  *     #story(String)}
+ * @param faults each file left out because it could not be read, naming it and why
  */
 public record Part(
         @Nullable Workflow workflow,
         List<Story> stories,
         List<Issue> issues,
         @Nullable Work work,
-        Map<String, String> paths) {
+        Map<String, String> paths,
+        List<String> faults) {
 
     /** Copies the lists and the map. */
     public Part {
         stories = List.copyOf(stories);
         issues = List.copyOf(issues);
         paths = Collections.unmodifiableMap(new LinkedHashMap<>(paths));
+        faults = List.copyOf(faults);
+    }
+
+    /**
+     * Makes a part with no faults.
+     *
+     * @param workflow the board's workflow
+     * @param stories the stories
+     * @param issues the issues
+     * @param work the work rules
+     * @param paths the files by id
+     */
+    public Part(
+            final @Nullable Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final @Nullable Work work,
+            final Map<String, String> paths) {
+        this(workflow, stories, issues, work, paths, List.of());
     }
 
     /**

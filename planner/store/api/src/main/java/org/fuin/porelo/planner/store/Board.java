@@ -16,6 +16,7 @@ import java.util.Optional;
  * @param issues every issue of every repository
  * @param work the work rules and what could not be read of them
  * @param repositories the project's repositories, its own first
+ * @param faults each file or reference left out because it could not be read, naming it and why
  */
 public record Board(
         Revision revision,
@@ -23,7 +24,28 @@ public record Board(
         List<Story> stories,
         List<Issue> issues,
         Work work,
-        List<String> repositories) {
+        List<String> repositories,
+        List<String> faults) {
+
+    /**
+     * A board with nothing left out.
+     *
+     * @param revision the commits it was read from
+     * @param workflow the states and phases
+     * @param stories every story
+     * @param issues every issue of every repository
+     * @param work the work rules
+     * @param repositories the project's repositories, its own first
+     */
+    public Board(
+            final Revision revision,
+            final Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final Work work,
+            final List<String> repositories) {
+        this(revision, workflow, stories, issues, work, repositories, List.of());
+    }
 
     /** Keeps repositories in their issues' order for callers without a project definition. */
     public Board(
@@ -46,6 +68,7 @@ public record Board(
         stories = List.copyOf(stories);
         issues = List.copyOf(issues);
         repositories = List.copyOf(repositories);
+        faults = List.copyOf(faults);
         repositories.forEach(Ids::name);
         if (new HashSet<>(repositories).size() != repositories.size()) {
             throw new IllegalArgumentException("A board names a repository twice");

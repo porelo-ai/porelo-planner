@@ -83,7 +83,7 @@ paths:
     get:
       operationId: getWorkflow
       summary: Read the workflow
-      description: Answers the project's states, phases, sound work rules and the faults found reading its workflow.
+      description: Answers the project's states, phases, sound work rules and the faults found reading its workflow and board.
       tags: [board]
       responses:
         '200':
@@ -1030,7 +1030,9 @@ components:
             $ref: '#/components/schemas/WorkRule'
         faults:
           type: array
-          description: What was found wrong reading the workflow, in the planner's words.
+          description: >-
+            What was found wrong reading the workflow, and each story, issue or reference left out because it could
+            not be read, in the planner's words. The rest of the board is answered.
           items:
             type: string
     State:
@@ -1121,7 +1123,9 @@ components:
             $ref: '#/components/schemas/WorkRule'
         faults:
           type: array
-          description: What was found wrong reading the workflow, in the planner's words.
+          description: >-
+            What was found wrong reading the workflow, and each story, issue or reference left out because it could
+            not be read, in the planner's words. The rest of the board is answered.
           items:
             type: string
         stories:
