@@ -11,7 +11,6 @@ left out.
 |---|---|---|---|
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | - | - | The planner runs as a service the system knows - a systemd user service on Linux, a service on Windows - started, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
-| <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | - | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
@@ -28,6 +27,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl39"></a>[PL39](PL39-A-Board-That-Answers-At-Once-With-Many-Stories.md) | M | - | Folding a column, searching and every other change answers at once on a board of a few hundred stories, measured in profile mode before anything is optimized |
 | <a id="pl22"></a>[PL22](PL22-The-Planner-Records-The-Stage-Of-An-Issue-It-Moves.md) | - | [PL05](README.md#pl05) | The planner writes the stage line of an issue it moves, in the record's own format, where a repository records issue stats, instead of refusing the move |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | [PL28](README.md#pl28) | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
