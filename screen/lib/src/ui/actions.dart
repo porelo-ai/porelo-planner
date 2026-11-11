@@ -141,7 +141,7 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           onError: board.reportActionProblem,
         ),
         if (board.pendingIssues.containsKey(issue.id)) movePlanningIssueAction(board, issue, issue.state),
-        for (final state in board.states.where((state) => {'WAITING', 'CLOSED'}.contains(state.kind)))
+        for (final state in board.states.where((state) => PlanningBoard.issueMayEnter(issue, state)))
           movePlanningIssueAction(board, issue, state.name),
       ],
     ],

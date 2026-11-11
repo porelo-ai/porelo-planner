@@ -41,10 +41,11 @@ class _HeldSource extends _Source {
     String title,
     String mustBeTrue,
     String? size,
-    String revision,
-  ) async {
+    String revision, {
+    IssueWorker worker = IssueWorker.agent,
+  }) async {
     await answer.future;
-    return super.createIssue(project, repository, title, mustBeTrue, size, revision);
+    return super.createIssue(project, repository, title, mustBeTrue, size, revision, worker: worker);
   }
 }
 
@@ -132,6 +133,30 @@ void main() {
     await settle(tester);
 
     expect(source.added.single.$2, 'porelo-other', reason: 'the chosen repository is sent');
+  });
+
+  // Harm: a new issue goes to a person, or to an agent, other than the one the form shows.
+  testWidgets('a new issue is an agent\'s unless the person chooses Manual', (tester) async {
+    final source = _Source();
+    await _show(tester, source);
+
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    await _fill(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    await _fill(tester);
+    await tester.tap(find.byKey(const Key('new-issue-worker')));
+    await settle(tester);
+    await tester.tap(find.text('Manual').last);
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+
+    expect(source.addedWorkers, [IssueWorker.agent, IssueWorker.manual], reason: 'Agent unchanged, then Manual');
   });
 
   // Harm: an idea numbered on a board that is no longer live is written against what the planner no longer holds.

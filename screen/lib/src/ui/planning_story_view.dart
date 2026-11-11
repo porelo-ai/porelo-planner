@@ -227,7 +227,7 @@ class PlanningStoryView extends StatelessWidget {
           ? 'Issue identifier not reported.'
           : issue.state.isEmpty
           ? 'Issue state not reported.'
-          : detail.moveStates.isEmpty && !detail.pendingMoves.containsKey(issue.id)
+          : detail.moveStatesOf(issue).isEmpty && !detail.pendingMoves.containsKey(issue.id)
           ? 'No waiting or closed destinations were reported.'
           : null);
 
@@ -243,7 +243,7 @@ class PlanningStoryView extends StatelessWidget {
         itemBuilder: (_) => [
           if (detail.pendingMoves.containsKey(issue.id))
             PopupMenuItem(value: issue.state, child: const Text('Undo this move')),
-          for (final state in detail.moveStates)
+          for (final state in detail.moveStatesOf(issue))
             PopupMenuItem(
               value: state.name,
               key: Key('planning-move-to ${issue.id} ${state.name}'),

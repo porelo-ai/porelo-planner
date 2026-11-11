@@ -12,6 +12,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -347,6 +348,117 @@ class WorkProposalTest {
                                 assertThat(repository.issues())
                                         .as("named once")
                                         .containsExactly("AA1.1"));
+    }
+
+    @Test
+    void aMixedStoryProposesOnlyItsAgentIssuesAndNamesThoseAPersonWorks() {
+        // An agent's task over an issue a person works would change what that person is doing.
+        final Board board = ManualIssues.of(board(WorkRule.Per.REPOSITORY), "BB1");
+
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+
+        assertThat(proposal.repositories())
+                .as("only the repository with an agent's issue gets a task")
+                .extracting(WorkProposal.Repository::repository)
+                .containsExactly("alpha");
+        assertThat(proposal.repositories())
+                .as("no task names the issue a person works")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("AA1", "AA1.1");
+        assertThat(proposal.manual())
+                .as("the issue a person works is named, so the window can say so")
+                .containsExactly("BB1");
+    }
+
+    @Test
+    void aSubIssueIsLeftOutWithItsParentWhenAPersonWorksIt() {
+        // A builder for a sub-issue of a person's issue would be an agent working that issue.
+        final Board board = ManualIssues.of(board(WorkRule.Per.REPOSITORY), "AA1");
+
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+
+        assertThat(proposal.repositories())
+                .as("only the other repository's agent issue gets a task")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("BB1");
+        assertThat(proposal.repositories())
+                .as("no builder for the sub-issue")
+                .flatExtracting(WorkProposal.Repository::subAgents)
+                .isEmpty();
+        assertThat(proposal.manual())
+                .as("parent and sub-issue named")
+                .containsExactly("AA1", "AA1.1");
+    }
+
+    @Test
+    void aStoryWhoseOpenIssuesAPersonWorksAllProposesNoTask() {
+        // Story-wide work over issues people work would hand them to an agent all the same.
+        for (final WorkRule.Per per : WorkRule.Per.values()) {
+            final Board board = ManualIssues.of(board(per), "AA1", "BB1");
+
+            assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Building"))
+                    .as("no task for a story only people work, per " + per)
+                    .isInstanceOf(WorkRefusal.class)
+                    .hasMessageContaining("AA1")
+                    .hasMessageContaining("AA1.1")
+                    .hasMessageContaining("BB1")
+                    .extracting(e -> ((WorkRefusal) e).name())
+                    .isEqualTo("WorkNotAllowed");
+        }
+    }
+
+    @Test
+    void aPersonsIssueFurtherBackDoesNotHoldBackTheAgentsWork() {
+        // A story held in Idea by a person's issue would never start its agent's ready issue.
+        final Board board = staggered(Worker.AGENT, Worker.MANUAL);
+
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+
+        assertThat(proposal.repositories())
+                .as("the agent's issue in Backlog gets its task")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("AA1");
+        assertThat(proposal.manual()).as("the person's issue is named").containsExactly("BB1");
+    }
+
+    @Test
+    void anAgentsIssueFurtherBackStillHoldsTheStoryBack() {
+        // An agent's issue started from a state its rule does not allow skips the work before it.
+        final Board board = staggered(Worker.MANUAL, Worker.AGENT);
+
+        assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Building"))
+                .as("the agent's issue in Idea is not ready for Building")
+                .isInstanceOf(WorkRefusal.class);
+    }
+
+    /** A story in Idea: AA1 in Backlog, BB1 in Idea, each with the worker given. */
+    private static Board staggered(final Worker inBacklog, final Worker inIdea) {
+        final Board original = board(WorkRule.Per.REPOSITORY);
+        return new Board(
+                original.revision(),
+                new Workflow(
+                        List.of("Idea", "Backlog", "Building", "Review", "Finished"),
+                        List.of(),
+                        List.of("Finished")),
+                List.of(
+                        new Story(
+                                "ST1",
+                                "Story",
+                                "Idea",
+                                false,
+                                "High",
+                                List.of("AA1", "BB1"),
+                                "",
+                                null)),
+                List.of(
+                        new Issue(
+                                "AA1", "alpha", "Ready", "Backlog", null, List.of(), null, null, "",
+                                inBacklog),
+                        new Issue(
+                                "BB1", "beta", "Behind", "Idea", null, List.of(), null, null, "",
+                                inIdea)),
+                original.work(),
+                original.repositories());
     }
 
     static Board board(final WorkRule.Per per) {

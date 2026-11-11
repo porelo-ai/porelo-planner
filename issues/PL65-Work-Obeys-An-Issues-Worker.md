@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL65",
   "title": "Work Obeys An Issue's Worker",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 1,
@@ -94,10 +94,31 @@ Order: 1, 2, 3. Every test runs over fakes in seconds; no VM.
   task. Seen failing first: today's proposal naming the Manual issue, and today's refusal of its move.
 - No Manual issue in a working state is shown as needing attention or counted as work without a run.
 
-## To be checked
+## Plan reading
 
-- Whether `WorkProposal.rule`'s check of the story's state against the rule's `from` must read the least advanced
-  Agent issue's state when a Manual issue further back in a working state holds the story's state; measured with a
-  mixed-story fixture in `WorkProposalTest`.
-- Whether the screen's proposal reader (`story_work_order.dart`) refuses an unknown field, so the contract and the
-  screen must change in one commit.
+Read by another model before the build; each finding checked in the code and built with a test seen red first:
+
+- An offered task still pending when its issue turned Manual could start on it: `NextStep.started` refuses a Manual
+  issue.
+- A rule run per story over issues that are all Manual is refused too, not only one run per issue.
+- A Manual issue is never `needsYou` or `readingStopped`, also inside a run.
+- A stopped reading of an issue switched to Manual no longer blocks the story's next proposal.
+- A switch back to Agent is refused while the issue or a sub-issue stands in a working state, which only an agent's
+  work may then leave.
+- A Manual issue further back in a working state does not hold the story's rule: `WorkProposal.rule` reads the least
+  advanced Agent issue's state when the story's state is held by a Manual one.
+- The screen's proposal reader ignores fields it does not know, so the contract and the screen did not have to change
+  in one commit.
+
+## Code reading
+
+Read by another model; each finding checked in the code and fixed with a test seen red first:
+
+- The run's own list of issues still reported a stopped reading of an issue switched to Manual as needing the person,
+  which blocked the board's start; a person's issue is reported there as theirs, as on the issue itself.
+- The screen offered the worker switch while the issue or a sub-issue had a staged move, or the board was partial.
+- A story whose state a person stated was taken as held there by a person's issue.
+- The switch of a person's issue in a working state to an agent is refused over HTTP, tested there too.
+
+Declined: `manual` stands among the proposal's required fields and `MANUAL` among the run's reasons; the planner
+always writes them, the description says so, and the window reads both tolerantly.

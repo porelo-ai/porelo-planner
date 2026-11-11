@@ -538,11 +538,13 @@ void main() {
       'repository': 'porelo-other',
       'title': 'An idea',
       'mustBeTrue': 'It holds.',
+      'worker': 'AGENT',
       'revision': 'r1',
-    }, reason: 'no size member when none is known, and no worker, which the planner takes as an agent');
+    }, reason: 'no size member when none is known, and an agent works it unless a person was chosen');
     expect((added.id, added.revision), ('PR3', 'r2'));
-    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1');
+    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1', worker: IssueWorker.manual);
     expect(jsonDecode(planner.calls.last.body)['size'], 'S', reason: 'a known size is sent');
+    expect(jsonDecode(planner.calls.last.body)['worker'], 'MANUAL', reason: 'a person chosen is sent');
     for (final answer in [
       {'revision': 'r2'},
       {'id': 'wrong', 'revision': 'r2'},
@@ -574,6 +576,36 @@ void main() {
       reason: 'a sixth priority is never sent',
     );
     expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
+  });
+
+  // Harm: a worker sent elsewhere than the planner reads it, or a refusal taken as saved, leaves an issue to the wrong
+  // worker while the person believes otherwise.
+  test('a worker change puts exactly its members on the issue and keeps a refusal\'s words', () async {
+    final (planner, source) = await _started();
+    planner.routes['PUT /projects/demo/issues/PR1/worker'] = () => _Reply(200, {'revision': 'r2'});
+    final saved = await source.setWorker('demo', 'PR1', IssueWorker.manual, 'r1');
+    expect(planner.targets, ['PUT /projects/demo', 'PUT /projects/demo/issues/PR1/worker']);
+    expect(jsonDecode(planner.calls.last.body), {'worker': 'MANUAL', 'revision': 'r1'}, reason: 'only its members');
+    expect(saved.revision, 'r2', reason: 'the revision after the save is read');
+    planner.routes['PUT /projects/demo/issues/PR1/worker'] = () => _Reply(200, {'revision': ''});
+    expect(
+      (await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, 'r2'))).name,
+      'BadAnswer',
+      reason: 'an answer without a revision is no save',
+    );
+    planner.routes['PUT /projects/demo/issues/PR1/worker'] = () =>
+        _Reply.problem('MoveNotAllowed', {'item': 'PR1'}, 'PR1 stands in Building, which only its work enters.', 422);
+    final refused = await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, 'r2'));
+    expect(
+      (refused.name, refused.description),
+      ('MoveNotAllowed', 'PR1 stands in Building, which only its work enters.'),
+      reason: 'the refusal keeps its name and words',
+    );
+    expect(
+      (await _refusal(source.setWorker('demo', '../PR1', IssueWorker.agent, 'r2'))).name,
+      'InvalidName',
+      reason: 'checked before it is sent',
+    );
   });
 
   // Harm: an uncertain or refused write is replayed and saves the same move twice.

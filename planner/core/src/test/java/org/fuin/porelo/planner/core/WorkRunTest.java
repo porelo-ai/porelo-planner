@@ -466,6 +466,153 @@ class WorkRunTest {
     }
 
     @Test
+    void aPersonsIssueInAWorkingStateWithoutARunDoesNotHoldBackTheStorysWork() {
+        // A person's issue in Implementing would otherwise read as lost work and block the agents.
+        final Fixture f = new Fixture();
+        f.store.current = ManualIssues.of(withSecondIssue(f.store.board(), "Building"), "BB1");
+
+        final WorkProposal proposal = f.run.propose("ST1", "Building");
+
+        assertThat(proposal.repositories())
+                .as("the agent's issue gets its task")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("AA1");
+        assertThat(proposal.manual()).as("the person's issue is named").containsExactly("BB1");
+    }
+
+    @Test
+    void aStoppedReadingOfAnIssueAPersonNowWorksNeitherHoldsTheRunNorStartsAnAgent() {
+        // A stop that only an agent's choice clears would hang the story's other issues for good.
+        final Fixture f = new Fixture();
+        f.store.current = withSecondIssue(f.store.board(), "Backlog");
+        final WorkRun.Offered builder =
+                f.order().tasks().stream()
+                        .filter(o -> o.task().issues().equals(List.of("AA1")))
+                        .findFirst()
+                        .orElseThrow();
+        f.start(builder);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        builder.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        assertThat(f.run.work("ST1").issues().get("AA1").rounds().stopped())
+                .as("the reading stopped at its limit")
+                .isTrue();
+        f.store.current = ManualIssues.of(f.store.board(), "AA1");
+        final String revision = f.store.board().revision().value();
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        1,
+                                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                                        "",
+                                        revision))
+                .as("no reader is started for the person's issue")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1");
+        assertThat(f.run.propose("ST1", "Building").repositories())
+                .as("the story's agent issue can still be proposed")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("BB1");
+    }
+
+    @Test
+    void aStoryWhoseWorkingStateAPersonSetIsNotHeldThereByAPersonsIssue() {
+        // A state a person set stands over the issues, so a working story state without a run
+        // would otherwise pass as a person's work and start agents over lost work.
+        final Fixture f = new Fixture();
+        final Board held =
+                ManualIssues.of(
+                        withSecondIssue(NextStepTest.board("Reading", "Reading"), "Backlog"),
+                        "AA1");
+        f.store.current = held;
+        assertThat(f.run.propose("ST1", "Reworking").repositories())
+                .as("a story state its person's issue gives is held by that issue")
+                .isNotEmpty();
+
+        f.store.current = withStoryState(held, true);
+
+        assertThatThrownBy(() -> f.run.propose("ST1", "Reworking"))
+                .as("the stated working state without a run needs attention")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("the proposal is not allowed")
+                                        .isEqualTo("WorkNotAllowed"));
+    }
+
+    /** The board with its first story's state stated by its head, or given by its issues. */
+    private static Board withStoryState(final Board board, final boolean stateGiven) {
+        final Story story = board.stories().getFirst();
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                List.of(
+                        new Story(
+                                story.id(),
+                                story.title(),
+                                story.state(),
+                                stateGiven,
+                                story.priority(),
+                                story.issues(),
+                                story.description(),
+                                story.link())),
+                board.issues(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** The fixture's board with BB1, an agent's issue of another repository, in the story too. */
+    private static Board withSecondIssue(final Board board, final String state) {
+        final Story story = board.stories().getFirst();
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                List.of(
+                        new Story(
+                                story.id(),
+                                story.title(),
+                                story.state(),
+                                false,
+                                story.priority(),
+                                List.of("AA1", "BB1"),
+                                story.description(),
+                                story.link())),
+                java.util.stream.Stream.concat(
+                                board.issues().stream(),
+                                java.util.stream.Stream.of(
+                                        new Issue(
+                                                "BB1", "beta", "Other", state, null, List.of(),
+                                                null, null, "")))
+                        .toList(),
+                board.work(),
+                List.of("alpha", "beta"));
+    }
+
+    @Test
     void aWorkerChangeOfAParentWhoseSubIssueARunningTaskOwnsIsRefused() {
         // A parent's worker is its sub-issues' worker, so the change would reach a running task.
         final Fixture f = new Fixture();

@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 
 /** The immutable choices proposed from one board, with no runtime or store changes. */
 public record WorkProposal(
@@ -19,13 +20,15 @@ public record WorkProposal(
         String comment,
         int readingRounds,
         List<IssueRounds> issueReadingRounds,
-        Revision revision) {
+        Revision revision,
+        List<String> manual) {
 
     /** Copies every collection so recomputation cannot be changed by a caller. */
     public WorkProposal {
         modes = List.copyOf(modes);
         repositories = List.copyOf(repositories);
         issueReadingRounds = List.copyOf(issueReadingRounds);
+        manual = List.copyOf(manual);
     }
 
     /** The proposed main participant; only its offered agent/model pair is a choice. */
@@ -82,7 +85,18 @@ public record WorkProposal(
             throw WorkRefusal.notAllowed(story.state(), to, "Readings are offered only by a run.");
         }
         bounded(story, to, rule.order());
-        final List<Issue> issues = issues(board, story, to);
+        final List<Issue> open = issues(board, story, to);
+        final List<Issue> issues = agents(open);
+        final List<String> manual =
+                open.stream().filter(i -> i.worker() == Worker.MANUAL).map(Issue::id).toList();
+        if (issues.isEmpty() && !manual.isEmpty()) {
+            throw WorkRefusal.notAllowed(
+                    story.state(),
+                    to,
+                    "A person works every open issue of the story: "
+                            + String.join(", ", manual)
+                            + ".");
+        }
         if (issues.isEmpty() && rule.then() != null) {
             throw WorkRefusal.notAllowed(story.state(), to, "A reading needs an open issue.");
         }
@@ -138,7 +152,8 @@ public record WorkProposal(
                 "",
                 2,
                 List.of(),
-                board.revision());
+                board.revision(),
+                manual);
     }
 
     static Story story(final Board board, final String id) {
@@ -154,11 +169,38 @@ public record WorkProposal(
         if (rule == null) {
             throw WorkRefusal.notAllowed(story.state(), to, "The target has no sound work rule.");
         }
-        if (!rule.from().contains(story.state())) {
+        if (!rule.from().contains(story.state()) && !agentsReady(board, story, to, rule)) {
             throw WorkRefusal.notAllowed(
                     story.state(), to, "The rule does not allow work from this state.");
         }
         return rule;
+    }
+
+    /**
+     * Whether the agents' issues of a story whose state an issue a person works holds back stand
+     * where the rule starts: the least advanced of them is in its {@code from}.
+     */
+    private static boolean agentsReady(
+            final Board board, final Story story, final String to, final WorkRule rule) {
+        if (story.stateGiven()) {
+            // A state a person set on the story stands over what its issues say.
+            return false;
+        }
+        final List<Issue> open = issues(board, story, to);
+        if (open.stream().noneMatch(i -> i.worker() == Worker.MANUAL)) {
+            return false;
+        }
+        final List<String> order = board.workflow().states();
+        return agents(open).stream()
+                .map(Issue::state)
+                .min((a, b) -> Integer.compare(order.indexOf(a), order.indexOf(b)))
+                .filter(rule.from()::contains)
+                .isPresent();
+    }
+
+    /** The issues an agent works; one a person works never gets an agent's task. */
+    private static List<Issue> agents(final List<Issue> issues) {
+        return issues.stream().filter(i -> i.worker() != Worker.MANUAL).toList();
     }
 
     private static List<Issue> issues(final Board board, final Story story, final String to) {

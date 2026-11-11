@@ -463,7 +463,8 @@ paths:
         Writes the issue's worker into its head against the board at the given revision, saved as a move is saved: one
         commit pushed under the person's own Git login, or nothing at all. A worker equal to the issue's is saved as
         nothing. A sub-issue takes its parent's worker and is refused one of its own; an issue a task of a running work
-        owns, itself or through one of its sub-issues, is refused, as a move of it is.
+        owns, itself or through one of its sub-issues, is refused, as a move of it is. An issue a person works is
+        refused an agent while it or one of its sub-issues stands in a working state, which no task entered.
       tags: [board]
       requestBody:
         required: true
@@ -551,7 +552,8 @@ paths:
       description: >-
         Checks a batch of moves against the board at the given revision and saves it all or not at all: each
         repository it changes gets one commit, pushed under the person's own Git login. A story moves its least
-        advanced issues; a working state is entered only by work.
+        advanced issues; a working state is entered only by work, except by an issue a person works (worker
+        MANUAL), which a person moves into and through the working states by hand.
       tags: [board]
       requestBody:
         required: true
@@ -1044,7 +1046,8 @@ components:
                   issues: 'PL2:Review'
     MoveRefused:
       description: >-
-        A move is refused: its state is entered only by work (EnteredOnlyByWork), is no waiting or closed state
+        A move is refused: its state is entered only by work and the item is a story or an issue an agent works
+        (EnteredOnlyByWork), is no waiting or closed state
         (StateNotAllowed), or the move is not allowed (MoveNotAllowed): it names no item or one twice, closes a parent
         over an open sub-issue, the work rules have faults, the body cannot be read, or the item cannot be saved in its
         repository.
@@ -1058,7 +1061,9 @@ components:
                 type: urn:porelo-planner:EnteredOnlyByWork
                 title: EnteredOnlyByWork
                 status: 422
-                detail: Building is entered only by starting its work.
+                detail: >-
+                  Building is entered only by starting its work; only an issue a person works is moved there by
+                  hand.
                 parameters:
                   item: PL1
                   to: Building
@@ -1667,7 +1672,7 @@ components:
           description: A state named by the workflow.
     StoryWorkProposal:
       type: object
-      required: [modes, repositories, coordinator, comment, readingRounds, issueReadingRounds, revision]
+      required: [modes, repositories, coordinator, comment, readingRounds, issueReadingRounds, revision, manual]
       properties:
         modes:
           type: array
@@ -1694,6 +1699,13 @@ components:
             $ref: '#/components/schemas/IssueReadingRounds'
         revision:
           $ref: '#/components/schemas/Revision'
+        manual:
+          type: array
+          description: >-
+            The story's open issues a person works (worker MANUAL), in story order: no task of this proposal
+            names them, and a person moves them through the work by hand.
+          items:
+            $ref: '#/components/schemas/IssueId'
     PlanRepositoryWork:
       type: object
       additionalProperties: false
@@ -2040,7 +2052,10 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
+          enum: [NONE, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
+          description: >-
+            Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
+            of the run takes it and it needs nobody's attention.
         rounds:
           type: integer
           minimum: 0

@@ -397,8 +397,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     String title,
     String mustBeTrue,
     String? size,
-    String revision,
-  ) async {
+    String revision, {
+    IssueWorker worker = IssueWorker.agent,
+  }) async {
     final answer = await _write(
       project,
       ['issues'],
@@ -407,7 +408,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'title': title,
         'mustBeTrue': mustBeTrue,
         'size': ?size,
-        // No worker is sent: the planner takes an agent, and one older than this screen refuses the member.
+        'worker': worker.wire,
         'revision': revision,
       },
     );
@@ -430,6 +431,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       method: 'PUT',
     );
     return answer['revision'] as String;
+  }
+
+  @override
+  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision) async {
+    final answer = await _write(
+      project,
+      ['issues', _checked('issue', issue, _issueId), 'worker'],
+      {'worker': worker.wire, 'revision': revision},
+      method: 'PUT',
+    );
+    return PlanningWorkerSaved(revision: answer['revision'] as String);
   }
 
   @override

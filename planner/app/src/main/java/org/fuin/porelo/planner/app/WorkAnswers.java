@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Predicate;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -28,7 +29,8 @@ public final class WorkAnswers {
             String comment,
             int readingRounds,
             List<IssueRounds> issueReadingRounds,
-            String revision) {}
+            String revision,
+            List<String> manual) {}
 
     /** The unchanged revision and individual tasks the window starts. */
     public record Order(String revision, List<StartTask> tasks) {}
@@ -93,7 +95,8 @@ public final class WorkAnswers {
                 proposal.issueReadingRounds().stream()
                         .map(limit -> new IssueRounds(limit.issue(), limit.rounds()))
                         .toList(),
-                proposal.revision().value());
+                proposal.revision().value(),
+                proposal.manual());
     }
 
     /** One story's run, including its known reading state. */
@@ -177,11 +180,19 @@ public final class WorkAnswers {
                 .toList();
     }
 
-    static @Nullable PlanWork work(final WorkRun.@Nullable Run run) {
-        return run == null ? null : knownWork(run);
+    static @Nullable PlanWork work(final Board board, final WorkRun.@Nullable Run run) {
+        return run == null ? null : knownWork(board, run);
     }
 
-    static PlanWork knownWork(final WorkRun.Run run) {
+    static PlanWork knownWork(final Board board, final WorkRun.Run run) {
+        return knownWork(run, issue -> manual(board, issue));
+    }
+
+    /**
+     * Answers the run, a person's issue reported as theirs: no task takes it and it waits on no
+     * agent's choice, whatever the run recorded before the switch.
+     */
+    static PlanWork knownWork(final WorkRun.Run run, final Predicate<String> manual) {
         final List<PlanWorkTask> tasks =
                 run.offers().stream()
                         .filter(o -> o.task() != null)
@@ -222,7 +233,9 @@ public final class WorkAnswers {
                         .sorted(java.util.Map.Entry.comparingByKey())
                         .map(
                                 entry -> {
-                                    final NextStep.Progress p = entry.getValue();
+                                    final boolean person = manual.test(entry.getKey());
+                                    final NextStep.Progress p =
+                                            person ? entry.getValue().manual() : entry.getValue();
                                     return new PlanWorkIssue(
                                             entry.getKey(),
                                             p.reason(),
@@ -230,10 +243,16 @@ public final class WorkAnswers {
                                             p.rounds().roundsMost(),
                                             atWork(run, entry.getKey()),
                                             p.needsYou(),
-                                            p.rounds().stopped(),
+                                            !person && p.rounds().stopped(),
                                             findings(p.findings()));
                                 })
                         .toList());
+    }
+
+    private static boolean manual(final Board board, final String issue) {
+        return board.issue(issue)
+                .map(i -> i.worker() == org.fuin.porelo.planner.store.Worker.MANUAL)
+                .orElse(false);
     }
 
     static boolean atWork(final WorkRun.Run run, final String issue) {
@@ -280,7 +299,8 @@ public final class WorkAnswers {
     }
 
     static boolean lost(final Board board, final WorkRun.Snapshot snapshot, final Issue issue) {
-        return board.work().rules().containsKey(issue.state())
+        return issue.worker() != org.fuin.porelo.planner.store.Worker.MANUAL
+                && board.work().rules().containsKey(issue.state())
                 && board.stories().stream()
                         .filter(
                                 s ->
@@ -292,6 +312,8 @@ public final class WorkAnswers {
 
     static Answers.Issue issue(
             final Board board, final Issue issue, final WorkRun.Snapshot snapshot) {
+        // A person's issue needs no agent's choice, whatever a run recorded before the switch.
+        final boolean manual = issue.worker() == org.fuin.porelo.planner.store.Worker.MANUAL;
         final NextStep.Progress progress = progress(snapshot, issue.id());
         final var link = issue.link();
         return new Answers.Issue(
@@ -307,8 +329,8 @@ public final class WorkAnswers {
                 progress == null ? null : progress.rounds().rounds(),
                 progress == null ? null : progress.rounds().roundsMost(),
                 atWork(snapshot, issue.id()),
-                progress == null ? lost(board, snapshot, issue) : progress.needsYou(),
-                progress != null && progress.rounds().stopped(),
+                !manual && (progress == null ? lost(board, snapshot, issue) : progress.needsYou()),
+                !manual && progress != null && progress.rounds().stopped(),
                 progress == null ? null : findings(progress.findings()));
     }
 

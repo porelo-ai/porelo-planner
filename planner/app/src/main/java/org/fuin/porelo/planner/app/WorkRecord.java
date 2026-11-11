@@ -340,9 +340,13 @@ public final class WorkRecord implements AutoCloseable {
                                     .filter(o -> o.status().equals("OFFERED"))
                                     .map(o -> new WorkRun.Offered(o.id(), o.arguments()))
                                     .toList();
+                    // A person's issue answers within the same reserve, so the bound needs no
+                    // board.
                     final var answer =
                             new WorkAnswers.TaskEventReply(
-                                    "", WorkAnswers.knownWork(run), WorkAnswers.starts(offers));
+                                    "",
+                                    WorkAnswers.knownWork(run, issue -> false),
+                                    WorkAnswers.starts(offers));
                     // Revision changes and cancellation must fit beside the work answer.
                     if (JSON.writeValueAsBytes(answer).length + END_RESERVE > MOST_RECORD) {
                         throw WorkRefusal.recordUnavailable(project, "The work record is full.");
@@ -375,7 +379,7 @@ public final class WorkRecord implements AutoCloseable {
                                             board,
                                             found,
                                             new WorkRun.Snapshot(0, Map.of(run.story(), run))),
-                                    WorkAnswers.knownWork(run),
+                                    WorkAnswers.knownWork(board, run),
                                     board.revision().value(),
                                     WorkAnswers.starts(offers));
                     if (JSON.writeValueAsBytes(answer).length + 65536 > MOST_RECORD) {

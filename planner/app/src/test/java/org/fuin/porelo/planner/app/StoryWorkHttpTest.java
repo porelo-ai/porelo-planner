@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
@@ -146,7 +147,8 @@ class StoryWorkHttpTest {
                         "comment",
                         "readingRounds",
                         "issueReadingRounds",
-                        "revision");
+                        "revision",
+                        "manual");
         assertThat(
                         proposal.get("repositories")
                                 .get(0)
@@ -183,6 +185,58 @@ class StoryWorkHttpTest {
         assertThat(json(call(BASE + "/work", MINIMAL), 200).get("tasks").size())
                 .as("omitted repositories and limits use the recomputed proposal")
                 .isEqualTo(2);
+    }
+
+    @Test
+    void theServedProposalNamesTheIssuesAPersonWorksAndGivesThemNoTask() throws Exception {
+        // A task served for a person's issue would put an agent on the work they are doing.
+        final Story story = board.stories().getFirst();
+        board =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        List.of(
+                                new Story(
+                                        story.id(),
+                                        story.title(),
+                                        story.state(),
+                                        story.stateGiven(),
+                                        story.priority(),
+                                        List.of("AA1", "BB1"),
+                                        story.description(),
+                                        story.link())),
+                        java.util.stream.Stream.concat(
+                                        board.issues().stream(),
+                                        java.util.stream.Stream.of(
+                                                new Issue(
+                                                        "BB1",
+                                                        "alpha",
+                                                        "A person's",
+                                                        "Backlog",
+                                                        null,
+                                                        List.of(),
+                                                        null,
+                                                        null,
+                                                        "",
+                                                        Worker.MANUAL)))
+                                .toList(),
+                        board.work(),
+                        board.repositories());
+
+        final JsonNode proposal = json(call(BASE + "/proposal", "{\"to\":\"Building\"}"), 200);
+
+        assertThat(proposal.get("manual").toString())
+                .as("the person's issue is named")
+                .isEqualTo("[\"BB1\"]");
+        assertThat(proposal.at("/repositories/0/issues").toString())
+                .as("no task names it")
+                .isEqualTo("[\"AA1\",\"AA1.1\"]");
+        final JsonNode order = json(call(BASE + "/work", MINIMAL), 200);
+        for (final JsonNode task : order.get("tasks")) {
+            assertThat(task.get("issues").toString())
+                    .as("no task of the order names the person's issue")
+                    .doesNotContain("BB1");
+        }
     }
 
     @Test

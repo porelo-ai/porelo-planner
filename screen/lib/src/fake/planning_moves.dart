@@ -38,8 +38,9 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
     if (!isStory && issue == null) refuse('NoSuchIssue', {'issue': id});
     final from = (isStory ? story! : issue!)['state'];
     final target = states.where((state) => state['name'] == to).firstOrNull;
-    if (target?['kind'] == 'WORKING') refuse('EnteredOnlyByWork', {'item': id, 'to': to});
-    if (target == null || !{'WAITING', 'CLOSED'}.contains(target['kind'])) {
+    final byHand = !isStory && issue!['worker'] == 'MANUAL';
+    if (target?['kind'] == 'WORKING' && !byHand) refuse('EnteredOnlyByWork', {'item': id, 'to': to});
+    if (target == null || !{'WAITING', 'CLOSED', if (byHand) 'WORKING'}.contains(target['kind'])) {
       refuse('StateNotAllowed', {
         'item': id,
         'from': from,
@@ -73,6 +74,37 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   settleStoryStates(board);
   board['revision'] = '${source['revision']}:moved';
   board['moved'] = moved;
+  return board;
+}
+
+/// Sets who works one issue on a copy, as the planner does, publishing nothing on a refusal.
+Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id, String worker, String revision) {
+  Never refuse(String name, Map<String, dynamic> fields) => throw mockRefusal('org.fuin.porelo.Tasks1.$name', fields);
+  if (revision != source['revision']) refuse('StaleRevision', {'revision': source['revision']});
+  final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  final states = (board['states'] as List).cast<Map<String, dynamic>>();
+  final issues = (board['stories'] as List)
+      .cast<Map<String, dynamic>>()
+      .expand((story) => (story['issues'] as List? ?? []).cast<Map<String, dynamic>>())
+      .toList();
+  final issue = issues.where((issue) => issue['id'] == id).firstOrNull;
+  if (issue == null) refuse('NoSuchIssue', {'issue': id});
+  void notAllowed(String reason) => refuse('MoveNotAllowed', {'item': id, 'from': '', 'to': '', 'reason': reason});
+  if (issue['parent'] is String) notAllowed('$id is a sub-issue and is worked as its parent ${issue['parent']} is.');
+  if (!{'AGENT', 'MANUAL'}.contains(worker)) notAllowed('A worker is AGENT or MANUAL.');
+  // A worker the issue has already is saved as nothing, at the same revision.
+  if (issue['worker'] == worker) return board;
+  if (worker == 'AGENT') {
+    for (final each in issues.where((each) => each['id'] == id || each['parent'] == id)) {
+      if (states.any((state) => state['name'] == each['state'] && state['kind'] == 'WORKING')) {
+        notAllowed('${each['id']} stands in ${each['state']}, which only its work enters.');
+      }
+    }
+  }
+  for (final each in issues.where((each) => each['id'] == id || each['parent'] == id)) {
+    each['worker'] = worker;
+  }
+  board['revision'] = '${source['revision']}:worker';
   return board;
 }
 

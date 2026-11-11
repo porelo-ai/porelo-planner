@@ -49,7 +49,7 @@ class WorkRecordTest {
             assertThat(restored.offers().getFirst().machine())
                     .as("spaces and non-ASCII letters are retained verbatim")
                     .isEqualTo(machine);
-            assertThat(WorkAnswers.knownWork(restored).tasks().getFirst().machine())
+            assertThat(WorkAnswers.knownWork(restored, issue -> false).tasks().getFirst().machine())
                     .as("the restored story answers the original machine name")
                     .isEqualTo(machine);
         }
@@ -77,7 +77,9 @@ class WorkRecordTest {
                     .as("an absent machine remains unknown")
                     .isNull();
             final var answer =
-                    json.readTree(json.writeValueAsString(WorkAnswers.knownWork(restored)));
+                    json.readTree(
+                            json.writeValueAsString(
+                                    WorkAnswers.knownWork(restored, issue -> false)));
             assertThat(answer.at("/tasks/0").has("machine"))
                     .as("the story's task always includes the machine field")
                     .isTrue();

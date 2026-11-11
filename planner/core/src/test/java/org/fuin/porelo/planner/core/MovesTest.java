@@ -37,6 +37,10 @@ class MovesTest {
     private final Board board = board(WORK);
 
     private static Board board(final Work work) {
+        return board(work, "Backlog");
+    }
+
+    private static Board board(final Work work, final String first) {
         return new Board(
                 new Revision("r1"),
                 new Workflow(STATES, List.of(), CLOSED),
@@ -45,7 +49,7 @@ class MovesTest {
                         story("ST2", "Backlog", true),
                         story("ST3", "Review", true, "PL3")),
                 List.of(
-                        issue("PL1", "Backlog", null),
+                        issue("PL1", first, null),
                         issue("PL2", "Review", null),
                         issue("PL3", "Review", null),
                         issue("PL4", "Review", null),
@@ -107,6 +111,35 @@ class MovesTest {
                 .containsExactly(entry("item", "PL1"), entry("to", "Building"));
         assertThat(refused(List.of(story("ST2", "Reading")), false).name())
                 .as("a story too")
+                .isEqualTo("EnteredOnlyByWork");
+    }
+
+    @Test
+    void aPersonMovesTheirIssueIntoAWorkingStateAndOnWithoutATask() {
+        // A person's issue held out of the working states could never show its work on the board.
+        final Board manual = ManualIssues.of(board, "PL1");
+
+        assertThat(Moves.check(manual, List.of(issue("PL1", "Building")), false, DERIVE).issues())
+                .as("into the working state")
+                .containsExactly(entry("PL1", "Building"));
+        final Board building = ManualIssues.of(board(WORK, "Building"), "PL1");
+        assertThat(Moves.check(building, List.of(issue("PL1", "Reading")), false, DERIVE).issues())
+                .as("on to the next working state")
+                .containsExactly(entry("PL1", "Reading"));
+        assertThat(Moves.check(building, List.of(issue("PL1", "Review")), false, DERIVE).issues())
+                .as("and out of the work")
+                .containsExactly(entry("PL1", "Review"));
+    }
+
+    @Test
+    void anAgentsIssueAndAStoryStillEnterAWorkingStateOnlyByWork() {
+        // A hand move into Building would show work begun that no agent's task does.
+        final Board manual = ManualIssues.of(board, "PL1");
+
+        final Moves.Refused agents = refused(manual, List.of(issue("PL2", "Building")));
+        assertThat(agents.name()).as("an agent's issue").isEqualTo("EnteredOnlyByWork");
+        assertThat(refused(manual, List.of(story("ST1", "Building"))).name())
+                .as("a story, even one with a person's issue")
                 .isEqualTo("EnteredOnlyByWork");
     }
 
@@ -230,6 +263,15 @@ class MovesTest {
     }
 
     private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {
+        return refused(board, moves, confirm);
+    }
+
+    private static Moves.Refused refused(final Board board, final List<Moves.Move> moves) {
+        return refused(board, moves, false);
+    }
+
+    private static Moves.Refused refused(
+            final Board board, final List<Moves.Move> moves, final boolean confirm) {
         final Moves.Refused refused =
                 catchThrowableOfType(
                         Moves.Refused.class, () -> Moves.check(board, moves, confirm, DERIVE));

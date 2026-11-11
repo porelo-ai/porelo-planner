@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models.dart';
 
 import 'package:flutter/material.dart';
@@ -61,8 +63,15 @@ class PlanningIssueView extends StatelessWidget {
             Chip(label: Text(planningValue(issue.state))),
             Text(planningValue(issue.repository)),
             Text('Worker: ${planningWorker(issue.worker)}'),
+            if (issue.parent == null && issue.worker != null) _workerSwitch(issue),
           ],
         ),
+        if (detail.workerProblem case final problem?)
+          Text(
+            problem,
+            key: const Key('planning-worker-problem'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         Text(planningValue(issue.title), style: Theme.of(context).textTheme.headlineSmall),
         PlanningWebLink(link: issue.link, label: 'Open issue', openLink: openLink),
         if (reply.revision.isNotEmpty) Text('Revision: ${reply.revision}'),
@@ -175,6 +184,19 @@ class PlanningIssueView extends StatelessWidget {
           ],
         ]),
       ],
+    );
+  }
+
+  Widget _workerSwitch(PlanIssue issue) {
+    final unavailable = detail.workerSaving ? 'waiting for the planner' : detail.board.workerUnavailable(issue);
+    final next = issue.byHand ? IssueWorker.agent : IssueWorker.manual;
+    return Tooltip(
+      message: unavailable ?? 'Let ${next == IssueWorker.manual ? 'a person' : 'an agent'} work ${issue.id}',
+      child: TextButton(
+        key: const Key('planning-worker-switch'),
+        onPressed: unavailable == null ? () => unawaited(detail.setWorker(next)) : null,
+        child: Text('Switch to ${planningWorker(next)}'),
+      ),
     );
   }
 }

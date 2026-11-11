@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -217,6 +218,75 @@ class WorkerEndpointTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"));
         assertThat(saved).as("nothing saved").isEmpty();
+    }
+
+    @Test
+    void aPersonsIssueInAWorkingStateIsRefusedAnAgentAndSavesNothing() throws Exception {
+        // An agent's issue in a working state no task entered would wait there forever.
+        final WorkRule implement =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Finished",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Implement {issues}",
+                        Map.of("codex", "model"));
+        current =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(
+                                List.of("Backlog", "Implementing", "Finished"),
+                                List.of(),
+                                List.of("Finished")),
+                        current.stories(),
+                        List.of(
+                                issue("AB01", null, Worker.MANUAL),
+                                new Issue(
+                                        "AB01.1",
+                                        "porelo-store",
+                                        "An issue",
+                                        "Implementing",
+                                        "S",
+                                        List.of(),
+                                        "AB01",
+                                        null,
+                                        "",
+                                        Worker.MANUAL),
+                                new Issue(
+                                        "AB02",
+                                        "porelo-store",
+                                        "An issue",
+                                        "Implementing",
+                                        "S",
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "",
+                                        Worker.MANUAL)),
+                        new Work(Map.of("Implementing", implement), List.of()));
+
+        for (final String issue : List.of("AB02", "AB01")) {
+            final var response =
+                    worker(issue, "{\"worker\": \"AGENT\", \"revision\": \"r1\"}")
+                            .andReturn()
+                            .getResponse();
+            assertThat(response.getStatus())
+                    .as("the switch of %s: %s", issue, response.getContentAsString())
+                    .isEqualTo(422);
+            final var refused =
+                    tools.jackson.databind.json.JsonMapper.builder()
+                            .build()
+                            .readTree(response.getContentAsString());
+            assertThat(refused.path("type").asString())
+                    .as("the switch of %s is refused as a move is", issue)
+                    .isEqualTo("urn:porelo-planner:MoveNotAllowed");
+            assertThat(refused.at("/parameters/item").asString())
+                    .as("the refusal names %s", issue)
+                    .isEqualTo(issue);
+        }
+        assertThat(saved).as("no refused switch is saved").isEmpty();
     }
 
     @Test

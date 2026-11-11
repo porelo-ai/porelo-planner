@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:porelo_planning/planning_fake.dart' show applyPlanningWorker;
 import 'package:porelo_planning/porelo_planning.dart';
 
 /// A small board: one waiting, one working and one closed state, and two stories with an issue each.
@@ -157,6 +158,20 @@ class FakePlanningSource implements PlanningSource {
   /// Every new issue asked of it: the project, repository, title, what must be true, size and revision.
   final List<(String, String, String, String, String?, String)> added = [];
 
+  /// The worker of every new issue asked of it, in the order of [added].
+  final List<IssueWorker> addedWorkers = [];
+
+  /// Every worker change asked of it: the project, issue, worker and revision.
+  final List<(String, String, IssueWorker, String)> workers = [];
+
+  @override
+  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision) async {
+    workers.add((project, issue, worker, revision));
+    final next = applyPlanningWorker(board, issue, worker.wire, revision);
+    if (next['revision'] != board['revision']) replace(next);
+    return PlanningWorkerSaved(revision: next['revision'] as String);
+  }
+
   /// A refusal of the next new issue, set by a test.
   Object? addFailure;
 
@@ -167,9 +182,11 @@ class FakePlanningSource implements PlanningSource {
     String title,
     String mustBeTrue,
     String? size,
-    String revision,
-  ) async {
+    String revision, {
+    IssueWorker worker = IssueWorker.agent,
+  }) async {
     added.add((project, repository, title, mustBeTrue, size, revision));
+    addedWorkers.add(worker);
     if (addFailure case final failure?) throw failure;
     if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
     final next = 'r${saves.length + added.length + 1}';

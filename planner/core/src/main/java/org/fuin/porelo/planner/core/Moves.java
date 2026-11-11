@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 
@@ -206,6 +207,7 @@ public final class Moves {
                     item(move.id(), "", move.to(), "Each move must name exactly one item, once."));
         }
         final String from;
+        boolean manual = false;
         if (move.story()) {
             from =
                     board.story(move.id())
@@ -217,23 +219,26 @@ public final class Moves {
                                                     Map.of("story", move.id())))
                             .state();
         } else {
-            from =
+            final Issue issue =
                     board.issue(move.id())
                             .orElseThrow(
                                     () ->
                                             new Refused(
                                                     "NoSuchIssue",
                                                     "There is no issue " + move.id() + ".",
-                                                    Map.of("issue", move.id())))
-                            .state();
+                                                    Map.of("issue", move.id())));
+            from = issue.state();
+            manual = issue.worker() == Worker.MANUAL;
         }
-        if (working.contains(move.to())) {
+        if (working.contains(move.to()) && !manual) {
             final Map<String, String> parameters = new LinkedHashMap<>();
             parameters.put("item", move.id());
             parameters.put("to", move.to());
             throw new Refused(
                     "EnteredOnlyByWork",
-                    move.to() + " is entered only by starting its work.",
+                    move.to()
+                            + " is entered only by starting its work; only an issue a person"
+                            + " works is moved there by hand.",
                     parameters);
         }
         if (!board.workflow().states().contains(move.to())) {

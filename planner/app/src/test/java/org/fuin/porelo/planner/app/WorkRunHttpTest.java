@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.AfterEach;
@@ -153,6 +154,151 @@ class WorkRunHttpTest {
         assertThat(store.board().revision().value())
                 .as("the refused change saves nothing")
                 .isEqualTo(revision);
+    }
+
+    @Test
+    void aPersonsIssueInAWorkingStateIsNeitherLostNorWaitingOnAReadingChoice() throws Exception {
+        // A person's own issue raised as needing them would bury the issues that really do.
+        final Issue manual =
+                new Issue(
+                        "AA1",
+                        "alpha",
+                        "A person's",
+                        "Building",
+                        null,
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        Worker.MANUAL);
+        final Issue agents =
+                new Issue(
+                        "AA2", "alpha", "An agent's", "Building", null, List.of(), null, null, "");
+        final Board board =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(
+                                List.of("Backlog", "Building", "Review"), List.of(), List.of()),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Building",
+                                        false,
+                                        "High",
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null)),
+                        List.of(manual, agents),
+                        store.board().work(),
+                        List.of("alpha"));
+        final WorkRun.Snapshot none = new WorkRun.Snapshot(0, Map.of());
+
+        assertThat(WorkAnswers.issue(board, agents, none).needsYou())
+                .as("an agent's issue in a working state without a run is lost work")
+                .isTrue();
+        assertThat(WorkAnswers.issue(board, manual, none).needsYou())
+                .as("a person's issue there is their own work")
+                .isFalse();
+        offerWork("ST1");
+        final WorkRun.Run run =
+                java.util.Objects.requireNonNull(projects.work("project").work("ST1"));
+        final WorkRun.Snapshot stopped =
+                new WorkRun.Snapshot(
+                        1,
+                        Map.of(
+                                "ST1",
+                                new WorkRun.Run(
+                                        run.id(),
+                                        run.story(),
+                                        run.to(),
+                                        run.mode(),
+                                        run.comment(),
+                                        run.coordinator(),
+                                        run.readingRounds(),
+                                        run.issueReadingRounds(),
+                                        run.repositories(),
+                                        run.since(),
+                                        run.offers(),
+                                        Map.of(
+                                                "AA1",
+                                                new NextStep.Progress(
+                                                        new ReadingCycle.Rounds(2, 2, true),
+                                                        List.of(),
+                                                        true,
+                                                        "ROUND_LIMIT",
+                                                        "")),
+                                        false,
+                                        false,
+                                        false)));
+        assertThat(stopped.runs().get("ST1").issues().get("AA1").rounds().stopped())
+                .as("the fixture's reading of AA1 stopped")
+                .isTrue();
+        final Answers.Issue answered = WorkAnswers.issue(board, manual, stopped);
+        assertThat(answered.needsYou() || answered.readingStopped())
+                .as("a stop left from before the switch asks the person for no choice")
+                .isFalse();
+    }
+
+    @Test
+    void theServedRunReportsAStoppedIssueAPersonNowWorksAsTheirsAndNotWaitingOnAChoice()
+            throws Exception {
+        // A run that still asks for an agent's choice on a person's issue blocks the story's start.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final String reader =
+                call("/tasks/build/events", event(offer, "ENDED", "Built"), 200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/read/events", event(reader, "STARTED", ""), 200);
+        final JsonNode read =
+                call(
+                        "/tasks/read/events",
+                        event(reader, "ENDED", "Findings:\n1. blocking | - | - | Preserve data"),
+                        200);
+        assertThat(read.at("/work/issues/0/readingStopped").asBoolean())
+                .as("the fixture's reading of AA1 stopped at its limit")
+                .isTrue();
+        final var switched =
+                mvc.perform(
+                                put("/projects/project/issues/AA1/worker")
+                                        .contentType("application/json")
+                                        .content(
+                                                "{\"worker\":\"MANUAL\",\"revision\":\""
+                                                        + store.board().revision().value()
+                                                        + "\"}"))
+                        .andReturn()
+                        .getResponse();
+        assertThat(switched.getStatus())
+                .as(
+                        "no task owns AA1, so the switch to a person: %s",
+                        switched.getContentAsString())
+                .isEqualTo(200);
+
+        final JsonNode served =
+                JSON.readTree(
+                        mvc.perform(get("/projects/project/stories/ST1/work"))
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString());
+
+        final JsonNode issue = served.at("/work/issues/0");
+        assertThat(issue.path("issue").asString()).as("the run's entry is AA1").isEqualTo("AA1");
+        assertThat(issue.path("reason").asString())
+                .as("the run says a person works AA1")
+                .isEqualTo("MANUAL");
+        assertThat(issue.path("needsYou").asBoolean())
+                .as("a person's issue needs no agent's choice")
+                .isFalse();
+        assertThat(issue.path("readingStopped").asBoolean())
+                .as("a stop left from before the switch is not offered as a choice")
+                .isFalse();
     }
 
     @Test
@@ -596,7 +742,7 @@ class WorkRunHttpTest {
                                             null,
                                             null,
                                             "",
-                                            old.worker())),
+                                            writes.workers().getOrDefault(old.id(), old.worker()))),
                             current.work(),
                             current.repositories());
             return current;

@@ -141,8 +141,12 @@ abstract interface class PlanningSource {
     String title,
     String mustBeTrue,
     String? size,
-    String revision,
-  );
+    String revision, {
+    IssueWorker worker = IssueWorker.agent,
+  });
+
+  /// Sets who works [issue], against the board at [revision]; a sub-issue is refused, as it takes its parent's.
+  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision);
 
   /// Sets [story]'s priority, one of [planningPriorities], against the board at [revision]; saved as a move is,
   /// it answers the board's revision after the save, the same one when the story had that priority already.

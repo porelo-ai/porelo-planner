@@ -155,7 +155,7 @@ class MockPlanningSource implements PlanningSource {
     return PlanningMoveResult.from({'revision': moved['revision'], 'moved': moved['moved']});
   }
 
-  /// New issues asked of it, each with its project, repository, title, what must be true, size and revision.
+  /// New issues asked of it, each with its project, repository, title, what must be true, size, worker and revision.
   final List<Map<String, dynamic>> issueCalls = [];
 
   /// Adds the issue as the planner does, numbered after its repository's issues on the board, and shows the board at a
@@ -167,14 +167,16 @@ class MockPlanningSource implements PlanningSource {
     String title,
     String mustBeTrue,
     String? size,
-    String revision,
-  ) async {
+    String revision, {
+    IssueWorker worker = IssueWorker.agent,
+  }) async {
     issueCalls.add({
       'project': project,
       'repository': repository,
       'title': title,
       'mustBeTrue': mustBeTrue,
       'size': size,
+      'worker': worker.wire,
       'revision': revision,
     });
     final current = board(project);
@@ -229,6 +231,19 @@ class MockPlanningSource implements PlanningSource {
       ],
     });
     return next;
+  }
+
+  /// Worker changes asked of it, each with its project, issue, worker and revision.
+  final List<Map<String, dynamic>> workerCalls = [];
+
+  @override
+  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision) async {
+    workerCalls.add({'project': project, 'issue': issue, 'worker': worker.wire, 'revision': revision});
+    if (moveFailure case final failure?) throw failure;
+    final current = board(project);
+    final next = applyPlanningWorker(current, issue, worker.wire, revision);
+    if (next['revision'] != current['revision']) push(project, next);
+    return PlanningWorkerSaved(revision: next['revision'] as String);
   }
 
   @override

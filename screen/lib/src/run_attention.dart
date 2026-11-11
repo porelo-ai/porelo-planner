@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'models.dart';
+
 /// A reported issue reason in words a person can act on; a reason without words shows its wire name.
 String planningReasonWords(String reason) => switch (reason) {
   'ROUND_LIMIT' => 'its reading rounds ran out',
@@ -33,7 +35,7 @@ class PlanningIssueAttention {
   /// Why it needs attention, in words, never empty.
   List<String> get causes {
     final words = [
-      if (reason.isNotEmpty && reason != 'NONE') planningReasonWords(reason),
+      if (planReasonNeedsAttention(reason)) planningReasonWords(reason),
       if (readingStopped && reason != 'ROUND_LIMIT') 'its reading stopped',
       if (needsYou) 'it needs you',
     ];

@@ -53,6 +53,25 @@ class WorkersTest {
     }
 
     @Test
+    void aPersonsIssueInAWorkingStateIsNotHandedToAnAgent() {
+        // An agent's issue in a working state that no task started would wait for work forever.
+        final Board working = ManualIssues.of(NextStepTest.board("Building", "Building"), "AA1");
+
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class, () -> Workers.check(working, "AA1", Worker.AGENT));
+
+        assertThat(refused).as("the switch to an agent is refused").isNotNull();
+        assertThat(refused.name()).as("the refusal's name").isEqualTo("MoveNotAllowed");
+        assertThat(refused.getMessage())
+                .as("the words name the working state")
+                .contains("Building");
+        assertThat(Workers.check(ManualIssues.of(board, "AA1"), "AA1", Worker.AGENT).workers())
+                .as("from a waiting state the switch is written")
+                .isEqualTo(Map.of("AA1", Worker.AGENT));
+    }
+
+    @Test
     void anIssueTheBoardLacksIsRefused() {
         // A worker saved for no issue would write a head the board does not hold.
         final Moves.Refused refused =

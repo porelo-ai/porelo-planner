@@ -65,9 +65,9 @@ class PlanningDetail extends ChangeNotifier {
   /// Whether the board's shared save is pending.
   bool get saving => board.saving;
 
-  /// States that a person may request, in the configured workflow order.
-  List<PlanState> get moveStates =>
-      board.states.where((state) => state.name.isNotEmpty && {'WAITING', 'CLOSED'}.contains(state.kind)).toList();
+  /// States that a person may request for [issue], in the configured workflow order.
+  List<PlanState> moveStatesOf(PlanIssue issue) =>
+      board.states.where((state) => state.name.isNotEmpty && PlanningBoard.issueMayEnter(issue, state)).toList();
 
   /// Why a new issue move cannot be staged now.
   String? get moveUnavailable => saving
@@ -92,10 +92,32 @@ class PlanningDetail extends ChangeNotifier {
   void queueMove(String id, String to) {
     if (_disposed || board.disposed || moveUnavailable != null) return;
     final issue = issues?.issues.where((issue) => issue.id == id).firstOrNull;
-    if (issue == null || issue.state.isEmpty || to != issue.state && !moveStates.any((state) => state.name == to)) {
+    if (issue == null ||
+        issue.state.isEmpty ||
+        to != issue.state && !moveStatesOf(issue).any((state) => state.name == to)) {
       return;
     }
     board.moveIssue(id, to, reported: issue);
+  }
+
+  /// The planner's words for the last refused worker change, until the next one is asked.
+  String? workerProblem;
+
+  /// Whether a worker change waits for the planner's answer.
+  bool workerSaving = false;
+
+  /// Has the planner set who works the issue shown; a refusal stays in [workerProblem].
+  Future<void> setWorker(IssueWorker worker) async {
+    final shown = issue?.issue;
+    if (_disposed || board.disposed || shown == null || workerSaving) return;
+    workerSaving = true;
+    workerProblem = null;
+    notifyListeners();
+    final problem = await board.setWorker(shown, worker);
+    if (_disposed) return;
+    workerSaving = false;
+    workerProblem = problem;
+    notifyListeners();
   }
 
   /// Drops all drafts through the same Undo used on the board.

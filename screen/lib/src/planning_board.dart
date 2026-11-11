@@ -366,9 +366,7 @@ class PlanningBoard extends ChangeNotifier {
         for (final issue in story.issues)
           if (issue.needsYou == true || issue.readingStopped == true) issue.id,
         for (final issue in work?.issues ?? <PlanWorkIssue>[])
-          if (issue.reason.isNotEmpty && issue.reason != 'NONE' ||
-              issue.needsYou == true ||
-              issue.readingStopped == true)
+          if (planReasonNeedsAttention(issue.reason) || issue.needsYou == true || issue.readingStopped == true)
             issue.issue,
       })
         _issueAttention(id, reported[id], story.issues.where((issue) => issue.id == id).firstOrNull),
@@ -413,7 +411,7 @@ class PlanningBoard extends ChangeNotifier {
     }
     final work = workOf(story);
     if (runAttention(story) case final attention?) return attention;
-    if (work == null && (kind == 'WAITING' || kind == 'CLOSED')) return null;
+    if (work == null && (kind == 'WAITING' || kind == 'CLOSED' || workedByHand(story))) return null;
     return switch (work?.atWork) {
       false => null,
       true =>
@@ -585,7 +583,13 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Adds an idea as a new issue against the revision the board shows; answers its id, or null after a refusal,
   /// whose words stand in [actionProblem] as every board action's do.
-  Future<String?> createIssue(String repository, String title, String mustBeTrue, String? size) async {
+  Future<String?> createIssue(
+    String repository,
+    String title,
+    String mustBeTrue,
+    String? size, {
+    IssueWorker worker = IssueWorker.agent,
+  }) async {
     if (newIssueUnavailable case final reason?) {
       actionProblem = 'No new issue: $reason.';
       _changed();
@@ -599,7 +603,7 @@ class PlanningBoard extends ChangeNotifier {
     actionProblem = null;
     _changed();
     try {
-      return (await source.createIssue(name, repository, title, mustBeTrue, size, revision)).id;
+      return (await source.createIssue(name, repository, title, mustBeTrue, size, revision, worker: worker)).id;
     } catch (error) {
       if (!_disposed && generation == _generation) {
         reportActionProblem(error);
@@ -688,6 +692,66 @@ class PlanningBoard extends ChangeNotifier {
           reported.priority == pending.priority ||
           pending.answered && reply.revision != pending.revision;
     });
+  }
+
+  /// Why who works [issue] cannot be changed now, or null when it can.
+  String? workerUnavailable(PlanIssue issue) =>
+      unavailableActions['SetWorker'] ??
+      (issue.parent != null
+          ? 'a sub-issue is worked as its parent ${issue.parent} is'
+          : issue.worker == null
+          ? 'the planner did not report who works it'
+          : _disposed || !live
+          ? 'the planning board is not live'
+          : snapshot?.complete != true
+          ? 'the planning board is not complete'
+          : snapshot!.revision.trim().isEmpty
+          ? 'the planning revision was not reported'
+          : actionBusy || saving
+          ? 'waiting for the planner'
+          : _staged(issue)
+          ? 'it or a sub-issue has a move to save or undo first'
+          : null);
+
+  /// Whether [issue] or one of its sub-issues has a staged move, which a worker change would make the save refuse.
+  bool _staged(PlanIssue issue) {
+    final staged = pendingIssues.keys.toSet();
+    return staged.contains(issue.id) ||
+        stories.expand((story) => story.issues).any((each) => each.parent == issue.id && staged.contains(each.id));
+  }
+
+  /// Sets who works [issue] against the revision the board shows; answers the planner's words for a refusal, which
+  /// also stand in [actionProblem], or null once it is saved.
+  Future<String?> setWorker(PlanIssue issue, IssueWorker worker) async {
+    if (workerUnavailable(issue) case final reason?) {
+      actionProblem = 'No worker change: $reason.';
+      _changed();
+      return actionProblem;
+    }
+    final source = backend;
+    final name = project;
+    final revision = snapshot!.revision;
+    final generation = _generation;
+    actionBusy = true;
+    actionProblem = null;
+    _changed();
+    try {
+      await source.setWorker(name, issue.id, worker, revision);
+      return null;
+    } catch (error) {
+      if (!_disposed && generation == _generation) {
+        reportActionProblem(error);
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
+          unavailableActions['SetWorker'] = planningFailureWords(error);
+        }
+      }
+      return planningFailureWords(error);
+    } finally {
+      if (!_disposed && generation == _generation) {
+        actionBusy = false;
+        _changed();
+      }
+    }
   }
 
   /// Applies a run reply immediately, independently of a subsequent board reload.
@@ -779,6 +843,17 @@ class PlanningBoard extends ChangeNotifier {
       if (entry.value.isIssue) entry.key.substring('issue '.length): entry.value,
   };
 
+  /// Whether a person may move [issue] into [target]: a waiting or closed state, or a working one for an issue a
+  /// person works, which no task enters for it.
+  static bool issueMayEnter(PlanIssue issue, PlanState? target) =>
+      target != null && {'WAITING', 'CLOSED', if (issue.byHand) 'WORKING'}.contains(target.kind);
+
+  /// Whether every issue of [story] in a working state is one a person works, so no run is missing for it.
+  bool workedByHand(PlanStory story) {
+    final working = story.issues.where((issue) => state(issue.state)?.kind == 'WORKING');
+    return working.isNotEmpty && working.every((issue) => issue.byHand);
+  }
+
   /// Stages one issue without changing its reported state or any sibling.
   void moveIssue(String id, String to, {PlanIssue? reported}) {
     if (_disposed || saving || snapshot?.complete != true || !live || snapshot!.revision.isEmpty) return;
@@ -792,7 +867,7 @@ class PlanningBoard extends ChangeNotifier {
       undo(key);
       return;
     }
-    if (target == null || !{'WAITING', 'CLOSED'}.contains(target.kind)) return;
+    if (!issueMayEnter(issue, target)) return;
     _pending[key] = PendingPlanningMove(issue.state, to, isIssue: true);
     moveProblem = null;
     moveNotice = null;
@@ -1067,7 +1142,7 @@ class PlanningBoard extends ChangeNotifier {
     }
     for (final story in stories) {
       final work = workOf(story);
-      if (work == null && state(story.state)?.kind == 'WORKING' ||
+      if (work == null && state(story.state)?.kind == 'WORKING' && !workedByHand(story) ||
           work != null && (!work.tasksReported || work.tasks.any((task) => task.atWork == null))) {
         return null;
       }
@@ -1345,7 +1420,7 @@ class PlanningBoards extends ChangeNotifier {
       for (final issue in story.issues)
         if (issue.readingStopped == true || issue.needsYou == true) issue.id,
       for (final issue in work?.issues ?? <PlanWorkIssue>[])
-        if (issue.reason.isNotEmpty && issue.reason != 'NONE' || issue.needsYou == true || issue.readingStopped == true)
+        if (planReasonNeedsAttention(issue.reason) || issue.needsYou == true || issue.readingStopped == true)
           issue.issue,
     };
     return [for (final id in ids) _attentionIssue(story, work, id)];

@@ -137,7 +137,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                   ),
                 ),
             ],
-            if (row.reason.isNotEmpty && row.reason != 'NONE') Text(planningShown(row.reason)),
+            if (planReasonNeedsAttention(row.reason)) Text(planningShown(row.reason)),
             if (row.issue case final issue?) ...[
               Text('${issue.id} · ${issue.repository} · reading ${issue.rounds ?? '?'} of ${issue.roundsMost ?? '?'}'),
               if (!widget.resolved && reading?.detail == null && reading?.busy == true)

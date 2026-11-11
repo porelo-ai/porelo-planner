@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
@@ -56,6 +57,11 @@ public final class NextStep {
         /** Starts counting only when the record has an accepted allowance. */
         public static Progress start(final int allowance) {
             return new Progress(ReadingCycle.Rounds.start(allowance), List.of(), false, "NONE", "");
+        }
+
+        /** Keeps the reading of an issue a person now works, which needs no agent and no answer. */
+        public Progress manual() {
+            return new Progress(rounds, findings, false, "MANUAL", answer);
         }
 
         /** Retains the reading while making a failure visible. */
@@ -108,7 +114,14 @@ public final class NextStep {
         }
         final Map<String, String> targets = new LinkedHashMap<>();
         for (final String id : binding.issues()) {
-            final String from = board.issue(id).orElseThrow().state();
+            final Issue issue = board.issue(id).orElseThrow();
+            final String from = issue.state();
+            if (issue.worker() == Worker.MANUAL) {
+                throw WorkRefusal.notAllowed(
+                        from,
+                        binding.state(),
+                        "A person works " + id + ", so no agent's task starts on it.");
+            }
             if (!from.equals(binding.state()) && !binding.rule().from().contains(from)) {
                 throw stateRefused(
                         id, from, binding.state(), "The rule does not allow this issue's state.");
@@ -272,6 +285,11 @@ public final class NextStep {
                 continue;
             }
             targets.put(id, target);
+            if (issue.worker() == Worker.MANUAL) {
+                // The ended task's state stands; a person moves the issue on from there.
+                progress.put(id, progress(progress, id).manual());
+                continue;
+            }
             if (next != null) {
                 try {
                     tasks.add(

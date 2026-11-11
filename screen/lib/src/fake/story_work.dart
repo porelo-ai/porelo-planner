@@ -172,10 +172,21 @@ class MockStoryWork {
           'reason': 'The target is not a working state.',
         });
       }
-      final issues = (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>();
+      final all = (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>();
+      // A person works a MANUAL issue by hand, so no task is proposed for it.
+      final issues = all.where((issue) => issue['worker'] != 'MANUAL').toList();
+      final manual = [for (final issue in all.where((issue) => issue['worker'] == 'MANUAL')) issue['id'] as String];
+      if (all.isNotEmpty && issues.isEmpty) {
+        refuse('WorkNotAllowed', {
+          'from': story['state'],
+          'to': parameters['to'],
+          'reason': 'A person works every issue of the story: ${manual.join(', ')}.',
+        });
+      }
       final repositories = issues.map((issue) => issue['repository'] as String).toSet();
       if (repositories.isEmpty) repositories.add('porelo-project');
       return {
+        'manual': manual,
         'modes': ['UNATTENDED', 'AGENT'],
         'comment': '',
         'readingRounds': 2,

@@ -177,6 +177,10 @@ class StoryWorkOrder {
       if (!issues.contains(issue) || !limits.add(issue)) _invalid('The proposal has an invalid issue limit.');
       _rounds(limit['rounds']);
     }
+    // An older planner names no issue a person works; one named beside a task would be worked twice.
+    if (map.containsKey('manual') && _strings(map['manual'], pattern: _issueName).any(issues.contains)) {
+      _invalid('The proposal gives an issue a person works to a task.');
+    }
     return StoryWorkProposal.from(jsonDecode(jsonEncode(map)) as Map<String, dynamic>);
   }
 

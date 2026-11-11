@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
@@ -677,6 +678,14 @@ public final class WorkRun {
                     final Issue issue =
                             board.issue(issueId)
                                     .orElseThrow(() -> new StoreException.NoSuchIssue(issueId));
+                    if (issue.worker() == Worker.MANUAL) {
+                        throw WorkRefusal.notAllowed(
+                                issue.state(),
+                                issue.state(),
+                                "A person works "
+                                        + issueId
+                                        + ", so no agent's reading or rework starts on it.");
+                    }
                     final Run run = snapshot.runs().get(story);
                     final NextStep.Progress previous =
                             run == null ? null : run.issues().get(issueId);
@@ -1170,16 +1179,21 @@ public final class WorkRun {
         if (run != null
                 && !run.stopped()
                 && (run.halted()
-                        || run.issues().values().stream().anyMatch(p -> p.rounds().stopped()))) {
+                        || run.issues().entrySet().stream()
+                                .anyMatch(
+                                        p ->
+                                                p.getValue().rounds().stopped()
+                                                        && !manual(board, p.getKey())))) {
             throw WorkRefusal.notAllowed(
                     story.state(), to, "The run needs attention before more work.");
         }
         if (run == null
-                && (board.work().rules().containsKey(story.state())
+                && (board.work().rules().containsKey(story.state()) && !heldByManual(board, story)
                         || board.issues().stream()
                                 .anyMatch(
                                         i ->
-                                                (story.issues().contains(i.id())
+                                                i.worker() != Worker.MANUAL
+                                                        && (story.issues().contains(i.id())
                                                                 || i.parent() != null
                                                                         && story.issues()
                                                                                 .contains(
@@ -1190,6 +1204,28 @@ public final class WorkRun {
             throw WorkRefusal.notAllowed(
                     story.state(), to, "Working states without a run need attention.");
         }
+    }
+
+    /** Whether a person works the issue; an issue the board lacks is not theirs. */
+    private static boolean manual(final Board board, final String issue) {
+        return board.issue(issue).map(i -> i.worker() == Worker.MANUAL).orElse(false);
+    }
+
+    /**
+     * Whether the story stands in its state because an issue a person works stands there; a state a
+     * person set on the story stands over its issues, so nothing holds it.
+     */
+    private static boolean heldByManual(final Board board, final Story story) {
+        return !story.stateGiven()
+                && board.issues().stream()
+                        .anyMatch(
+                                i ->
+                                        i.worker() == Worker.MANUAL
+                                                && i.state().equals(story.state())
+                                                && (story.issues().contains(i.id())
+                                                        || i.parent() != null
+                                                                && story.issues()
+                                                                        .contains(i.parent())));
     }
 
     private static Offer offer(final NextStep.Planned planned, final String story) {

@@ -215,6 +215,7 @@ class PlanIssue {
       blockedBy = source.blockedBy,
       blockedByReported = source.blockedByReported,
       link = source.link,
+      parent = source.parent,
       rounds = source.rounds,
       roundsMost = source.roundsMost,
       readingStopped = source.readingStopped,
@@ -236,6 +237,7 @@ class PlanIssue {
       blockedBy = _planStrings(map['blockedBy']),
       blockedByReported = _planStringsReported(map['blockedBy']),
       link = _planText(map, 'link'),
+      parent = map['parent'] is String && (map['parent'] as String).isNotEmpty ? map['parent'] as String : null,
       rounds = validRound(map['rounds']) ? map['rounds'] as int : null,
       roundsMost = validRound(map['roundsMost'], minimum: 1) ? map['roundsMost'] as int : null,
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
@@ -288,6 +290,12 @@ class PlanIssue {
 
   /// Its web link.
   final String link;
+
+  /// The issue it is a sub-issue of, or null for a head issue.
+  final String? parent;
+
+  /// Whether a person moves it by hand, into and through the working states too.
+  bool get byHand => worker == IssueWorker.manual;
 
   /// The reading round as reported, or null when unsaid.
   final int? rounds;
@@ -561,6 +569,18 @@ class PlanningIssueAdded {
   /// The board's revision after the save.
   final String revision;
 }
+
+/// What the planner answered a saved worker.
+class PlanningWorkerSaved {
+  /// Takes what the planner answered.
+  const PlanningWorkerSaved({required this.revision});
+
+  /// The board's revision after the save.
+  final String revision;
+}
+
+/// Whether an issue's durable [reason] asks for a person: `NONE` does not, nor `MANUAL`, an issue a person works.
+bool planReasonNeedsAttention(String reason) => reason.isNotEmpty && reason != 'NONE' && reason != 'MANUAL';
 
 /// One finding from the reader's last report, preserving unknown severities.
 class PlanFinding {
@@ -844,7 +864,8 @@ class StoryWorkProposal {
       comment = _planText(map, 'comment'),
       readingRounds = map['readingRounds'] is int ? map['readingRounds'] as int : null,
       issueReadingRounds = _planList(map['issueReadingRounds'], PlanIssueReadingRounds.from),
-      revision = _planText(map, 'revision');
+      revision = _planText(map, 'revision'),
+      manual = _planStrings(map['manual']);
 
   /// The modes reported by the daemon.
   final List<String> modes;
@@ -860,6 +881,9 @@ class StoryWorkProposal {
 
   /// The issueReadingRounds reported by the daemon.
   final List<PlanIssueReadingRounds> issueReadingRounds;
+
+  /// The story's open issues a person works, which no task of the proposal names; empty from an older planner.
+  final List<String> manual;
 
   /// The proposed issue identities grouped by repository.
   List<StoryWorkIssue> get issues => [

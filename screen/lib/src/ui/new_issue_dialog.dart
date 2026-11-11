@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../models.dart';
 import '../planning_board.dart';
+import 'planning_detail_widgets.dart';
 import 'style.dart';
 
-/// The form for an idea added as a new issue: its repository, title, what must be true and, if known, its size.
+/// The form for an idea added as a new issue: its repository, title, what must be true, who works it and, if known,
+/// its size.
 ///
 /// It answers the new issue's id once the planner has written it; a refusal stays in the form, in the planner's words,
 /// so nothing written is lost.
@@ -26,6 +29,7 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
   // Only a single repository is chosen for the person: with several, an unseen default sends the issue astray.
   late String? _repository = widget.board.repositories.length == 1 ? widget.board.repositories.single : null;
   String? _size;
+  IssueWorker _worker = IssueWorker.agent;
   String? _problem;
   bool _sending = false;
 
@@ -45,7 +49,7 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
       _sending = true;
       _problem = null;
     });
-    final id = await widget.board.createIssue(repository, _title.text, _mustBeTrue.text, _size);
+    final id = await widget.board.createIssue(repository, _title.text, _mustBeTrue.text, _size, worker: _worker);
     if (!mounted) return;
     if (id != null) {
       Navigator.pop(context, id);
@@ -73,9 +77,7 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'The issue is written in state Idea, worked by an agent, and pushed at once, as a move is saved.',
-            ),
+            const Text('The issue is written in state Idea and pushed at once, as a move is saved.'),
             const SizedBox(height: Space.normal),
             DropdownButtonFormField<String>(
               key: const Key('new-issue-repository'),
@@ -113,6 +115,17 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
                 for (final size in _sizes) DropdownMenuItem<String?>(value: size, child: Text(size)),
               ],
               onChanged: _sending ? null : (size) => setState(() => _size = size),
+            ),
+            DropdownButtonFormField<IssueWorker>(
+              key: const Key('new-issue-worker'),
+              initialValue: _worker,
+              decoration: const InputDecoration(labelText: 'Worked by'),
+              isExpanded: true,
+              items: [
+                for (final worker in IssueWorker.values)
+                  DropdownMenuItem(value: worker, child: Text(planningWorker(worker))),
+              ],
+              onChanged: _sending ? null : (worker) => setState(() => _worker = worker ?? IssueWorker.agent),
             ),
             if (_problem case final problem?)
               Padding(

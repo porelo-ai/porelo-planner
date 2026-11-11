@@ -233,6 +233,48 @@ class NextStepTest {
                 .isTrue();
     }
 
+    @Test
+    void aBuildEndingForAnIssueAPersonNowWorksWritesItsStateAndOffersNoReader() {
+        // A reader started for an issue switched to a person would put an agent on their work.
+        final Board board = ManualIssues.of(board("Building", "Finished"), "AA1");
+
+        final NextStep.Result next =
+                NextStep.after(
+                        board,
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst());
+
+        assertThat(next.tasks()).as("no task for the person's issue").isEmpty();
+        assertThat(next.writes().issues())
+                .as("the state the ended build earned is still written")
+                .containsEntry("AA1", "Reading");
+        assertThat(next.progress().get("AA1").reason())
+                .as("the issue says a person works it")
+                .isEqualTo("MANUAL");
+        assertThat(next.progress().get("AA1").needsYou())
+                .as("a person's own issue is not raised as needing them")
+                .isFalse();
+    }
+
+    @Test
+    void anOfferedTaskIsNotStartedForAnIssueAPersonNowWorks() {
+        // An offer made before the switch, started after it, would put an agent on a person's work.
+        final Board board = ManualIssues.of(board("Backlog", "Finished"), "AA1");
+
+        assertThatThrownBy(
+                        () ->
+                                NextStep.started(
+                                        board,
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        states -> states.getFirst()))
+                .as("the start of the stale offer is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1");
+    }
+
     static NextStep.Binding binding(
             final List<String> issues, final String role, final String state) {
         return new NextStep.Binding("ST1", "alpha", issues, role, state, "AGENT", rule(state));

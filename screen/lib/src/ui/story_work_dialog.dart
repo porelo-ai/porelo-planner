@@ -203,6 +203,10 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
             children: [SelectableText(_said(repo.workOrder), key: Key('story-work-order ${repo.repository}'))],
           ),
         ],
+        if (proposal.manual.isNotEmpty) ...[
+          const SizedBox(height: Space.normal),
+          Text('Worked by a person, with no task: ${proposal.manual.join(', ')}', key: const Key('story-work-manual')),
+        ],
         const SizedBox(height: Space.normal),
         Text(switch (proposal.coordinator) {
           'START' => 'Start the project coordinator.',

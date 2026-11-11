@@ -24,7 +24,8 @@ public final class Workers {
      * @param worker the worker it is to have
      * @return what saving the change writes; nothing when the issue has that worker already
      * @throws Moves.Refused {@code NoSuchIssue} for an issue the board lacks, {@code
-     *     MoveNotAllowed} for a sub-issue, which is worked as its parent is
+     *     MoveNotAllowed} for a sub-issue, which is worked as its parent is, and for a person's
+     *     issue handed to an agent while it or a sub-issue stands in a working state
      */
     public static Writes check(final Board board, final String issue, final Worker worker) {
         final Issue found =
@@ -43,6 +44,21 @@ public final class Workers {
         }
         if (found.worker() == worker) {
             return new Writes(Map.of(), Map.of(), List.of());
+        }
+        if (worker == Worker.AGENT) {
+            for (final Issue each : board.issues()) {
+                if ((each.id().equals(issue) || issue.equals(each.parent()))
+                        && board.work().rules().containsKey(each.state())) {
+                    // No task entered that state, so an agent's issue there would wait forever.
+                    throw refused(
+                            issue,
+                            each.id()
+                                    + " stands in "
+                                    + each.state()
+                                    + ", which only its work enters; move it to a waiting state"
+                                    + " before an agent works it.");
+                }
+            }
         }
         return new Writes(Map.of(), Map.of(), List.of(), Map.of(issue, worker));
     }

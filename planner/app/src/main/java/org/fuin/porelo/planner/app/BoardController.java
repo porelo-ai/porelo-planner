@@ -498,7 +498,7 @@ public class BoardController {
                         story.priority(),
                         link(story.link()),
                         issues(board, story, snapshot),
-                        WorkAnswers.work(snapshot.runs().get(checked)),
+                        WorkAnswers.work(board, snapshot.runs().get(checked)),
                         story.description()));
     }
 
@@ -632,7 +632,7 @@ public class BoardController {
             final WorkRun.Answer answer = projects.work(name).report(task, report);
             return new WorkAnswers.TaskEventReply(
                     answer.revision(),
-                    WorkAnswers.knownWork(answer.work()),
+                    WorkAnswers.knownWork(answer.board(), answer.work()),
                     WorkAnswers.starts(answer.tasks()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
@@ -652,7 +652,7 @@ public class BoardController {
                         (board, snapshot) -> {
                             found(board, checked);
                             return new WorkAnswers.StoryWorkReply(
-                                    WorkAnswers.work(snapshot.runs().get(checked)));
+                                    WorkAnswers.work(board, snapshot.runs().get(checked)));
                         });
     }
 
@@ -665,8 +665,8 @@ public class BoardController {
         final String checked = storyId(project, story);
         WorkRequests.empty(request);
         try {
-            return new WorkAnswers.StoryWorkReply(
-                    WorkAnswers.work(projects.work(name(project)).stop(checked)));
+            final WorkRun.Run stopped = projects.work(name(project)).stop(checked);
+            return new WorkAnswers.StoryWorkReply(WorkAnswers.work(board(project), stopped));
         } finally {
             changes.saved(name(project));
         }
@@ -695,7 +695,7 @@ public class BoardController {
             final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
             return new WorkAnswers.ReadingReply(
                     issue(answer.board(), answer.board().issue(checked).orElseThrow(), snapshot),
-                            WorkAnswers.knownWork(answer.work()),
+                            WorkAnswers.knownWork(answer.board(), answer.work()),
                     answer.revision(), WorkAnswers.starts(answer.tasks()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
@@ -781,7 +781,7 @@ public class BoardController {
                 story.priority(),
                 link(story.link()),
                 issues(board, story, snapshot),
-                WorkAnswers.work(snapshot.runs().get(story.id())));
+                WorkAnswers.work(board, snapshot.runs().get(story.id())));
     }
 
     private static List<Answers.Issue> issues(
