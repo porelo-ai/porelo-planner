@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.git;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -17,8 +18,8 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Runs one {@link GitCall} with no input, a hard time limit and bounded output, and tells a refused
- * login from any other failure.
+ * Runs one {@link GitCall} with no input unless one is given, a hard time limit and bounded output,
+ * and tells a refused login from any other failure.
  */
 public final class GitRunner {
 
@@ -78,7 +79,30 @@ public final class GitRunner {
      *     secrets
      */
     public byte[] run(final GitCall call, final @Nullable Path directory) {
-        return run(call, directory, false);
+        return run(call, directory, false, null);
+    }
+
+    /**
+     * Runs a call fed an input, as {@code git cat-file --batch} reads its object ids.
+     *
+     * @param call the call
+     * @param directory where it runs, or {@code null} for the planner's own directory
+     * @param input what the call reads on its standard input, closed after it
+     * @return its standard output
+     * @throws GitFailure when it fails, runs too long, prints too much or does not take its whole
+     *     input
+     */
+    public byte[] run(final GitCall call, final @Nullable Path directory, final byte[] input) {
+        return run(call, directory, false, input.clone());
+    }
+
+    /**
+     * Answers how much standard output one call may print.
+     *
+     * @return the bound in bytes
+     */
+    public int outputBytes() {
+        return outputBytes;
     }
 
     /**
@@ -91,11 +115,14 @@ public final class GitRunner {
      * @throws GitFailure when it fails otherwise, runs too long or prints too much
      */
     public byte[] find(final GitCall call, final @Nullable Path directory) {
-        return run(call, directory, true);
+        return run(call, directory, true, null);
     }
 
     private byte[] run(
-            final GitCall call, final @Nullable Path directory, final boolean noneFoundIsEmpty) {
+            final GitCall call,
+            final @Nullable Path directory,
+            final boolean noneFoundIsEmpty,
+            final byte @Nullable [] input) {
         final ProcessBuilder builder = new ProcessBuilder(call.arguments());
         builder.environment().clear();
         builder.environment().putAll(call.environment());
@@ -113,7 +140,11 @@ public final class GitRunner {
         try {
             // Nothing to read, and no file: /dev/null is C:\dev\null on Windows, which any account
             // may make.
-            process.getOutputStream().close();
+            final FutureTask<Void> fed =
+                    input == null ? null : write(process.getOutputStream(), input, process);
+            if (fed == null) {
+                process.getOutputStream().close();
+            }
             final FutureTask<byte[]> output = read(process.getInputStream(), outputBytes, process);
             final FutureTask<byte[]> errors = read(process.getErrorStream(), ERROR_BYTES, process);
             if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -136,6 +167,9 @@ public final class GitRunner {
                                         : GitFailure.Kind.FAILED;
                 throw new GitFailure(
                         kind, "git exited with " + process.exitValue() + ": " + scrubbed(err));
+            }
+            if (fed != null) {
+                taken(fed, process);
             }
             return out;
         } catch (final IOException e) {
@@ -194,6 +228,41 @@ public final class GitRunner {
                         });
         Thread.ofVirtual().start(task);
         return task;
+    }
+
+    /** Writes the input on a thread of its own, so a call printing while it reads cannot block. */
+    private static FutureTask<Void> write(
+            final OutputStream stream, final byte[] input, final Process process) {
+        final FutureTask<Void> task =
+                new FutureTask<>(
+                        () -> {
+                            try (OutputStream out = stream) {
+                                out.write(input);
+                            } catch (final IOException e) {
+                                kill(process);
+                                throw e;
+                            }
+                            return null;
+                        });
+        Thread.ofVirtual().start(task);
+        return task;
+    }
+
+    /** A call that ended without taking its whole input answered something else than asked. */
+    private void taken(final Future<Void> fed, final Process process) throws InterruptedException {
+        try {
+            fed.get(limit.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (final ExecutionException e) {
+            kill(process);
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED,
+                    "git did not take its whole input: "
+                            + scrubbed(e.getCause() == null ? null : e.getCause().getMessage()));
+        } catch (final TimeoutException e) {
+            kill(process);
+            throw new GitFailure(
+                    GitFailure.Kind.UNREACHABLE, "no answer within " + limit.toSeconds() + " s");
+        }
     }
 
     private byte[] finished(final Future<byte[]> stream, final Process process)

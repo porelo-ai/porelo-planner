@@ -99,12 +99,13 @@ public final class GitProjects {
             final String project, final CloneUrl own, final @Nullable String branch) {
         final Path directory = CacheDirectory.of(environment, project);
         final FileProjectLock lock = new FileProjectLock(directory);
+        final GitRunner runner = new GitRunner(settings.callLimit(), settings.outputBytes());
         final GitRemote remote =
                 new GitRemote(
                         directory,
                         environment,
                         settings.connectTimeout(),
-                        new GitRunner(settings.callLimit(), settings.outputBytes()),
+                        runner,
                         settings.fileBytes());
         final List<Repository> repositories;
         try (ProjectLock.Held held = lock.acquire()) {
@@ -120,7 +121,12 @@ public final class GitProjects {
                 clock,
                 settings.interval(),
                 settings.parallel(),
-                background);
+                background,
+                new LocalSaves(
+                        repositories,
+                        remote,
+                        new GitLocalRefs(directory, environment, settings.connectTimeout(), runner),
+                        background));
     }
 
     /**

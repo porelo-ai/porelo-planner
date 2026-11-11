@@ -5,9 +5,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Ids;
 import org.jspecify.annotations.Nullable;
@@ -15,7 +19,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@link Remote} over the {@code git} command line: one bare clone per repository in the
  * project's cache directory, fetched without its URL ever written into the clone, and every file
- * read from a commit's tree.
+ * read from a commit's tree. The planning files of a repository's latest commits are read with two
+ * calls each and kept in memory.
  */
 public final class GitRemote implements Remote {
 
@@ -23,6 +28,9 @@ public final class GitRemote implements Remote {
 
     /** The local ref a fetch writes; the remote's own names never reach the clone. */
     private static final String FETCHED = "refs/planner/fetched";
+
+    /** How many commits' planning files are kept per repository: the board's and a save's. */
+    private static final int KEPT_COMMITS = 2;
 
     private final Path project;
 
@@ -33,6 +41,8 @@ public final class GitRemote implements Remote {
     private final GitRunner runner;
 
     private final int fileBytes;
+
+    private final Map<String, Kept> kept = new ConcurrentHashMap<>();
 
     /**
      * Makes a remote.
@@ -125,35 +135,39 @@ public final class GitRemote implements Remote {
 
     @Override
     public Optional<String> read(final String repository, final String commit, final String path) {
+        final String checked = RepoPath.checked(path);
+        if (CommitFiles.file(checked)) {
+            final CommitFiles files = files(repository, commit(commit));
+            final CommitFiles.Entry entry = files.entry(checked);
+            if (entry == null) {
+                return Optional.empty();
+            }
+            refused(repository, path, entry);
+            final byte[] bytes = files.bytes(entry.object());
+            return Optional.of(text(bytes != null ? bytes : blob(repository, entry.object())));
+        }
         final Path clone = clone(repository);
-        final String entry =
-                text(
-                        run(
-                                clone,
-                                List.of(
-                                        "ls-tree",
-                                        "-l",
-                                        "-z",
-                                        "--end-of-options",
-                                        commit(commit),
-                                        "--",
-                                        RepoPath.checked(path))));
-        if (entry.isEmpty()) {
+        final byte[] listed =
+                run(
+                        clone,
+                        List.of(
+                                "ls-tree",
+                                "-l",
+                                "-z",
+                                "--end-of-options",
+                                commit(commit),
+                                "--",
+                                checked));
+        if (listed.length == 0) {
             return Optional.empty();
         }
-        // "<mode> <type> <object> <size>\t<path>\0"
-        final String[] head = entry.substring(0, entry.indexOf('\t')).trim().split("\\s+");
-        if (!head[0].equals("100644") && !head[0].equals("100755")) {
+        final CommitFiles.Entry entry = CommitFiles.entries(listed).get(checked);
+        if (entry == null) {
             throw new GitFailure(
-                    GitFailure.Kind.FAILED,
-                    repository + ": " + path + " is not a plain file (mode " + head[0] + ")");
+                    GitFailure.Kind.FAILED, repository + ": git ls-tree answered otherwise");
         }
-        if (Long.parseLong(head[3]) > fileBytes) {
-            throw new GitFailure(
-                    GitFailure.Kind.FAILED,
-                    repository + ": " + path + " is larger than " + fileBytes + " bytes");
-        }
-        return Optional.of(text(run(clone, List.of("cat-file", "blob", commit(head[2])))));
+        refused(repository, path, entry);
+        return Optional.of(text(blob(repository, entry.object())));
     }
 
     @Override
@@ -220,46 +234,45 @@ public final class GitRemote implements Remote {
             final List<String> paths,
             final String subject) {
         final Path clone = clone(repository);
-        final Path index = root.resolve(".index-" + Ids.name(repository));
-        runIndexed(clone, index, List.of("read-tree", "--end-of-options", commit(parent)));
+        final String base = commit(parent);
+        final List<String> written = new ArrayList<>();
+        final List<String> files = new ArrayList<>();
+        final List<String> removed = new ArrayList<>();
         for (final String path : paths) {
             final String checked = RepoPath.checked(path);
             final Path file = root.resolve(checked);
             if (!Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                // The save's own directory, where the file is gone, stands in for a work tree.
-                runIndexed(
-                        clone,
-                        index,
-                        List.of(
-                                "--work-tree=" + root,
-                                "update-index",
-                                "--force-remove",
-                                "--",
-                                checked));
-                continue;
-            }
-            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                removed.add(checked);
+            } else if (Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                written.add(checked);
+                files.add(file.toString());
+            } else {
                 throw new GitFailure(
                         GitFailure.Kind.FAILED, repository + ": " + path + " is no plain file");
             }
-            final String blob =
-                    text(run(
-                                    clone,
-                                    List.of(
-                                            "hash-object",
-                                            "-w",
-                                            "--no-filters",
-                                            "--",
-                                            file.toString())))
-                            .strip();
-            runIndexed(
-                    clone,
-                    index,
-                    List.of(
-                            "update-index",
-                            "--add",
-                            "--cacheinfo",
-                            mode(repository, parent, checked) + "," + blob + "," + checked));
+        }
+        final Path index = root.resolve(".index-" + Ids.name(repository));
+        runIndexed(clone, index, List.of("read-tree", "--end-of-options", base));
+        if (!written.isEmpty()) {
+            final List<String> blobs = blobs(repository, clone, files);
+            final Map<String, String> modes = modes(clone, base, written);
+            final List<String> update = new ArrayList<>(List.of("update-index", "--add"));
+            for (int i = 0; i < written.size(); i++) {
+                final String path = written.get(i);
+                // A changed file keeps its mode; a new one is a plain file.
+                final String mode = "100755".equals(modes.get(path)) ? "100755" : "100644";
+                update.add("--cacheinfo");
+                update.add(mode + "," + blobs.get(i) + "," + path);
+            }
+            runIndexed(clone, index, update);
+        }
+        if (!removed.isEmpty()) {
+            // The save's own directory, where the files are gone, stands in for a work tree.
+            final List<String> remove =
+                    new ArrayList<>(
+                            List.of("--work-tree=" + root, "update-index", "--force-remove", "--"));
+            remove.addAll(removed);
+            runIndexed(clone, index, remove);
         }
         final String tree = text(runIndexed(clone, index, List.of("write-tree"))).strip();
         return commit(
@@ -268,12 +281,45 @@ public final class GitRemote implements Remote {
                                 List.of(
                                         "commit-tree",
                                         "-p",
-                                        commit(parent),
+                                        base,
                                         "-m",
                                         subject,
                                         "--end-of-options",
                                         tree)))
                         .strip());
+    }
+
+    /** Writes each file's blob in one call, which answers one id per line in their order. */
+    private List<String> blobs(
+            final String repository, final Path clone, final List<String> files) {
+        final List<String> line =
+                new ArrayList<>(List.of("hash-object", "-w", "--no-filters", "--"));
+        line.addAll(files);
+        final List<String> blobs = text(run(clone, line)).lines().toList();
+        if (blobs.size() != files.size()
+                || !blobs.stream().allMatch(blob -> COMMIT.matcher(blob).matches())) {
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED, repository + ": git hash-object answered otherwise");
+        }
+        return blobs;
+    }
+
+    /** The mode each of the paths has in a commit, none for a path it lacks. */
+    private Map<String, String> modes(
+            final Path clone, final String commit, final List<String> paths) {
+        final List<String> line =
+                new ArrayList<>(List.of("ls-tree", "-z", "--end-of-options", commit, "--"));
+        line.addAll(paths);
+        final Map<String, String> modes = new HashMap<>();
+        // "<mode> <type> <object>\t<path>\0"
+        for (final String entry : text(run(clone, line)).split("\0")) {
+            final int tab = entry.indexOf('\t');
+            final int space = entry.indexOf(' ');
+            if (tab > 0 && space > 0 && space < tab) {
+                modes.put(entry.substring(tab + 1), entry.substring(0, space));
+            }
+        }
+        return modes;
     }
 
     @Override
@@ -324,16 +370,6 @@ public final class GitRemote implements Remote {
                 GitFailure.Kind.FAILED, "the remote of " + repository + " names no default branch");
     }
 
-    /** A changed file keeps its mode; a new one is a plain file. */
-    private String mode(final String repository, final String commit, final String path) {
-        final String entry =
-                text(
-                        run(
-                                clone(repository),
-                                List.of("ls-tree", "-z", "--end-of-options", commit, "--", path)));
-        return entry.startsWith("100755 ") ? "100755" : "100644";
-    }
-
     private byte[] runIndexed(final Path clone, final Path index, final List<String> arguments) {
         final List<String> line = new ArrayList<>();
         line.add("--git-dir=" + clone);
@@ -346,18 +382,21 @@ public final class GitRemote implements Remote {
             final String commit,
             final String directory,
             final String type) {
-        final Path clone = clone(repository);
+        final String checked = RepoPath.checked(directory);
+        if (CommitFiles.directory(checked)) {
+            return files(repository, commit(commit)).under(checked, type);
+        }
         final String out =
                 text(
                         run(
-                                clone,
+                                clone(repository),
                                 List.of(
                                         "ls-tree",
                                         "-z",
                                         "--end-of-options",
                                         commit(commit),
                                         "--",
-                                        RepoPath.checked(directory) + "/")));
+                                        checked + "/")));
         final List<String> found = new ArrayList<>();
         for (final String entry : out.split("\0")) {
             if (entry.isEmpty()) {
@@ -371,6 +410,90 @@ public final class GitRemote implements Remote {
         }
         found.sort(null);
         return List.copyOf(found);
+    }
+
+    /**
+     * Refuses what is no plain file, as a link reaching out of the repository, or a too large one.
+     */
+    private void refused(
+            final String repository, final String path, final CommitFiles.Entry entry) {
+        if (!entry.plain()) {
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED,
+                    repository + ": " + path + " is not a plain file (mode " + entry.mode() + ")");
+        }
+        if (entry.size() > fileBytes) {
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED,
+                    repository + ": " + path + " is larger than " + fileBytes + " bytes");
+        }
+    }
+
+    private byte[] blob(final String repository, final String object) {
+        return run(clone(repository), List.of("cat-file", "blob", commit(object)));
+    }
+
+    /** A commit's planning files, from memory once one listing and one batch read them. */
+    private CommitFiles files(final String repository, final String commit) {
+        return kept.computeIfAbsent(Ids.name(repository), name -> new Kept())
+                .files(commit, () -> load(repository, commit));
+    }
+
+    private CommitFiles load(final String repository, final String commit) {
+        final Path clone = clone(repository);
+        final List<String> line =
+                new ArrayList<>(
+                        List.of(
+                                "ls-tree",
+                                "-r",
+                                "-t",
+                                "-l",
+                                "-z",
+                                "--end-of-options",
+                                commit,
+                                "--"));
+        line.addAll(CommitFiles.PLANNING);
+        final Map<String, CommitFiles.Entry> entries = CommitFiles.entries(run(clone, line));
+        final Map<String, Long> wanted = CommitFiles.wanted(entries, fileBytes);
+        if (wanted.isEmpty()) {
+            return CommitFiles.of(entries, Map.of());
+        }
+        if (CommitFiles.printed(wanted) > runner.outputBytes()) {
+            // More than one call may print: each file is read alone when it is asked for.
+            return CommitFiles.of(entries, null);
+        }
+        final byte[] out =
+                runner.run(
+                        GitCall.of(
+                                environment,
+                                connectTimeout,
+                                List.of("--git-dir=" + clone, "cat-file", "--batch")),
+                        clone,
+                        CommitFiles.input(wanted.keySet()));
+        return CommitFiles.of(entries, CommitFiles.blobs(out, wanted));
+    }
+
+    /** The planning files of a repository's latest commits; a commit's files never change. */
+    private static final class Kept {
+
+        private final Map<String, CommitFiles> commits =
+                new LinkedHashMap<>(4, 0.75f, true) {
+                    @Override
+                    protected boolean removeEldestEntry(
+                            final Map.Entry<String, CommitFiles> eldest) {
+                        return size() > KEPT_COMMITS;
+                    }
+                };
+
+        synchronized CommitFiles files(final String commit, final Supplier<CommitFiles> load) {
+            final CommitFiles known = commits.get(commit);
+            if (known != null) {
+                return known;
+            }
+            final CommitFiles loaded = load.get();
+            commits.put(commit, loaded);
+            return loaded;
+        }
     }
 
     private Path clone(final String repository) {

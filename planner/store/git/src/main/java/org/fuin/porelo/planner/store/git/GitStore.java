@@ -75,6 +75,8 @@ public final class GitStore implements PlanningStore {
 
     private final Executor background;
 
+    private final LocalSaves saves;
+
     private final AtomicReference<@Nullable Snapshot> current = new AtomicReference<>();
 
     private final AtomicBoolean checking = new AtomicBoolean();
@@ -106,6 +108,41 @@ public final class GitStore implements PlanningStore {
             final Duration interval,
             final int parallel,
             final Executor background) {
+        this(
+                repositories,
+                remote,
+                reader,
+                lock,
+                clock,
+                interval,
+                parallel,
+                background,
+                LocalSaves.none(repositories, remote));
+    }
+
+    /**
+     * Makes a store whose saves stand in the planner's own clones and are pushed in the background.
+     *
+     * @param repositories the project's repositories, its own first
+     * @param remote reaches them
+     * @param reader reads one at a commit
+     * @param lock keeps a refresh and a save of the project apart
+     * @param clock tells when the last check was
+     * @param interval how old the last check may be before a request starts another
+     * @param parallel how many remotes are asked at once
+     * @param background runs a check a request started
+     * @param saves holds the saves and pushes them
+     */
+    public GitStore(
+            final List<Repository> repositories,
+            final Remote remote,
+            final PartReader reader,
+            final ProjectLock lock,
+            final Clock clock,
+            final Duration interval,
+            final int parallel,
+            final Executor background,
+            final LocalSaves saves) {
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project has at least its own repository");
         }
@@ -120,6 +157,8 @@ public final class GitStore implements PlanningStore {
         this.interval = interval;
         this.parallel = parallel;
         this.background = background;
+        this.saves = saves;
+        saves.tell(this::pushed);
     }
 
     /**
@@ -134,6 +173,8 @@ public final class GitStore implements PlanningStore {
             if (snapshot == null) {
                 return refresh();
             }
+            // A save a former start left unpushed goes out now.
+            saves.push();
         }
         if (!clock.instant().isBefore(snapshot.checked().plus(interval))
                 && checking.compareAndSet(false, true)) {
@@ -161,28 +202,34 @@ public final class GitStore implements PlanningStore {
 
     @Override
     public Board refresh() {
+        final Board board = refreshed();
+        // A push that failed is tried again with each check.
+        saves.push();
+        return board;
+    }
+
+    private Board refreshed() {
         try (ProjectLock.Held held = lock.acquire()) {
             requireActive();
             final Snapshot old = current.get();
-            final Map<String, String> heads =
-                    each(
-                            repository ->
-                                    remote.head(
-                                            repository.name(),
-                                            repository.url(),
-                                            repository.branch()));
+            // A repository with saves not pushed yet is read at its last save, never fetched over.
             final Map<String, String> commits =
                     each(
                             repository -> {
                                 final String name = repository.name();
-                                if (old != null && unchanged(old, heads, name)) {
-                                    return of(old.commits(), name);
+                                if (saves.pending(name)) {
+                                    return saves.tip(name).orElseThrow();
+                                }
+                                final String head =
+                                        remote.head(name, repository.url(), repository.branch());
+                                if (old != null && head.equals(old.commits().get(name))) {
+                                    return head;
                                 }
                                 return remote.fetch(name, repository.url(), repository.branch());
                             });
             final String own = repositories.get(0).name();
             final Part ownPart =
-                    old != null && unchanged(old, heads, own)
+                    old != null && unchanged(old, commits, own)
                             ? of(old.parts(), own)
                             : ownPart(of(commits, own));
             final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);
@@ -196,7 +243,7 @@ public final class GitStore implements PlanningStore {
                                 if (own(repository)) {
                                     return ownPart;
                                 }
-                                if (old != null && sameWorkflow && unchanged(old, heads, name)) {
+                                if (old != null && sameWorkflow && unchanged(old, commits, name)) {
                                     return of(old.parts(), name);
                                 }
                                 return reader.read(repository, of(commits, name), project);
@@ -206,9 +253,9 @@ public final class GitStore implements PlanningStore {
     }
 
     /**
-     * Saves the writes: every repository they change gets one commit, all built and read back
-     * before the first push, the others' pushed before the own, each only while its branch still
-     * stands where it was fetched.
+     * Saves the writes: every repository they change gets one commit in the planner's own clone,
+     * all built and read back before any stands, and the answer comes once they stand; the pushes
+     * follow in the background, the others' before the own.
      */
     @Override
     public Board save(final Revision revision, final Writes writes) {
@@ -238,6 +285,13 @@ public final class GitStore implements PlanningStore {
 
     private Saved saved(
             final Revision revision, final Writes writes, final @Nullable NewIssue idea) {
+        final Saved saved = committed(revision, writes, idea);
+        saves.push();
+        return saved;
+    }
+
+    private Saved committed(
+            final Revision revision, final Writes writes, final @Nullable NewIssue idea) {
         final String own = repositories.get(0).name();
         final ProjectLock.Held held =
                 lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own));
@@ -247,16 +301,6 @@ public final class GitStore implements PlanningStore {
             if (snapshot == null || !snapshot.board().revision().equals(revision)) {
                 throw new StoreException.StaleRevision(
                         snapshot == null ? "" : snapshot.board().revision().value());
-            }
-            final Map<String, String> heads =
-                    each(
-                            repository ->
-                                    remote.head(
-                                            repository.name(),
-                                            repository.url(),
-                                            repository.branch()));
-            if (!heads.equals(snapshot.commits())) {
-                throw new StoreException.StaleRevision(revision(heads));
             }
             final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
             final Map<String, String> stories = storyHeads(snapshot, writes);
@@ -276,7 +320,7 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.Unreadable(own, "no directory for the save");
             }
             try {
-                return commitAndPush(
+                return commitLocally(
                         snapshot,
                         new Edits(writes, idea, issues, stories, workers, priorities),
                         scratch);
@@ -484,7 +528,7 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
-    private Saved commitAndPush(final Snapshot snapshot, final Edits edits, final Path scratch) {
+    private Saved commitLocally(final Snapshot snapshot, final Edits edits, final Path scratch) {
         final Writes writes = edits.writes();
         final @Nullable NewIssue idea = edits.idea();
         final Map<String, Map<String, String>> issues = edits.issues();
@@ -669,51 +713,14 @@ public final class GitStore implements PlanningStore {
         final Map<String, String> all = new LinkedHashMap<>(snapshot.commits());
         all.putAll(made);
         board(all, after);
-        // The own repository last: its stories index names the others' states, pushed first.
-        final List<String> order = new ArrayList<>(made.keySet());
-        if (order.remove(own)) {
-            order.add(own);
-        }
-        final List<String> pushed = new ArrayList<>();
-        final Map<String, String> commits = new LinkedHashMap<>(snapshot.commits());
-        for (final String name : order) {
-            final Repository repository = repository(name);
-            try {
-                remote.push(
-                        name,
-                        repository.url(),
-                        repository.branch(),
-                        of(made, name),
-                        of(snapshot.commits(), name));
-            } catch (final GitFailure e) {
-                if (pushed.isEmpty()) {
-                    if (e.kind() == GitFailure.Kind.REJECTED) {
-                        throw new StoreException.StaleRevision(revision(heads()));
-                    }
-                    throw refusal(name, e);
-                }
-                final StoreException.PartlySaved partly =
-                        new StoreException.PartlySaved(
-                                name, pushed, String.valueOf(refusal(name, e).getMessage()));
-                try {
-                    swapAfter(snapshot, commits, after);
-                } catch (final RuntimeException board) {
-                    partly.addSuppressed(board);
-                }
-                throw partly;
-            }
-            commits.put(name, of(made, name));
-            pushed.add(name);
-            try {
-                remote.advance(name, of(made, name));
-            } catch (final GitFailure e) {
-                // The remote holds the save; the next fetch records its commit in the clone.
-                lastFailure.set(
-                        new StoreException.Unreadable(name, String.valueOf(e.getMessage())));
-            }
+        final Map<String, String> parents = new LinkedHashMap<>();
+        made.keySet().forEach(name -> parents.put(name, of(snapshot.commits(), name)));
+        // The answer stands once the commits do; the pushes follow in the background.
+        if (!saves.record(parents, made)) {
+            throw new StoreException.StaleRevision(revision(tips()));
         }
         return new Saved(
-                swapAfter(snapshot, commits, after).board(), added == null ? null : added.id());
+                swapAfter(snapshot, all, after).board(), added == null ? null : added.id());
     }
 
     /**
@@ -1005,14 +1012,16 @@ public final class GitStore implements PlanningStore {
         return repositories.stream().filter(r -> r.name().equals(name)).findFirst().orElseThrow();
     }
 
-    /** Every repository's branch head as the remotes hold it now. */
-    private Map<String, String> heads() {
-        return each(
-                repository ->
-                        remote.head(repository.name(), repository.url(), repository.branch()));
+    /** Every repository's commit as its board is read now: its last save, or what was fetched. */
+    private Map<String, String> tips() {
+        final Map<String, String> tips = new LinkedHashMap<>();
+        for (final Repository repository : repositories) {
+            saves.tip(repository.name()).ifPresent(tip -> tips.put(repository.name(), tip));
+        }
+        return tips;
     }
 
-    /** The board after a save, its changed repositories as read before the first push. */
+    /** The board after a save, its changed repositories as read from their new commits. */
     private Snapshot swapAfter(
             final Snapshot snapshot,
             final Map<String, String> commits,
@@ -1083,6 +1092,7 @@ public final class GitStore implements PlanningStore {
     @Override
     public void retire() {
         retired.set(true);
+        saves.stop();
     }
 
     /** Refuses a store retired while a read waited on the project's lock. */
@@ -1130,7 +1140,7 @@ public final class GitStore implements PlanningStore {
             }
             final Map<String, String> commits = new LinkedHashMap<>();
             for (final Repository repository : repositories) {
-                final Optional<String> fetched = remote.fetched(repository.name());
+                final Optional<String> fetched = saves.tip(repository.name());
                 if (fetched.isEmpty()) {
                     return Optional.empty();
                 }
@@ -1150,6 +1160,107 @@ public final class GitStore implements PlanningStore {
             // Checked never: the first request starts a check at once.
             return Optional.of(swap(commits, parts, Instant.MIN));
         }
+    }
+
+    /** Rebuilds the board after a round of pushes, which tells what became of the saves. */
+    private void pushed() {
+        // A refresh that swapped the board meanwhile is built on and tried again.
+        for (int attempt = 0; attempt < 3; attempt++) {
+            final Snapshot snapshot = current.get();
+            if (snapshot == null || retired.get() || swappedAfterPush(snapshot)) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Rebuilds one board after a round of pushes.
+     *
+     * @return whether nothing is left to do: the board was swapped, needs no change, or failed
+     */
+    private boolean swappedAfterPush(final Snapshot snapshot) {
+        try {
+            // A save made again on another's change, or dropped, is read with the next check.
+            final boolean moved =
+                    repositories.stream()
+                            .anyMatch(
+                                    repository ->
+                                            !saves.tip(repository.name())
+                                                    .equals(
+                                                            Optional.ofNullable(
+                                                                    snapshot.commits()
+                                                                            .get(
+                                                                                    repository
+                                                                                            .name()))));
+            final Board board = board(snapshot.commits(), snapshot.parts());
+            if (!moved && board.equals(snapshot.board())) {
+                return true;
+            }
+            final Snapshot next =
+                    new Snapshot(
+                            board,
+                            snapshot.commits(),
+                            snapshot.parts(),
+                            moved ? Instant.MIN : snapshot.checked());
+            if (!current.compareAndSet(snapshot, next)) {
+                return false;
+            }
+            if (!snapshot.board().equals(board)) {
+                listeners.forEach(listener -> listener.accept(board));
+            }
+            return true;
+        } catch (final RuntimeException e) {
+            lastFailure.set(
+                    new StoreException.Unreadable(
+                            repositories.get(0).name(), GitRunner.scrubbed(causes(e))));
+            return true;
+        }
+    }
+
+    /** What the board tells of saves whose push failed or that were dropped. */
+    private List<String> pushFaults(final Map<String, Part> parts) {
+        final List<String> faults = new ArrayList<>();
+        for (final Repository repository : repositories) {
+            final LocalSaves.PushState state = saves.state().get(repository.name());
+            if (state == null) {
+                continue;
+            }
+            switch (state.kind()) {
+                case FAILED ->
+                        faults.add(
+                                repository.name()
+                                        + ": a save is not pushed yet and is tried again with the"
+                                        + " next check: "
+                                        + state.words());
+                case DROPPED ->
+                        faults.add(
+                                repository.name()
+                                        + ": a save was dropped, since the remote changed "
+                                        + dropped(parts.get(repository.name()), state.dropped())
+                                        + " too; move them again");
+                case PENDING, PUSHED -> {}
+            }
+        }
+        return faults;
+    }
+
+    /** The items whose files a dropped save changed, or its files where they name none. */
+    private static String dropped(final @Nullable Part part, final List<String> paths) {
+        final List<String> items = new ArrayList<>();
+        if (part != null) {
+            part.paths()
+                    .forEach(
+                            (key, path) -> {
+                                if (paths.contains(path)) {
+                                    items.add(
+                                            key.startsWith(Part.story(""))
+                                                    ? key.substring(Part.story("").length())
+                                                    : key);
+                                }
+                            });
+        }
+        items.sort(null);
+        return items.isEmpty() ? String.join(", ", paths) : String.join(", ", items);
     }
 
     private Snapshot swap(
@@ -1196,6 +1307,7 @@ public final class GitStore implements PlanningStore {
                 }
             }
         }
+        faults.addAll(pushFaults(parts));
         final List<Issue> issues = new ArrayList<>(known.values());
         final Revision revision = new Revision(revision(commits));
         try {

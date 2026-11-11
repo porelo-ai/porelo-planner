@@ -58,7 +58,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
-| <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
 
 ## Review
 
@@ -71,6 +70,7 @@ left out.
 | <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | M | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
 | <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
+| <a id="pl70"></a>[PL70](PL70-A-Save-Answers-Once-Its-Commits-Stand.md) | L | - | A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere |
 
 ## Finished
 

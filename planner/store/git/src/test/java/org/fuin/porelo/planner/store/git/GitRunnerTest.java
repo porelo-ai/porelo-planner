@@ -60,6 +60,24 @@ class GitRunnerTest {
     }
 
     @Test
+    void aCallFedAnInputGetsAllOfItAndAnswersWhileItReads() {
+        // A lost input answers other files; an input written before the answer is read hangs on a
+        // full pipe.
+        // More than a pipe holds, even grown to the kernel's usual 1 MiB maximum.
+        final byte[] input = new byte[8 << 20];
+        for (int i = 0; i < input.length; i++) {
+            input[i] = (byte) (i * 31 + i / 7);
+        }
+        final GitRunner runner = new GitRunner(Duration.ofSeconds(10), 16 << 20);
+        assertThat(runner.run(shell("cat"), null, input))
+                .as("the whole input, byte for byte, through a call printing as it reads")
+                .isEqualTo(input);
+        assertThat(new String(RUNNER.run(shell("cat"), null, new byte[0]), StandardCharsets.UTF_8))
+                .as("an empty input ends at once")
+                .isEmpty();
+    }
+
+    @Test
     void aCallThatPrintsWithoutEndIsStopped() {
         // A hostile remote's endless answer would fill the planner's memory.
         assertThatThrownBy(() -> RUNNER.run(shell("yes"), null))

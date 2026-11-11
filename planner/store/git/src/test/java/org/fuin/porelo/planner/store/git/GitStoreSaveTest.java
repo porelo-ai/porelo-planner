@@ -291,31 +291,35 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void aSaveAgainstAnOlderRevisionIsRefusedAndPushesNothing() throws Exception {
-        // A save over a board the window no longer shows would undo someone else's move.
+    void aSaveOverAChangeToOtherFilesItDidNotSeeIsMadeAgainOnTheChangeAndKeepsIt()
+            throws Exception {
+        // A save lost, or pushed over another's change, because the remote moved meanwhile.
         final GitStore store = store();
         final Board board = store.board();
-        final String other = head(OTHER);
-        final String own = head(OWN);
-        Files.writeString(
-                repositories.work(OTHER).resolve("issues/CD01-Other.md"), issue("CD01", "Idea"));
-        repositories.commit(OTHER);
-        final String moved = head(OTHER);
+        repositories.repository(OTHER, Map.of("doc/notes.md", "Someone else's note.\n"));
+        final String theirs = head(OTHER);
 
-        final StoreException.StaleRevision stale =
-                catchThrowableOfType(
-                        StoreException.StaleRevision.class,
-                        () ->
-                                store.save(
-                                        board.revision(),
-                                        writes(Map.of("AB01", "Review"), Map.of(), List.of())));
+        final Board saved =
+                store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
 
-        assertThat(stale).as("refused as stale").isNotNull();
-        assertThat(stale.current())
-                .as("names the remote's revision, as a fresh read gives it")
-                .isEqualTo(store.refresh().revision().value());
-        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
-        assertThat(moved).isNotEqualTo(other);
+        assertThat(saved.issue("CD01").orElseThrow().state())
+                .as("the answer shows the move")
+                .isEqualTo("Idea");
+        assertThat(git(OTHER, "rev-parse", head(OTHER) + "^").strip())
+                .as("the save follows the other's change")
+                .isEqualTo(theirs);
+        assertThat(read(OTHER, "doc/notes.md"))
+                .as("the other's change kept")
+                .isEqualTo("Someone else's note.\n");
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the move pushed")
+                .contains("\"state\": \"Idea\"");
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
+        assertThat(store.refresh().issue("CD01").orElseThrow().state())
+                .as("the next check reads the move from the remote")
+                .isEqualTo("Idea");
     }
 
     @Test
@@ -375,34 +379,50 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void aFailedPushAfterAnotherIsReportedAsPartlySavedNamingBoth() throws Exception {
-        // A save told as failed after one repository took it would hide a half-made move.
-        final Path hook = repositories.served().resolve(OWN + ".git/hooks/pre-receive");
+    void aFailedPushIsToldOnTheBoardAndTheOwnWaitsUntilTheOthersArePushed() throws Exception {
+        // A save told as saved while it never reached a remote, or a stories index pushed naming
+        // states its repositories do not hold.
+        final Path hook = repositories.served().resolve(OTHER + ".git/hooks/pre-receive");
         Files.writeString(hook, "#!/bin/sh\necho refused by the test >&2\nexit 1\n");
         hook.toFile().setExecutable(true);
         final GitStore store = store();
         final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
 
-        final StoreException.PartlySaved partly =
-                catchThrowableOfType(
-                        StoreException.PartlySaved.class,
-                        () ->
-                                store.save(
-                                        board.revision(),
-                                        writes(
-                                                Map.of("AB01", "Review", "CD01", "Review"),
-                                                Map.of(),
-                                                List.of())));
+        final Board saved =
+                store.save(
+                        board.revision(),
+                        writes(Map.of("AB01", "Review", "CD01", "Review"), Map.of(), List.of()));
 
-        assertThat(partly).as("partly saved").isNotNull();
-        assertThat(partly.subject()).as("the repository that failed").isEqualTo(OWN);
-        assertThat(partly.pushed()).as("the one that took it").containsExactly(OTHER);
-        assertThat(store.board().issue("CD01").orElseThrow().state())
-                .as("the board shows what was pushed")
+        assertThat(saved.issue("CD01").orElseThrow().state())
+                .as("the answer shows the move")
                 .isEqualTo("Review");
-        assertThat(store.board().issue("AB01").orElseThrow().state())
-                .as("and not what was refused")
-                .isEqualTo("Backlog");
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("neither pushed: the own waits for the other")
+                .containsExactly(own, other);
+        assertThat(store.board().faults())
+                .as("the board tells the push that failed")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("names the repository and the refusal")
+                                        .startsWith(OTHER + ": ")
+                                        .contains("refused by the test"));
+
+        Files.delete(hook);
+        store.refresh();
+        final Board checked = store.board();
+
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("the next check pushes both")
+                .doesNotContain(own, other);
+        assertThat(checked.faults())
+                .as("and the fault is gone")
+                .noneMatch(fault -> fault.contains("refused by the test"));
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
     }
 
     @Test
@@ -730,8 +750,8 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void aPushRejectedAsTheBranchMovedNamesTheRevisionTheRemotesHoldNow() throws Exception {
-        // Answered with the revision the window sent, the window would retry the same save forever.
+    void aPushOverAChangeToTheSameIssueDropsTheSaveAndTheBoardNamesIt() throws Exception {
+        // A save written over another's move of the same issue.
         final GitStore store =
                 store(
                         real ->
@@ -739,30 +759,41 @@ class GitStoreSaveTest {
                                         real,
                                         "push",
                                         () -> {
-                                            Files.writeString(
-                                                    repositories
-                                                            .work(OTHER)
-                                                            .resolve("issues/CD01-Other.md"),
-                                                    issue("CD01", "Idea"));
-                                            repositories.commit(OTHER);
+                                            if (!read(OTHER, "issues/CD01-Other.md")
+                                                    .contains("\"state\": \"Idea\"")) {
+                                                Files.writeString(
+                                                        repositories
+                                                                .work(OTHER)
+                                                                .resolve("issues/CD01-Other.md"),
+                                                        issue("CD01", "Idea"));
+                                                repositories.commit(OTHER);
+                                            }
                                         }));
         final Board board = store.board();
+        final String own = head(OWN);
 
-        final StoreException.StaleRevision stale =
-                catchThrowableOfType(
-                        StoreException.StaleRevision.class,
-                        () ->
-                                store.save(
-                                        board.revision(),
-                                        writes(Map.of("CD01", "Review"), Map.of(), List.of())));
+        store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
+        final String theirs = head(OTHER);
 
-        assertThat(stale).as("refused as stale").isNotNull();
-        assertThat(stale.current())
-                .as("naming the commits the repositories hold now")
-                .isEqualTo(
-                        GitStore.revision(
-                                List.of(OWN, OTHER), Map.of(OWN, head(OWN), OTHER, head(OTHER))))
-                .isNotEqualTo(board.revision().value());
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the other's move stays the remote's")
+                .contains("\"state\": \"Idea\"");
+        assertThat(store.board().faults())
+                .as("the board names the repository and the issue dropped")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the fault")
+                                        .startsWith(OTHER + ": ")
+                                        .contains("CD01"));
+        final Board checked = store.refresh();
+        assertThat(checked.issue("CD01").orElseThrow().state())
+                .as("the next check reads the other's move")
+                .isEqualTo("Idea");
+        assertThat(head(OTHER)).as("nothing pushed over it").isEqualTo(theirs);
+        assertThat(head(OWN))
+                .as("the own stories index, naming the dropped move, dropped with it")
+                .isEqualTo(own);
     }
 
     @Test
@@ -886,28 +917,19 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void anIdeaAgainstAnOlderRevisionIsRefusedAndWritesNothing() throws Exception {
+    void anIdeaOverAnIssueAddedElsewhereIsDroppedSoNoNumberIsTakenTwice() throws Exception {
         // An idea numbered on an old board could take a number someone has taken since.
         final GitStore store = store();
         final Board board = store.board();
-        final String own = head(OWN);
-        Files.writeString(
-                repositories.work(OTHER).resolve("issues/CD01-Other.md"), issue("CD01", "Idea"));
-        repositories.commit(OTHER);
-        final String other = head(OTHER);
+        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "Idea")));
+        final String theirs = head(OTHER);
 
-        final StoreException.StaleRevision stale =
-                catchThrowableOfType(
-                        StoreException.StaleRevision.class,
-                        () ->
-                                store.createIssue(
-                                        board.revision(),
-                                        new NewIssue(OTHER, "Idea", "Text.", null)));
+        store.createIssue(board.revision(), new NewIssue(OTHER, "Idea", "Text.", null));
 
-        assertThat(stale).as("refused as stale").isNotNull();
-        assertThat(List.of(head(OWN), head(OTHER)))
-                .as("nothing pushed")
-                .containsExactly(own, other);
+        assertThat(head(OTHER)).as("nothing pushed over the other's issue").isEqualTo(theirs);
+        assertThat(store.board().faults())
+                .as("the board tells the idea dropped")
+                .anySatisfy(fault -> assertThat(fault).as("the fault").startsWith(OTHER + ": "));
     }
 
     @Test
@@ -1317,24 +1339,27 @@ class GitStoreSaveTest {
                         + "\n[user]\n\tname = A Person\n\temail = person@example.org\n");
         person.put("GIT_CONFIG_GLOBAL", config.toString());
         final Path cache = CacheDirectory.of(person, "project");
-        remote =
-                new GitRemote(
-                        cache,
-                        person,
-                        Duration.ofSeconds(5),
-                        new GitRunner(Duration.ofSeconds(20), 1 << 20),
-                        1 << 16);
-        return new GitStore(
+        final GitRunner runner = new GitRunner(Duration.ofSeconds(20), 1 << 20);
+        remote = new GitRemote(cache, person, Duration.ofSeconds(5), runner, 1 << 16);
+        final List<Repository> served =
                 List.of(
                         new Repository(OWN, new CloneUrl(server.url(OWN + ".git")), null),
-                        new Repository(OTHER, new CloneUrl(server.url(OTHER + ".git")), "main")),
-                wrap.apply(remote),
+                        new Repository(OTHER, new CloneUrl(server.url(OTHER + ".git")), "main"));
+        final Remote wrapped = wrap.apply(remote);
+        return new GitStore(
+                served,
+                wrapped,
                 new StoreReader(remote, 1000),
                 new FileProjectLock(cache),
                 Clock.systemUTC(),
                 Duration.ofSeconds(10),
                 4,
-                Runnable::run);
+                Runnable::run,
+                new LocalSaves(
+                        served,
+                        wrapped,
+                        new GitLocalRefs(cache, person, Duration.ofSeconds(5), runner),
+                        Runnable::run));
     }
 
     /** The board as a store with a cache of its own reads it from the served repositories. */

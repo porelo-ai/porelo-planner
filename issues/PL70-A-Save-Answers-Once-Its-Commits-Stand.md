@@ -5,68 +5,87 @@
   "$schema": "issue-1.json",
   "id": "PL70",
   "title": "A Save Answers Once Its Commits Stand",
-  "state": "Implementing",
-  "size": "L",
+  "state": "Review",
+  "size": "M",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A save answers once its local commits stand, the pushes run in the background with the repositories in parallel, the window shows each push's state and a failed push as a Needs-you entry, and a change the person made is never reported as made elsewhere"
+  "covers": "A save answers once its local commit stands in the planner's clone, a restart loses none, the pushes follow in the background with the own repository last and a rejected push replayed, and a push that conflicts drops the save and says so on the board"
 }
 ```
 
-**Size:** L - the Git store's save splits into a commit part and a push part, the store's interface and the planner's
-answers carry a push state, and the screen shows it; one additive contract change the window reads.
+**Size:** M - one unit in `store/git` behind a small interface, the save in `GitStore` rewired to it, and the app
+starting its pusher; no contract change.
 
-**Estimate:** 113 min, the measured median of L. Uncertain: where the time of a save goes is measured first; if it
-lies elsewhere than in reading files one Git process at a time, the plan's first step changes.
+**Estimate:** 67 min, the measured median of M.
 
-**What must be true.** A person who saves moves gets the answer within seconds, as soon as the save's commits stand
-in the planner's clones; the pushes follow in the background, the repositories in parallel. The window shows that a
-save is still being pushed, says so when a push failed and what the person can do, and never reports a change the
-person made as made elsewhere.
+**What must be true.** A person who saves moves gets the answer in about a second, as soon as the save's commit stands
+in the planner's clone; a restart loses no save. The pushes follow in the background. A push the remote rejects is
+replayed on the remote's new head and pushed again; one that really conflicts drops the save, and the board says
+which repository and which items, so the person moves them again.
 
 ## Plan
 
-Read in today's code:
+Read in today's code: one bare clone per repository (`GitRemote`); a save (`GitStore.saved`) asks every remote head,
+copies every file of every repository through Git into a scratch directory (`SaveFiles.write`), builds each commit
+with `commit-tree` on a temporary index with several processes per file, reads the whole board again, then pushes one
+repository after the other and answers. A planner commit is held by no ref until its push moves
+`refs/planner/fetched`.
 
-- `GitStore.saved` holds the project's lock, asks every repository's remote head (`remote.head`, one network call
-  each), then `commitAndPush` copies every repository's `project.yml`, `issues/` and `stories/` into a scratch
-  directory through `SaveFiles.write`, one `remote.read` per file - an `ls-tree` and a read, two Git processes per
-  file, for every repository, changed or not. The stories index then reads every repository's index from the scratch
-  copies (`IssueSource.local`). Each changed repository gets a commit, is read back, and the whole board is read
-  again; then the repositories are pushed one after the other, the own repository last, and only then is the save
-  answered.
-- The window waits 30 s for a save's answer; a save of four story moves over three repositories took longer than
-  that, and every push went through.
+The unit, `LocalSaves` in `store/git`, over `LocalRefs` (`GitLocalRefs` in the clones):
 
-Steps:
+- `record(parents, commits)` makes a save's commits, built by `GitRemote.commit`, the repositories'
+  `refs/planner/local`, all or none and only while each still stands at the commit the save was made on (compare
+  and swap with `update-ref`); the ref exists only while a save waits.
+- `push()` starts one round in the background, or one more after the running one: the other repositories pushed in
+  parallel, the own repository last and only once the others are, since its stories index names their states. A push
+  leases `refs/planner/fetched`, which moves on success. On a rejection it fetches into a ref of its own and makes
+  each save again on the remote's commit (`diff-tree`, `read-tree`, `update-index`, `commit-tree`, no working tree)
+  while the remote changed none of the save's paths and the two did not both add an issue file, which could carry the
+  same number. Otherwise the save is dropped - `local` removed, `fetched` moved to the remote - and the own
+  repository's waiting saves with it, since its stories index names the dropped states. No text merge: two generated
+  indexes merged by lines are not an index the generator writes.
+- `state()` answers each repository's push: pending, pushed, failed with its words, or dropped with its paths.
+- A new start finds `local` and pushes it with the first board.
+- The refs are guarded by the unit's own monitor; the project lock is never held by the pusher.
 
-1. **Measure** (no code kept): a save of moves over three repositories of a project of about fifteen, against local
-   bare repositories, timed per part - heads, scratch copy, index, commits, read-back, board read, each push. Written
-   into this issue before building on.
-2. **Commit part fast** (`store/git`). The scratch copy takes only the changed repositories' files and the other
-   repositories' issue indexes, read in one batch per repository (`git cat-file --batch` or one `git archive`), not
-   one process per file. Red first, unit over a counting fake `Remote`: a save touching one repository of five
-   reads no issue file of the other four.
-3. **Push part in the background** (`store/git`, `store/api`). `save` answers the board of its local commits once
-   they are read back; the pushes run on an executor of the store, the other repositories in parallel and the own
-   repository last, as today, since its stories index names the others' states. The store keeps a push state per
-   save - pending, pushed, or failed with the repository and the refusal's words - offered through
-   `PlanningStore` (a default of "nothing pending" for stores that push nothing). A next save waits for the pending
-   pushes (the lock stays held by them) and is refused `Busy` only after the lock's wait; a poll does not replace
-   the board while a push is pending. A failed push leaves the local commit, so the person chooses: push again, or
-   drop the save, which resets the clone to the remote. Red first, unit over a fake `Remote` whose push blocks: the
-   save answers before the push ends; a failed push is told with its repository; no poll during the push brings
-   back the older board.
-4. **Contract and app** (`planner.yaml` first, `app`). The board's answer and its event carry the save's push state;
-   `POST .../pushes/retry` and `.../pushes/drop` act on a failed one. Red first, integration in `app`: a save over
-   a blocking fake answers 200 before its push ends, and the next board event says pushed.
-5. **Screen** (`screen`). A pending push shows on the board; a failed push is a Needs-you entry with its
-   repository, the words and the two choices. A board that changes by the person's own save, answered or not, is
-   never reported as moved elsewhere: the screen tells its own moves from others' by the save's revision, not by
-   whether its call answered in time. Red first, widget tests over the fake.
+Around the unit:
 
-Order 1 to 5; every test runs over fakes in seconds; a VM is not needed.
+- `GitStore.save` checks only that the window's revision is the board's and asks no remote head; it answers once the
+  commits stand, with the board read from them.
+- `GitRemote` reads a commit's planning files (`project.yml`, `issues/`, `stories/`, `stats/`) with one `ls-tree` and
+  one `cat-file --batch` and keeps the last two commits of each repository; a commit takes a fixed seven processes
+  whatever the number of files. `GitRunner` feeds a call an input on a thread of its own.
+- The board's `faults` name a failed push and a dropped save with its items; the window shows them today. A check
+  reads a repository with a waiting save at that save and never fetches over it, and starts a round of pushes, so a
+  failed one is tried again.
+- `GitProjects` gives each store its `LocalSaves`; retiring the store stops the pushes.
+- The contract is unchanged; the Git store no longer answers `PartlySaved`, which stays in it for another store.
+
+Tests, each seen red by a deliberate break:
+
+1. `LocalSavesTest`, over bare repositories served by a local HTTPS server: a save stands only in the clone; a new
+   start pushes a save left unpushed; a rejected push over other files is made again and keeps both; one over the
+   same file is dropped and named; the own repository waits for the others; a save made during a push goes with the
+   next round; a save on an older commit is refused.
+2. `GitStoreSaveTest`: a save over a change to other files is made again on it; a failed push is told on the board and
+   the own waits; a push over a change to the same issue is dropped, named, and the own stories index dropped with it;
+   an idea over an issue added elsewhere is dropped. `GitStoreTest`: a round of pushes keeps the board when nothing
+   changed.
+3. `GitRemoteTest`, `CommitFilesTest`, `GitRunnerTest`: each commit read as it holds its files after another; a link
+   or an oversized file still refused; a commit holds exactly the save's changes and keeps a file's mode; a call fed an
+   input takes all of it while it prints.
+
+- **Code reading:** read by another model; each finding checked in the code. Fixed, each with a test seen red: a
+  push that landed without being recorded, followed by another save, was taken for a conflict and dropped both - the
+  remote's commit found among the saves is now the new base; the own repository could be pushed while a save of
+  another, made during the round, still waited - it now goes only once no other waits; a push the remote refused
+  while it stood still was made again under new commits three times - it now fails with the remote's words. Fixed
+  without a test, as nothing is lost: the state told pushed set under the refs' monitor, a board rebuilt after a push
+  tried again when a check swapped it meanwhile, a listener's failure kept from ending the pushes, a failure of a
+  round kept from hiding a dropped save. Declined: a drop all or none across repositories - a save another repository
+  took is on its remote and stays, and the board names what was dropped; unmaking a pushed commit would be a second
+  write over the remote.
 
 ## Measured
 
@@ -77,36 +96,21 @@ the rest the read-back; three commits, about 2.9 s, each running several process
 between the Git calls, about 2 s before each commit and the first push; the three pushes with their heads, under 1.2 s.
 The pushes are not where the time goes; the commit part is.
 
+After the change, the same fixture, three saves: answered in 385, 366 and 306 ms (median 366 ms), the pushes done
+about 0.45 s later, the remotes holding every move. With the local commits alone and the reads unchanged it was
+6.0 s.
+
 ## Plan reading
 
-Read by another model, each claim checked in the code: a commit of the planner is referenced by no ref until it is
-pushed (`GitRemote.commit` runs `commit-tree`; only `advance` moves `refs/planner/fetched`), so a restart before the
-push loses a save already answered; the project lock is owned by its thread (`FileProjectLock`, a `ReentrantLock`)
-and cannot pass to a background push; every save compares the remote heads with the board's commits
-(`GitStore.saved`), so a pending or failed push would refuse every later save; a push the remote rejects can never be
-pushed again with its old lease. A background push needs answers to all of these, and to a second window saving on an
-unpushed revision.
+Read by another model, each claim checked in the code: a planner commit was held by no ref until pushed, so a restart
+lost a save already answered - now `refs/planner/local` holds it; the project lock is owned by its thread - now held
+only for the local commit, never handed on; every save compared the remote heads - now it compares only the window's
+revision; a rejected push could never be pushed again with its old lease - now it is replayed on the fetched head.
 
 ## Acceptance
 
-- A save of moves over three repositories of a project of about fifteen answers within 5 s; its pushes follow, and
-  the board shows them pending until they are pushed. Seen failing first: today's save answering only after the
-  last push.
-- A push that fails shows as a Needs-you entry naming the repository, with push again and drop; neither loses a
-  change silently.
-- The person's own moves are never reported as moved elsewhere, also when the window gave up waiting for the answer.
-
-## Open questions
-
-- The measurement puts the time in the commit part, not the pushes. Proposed: this issue makes the commit part fast
-  (step 2, with the read-back and the commit batched too) and pushes the other repositories in parallel, while the
-  save still answers after its pushes; the own moves are never reported as moved elsewhere (step 5's last sentence).
-  The background push (step 3, and step 5's pending and failed push) moves to an issue of its own, built only if a
-  save still answers too slowly after this, against a real remote. This changes *What must be true* (the answer would
-  follow the pushes) and the size to M.
-
-## To be checked
-
-- What fills the time between the Git calls (about 2 s before each commit), read with a profiler before step 2.
-- Whether the window outside the screen package needs a change for the push state, said to the coordinator as soon
-  as the contract stands.
+- The measured fixture's save answers in under 1 s, its pushes follow, and the remote holds every move afterwards.
+  Seen failing first: today's 21.7 s.
+- A planner restarted with a save not yet pushed pushes it.
+- A push that conflicts with a change made elsewhere drops the save, and the board's faults name the repository and the
+  items; nothing is pushed over the other change.
