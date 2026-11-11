@@ -19,6 +19,10 @@ jobs:
         runs-on: windows-2025
         timeout-minutes: 30
         steps:
+            # The checks compare files byte for byte with their shared copies, which have LF line ends.
+            - name: Check out with LF line ends
+              run: git config --global core.autocrlf false
+
             # Without the job's token in .git/config: nothing here pushes with git.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
