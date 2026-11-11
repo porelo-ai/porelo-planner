@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL26",
   "title": "The Mock Board Saves Moves",
-  "state": "Idea",
+  "state": "Backlog",
   "size": "-",
   "priority": "Medium",
   "rank": 15,

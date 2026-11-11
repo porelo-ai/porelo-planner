@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL25",
   "title": "Findings In The Screen's Older Code",
-  "state": "Idea",
+  "state": "Backlog",
   "size": "-",
   "priority": "Medium",
   "rank": 14,
