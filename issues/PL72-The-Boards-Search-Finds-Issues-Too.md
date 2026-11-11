@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL72",
   "title": "The Board's Search Finds Issues Too",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 1,
@@ -49,3 +49,12 @@ Steps:
 - A search for an issue's number or title shows its story with the issue list open and the issue marked, scrolled
   into view; clearing the search leaves the issue lists as the person had them. Seen failing first: today's board
   shows no story for an issue's number.
+
+## Code reading
+
+- Fixed: a search scrolled again on every key that found something, pulling back a person who had scrolled away; it
+  now scrolls only when the first found card changes (a widget test, seen red first).
+- Declined: the per-key walk over the built cards and the unsorted unplaced stories cost linear work per key, small at
+  hundreds of stories. A story in a folded state is scrolled to as its mark, without its issue list, since folding is
+  the person's choice. The card, not the found row, is brought into view; a row lies within its card.
+

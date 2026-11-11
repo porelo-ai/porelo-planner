@@ -143,6 +143,42 @@ PlanningSnapshot _snapshot(String id) => PlanningSnapshot.from({
   'revision': id,
 });
 
+/// A board with two stories, one holding two issues, as the planner streams it.
+Future<PlanningBoard> _boardWithIssues() async {
+  final backend = _Backend();
+  final board = PlanningBoard(backend, 'project');
+  addTearDown(board.dispose);
+  backend.controllers['project']!.add(
+    PlanningSnapshot.from({
+      'states': [
+        {'name': 'Building', 'kind': 'WORKING'},
+      ],
+      'phases': [
+        {
+          'name': 'Build',
+          'states': ['Building'],
+        },
+      ],
+      'stories': [
+        {
+          'id': 'ST7',
+          'state': 'Building',
+          'title': 'A story',
+          'priority': 'High',
+          'issues': [
+            {'id': 'PL9', 'repository': 'planner', 'title': 'Read the board', 'state': 'Building'},
+            {'id': 'AB10', 'repository': 'planner', 'title': 'Keep a cache', 'state': 'Building'},
+          ],
+        },
+        {'id': 'ST8', 'state': 'Building', 'title': 'Another story', 'priority': 'High', 'issues': <Object>[]},
+      ],
+      'revision': 'r1',
+    }),
+  );
+  await Future<void>.delayed(Duration.zero);
+  return board;
+}
+
 void main() {
   // Harm: a synchronous refusal leaves a board looking live or offers calls an older daemon cannot serve.
   for (final (failure, unsupported, words) in <(Object, bool, String?)>[
@@ -475,6 +511,38 @@ void main() {
     expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the search finds it again');
     board.filter(PlanningPriority.highest);
     expect(board.cards('Building'), isEmpty, reason: 'a High story is below Highest');
+  });
+  // Harm: work the person looks for by an issue's number is hidden, so it is not found on the board.
+  test('a search for an issue\'s number keeps its story and answers the issue', () async {
+    final board = await _boardWithIssues();
+    board.search('pl9');
+    expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the story holding PL9 stays shown');
+    expect(board.foundIssues, {'PL9'}, reason: 'only the issue whose number matches is found');
+  });
+  // Harm: work the person looks for by words of an issue's title is hidden, so it is not found on the board.
+  test('a word of an issue\'s title keeps its story and answers the issue', () async {
+    final board = await _boardWithIssues();
+    board.search('Cache');
+    expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the story holding the issue stays');
+    expect(board.foundIssues, {'AB10'}, reason: 'the issue whose title holds the word is found');
+  });
+  // Harm: a search matching a story's own words opens its issue lists the person did not ask for.
+  test('a story found only by its own words answers no issues', () async {
+    final board = await _boardWithIssues();
+    board.search('st7');
+    expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the story matches by its number');
+    expect(board.foundIssues, isEmpty, reason: 'no issue matches the story\'s number');
+    board.search('');
+    expect(board.foundIssues, isEmpty, reason: 'a blank search finds no issues');
+  });
+  // Harm: a search rewrites the issue lists the person opened or closed by hand.
+  test('a search and its clearing leave the opened issue lists as they were', () async {
+    final board = await _boardWithIssues();
+    board.expand('ST8');
+    board.search('pl9');
+    board.search('');
+    expect(board.preferences.expandedStories, {'ST8'}, reason: 'only the person\'s own toggles are kept');
+    expect(board.cards('Building').map((story) => story.id), ['ST7', 'ST8'], reason: 'both stories return');
   });
   // Harm: a failed planning stream cannot be resumed while the machine remains connected.
   test('retry replaces an ended watch without resetting the view choices', () async {

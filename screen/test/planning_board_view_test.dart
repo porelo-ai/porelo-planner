@@ -253,6 +253,57 @@ void main() {
     expect(await first, isFalse);
   });
 
+  // Harm: an issue searched for by its number lies in a story far down its column, unseen, and is taken for missing.
+  testWidgets('a search for an issue opens its story, marks the issue and brings the card into view', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['stories'] = [
+      for (var number = 1; number <= 30; number++)
+        {
+          'id': 'Story$number',
+          // Every story matches the search by its own words, so the search alone does not move the card up.
+          'title': 'Story number $number after ab42',
+          'state': 'Ready',
+          'priority': 'High',
+          'issues': [
+            if (number == 30) {'id': 'AB42', 'repository': 'planner', 'title': 'The far issue', 'state': 'Ready'},
+          ],
+        },
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+    final view = tester.getRect(find.byKey(const Key('planning-board-scroll')));
+    final card = find.byKey(const Key('planning-card Story30'));
+    expect(view.overlaps(tester.getRect(card)), isFalse, reason: 'the card starts below the visible board');
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42');
+    await settle(tester);
+    expect(find.byKey(const Key('planning-issue-found AB42')), findsOneWidget, reason: 'the found issue is marked');
+    final shown = tester.getRect(card);
+    expect(
+      shown.top >= view.top && shown.bottom <= view.bottom,
+      isTrue,
+      reason: 'the card $shown is brought inside the visible board $view',
+    );
+    expect(boards.selected!.preferences.expandedStories, isEmpty, reason: 'the person opened no issue list');
+
+    // Harm: a person who scrolled away while typing is pulled back on every key.
+    tester
+        .state<ScrollableState>(
+          find.descendant(of: find.byKey(const Key('planning-board-scroll')), matching: find.byType(Scrollable)).first,
+        )
+        .position
+        .jumpTo(0);
+    await settle(tester);
+    expect(view.overlaps(tester.getRect(card)), isFalse, reason: 'the person scrolled the card out of view again');
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42 ');
+    await settle(tester);
+    expect(
+      view.overlaps(tester.getRect(card)),
+      isFalse,
+      reason: 'a search that finds the same first card does not scroll again',
+    );
+  });
+
   // Harm: an unplaced story's pending summary conceals its unreported source.
   testWidgets('an unreported source is visible in the pending summary', (tester) async {
     final (backend, boards) = await _showBoard(tester);

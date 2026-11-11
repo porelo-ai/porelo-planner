@@ -238,6 +238,54 @@ class _BoardViewState extends State<_BoardView> {
     if (_horizontal.hasClients) board.preferences.horizontalOffset = _horizontal.offset;
   }
 
+  /// Searches, and once the frame stands brings the first card holding a found issue into view; only a change of the
+  /// search scrolls, so scrolling by hand is not taken back on a redraw.
+  void _searchFor(String query) {
+    board.search(query);
+    final found = board.foundIssues;
+    if (found.isEmpty) {
+      _shownFound = null;
+      return;
+    }
+    final keys = [
+      for (final story in [
+        for (final phase in board.phases)
+          for (final state in board.statesIn(phase)) ...board.cards(state.name),
+        ...board.unplaced,
+      ])
+        if (story.issues.any((issue) => found.contains(issue.id))) Key('planning-card ${story.id}'),
+    ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final built = _elementsKeyed(context, keys.toSet());
+      // A card in a folded phase is not built; a folded state shows the story's mark, without its issues.
+      final key = keys.where(built.containsKey).firstOrNull;
+      // The same first card again is left where the person scrolled it.
+      if (key == null || key == _shownFound) return;
+      _shownFound = key;
+      Scrollable.ensureVisible(built[key]!);
+    });
+  }
+
+  /// The card the search last brought into view, so a further key finding it again does not scroll.
+  Key? _shownFound;
+
+  /// The elements under [root] whose widgets carry one of [keys].
+  static Map<Key, BuildContext> _elementsKeyed(BuildContext root, Set<Key> keys) {
+    final found = <Key, BuildContext>{};
+    void visit(Element element) {
+      final key = element.widget.key;
+      if (key != null && keys.contains(key)) {
+        found.putIfAbsent(key, () => element);
+      } else {
+        element.visitChildElements(visit);
+      }
+    }
+
+    root.visitChildElements(visit);
+    return found;
+  }
+
   @override
   void dispose() {
     _vertical.dispose();
@@ -316,7 +364,7 @@ class _BoardViewState extends State<_BoardView> {
                   child: TextField(
                     key: const Key('planning-search'),
                     controller: _search,
-                    onChanged: board.search,
+                    onChanged: _searchFor,
                     decoration: const InputDecoration(
                       labelText: 'Search',
                       hintText: 'Story ID or a word',
@@ -845,6 +893,7 @@ class _BoardViewState extends State<_BoardView> {
       story,
       Theme.of(context),
       board.preferences.expandedStories.contains(story.id),
+      _foundIn(story).join(' '),
       _work(story),
       board.pending[story.id],
       board.pending[story.id]?.problem,
@@ -860,9 +909,22 @@ class _BoardViewState extends State<_BoardView> {
     return card;
   }
 
+  /// The ids of [story]'s issues the current search finds.
+  List<String> _foundIn(PlanStory story) {
+    final found = board.foundIssues;
+    return found.isEmpty
+        ? const []
+        : [
+            for (final issue in story.issues)
+              if (found.contains(issue.id)) issue.id,
+          ];
+  }
+
   Widget _buildCard(BuildContext context, PlanStory story) {
     final theme = Theme.of(context);
-    final open = board.preferences.expandedStories.contains(story.id);
+    final found = _foundIn(story);
+    // A found issue opens its list while the search stands, without changing the person's own choice.
+    final open = board.preferences.expandedStories.contains(story.id) || found.isNotEmpty;
     final work = _work(story);
     return _drag(
       story,
@@ -936,29 +998,33 @@ class _BoardViewState extends State<_BoardView> {
                     Padding(
                       key: Key('planning-issue ${story.id} ${issue.id}'),
                       padding: const EdgeInsets.only(top: Space.small),
-                      child: Column(
-                        key: Key('planning-issue-row ${issue.id}'),
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextButton(
-                            key: Key('planning-issue ${issue.id}'),
-                            onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
-                            child: Text('${issue.id} · ${issue.repository}'),
-                          ),
-                          if (issue.title.isNotEmpty) Text(issue.title),
-                          Wrap(
-                            spacing: Space.small,
-                            children: [
-                              if (issue.state.isNotEmpty) Text(issue.state),
-                              if (issue.size.isNotEmpty) Text(issue.size),
-                              if (issue.worker case final worker?) Text(planningWorker(worker)),
-                            ],
-                          ),
-                          if (!issue.blockedByReported)
-                            const Text('Blockers not reported')
-                          else if (issue.blockedBy.isNotEmpty)
-                            Text('Blocked by ${issue.blockedBy.join(', ')}'),
-                        ],
+                      child: _markFound(
+                        context,
+                        found.contains(issue.id) ? issue.id : null,
+                        Column(
+                          key: Key('planning-issue-row ${issue.id}'),
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextButton(
+                              key: Key('planning-issue ${issue.id}'),
+                              onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
+                              child: Text('${issue.id} · ${issue.repository}'),
+                            ),
+                            if (issue.title.isNotEmpty) Text(issue.title),
+                            Wrap(
+                              spacing: Space.small,
+                              children: [
+                                if (issue.state.isNotEmpty) Text(issue.state),
+                                if (issue.size.isNotEmpty) Text(issue.size),
+                                if (issue.worker case final worker?) Text(planningWorker(worker)),
+                              ],
+                            ),
+                            if (!issue.blockedByReported)
+                              const Text('Blockers not reported')
+                            else if (issue.blockedBy.isNotEmpty)
+                              Text('Blocked by ${issue.blockedBy.join(', ')}'),
+                          ],
+                        ),
                       ),
                     ),
               ],
@@ -969,6 +1035,18 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 }
+
+/// Marks the row of the issue [found] by the search with a highlighted background; any other row stays as it is.
+Widget _markFound(BuildContext context, String? found, Widget row) => found == null
+    ? row
+    : DecoratedBox(
+        key: Key('planning-issue-found $found'),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(Space.tight),
+        ),
+        child: row,
+      );
 
 class _PlanningDetailView extends StatefulWidget {
   const _PlanningDetailView({

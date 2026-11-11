@@ -1003,11 +1003,25 @@ class PlanningBoard extends ChangeNotifier {
     int.tryParse(_trailingNumber.firstMatch(story.id)?.group(0) ?? ''),
   );
 
+  /// Each story's issues with their words for the search, made once per story read.
+  static final _issueKeys = Expando<List<(String, String, String)>>('issue keys');
+
+  static List<(String, String, String)> _issueKeysOf(PlanStory story) => _issueKeys[story] ??= [
+    for (final issue in story.issues) (issue.id, issue.id.toLowerCase(), issue.title.toLowerCase()),
+  ];
+
+  static Iterable<String> _issuesFound(PlanStory story, String query) => query.isEmpty
+      ? const []
+      : _issueKeysOf(story).where((keys) => keys.$2.contains(query) || keys.$3.contains(query)).map((keys) => keys.$1);
+
   bool _matches(PlanStory story, String query) {
     final keys = _keysOf(story);
     return (preferences.priority.maximum == null || rank(story.priority) <= preferences.priority.maximum!) &&
-        (query.isEmpty || keys.$1.contains(query) || keys.$2.contains(query));
+        (query.isEmpty || keys.$1.contains(query) || keys.$2.contains(query) || _issuesFound(story, query).isNotEmpty);
   }
+
+  /// What the found issues were collected from, and the issues.
+  (List<Object?>, Set<String>)? _found;
 
   List<PlanStory> _sort(Iterable<PlanStory> stories) {
     final query = preferences.search.trim().toLowerCase();
@@ -1054,6 +1068,20 @@ class PlanningBoard extends ChangeNotifier {
   void filter(PlanningPriority priority) {
     preferences.priority = priority;
     _changed();
+  }
+
+  /// The ids of the issues the current search finds in the stories it keeps, empty without a search.
+  Set<String> get foundIssues {
+    final inputs = <Object?>[snapshot, preferences.search, preferences.priority];
+    final found = _found;
+    if (found != null && listEquals(found.$1, inputs)) return found.$2;
+    final query = preferences.search.trim().toLowerCase();
+    final issues = Set<String>.unmodifiable({
+      for (final story in stories)
+        if (_matches(story, query)) ..._issuesFound(story, query),
+    });
+    _found = (inputs, issues);
+    return issues;
   }
 
   /// Updates the search.
