@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -101,6 +102,10 @@ public class Problems {
             fields.put("to", "");
             fields.put("reason", reason);
             return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, fields);
+        }
+        if ("/projects/{project}/ideas".equals(pattern)) {
+            final String reason = "The body is no hand-in of an idea.";
+            return refused(WorkRefusal.ideaRefused(reason, List.of("body: " + reason), null));
         }
         if ("/log/level".equals(pattern)) {
             return problem(

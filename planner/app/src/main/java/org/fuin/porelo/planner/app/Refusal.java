@@ -73,6 +73,7 @@ public final class Refusal extends RuntimeException {
                             "TaskEventConflict" ->
                             HttpStatus.CONFLICT;
                     case "WorkRecordUnavailable" -> HttpStatus.SERVICE_UNAVAILABLE;
+                    case "IdeaRefused" -> HttpStatus.UNPROCESSABLE_CONTENT;
                     default -> HttpStatus.BAD_REQUEST;
                 };
         return new Refusal(

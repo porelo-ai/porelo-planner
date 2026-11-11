@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -98,6 +99,71 @@ class WorkRecordTest {
                                             .locked(session -> session.read()))
                     .as("backward compatibility does not excuse other missing binding fields")
                     .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void handedIdeasSurviveRestartAndARecordWrittenBeforeThemReads() throws Exception {
+        // A lost offer would save a repeated hand-in as a second story; an older record must open.
+        final String offer = "4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f";
+        final String story = String.format("ST%d", 7);
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(
+                                        new WorkRun.Snapshot(
+                                                1,
+                                                Map.of(),
+                                                Map.of(
+                                                        offer,
+                                                        new HandedIdeas.Handed(
+                                                                HandedIdeas.DONE,
+                                                                story,
+                                                                List.of(),
+                                                                1))));
+                                return true;
+                            });
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final HandedIdeas.Handed restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().ideas().get(offer));
+            assertThat(restored)
+                    .as("the offer's story after a restart")
+                    .isEqualTo(new HandedIdeas.Handed(HandedIdeas.DONE, story, List.of(), 1));
+        }
+        final JsonMapper json = JsonMapper.builder().build();
+        final ObjectNode document = (ObjectNode) json.readTree(Files.readString(file));
+        assertThat(document.has("ideas")).as("the record holds the handed ideas").isTrue();
+        document.remove("ideas");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final Map<String, HandedIdeas.Handed> ideas =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().ideas());
+            assertThat(ideas)
+                    .as("a record written before ideas were handed in holds none")
+                    .isEmpty();
+        }
+        document.putObject("ideas")
+                .putObject(offer)
+                .put("status", HandedIdeas.DONE)
+                .put("story", "../" + story)
+                .put("order", 1)
+                .putArray("pushed");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()));
+            assertThat(refused).as("a handed idea that fails its check is refused").isNotNull();
+            assertThat(reason(refused)).as("its words").doesNotContain("../" + story);
         }
     }
 

@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import org.fuin.porelo.planner.app.mock.MockController;
+import org.fuin.porelo.planner.core.NewIdeas;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -53,6 +54,10 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Refreshed", Answers.Refreshed.class),
                     Map.entry("Moved", Answers.Moved.class),
                     Map.entry("IssueAdded", Answers.IssueAdded.class),
+                    Map.entry("IdeaRequest", WorkRequests.IdeaRequest.class),
+                    Map.entry("Idea", NewIdeas.Idea.class),
+                    Map.entry("IdeaStory", NewIdeas.Story.class),
+                    Map.entry("IdeaAdded", Answers.IdeaAdded.class),
                     Map.entry("WorkerRequest", WorkRequests.WorkerRequest.class),
                     Map.entry("WorkerSaved", Answers.WorkerSaved.class),
                     Map.entry("PriorityRequest", WorkRequests.PriorityRequest.class),
@@ -292,6 +297,49 @@ class ApiMatchesDescriptionTest {
                     component.getGenericType(),
                     "IssueLimit." + component.getName());
         }
+    }
+
+    @Test
+    void theHandInOfAnIdeaDescribesItsBodyItsAnswerAndEveryRefusal() {
+        // A refusal or a member missing from the contract lets the window take a refused idea as
+        // saved, or send an idea the planner reads otherwise.
+        final JsonNode operation =
+                description.path("paths").path("/projects/{project}/ideas").path("post");
+        assertThat(operation.at("/requestBody/content/application~1json/schema/$ref").asText())
+                .as("the hand-in's body")
+                .isEqualTo("#/components/schemas/IdeaRequest");
+        assertThat(operation.at("/responses/201/content/application~1json/schema/$ref").asText())
+                .as("the hand-in's answer")
+                .isEqualTo("#/components/schemas/IdeaAdded");
+        final Set<String> statuses = new TreeSet<>();
+        operation.path("responses").fieldNames().forEachRemaining(statuses::add);
+        assertThat(statuses)
+                .as("every answer of the hand-in")
+                .isEqualTo(
+                        Set.of(
+                                "201", "400", "401", "404", "409", "422", "501", "502", "503",
+                                "504"));
+        assertThat(operation.at("/responses/422/$ref").asText())
+                .as("a refused idea's answer")
+                .isEqualTo("#/components/responses/IdeaRefused");
+        final JsonNode schemas = description.path("components").path("schemas");
+        final JsonNode issue = schemas.path("IdeaIssue");
+        final Set<String> properties = new TreeSet<>();
+        issue.path("properties").fieldNames().forEachRemaining(properties::add);
+        assertThat(properties)
+                .as("an idea's issue has exactly the members the planner reads")
+                .isEqualTo(names(NewIdeas.Issue.class.getRecordComponents()));
+        final Set<String> required = new TreeSet<>();
+        issue.path("required").forEach(field -> required.add(field.asText()));
+        assertThat(required)
+                .as("only the size of an idea's issue may be left out")
+                .isEqualTo(Set.of("repository", "title", "mustBeTrue", "worker"));
+        assertThat(schemas.at("/Idea/properties/issues/items/$ref").asText())
+                .as("the idea's issues")
+                .isEqualTo("#/components/schemas/IdeaIssue");
+        assertThat(schemas.at("/Problem/properties/parameters/properties/faults/type").asText())
+                .as("an idea's faults are a list")
+                .isEqualTo("array");
     }
 
     private static void wireType(

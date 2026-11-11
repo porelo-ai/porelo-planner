@@ -283,6 +283,59 @@ class MockModeTest {
     }
 
     @Test
+    void theMockSavesAHandedInIdeaOnItsBoardOnceUntilAReset() throws Exception {
+        // The window's tests of a discussion's end need the story on the board, made once.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final String body =
+                "{\"offer\": \"4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f\", \"idea\": {\"story\":"
+                        + " {\"title\": \"Tag stories\", \"gain\": \"G\", \"test\": \"T\","
+                        + " \"priority\": \"High\"}, \"issues\": [{\"repository\": \"porelo\","
+                        + " \"title\": \"Tags\", \"mustBeTrue\": \"W\", \"worker\": \"Agent\"}]}}";
+        try {
+            final HttpResponse<String> first = call(runtime, "POST", "/projects/any/ideas", body);
+            assertThat(first.statusCode())
+                    .as("the status of a hand-in: %s", first.body())
+                    .isEqualTo(201);
+            final String story = JSON.readTree(first.body()).path("id").asString();
+            assertThat(
+                            JSON.readTree(call(runtime, "POST", "/projects/any/ideas", body).body())
+                                    .path("id")
+                                    .asString())
+                    .as("a second hand-in answers the same story")
+                    .isEqualTo(story);
+            final JsonNode saved =
+                    json(call(runtime, "GET", "/projects/any/stories/" + story, null)).get("story");
+            assertThat(saved.path("state").asString()).as("the story's state").isEqualTo("Idea");
+            assertThat(saved.path("issues"))
+                    .as("its one issue, in Idea in the repository named")
+                    .singleElement()
+                    .satisfies(
+                            issue -> {
+                                assertThat(issue.path("repository").asString())
+                                        .as("its repository")
+                                        .isEqualTo("porelo");
+                                assertThat(issue.path("state").asString())
+                                        .as("its state")
+                                        .isEqualTo("Idea");
+                            });
+            final List<String> stories = new ArrayList<>();
+            json(call(runtime, "GET", "/projects/any/stories", null))
+                    .get("stories")
+                    .forEach(each -> stories.add(each.get("id").asString()));
+            assertThat(stories).as("the board holds one story of the idea").containsOnlyOnce(story);
+        } finally {
+            call(runtime, "POST", "/mock/reset", null);
+        }
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        assertThat(
+                        json(call(runtime, "GET", "/projects/any/stories", null))
+                                .get("revision")
+                                .asString())
+                .as("a reset restores the mock board")
+                .isEqualTo("mock@1");
+    }
+
+    @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
         // Projects kept across the window's tests would leak a test's project into the next and
         // run into the planner's bound on projects after a few tests.

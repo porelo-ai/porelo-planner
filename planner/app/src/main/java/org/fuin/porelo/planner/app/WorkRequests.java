@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.Moves;
+import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
@@ -122,6 +124,111 @@ public final class WorkRequests {
 
     private static final Set<String> ISSUE_MEMBERS =
             Set.of("repository", "title", "mustBeTrue", "size", "worker", "revision");
+
+    /**
+     * The idea a discussion wrote, as the window hands it in.
+     *
+     * @param offer the discussion's offer
+     * @param idea the idea, each member null where it is missing or no text
+     */
+    public record IdeaRequest(String offer, NewIdeas.Idea idea) {}
+
+    /**
+     * A hand-in as read: the request and the faults of the idea's shape, each by its field.
+     *
+     * @param request the request
+     * @param shape the members the idea format does not name, by where they stand
+     */
+    record HandIn(IdeaRequest request, List<String> shape) {}
+
+    private static final String NO_HAND_IN = "The body is no hand-in of an idea.";
+
+    /**
+     * Reads a hand-in strictly: at most 65536 bytes, one JSON object with exactly an offer and an
+     * idea object; a refusal never repeats what was sent.
+     *
+     * @param request the request
+     * @return the hand-in
+     * @throws WorkRefusal {@code IdeaRefused} for a body that is no hand-in
+     */
+    static HandIn handIn(final HttpServletRequest request) {
+        final JsonNode body;
+        try {
+            body = read(request);
+        } catch (final WorkRefusal invalid) {
+            throw noHandIn("body: " + NO_HAND_IN);
+        }
+        if (!Set.of("offer", "idea").equals(Set.copyOf(body.propertyNames()))) {
+            throw noHandIn("body: The body must hold exactly an offer and an idea.");
+        }
+        final JsonNode offer = body.get("offer");
+        if (!offer.isString()) {
+            throw noHandIn("offer: The offer must be a lowercase UUID.");
+        }
+        HandedIdeas.offer(offer.asString());
+        final JsonNode idea = body.get("idea");
+        if (!idea.isObject()) {
+            throw noHandIn("idea: The idea must be an object with a story and issues.");
+        }
+        final List<String> shape = new ArrayList<>();
+        known(idea, Set.of("story", "issues"), "idea", shape);
+        final JsonNode story = idea.path("story");
+        NewIdeas.Story readStory = null;
+        if (story.isObject()) {
+            known(story, Set.of("title", "gain", "test", "priority"), "story", shape);
+            readStory =
+                    new NewIdeas.Story(
+                            textOrNull(story, "title"),
+                            textOrNull(story, "gain"),
+                            textOrNull(story, "test"),
+                            textOrNull(story, "priority"));
+        }
+        final List<NewIdeas.@Nullable Issue> issues = new ArrayList<>();
+        final JsonNode items = idea.path("issues");
+        if (items.isArray()) {
+            for (final JsonNode item : items) {
+                if (!item.isObject()) {
+                    issues.add(null);
+                    continue;
+                }
+                known(
+                        item,
+                        Set.of("repository", "title", "mustBeTrue", "size", "worker"),
+                        "issues[" + issues.size() + "]",
+                        shape);
+                final JsonNode size = item.get("size");
+                issues.add(
+                        new NewIdeas.Issue(
+                                textOrNull(item, "repository"),
+                                textOrNull(item, "title"),
+                                textOrNull(item, "mustBeTrue"),
+                                size == null ? null : size.isString() ? size.asString() : "",
+                                textOrNull(item, "worker")));
+            }
+        }
+        return new HandIn(
+                new IdeaRequest(offer.asString(), new NewIdeas.Idea(readStory, issues)), shape);
+    }
+
+    private static WorkRefusal noHandIn(final String fault) {
+        return WorkRefusal.ideaRefused(NO_HAND_IN, List.of(fault), null);
+    }
+
+    // A member's name was sent, so the fault names only where it stands.
+    private static void known(
+            final JsonNode node,
+            final Set<String> names,
+            final String field,
+            final List<String> shape) {
+        if (!names.containsAll(node.propertyNames())) {
+            shape.add(field + ": It holds a member the idea format does not name.");
+        }
+    }
+
+    private static @Nullable String textOrNull(final JsonNode node, final String name) {
+        final JsonNode value = node.get(name);
+        return value != null && value.isString() ? value.asString() : null;
+    }
 
     /**
      * An issue's new worker as the window sends it.

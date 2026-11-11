@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import java.util.List;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
@@ -59,6 +60,11 @@ final class LoggedStore implements PlanningStore {
     @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         return store.createIssue(revision, issue);
+    }
+
+    @Override
+    public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
+        return store.createIdea(revision, idea);
     }
 
     @Override

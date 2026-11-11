@@ -128,6 +128,27 @@ class MockPlanningSource implements PlanningSource {
     });
   }
 
+  /// The ideas handed in, each with its project and offer, in order.
+  final List<(String, String, Map<String, Object?>)> handedIdeas = [];
+
+  final Map<(String, String), String> _handed = {};
+
+  /// Answers one story per offer, numbered after the board's stories; the board itself is left as it is.
+  @override
+  Future<String> handIdea(String project, String offer, Map<String, Object?> idea) async {
+    final current = board(project);
+    handedIdeas.add((project, offer, idea));
+    if (moveFailure case final failure?) throw failure;
+    return _handed.putIfAbsent((project, offer), () {
+      var highest = 0;
+      for (final story in (current['stories'] as List).cast<Map<String, dynamic>>()) {
+        final number = int.tryParse((story['id'] as String).substring(2)) ?? 0;
+        if (number > highest) highest = number;
+      }
+      return 'ST${highest + 1 + _handed.length}';
+    });
+  }
+
   /// Simulates the window's confirmed starts separately from preparing a planner order.
   Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) async {
     // A discussion belongs to no story, so no run on the board records it.

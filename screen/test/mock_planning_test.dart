@@ -32,6 +32,18 @@ void main() {
     expect(starts, isEmpty);
   });
   // Harm: the stand-in names a refusal differently from the daemon, so the screen's words differ in tests alone.
+  // Harm: a stand-in that answers a new story for a repeated hand-in lets the window's tests pass a second story.
+  test('the stand-in records each hand-in of an idea and answers one story per offer', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final idea = <String, Object?>{'story': <String, Object?>{}, 'issues': <Object?>[]};
+    final first = await source.handIdea('demo', 'offer-a', idea);
+    expect(await source.handIdea('demo', 'offer-a', idea), first, reason: 'the same offer, the same story');
+    expect(await source.handIdea('demo', 'offer-b', idea), isNot(first), reason: 'another offer, another story');
+    expect(source.handedIdeas.map((call) => call.$2), ['offer-a', 'offer-a', 'offer-b'], reason: 'every hand-in');
+    expect(RegExp(r'^ST[0-9]{1,5}$').hasMatch(first), isTrue, reason: 'a story id as the planner answers it');
+  });
+
   test('a stand-in refusal is worded as the daemon words it', () {
     final refusal = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'revision': 'r2'});
 

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
@@ -114,7 +115,8 @@ public final class WorkRecord implements AutoCloseable {
             String repository,
             @Nullable String branch,
             long generation,
-            Map<String, WorkRun.Run> runs) {}
+            Map<String, WorkRun.Run> runs,
+            Map<String, HandedIdeas.Handed> ideas) {}
 
     /** Opens a project's one writer, clearing a record from a different repository or branch. */
     public synchronized WorkRun.Record open(
@@ -304,7 +306,7 @@ public final class WorkRecord implements AutoCloseable {
                 write(reset);
                 return reset;
             }
-            return new WorkRun.Snapshot(doc.generation(), doc.runs());
+            return new WorkRun.Snapshot(doc.generation(), doc.runs(), doc.ideas());
         }
 
         private Path opened() {
@@ -354,6 +356,10 @@ public final class WorkRecord implements AutoCloseable {
             }
             if (tree == null || tree.isMissingNode()) {
                 throw unavailable(project, "The work record is not valid JSON.");
+            }
+            // A record written before ideas were handed in holds none.
+            if (tree instanceof ObjectNode root && !root.has("ideas")) {
+                root.putObject("ideas");
             }
             for (final JsonNode run : tree.path("runs")) {
                 for (final JsonNode offer : run.path("offers")) {
@@ -548,7 +554,8 @@ public final class WorkRecord implements AutoCloseable {
                                         repository,
                                         branch,
                                         snapshot.generation(),
-                                        snapshot.runs()));
+                                        snapshot.runs(),
+                                        snapshot.ideas()));
                 if (bytes.length > MOST_RECORD) {
                     throw WorkRefusal.recordUnavailable(project, "The work record is full.");
                 }
@@ -559,6 +566,7 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         private void validate(final Document doc) {
+            doc.ideas().forEach(HandedIdeas::validate);
             final Set<String> ids = new HashSet<>();
             doc.runs()
                     .forEach(

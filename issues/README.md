@@ -14,6 +14,7 @@ left out.
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
+| <a id="pl80"></a>[PL80](PL80-The-Idea-Hand-Ins-And-The-Mock-Copies-Smaller-Findings.md) | - | - | A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
 
@@ -47,7 +48,6 @@ left out.
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
-| <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 
 ## Review
 
@@ -71,6 +71,7 @@ left out.
 | <a id="pl27"></a>[PL27](PL27-The-Work-Record-Says-Why-It-Is-Unavailable.md) | S | - | A refusal of the local work record names what was refused, such as a directory another account could replace, so the person can fix it instead of seeing only that the record is unavailable |
 | <a id="pl42"></a>[PL42](PL42-A-Project-On-Any-Host-And-Owner.md) | S | - | The Git store reads a project whose repositories live on any host and under any owner: each central from any clone URL - https, ssh or scp-like - and the link pattern and host of story texts and indexes from project.yml instead of one fixed owner |
 | <a id="pl58"></a>[PL58](PL58-The-Store-Writes-An-Idea-As-A-Story-And-Its-Issues.md) | L | - | The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number; nothing stands on a fault before the answer, and a push that fails or is dropped after it is named in the board's faults |
+| <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 
 ## Finished
 

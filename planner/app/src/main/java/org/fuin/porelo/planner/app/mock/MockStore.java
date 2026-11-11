@@ -10,8 +10,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
@@ -97,6 +101,8 @@ public final class MockStore implements PlanningStore {
 
     // Guarded by this store's monitor, as every change of the board is.
     private int saves;
+
+    private static final Pattern ID = Pattern.compile("([A-Z]+)([0-9]+)");
 
     /**
      * Makes a store serving a board until it is changed or reset.
@@ -253,6 +259,83 @@ public final class MockStore implements PlanningStore {
                                 issueStates.stream().allMatch(state -> closed.indexOf(state) > 0)
                                         ? issueStates.getFirst()
                                         : closed.getFirst());
+    }
+
+    /**
+     * Adds an idea to the board in memory: its story and an issue in each repository it names,
+     * numbered after the highest of their kind; nothing reaches a repository.
+     */
+    @Override
+    public synchronized NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
+        final Board board = current;
+        if (!board.revision().equals(revision)) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        final List<Issue> issues = new ArrayList<>(board.issues());
+        final List<String> ids = new ArrayList<>();
+        for (final NewIssue issue : idea.issues()) {
+            final String id = next(issues, issue.repository());
+            ids.add(id);
+            issues.add(
+                    new Issue(
+                            id,
+                            issue.repository(),
+                            issue.title(),
+                            "Idea",
+                            issue.size(),
+                            List.of(),
+                            null,
+                            null,
+                            "**What must be true.** " + issue.mustBeTrue() + "\n",
+                            issue.worker()));
+        }
+        int story = 0;
+        for (final Story known : board.stories()) {
+            story = Math.max(story, Integer.parseInt(known.id().substring(2)));
+        }
+        final String id = "ST" + (story + 1);
+        final List<Story> stories = new ArrayList<>(board.stories());
+        stories.add(
+                new Story(
+                        id,
+                        idea.title(),
+                        "Idea",
+                        false,
+                        idea.priority(),
+                        ids,
+                        idea.gain() + "\n\n" + idea.test(),
+                        null));
+        saves++;
+        current =
+                new Board(
+                        new Revision(REVISION_PREFIX + (saves + 1)),
+                        board.workflow(),
+                        stories,
+                        issues,
+                        board.work(),
+                        board.repositories(),
+                        board.faults());
+        return new NewIdea.Added(id, ids, current);
+    }
+
+    private static String next(final List<Issue> issues, final String repository) {
+        String prefix = null;
+        int highest = 0;
+        for (final Issue issue : issues) {
+            final Matcher id = ID.matcher(issue.id());
+            if (issue.repository().equals(repository) && id.matches()) {
+                if (prefix == null) {
+                    prefix = id.group(1);
+                }
+                if (prefix.equals(id.group(1))) {
+                    highest = Math.max(highest, Integer.parseInt(id.group(2)));
+                }
+            }
+        }
+        if (prefix == null) {
+            throw new StoreException.NotSavable("", "The repository's issues give no prefix.");
+        }
+        return prefix + (highest + 1);
     }
 
     /** Restores the board the store was made with, so each of the window's tests starts alike. */

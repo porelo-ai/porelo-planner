@@ -186,6 +186,12 @@ abstract interface class PlanningSource {
   /// The offer belongs to no story: the planner records no run for it and takes no task events for it.
   Future<PlanningTaskOrder> discussIdea(String project, String idea);
 
+  /// Hands in the idea a discussion wrote, the content of its result file, with the discussion's [offer] when its
+  /// task ended; answers the id of the story the planner saved it as, the same one for a second hand-in of the offer.
+  ///
+  /// A malformed idea is refused as `IdeaRefused`, its faults by field in `parameters['faults']`.
+  Future<String> handIdea(String project, String offer, Map<String, Object?> idea);
+
   /// Reads current work and any ended outcome for a story.
   Future<StoryWorkStatus> getStoryWork(String project, String story);
 

@@ -97,6 +97,28 @@ public final class WorkRefusal extends RuntimeException {
                 "WorkRecordUnavailable", reason, Map.of("project", project, "reason", reason));
     }
 
+    /**
+     * Refuses an idea, listing its faults in fixed words and, for an offer saved before, the
+     * repositories already pushed.
+     *
+     * @param detail the refusal's words
+     * @param faults the faults, each by its field
+     * @param pushed the repositories already pushed, or null when no save of the offer began
+     * @return the refusal
+     */
+    public static WorkRefusal ideaRefused(
+            final String detail,
+            final List<String> faults,
+            final @org.jspecify.annotations.Nullable List<String> pushed) {
+        return new WorkRefusal(
+                NewIdeas.REFUSED,
+                detail,
+                pushed == null
+                        ? Map.of("faults", List.copyOf(faults))
+                        : Map.of(
+                                "faults", List.copyOf(faults), "pushed", String.join(",", pushed)));
+    }
+
     /** Refuses unreadable input without echoing its contents. */
     public static WorkRefusal invalidSettings() {
         final String detail = "The work request is invalid.";

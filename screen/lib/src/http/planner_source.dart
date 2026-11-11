@@ -538,6 +538,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<String> handIdea(String project, String offer, Map<String, Object?> idea) async {
+    // The answer names the story alone, so it carries no revision.
+    final answer = await _write(project, ['ideas'], {'offer': offer, 'idea': idea}, revision: false);
+    final id = answer['id'];
+    if (id is! String || !_storyId.hasMatch(id)) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not confirm the story\'s id.');
+    }
+    return id;
+  }
+
+  @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) async {
     final answer = await _runRead(project, ['stories', _checked('story', story, _storyId), 'work']);
     final status = _status(answer, nullable: true);

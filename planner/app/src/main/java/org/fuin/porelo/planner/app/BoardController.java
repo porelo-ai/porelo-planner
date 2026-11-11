@@ -611,6 +611,44 @@ public class BoardController {
         return WorkAnswers.discussion(IdeaDiscussion.offer(board(name), idea));
     }
 
+    /**
+     * Saves the idea a discussion wrote as a story in state Idea with its issues, once per offer.
+     *
+     * @param project the project's name
+     * @param request the request, whose body is the offer and the idea
+     * @return the story's id, as created
+     */
+    @PostMapping("/projects/{project}/ideas")
+    public ResponseEntity<Answers.IdeaAdded> handIdea(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = name(project);
+        final WorkRequests.HandIn handIn = WorkRequests.handIn(request);
+        final String offer = handIn.request().offer();
+        final String story;
+        try {
+            story = projects.work(name).idea(offer, handIn.request().idea(), handIn.shape());
+        } catch (final StoreException.NotSavable e) {
+            throw WorkRefusal.ideaRefused(
+                    "The store cannot write the idea.",
+                    List.of(bounded(String.valueOf(e.getMessage()))),
+                    null);
+        } catch (final UnsupportedOperationException e) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not add ideas.",
+                    Map.of("project", name));
+        } finally {
+            changes.saved(name);
+        }
+        LOG.info(
+                "Saved the idea of offer {} in project {} as story {}",
+                LogText.of(offer),
+                LogText.of(name),
+                LogText.of(story));
+        return ResponseEntity.status(HttpStatus.CREATED).body(new Answers.IdeaAdded(story));
+    }
+
     /** Computes the proposal from one board without starting or recording work. */
     @PostMapping("/projects/{project}/stories/{story}/proposal")
     public WorkAnswers.Proposal proposeStoryWork(
@@ -851,5 +889,13 @@ public class BoardController {
 
     private static @Nullable String link(final @Nullable URI link) {
         return link == null ? null : link.toString();
+    }
+
+    /** A store's words cut to the bound the description sets on a fault. */
+    private static String bounded(final String words) {
+        final int most = 1000;
+        return words.codePointCount(0, words.length()) <= most
+                ? words
+                : words.substring(0, words.offsetByCodePoints(0, most - 1)) + "…";
     }
 }

@@ -77,14 +77,24 @@ public final class WorkRun {
         }
     }
 
-    /** The current runs only, with a monotonically increasing local generation. */
-    public record Snapshot(long generation, Map<String, Run> runs) {
+    /**
+     * The current runs and the discussions' offers whose ideas were handed in, with a monotonically
+     * increasing local generation.
+     */
+    public record Snapshot(
+            long generation, Map<String, Run> runs, Map<String, HandedIdeas.Handed> ideas) {
         /** Prevents actions from mutating an already published generation. */
         public Snapshot {
             if (generation < 0) {
                 throw WorkRefusal.invalidSettings();
             }
             runs = Map.copyOf(runs);
+            ideas = Map.copyOf(ideas);
+        }
+
+        /** A snapshot of runs without a handed-in idea. */
+        public Snapshot(final long generation, final Map<String, Run> runs) {
+            this(generation, runs, Map.of());
         }
     }
 
@@ -886,6 +896,24 @@ public final class WorkRun {
     }
 
     /**
+     * Saves the idea a discussion wrote, once per offer: checked first, then saved under the
+     * record's lock with the offer recorded before and after the store's save.
+     *
+     * @param offer the discussion's offer
+     * @param idea the idea
+     * @param shape the faults of the idea's shape its reader found
+     * @return the story's id, the one an earlier hand-in of the offer saved too
+     * @throws WorkRefusal {@code IdeaRefused} for a malformed idea or an offer whose save was
+     *     pending or partly pushed
+     */
+    public String idea(final String offer, final NewIdeas.Idea idea, final List<String> shape) {
+        HandedIdeas.offer(offer);
+        NewIdeas.check(store.board(), idea, shape);
+        return record.locked(
+                session -> HandedIdeas.save(store, session, read(session), offer, idea, shape));
+    }
+
+    /**
      * Serializes a change of who works an issue with the runs' saves, refused as a move of the
      * issue is while a run with a started task owns it.
      *
@@ -1243,7 +1271,7 @@ public final class WorkRun {
         if (snapshot.generation() == Long.MAX_VALUE) {
             throw WorkRefusal.invalidSettings();
         }
-        return new Snapshot(snapshot.generation() + 1, runs);
+        return new Snapshot(snapshot.generation() + 1, runs, snapshot.ideas());
     }
 
     private static WorkProposal.RunningWork running(final Snapshot snapshot) {

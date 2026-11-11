@@ -87,6 +87,13 @@ public final class Answers {
     public record IssueAdded(String id, String revision) {}
 
     /**
+     * The story a discussion's idea was saved as.
+     *
+     * @param id the story's id
+     */
+    public record IdeaAdded(String id) {}
+
+    /**
      * A state.
      *
      * @param name its name

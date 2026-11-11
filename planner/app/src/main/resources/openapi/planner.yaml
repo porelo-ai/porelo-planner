@@ -352,6 +352,54 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/ideas:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: handIdea
+      summary: Hand in the idea a discussion wrote
+      description: >-
+        Saves the idea a discussion's task wrote, which the window hands in with the discussion's offer when the task
+        ends: one story in state Idea in the project's own repository and an issue in state Idea in each repository the
+        idea names, in one save against the board the planner reads; the request carries no revision. The idea is
+        checked before anything is saved, and a malformed idea makes nothing. One offer makes one story: a second
+        hand-in of a saved offer answers the same story and writes nothing, even for another idea; a hand-in of an
+        offer whose save is still pending or was only partly pushed is refused (IdeaRefused, naming the repositories
+        already pushed) and writes nothing. The JSON body is at most 65536 bytes. The changes stream announces the new
+        board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdeaRequest'
+      responses:
+        '201':
+          description: The story and its issues are saved, by this hand-in or an earlier one of the same offer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaAdded'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/IdeaRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/stories/{story}/proposal:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1204,6 +1252,39 @@ components:
             parameters:
               field: title
               reason: The title must have 1 to 120 characters.
+    IdeaRefused:
+      description: >-
+        An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in -
+        larger than 65536 bytes, not JSON, not an object, a member missing or unknown, or offer no lowercase UUID -
+        with one fault; or the idea breaks the idea format, at most 100 faults, each starting with the field it names
+        (story, story.title, issues, issues[0].repository, counted from 0); or the store cannot write it, its words
+        as the one fault; or the offer's save is still pending or was only partly pushed, with pushed naming the
+        repositories already pushed (comma-joined, empty when none).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            Malformed:
+              value:
+                type: urn:porelo-planner:IdeaRefused
+                title: IdeaRefused
+                status: 422
+                detail: The idea does not follow the idea format.
+                parameters:
+                  faults:
+                    - 'story.title: The title must be one line of 1 to 120 characters.'
+                    - 'issues[1].worker: The worker must be Agent or Manual.'
+            PartlySaved:
+              value:
+                type: urn:porelo-planner:IdeaRefused
+                title: IdeaRefused
+                status: 422
+                detail: The idea of this offer was saved only in part and is not saved again.
+                parameters:
+                  pushed: porelo-other
+                  faults:
+                    - 'offer: The idea of this offer was saved only in part and is not saved again.'
     PriorityRefused:
       description: >-
         A project name or story id was refused (InvalidName), or the body is no priority change (PriorityNotAllowed,
@@ -1232,8 +1313,9 @@ components:
                   story: ST7
     NotOffered:
       description: >-
-        This planner's store saves no moves, adds no issues, saves no workers or saves no priorities; the mock mode
-        saves moves and workers into its in-memory board but adds no issues and saves no priorities (NotOffered).
+        This planner's store saves no moves, adds no issues, saves no workers, saves no priorities or adds no ideas;
+        the mock mode saves moves and workers and adds ideas into its in-memory board, but adds no issues and saves no
+        priorities (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -1568,6 +1650,93 @@ components:
           $ref: '#/components/schemas/IssueId'
         revision:
           $ref: '#/components/schemas/Revision'
+    IdeaRequest:
+      description: The idea a discussion's task wrote and the discussion's offer; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [offer, idea]
+      properties:
+        offer:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: The offer of the discussion's task, as the discussion answered it.
+        idea:
+          $ref: '#/components/schemas/Idea'
+    Idea:
+      description: >-
+        The idea format, as the task's result file holds it and the window hands it on unchanged: one story and an
+        issue in each repository it concerns, each repository named once. One line means no control character or
+        line break (U+0000 to U+001F, U+007F to U+009F, U+2028, U+2029); the spaces around a title, gain or test are
+        dropped, and lengths count code points.
+      type: object
+      additionalProperties: false
+      required: [story, issues]
+      properties:
+        story:
+          $ref: '#/components/schemas/IdeaStory'
+        issues:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IdeaIssue'
+    IdeaStory:
+      description: The idea's story, saved in state Idea in the project's own repository.
+      type: object
+      additionalProperties: false
+      required: [title, gain, test, priority]
+      properties:
+        title:
+          type: string
+          description: One line.
+          minLength: 1
+          maxLength: 120
+        gain:
+          type: string
+          description: What a user gains, one line.
+          minLength: 1
+          maxLength: 400
+        test:
+          type: string
+          description: How a person sees it work, one line.
+          minLength: 1
+          maxLength: 400
+        priority:
+          $ref: '#/components/schemas/Priority'
+    IdeaIssue:
+      description: One issue of the idea, saved in state Idea in its repository.
+      type: object
+      additionalProperties: false
+      required: [repository, title, mustBeTrue, worker]
+      properties:
+        repository:
+          description: One of the project's repositories, named by no other issue of the idea.
+          allOf:
+            - $ref: '#/components/schemas/Name'
+        title:
+          type: string
+          description: One line.
+          minLength: 1
+          maxLength: 120
+        mustBeTrue:
+          type: string
+          description: The paragraph the issue's file opens with; not blank.
+          minLength: 1
+          maxLength: 4000
+        size:
+          type: string
+          enum: [XS, S, M, L, XL]
+        worker:
+          type: string
+          description: Who works the issue, as the person chose it.
+          enum: [Agent, Manual]
+    IdeaAdded:
+      description: The id of the story the offer's idea was saved as.
+      type: object
+      required: [id]
+      properties:
+        id:
+          $ref: '#/components/schemas/StoryId'
 
     Refreshed:
       description: The revision after a fetch.
@@ -2261,3 +2430,10 @@ components:
               type: array
               items:
                 type: string
+            faults:
+              type: array
+              description: An idea's faults, each starting with the field it names, in fixed words.
+              maxItems: 100
+              items:
+                type: string
+                maxLength: 1000
