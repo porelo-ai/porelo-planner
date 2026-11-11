@@ -12,8 +12,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import tools.jackson.databind.JsonNode;
@@ -44,6 +47,14 @@ class MockModeTest {
     static void stop() throws IOException {
         mock.close();
         RuntimeDirectories.delete(runtime);
+    }
+
+    @BeforeEach
+    void reset() throws Exception {
+        // The mock board saves moves, so each test starts from the first board as the window's do.
+        assertThat(call(runtime, "POST", "/mock/reset", null).statusCode())
+                .as("the reset before a test")
+                .isEqualTo(204);
     }
 
     @Test
@@ -110,26 +121,146 @@ class MockModeTest {
     @Test
     void theMockAnswersAWorkerChangeAsItAnswersAMove() throws Exception {
         // The window tests its handling of a save against the mock; a different answer hides it.
-        call(runtime, "PUT", "/projects/any", SOURCE);
+        call(runtime, "PUT", "/projects/moved", SOURCE);
+        call(runtime, "PUT", "/projects/worked", SOURCE);
         final HttpResponse<String> move =
                 call(
                         runtime,
                         "POST",
-                        "/projects/any/moves",
+                        "/projects/moved/moves",
                         "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"PJ74\", \"to\":"
                                 + " \"Estimated\"}]}");
         final HttpResponse<String> worker =
                 call(
                         runtime,
                         "PUT",
-                        "/projects/any/issues/PJ74/worker",
+                        "/projects/worked/issues/PJ74/worker",
                         "{\"worker\": \"MANUAL\", \"revision\": \"mock@1\"}");
         assertThat(worker.statusCode())
                 .as("the status of a worker change, against a move's: %s", worker.body())
                 .isEqualTo(move.statusCode());
-        assertThat(JSON.readTree(worker.body()).path("type").asString())
-                .as("the refusal of a worker change, against a move's")
-                .isEqualTo(JSON.readTree(move.body()).path("type").asString());
+        assertThat(JSON.readTree(worker.body()).path("revision").asString())
+                .as("the revision after a worker change, against a move's")
+                .isEqualTo(JSON.readTree(move.body()).path("revision").asString());
+        final JsonNode issue =
+                json(call(runtime, "GET", "/projects/worked/issues/PJ74", null)).get("issue");
+        assertThat(issue.get("worker").asString())
+                .as("the worker read after the change")
+                .isEqualTo("MANUAL");
+    }
+
+    @Test
+    void aMoveShowsInTheNextReadAndOnTheStream() throws Exception {
+        // The window's tests of a save would pass against a mock that never saved.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
+        final HttpResponse<java.util.stream.Stream<String>> stream =
+                HttpClient.newHttpClient()
+                        .send(
+                                HttpRequest.newBuilder(
+                                                URI.create(
+                                                        "http://127.0.0.1:"
+                                                                + address.port()
+                                                                + "/projects/any/events"))
+                                        .header("Authorization", "Bearer " + address.token())
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofLines());
+        try (java.util.stream.Stream<String> lines = stream.body()) {
+            final CompletableFuture<Boolean> told =
+                    CompletableFuture.supplyAsync(
+                            () -> lines.anyMatch(line -> line.equals("id:mock@2")));
+            final HttpResponse<String> move =
+                    call(
+                            runtime,
+                            "POST",
+                            "/projects/any/moves",
+                            "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
+                                    + " \"Review\"}]}");
+            assertThat(json(move).get("revision").asString())
+                    .as("the revision the move answers")
+                    .isEqualTo("mock@2");
+            final JsonNode issue =
+                    json(call(runtime, "GET", "/projects/any/issues/B542", null)).get("issue");
+            assertThat(issue.get("state").asString())
+                    .as("the moved issue in the next read")
+                    .isEqualTo("Review");
+            assertThat(told.get(20, TimeUnit.SECONDS))
+                    .as("the new revision told on the open stream")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void theFixedStoryAnswersPartlySavedNamingWhatWasPushedAndWhatFailed() throws Exception {
+        // The window's handling of a half-made save could not be tested against the mock.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> move =
+                call(
+                        runtime,
+                        "POST",
+                        "/projects/any/moves",
+                        "{\"revision\": \"mock@1\", \"moves\": [{\"story\": \"ST292\", \"to\":"
+                                + " \"Review\"}]}");
+        assertThat(move.statusCode()).as("the status: %s", move.body()).isEqualTo(502);
+        final JsonNode problem = JSON.readTree(move.body());
+        assertThat(problem.path("type").asString())
+                .as("the refusal")
+                .isEqualTo("urn:porelo-planner:PartlySaved");
+        assertThat(problem.path("parameters").path("pushed").asString())
+                .as("the repositories pushed")
+                .isEqualTo("porelo");
+        assertThat(problem.path("parameters").path("failed").asString())
+                .as("the repository that failed")
+                .isEqualTo("porelo-host");
+        assertThat(
+                        json(call(runtime, "GET", "/projects/any/stories", null))
+                                .get("revision")
+                                .asString())
+                .as("the revision holding what was pushed")
+                .isEqualTo("mock@2");
+    }
+
+    @Test
+    void aParentClosedOverItsOpenSubIssueIsRefused() throws Exception {
+        // Without a sub-issue in the mock, the window could not test this refusal at all.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> move =
+                call(
+                        runtime,
+                        "POST",
+                        "/projects/any/moves",
+                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B540\", \"to\":"
+                                + " \"Finished\"}]}");
+        assertThat(JSON.readTree(move.body()).path("type").asString())
+                .as("the refusal of a parent closed over its open sub-issue: %s", move.body())
+                .isEqualTo("urn:porelo-planner:MoveNotAllowed");
+        assertThat(
+                        json(call(runtime, "GET", "/projects/any/issues/B540", null))
+                                .get("issue")
+                                .get("state")
+                                .asString())
+                .as("the parent after the refusal")
+                .isEqualTo("Implementing");
+    }
+
+    @Test
+    void aResetBringsBackTheFirstRevisionAndOneProjectsMoveLeavesAnother() throws Exception {
+        // A test's moves seen by the next test or another project make the window's tests flaky.
+        call(runtime, "PUT", "/projects/moved", SOURCE);
+        call(runtime, "PUT", "/projects/other", SOURCE);
+        call(
+                runtime,
+                "POST",
+                "/projects/moved/moves",
+                "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
+                        + " \"Review\"}]}");
+        assertThat(revision("moved")).as("the moved project's revision").isEqualTo("mock@2");
+        assertThat(revision("other")).as("the other project's revision").isEqualTo("mock@1");
+
+        call(runtime, "POST", "/mock/reset", null);
+        call(runtime, "PUT", "/projects/moved", SOURCE);
+
+        assertThat(revision("moved")).as("the revision after the reset").isEqualTo("mock@1");
     }
 
     @Test
@@ -302,6 +433,12 @@ class MockModeTest {
                                                 + " "
                                                 + state.get("kind").asString()));
         return states;
+    }
+
+    private static String revision(final String project) throws Exception {
+        return json(call(runtime, "GET", "/projects/" + project + "/stories", null))
+                .get("revision")
+                .asString();
     }
 
     private static JsonNode json(final HttpResponse<String> answer) {

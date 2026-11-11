@@ -154,7 +154,8 @@ public class StoreConfiguration {
             return new Projects(
                     (project, repository, branch) -> {
                         checkedSource(project, repository, branch);
-                        return mock;
+                        // A board of its own, so a move in one project leaves another's as it was.
+                        return mock.copy();
                     },
                     MOST_PROJECTS,
                     records);

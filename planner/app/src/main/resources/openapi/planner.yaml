@@ -73,8 +73,9 @@ paths:
       operationId: resetMock
       summary: Restore the mock board
       description: >-
-        Only in the mock mode (`porelo-planner --mock`), for the window's tests: restores the mock board every project
-        is served from and forgets every project given, so each test starts alike. Outside the mock mode a POST here
+        Only in the mock mode (`porelo-planner --mock`), for the window's tests: forgets every project given with the
+        moves saved into its own copy of the mock board, so a project given again is served the mock board at
+        `mock@1` and each test starts alike. Outside the mock mode a POST here
         answers 404, as for a path that does not exist.
       tags: [mock]
       responses:
@@ -1231,8 +1232,8 @@ components:
                   story: ST7
     NotOffered:
       description: >-
-        This planner's store saves no moves, adds no issues, saves no workers or saves no priorities, as in mock mode
-        (NotOffered).
+        This planner's store saves no moves, adds no issues, saves no workers or saves no priorities; the mock mode
+        saves moves and workers into its in-memory board but adds no issues and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:

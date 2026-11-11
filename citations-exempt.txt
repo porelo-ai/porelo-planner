@@ -25,6 +25,7 @@ planner/app/src/test/java/org/fuin/porelo/planner/app/NativeStartIT.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/RealProjectReadTest.java
 planner/app/src/main/resources/mock/board.json
 planner/app/src/test/java/org/fuin/porelo/planner/app/MockModeTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/mock/MockStoreTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/EventsStreamTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/HeadEditTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/GitStoreSaveTest.java

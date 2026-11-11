@@ -415,7 +415,8 @@
         "B551",
         "B552",
         "HO156",
-        "HO157"
+        "HO157",
+        "B540.1"
       ],
       "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",
       "link": "https://example.org/stories/ST291"
@@ -740,6 +741,18 @@
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B540",
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT"
+    },
+    {
+      "id": "B540.1",
+      "repository": "porelo",
+      "title": "The host tool's module builds in the porelo build",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": "B540",
+      "link": "https://example.org/issues/B540.1",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT"
     },

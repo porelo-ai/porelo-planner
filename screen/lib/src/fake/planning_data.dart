@@ -786,6 +786,25 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "findings": [],
           "whatMustBeTrue": "The work meets the story description.",
           "subAgents": []
+        },
+        {
+          "id": "B540.1",
+          "repository": "porelo",
+          "state": "Backlog",
+          "title": "The host tool's module builds in the porelo build",
+          "size": "S",
+          "blockedBy": [],
+          "parent": "B540",
+          "link": "https://example.org/issues/B540.1",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the story description.",
+          "subAgents": []
         }
       ],
       "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",

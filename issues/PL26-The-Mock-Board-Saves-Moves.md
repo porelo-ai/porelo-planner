@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL26",
   "title": "The Mock Board Saves Moves",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 15,
@@ -15,8 +15,7 @@
 ```
 
 **Size:** M - a save and a story-state rule in `MockStore`, one board per project, two additions to the mock board,
-in `app` alone; but the mock board is what the window's planning tests read, so its new items and the changed
-answer of a Start in the mock are agreed with the window.
+in `app` and the screen package's copy of the mock board; the mock board is what the window's planning tests read.
 
 **What must be true.** The window's planning tests can save moves against the mock mode and see them. This issue
 builds the mock mode's moves in memory, which [PL10](README.md#pl10) leaves to it:
@@ -28,50 +27,49 @@ builds the mock mode's moves in memory, which [PL10](README.md#pl10) leaves to i
 
 ## Plan
 
-Read in today's code: `POST /projects/{project}/moves` (`BoardController.saveMoves`) checks the batch with
-`Moves.check`, which already refuses a parent closed over an open sub-issue (`checkParents`, `MoveNotAllowed`), and
-then calls `PlanningStore.save`; `changes.saved(project)` then tells every window the store's board if its revision
-moved (`ChangesRegistry.saved`, `Changes.saved`). `MockStore` (`app/mock`) overrides neither `save` nor `storyState`,
-whose defaults throw `UnsupportedOperationException`, so today a move in the mock mode answers `NotOffered`, a story
-move with issues already in `Moves.check`. Its revision is fixed (`mock@1` in `mock/board.json`), and
-`StoreConfiguration.projects` hands the one `MockStore` bean to every project given. No issue of `mock/board.json`
-has a `parent`. The rest - the event and the reset - needs nothing new: a new revision is told by the existing path,
-and `MockController.reset` already forgets every project.
+As built:
 
-1. **One board per project** (`StoreConfiguration`, `MockStore`). The opener answers a new `MockStore` on the board
-   read once from the class path, so a move in one project leaves another's board as it was; `reset` restores the
-   bean's board, and forgetting the projects drops the copies. Unit.
-2. **Save and story state** (`MockStore`). `save(revision, writes)` refuses a revision other than the current one
-   (`StaleRevision`), sets each issue's new state and each story's stated state or its removal (`Writes.issues`,
-   `stories`, `unstated`), derives every story without a stated state from its issues, and answers the board with the
-   next revision, `mock@2` and on. `storyState` derives as the stories index does: the earliest open state of the
-   issues in workflow order, otherwise a closed state. Red first, unit in a new `MockStoreTest`: a save of B542 to
-   Review answers a board with a new revision and B542 in Review, and the board before it is unchanged. Harm: the
-   window's tests of a save pass against a mock that never saved.
-3. **PartlySaved** (`MockStore`). A batch moving issues of the fixed story in more than one repository saves those of
-   the first repository in the project's order, answers a board with a new revision for them, and throws
-   `PartlySaved` naming the next one, as the Git store leaves a save whose later push failed. Proposed story: ST292,
-   whose issues lie in porelo, porelo-host, porelo-frontend and porelo-message-matrix. Unit.
-4. **A sub-issue** (`mock/board.json`). B540.1 in porelo, parent B540, in Backlog, listed with ST291, so ST291 stays
-   in Backlog; moving B540 to Finished answers `MoveNotAllowed`. Integration in `MockModeTest`.
-5. **Over HTTP** (`MockModeTest`, integration): a move answers a new revision, the next read and an open event
-   stream show it, ST292 answers 502 `PartlySaved` with `pushed` and `failed`, and `POST /mock/reset` brings back
-   `mock@1`. `StoryWorkHttpTest.mockModeServesTheOperationsThroughARealHttpServer` asserts today that a Start in the
-   mock leaves the revision at `mock@1`; with a save, `WorkRun` moves ST14's issue into Implementing, and the
-   assertion turns to that.
+1. **One board per project** (`StoreConfiguration`, `MockStore.copy`). The mock opener answers a new `MockStore` on
+   the board read once from the class path, so a move in one project leaves another's board as it was; forgetting
+   the projects on `POST /mock/reset` drops the copies, and `MockStore.reset` restores a store's first board.
+2. **Save** (`MockStore.save`, under the store's monitor, so concurrent requests neither lose nor double a move).
+   It refuses a revision other than the current one (`StaleRevision`), sets each issue's new state and worker and
+   each story's stated state or its removal, derives every story without a stated state from its issues, and
+   answers the board with the next revision, `mock@2` and on. A priority stays unsaved
+   (`UnsupportedOperationException`, answered `NotOffered` as before).
+3. **Story state** (`MockStore.storyState`): the earliest open state of the issues in workflow order; with every
+   issue closed, the first issue's state when all are rejected, else the completed state. The store interface's
+   `Workflow` names the closed states but not which reject; the mock takes the first closed state as the completed
+   one and every later one as rejecting, which holds for the mock's workflow (Finished, Rejected).
+4. **PartlySaved** (`MockStore.PARTLY_SAVED`, ST292). A batch moving an issue of ST292 whose writes reach more than
+   one repository saves the writes of the first repository in push order - the other repositories in the project's
+   order, the own repository last, as the Git store pushes them - answers that board with a new revision for every
+   read and window, and throws `PartlySaved` naming it as pushed and the next as failed. A story move of ST292 to
+   Review answers 502 with `pushed` porelo and `failed` porelo-host.
+5. **A sub-issue** (`mock/board.json` and the screen package's `planning_data.dart`, which `MockModeTest` compares
+   story by story with its issues). B540.1 in porelo, parent B540, in Backlog, listed with ST291, which stays in
+   Backlog; moving B540 to Finished answers `MoveNotAllowed`.
+6. **Start in the mock.** A work order saves nothing, so `StoryWorkHttpTest` still sees `mock@1` after it; the move
+   into the working state is saved when the window reports the task STARTED (`WorkRun`, `NextStep.started`), which
+   in the mock now changes the board instead of halting the run with `SAVE_REFUSED`.
 
 ## Acceptance
 
-- `MockStoreTest` and the new `MockModeTest` cases seen red on today's code, then green; the app's whole suite and
-  the native test in mock mode green.
-- Against `--mock`: a move shows in the next read and on the stream, ST292 answers PartlySaved, B540 to Finished
-  answers MoveNotAllowed, a reset restores `mock@1`.
+- `MockStoreTest` (unit): a save answers `mock@2` with the move and leaves the board before it unchanged; a stale
+  save is refused and changes nothing; a story without a stated state follows its issues, a stated one is kept and
+  its removal derives it again; the derivation of open, closed and rejected issues; ST292 over two repositories saves
+  porelo and names porelo-host; over one repository it saves whole; one copy's move leaves another's board; a reset
+  restores the first board; eight concurrent saves end at `mock@9` with every move; a priority is not saved. Each
+  seen red under a deliberate break, then green.
+- `MockModeTest` (integration over HTTP against `--mock`): a move answers `mock@2`, shows in the next read and on an
+  open event stream; ST292 answers 502 `PartlySaved` with `pushed` and `failed`; B540 to Finished answers
+  `MoveNotAllowed`; a reset brings back `mock@1`, and one project's move leaves another at `mock@1`; a worker change
+  answers as a move does.
+- The app's whole suite and the screen package's tests green.
 
-## To be checked
+## Readings declined
 
-- With the window's agent: the story for PartlySaved and the sub-issue's id, whether the window's tests count the
-  mock's issues or rely on `mock@1` after a Start, and whether a Start in the mock may now move issues.
-- Whether the store interface's `Workflow` says enough to derive a story's state as the stories index does: it names
-  the closed states, not which of them is the rejecting one.
-- In which order the Git store pushes a save's repositories, so the mock's PartlySaved names them as it would.
-- Whether the Git store lists a sub-issue among its story's issues, so the mock board does the same.
+- `/mock/reset` also resets the board the per-project copies are made from, which no save writes into; the reset is
+  kept there so a store used without copies starts again alike, and costs nothing.
+- The mock stores a target state without checking it against the workflow: every move reaches it only through the
+  core's moves, which refuse a state the workflow lacks with `StateNotAllowed` before anything is saved.
