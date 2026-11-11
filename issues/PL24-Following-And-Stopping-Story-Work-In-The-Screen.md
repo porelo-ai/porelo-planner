@@ -37,8 +37,8 @@ planner answers to the window's Start hook once.
   and never put into a path, a file name or a URL; `PlanningTaskEnded` Porelo's record of the
   agent's end unmapped, `{at,finished,why,answer,unpushed}`. The answer `{revision,work,tasks}` is checked whole, and
   its still-valid offers go to the Start hook once, bound to the provider, project and story they came from, never to
-  the board shown now. A stop voids pending starts; `PlanningTaskChanges` lets the window stop the active tasks and
-  report STOPPED.
+  the board shown now. A stop voids pending starts; `PlanningTaskChanges` lets the window stop a task whose Start
+  finished after the stop, without a report, since the planner voided its offer.
 - **Shown state:** activity stays until a report confirms it ended; Needs you lists every issue whose run reason is not
   NONE with its raw answer, DONE readings with invalid findings and refused saves included; the three reading choices
   appear only for a stopped reading, and a choice reads its findings for the round and revision it is made on. The
