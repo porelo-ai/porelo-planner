@@ -17,6 +17,7 @@ left out.
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | - | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
+| <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | [PL46](README.md#pl46) | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | - | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | - | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
@@ -61,7 +62,7 @@ left out.
 |---|---|---|---|
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | [PL04](README.md#pl04) | `--mock` serves the window's mock board through the same API and SSE, moves in memory, a reset between tests |
-| <a id="pl46"></a>[PL46](PL46-An-Issue-Says-Whether-An-Agent-Works-It.md) | L | - | Every issue's head carries who works it, Agent or Manual; the board shows it and lets a person set it, and only an Agent issue gets a task started for it when it reaches a state that starts work |
+| <a id="pl46"></a>[PL46](PL46-An-Issue-Says-Whether-An-Agent-Works-It.md) | M | - | Every issue's head carries who works it, Agent or Manual, read as Agent where it names none; the planner saves it through its own call, and the board shows it |
 
 ## Review
 
