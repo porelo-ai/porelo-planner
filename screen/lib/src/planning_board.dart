@@ -756,6 +756,8 @@ class PlanningBoard extends ChangeNotifier {
       if (_disposed || generation != _generation) return;
       moveProblem = null;
       _acceptNewest(reply.$1, reply.$2);
+      final faults = snapshot?.faults ?? const <String>[];
+      problem = faults.isEmpty ? null : planningShown(faults.join('\n'));
     } catch (error) {
       if (!_disposed && generation == _generation) moveProblem = planningFailureWords(error);
     } finally {

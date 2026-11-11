@@ -369,6 +369,21 @@ void main() {
     expect((await _refusal(source.refreshProject('../demo'))).name, 'InvalidName', reason: 'checked before it is sent');
   });
 
+  // Harm: Reload planning, the one way out of a changed project, is refused for the change it should recover from.
+  test('a refresh after the project repository changed tells the planner the new one and fetches it', () async {
+    var repository = const PlannerProject('https://example.org/first.git');
+    final (planner, source) = await _started(projects: (_) => repository);
+    planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, {'revision': 'r2'});
+    await source.stories('demo');
+    repository = const PlannerProject('https://example.org/second.git');
+    final before = planner.targets.length;
+    expect(await source.refreshProject('demo'), 'r2', reason: 'the fetch runs for the repository named now');
+    expect(planner.targets.skip(before), [
+      'PUT /projects/demo',
+      'POST /projects/demo/refresh',
+    ], reason: 'the planner is told the new repository before it fetches');
+  });
+
   // Harm: a story's task answered for an idea reaches Start, or a refused idea is taken for an offer.
   test('a discussion posts the idea and accepts only a discussion answered without a revision', () async {
     final (planner, source) = await _started();

@@ -35,3 +35,12 @@ faults never pushes the board out of sight.
 
 - After the planner starts, the window shows the repositories' current board within seconds; eight faults take one
   line until opened.
+
+## Reading
+
+- Fixed: a refresh bound the project as a write does, so after the project's repository changed, Reload planning was
+  refused with "reload planning first" every time. It now tells the planner the repository named now, as a read does.
+- Fixed: Reload planning took the board it read but kept the faults line from the stream, so with the stream down it
+  showed faults that were gone or hid new ones.
+- Declined: the first poll right after a window's first read refreshes a second time. Unchanged, a refresh asks each
+  remote for its head and fetches nothing, so it costs one round of head checks at a start and does no harm.

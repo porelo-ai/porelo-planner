@@ -103,6 +103,30 @@ PlanningSnapshot _complete(String revision, String state, {String phase = 'Build
   ],
 });
 
+/// A source whose stream has shown a fault, and whose reads answer the board as the repositories hold it now.
+class _Reread extends _Backend {
+  List<String> faults = const [];
+  @override
+  Future<PlanningSnapshot> planningWorkflow(String project) async {
+    return PlanningSnapshot.from({
+      'revision': 'r2',
+      'states': [
+        {'name': 'Building', 'kind': 'WORKING'},
+      ],
+      'phases': [
+        {
+          'name': 'Build',
+          'states': ['Building'],
+        },
+      ],
+      'faults': faults,
+    });
+  }
+
+  @override
+  Future<PlanningSnapshot> stories(String project) async => _complete('r2', 'Building');
+}
+
 PlanningSnapshot _snapshot(String id) => PlanningSnapshot.from({
   'states': [
     {'name': 'Building', 'kind': 'WORKING'},
@@ -241,6 +265,41 @@ void main() {
 
     expect(board.snapshot!.phases.map((phase) => phase.name), ['Ship'], reason: 'the new workflow, same states');
     expect(backend.workflowReads, reads, reason: 'no workflow read beside the stream');
+  });
+
+  // Harm: Reload planning shows faults that are gone, or hides new ones, while the stream is down.
+  test('a reload shows the faults of the board it read, and none once they are gone', () async {
+    final backend = _Reread();
+    final board = PlanningBoard(backend, 'project');
+    addTearDown(board.dispose);
+    backend.controllers['project']!.add(
+      PlanningSnapshot.from({
+        'revision': 'r1',
+        'states': [
+          {'name': 'Building', 'kind': 'WORKING'},
+        ],
+        'phases': [
+          {
+            'name': 'Build',
+            'states': ['Building'],
+          },
+        ],
+        'work': <Object>[],
+        'faults': ['an old fault'],
+        'stories': <Object>[],
+      }),
+    );
+    await pumpEventQueue();
+    expect(board.problem, 'an old fault', reason: 'the streamed board shows its fault');
+    await backend.controllers['project']!.close();
+    await pumpEventQueue();
+
+    await board.reload();
+    expect(board.problem, isNull, reason: 'the board read now has no fault');
+
+    backend.faults = ['a new fault'];
+    await board.reload();
+    expect(board.problem, 'a new fault', reason: 'a fault of the board read now is shown');
   });
 
   // Harm: a workflow broken by a push elsewhere goes unsaid, the board showing the old columns as sound.
