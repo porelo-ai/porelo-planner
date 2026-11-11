@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL28",
   "title": "The Planner's Own Files On Windows",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 17,
@@ -95,7 +95,8 @@ On Windows, the POSIX mode is replaced by the owner and the discretionary access
 - Every Linux test that ran before still runs and passes on Linux, unchanged in what it asserts.
 - Each new guard is seen red by a break that compiles.
 
-## To be checked
+## Measured
 
-- The default owner and DACL of `C:\`, `C:\Users`, the profile, `AppData` and `AppData\Local` on `windows-2025`,
-  read by the first trial run: the ancestor rule must accept them.
+- On `windows-2025` the three tests on real files pass in the runner's temporary directory, so the ancestors of that
+  directory, as the runner sets them, pass the rule. Which directory that is, and the owner and DACL of the profile's
+  `AppData\Local`, the run did not print; the executable's first run on the runner reads them.
