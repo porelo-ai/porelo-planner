@@ -3,8 +3,10 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
@@ -486,6 +488,43 @@ class WorkRecordTest {
                     .as(
                             "the directories are checked when the lock is taken, not again while it is held")
                     .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void aRecordOpenElsewhereForAMomentIsStillReplaced() {
+        // A virus scanner or indexer on Windows holds a file open for a moment; the work would
+        // fail.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final AtomicInteger refused = new AtomicInteger();
+        final WorkRecord.Replace busyOnce =
+                (written, target) -> {
+                    if (refused.getAndIncrement() == 0) {
+                        throw new FileSystemException(
+                                target.toString(),
+                                null,
+                                "The process cannot access the file because it is being used by"
+                                        + " another process");
+                    }
+                    Files.move(
+                            written,
+                            target,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                };
+        try (WorkRecord records =
+                new WorkRecord(environment, false, PrivateFiles.of(environment), busyOnce)) {
+            final long generation =
+                    records.open("project", "https://example.org/store.git", "main")
+                            .locked(
+                                    session -> {
+                                        session.write(new WorkRun.Snapshot(7, Map.of()));
+                                        return session.read().generation();
+                                    });
+
+            assertThat(generation)
+                    .as("the record is written once the file is free again")
+                    .isEqualTo(7);
         }
     }
 }

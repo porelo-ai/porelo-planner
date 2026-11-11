@@ -37,11 +37,6 @@ public final class AddressFile implements AutoCloseable {
 
     private static final String LOCK = "planner.lock";
 
-    /** How long a step refused because the file is open elsewhere is taken again. */
-    private static final java.time.Duration SHARED_FOR = java.time.Duration.ofSeconds(2);
-
-    private static final java.time.Duration SHARED_PAUSE = java.time.Duration.ofMillis(50);
-
     /** The lock files this process holds. */
     private static final Set<Path> HELD = ConcurrentHashMap.newKeySet();
 
@@ -187,7 +182,7 @@ public final class AddressFile implements AutoCloseable {
                     throw alreadyRuns(directory);
                 }
                 // Held, so a file here is a dead planner's; gone before a window reads its port.
-                whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+                SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
                 return new AddressFile(directory, lockFile, channel, lock, files);
             } catch (IOException | RuntimeException e) {
                 HELD.remove(lockFile);
@@ -225,7 +220,7 @@ public final class AddressFile implements AutoCloseable {
                 }
             }
             final Path written = temporary;
-            whileShared(
+            SharedFiles.whileShared(
                     () ->
                             Files.move(
                                     written,
@@ -249,7 +244,7 @@ public final class AddressFile implements AutoCloseable {
     @Override
     public void close() {
         try {
-            whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
         } catch (IOException e) {
             throw new IllegalStateException(
                     "the address file " + directory.resolve(FILE) + " cannot be deleted: " + e, e);
@@ -279,37 +274,6 @@ public final class AddressFile implements AutoCloseable {
         } catch (IOException e) {
             // Not told apart: refused as the account's own.
             return true;
-        }
-    }
-
-    /** A step on the address file. */
-    private interface FileStep {
-
-        /** Takes it. */
-        void take() throws IOException;
-    }
-
-    /**
-     * Takes a step again for a short while when Windows refuses it because a window has the file
-     * open, then fails with the last refusal.
-     */
-    private static void whileShared(final FileStep step) throws IOException {
-        final long end = System.nanoTime() + SHARED_FOR.toNanos();
-        while (true) {
-            try {
-                step.take();
-                return;
-            } catch (final java.nio.file.FileSystemException e) {
-                if (System.nanoTime() > end || e instanceof java.nio.file.NoSuchFileException) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(SHARED_PAUSE.toMillis());
-                } catch (final InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                }
-            }
         }
     }
 

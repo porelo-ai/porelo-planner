@@ -51,7 +51,21 @@ public final class WorkRecord implements AutoCloseable {
     private final Map<String, String> environment;
     private final PrivateFiles files;
     private final boolean memory;
+    private final Replace replace;
     private final Map<String, Entry> entries = new HashMap<>();
+
+    /** Puts a written record in place of the one before. */
+    interface Replace {
+
+        /**
+         * Puts it there.
+         *
+         * @param written the new record
+         * @param target where the record is kept
+         * @throws IOException when it is refused
+         */
+        void move(Path written, Path target) throws IOException;
+    }
 
     /** Keeps mock records in memory and resolves real state paths only when a project is used. */
     public WorkRecord(final Map<String, String> environment, final boolean memory) {
@@ -61,9 +75,28 @@ public final class WorkRecord implements AutoCloseable {
     /** Keeps records with the given platform's private files. */
     WorkRecord(
             final Map<String, String> environment, final boolean memory, final PrivateFiles files) {
+        this(
+                environment,
+                memory,
+                files,
+                (written, target) ->
+                        Files.move(
+                                written,
+                                target,
+                                StandardCopyOption.ATOMIC_MOVE,
+                                StandardCopyOption.REPLACE_EXISTING));
+    }
+
+    /** Keeps records with the given private files, replacing a record as told. */
+    WorkRecord(
+            final Map<String, String> environment,
+            final boolean memory,
+            final PrivateFiles files,
+            final Replace replace) {
         this.environment = Map.copyOf(environment);
         this.memory = memory;
         this.files = files;
+        this.replace = replace;
     }
 
     /** The versioned on-disk envelope binds runs to their planning source. */
@@ -389,11 +422,8 @@ public final class WorkRecord implements AutoCloseable {
                     }
                     channel.force(true);
                 }
-                Files.move(
-                        temporary,
-                        target,
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
+                final Path written = temporary;
+                SharedFiles.whileShared(() -> replace.move(written, target));
                 temporary = null;
                 // Windows opens no directory as a file; its move is durable once it returns.
                 if (!files.windows()) {
