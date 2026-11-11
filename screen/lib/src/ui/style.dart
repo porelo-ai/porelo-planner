@@ -23,6 +23,12 @@ abstract final class PlanningStyle {
   /// The width of a phase folded to its summary.
   static const double foldedColumn = 136;
 
+  /// The room a priority mark takes in a folded column, the widest mark's.
+  static const double foldedMark = 28;
+
+  /// A menu button that takes only its icon's room.
+  static const double denseButton = 28;
+
   /// The miniature progress indicator's width.
   static const double progress = 56;
 

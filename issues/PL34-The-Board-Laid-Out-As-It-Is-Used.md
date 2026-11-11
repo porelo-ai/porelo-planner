@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL34",
   "title": "The Board Laid Out As It Is Used",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 21,

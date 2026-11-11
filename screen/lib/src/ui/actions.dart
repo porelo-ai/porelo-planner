@@ -149,10 +149,13 @@ PlanningAction planningWebAction(
 /// The actions one story offers, as one menu; what cannot run stays in it, grayed, with its reason.
 class PlanningActionMenu extends StatelessWidget {
   /// Takes what to offer and what to say it is for.
-  const PlanningActionMenu({required this.actions, required this.tooltip, super.key});
+  const PlanningActionMenu({required this.actions, required this.tooltip, this.dense = false, super.key});
 
   /// What this story can do, runnable or not.
   final List<PlanningAction> actions;
+
+  /// Whether the button takes only its icon's room, as in a folded column.
+  final bool dense;
 
   /// What the button says it is for.
   final String tooltip;
@@ -163,6 +166,14 @@ class PlanningActionMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: tooltip,
       icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
+      padding: dense ? EdgeInsets.zero : const EdgeInsets.all(8),
+      style: dense
+          ? IconButton.styleFrom(
+              minimumSize: const Size.square(PlanningStyle.denseButton),
+              fixedSize: const Size.square(PlanningStyle.denseButton),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            )
+          : null,
       onSelected: (id) {
         for (final action in actions) {
           if (action.id == id && action.available) action.run();

@@ -372,39 +372,47 @@ class _BoardViewState extends State<_BoardView> {
                 icon: const Icon(Icons.refresh),
                 label: const Text('Reload planning'),
               ),
-            if (board.pending.isNotEmpty) Flexible(child: _pending(context)),
+            // Not flexible: a loose share of the height would stay empty below the board.
+            if (board.pending.isNotEmpty) _pending(context),
             const SizedBox(height: Space.normal),
             if (board.snapshot == null && board.problem == null)
               const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
             Expanded(
               child: board.snapshot == null
                   ? const SizedBox.shrink()
-                  : SingleChildScrollView(
-                      key: const Key('planning-board-scroll'),
-                      controller: _vertical,
+                  // The sideways bar sits at the view's foot, not under the tallest column, so it can be seen.
+                  : Scrollbar(
+                      key: const Key('planning-board-sideways'),
+                      controller: _horizontal,
+                      thumbVisibility: true,
+                      notificationPredicate: (notification) => notification.depth == 1,
                       child: SingleChildScrollView(
-                        controller: _horizontal,
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (final phase in board.phases)
-                              if (board.statesIn(phase).isNotEmpty) _phase(context, phase),
-                            if (board.unplaced.isNotEmpty)
-                              SizedBox(
-                                width: PlanningStyle.column,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('Stories outside the reported workflow'),
-                                    for (final story in board.unplaced) ...[
-                                      Text('State: ${story.state.isEmpty ? 'not reported' : story.state}'),
-                                      _card(context, story),
+                        key: const Key('planning-board-scroll'),
+                        controller: _vertical,
+                        child: SingleChildScrollView(
+                          controller: _horizontal,
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (final phase in board.phases)
+                                if (board.statesIn(phase).isNotEmpty) _phase(context, phase),
+                              if (board.unplaced.isNotEmpty)
+                                SizedBox(
+                                  width: PlanningStyle.column,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Stories outside the reported workflow'),
+                                      for (final story in board.unplaced) ...[
+                                        Text('State: ${story.state.isEmpty ? 'not reported' : story.state}'),
+                                        _card(context, story),
+                                      ],
                                     ],
-                                  ],
+                                  ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -519,12 +527,23 @@ class _BoardViewState extends State<_BoardView> {
                           child: Container(
                             key: Key('planning-card ${story.id}'),
                             padding: const EdgeInsets.all(Space.tight),
-                            child: Wrap(
-                              spacing: Space.tight,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _priority(context, story.priority ?? '', mark: true),
-                                Text(story.id),
-                                _menu(story),
+                                Row(
+                                  children: [
+                                    // One width for every mark, so the numbers and menus stand in line.
+                                    SizedBox(
+                                      width: PlanningStyle.foldedMark,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: _priority(context, story.priority ?? '', mark: true),
+                                      ),
+                                    ),
+                                    Expanded(child: Text(story.id, softWrap: false, overflow: TextOverflow.fade)),
+                                    _menu(story, dense: true),
+                                  ],
+                                ),
                                 if (board.pending[story.id] case final move? when move.problem == null)
                                   const Text('moved'),
                                 if (board.pending[story.id]?.problem case final problem?) Text(problem),
@@ -710,8 +729,9 @@ class _BoardViewState extends State<_BoardView> {
     await source.stopWork(story.id, revision: revision, source: backend, sourceProject: project);
   }
 
-  Widget _menu(PlanStory story) => PlanningActionMenu(
+  Widget _menu(PlanStory story, {bool dense = false}) => PlanningActionMenu(
     key: Key('planning-menu ${story.id}'),
+    dense: dense,
     tooltip: 'Work on ${story.id}',
     actions: [
       PlanningAction(
