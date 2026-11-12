@@ -87,7 +87,7 @@ class _Source extends MockPlanningSource {
   }
 
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async =>
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) async =>
       StoryWorkOrder.readProposal(_proposal());
 
   @override

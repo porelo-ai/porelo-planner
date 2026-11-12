@@ -658,7 +658,8 @@ public class BoardController {
             final HttpServletRequest request) {
         final String checked = storyId(project, id);
         final WorkRequests.Proposal body = WorkRequests.proposal(WorkRequests.read(request));
-        return WorkAnswers.proposal(projects.work(name(project)).propose(checked, body.to()));
+        return WorkAnswers.proposal(
+                projects.work(name(project)).propose(checked, body.to(), body.issues()));
     }
 
     /**

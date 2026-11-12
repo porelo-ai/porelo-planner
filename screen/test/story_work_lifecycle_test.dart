@@ -14,8 +14,8 @@ class _Delayed extends MockPlanningSource {
   bool delayProposal = true;
   int storyStarts = 0;
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) =>
-      delayProposal ? proposal.future : super.proposeStoryWork(project, story, to);
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) =>
+      delayProposal ? proposal.future : super.proposeStoryWork(project, story, to, issues: issues);
   @override
   Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) {
     storyStarts++;

@@ -45,7 +45,10 @@ void _repository(Map<String, dynamic> repo) {
   if (!_repositoryName.hasMatch(_text(repo, 'repository'))) _invalid('The repository name is invalid.');
   final issues = _strings(repo['issues'], pattern: _issueName);
   final main = repo['main'];
-  if (main is! Map<String, dynamic> || main['role'] != 'MAIN') _invalid('The main worker is invalid.');
+  if (main is! Map<String, dynamic> || !const {'MAIN', 'READER'}.contains(main['role'])) {
+    _invalid('The main worker is invalid.');
+  }
+  if (main['role'] == 'READER' && _records(repo['subAgents']).isNotEmpty) _invalid('A reading has no helpers.');
   for (final key in ['name', 'agent', 'model', 'brief']) {
     _text(main, key, blank: key == 'name' || key == 'brief', most: key == 'brief' ? 4000 : null);
   }
@@ -100,6 +103,26 @@ class StoryWorkOrder {
       }
       final helpers = _records(repo['subAgents']);
       if (helpers.length != original.subAgents.length) _invalid('The request omits a proposed helper.');
+      if (original.main.role == 'READER') {
+        // A reading by hand is one reader per issue, each reading a build only the planner knows.
+        for (final issue in _strings(repo['issues'])) {
+          expected.add(
+            PlanningTaskOrder._(
+              null,
+              name,
+              [issue],
+              'READER',
+              main['agent'] as String,
+              main['model'] as String,
+              request.mode,
+              '',
+              null,
+              const [],
+            ),
+          );
+        }
+        continue;
+      }
       expected.add(
         PlanningTaskOrder._(
           null,
@@ -294,5 +317,6 @@ class PlanningTaskOrder {
       model == other.model &&
       mode == other.mode &&
       result == other.result &&
-      listEquals(reads, other.reads);
+      // An expected reader names no build; the planner's names one, which reading it refuses otherwise.
+      (role == 'READER' && other.reads.isEmpty || listEquals(reads, other.reads));
 }

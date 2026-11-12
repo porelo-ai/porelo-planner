@@ -187,7 +187,10 @@ class MockStoryWork {
       }
       final all = (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>();
       // A person works a MANUAL issue by hand, so no task is proposed for it.
-      final issues = all.where((issue) => issue['worker'] != 'MANUAL').toList();
+      final chosen = parameters['issues'] as List?;
+      final issues = all
+          .where((issue) => issue['worker'] != 'MANUAL' && (chosen == null || chosen.contains(issue['id'])))
+          .toList();
       final manual = [for (final issue in all.where((issue) => issue['worker'] == 'MANUAL')) issue['id'] as String];
       if (all.isNotEmpty && issues.isEmpty) {
         refuse('WorkNotAllowed', {
@@ -266,7 +269,12 @@ class MockStoryWork {
         'tasks': [for (final task in (story['work'] as Map)['tasks'] as List) (task as Map)['task']],
       });
     }
-    final proposal = call('ProposeStoryWork', {'project': project, 'story': story['id'], 'to': parameters['to']});
+    final proposal = call('ProposeStoryWork', {
+      'project': project,
+      'story': story['id'],
+      'to': parameters['to'],
+      'issues': ?parameters['issues'],
+    });
     void invalid(String reason) =>
         refuse('WorkNotAllowed', {'from': story['state'], 'to': parameters['to'], 'reason': reason});
     if (!(proposal['modes'] as List).contains(parameters['mode'])) invalid('The project does not allow that mode.');

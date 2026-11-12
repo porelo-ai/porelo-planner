@@ -320,13 +320,22 @@ public final class WorkRun {
 
     /** Returns a proposal using recorded activity and refusing lost or halted runs. */
     public WorkProposal propose(final String story, final String to) {
+        return propose(story, to, null);
+    }
+
+    /**
+     * Returns a proposal for the story's issues {@code issues}, or its own when null, using
+     * recorded activity and refusing lost or halted runs.
+     */
+    public WorkProposal propose(
+            final String story, final String to, final @Nullable List<String> issues) {
         Ids.story(story);
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
                     allowed(board, snapshot, story, to);
-                    return WorkProposal.propose(board, story, to, running(snapshot));
+                    return WorkProposal.propose(board, story, to, running(snapshot), issues);
                 });
     }
 
@@ -341,12 +350,27 @@ public final class WorkRun {
                         throw WorkRefusal.staleRevision(board.revision().value());
                     }
                     allowed(board, snapshot, storyId, to);
+                    final Run earlier = snapshot.runs().get(storyId);
+                    if (earlier != null
+                            && !earlier.stopped()
+                            && !earlier.halted()
+                            && followUpWaits(earlier)) {
+                        throw WorkRefusal.notAllowed(
+                                WorkProposal.story(board, storyId).state(),
+                                to,
+                                "Work an earlier end offered waits to start.");
+                    }
                     final WorkOrder order =
                             WorkOrder.accept(board, storyId, to, decision, running(snapshot));
                     final WorkProposal proposal =
-                            WorkProposal.propose(board, storyId, to, running(snapshot));
+                            WorkProposal.propose(
+                                    board, storyId, to, running(snapshot), decision.issues());
                     final WorkRule rule =
-                            WorkProposal.rule(board, WorkProposal.story(board, storyId), to);
+                            WorkProposal.rule(
+                                    board,
+                                    WorkProposal.story(board, storyId),
+                                    to,
+                                    decision.issues());
                     final Run old = snapshot.runs().get(storyId);
                     final int rounds =
                             decision.readingRounds() == null
@@ -365,7 +389,54 @@ public final class WorkRun {
                     final Map<String, NextStep.Progress> progress =
                             new LinkedHashMap<>(old == null ? Map.of() : old.issues());
                     final List<Offer> offers = new ArrayList<>();
-                    for (final WorkOrder.Task task : order.tasks()) {
+                    if (rule.blocked() != null) {
+                        for (final WorkOrder.Task task : order.tasks()) {
+                            for (final String id : task.issues()) {
+                                final int allowance =
+                                        overrides.stream()
+                                                .filter(l -> l.issue().equals(id))
+                                                .mapToInt(WorkProposal.IssueRounds::rounds)
+                                                .findFirst()
+                                                .orElse(rounds);
+                                final NextStep.Progress previous = progress.get(id);
+                                progress.put(
+                                        id,
+                                        previous == null
+                                                ? NextStep.Progress.start(allowance)
+                                                : new NextStep.Progress(
+                                                        new ReadingCycle.Rounds(
+                                                                previous.rounds().rounds(),
+                                                                previous.rounds().roundsMost(),
+                                                                false),
+                                                        previous.findings(),
+                                                        false,
+                                                        "NONE",
+                                                        previous.answer()));
+                                carriedBuild(old, id)
+                                        .filter(carried -> !offers.contains(carried))
+                                        .ifPresent(offers::add);
+                                offers.add(
+                                        offer(
+                                                handReader(
+                                                        board,
+                                                        storyId,
+                                                        to,
+                                                        rule,
+                                                        old,
+                                                        id,
+                                                        new NextStep.Settings(
+                                                                task.mode(),
+                                                                task.agent(),
+                                                                task.model()),
+                                                        decision.comment() == null
+                                                                ? ""
+                                                                : decision.comment()),
+                                                storyId));
+                            }
+                        }
+                    }
+                    for (final WorkOrder.Task task :
+                            rule.blocked() == null ? order.tasks() : List.<WorkOrder.Task>of()) {
                         final List<String> owned =
                                 task.issues().stream()
                                         .filter(
@@ -502,7 +573,12 @@ public final class WorkRun {
                     session.write(next);
                     return new Order(
                             board.revision().value(),
-                            offered(run, offers.stream().map(Offer::id).toList()));
+                            offered(
+                                    run,
+                                    offers.stream()
+                                            .filter(o -> o.status().equals("OFFERED"))
+                                            .map(Offer::id)
+                                            .toList()));
                 });
     }
 
@@ -1096,9 +1172,9 @@ public final class WorkRun {
                                 following.add(next.id());
                             }
                         } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
+                            // Nothing was offered, so the reading still waits for a choice.
                             draft.progress.put(
-                                    issueId,
-                                    draft.progress(issueId).attention("NEXT_STEP_UNAVAILABLE"));
+                                    issueId, previous.attention("NEXT_STEP_UNAVAILABLE"));
                         }
                     }
                     writes = reconcile(board, draft, writes, following);
@@ -1364,6 +1440,66 @@ public final class WorkRun {
         } else {
             session.preflightIssue(snapshot, board, issue);
         }
+    }
+
+    /**
+     * Whether an offer an end or a person's choice made, a reader or a rework, still waits for the
+     * window to start: one offered beside work that already ran, or one an end lists. An order no
+     * task of which ran yet, beside a build it carries for its readers, may still be replaced.
+     */
+    private static boolean followUpWaits(final Run run) {
+        final Set<String> following =
+                run.offers().stream()
+                        .flatMap(o -> o.following().stream())
+                        .collect(java.util.stream.Collectors.toSet());
+        final boolean ran =
+                run.offers().stream()
+                        .anyMatch(o -> !o.status().equals("OFFERED") && !o.status().equals("VOID"));
+        return run.offers().stream()
+                .anyMatch(o -> o.status().equals("OFFERED") && (ran || following.contains(o.id())));
+    }
+
+    /**
+     * The build a hand reading reads, kept void in the run that replaces the old one, so a later
+     * round or rework of that reading still finds it and no report can bind to it again.
+     */
+    private static java.util.Optional<Offer> carriedBuild(
+            final @Nullable Run run, final String issueId) {
+        return run == null
+                ? java.util.Optional.empty()
+                : run.offers().stream()
+                        .filter(
+                                o ->
+                                        !o.binding().role().equals("READER")
+                                                && o.binding().issues().contains(issueId)
+                                                && o.task() != null)
+                        .reduce((left, right) -> right)
+                        .map(o -> o.status().equals("VOID") ? o : withStatus(o, "VOID"));
+    }
+
+    /**
+     * A reader a person starts for an issue standing where the reading rule takes from, reading the
+     * issue's last build in the story's run where it landed; refused when none is known, since a
+     * reader of nothing passes whatever stands.
+     */
+    private static NextStep.Planned handReader(
+            final Board board,
+            final String storyId,
+            final String to,
+            final WorkRule rule,
+            final @Nullable Run run,
+            final String issueId,
+            final NextStep.Settings settings,
+            final String comment) {
+        final NextStep.Build built =
+                run == null ? new NextStep.Build("", List.of()) : lastBuild(run, issueId);
+        final Issue issue = board.issue(issueId).orElseThrow();
+        if (built.task().isEmpty() || built.landed().isEmpty()) {
+            throw WorkRefusal.notAllowed(
+                    issue.state(), to, "No landed build of " + issueId + " is known to read.");
+        }
+        return NextStep.task(
+                board, storyId, issue, to, rule, settings, comment, "", "READER", built);
     }
 
     /** The build that last built the issue, whose landed work a new reading reads. */

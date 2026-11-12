@@ -95,7 +95,7 @@ class MockPlanningSource implements PlanningSource {
 
   @override
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async {
-    final proposal = await proposeStoryWork(request.project, request.story, request.to);
+    final proposal = await proposeStoryWork(request.project, request.story, request.to, issues: request.issues);
     return StoryWorkOrder.from(work.call('StartStoryWork', request.toMap()), request: request, proposal: proposal);
   }
 
@@ -342,8 +342,10 @@ class MockPlanningSource implements PlanningSource {
   }
 
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async =>
-      StoryWorkProposal.from(work.call('ProposeStoryWork', {'project': project, 'story': story, 'to': to}));
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) async =>
+      StoryWorkProposal.from(
+        work.call('ProposeStoryWork', {'project': project, 'story': story, 'to': to, 'issues': ?issues}),
+      );
 
   @override
   Future<StoryWorkStatus> getStoryWork(String project, String story) async =>

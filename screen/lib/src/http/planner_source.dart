@@ -307,7 +307,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
 
   final Map<String, _Given> _given = {};
   final Map<String, PlannerProject> _readSources = {};
-  final Map<(String, String, String), (PlannerProject, StoryWorkProposal)> _proposals = {};
+  final Map<(String, String, String, String), (PlannerProject, StoryWorkProposal)> _proposals = {};
 
   static const _prefix = 'urn:porelo-planner:';
   static final _refusalName = RegExp(r'^[A-Z][A-Za-z]{1,63}$');
@@ -448,17 +448,24 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async {
-    final answer = await _write(project, ['stories', _checked('story', story, _storyId), 'proposal'], {'to': to});
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) async {
+    final answer = await _write(
+      project,
+      ['stories', _checked('story', story, _storyId), 'proposal'],
+      {'to': to, 'issues': ?issues},
+    );
     try {
       final proposal = StoryWorkOrder.readProposal(answer);
-      _proposals[(project, story, to)] = (_given[project]!.source, proposal);
+      _proposals[(project, story, to, _chosen(issues))] = (_given[project]!.source, proposal);
       // The expected defaults must not be changeable through a proposal handed to a caller.
       return StoryWorkOrder.readProposal(answer);
     } on FormatException catch (error) {
       throw PlanningRefusal('BadAnswer', const {}, error.message);
     }
   }
+
+  /// A proposal for chosen issues is kept apart from the story's own, so one never stands for the other.
+  static String _chosen(List<String>? issues) => issues == null ? '' : issues.join(' ');
 
   @override
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async {
@@ -476,7 +483,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     final project = request.project;
     _checked('story', request.story, _storyId);
     final given = await _bound(project);
-    var saved = _proposals[(project, request.story, request.to)];
+    var saved = _proposals[(project, request.story, request.to, _chosen(request.issues))];
     if (saved != null && saved.$1 != given.source) {
       throw const PlanningRefusal('ProjectChanged', {}, 'The proposal belongs to a different project repository.');
     }
@@ -484,8 +491,8 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       if (supplied.repositories.isNotEmpty) {
         saved = (given.source, supplied);
       } else {
-        await proposeStoryWork(project, request.story, request.to);
-        saved = _proposals[(project, request.story, request.to)]!;
+        await proposeStoryWork(project, request.story, request.to, issues: request.issues);
+        saved = _proposals[(project, request.story, request.to, _chosen(request.issues))]!;
       }
     }
     final captured = StoryWorkRequest(

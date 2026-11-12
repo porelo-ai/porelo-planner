@@ -169,6 +169,20 @@ class PlanningScreen extends StatelessWidget {
           if (place.story != null && detailBoard != null)
             _PlanningDetailView(
               key: ValueKey((detailBoard, place.story, place.issue)),
+              startTask: startTask,
+              agents: agents,
+              machines: {
+                for (final source in boards.sources.where((source) => source.project == detailBoard.project))
+                  source: boards.machineOf(source),
+              },
+              unavailableMachines: [
+                for (final machine in boards.providerNames)
+                  if (!boards.sources.any(
+                    (source) => source.project == detailBoard.project && boards.machineOf(source) == machine,
+                  ))
+                    machine,
+              ],
+              onStarted: taskChanges.started,
               board: detailBoard,
               story: place.story!,
               issue: place.issue,
@@ -816,22 +830,18 @@ class _BoardViewState extends State<_BoardView> {
     target ??=
         board.states.where((state) => state.kind == 'WORKING' && state.name != story.state).firstOrNull ??
         board.states.where((state) => state.kind == 'WORKING').firstOrNull;
-    if (target == null || board.startUnavailable(story) != null) return;
-    final work = StoryWork(
+    if (target == null) return;
+    await _openStart(
+      context,
       board,
       story,
-      target.name,
+      target,
       startTask: widget.startTask,
-      agentChoices: widget.agents,
+      agents: widget.agents,
       machines: widget.machines,
       unavailableMachines: widget.unavailableMachines,
       onStarted: widget.onStarted,
     );
-    try {
-      await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
-    } finally {
-      work.dispose();
-    }
   }
 
   Future<void> _discuss() async {
@@ -1091,8 +1101,47 @@ Widget _markFound(BuildContext context, String? found, Widget row) => found == n
         child: row,
       );
 
+/// Opens the start dialog for [story]'s work toward [target], or for [issues] of it alone; nothing is staged, so
+/// closing the dialog before a task starts leaves everything where it stood.
+Future<void> _openStart(
+  BuildContext context,
+  PlanningBoard board,
+  PlanStory story,
+  PlanState target, {
+  required PlanningStartTask startTask,
+  required PlanningAgents agents,
+  required Map<PlanningBoard, String> machines,
+  required List<String> unavailableMachines,
+  required Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>)
+  onStarted,
+  List<String>? issues,
+}) async {
+  if (board.startUnavailable(story) != null) return;
+  final work = StoryWork(
+    board,
+    story,
+    target.name,
+    startTask: startTask,
+    agentChoices: agents,
+    machines: machines,
+    unavailableMachines: unavailableMachines,
+    onStarted: onStarted,
+    issues: issues,
+  );
+  try {
+    await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
+  } finally {
+    work.dispose();
+  }
+}
+
 class _PlanningDetailView extends StatefulWidget {
   const _PlanningDetailView({
+    required this.startTask,
+    required this.agents,
+    required this.machines,
+    required this.unavailableMachines,
+    required this.onStarted,
     required this.board,
     required this.story,
     required this.issue,
@@ -1105,6 +1154,11 @@ class _PlanningDetailView extends StatefulWidget {
     required this.openLink,
     super.key,
   });
+  final PlanningStartTask startTask;
+  final PlanningAgents agents;
+  final Map<PlanningBoard, String> machines;
+  final List<String> unavailableMachines;
+  final Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>) onStarted;
   final PlanningBoard board;
   final Future<void> Function(Uri) openLink;
   final String story;
@@ -1119,6 +1173,27 @@ class _PlanningDetailView extends StatefulWidget {
 
 class _PlanningDetailViewState extends State<_PlanningDetailView> {
   late final detail = PlanningDetail(widget.board, widget.story, widget.issue);
+
+  /// A move of one issue into a working state is its start: the dialog opens for that issue alone.
+  void _startIssue(String issue, String to) {
+    final story = widget.board.stories.where((story) => story.id == widget.story).firstOrNull;
+    final target = widget.board.state(to);
+    if (story == null || target == null) return;
+    unawaited(
+      _openStart(
+        context,
+        widget.board,
+        story,
+        target,
+        startTask: widget.startTask,
+        agents: widget.agents,
+        machines: widget.machines,
+        unavailableMachines: widget.unavailableMachines,
+        onStarted: widget.onStarted,
+        issues: [issue],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -1179,6 +1254,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           if (widget.issue == null)
             PlanningStoryView(
               detail: detail,
+              onStartIssue: _startIssue,
               onIssue: widget.onIssue,
               onTask: widget.onTask,
               taskUnavailable: widget.taskUnavailable,

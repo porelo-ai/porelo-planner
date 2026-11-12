@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL49",
   "title": "Work Moves On By Itself From A Move On The Board",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 25,
@@ -66,6 +66,45 @@ Not part of this issue: model and effort chosen by phase and risk, an issue of i
 ([PL66](README.md#pl66)); a reading limit in the work rules, since the work rules set no cap on reading
 rounds for now and the start dialog's reading rounds stay as they are; and asking to stop a running task before a
 move out of a working state, which belongs to the warnings before a move ([PL38](README.md#pl38)).
+
+What a caller could do that the plan above did not forbid, read in the code, and what forbids it now:
+
+- **A named issue list is checked whole before any proposal or order.** It is present and non-empty or absent, each
+  issue named once, each an open issue of the story (or a sub-issue of one), each worked by an agent, and each in a
+  state the rule's `from` holds; anything else is refused before a task is offered, never only at STARTED, where
+  `NextStep.started` also takes an issue already in the target state. Red first, unit, in `WorkProposalTest`.
+- **A reading by hand reads the issue's last landed build, or is refused.** `WorkOrder.accept` builds a `MAIN` task
+  and `WorkRun.order` a task without `reads`, so a reading through that path would end as a build: counted as no
+  reading and moved to Review whatever it found. For a rule with `blocked`, `WorkRun.order` offers one `READER` per
+  issue through `NextStep.task`, reading the last build of that issue in the story's recorded run; an issue without
+  one is refused ("No landed build of the issue is known to read"), and its counted readings go on from the run.
+  Red first, unit, in `WorkRunTest`: a hand reading's offer reads the last build; its blocking end stops in Reading
+  under Needs you and its clean end leads to Review; one with no known build is refused and records nothing.
+- **An order for chosen issues never drops work the run still owes.** `WorkRun.order` replaces the story's run with
+  its offers. An order is refused while the run holds an offer not yet started that an earlier end offered (a
+  reader or a rework waiting for the window), so starting issue B cannot drop issue A's reader. A build's history
+  older than the run it was ordered in is not kept: a hand reading of such an issue is refused, as above. Red first,
+  unit, in `WorkRunTest`.
+- **Cancelling the dialog cancels only what has not started.** An issue's move into a working state is its start:
+  nothing is staged, and the issue stands in the working state once its task started. Cancel before any start
+  leaves the issue where it stood; after a start the dialog says the task runs, and Stop work is the way back.
+
+What the build found, read in the code:
+
+- **A story's proposal names only the least advanced of its open Agent issues whose state the rule's `from` holds.**
+  A story whose working state a person set and whose issues stand past it is offered nothing to rework there, and
+  when Agent issues exist but none stands where the rule takes from, the proposal is refused ("No open issue of the
+  story stands where the rule takes from.").
+- **A reading's offer has the role `READER`**, not `MAIN`: the board's contract allows both for the main task of a
+  proposal and an order, and the screen expects one reader per issue for a reading, each with no helpers.
+- **An issue's start opens from its state menu on the story**, as "Start <state>…" for each working state, offered
+  for an Agent issue only; a Manual issue keeps its move into a working state by hand.
+- **The screen's `PlanningSource.proposeStoryWork` takes an optional named `issues`**, so every class that implements
+  or extends a planning source declares it; the screen's own fakes do.
+
+- **The code reading found two gaps, both fixed.** An offer a person's choice made was not counted as waiting, so an
+  order could replace the run and drop it; and a reading by hand left no build in the run it started, so another round
+  or a rework of it found nothing to read and a failed choice cleared the stop.
 
 Order: 2, 1. Sum by the medians: 1 M, 1 S = 67 + 33 = 100 minutes, an L.
 

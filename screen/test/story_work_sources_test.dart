@@ -49,10 +49,10 @@ Map<String, dynamic> _proposal(String model) => {
 class _Source extends MockPlanningSource {
   _Source();
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) {
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) {
     final proposal = work.proposals[story];
     if (proposal != null) proposal['revision'] = boards[project]!['revision'];
-    return super.proposeStoryWork(project, story, to);
+    return super.proposeStoryWork(project, story, to, issues: issues);
   }
 
   int workReads = 0;

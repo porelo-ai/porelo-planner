@@ -964,7 +964,11 @@ class StoryWorkRequest {
     this.comment,
     this.readingRounds,
     this.issueReadingRounds = const {},
+    this.issues,
   });
+
+  /// The story's issues the work is for, or null for the story's own work.
+  final List<String>? issues;
 
   /// The project name sent to the machine.
   final String project;
@@ -1037,6 +1041,7 @@ class StoryWorkRequest {
       'issueReadingRounds': [
         for (final each in issueReadingRounds.entries) {'issue': each.key, 'rounds': each.value},
       ],
+    'issues': ?issues,
   };
 }
 

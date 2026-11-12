@@ -64,7 +64,12 @@ Future<(MockPlanningSource, PlanningBoard)> _open(WidgetTester tester, Map<Strin
   return (source, board);
 }
 
-Future<PlanningDetail> _show(WidgetTester tester, PlanningBoard board, {String? issue}) async {
+Future<PlanningDetail> _show(
+  WidgetTester tester,
+  PlanningBoard board, {
+  String? issue,
+  void Function(String issue, String to)? onStartIssue,
+}) async {
   tester.view
     ..physicalSize = const Size(1280, 2000)
     ..devicePixelRatio = 1;
@@ -80,6 +85,7 @@ Future<PlanningDetail> _show(WidgetTester tester, PlanningBoard board, {String? 
             builder: (_, _) => issue == null
                 ? PlanningStoryView(
                     detail: detail,
+                    onStartIssue: onStartIssue,
                     onIssue: (_) {},
                     onTask: (_) {},
                     taskUnavailable: (_) => null,
@@ -133,6 +139,27 @@ void main() {
     await settle(tester);
     expect(_stateOf(source, 'PL2'), 'Implementing', reason: 'saved by hand, with no task');
     expect(source.work.calls, isEmpty, reason: 'no work was started for it');
+  });
+
+  // Harm: an agent's issue cannot be started on its own from the story, or a person's issue is handed to an agent.
+  testWidgets('a working state offered for an agent\'s issue opens its start and stages no move', (tester) async {
+    final (source, board) = await _open(tester, _board());
+    final started = <(String, String)>[];
+    await _show(tester, board, onStartIssue: (issue, to) => started.add((issue, to)));
+
+    await tester.tap(find.byKey(const Key('planning-move PL2')));
+    await settle(tester);
+    expect(find.byKey(const Key('planning-start-issue PL2 Implementing')), findsNothing, reason: 'a person\'s issue');
+    await tester.tapAt(Offset.zero);
+    await settle(tester);
+
+    await tester.tap(find.byKey(const Key('planning-move PL1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-start-issue PL1 Implementing')));
+    await settle(tester);
+    expect(started, [('PL1', 'Implementing')], reason: 'the start opens for that issue alone');
+    expect(board.pendingIssues, isEmpty, reason: 'a start stages no move');
+    expect(source.work.calls, isEmpty, reason: 'nothing starts before the dialog confirms');
   });
 
   // Harm: the stand-in the window's planning tests run on lets an agent's issue into work, or keeps a person's out.

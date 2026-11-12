@@ -32,6 +32,7 @@ class StoryWork extends ChangeNotifier {
     Map<PlanningBoard, String>? machines,
     this.unavailableMachines = const [],
     this.onStarted,
+    this.issues,
   }) : backend = board.backend,
        project = board.project,
        revision = board.snapshot?.revision ?? '',
@@ -47,6 +48,9 @@ class StoryWork extends ChangeNotifier {
 
   /// The selected working state.
   String to;
+
+  /// The story's issues the work is for, as a move of those issues chose them; null for the story's own work.
+  final List<String>? issues;
 
   /// Watched providers of this project, labeled by their machine identities.
   final Map<PlanningBoard, String> machines;
@@ -147,7 +151,7 @@ class StoryWork extends ChangeNotifier {
 
   bool get _validSubAgents => proposal!.repositories.every(
     (repo) =>
-        repo.main.role == 'MAIN' &&
+        (repo.main.role == 'MAIN' || repo.main.role == 'READER' && repo.subAgents.isEmpty) &&
         repo.subAgents.every((sub) {
           final chosen = choices[(repo.repository, sub.id)];
           return switch (chosen?.choice) {
@@ -219,7 +223,7 @@ class StoryWork extends ChangeNotifier {
     agents = [];
     _changed();
     try {
-      final answer = await source.proposeStoryWork(name, id, target);
+      final answer = await source.proposeStoryWork(name, id, target, issues: issues);
       if (!valid()) return;
       proposal = answer;
       mode = answer.modes.where((each) => ['UNATTENDED', 'AGENT'].contains(each)).firstOrNull;
@@ -395,6 +399,7 @@ class StoryWork extends ChangeNotifier {
         for (final each in issueRounds.entries)
           if (each.value.isNotEmpty) each.key: _rounds(each.value)!,
       },
+      issues: issues,
     );
     Object? token;
     final run = origin.runOf(id)..startTask = startTask;

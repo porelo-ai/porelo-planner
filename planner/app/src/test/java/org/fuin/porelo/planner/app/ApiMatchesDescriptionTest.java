@@ -374,10 +374,15 @@ class ApiMatchesDescriptionTest {
         }
         if (type instanceof ParameterizedType parameterized
                 && parameterized.getRawType() == List.class) {
-            assertThat(field.path("type").asText()).as("%s is a list", name).isEqualTo("array");
+            final JsonNode list =
+                    field.has("$ref")
+                            ? schemas.get(
+                                    field.get("$ref").asText().replace("#/components/schemas/", ""))
+                            : field;
+            assertThat(list.path("type").asText()).as("%s is a list", name).isEqualTo("array");
             wireType(
                     schemas,
-                    field.get("items"),
+                    list.get("items"),
                     parameterized.getActualTypeArguments()[0],
                     name + "[]");
             return;

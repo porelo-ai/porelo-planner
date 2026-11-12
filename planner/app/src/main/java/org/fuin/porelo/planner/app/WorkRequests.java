@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
@@ -40,8 +41,14 @@ public final class WorkRequests {
 
     private WorkRequests() {}
 
-    /** A target state for a recomputed work proposal. */
-    public record Proposal(String to) {}
+    /**
+     * A target state for a recomputed work proposal.
+     *
+     * @param to the working state
+     * @param issues the story's issues the work is for, or null for the story's own
+     */
+    public record Proposal(
+            String to, @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> issues) {}
 
     /** The exact work body emitted by the window, with absent overrides preserved. */
     public record Request(
@@ -55,7 +62,8 @@ public final class WorkRequests {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String comment,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Number readingRounds,
             @JsonInclude(JsonInclude.Include.NON_NULL)
-                    @Nullable List<IssueLimit> issueReadingRounds) {}
+                    @Nullable List<IssueLimit> issueReadingRounds,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> issues) {}
 
     /** An explicitly supplied reading bound, kept numeric until core validation. */
     public record IssueLimit(String issue, Number rounds) {}
@@ -528,8 +536,8 @@ public final class WorkRequests {
     }
 
     static Proposal proposal(final JsonNode body) {
-        fields(body, Set.of("to"));
-        return new Proposal(text(body, "to"));
+        fields(body, Set.of("to", "issues"));
+        return new Proposal(text(body, "to"), chosen(body));
     }
 
     /**
@@ -559,7 +567,8 @@ public final class WorkRequests {
                         "repositories",
                         "comment",
                         "readingRounds",
-                        "issueReadingRounds"));
+                        "issueReadingRounds",
+                        "issues"));
         final List<WorkAnswers.Repository> repositories;
         if (body.has("repositories")) {
             repositories = new ArrayList<>();
@@ -590,8 +599,42 @@ public final class WorkRequests {
                 repositories,
                 body.has("comment") ? text(body, "comment") : null,
                 body.has("readingRounds") ? rounds(body.path("readingRounds"), from, to) : null,
-                overrides);
+                overrides,
+                chosen(body));
     }
+
+    /**
+     * Reads the issues a person chose for the work: when present, one to {@value #MOST_CHOSEN}
+     * issue identifiers, each once; null when absent.
+     */
+    private static @Nullable List<String> chosen(final JsonNode body) {
+        if (!body.has("issues")) {
+            return null;
+        }
+        final JsonNode list = array(body, "issues");
+        if (list.isEmpty() || list.size() > MOST_CHOSEN) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final List<String> issues = new ArrayList<>();
+        for (final JsonNode issue : list) {
+            if (!issue.isString()) {
+                throw WorkRefusal.invalidSettings();
+            }
+            try {
+                Ids.issue(issue.asString());
+            } catch (final IllegalArgumentException malformed) {
+                throw WorkRefusal.invalidSettings();
+            }
+            if (issues.contains(issue.asString())) {
+                throw WorkRefusal.invalidSettings();
+            }
+            issues.add(issue.asString());
+        }
+        return issues;
+    }
+
+    /** The most issues one request may choose. */
+    private static final int MOST_CHOSEN = 1000;
 
     static WorkOrder.Decision decision(final Request request) {
         final List<WorkAnswers.Repository> repositories = request.repositories();
@@ -608,7 +651,8 @@ public final class WorkRequests {
                         ? null
                         : overrides.stream()
                                 .map(limit -> new WorkOrder.Limit(limit.issue(), limit.rounds()))
-                                .toList());
+                                .toList(),
+                request.issues());
     }
 
     private static WorkAnswers.Repository repository(final JsonNode node) {

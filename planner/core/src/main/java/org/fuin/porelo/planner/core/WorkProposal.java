@@ -121,16 +121,48 @@ public record WorkProposal(
     /** Proposes work using only the board and explicitly supplied coordinator knowledge. */
     public static WorkProposal propose(
             final Board board, final String id, final String to, final RunningWork running) {
+        return propose(board, id, to, running, null);
+    }
+
+    /**
+     * Proposes work for the story's issues {@code picked}, or, when null, for its least advanced
+     * open issues the rule takes from.
+     *
+     * @param board the board
+     * @param id the story
+     * @param to the working state
+     * @param running the run's activity
+     * @param picked the story's issues named for the work, or null for the story's own
+     * @return the proposal
+     */
+    public static WorkProposal propose(
+            final Board board,
+            final String id,
+            final String to,
+            final RunningWork running,
+            final @Nullable List<String> picked) {
         final Story story = story(board, id);
-        final WorkRule rule = rule(board, story, to);
-        if (rule.blocked() != null) {
-            throw WorkRefusal.notAllowed(story.state(), to, "Readings are offered only by a run.");
-        }
+        final WorkRule rule = picked == null ? rule(board, story, to) : target(board, story, to);
         bounded(story, to, rule.order());
         final List<Issue> open = issues(board, story, to);
-        final List<Issue> issues = agents(open);
+        final List<Issue> issues =
+                picked == null
+                        ? leastAdvanced(board, rule, agents(open))
+                        : named(story, to, rule, open, picked);
         final List<String> manual =
-                open.stream().filter(i -> i.worker() == Worker.MANUAL).map(Issue::id).toList();
+                picked == null
+                        ? open.stream()
+                                .filter(i -> i.worker() == Worker.MANUAL)
+                                .map(Issue::id)
+                                .toList()
+                        : List.of();
+        final boolean reading = rule.blocked() != null;
+        if (issues.isEmpty() && !agents(open).isEmpty()) {
+            throw WorkRefusal.notAllowed(
+                    story.state(),
+                    to,
+                    "No open issue of the story stands where the rule takes from.");
+        }
         if (issues.isEmpty() && !manual.isEmpty()) {
             throw WorkRefusal.notAllowed(
                     story.state(),
@@ -163,7 +195,7 @@ public record WorkProposal(
             final List<Assignment> helpers = new ArrayList<>();
             for (final Issue issue : group.getValue()) {
                 final String brief = brief(issue, story, to);
-                if (issue.parent() != null && story.issues().contains(issue.parent())) {
+                if (!reading && issue.parent() != null && story.issues().contains(issue.parent())) {
                     final Choice own = Choice.of(to, rule, List.of(issue));
                     helpers.add(
                             new Assignment(
@@ -186,7 +218,7 @@ public record WorkProposal(
             final Main main =
                     new Main(
                             "main",
-                            "MAIN",
+                            reading ? "READER" : "MAIN",
                             chosen.agent(),
                             chosen.model(),
                             rule.order(),
@@ -216,6 +248,29 @@ public record WorkProposal(
     }
 
     static WorkRule rule(final Board board, final Story story, final String to) {
+        final WorkRule rule = target(board, story, to);
+        if (!rule.from().contains(story.state()) && !agentsReady(board, story, to, rule)) {
+            throw WorkRefusal.notAllowed(
+                    story.state(), to, "The rule does not allow work from this state.");
+        }
+        return rule;
+    }
+
+    /**
+     * The sound rule of the working state {@code to}: for the story's own work one that takes work
+     * from the story's state, for issues a person named one whatever the story's state, since each
+     * named issue is checked against it.
+     */
+    static WorkRule rule(
+            final Board board,
+            final Story story,
+            final String to,
+            final @Nullable List<String> picked) {
+        return picked == null ? rule(board, story, to) : target(board, story, to);
+    }
+
+    /** The sound rule of the working state {@code to}, whatever the story's state. */
+    private static WorkRule target(final Board board, final Story story, final String to) {
         if (!board.workflow().states().contains(to)) {
             throw WorkRefusal.invalidSettings();
         }
@@ -223,11 +278,63 @@ public record WorkProposal(
         if (rule == null) {
             throw WorkRefusal.notAllowed(story.state(), to, "The target has no sound work rule.");
         }
-        if (!rule.from().contains(story.state()) && !agentsReady(board, story, to, rule)) {
-            throw WorkRefusal.notAllowed(
-                    story.state(), to, "The rule does not allow work from this state.");
-        }
         return rule;
+    }
+
+    /**
+     * The least advanced of the agents' open issues standing where the rule takes work from, as a
+     * move of the story moves them, so an issue further on is never worked again.
+     */
+    private static List<Issue> leastAdvanced(
+            final Board board, final WorkRule rule, final List<Issue> agents) {
+        final List<String> order = board.workflow().states();
+        final List<Issue> ready =
+                agents.stream().filter(i -> rule.from().contains(i.state())).toList();
+        final int least = ready.stream().mapToInt(i -> order.indexOf(i.state())).min().orElse(-1);
+        return ready.stream().filter(i -> order.indexOf(i.state()) == least).toList();
+    }
+
+    /**
+     * The issues a person named for the work, each once, each an open issue of the story an agent
+     * works, standing where the rule takes work from; any other list is refused whole.
+     */
+    private static List<Issue> named(
+            final Story story,
+            final String to,
+            final WorkRule rule,
+            final List<Issue> open,
+            final List<String> chosen) {
+        if (chosen.isEmpty()) {
+            throw WorkRefusal.notAllowed(story.state(), to, "Name at least one issue.");
+        }
+        if (new java.util.HashSet<>(chosen).size() != chosen.size()) {
+            throw WorkRefusal.notAllowed(story.state(), to, "Name each issue once.");
+        }
+        final List<Issue> named = new ArrayList<>();
+        for (final String id : chosen) {
+            final Issue issue =
+                    open.stream()
+                            .filter(i -> i.id().equals(id))
+                            .findFirst()
+                            .orElseThrow(
+                                    () ->
+                                            WorkRefusal.notAllowed(
+                                                    story.state(),
+                                                    to,
+                                                    "A named issue is no open issue of the story."));
+            if (issue.worker() == Worker.MANUAL) {
+                throw WorkRefusal.notAllowed(
+                        story.state(),
+                        to,
+                        "A person works " + id + ", so no agent's task starts on it.");
+            }
+            if (!rule.from().contains(issue.state())) {
+                throw WorkRefusal.notAllowed(
+                        issue.state(), to, "The rule does not allow work from this state.");
+            }
+            named.add(issue);
+        }
+        return named;
     }
 
     /**

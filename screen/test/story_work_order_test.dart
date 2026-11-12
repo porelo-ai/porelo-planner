@@ -96,6 +96,76 @@ void main() {
     }
   });
 
+  // Harm: a reading started by hand runs as a build, so its findings are never read and its issue moves on unread.
+  test('a reading by hand is ordered as one reader per issue, each naming the build it reads', () {
+    Map<String, dynamic> reading() => {
+      ...servedProposal(),
+      'repositories': [
+        {
+          'repository': 'repo',
+          'issues': ['PR1', 'PR2'],
+          'main': {'name': 'main', 'role': 'READER', 'agent': 'codex', 'model': 'main-model', 'brief': 'Read.'},
+          'subAgents': <Map<String, dynamic>>[],
+        },
+      ],
+    };
+    final proposal = StoryWorkOrder.readProposal(reading());
+    final request = StoryWorkRequest(
+      project: 'demo',
+      story: 'ST1',
+      to: 'Reading',
+      mode: 'AGENT',
+      revision: 'r1',
+      subAgents: const [],
+      proposedRepositories: proposal.repositories,
+      issues: const ['PR1', 'PR2'],
+    );
+    Map<String, dynamic> task(int offer, String issue, {String role = 'READER', List<String> reads = const ['b']}) => {
+      'offer': servedOffer(offer),
+      'repository': 'repo',
+      'issues': [issue],
+      'role': role,
+      'agent': 'codex',
+      'model': 'main-model',
+      'mode': 'AGENT',
+      'prompt': 'Read.\n',
+      'reads': reads,
+    };
+    final order = StoryWorkOrder.from(
+      {
+        'revision': 'r1',
+        'tasks': [task(1, 'PR1'), task(2, 'PR2')],
+      },
+      request: request,
+      proposal: proposal,
+    );
+    expect(order.tasks.map((task) => task.role), ['READER', 'READER'], reason: 'one reader per issue');
+    for (final (name, tasks) in [
+      ('a build in place of a reader', [task(1, 'PR1', role: 'MAIN', reads: const []), task(2, 'PR2')]),
+      ('a reader of no build', [task(1, 'PR1', reads: const []), task(2, 'PR2')]),
+      ('one reader for both issues', [task(1, 'PR1')]),
+    ]) {
+      expect(
+        () => StoryWorkOrder.from({'revision': 'r1', 'tasks': tasks}, request: request, proposal: proposal),
+        throwsFormatException,
+        reason: name,
+      );
+    }
+    expect(
+      () => StoryWorkOrder.readProposal(
+        reading()
+          ..['repositories'] = [
+            {
+              ...(reading()['repositories'] as List).single as Map<String, dynamic>,
+              'subAgents': (servedProposal()['repositories'] as List).single['subAgents'],
+            },
+          ],
+      ),
+      throwsFormatException,
+      reason: 'a reading has no helpers',
+    );
+  });
+
   // Harm: a story's work order smuggles a discussion or a result file into a story's Start.
   test('a story order refuses a task that carries a result', () {
     final answer = servedOrder();

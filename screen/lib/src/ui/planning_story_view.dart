@@ -22,8 +22,12 @@ class PlanningStoryView extends StatelessWidget {
     required this.onTask,
     required this.taskUnavailable,
     required this.openLink,
+    this.onStartIssue,
     super.key,
   });
+
+  /// Opens the start of an issue's work toward a working state; without it no issue's work starts here.
+  final void Function(String issue, String to)? onStartIssue;
 
   /// The retained reads.
   final PlanningDetail detail;
@@ -227,28 +231,43 @@ class PlanningStoryView extends StatelessWidget {
           ? 'Issue identifier not reported.'
           : issue.state.isEmpty
           ? 'Issue state not reported.'
-          : detail.moveStatesOf(issue).isEmpty && !detail.pendingMoves.containsKey(issue.id)
+          : detail.moveStatesOf(issue).isEmpty &&
+                !detail.pendingMoves.containsKey(issue.id) &&
+                _startStatesOf(issue).isEmpty
           ? 'No waiting or closed destinations were reported.'
           : null);
+
+  /// The working states an agent's issue may be started toward; a person's issue is moved there by hand instead.
+  List<PlanState> _startStatesOf(PlanIssue issue) => onStartIssue == null || issue.byHand
+      ? const []
+      : detail.board.states.where((state) => state.kind == 'WORKING' && state.name != issue.state).toList();
 
   Widget _issueState(BuildContext context, PlanIssue issue) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      PopupMenuButton<(String, String, bool)>(
+      PopupMenuButton<(String, String, bool, bool)>(
         key: Key('planning-move ${issue.id}'),
         tooltip: _moveUnavailable(issue) ?? 'Change the state of ${issue.id}',
         enabled: _moveUnavailable(issue) == null,
         // Each item carries the state shown when the menu opened; a rebuild while it stands open changes no item.
-        onSelected: (choice) => detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, undo: choice.$3),
+        onSelected: (choice) => choice.$4
+            ? onStartIssue?.call(issue.id, choice.$2)
+            : detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, undo: choice.$3),
         itemBuilder: (_) => [
           if (detail.pendingMoves.containsKey(issue.id))
-            PopupMenuItem(value: (issue.state, issue.state, true), child: const Text('Undo this move')),
+            PopupMenuItem(value: (issue.state, issue.state, true, false), child: const Text('Undo this move')),
           for (final state in detail.moveStatesOf(issue))
             PopupMenuItem(
-              value: (issue.state, state.name, false),
+              value: (issue.state, state.name, false, false),
               key: Key('planning-move-to ${issue.id} ${state.name}'),
               child: Text(state.name),
+            ),
+          for (final state in _startStatesOf(issue))
+            PopupMenuItem(
+              value: (issue.state, state.name, false, true),
+              key: Key('planning-start-issue ${issue.id} ${state.name}'),
+              child: Text('Start ${state.name}…'),
             ),
         ],
         child: Row(

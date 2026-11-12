@@ -186,8 +186,9 @@ abstract interface class PlanningSource {
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);
 
-  /// Reads the proposed tasks and participants for a working state.
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to);
+  /// Reads the proposed tasks and participants for a working state; with [issues], for those of the story's issues
+  /// alone.
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues});
 
   /// Prepares a checked order without starting tasks or recording running work.
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request);

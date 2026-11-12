@@ -318,6 +318,47 @@ void main() {
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/stories/ST1/work']);
   });
 
+  // Harm: a move of one issue proposes and starts the work of the whole story, so agents start on issues nobody moved.
+  test('a proposal and an order for chosen issues name them, and a proposal for the story is kept apart', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, servedOrder());
+    await source.proposeStoryWork('demo', 'ST1', 'Building', issues: ['PR1']);
+    expect(jsonDecode(planner.calls.last.body), {
+      'to': 'Building',
+      'issues': ['PR1'],
+    }, reason: 'the proposal names the chosen issue');
+    await source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: 'ST1',
+        to: 'Building',
+        mode: 'AGENT',
+        revision: 'r1',
+        subAgents: const [],
+        issues: const ['PR1'],
+      ),
+    );
+    expect((jsonDecode(planner.calls.last.body) as Map)['issues'], ['PR1'], reason: 'the order names the chosen issue');
+    final before = planner.calls.length;
+    await source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: 'ST1',
+        to: 'Building',
+        mode: 'AGENT',
+        revision: 'r1',
+        subAgents: const [],
+      ),
+    );
+    expect(
+      planner.calls.sublist(before).map((call) => call.target),
+      contains('/projects/demo/stories/ST1/proposal'),
+      reason: "the story's own order is checked against its own proposal, never the chosen issue's",
+    );
+    expect((jsonDecode(planner.calls.last.body) as Map).containsKey('issues'), isFalse);
+  });
+
   // Harm: a proposal is requested for another target or malformed participants silently disappear.
   test('a proposal posts only its target and refuses malformed proposals whole', () async {
     final (planner, source) = await _started();

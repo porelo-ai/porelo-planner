@@ -620,6 +620,49 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void workForChosenIssuesIsProposedAndOfferedForThemAloneAndAMalformedListIsRefused()
+            throws Exception {
+        // A list taken loosely starts work for issues the person did not move, or two agents on
+        // one issue.
+        final JsonNode proposal =
+                call("/stories/ST1/proposal", "{\"to\":\"Building\",\"issues\":[\"AA1\"]}", 200);
+        assertThat(proposal.at("/repositories/0/issues/0").asString())
+                .as("the proposal names the chosen issue")
+                .isEqualTo("AA1");
+        final JsonNode order =
+                call(
+                        "/stories/ST1/work",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"issues\":[\"AA1\"]}",
+                        200);
+        assertThat(order.at("/tasks/0/issues/0").asString())
+                .as("the order offers work for the chosen issue")
+                .isEqualTo("AA1");
+        for (final String issues :
+                List.of("[]", "[\"AA1\",\"AA1\"]", "[\"aa1\"]", "\"AA1\"", "[1]", "null")) {
+            assertThat(
+                            call(
+                                            "/stories/ST1/proposal",
+                                            "{\"to\":\"Building\",\"issues\":" + issues + "}",
+                                            400)
+                                    .path("type")
+                                    .asString())
+                    .as("the proposal naming %s is refused", issues)
+                    .endsWith(":InvalidSettings");
+            assertThat(
+                            call(
+                                            "/stories/ST1/work",
+                                            "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"issues\":"
+                                                    + issues
+                                                    + "}",
+                                            400)
+                                    .path("type")
+                                    .asString())
+                    .as("the order naming %s is refused", issues)
+                    .endsWith(":InvalidSettings");
+        }
+    }
+
+    @Test
     void invalidReportsAreBoundedAndNeverEchoUncheckedSubjects() throws Exception {
         // Prevents malformed reports or unchecked subjects from reaching tasks or refusals.
         for (final String body :

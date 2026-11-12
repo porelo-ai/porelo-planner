@@ -233,7 +233,7 @@ class FakePlanningSource implements PlanningSource {
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');
 
   @override
-  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to) async =>
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) async =>
       _notServed('ProposeStoryWork');
 
   @override

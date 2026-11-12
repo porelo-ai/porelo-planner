@@ -563,13 +563,13 @@ class WorkRunTest {
                         withSecondIssue(NextStepTest.board("Reading", "Reading"), "Backlog"),
                         "AA1");
         f.store.current = held;
-        assertThat(f.run.propose("ST1", "Reworking").repositories())
+        assertThat(f.run.propose("ST1", "Building").repositories())
                 .as("a story state its person's issue gives is held by that issue")
                 .isNotEmpty();
 
         f.store.current = withStoryState(held, true);
 
-        assertThatThrownBy(() -> f.run.propose("ST1", "Reworking"))
+        assertThatThrownBy(() -> f.run.propose("ST1", "Building"))
                 .as("the stated working state without a run needs attention")
                 .isInstanceOf(WorkRefusal.class)
                 .satisfies(
@@ -2487,6 +2487,295 @@ class WorkRunTest {
     }
 
     @Test
+    void aReadingStartedByHandReadsTheLastBuildAndCountsOnFromTheRun() {
+        // A reader started on nothing, or a reading that counted as a build, passes an issue to
+        // Review nobody read.
+        final Fixture f = readInReview();
+        final var order = f.handReading();
+        assertThat(order.tasks()).as("one reader for the issue").hasSize(1);
+        final WorkOrder.Task reader = order.tasks().getFirst().task();
+        assertThat(reader.role()).as("the task reads").isEqualTo("READER");
+        assertThat(reader.reads()).as("it reads the issue's last build").containsExactly("task");
+        assertThat(reader.prompt())
+                .as("its order names where that build landed")
+                .contains(readsWork("work/built"));
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        order.tasks().getFirst().offer(),
+                        WorkRun.Event.STARTED,
+                        "box",
+                        "workstation",
+                        null));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the started reading takes the issue to Reading")
+                .isEqualTo("Reading");
+        final var blocked =
+                f.run.report(
+                        "again",
+                        new WorkRun.Report(
+                                order.tasks().getFirst().offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Findings:\n1. blocking | - | - | Preserve data")));
+        final NextStep.Progress progress = blocked.work().issues().get("AA1");
+        assertThat(progress.rounds().rounds())
+                .as("the reading counts on from the run's first")
+                .isEqualTo(2);
+        assertThat(progress.rounds().stopped()).as("blocking findings ask the person").isTrue();
+        assertThat(blocked.tasks()).as("nothing starts by itself").isEmpty();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue waits in Reading")
+                .isEqualTo("Reading");
+    }
+
+    @Test
+    void aCleanReadingStartedByHandLeadsToReview() {
+        // A clean hand reading left in Reading holds an issue back that was found sound.
+        final Fixture f = readInReview();
+        final var offer = f.handReading().tasks().getFirst();
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        offer.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings: none")));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the clean reading leads to Review")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void aReadingByHandOfAnIssueWithNoKnownBuildIsRefusedAndRecordsNothing() {
+        // A reader with no build to read reads whatever stands and passes it.
+        final Fixture f = new Fixture();
+        f.store.current = handReadable(f.store.current, "Review");
+        final var before = f.record.value;
+        assertThatThrownBy(f::handReading)
+                .as("no build of the issue is known")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("No landed build");
+        assertThat(f.record.value).as("the refused reading records nothing").isEqualTo(before);
+    }
+
+    @Test
+    void anOrderIsRefusedWhileAnEndsFollowUpWaitsToStart() {
+        // An order replacing the run drops a reader an end offered, and the issue is never read.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks();
+        assertThat(reader).as("the end offered a reader").hasSize(1);
+        final var before = f.record.value;
+        assertThatThrownBy(
+                        () ->
+                                f.run.order(
+                                        "ST1",
+                                        "Building",
+                                        new WorkOrder.Decision(
+                                                "AGENT",
+                                                f.store.board().revision().value(),
+                                                null,
+                                                "",
+                                                1,
+                                                null)))
+                .as("a new order while the reader waits to start")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("waits to start");
+        assertThat(f.record.value).as("the refused order records nothing").isEqualTo(before);
+    }
+
+    @Test
+    void anOrderIsRefusedWhileWorkAPersonsChoiceOfferedWaitsToStart() {
+        // An order replacing the run drops the rework a person chose, and the work leaves unread.
+        final Fixture f = blockedHandReading();
+        f.store.current =
+                NextStepTest.withRule(
+                        f.store.board(), "Reworking", NextStepTest.choices("Reading"));
+        final var rework =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                2,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks();
+        assertThat(rework).as("the choice offered a rework").hasSize(1);
+        final var before = f.record.value;
+        assertThatThrownBy(
+                        () ->
+                                f.run.order(
+                                        "ST1",
+                                        "Building",
+                                        new WorkOrder.Decision(
+                                                "AGENT",
+                                                f.store.board().revision().value(),
+                                                null,
+                                                "",
+                                                1,
+                                                null)))
+                .as("a new order while the chosen rework waits to start")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("waits to start");
+        assertThat(f.record.value).as("the refused order records nothing").isEqualTo(before);
+    }
+
+    @Test
+    void anotherRoundOfAReadingStartedByHandReadsTheSameBuild() {
+        // A round with no build to read is lost, and the issue stays stuck in Reading.
+        final Fixture f = blockedHandReading();
+        final var again =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        2,
+                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(again.tasks()).as("one more reader is offered").hasSize(1);
+        assertThat(again.tasks().getFirst().task().reads())
+                .as("it reads the build the hand reading read")
+                .containsExactly("task");
+    }
+
+    @Test
+    void aChoiceThatCannotOfferItsTaskLeavesTheReadingStoppedForAnotherChoice() {
+        // A choice lost to a task that cannot be made leaves the person nothing to choose again.
+        final Fixture f = blockedHandReading();
+        final Board blocked = f.store.board();
+        f.store.current =
+                NextStepTest.withRule(blocked, "Reworking", NextStepTest.choices("Backlog"));
+        final var lost =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        2,
+                        ReadingCycle.Choice.REWORK,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(lost.tasks()).as("no rework can be made from Reading").isEmpty();
+        assertThat(lost.work().issues().get("AA1").rounds().stopped())
+                .as("the reading still waits for the person's choice")
+                .isTrue();
+        assertThat(
+                        f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        2,
+                                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                                        "",
+                                        f.store.board().revision().value(),
+                                        null)
+                                .tasks())
+                .as("another choice is taken")
+                .hasSize(1);
+    }
+
+    /** A reading started by hand of the issue in Review, ended with blocking findings. */
+    private static Fixture blockedHandReading() {
+        final Fixture f = readInReview();
+        final var offer = f.handReading().tasks().getFirst();
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final var blocked =
+                f.run.report(
+                        "again",
+                        new WorkRun.Report(
+                                offer.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Findings:\n1. blocking | - | - | Preserve data")));
+        assertThat(blocked.work().issues().get("AA1").rounds().stopped())
+                .as("the hand reading stopped for the person")
+                .isTrue();
+        return f;
+    }
+
+    /** A story whose issue was built where it landed, read clean once and now stands in Review. */
+    private static Fixture readInReview() {
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n")));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the first reading reached Review")
+                .isEqualTo("Review");
+        f.store.current = handReadable(f.store.current, null);
+        return f;
+    }
+
+    /** The board whose Reading rule also reads from Review, with AA1 in {@code state} if given. */
+    private static Board handReadable(final Board board, final @Nullable String state) {
+        final Map<String, WorkRule> rules = new java.util.LinkedHashMap<>(board.work().rules());
+        final WorkRule reading = rules.get("Reading");
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        List.of("Building", "Reworking", "Review"),
+                        reading.done(),
+                        reading.then(),
+                        reading.blocked(),
+                        reading.per(),
+                        reading.modes(),
+                        reading.order(),
+                        reading.models()));
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                state == null
+                        ? board.issues()
+                        : WorkProposalTest.with(board, Map.of("AA1", state)).issues(),
+                new Work(rules, board.work().faults()),
+                board.repositories());
+    }
+
+    @Test
     void capacityForAFollowUpCannotRefuseTheAcceptedEnd() {
         // Prevents a full follow-up record from losing an accepted task end.
         final Fixture f = new Fixture();
@@ -2662,6 +2951,20 @@ class WorkRunTest {
                     "Building",
                     new WorkOrder.Decision(
                             "AGENT", store.board().revision().value(), null, "", 1, null));
+        }
+
+        WorkRun.Order handReading() {
+            return run.order(
+                    "ST1",
+                    "Reading",
+                    new WorkOrder.Decision(
+                            "AGENT",
+                            store.board().revision().value(),
+                            null,
+                            "",
+                            null,
+                            null,
+                            List.of("AA1")));
         }
 
         void start(final WorkRun.Offered offer) {

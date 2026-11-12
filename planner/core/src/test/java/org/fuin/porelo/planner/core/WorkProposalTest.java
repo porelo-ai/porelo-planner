@@ -579,6 +579,138 @@ class WorkProposalTest {
                 original.repositories());
     }
 
+    @Test
+    void aStoryProposesOnlyItsLeastAdvancedIssuesTheRuleTakesFrom() {
+        // An issue already read and in Review built again would be worked twice and moved back.
+        final Board board = with(board(WorkRule.Per.REPOSITORY), Map.of("BB1", "Review"));
+        assertThat(WorkProposal.propose(board, "ST1", "Building").repositories())
+                .as("only the issues in Backlog are proposed")
+                .flatExtracting(WorkProposal.Repository::issues)
+                .containsExactly("AA1", "AA1.1");
+        final Board allRead =
+                with(
+                        board(WorkRule.Per.REPOSITORY),
+                        Map.of("AA1", "Review", "AA1.1", "Review", "BB1", "Review"));
+        assertThatThrownBy(() -> WorkProposal.propose(allRead, "ST1", "Building"))
+                .as("a story stated in Backlog whose issues all stand in Review builds none again")
+                .isInstanceOf(WorkRefusal.class);
+    }
+
+    @Test
+    void aProposalForNamedIssuesNamesThemAlone() {
+        // Work proposed for issues the person did not move starts agents nobody asked for.
+        final Board board = board(WorkRule.Per.REPOSITORY);
+        final WorkProposal proposal =
+                WorkProposal.propose(board, "ST1", "Building", story -> List.of(), List.of("BB1"));
+        assertThat(proposal.repositories())
+                .as("one repository, for the named issue alone")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("beta", List.of("BB1")));
+    }
+
+    @Test
+    void aNamedIssueListThatIsEmptyRepeatsOrNamesWhatTheRuleCannotWorkIsRefused() {
+        // An issue started that is not the story's, not in a state the rule takes from, worked
+        // by a person, or named twice would start work no one asked for or two agents on one.
+        final Board board = board(WorkRule.Per.REPOSITORY);
+        final Map<String, Board> boards = new LinkedHashMap<>();
+        final Map<String, List<String>> lists = new LinkedHashMap<>();
+        lists.put("none", List.of());
+        lists.put("twice", List.of("BB1", "BB1"));
+        lists.put("unknown", List.of("ZZ9"));
+        lists.put("closed", List.of("AA1.2"));
+        lists.put("another repository's child", List.of("AA1.3"));
+        lists.put("closed parent", List.of("CC1"));
+        for (final String name : lists.keySet()) {
+            boards.put(name, board);
+        }
+        lists.put("a person's", List.of("BB1"));
+        boards.put("a person's", ManualIssues.of(board, "BB1"));
+        lists.put("in Review", List.of("BB1"));
+        boards.put("in Review", with(board, Map.of("BB1", "Review")));
+        for (final String name : lists.keySet()) {
+            assertThatThrownBy(
+                            () ->
+                                    WorkProposal.propose(
+                                            boards.get(name),
+                                            "ST1",
+                                            "Building",
+                                            story -> List.of(),
+                                            lists.get(name)))
+                    .as("the list naming %s", name)
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void aReadingIsProposedByHandForAnIssueInReviewWithItsOwnReader() {
+        // An issue in Review that cannot be read again by hand can only be passed unread.
+        final Board board = reading(with(board(WorkRule.Per.REPOSITORY), Map.of("BB1", "Review")));
+        final WorkProposal proposal =
+                WorkProposal.propose(board, "ST1", "Reading", story -> List.of(), List.of("BB1"));
+        assertThat(proposal.repositories())
+                .as("one reading, of the named issue alone")
+                .extracting(WorkProposal.Repository::issues)
+                .containsExactly(List.of("BB1"));
+        assertThat(proposal.repositories().getFirst().main().role())
+                .as("the task reads; it does not build")
+                .isEqualTo("READER");
+        assertThat(proposal.repositories().getFirst().subAgents())
+                .as("a reading has no helpers")
+                .isEmpty();
+    }
+
+    /** The board with the given issues moved to the given states. */
+    static Board with(final Board board, final Map<String, String> states) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        new Issue(
+                                                i.id(),
+                                                i.repository(),
+                                                i.title(),
+                                                states.getOrDefault(i.id(), i.state()),
+                                                i.size(),
+                                                i.blockedBy(),
+                                                i.parent(),
+                                                i.link(),
+                                                i.text(),
+                                                i.worker(),
+                                                i.risk()))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** The board with a Reading state whose rule reads from Building and from Review. */
+    static Board reading(final Board board) {
+        final List<String> states = new java.util.ArrayList<>(board.workflow().states());
+        states.add(states.indexOf("Review"), "Reading");
+        final Map<String, WorkRule> rules = new LinkedHashMap<>(board.work().rules());
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        List.of("Building", "Review"),
+                        "Review",
+                        null,
+                        "Building",
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Read {issues}",
+                        Map.of("zeta", "large")));
+        return new Board(
+                board.revision(),
+                new Workflow(states, board.workflow().phases(), board.workflow().closed()),
+                board.stories(),
+                board.issues(),
+                new Work(rules, board.work().faults()),
+                board.repositories());
+    }
+
     static Board board(final WorkRule.Per per) {
         final Map<String, String> models = new LinkedHashMap<>();
         models.put("zeta", "large");

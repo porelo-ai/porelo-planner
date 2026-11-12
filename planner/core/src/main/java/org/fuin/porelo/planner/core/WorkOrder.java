@@ -75,19 +75,44 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
     /** An issue's chosen reading limit before validation. */
     public record Limit(String issue, Number rounds) {}
 
-    /** The operator's choices; omitted collections and limits take the proposal's defaults. */
+    /**
+     * The operator's choices; omitted collections and limits take the proposal's defaults, and
+     * {@code issues}, when given, are the story's issues the work is for, none other.
+     */
     public record Decision(
             String mode,
             String revision,
             @Nullable List<WorkProposal.Repository> repositories,
             @Nullable String comment,
             @Nullable Number readingRounds,
-            @Nullable List<Limit> issueReadingRounds) {
+            @Nullable List<Limit> issueReadingRounds,
+            @Nullable List<String> issues) {
         /** Copies present choices to prevent concurrent changes while accepting. */
         public Decision {
             repositories = repositories == null ? null : List.copyOf(repositories);
             issueReadingRounds =
                     issueReadingRounds == null ? null : List.copyOf(issueReadingRounds);
+            issues = issues == null ? null : List.copyOf(issues);
+        }
+
+        /**
+         * Choices for the story's work as its proposal names it.
+         *
+         * @param mode the mode
+         * @param revision the board's revision the person saw
+         * @param repositories the chosen repositories, or null for the proposal's
+         * @param comment the person's words, or null
+         * @param readingRounds the readings granted, or null for the default
+         * @param issueReadingRounds the readings granted per issue, or null
+         */
+        public Decision(
+                final String mode,
+                final String revision,
+                final @Nullable List<WorkProposal.Repository> repositories,
+                final @Nullable String comment,
+                final @Nullable Number readingRounds,
+                final @Nullable List<Limit> issueReadingRounds) {
+            this(mode, revision, repositories, comment, readingRounds, issueReadingRounds, null);
         }
     }
 
@@ -115,8 +140,9 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
         if (!active.isEmpty()) {
             throw WorkRefusal.workRunning(id, active);
         }
-        final WorkProposal proposal = WorkProposal.propose(board, id, to, running);
-        final WorkRule rule = WorkProposal.rule(board, story, to);
+        final WorkProposal proposal =
+                WorkProposal.propose(board, id, to, running, decision.issues());
+        final WorkRule rule = WorkProposal.rule(board, story, to, decision.issues());
         if (!rule.modes().contains(decision.mode())) {
             throw refused(story, to, "The project does not allow that mode.");
         }
@@ -216,7 +242,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
         if (!source.issues().equals(choice.issues())
                 || !source.main().name().equals(choice.main().name())
                 || !source.main().brief().equals(choice.main().brief())
-                || !choice.main().role().equals("MAIN")) {
+                || !choice.main().role().equals(source.main().role())) {
             throw refused(story, to, "A main identity, brief or repository's issues were changed.");
         }
         offered(
