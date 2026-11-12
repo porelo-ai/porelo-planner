@@ -10,7 +10,7 @@
   "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it"
+  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues"
 }
 ```
 
@@ -33,3 +33,9 @@ frames it.
 - The screen's test frames the board event itself, so a change of the planner's framing goes unseen.
 - The mock's answers are recorded where `CI` is unset only through `record`'s own check, which a caller passing
   another environment would skip; recording answers green and checks nothing.
+- `check-commits` lists the committed files with a git call that has no timeout and ignores the environment it is
+  given, so a git that hangs holds the check until the job's own limit.
+- `check-commits` answers a whole range as no answer when one commit's issue file is malformed or a stage record path
+  cannot be read, so the other commits' faults go unsaid.
+- `check-commits` takes an issue file at any depth below `issues/` as measured, a fixture's among them, though the
+  prefixes are read only from the repository's own issues.

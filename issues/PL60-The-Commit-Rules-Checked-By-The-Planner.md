@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL60",
   "title": "The Commit Rules Checked By The Planner",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -50,7 +50,10 @@ The steps:
    - The range is refused when blank or starting with `-`, and git takes it after `--end-of-options` and before `--`;
      every other git call (`ls-tree`, `rev-list`, `diff-tree`, `show <hash>:<path>`) ends its revisions with `--`.
      The log's record and field separators and the six-field check stay; output git writes that is no UTF-8 is no
-     answer.
+     answer. The log must hold one record separator and five field separators per commit, as `rev-list --count`
+     counts them, or it is no answer: a message holding a record separator and five field separators would otherwise
+     forge an exempt commit and hide its own body behind it, and a name holding a field separator would shift the
+     fields.
    - A commit is exempt by its recorded author name `dependabot[bot]` or `github-actions[bot]`, or committer name
      `GitHub`, exactly; these are what the commit says of itself, as today, and an exempt commit skips the stage
      check too. `--outside` needs a `Signed-off-by:` trailer naming the author's address, compared without case.
@@ -66,24 +69,30 @@ The steps:
      a measured or closed state, a duplicate field); a measured issue that is new or changes state or size needs its
      `stats/<issue>.jsonl` in the tree, its presence enough; it is compared with the first parent only, and a parent
      version that cannot be read or is no valid issue is a fault, never taken as unchanged.
-2. This repository's `build.yml` and `shared-rules.yml` run the planner's `check-commits` through `PlannerApplication`
-   on the app's runtime classpath, in place of the build tools' `exec:exec@release` call, failing on any exit but 0;
-   an unset push base or empty range still fails as today. A changelog entry.
+2. This repository's `build.yml` runs the planner's `check-commits` with the native executable its build step wrote,
+   and `shared-rules.yml`'s daily run through `PlannerApplication` on the app's runtime classpath (`exec:exec@planner`
+   in `planner/app`, after an install), in place of the build tools' `exec:exec@release` call, failing on any exit but
+   0. A pull request keeps the build tools' pinned call while they carry the command, since the planner built from
+   the pull request's own tree is code the pull request can change to pass itself; an unset push base or empty range still fails as today. Each line the command says is escaped as the other work
+   tools' lines are. A changelog entry.
 
 Tests, red first:
 
 - Unit, `CommitRulesTest`, the build tools' `CheckCommitsTest` carried over (fake git for the rules, a fixture
-  repository made with git under `GIT_CONFIG_GLOBAL=/dev/null` for the git calls): among them a range `--output=x`
-  and `--all` refused before git runs, a body holding the record separator refused or no answer, an author
-  `dependabot[bot] ` (a trailing space) not exempt, a person's move passing, an open stage refused, a merge whose
-  second parent changed a measured issue checked against the first parent only, a parent version that cannot be read
-  refused.
-- Unit, `WhoTest` carried over.
-- Integration, test scope while the build tools still carry the commands: the same fixture refused alike by both.
+  repository made with git under `GIT_CONFIG_GLOBAL=/dev/null` for the git calls): among them a range `--output=x`,
+  `--all`, `-n1` or blank refused before git runs, a message holding the record or the field separator no answer, an
+  author `dependabot[bot] ` (a trailing space) not exempt, a person's move as `StageRecords.move` writes it passing,
+  a malformed JSON line refused, an open stage refused, a merge whose second parent changed a measured issue checked
+  against the first parent only, a parent version that cannot be read refused. The build tools hold no `WhoTest`;
+  `Who` is proven through the refusals of names and credits in `CommitRulesTest`.
+- Integration, `CommitCommandTest` in `app`, test scope while the build tools still carry the command: both run as
+  processes at one fixture repository's root, with the same exit code and lines for a pass, a long subject, an issue
+  number, a prose body, `--outside`, an empty range, two ranges, `--all`, `-n1` and an unknown revision; a control
+  character in a message said escaped; no build directory and no temporary file left behind.
 
 ## Acceptance
 
 - The tests above, each seen red first; the full build green.
-- This repository's Build and shared-rules workflow run the planner's `check-commits` and are green on it; a
+- This repository's Build and the shared-rules workflow's daily run use the planner's `check-commits` and are green on it; a
   deliberately long subject on a branch turns them red.
 - The planner's executable gives `check-commits` with the build tools' exit codes, on one fixture run by both.

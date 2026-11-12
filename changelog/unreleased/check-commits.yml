@@ -1,0 +1,2 @@
+title: The planner's executable checks a range of commits against the shared rules on commit messages and stage records with `check-commits`, as the build tools do, and refuses a log whose commits cannot be told apart.
+type: added

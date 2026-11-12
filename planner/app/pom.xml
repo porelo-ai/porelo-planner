@@ -75,6 +75,32 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!-- Any work command of the planner, in a JVM of its own at the repository's root, for a workflow that
+                 builds no executable: '-pl planner/app exec:exec@planner -Dplanner.args=...' after an install. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>planner</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>runtime</classpathScope>
+                            <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.planner.app.PlannerApplication ${planner.args}</commandlineArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
         <!-- The planner from the source, for a person who works on it: DevTools restarts it in a moment when any
              module's classes change, and nothing of it reaches a package, which never has this profile. It writes the

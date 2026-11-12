@@ -33,6 +33,11 @@ jobs:
             - name: The documents
               run: ./mvnw -B -U -s settings.xml -Pdocuments test
 
+            # The planner's commands on the JVM, for main's commits below; no native executable is built here.
+            - name: The planner
+              if: github.event_name == 'schedule'
+              run: ./mvnw -B -s settings.xml -pl planner/app -am install -DskipTests
+
             # A pull request's own commits held to the shared rule on commit messages. One from outside - from another
             # repository, or opened by someone not a member - also carries its author's Signed-off-by: on each commit,
             # the Developer Certificate of Origin; Dependabot's and GitHub's own commits are exempt by the author and
@@ -62,6 +67,8 @@ jobs:
                           outside=
                       fi
                   fi
+                  # The build tools' pinned rule, never the planner built from the pull request's own tree, which
+                  # the pull request could change to pass itself.
                   ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $PR_BASE..$PR_HEAD $outside"
 
             # A push the Build never starts, of [skip ci] commits or of documents alone, meets no check of its own, so
@@ -72,4 +79,4 @@ jobs:
                   set -eu
                   # A repository younger than that is read whole, its first commit too.
                   start=$(git rev-list -1 --before='26 hours ago' HEAD)
-                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits ${start:+$start..}HEAD"
+                  ./mvnw -B -s settings.xml -pl planner/app exec:exec@planner -Dplanner.args="check-commits ${start:+$start..}HEAD"

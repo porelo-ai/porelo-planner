@@ -24,8 +24,8 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 
 ## The work tools
 
-The same executable indexes and checks a repository's issues and the project's stories when its first argument is
-`issues` or `stories`. It then starts no server, opens no port and reads no planner configuration; it answers and
+The same executable indexes and checks a repository's issues and the project's stories, and checks a range of commits,
+when its first argument is `issues`, `stories` or `check-commits`. It then starts no server, opens no port and reads no planner configuration; it answers and
 exits. Each command is run from the repository's root:
 
 | Command | What it does |
@@ -35,6 +35,7 @@ exits. Each command is run from the repository's root:
 | `stories index <dir>` | Writes each story's text above `## Data` and the stories' `README.md` from the heads, the issues read from the checkouts beside the project's own. |
 | `stories check <dir>` | Checks every story's head, the issues it names in their repositories' indexes, each story's text and the stories' `README.md`; writes nothing. |
 | `stories cut <version> <dir> --after <yyyy-mm-dd>` | Prints a release's notes: the stories tested after that day, each linked on the host and under the owner `project.yml` names for the project. |
+| `check-commits <range> [--outside]` | Checks each commit of a Git range against the shared rules on commit messages - a subject of at most 72 characters, only trailers below it, no issue number of the repository's own prefixes, nobody named or credited - and the stage records in `stats/` that each commit's tree carries; with `--outside`, each commit also carries its author's `Signed-off-by:`. GitHub's and Dependabot's own commits are exempt. |
 
 - **Exit 0** is a pass, with one `OK` line on standard output. **Exit 1** is a refusal: each fault on standard error,
   then their count. **Exit 2** is no answer: something could not be read or written, or the arguments are no command,
@@ -42,6 +43,8 @@ exits. Each command is run from the repository's root:
 - **The stories commands read the issue indexes from the checkouts beside the project's own**, named as
   `project.yml` names the repositories, and never over the network; the project's checkout is the nearest directory
   above `<dir>` that holds `project.yml`.
+- **`check-commits` reads the Git repository it is run in** and refuses a range that starts with `-`. A log that does
+  not split into its commits, because a name, address or message holds Git's separators, is no answer.
 - **A character from a repository that could steer a terminal** - a control, format or line separator character - is
   written as its `\uXXXX` escape in every line the tools say.
 - From the packages it is `/usr/libexec/porelo/planner issues check issues`.

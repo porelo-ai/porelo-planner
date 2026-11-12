@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -13,8 +14,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.git.stories.CommitRules;
 import org.fuin.porelo.planner.store.git.stories.IssueSource;
 import org.fuin.porelo.planner.store.git.stories.IssuesIndex;
 import org.fuin.porelo.planner.store.git.stories.Project;
@@ -41,6 +44,8 @@ final class WorkCommands {
 
     private static final String ISSUES = "issues index <dir> | issues check <dir>";
 
+    private static final String COMMITS = "check-commits RANGE [--outside]";
+
     private static final String STORIES =
             "stories index <dir> | stories check <dir>"
                     + " | stories cut <version> <dir> --after <yyyy-mm-dd>";
@@ -58,16 +63,21 @@ final class WorkCommands {
      * Whether the arguments name a work tool rather than the server.
      *
      * @param args the command line
-     * @return whether the first argument is {@code issues} or {@code stories}
+     * @return whether the first argument is {@code issues}, {@code stories} or {@code
+     *     check-commits}
      */
     static boolean named(final String... args) {
-        return args.length > 0 && (args[0].equals("issues") || args[0].equals("stories"));
+        return args.length > 0
+                && (args[0].equals("issues")
+                        || args[0].equals("stories")
+                        || args[0].equals("check-commits"));
     }
 
     /**
      * Runs a work tool.
      *
-     * @param args the command line, its first argument {@code issues} or {@code stories}
+     * @param args the command line, its first argument {@code issues}, {@code stories} or {@code
+     *     check-commits}
      * @param out where an answer goes
      * @param err where each fault and every failure goes
      * @return the exit code: 0, {@value #REFUSED} or {@value #UNANSWERED}
@@ -76,14 +86,56 @@ final class WorkCommands {
         final WorkCommands commands = new WorkCommands(out, err);
         try {
             final List<String> rest = args.subList(1, args.size());
-            return args.getFirst().equals("issues")
-                    ? commands.issues(rest)
-                    : commands.stories(rest);
+            return switch (args.getFirst()) {
+                case "issues" -> commands.issues(rest);
+                case "check-commits" -> commands.checkCommits(rest);
+                default -> commands.stories(rest);
+            };
         } catch (RuntimeException | StackOverflowError | OutOfMemoryError ex) {
             // The JVM's own exit 1 would read as a refusal of the files checked.
             err.println(
                     "internal error - this is not an answer to the question asked: " + said(ex));
             return UNANSWERED;
+        }
+    }
+
+    /**
+     * Checks the commits of a range in the repository the command runs in, at its root; each line
+     * said with its control characters escaped, since it quotes what a commit says of itself.
+     */
+    private int checkCommits(final List<String> rest) {
+        String range = null;
+        boolean outside = false;
+        for (final String arg : rest) {
+            if (arg.equals("--outside")) outside = true;
+            else if (arg.startsWith("--") || range != null) return usage(COMMITS);
+            else range = arg;
+        }
+        if (range == null) return usage(COMMITS);
+        final Path here = Path.of(".");
+        final ByteArrayOutputStream said = new ByteArrayOutputStream();
+        final ByteArrayOutputStream faults = new ByteArrayOutputStream();
+        final int code;
+        try (PrintStream sayer = new PrintStream(said, true, StandardCharsets.UTF_8);
+                PrintStream faulter = new PrintStream(faults, true, StandardCharsets.UTF_8)) {
+            code =
+                    new CommitRules(
+                                    sayer,
+                                    faulter,
+                                    CommitRules.Git.in(here, Map.of()),
+                                    () -> CommitRules.prefixes(here))
+                            .check(range, outside);
+        }
+        escaped(said, out);
+        escaped(faults, err);
+        return code;
+    }
+
+    private static void escaped(final ByteArrayOutputStream lines, final PrintStream to) {
+        final String text = lines.toString(StandardCharsets.UTF_8);
+        if (text.isEmpty()) return;
+        for (final String line : text.split("\n", -1)) {
+            if (!line.isEmpty()) to.println(shown(line));
         }
     }
 
