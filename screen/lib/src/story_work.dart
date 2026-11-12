@@ -400,7 +400,7 @@ class StoryWork extends ChangeNotifier {
     final run = origin.runOf(id)..startTask = startTask;
     run.onStarted = onStarted;
     final epoch = run.epoch;
-    bool valid() =>
+    bool owned() =>
         run.epoch == epoch &&
         !_disposed &&
         generation == _generation &&
@@ -408,7 +408,9 @@ class StoryWork extends ChangeNotifier {
         origin.generation == boardGeneration &&
         identical(backend, source) &&
         project == name &&
-        story.id == id &&
+        story.id == id;
+    bool valid() =>
+        owned() &&
         revision == request.revision &&
         current &&
         origin.startUnavailable(story, ownStart: token, ownTasks: [for (final task in startedTasks) task.$2]) == null;
@@ -423,8 +425,9 @@ class StoryWork extends ChangeNotifier {
       if (!valid()) return false;
       tasks = List.unmodifiable(order.tasks.map(StoryWorkTask.new));
       _changed();
+      // Once the planner took the order, its own tasks' starts move the board; only a lost owner stops the rest.
       for (final task in tasks) {
-        if (!valid()) return false;
+        if (!owned()) return false;
         try {
           task.started = await run.start(task.order, startTask, epoch);
         } catch (error) {
@@ -433,7 +436,7 @@ class StoryWork extends ChangeNotifier {
         }
         _changed();
       }
-      return valid();
+      return owned();
     } catch (error) {
       if (valid()) {
         problem = planningFailureWords(error);

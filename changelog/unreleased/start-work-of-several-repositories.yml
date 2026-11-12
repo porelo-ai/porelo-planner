@@ -1,0 +1,2 @@
+title: Start work for a story of several repositories closes once every task started, instead of staying open because the first task's own start moved the board.
+type: fixed

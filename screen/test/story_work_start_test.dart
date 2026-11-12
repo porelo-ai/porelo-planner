@@ -261,6 +261,22 @@ void main() {
     expect(calls, hasLength(2));
   });
 
+  // Harm: an order of two repositories never ends, so the form stays open and its second builder is never reported.
+  test("a board moved by the order's own first start does not stop its later tasks", () async {
+    final calls = <PlanningTaskOrder>[];
+    final work = await form((_, _, _, task) async {
+      calls.add(task);
+      if (calls.length == 1) {
+        // The first builder's STARTED moves its issue, so the board's revision moves before the next task starts.
+        source.push('demo', {...source.boards['demo']!, 'revision': 'r2'});
+        await pumpEventQueue();
+      }
+      return PlanningTaskStarted(task: 'task-${calls.length}', container: 'container-${calls.length}');
+    });
+    expect(await work.start(), isTrue, reason: 'every task of the accepted order started');
+    expect(calls, source.order.tasks, reason: 'the second task starts after the board moved');
+  });
+
   // Harm: a second form or repeated click starts the same story while its first order is still pending.
   test('a second start is unavailable until the first order fails', () async {
     final gate = Completer<PlanningTaskStarted>();
