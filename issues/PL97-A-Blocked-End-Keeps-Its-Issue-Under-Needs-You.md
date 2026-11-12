@@ -30,11 +30,13 @@ finish behave as today.
 - **Today, read in the code.** The window reports ENDED with `TaskEnded` (at, finished, why, answer, unpushed, landed);
   `WorkEnds.Outcome.of(finished, unpushed)` gives DONE, UNPUSHED or FAILED, and `NextStep.after` moves a DONE build's
   issues to the rule's `then` or `done` and offers the next task; FAILED and UNPUSHED raise the issues under Needs you.
-- **The contract.** `TaskEnded` gains `outcome`, optional, `DONE` or `BLOCKED`, as Porelo's task row declares it,
-  copied unchanged by the window; absent means as today. Written first in `planner.yaml`, covered by
-  `ApiMatchesDescriptionTest`.
+- **The contract, agreed with the window.** `TaskEnded` gains `outcome`, optional, one of `DONE`, `BLOCKED` and
+  `FAILED`, Porelo's `WorkEnded.outcome` copied unchanged by the window; absent means as today. There is no second
+  reason field: the window fills the existing `why` from `WorkEnded.why`. Written first in `planner.yaml`, covered by
+  `ApiMatchesDescriptionTest`. `TaskEnded` refuses a property it does not describe, so the window sends `outcome`
+  only to a planner published with it.
 - **The judging.** `WorkEnds.Outcome` gains BLOCKED, taken whenever the declared outcome is BLOCKED, whatever
-  `finished` says. `NextStep.after` treats BLOCKED as it treats FAILED: no move, no next task, the issues raised with
+  `finished` says, and FAILED whenever the declared outcome is FAILED. `NextStep.after` treats BLOCKED as it treats FAILED: no move, no next task, the issues raised with
   attention `BLOCKED` and the why the window reported shown with the issue, as FAILED's why is today. The ended record
   keeps the outcome, so a replayed end matches its fingerprint and an older record without it reads as before.
 - **Tests, red first.**
@@ -49,8 +51,3 @@ finish behave as today.
 
 - A blocked end leaves its issues in their state under Needs you with the task's why; DONE and an end without an
   outcome behave as today; each new test seen red; the suite and the documents' checks pass.
-
-## To be checked
-
-- The name and values the window reads from Porelo's task row for the declared outcome, before the contract's field
-  is fixed; agreed with the window's agent in the channel.
