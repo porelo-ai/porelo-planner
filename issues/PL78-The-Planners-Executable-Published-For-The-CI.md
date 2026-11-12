@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL78",
   "title": "The Planner's Executable Published For The CI",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 26,
@@ -50,10 +50,17 @@ SHA-256, which a CI step pins together with the version; no snapshot clean-up re
   - Snapshots publish nothing to `files`.
 - **This repository's own check with the downloaded executable** is the daily issues check, which takes the released
   executable pinned by version and SHA-256.
-- **Tests.** The steps are workflow shell; their logic is the upload and the check of the digest.
-  - Before the hand-over, the two steps' script is run locally against a throwaway local HTTP server (stored file,
-    absent file, wrong digest). Each failure path is seen once, with its message read.
-  - The real run is the next release's Build.
+- **Tests.** The steps are workflow shell; their logic is the upload and the check of the digest. Their scripts,
+  taken from the workflow, were run locally against a throwaway HTTPS server:
+  - nothing stored: the read-back fails after its tries, naming the 404;
+  - a release published: the `.deb`, the `.rpm` and the executable are stored, and the read-back answers OK, with the
+    version, path and SHA-256 in the summary;
+  - the same release again: it stops at the first stored file, before any upload;
+  - only the executable stored: it stops, naming it, and uploads nothing;
+  - a stored executable with other bytes: the read-back fails, naming both digests;
+  - a snapshot: nothing is stored under `files`.
+
+  The real run is the next release's Build.
 
 ## Acceptance
 

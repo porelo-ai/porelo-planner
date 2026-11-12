@@ -1,0 +1,2 @@
+title: A release publishes the planner's native executable to Artifactory as files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64 with its SHA-256, read back and checked, for other repositories' CI to download pinned.
+type: added

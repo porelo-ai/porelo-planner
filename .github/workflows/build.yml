@@ -128,7 +128,8 @@ jobs:
                       esac
                       echo "channel=snapshots" >> "$GITHUB_OUTPUT"
                   fi
-                  echo "  $VERSION -> $(tail -1 "$GITHUB_OUTPUT")"
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+                  echo "  $VERSION -> $(grep '^channel=' "$GITHUB_OUTPUT")"
 
             # Every -SNAPSHOT in the effective pom - dependencies, the imported BOM, plugins and their dependencies such as
             # porelo-release, inactive profiles too - refuses the tag.
@@ -148,6 +149,7 @@ jobs:
                   JF_URL: ${{ vars.JF_URL }}
                   JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
                   CHANNEL: ${{ steps.channel.outputs.channel }}
+                  VERSION: ${{ steps.channel.outputs.version }}
               run: |
                   set -euo pipefail
                   case "$JF_URL" in
@@ -162,6 +164,11 @@ jobs:
                   }
                   deb="$(only planner/app/target/*.deb)"
                   rpm="$(only planner/app/target/*.rpm)"
+                  # Other repositories' CI pins the release executable by this path, its version and its SHA-256.
+                  exe="$RUNNER_TEMP/porelo-planner-${VERSION}-linux-x86_64"
+                  if [ "$CHANNEL" = releases ]; then
+                      cp planner/app/target/porelo-planner "$exe"
+                  fi
                   # A published release is never replaced, as on Central: each file is asked for where it would be
                   # stored, so one uploaded by a run that failed before its index was written counts too. Anything
                   # but a 404 stops the release, since whether it is published is then unknown.
@@ -178,6 +185,7 @@ jobs:
                   if [ "$CHANNEL" = releases ]; then
                       absent "porelo-dist-deb/pool/main/p/porelo-planner/$(basename "$deb")"
                       absent "porelo-dist-rpm/releases/$(basename "$rpm")"
+                      absent "files/porelo-planner/${VERSION}/$(basename "$exe")"
                   fi
                   [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
                   # Assigned first, so a checksum that cannot be computed stops here instead of sending an empty header,
@@ -201,6 +209,9 @@ jobs:
                   put "$deb" "porelo-dist-deb/pool/main/p/porelo-planner/" \
                       "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
                   put "$rpm" "porelo-dist-rpm/${CHANNEL}/"
+                  if [ "$CHANNEL" = releases ]; then
+                      put "$exe" "files/porelo-planner/${VERSION}/"
+                  fi
 
             # Uploaded is not installable. Read anonymously, as an installer sees it, into a variable before grep: grep
             # leaving a pipe early would fail curl under pipefail on a large index.
@@ -268,6 +279,48 @@ jobs:
                       echo "::error::$RPM is not in $rpmrepo after $tries reads; the last: $last"
                       exit 1
                   fi
+
+            # Stored is not proof: the executable is read back anonymously, as another repository's CI reads it, and
+            # its digest is the built file's.
+            - name: The executable is published
+              timeout-minutes: 3
+              if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  VERSION: ${{ steps.channel.outputs.version }}
+              run: |
+                  set -euo pipefail
+                  name="porelo-planner-${VERSION}-linux-x86_64"
+                  url="${JF_URL%/}/artifactory/files/porelo-planner/${VERSION}/$name"
+                  built="$(sha256sum planner/app/target/porelo-planner | cut -d' ' -f1)"
+                  tries=0
+                  read=false
+                  while [ "$tries" -lt 10 ]; do
+                      if curl -sSfL --proto =https --proto-redir =https --max-time 60 -o "$RUNNER_TEMP/$name.read" "$url" 2>"$RUNNER_TEMP/read-error"; then
+                          read=true
+                          break
+                      fi
+                      last="$(cat "$RUNNER_TEMP/read-error")"
+                      tries=$((tries + 1))
+                      sleep 6
+                  done
+                  if [ "$read" != true ]; then
+                      echo "::error::$url could not be read after $tries tries; the last: $last"
+                      exit 1
+                  fi
+                  got="$(sha256sum "$RUNNER_TEMP/$name.read" | cut -d' ' -f1)"
+                  if [ "$got" != "$built" ]; then
+                      echo "::error::$url has SHA-256 $got; the built executable has $built"
+                      exit 1
+                  fi
+                  echo "  OK    $url reads back with SHA-256 $built"
+                  {
+                      echo "### The planner's executable for the CI"
+                      echo
+                      echo "- version: \`$VERSION\`"
+                      echo "- path: \`files/porelo-planner/${VERSION}/$name\`"
+                      echo "- sha256: \`$built\`"
+                  } >> "$GITHUB_STEP_SUMMARY"
 
     # The window's planning screen, a Flutter package: analysed and tested as the window's build does it, with the
     # Flutter its pubspec pins. Only the screen's module: the Java build is the job above.
