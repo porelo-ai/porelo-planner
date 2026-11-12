@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL85",
   "title": "The Planner In A Real Run From Idea To Finished",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 1,
