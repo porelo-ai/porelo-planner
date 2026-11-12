@@ -32,6 +32,7 @@
 #   PLANNER_TOKEN         the bearer token; read from the address file when unset
 #   PLANNER_BRANCH        the store's branch; main when unset
 #   PORELO                Porelo's executable for 'records'; porelo on the PATH when unset
+#   PORELO_PROJECT        Porelo's project for 'records'; PLANNER_PROJECT when unset
 #
 # Exit codes: 0 the check holds, 1 it does not, 2 the probe cannot run (usage, a tool missing, the
 # planner or the forge not reachable). Every failure prints what was asked and what was got.
@@ -63,6 +64,8 @@ need jq
 
 PROJECT=${PLANNER_PROJECT:-}
 [[ $PROJECT =~ ^[a-z0-9][a-z0-9._-]{0,99}$ ]] || die "PLANNER_PROJECT is unset or not a project name"
+PORELO_PROJECT=${PORELO_PROJECT:-$PROJECT}
+[[ $PORELO_PROJECT =~ ^[a-z0-9][a-z0-9._-]{0,99}$ ]] || die "PORELO_PROJECT is not a project name"
 BRANCH=${PLANNER_BRANCH:-main}
 [[ $BRANCH =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || die "PLANNER_BRANCH is not a branch name"
 
@@ -304,7 +307,7 @@ records)
     [[ $since =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die "records needs a time like 2026-01-01T00:00:00Z"
     porelo=${PORELO:-porelo}
     need "$porelo"
-    got=$("$porelo" task records -p "$PROJECT" --since "$since" --json) || die "Porelo did not answer its task records"
+    got=$("$porelo" task records -p "$PORELO_PROJECT" --since "$since" --json) || die "Porelo did not answer its task records"
     count=$(jq -r 'if type == "array" then length else (.records // [] | length) end' <<<"$got")
     [[ $count =~ ^[1-9][0-9]*$ ]] || fail "records" "at least one task record since $since" "${count:-none}"
     pass "Porelo holds $count task record(s) of $PROJECT since $since"
