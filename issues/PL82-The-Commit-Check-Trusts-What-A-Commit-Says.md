@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL82",
   "title": "The Commit Check Trusts What A Commit Says",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 1,
@@ -16,6 +16,8 @@
 
 **Size:** S - one class of the Git store, `CommitRules`, and its unit tests; the fault lines are new, the exit
 codes stay.
+
+**Estimate:** 33 min, the measured median of S.
 
 **What must be true.** Nobody who writes a commit can make `check-commits` skip a rule by what the commit says of
 itself; the planner's command and the build tools' `check-commits` stay alike while both carry it.
