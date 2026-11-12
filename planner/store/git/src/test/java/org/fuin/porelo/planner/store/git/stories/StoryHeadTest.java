@@ -43,11 +43,19 @@ class StoryHeadTest {
         final IllegalArgumentException refused =
                 catchThrowableOfType(
                         IllegalArgumentException.class,
-                        () -> StoryHead.reference("other-repository", "CD02"));
+                        () -> StoryHead.reference("Other/Repository", "CD02"));
 
-        assertThat(refused).as("a repository outside the schema's names refused").isNotNull();
+        assertThat(refused).as("a name no project repository can have refused").isNotNull();
         assertThat(StoryHead.reference("porelo-other", "CD02"))
                 .as("a porelo repository taken")
                 .isEqualTo("porelo-other#CD02");
+    }
+
+    // Prevents a project whose repositories are not named porelo-* from saving no idea at all.
+    @Test
+    void aReferenceToAnyRepositoryNameAProjectMayHaveIsTaken() {
+        assertThat(StoryHead.reference("foo-1", "TP01"))
+                .as("a project's repository of any valid name")
+                .isEqualTo("foo-1#TP01");
     }
 }
