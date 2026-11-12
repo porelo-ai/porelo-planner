@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL35",
   "title": "A Test App For The Planning Screen",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 22,
