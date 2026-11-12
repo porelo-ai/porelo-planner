@@ -50,6 +50,30 @@ state answers as today.
     (`ApiMatchesDescriptionTest`). Harm: the window reading a field the contract does not name.
   - Widget, screen: a story with a given state and one misfit shows the mark and the misfit's state; a derived one
     shows neither. Harm: the person not seeing that a story's state stands against its issues.
+- **The plan reading's points**, each checked in the code:
+  - The screen reads and copies neither field today: `PlanStory.from` and `PlanStory.withMoves`. A planner older
+    than this change sends no `misfits` and no `stateGiven`; `PlanStory.from` reads them as none and false and does
+    not fail. After a save, `withMoves` keeps `stateGiven` (a story without issues that the save moved takes it as
+    given, as the store writes it), keeps the misfits while neither the story nor one of its issues moved, and
+    clears them otherwise; the board read that follows every save (`PlanningBoard.save`) then brings the
+    planner's answer. A story with issues takes no destination in `withMoves`, so a confirmed move's given state
+    and misfits arrive with that read. Tested at unit level.
+  - An issue the board does not hold is neither a misfit nor read by the rule: `BoardController.issues` skips it,
+    `Moves.statesOf` handed it to the rule as "", and the refusal named it as `id:null`. One rule in the core
+    method; a story none of whose issues the board holds has none. The Git store already leaves another
+    repository's issue out of a story, so this guards the mock and any other store.
+  - The core method takes the issues' states and the injected rule (`store::storyState`), never a copy of the
+    workflow's rule; `Moves.check` derives over the same issues and names its refusal's issues by it. The changes
+    stream's `boardOf` has no store, so `Changes.Frame` carries the rule beside the board. Tested: a confirmed move
+    leaves a story given and misfitting.
+  - Edge cases, each a test: a given story with no issues has none; a given state its issues derive has none even
+    while single issues stand elsewhere; given Review over only Finished issues makes each a misfit; the misfits
+    come in the story's issue order.
+  - `misfits` is filled through one helper in `BoardController.story` and `storyDetail`; `StoryDetail` is `Story`
+    with a description, and the stream's `Board` carries `Story`, so both carry it.
+  - `MockStore.story` already keeps a given state on a rebuild (only a story without one follows its issues), so it
+    needs no change, only a test; the mock board gives ST193 the given state Review over PJ106 in Implementing, and
+    the screen's recorded mock answers are recorded again.
 
 ## Acceptance
 
