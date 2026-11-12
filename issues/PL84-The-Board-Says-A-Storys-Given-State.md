@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL84",
   "title": "The Board Says A Story's Given State",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 29,
@@ -72,8 +72,51 @@ state answers as today.
   - `misfits` is filled through one helper in `BoardController.story` and `storyDetail`; `StoryDetail` is `Story`
     with a description, and the stream's `Board` carries `Story`, so both carry it.
   - `MockStore.story` already keeps a given state on a rebuild (only a story without one follows its issues), so it
-    needs no change, only a test; the mock board gives ST193 the given state Review over PJ106 in Implementing, and
-    the screen's recorded mock answers are recorded again.
+    needs no change, only a test. No story of the mock board stood in a state its issues do not give, and the
+    window's tests hold the Implementing column as it is, so the mock board gains ST295, given Review over SL37 in
+    Review and SL38 in Backlog, priority Low; the screen's recorded mock answers are recorded again.
+- **Built.**
+  - `core`: `Misfits.of` holds the rule over the issues the board holds and the injected `Moves.StoryState`, and
+    answers null, unknown, for a story whose rule throws. `Moves.check` derives over the same issues, names its
+    refusal's issues by `Misfits.of`, takes a move of a story none of whose issues the board holds as one without
+    issues, and its choice of a story's least advanced issues skips an issue the board does not hold, which before
+    threw a `NullPointerException`. `WorkRun.derive()` hands out the store's rule, and `Changes.Frame` carries it.
+  - `app`: OpenAPI `Story.misfits` (required, an `IssueId` array or null; `StoryDetail` takes it by `allOf`), and
+    `stateGiven`'s description names the board and a confirmed move too; `Answers.Story` and `StoryDetail` gain
+    `misfits`, filled by `Misfits.of` in `BoardController.story` and `storyDetail`, with the rule from the same
+    `WorkRun` the board is viewed through; `boardOf` takes the rule, which the stream passes from its frame. The
+    mock board gains ST295; the screen's `stories.json` and `board-event.json` were recorded again.
+  - `screen`: `PlanStory` reads `stateGiven` and `misfits` leniently, `misfits` null when unknown, and keeps them
+    through `withMoves` as above; `planningGivenMark` puts a pin beside the story's id and priority on the card and
+    beside the state chip on the story page, its tooltip naming each misfit with its state, that the issues fit,
+    or that this is not known.
+  - The window's mock board, which `MockModeTest` holds equal to the planner's: `planning_data.dart` gains the same
+    ST295; the stand-in's `settleStoryStates` keeps a given state and recomputes its misfits, and a story move
+    drops it, as the planner unstates a story its issues fit.
+  - Tests: `MisfitsTest` (the four edge cases, a misfit named, an issue the board does not hold, a rule that
+    throws), `MovesTest` (a confirmed move's misfits match its refusal; a refusal names no issue the board does not
+    hold; a story none of whose issues the board holds takes the state), `BoardReadsTest` (the stories, a story and
+    the streamed board carry the misfits), `MockStoreTest` (ST295 keeps its given state and misfit through a save),
+    `planning_contract_test.dart` (lenient reading, `withMoves`), `planning_given_state_test.dart` (the card's and
+    the story page's mark) and `planning_moves_test.dart` (the stand-in keeps the given state and names its misfit
+    until it fits).
+  - No separate test for a derived state having none: a story's derived state is what its issues give, so no break
+    of the rule can make that case fail.
+- **The code reading's findings.**
+  - One given story could fail the whole board: fixed. `Misfits.of` answers null for a story whose rule throws (a
+    store without a read board, a state its workflow does not know), and the answer says null means unknown.
+    Deriving from the answered board instead was not cheap: the rule lives in the Git store's workflow, not in the
+    board's.
+  - A refusal could name no issue: fixed. A story none of whose issues the board holds takes the state as one
+    without issues, since there is nothing to fit.
+  - The screen claimed "its issues fit it" when it did not know: fixed. `misfits` is null when unknown, after a save
+    that moved the story or one of its issues and from an older planner, and the tooltip says it is not known.
+  - The contract's words on an issue the board does not hold: fixed with the nullable `misfits`; they now say only
+    the issues the board holds are read and named.
+  - The stand-in dropped a moved story's given state: declined. The screen never sends `confirm`, so the planner
+    it stands in for never keeps a mismatched story given: it unstates a story its issues fit and refuses any other.
+    The stand-in takes every story move and already unstates; modelling the refusal would change the scenarios the
+    stand-in's existing tests and the window's tests play, beyond this issue.
 
 ## Acceptance
 

@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -133,6 +134,11 @@ class BoardReadsTest {
                     public Board refresh() {
                         return board();
                     }
+
+                    @Override
+                    public @Nullable String storyState(final List<String> issueStates) {
+                        return BoardReadsTest.storyState(issueStates);
+                    }
                 };
         final Projects projects =
                 new Projects(
@@ -158,6 +164,17 @@ class BoardReadsTest {
                                                 Executors.newSingleThreadScheduledExecutor())))
                         .setControllerAdvice(new Problems())
                         .build();
+    }
+
+    /**
+     * The stories index's rule over this board's workflow: the earliest open state, else Finished.
+     */
+    private static @Nullable String storyState(final List<String> issueStates) {
+        final List<String> order = board().workflow().states();
+        return issueStates.stream()
+                .filter(state -> !"Finished".equals(state))
+                .min(java.util.Comparator.comparingInt(order::indexOf))
+                .orElse(issueStates.isEmpty() ? null : "Finished");
     }
 
     private void given() throws Exception {
@@ -220,11 +237,30 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.stories[1].size").isEmpty())
                 .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("size")))
                 .andExpect(jsonPath("$.stories[1].stateGiven").value(false))
+                // Harm: a story given Review over an issue in Backlog shown as fitting, taken as
+                // done.
+                .andExpect(
+                        jsonPath("$.stories[0].misfits")
+                                .value(org.hamcrest.Matchers.contains("AB01")))
+                .andExpect(jsonPath("$.stories[1].misfits").isEmpty())
+                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("misfits")))
                 .andExpect(jsonPath("$.stories[1].issues[0].id").value("AB01.1"))
                 .andExpect(jsonPath("$.stories[1].issues[1].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories").param("state", "Backlog"))
                 .andExpect(jsonPath("$.stories.length()").value(1))
                 .andExpect(jsonPath("$.stories[0].id").value("ST2"));
+    }
+
+    @Test
+    void theStreamedBoardNamesTheMisfitsOfAGivenState() {
+        // Harm: a window following the stream losing the mark the board's read showed.
+        final Answers.Board streamed =
+                BoardController.boardOf(
+                        board(), new WorkRun.Snapshot(0, Map.of()), BoardReadsTest::storyState);
+        assertThat(streamed.stories())
+                .as("ST1 given Review over AB01 in Backlog; ST2 by its issues")
+                .extracting(Answers.Story::misfits)
+                .containsExactly(List.of("AB01"), List.of());
     }
 
     @Test
@@ -235,6 +271,9 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.revision").value("porelo-store@c1"))
                 .andExpect(jsonPath("$.story.description").value("The story's text."))
                 .andExpect(jsonPath("$.story.size").value("M"))
+                // Harm: the story page showing a given state as fitting while the board marks it.
+                .andExpect(
+                        jsonPath("$.story.misfits").value(org.hamcrest.Matchers.contains("AB01")))
                 .andExpect(jsonPath("$.story.issues[0].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories/ST2/issues"))
                 .andExpect(status().isOk())

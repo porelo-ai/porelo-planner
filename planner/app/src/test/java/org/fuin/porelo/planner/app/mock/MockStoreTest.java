@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
@@ -80,6 +81,20 @@ class MockStoreTest {
                 .as("the story whose stated state was removed")
                 .extracting(Story::state, Story::stateGiven)
                 .containsExactly("Backlog", false);
+    }
+
+    @Test
+    void theMockBoardsGivenStoryKeepsItsStateAndItsMisfitThroughASave() {
+        // Harm: the window's tests never seeing a given state that its issues do not fit.
+        final Board after = store.save(FIRST, moves(Map.of("B542", "Review")));
+
+        assertThat(story(after, "ST295"))
+                .as("ST295 given Review over SL38 in Backlog, after another issue's save")
+                .extracting(Story::state, Story::stateGiven)
+                .containsExactly("Review", true);
+        assertThat(Misfits.of(after, story(after, "ST295"), store::storyState))
+                .as("SL38 stands outside the given Review, SL37 fits")
+                .containsExactly("SL38");
     }
 
     @Test

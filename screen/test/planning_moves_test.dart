@@ -719,7 +719,7 @@ void main() {
   });
 
   // Harm: the mock shows a story where the daemon never puts it, so a saved move lands elsewhere than expected.
-  test('every story of the mock board stands in the earliest open state of its issues', () {
+  test('every story of the mock board without a given state stands in the earliest open state of its issues', () {
     final board = mockPlanningBoard();
     final states = (board['states'] as List<dynamic>).cast<Map<String, dynamic>>();
     final order = [for (final state in states) state['name'] as String];
@@ -734,7 +734,7 @@ void main() {
         for (final issue in (story['issues'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>())
           issue['state'] as String,
       ];
-      if (issues.isEmpty) continue;
+      if (issues.isEmpty || story['stateGiven'] == true) continue;
       expect(issues.every(order.contains), isTrue, reason: '${story['id']} has an issue outside the workflow');
       final open = issues.where((state) => !closed.contains(state)).toList();
       final earliest = (open.isEmpty ? issues : open).reduce((a, b) => order.indexOf(a) <= order.indexOf(b) ? a : b);
@@ -1041,5 +1041,25 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     board.moveIssue('IssueOne', 'Ready', shown: 'Ready', undo: true);
     expect(board.pending.keys, isNot(contains('issue IssueOne')), reason: 'the draft is taken back');
+  });
+
+  // Harm: the window's tests seeing the mock's given story jump to its issues' state, which the planner never does.
+  test('the stand-in keeps a given state through a move and names its misfit until it fits', () {
+    final saved = applyPlanningMove(mockPlanningBoard(), {
+      'revision': 'design-1',
+      'moves': [
+        {'issue': 'B542', 'to': 'Review'},
+      ],
+    });
+    final kept = mockPlanningStory(saved, 'ST295')!;
+    expect(kept['state'], 'Review', reason: 'another issue\'s move leaves the given state');
+    expect(kept['misfits'], ['SL38'], reason: 'SL38 still stands in Backlog');
+    final fitting = applyPlanningMove(mockPlanningBoard(), {
+      'revision': 'design-1',
+      'moves': [
+        {'issue': 'SL38', 'to': 'Review'},
+      ],
+    });
+    expect(mockPlanningStory(fitting, 'ST295')!['misfits'], isEmpty, reason: 'its issues now give Review');
   });
 }

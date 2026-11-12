@@ -992,6 +992,7 @@ class _BoardViewState extends State<_BoardView> {
                   children: [
                     Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
+                    ?planningGivenMark(story),
                     _menu(story),
                   ],
                 ),

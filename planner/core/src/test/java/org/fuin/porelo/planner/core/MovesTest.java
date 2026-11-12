@@ -95,6 +95,72 @@ class MovesTest {
     }
 
     @Test
+    void aConfirmedMoveLeavesTheStoryGivenWithTheIssuesItsRefusalNamed() {
+        // Harm: the board's mark and the move's refusal naming different issues for one story.
+        final Moves.Refused refused = refused(List.of(story("ST1", "Rejected")), false);
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE);
+        final Story saved =
+                new Story(
+                        "ST1",
+                        "A story",
+                        planned.stories().get("ST1"),
+                        true,
+                        "High",
+                        null,
+                        List.of("PL1", "PL2"),
+                        "",
+                        null);
+        final Board after =
+                new Board(
+                        new Revision("r2"),
+                        board.workflow(),
+                        List.of(saved),
+                        List.of(issue("PL1", "Rejected", null), issue("PL2", "Review", null)),
+                        WORK);
+        assertThat(Misfits.of(after, saved, DERIVE))
+                .as("the saved story is given and PL2 stands outside Rejected, as refused")
+                .containsExactly("PL2");
+        assertThat(refused.parameters().get("issues"))
+                .as("the refusal names the same issue")
+                .isEqualTo("PL2:Review");
+    }
+
+    @Test
+    void aRefusalNamesNoIssueTheBoardDoesNotHold() {
+        // Harm: a refusal naming an issue as "null", which the person cannot find or move.
+        final Board missing =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Backlog", false, "PL1", "XX9", "PL2")),
+                        List.of(issue("PL1", "Backlog", null), issue("PL2", "Review", null)),
+                        WORK);
+        final Moves.Refused refused = refused(missing, List.of(story("ST1", "Rejected")));
+        assertThat(refused.parameters().get("issues"))
+                .as("only the issue the board holds that stands elsewhere")
+                .isEqualTo("PL2:Review");
+    }
+
+    @Test
+    void aStoryNoneOfWhoseIssuesTheBoardHoldsTakesTheStateItself() {
+        // Harm: a move refused as a mismatch that names no issue, which nobody can confirm against.
+        final Board elsewhere =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Backlog", false, "XX9")),
+                        List.of(issue("PL1", "Backlog", null)),
+                        WORK);
+        final Moves.Planned planned =
+                Moves.check(elsewhere, List.of(story("ST1", "Review")), false, DERIVE);
+        assertThat(planned.stories())
+                .as("taken as for a story without issues")
+                .containsExactly(entry("ST1", "Review"));
+        assertThat(planned.issues()).as("no issue of the board moves").isEmpty();
+    }
+
+    @Test
     void aStoryWithoutIssuesTakesTheStateItself() {
         final Moves.Planned planned =
                 Moves.check(board, List.of(story("ST2", "Idea")), false, DERIVE);

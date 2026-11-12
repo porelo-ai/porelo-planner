@@ -62,6 +62,7 @@ class PlanningStoryView extends StatelessWidget {
               Text(story.id),
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
+              ?planningGivenMark(story),
             ],
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),

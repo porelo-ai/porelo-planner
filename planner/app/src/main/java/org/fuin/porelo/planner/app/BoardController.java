@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
+import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.Priorities;
@@ -451,16 +452,15 @@ public class BoardController {
     }
 
     /**
-     * Maps the whole board as an event of the changes stream carries it.
+     * Maps the whole board with its local work, as an event of the changes stream carries it.
      *
      * @param board the board
+     * @param snapshot the local work generation
+     * @param derive derives a story's state from its issues, as the board's store does
      * @return the workflow's answer and every story in one
      */
-    static Answers.Board boardOf(final Board board) {
-        return boardOf(board, new WorkRun.Snapshot(0, Map.of()));
-    }
-
-    static Answers.Board boardOf(final Board board, final WorkRun.Snapshot snapshot) {
+    static Answers.Board boardOf(
+            final Board board, final WorkRun.Snapshot snapshot, final Moves.StoryState derive) {
         final Answers.Workflow workflow = workflowOf(board);
         return new Answers.Board(
                 workflow.revision(),
@@ -469,7 +469,9 @@ public class BoardController {
                 workflow.work(),
                 workflow.faults(),
                 board.repositories(),
-                board.stories().stream().map(story -> story(board, story, snapshot)).toList());
+                board.stories().stream()
+                        .map(story -> story(board, story, snapshot, derive))
+                        .toList());
     }
 
     /**
@@ -483,20 +485,19 @@ public class BoardController {
     public Answers.StoryList stories(
             @PathVariable("project") final String project,
             @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
-        return projects.work(name(project))
-                .view(
-                        (board, snapshot) ->
-                                new Answers.StoryList(
-                                        board.revision().value(),
-                                        board.stories().stream()
-                                                .filter(
-                                                        story ->
-                                                                states == null
-                                                                        || states.isEmpty()
-                                                                        || states.contains(
-                                                                                story.state()))
-                                                .map(story -> story(board, story, snapshot))
-                                                .toList()));
+        final WorkRun work = projects.work(name(project));
+        return work.view(
+                (board, snapshot) ->
+                        new Answers.StoryList(
+                                board.revision().value(),
+                                board.stories().stream()
+                                        .filter(
+                                                story ->
+                                                        states == null
+                                                                || states.isEmpty()
+                                                                || states.contains(story.state()))
+                                        .map(story -> story(board, story, snapshot, work.derive()))
+                                        .toList()));
     }
 
     /**
@@ -510,12 +511,15 @@ public class BoardController {
     public Answers.StoryReply story(
             @PathVariable("project") final String project, @PathVariable("story") final String id) {
         final String checked = storyId(project, id);
-        return projects.work(name(project))
-                .view((board, snapshot) -> storyDetail(board, snapshot, checked));
+        final WorkRun work = projects.work(name(project));
+        return work.view((board, snapshot) -> storyDetail(board, snapshot, checked, work.derive()));
     }
 
     private static Answers.StoryReply storyDetail(
-            final Board board, final WorkRun.Snapshot snapshot, final String checked) {
+            final Board board,
+            final WorkRun.Snapshot snapshot,
+            final String checked,
+            final Moves.StoryState derive) {
         final Story story = found(board, checked);
         return new Answers.StoryReply(
                 board.revision().value(),
@@ -524,6 +528,7 @@ public class BoardController {
                         story.title(),
                         story.state(),
                         story.stateGiven(),
+                        Misfits.of(board, story, derive),
                         story.priority(),
                         story.size(),
                         link(story.link()),
@@ -863,12 +868,16 @@ public class BoardController {
     }
 
     private static Answers.Story story(
-            final Board board, final Story story, final WorkRun.Snapshot snapshot) {
+            final Board board,
+            final Story story,
+            final WorkRun.Snapshot snapshot,
+            final Moves.StoryState derive) {
         return new Answers.Story(
                 story.id(),
                 story.title(),
                 story.state(),
                 story.stateGiven(),
+                Misfits.of(board, story, derive),
                 story.priority(),
                 story.size(),
                 link(story.link()),

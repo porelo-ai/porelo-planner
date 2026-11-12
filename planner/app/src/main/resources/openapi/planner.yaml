@@ -1784,7 +1784,7 @@ components:
     Story:
       description: One story as the board shows it.
       type: object
-      required: [id, title, state, stateGiven, priority, size, link, issues, work]
+      required: [id, title, state, stateGiven, misfits, priority, size, link, issues, work]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -1794,7 +1794,19 @@ components:
           type: string
         stateGiven:
           type: boolean
-          description: True when the story's head states its state, false when its issues give it.
+          description: >-
+            True when the story's state was given to it - on the board, by a confirmed move, or in its head -
+            false when its issues give it by the automatic rule, the earliest open state of its issues.
+        misfits:
+          type: [array, 'null']
+          description: >-
+            For a given state that its issues do not give, each of its issues whose own state is another, in the
+            story's order; empty when its issues give that state or its state is not given. Only the issues the
+            board holds - those in `issues`, with their own states - are read and named. Null when the state is
+            given but the planner could not apply the workflow's rule to it, so whether its issues fit is not
+            known.
+          items:
+            $ref: '#/components/schemas/IssueId'
         priority:
           type: string
         size:

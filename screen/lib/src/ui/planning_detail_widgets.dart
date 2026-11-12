@@ -121,3 +121,20 @@ String planningWorker(IssueWorker? worker) => switch (worker) {
   IssueWorker.manual => 'Manual',
   null => 'Not reported',
 };
+
+/// The mark beside a story's state when it was given rather than derived; its tooltip names each misfit with its state.
+Widget? planningGivenMark(PlanStory story) {
+  if (!story.stateGiven) return null;
+  final states = {for (final issue in story.issues) issue.id: issue.state};
+  final misfits = [for (final id in story.misfits ?? const <String>[]) '$id ${planningValue(states[id] ?? '')}'];
+  final message = story.misfits == null
+      ? 'State given to the story; whether its issues fit it is not known.'
+      : misfits.isEmpty
+      ? 'State given to the story; its issues fit it.'
+      : 'State given to the story; these issues do not fit it: ${misfits.join(', ')}';
+  return Tooltip(
+    key: Key('planning-given ${story.id}'),
+    message: message,
+    child: Icon(misfits.isEmpty ? Icons.push_pin_outlined : Icons.push_pin, size: PlanningStyle.rowIcon),
+  );
+}

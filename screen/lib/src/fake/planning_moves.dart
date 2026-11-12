@@ -60,6 +60,8 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
           moved.add(item['id'] as String);
         }
         if (issues.isEmpty) story['state'] = to;
+        // A story moved where its issues follow states no state of its own, as the planner unstates it.
+        if (issues.isNotEmpty) story.remove('stateGiven');
       });
     } else {
       issueWrites.add(() {
@@ -108,12 +110,24 @@ Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id,
   return board;
 }
 
-/// Puts every story with issues in the earliest open state of its issues, or the earliest closed one when all are.
+/// Puts every story with issues in the earliest open state of its issues, or the earliest closed one when all are;
+/// a story whose state was given keeps it, with each issue standing elsewhere as a misfit when its issues give another.
 void settleStoryStates(Map<String, dynamic> board) {
   final states = (board['states'] as List).cast<Map<String, dynamic>>();
   for (final story in (board['stories'] as List).cast<Map<String, dynamic>>()) {
-    final least = _leastAdvanced(states, (story['issues'] as List? ?? []).cast<Map<String, dynamic>>());
-    if (least.isNotEmpty) story['state'] = least.first['state'];
+    final issues = (story['issues'] as List? ?? []).cast<Map<String, dynamic>>();
+    final least = _leastAdvanced(states, issues);
+    if (story['stateGiven'] == true) {
+      story['misfits'] = least.isEmpty || least.first['state'] == story['state']
+          ? <String>[]
+          : [
+              for (final issue in issues)
+                if (issue['state'] != story['state']) issue['id'] as String,
+            ];
+    } else {
+      if (least.isNotEmpty) story['state'] = least.first['state'];
+      if (story.containsKey('misfits')) story['misfits'] = <String>[];
+    }
   }
 }
 

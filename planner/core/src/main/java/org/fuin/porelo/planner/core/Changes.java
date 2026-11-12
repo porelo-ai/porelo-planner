@@ -44,14 +44,23 @@ public final class Changes {
         this.work = work;
     }
 
-    /** One board and local work generation observed under the record lock. */
-    public record Frame(Board board, WorkRun.Snapshot work) {}
+    /**
+     * One board and local work generation observed under the record lock.
+     *
+     * @param board the board
+     * @param work the local work generation
+     * @param derive derives a story's state from its issues, as the board's store does
+     */
+    public record Frame(Board board, WorkRun.Snapshot work, Moves.StoryState derive) {}
 
     private Frame frame() {
         final WorkRun run = work;
         return run == null
-                ? new Frame(store.board(), new WorkRun.Snapshot(0, java.util.Map.of()))
-                : run.view(Frame::new);
+                ? new Frame(
+                        store.board(),
+                        new WorkRun.Snapshot(0, java.util.Map.of()),
+                        store::storyState)
+                : run.view((board, snapshot) -> new Frame(board, snapshot, store::storyState));
     }
 
     /**

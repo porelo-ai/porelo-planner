@@ -633,6 +633,20 @@
       "link": "https://example.org/stories/ST10"
     },
     {
+      "id": "ST295",
+      "title": "Hand the sluice's last checks to a person",
+      "state": "Review",
+      "stateGiven": true,
+      "priority": "Low",
+      "size": null,
+      "issues": [
+        "SL37",
+        "SL38"
+      ],
+      "description": "",
+      "link": "https://example.org/stories/ST295"
+    },
+    {
       "id": "ST264",
       "title": "A host prepared with no project or person",
       "state": "Finished",
@@ -1456,6 +1470,32 @@
       "link": "https://example.org/issues/SL35",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
+      "risk": "ORDINARY"
+    },
+    {
+      "id": "SL37",
+      "repository": "porelo-message-sluice",
+      "title": "Planning work",
+      "state": "Review",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/SL37",
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY"
+    },
+    {
+      "id": "SL38",
+      "repository": "porelo-message-sluice",
+      "title": "Planning work",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/SL38",
+      "text": "**What must be true.** The work meets the story description.\n",
+      "worker": "AGENT",
       "risk": "ORDINARY"
     },
     {

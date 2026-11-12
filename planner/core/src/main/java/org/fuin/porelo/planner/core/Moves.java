@@ -166,11 +166,12 @@ public final class Moves {
         for (final Move move : moves) {
             if (move.story()) {
                 final Story story = story(board, move.id());
-                if (story.issues().isEmpty()) {
+                // A story none of whose issues the board holds has nothing to fit, as one without.
+                if (Misfits.known(story.issues(), states).isEmpty()) {
                     stories.put(story.id(), move.to());
-                } else if (!move.to().equals(derive.of(statesOf(story, states)))) {
+                } else if (!move.to().equals(Misfits.derived(story.issues(), states, derive))) {
                     if (!confirm) {
-                        throw mismatch(story, move.to(), states);
+                        throw mismatch(story, move.to(), states, derive);
                     }
                     stories.put(story.id(), move.to());
                 } else if (story.stateGiven()) {
@@ -280,11 +281,10 @@ public final class Moves {
     /** A story's issues in the earliest state, among the open ones while any is open. */
     private static List<String> leastAdvanced(
             final Workflow workflow, final Story story, final Map<String, String> states) {
+        final List<String> known = story.issues().stream().filter(states::containsKey).toList();
         final List<String> open =
-                story.issues().stream()
-                        .filter(id -> !workflow.closed().contains(states.get(id)))
-                        .toList();
-        final List<String> candidates = open.isEmpty() ? story.issues() : open;
+                known.stream().filter(id -> !workflow.closed().contains(states.get(id))).toList();
+        final List<String> candidates = open.isEmpty() ? known : open;
         final int earliest =
                 candidates.stream()
                         .mapToInt(id -> workflow.states().indexOf(states.get(id)))
@@ -296,10 +296,12 @@ public final class Moves {
     }
 
     private static Refused mismatch(
-            final Story story, final String to, final Map<String, String> states) {
+            final Story story,
+            final String to,
+            final Map<String, String> states,
+            final StoryState derive) {
         final String misfits =
-                story.issues().stream()
-                        .filter(id -> !to.equals(states.get(id)))
+                Misfits.of(story.issues(), to, states, derive).stream()
                         .map(id -> id + ":" + states.get(id))
                         .collect(Collectors.joining(", "));
         final Map<String, String> parameters = new LinkedHashMap<>();
@@ -310,10 +312,6 @@ public final class Moves {
                 "StoryStateMismatch",
                 story.id() + " does not fit " + to + " while its issues stand in " + misfits + ".",
                 parameters);
-    }
-
-    private static List<String> statesOf(final Story story, final Map<String, String> states) {
-        return story.issues().stream().map(id -> of(Optional.ofNullable(states.get(id)))).toList();
     }
 
     private static Story story(final Board board, final String id) {

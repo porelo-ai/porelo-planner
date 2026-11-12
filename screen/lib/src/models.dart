@@ -324,6 +324,12 @@ class PlanStory {
     : id = source.id,
       title = source.title,
       state = destination ?? source.state,
+      // A story without issues saved to a destination states it, as the planner writes it.
+      stateGiven = destination != null || source.stateGiven,
+      // Misfits read before a move of the story or its issues are unknown until the board read after the save.
+      misfits = destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
+          ? null
+          : source.misfits,
       priority = source.priority,
       description = source.description,
       issues = [for (final issue in source.issues) PlanIssue.withState(issue, moves[issue.id] ?? issue.state)],
@@ -337,6 +343,8 @@ class PlanStory {
     : id = _planText(map, 'id'),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
+      stateGiven = map['stateGiven'] == true,
+      misfits = map['misfits'] is List ? _planStrings(map['misfits']) : null,
       priority = map['priority'] is String ? map['priority'] as String : null,
       description = _planText(map, 'description'),
       issues = _planList(map['issues'], PlanIssue.from),
@@ -353,6 +361,12 @@ class PlanStory {
 
   /// Its reported state.
   final String state;
+
+  /// Whether its state was given to it rather than derived from its issues; false when unsaid.
+  final bool stateGiven;
+
+  /// The ids of its issues that do not fit its given state, in its order; empty when they fit, null when unknown.
+  final List<String>? misfits;
 
   /// Its reported priority, empty when unsaid.
   final String? priority;

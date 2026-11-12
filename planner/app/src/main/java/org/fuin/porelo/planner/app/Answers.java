@@ -155,7 +155,9 @@ public final class Answers {
      * @param id its id
      * @param title its title
      * @param state its state
-     * @param stateGiven whether its head states the state, rather than its issues giving it
+     * @param stateGiven whether its state was given to it, rather than its issues giving it
+     * @param misfits its issues that do not fit its given state, in its order; empty when they do;
+     *     null when the planner could not tell
      * @param priority its priority
      * @param size its size, given when it was estimated, or null when it has none
      * @param link where a person reads it, if known
@@ -167,6 +169,7 @@ public final class Answers {
             String title,
             String state,
             boolean stateGiven,
+            @Nullable List<String> misfits,
             String priority,
             @Nullable String size,
             @Nullable String link,
@@ -179,7 +182,9 @@ public final class Answers {
      * @param id its id
      * @param title its title
      * @param state its state
-     * @param stateGiven whether its head states the state, rather than its issues giving it
+     * @param stateGiven whether its state was given to it, rather than its issues giving it
+     * @param misfits its issues that do not fit its given state, in its order; empty when they do;
+     *     null when the planner could not tell
      * @param priority its priority
      * @param size its size, given when it was estimated, or null when it has none
      * @param link where a person reads it, if known
@@ -192,6 +197,7 @@ public final class Answers {
             String title,
             String state,
             boolean stateGiven,
+            @Nullable List<String> misfits,
             String priority,
             @Nullable String size,
             @Nullable String link,

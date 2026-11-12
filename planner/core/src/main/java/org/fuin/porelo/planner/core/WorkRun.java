@@ -935,6 +935,16 @@ public final class WorkRun {
                 });
     }
 
+    /**
+     * Answers how this run's store derives a story's state from its issues, for the boards it
+     * views.
+     *
+     * @return the store's rule
+     */
+    public Moves.StoryState derive() {
+        return store::storyState;
+    }
+
     /** Reads one complete generation for board decoration. */
     public Snapshot snapshot() {
         return record.locked(this::read);
