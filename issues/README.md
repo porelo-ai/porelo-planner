@@ -11,7 +11,6 @@ left out.
 |---|---|---|---|
 | <a id="pl78"></a>[PL78](PL78-The-Planners-Executable-Published-For-The-CI.md) | - | - | The Build publishes the planner's bare native executable with its sha256 beside it, so every repository's CI downloads it pinned by version and digest to check its issues, stories, commits and pushes |
 | <a id="pl83"></a>[PL83](PL83-The-Work-Numbers-Per-Phase-Kept-And-Served.md) | - | - | A task is started with the phase it works in, the Git store keeps a finished issue's numbers from Porelo's records in stats/, and the velocity and an issue's tokens per phase reach the window and the stage command from those records |
-| <a id="pl95"></a>[PL95](PL95-A-Run-Ends-With-Its-Story.md) | - | - | The planner's local record of a story's run ends with the story: a run whose story is gone from the store is dropped, and a story saved anew under an old ID starts without the run recorded before it |
 | <a id="pl89"></a>[PL89](PL89-The-Planner-Names-Its-Version-To-The-Window.md) | - | - | The planner answers its own version and the commit it was built from to the window, so the window's About names which planner it talks to, and a planner left running from an older install is seen at once |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
@@ -28,6 +27,12 @@ left out.
 |---|---|---|---|
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | M | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | M | [PL90](README.md#pl90) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
+
+## Analyzed
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl95"></a>[PL95](PL95-A-Run-Ends-With-Its-Story.md) | M | - | The planner's local record of a story's run ends with the story: a run whose story is gone from the store is dropped, and a story saved anew under an old ID starts without the run recorded before it |
 
 ## Estimated
 
