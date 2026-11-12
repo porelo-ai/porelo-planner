@@ -5,73 +5,63 @@
   "$schema": "issue-1.json",
   "id": "PL102",
   "title": "The Executable Published On Every Push",
-  "state": "Implementing",
-  "size": "L",
+  "state": "Review",
+  "size": "M",
   "priority": "High",
   "rank": 30,
   "blockedBy": [],
-  "covers": "Every push to main that builds publishes the planner's native executable under a version of its own, never overwritten, with its sha256 beside it, so a repository's CI can pin a change before a release; a rule of its own removes old builds nobody pins"
+  "covers": "Every push to main that builds publishes the planner's native executable under its package version, never replaced, with its sha256 beside it, so a repository's CI can pin a change before a release"
 }
 ```
 
-**Size:** L - the Build's publish step, a clean-up workflow that reads every repository's pin, and a rule for
-pinning that every repository follows.
+**Size:** M - the Build's publish and read-back steps, and the published path is a contract every repository's CI
+reads.
 
-**Estimate:** a guess: no L has a measured median yet; about twice M's 67 min.
+**Estimate:** 67 min, the measured median of M.
 
 **What must be true.** A repository's workflow can pin a planner executable built from any push to main, by version
-and sha256, the same way it pins a release. A published build is never replaced. Old builds go away by a rule, and
-none that a repository pins goes with them.
+and sha256, the same way it pins a release. A published build is never replaced.
 
 ## Plan
 
-- **Today, read in the code.** `.github/workflows/build.yml` publishes the bare executable to
-  `files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64` on a release only. It refuses a path that
-  already exists, then reads the file back anonymously and compares its sha256. A snapshot build publishes nothing
-  there.
-- **The change.**
-  - The publish step and its read-back run on every push to main that builds, not only on releases.
-  - The version of a build from a push is its package version, `x.y.z~snapshot.<run>`. It differs per run and is the
-    version the executable names. Today the workflow's `VERSION` is the bare `project.version`, so a snapshot would
-    land at `x.y.z-SNAPSHOT` on every run. The step takes the package version the build computed instead, the one
-    value the packages and `/health` use.
-  - Nothing is overwritten. Run numbers do not repeat, and a rerun of a run comes after it, never beside it. The
-    existence check stays, and the storage refuses a replacement itself: the publishing token may deploy but not
-    overwrite or delete.
-  - **The clean-up**, a workflow of its own, runs on a schedule and by hand, and only from `main`, with a token of
-    its own that may delete only under `files/porelo-planner/`; the publishing token cannot delete. It keeps
-    curl's existing rules: the token on standard input, no redirect followed with it.
-    - It deletes a snapshot build only when it is older than 30 days, not among the newest 10, and named by no pin.
-      Never a release, and never a path outside the prefix or whose version does not have the snapshot form.
-    - A repository pins only a build younger than 7 days, the newest it needs. A build is thus never pinned anew
-      within weeks of the clean-up taking it, so reading the pins and deleting need no lock between them.
-    - The pins are read from the default branch of every repository the project file names. Every listing, of the
-      builds and of each repository's pins, must be read whole and parse, or the clean-up deletes nothing and fails
-      with what it could not read. It names each build it removes.
-  - `doc/` names the path, how to pin a build from a push, and the 7-day rule.
-- **Tests, by level.**
-  - Workflow, local: the publish and read-back steps run against the local HTTPS test server, in the cases the
-    release publish was tested in: a first publish, a second publish of the same version (refused), and a digest
-    that differs (refused). The snapshot path carries the package version.
-  - The clean-up's choice of what to delete is a small script over the listings. It is tested on fixtures: the
-    newest 10 kept, one younger than 30 days kept, a pinned build kept, a release never chosen, a path outside the
-    prefix never chosen, and a listing that is cut short or unreadable deletes nothing. Harm: a pinned executable
-    deleted under a repository's CI.
-- **The plan reading's points**, all taken: the package version as the snapshot path; no-overwrite enforced by the
-  token as well as checked; the clean-up's age rule instead of a lock; incomplete listings delete nothing; a delete
-  token of its own, from `main` only.
+- **Before, read in the code.** `.github/workflows/build.yml` published the bare executable to
+  `files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64` on a release only, and the workflow's
+  `VERSION` was the bare `project.version`, so a snapshot would have landed at `x.y.z-SNAPSHOT` on every run.
+- **The change, as built.**
+  - The publish and read-back steps run on every push to main that builds, as on a release.
+  - The executable takes its packages' version, read from the built `.deb`'s name: `x.y.z~snapshot.<run>` for a
+    snapshot, `x.y.z` for a release. The build computes it once; the step only reads it. It must belong to the
+    project version on its channel and to this run: exactly `x.y.z~snapshot.<this run's number>` for a snapshot,
+    exactly the tag's `x.y.z` for a release. Otherwise the step stops before uploading.
+  - The existence check covers a snapshot's executable too: a version that is published already stops the run.
+    Run numbers do not repeat, so a rerun after the executable was published stops there and the next push
+    publishes anew.
+  - `doc/index.md` names the path and how to pin; the changelog entry says snapshots too.
+- **The clean-up of old builds is split off** into [PL103](README.md#pl103), since the rule it needs binds every
+  repository's CI.
+- **Tests, workflow level, local.** The publish and read-back steps, taken from `build.yml` as they stand, ran
+  against a local HTTPS test server:
+  - a snapshot published and read back under `0.1.1~snapshot.36` (red on the workflow before: nothing published);
+  - the same snapshot again, refused as published already;
+  - a stored file that differs from the built one, refused by the read-back;
+  - a release published under `0.1.1`;
+  - a package of another version, a malformed package version, a release package not of the tag's version, a
+    snapshot package of another run and a release with a snapshot-shaped version, each refused before any upload
+    (the last two red before the fix).
+
+  Harm: a pin naming an executable that was replaced, or a snapshot pinned under a path every run overwrites.
+
+- **The code reading's findings (Codex).**
+  - Fixed: a snapshot's version is bound to the run's number; a release's version must be plain `x.y.z`.
+  - Left to the storage: two runs of one recreated release tag could both see the path absent and both upload. Only
+    a publishing token that cannot overwrite closes that, which is under *To be checked*.
 
 ## Acceptance
 
 - After a push to main, the run's summary names the version, path and sha256 of the published executable. A
   download of that path matches the digest. Publishing the same version again is refused.
-- The clean-up keeps the newest 10, every build younger than 30 days, every pinned build and every release, and
-  deletes the rest; a listing it cannot read whole deletes nothing. Each new test was seen red.
 
 ## To be checked
 
-- That the publishing token cannot overwrite in `files` (a second PUT of the same path is refused), and that a
-  delete token limited to `files/porelo-planner/` can be had.
-- Where the project file lists the repositories, and that each one's pin is readable from its default branch
-  without a credential.
-- That an Artifactory path holding `~` is fetched as written.
+- That the publishing token cannot overwrite in `files`: a second PUT of the same path is refused by the storage too.
+- That an Artifactory path holding `~` is fetched as written; the first push after this change shows it.

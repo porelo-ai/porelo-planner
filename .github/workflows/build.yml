@@ -143,6 +143,7 @@ jobs:
             # Curl alone, so no downloaded tool runs beside the token; the token reaches it as config on standard input,
             # so neither a file nor a command line holds it. A .deb without its properties is stored and never indexed.
             - name: Publish the packages
+              id: publish
               timeout-minutes: 5
               if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
               env:
@@ -164,11 +165,27 @@ jobs:
                   }
                   deb="$(only planner/app/target/*.deb)"
                   rpm="$(only planner/app/target/*.rpm)"
-                  # Other repositories' CI pins the release executable by this path, its version and its SHA-256.
-                  exe="$RUNNER_TEMP/porelo-planner-${VERSION}-linux-x86_64"
-                  if [ "$CHANNEL" = releases ]; then
-                      cp planner/app/target/porelo-planner "$exe"
-                  fi
+                  # The executable takes the version its packages carry, which the build gives a snapshot per run; the
+                  # project version alone would land every snapshot on one path.
+                  FILES="$(basename "$deb")"
+                  FILES="${FILES#porelo-planner_}"
+                  FILES="${FILES%_amd64.deb}"
+                  # Bound to this run, so no package of another run, or of another form, lands under this build's name.
+                  case "$CHANNEL" in
+                      releases) want="$VERSION" ;;
+                      snapshots) want="${VERSION%-SNAPSHOT}~snapshot.${GITHUB_RUN_NUMBER}" ;;
+                      *) echo "::error::unknown channel '$CHANNEL'"; exit 1 ;;
+                  esac
+                  [ "$FILES" = "$want" ] \
+                      || { echo "::error::the package version '$FILES' is not $want, this run's on $CHANNEL"; exit 1; }
+                  [[ "$FILES" =~ ^[0-9]+\.[0-9]+\.[0-9]+(~snapshot\.[0-9]+)?$ ]] \
+                      || { echo "::error::the package version '$FILES' is not x.y.z or x.y.z~snapshot.N"; exit 1; }
+                  [ "$CHANNEL" = snapshots ] || [[ "$FILES" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+                      || { echo "::error::a release's version '$FILES' is not x.y.z"; exit 1; }
+                  echo "files=$FILES" >> "$GITHUB_OUTPUT"
+                  # Other repositories' CI pins the executable by this path, its version and its SHA-256, a snapshot's too.
+                  exe="$RUNNER_TEMP/porelo-planner-${FILES}-linux-x86_64"
+                  cp planner/app/target/porelo-planner "$exe"
                   # A published release is never replaced, as on Central: each file is asked for where it would be
                   # stored, so one uploaded by a run that failed before its index was written counts too. Anything
                   # but a 404 stops the release, since whether it is published is then unknown.
@@ -185,8 +202,9 @@ jobs:
                   if [ "$CHANNEL" = releases ]; then
                       absent "porelo-dist-deb/pool/main/p/porelo-planner/$(basename "$deb")"
                       absent "porelo-dist-rpm/releases/$(basename "$rpm")"
-                      absent "files/porelo-planner/${VERSION}/$(basename "$exe")"
                   fi
+                  # A pinned executable is never replaced, a snapshot's neither: its version names one run.
+                  absent "files/porelo-planner/${FILES}/$(basename "$exe")"
                   [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
                   # Assigned first, so a checksum that cannot be computed stops here instead of sending an empty header,
                   # which curl drops; Artifactory checks the bytes against both. Only a 2xx is an upload, and a redirect
@@ -209,9 +227,7 @@ jobs:
                   put "$deb" "porelo-dist-deb/pool/main/p/porelo-planner/" \
                       "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
                   put "$rpm" "porelo-dist-rpm/${CHANNEL}/"
-                  if [ "$CHANNEL" = releases ]; then
-                      put "$exe" "files/porelo-planner/${VERSION}/"
-                  fi
+                  put "$exe" "files/porelo-planner/${FILES}/"
 
             # Uploaded is not installable. Read anonymously, as an installer sees it, into a variable before grep: grep
             # leaving a pipe early would fail curl under pipefail on a large index.
@@ -284,10 +300,10 @@ jobs:
             # its digest is the built file's.
             - name: The executable is published
               timeout-minutes: 3
-              if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
               env:
                   JF_URL: ${{ vars.JF_URL }}
-                  VERSION: ${{ steps.channel.outputs.version }}
+                  VERSION: ${{ steps.publish.outputs.files }}
               run: |
                   set -euo pipefail
                   name="porelo-planner-${VERSION}-linux-x86_64"
