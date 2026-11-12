@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL92",
   "title": "The Rework Dialog Says Why It Cannot Rework",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 2,

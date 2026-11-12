@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL29",
   "title": "The Windows Executable Built, Tested And Shipped",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 18,
