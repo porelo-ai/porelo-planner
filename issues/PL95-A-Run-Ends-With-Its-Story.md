@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL95",
   "title": "A Run Ends With Its Story",
-  "state": "Analyzed",
+  "state": "Implementing",
   "size": "M",
   "priority": "Highest",
   "rank": 1,
@@ -53,9 +53,8 @@ attention, until someone removes the record by hand.
 - Run 27's case passes without a hand repair: a story saved anew under an old ID shows no work and its proposal
   answers. Every new test seen red; the suite and the documents' checks pass.
 
-## Open questions
+## Not covered
 
 - A story written outside the planner under a reused ID, while the planner never read the board without it, still
-  takes over the old run. Closing that needs the story's identity from the store (for example the commit that added
-  its file) kept with the run: about one more M, a change of the store's interface. Build it now, or leave it until a
-  case is seen?
+  takes over the old run. Closing it needs the story's identity from the store kept with the run; it is left until a
+  case is seen.
