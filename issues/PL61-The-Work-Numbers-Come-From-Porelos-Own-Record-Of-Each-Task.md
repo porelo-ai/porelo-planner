@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL61",
   "title": "The Work Numbers Come From Porelo's Own Record Of Each Task",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 1,
