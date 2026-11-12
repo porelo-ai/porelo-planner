@@ -54,6 +54,8 @@
         <!-- The JSON schema validator the build tools' stories tests are written against. -->
         <json-schema-validator.version>1.5.9</json-schema-validator.version>
         <archunit.version>1.4.2</archunit.version>
+        <!-- porelo's version of its native-image checks; the build tools publish older copies at higher versions. -->
+        <porelo.checks.version>0.5.1-SNAPSHOT</porelo.checks.version>
     </properties>
 
     <modules>

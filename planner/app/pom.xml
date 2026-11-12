@@ -205,7 +205,7 @@
                             <dependency>
                                 <groupId>org.fuin.porelo</groupId>
                                 <artifactId>porelo-cpu-check</artifactId>
-                                <version>${porelo.buildtools.version}</version>
+                                <version>${porelo.checks.version}</version>
                             </dependency>
                         </dependencies>
                     </plugin>

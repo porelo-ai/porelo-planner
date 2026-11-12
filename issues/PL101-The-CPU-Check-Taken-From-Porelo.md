@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL101",
   "title": "The CPU Check Taken From Porelo",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 26,
@@ -28,8 +28,9 @@ the check porelo publishes. The build tools stop publishing their copy, and the 
 - **The change.** The root `pom.xml` names porelo's version of the check, `0.5.1-SNAPSHOT`, in a property of its own,
   and the check's dependency takes it. The build tools publish the same artifact at their own, higher versions until
   they drop it, so the version is named, never taken from the build tools'. Nothing else changes. Built with `-U`, so the snapshot is read from Central.
-- **Test.** No new test: the native build's check of the executable is the test. It is seen red once, by asking it
-  for a narrower instruction set than the executable has, before the hand-over.
+- **The change, as built.** The root names `porelo.checks.version`, and the check in `planner/app/pom.xml` takes it.
+- **Test.** No new test: the native build's check of the executable is the test. It was seen red on a copy of the
+  executable whose required set names AVX2 in place of SSE2: porelo's check refused it, naming AVX2 beyond x86-64 v1.
 
 ## Acceptance
 
