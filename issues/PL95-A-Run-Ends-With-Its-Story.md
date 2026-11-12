@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL95",
   "title": "A Run Ends With Its Story",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Highest",
   "rank": 1,
@@ -32,26 +32,22 @@ attention, until someone removes the record by hand.
   for the same story (`WorkRun.replace`) and never removed. `WorkRun.work`, the board's decoration and
   `WorkRun.propose` read `runs.get(story)` without asking whether that story is still the one the run was for; a run
   that needs attention refuses the proposal. `stop` keeps a running story stoppable even when it left the board.
-- **A story saved anew starts with no run.** When `HandedIdeas` records a handed idea as saved under story S, the same
-  new generation drops a run of S that has no task at work. A run of S with a task still at work is kept stoppable, but
-  it is no longer S's: its offers are voided, it is marked halted, and it is dropped once its last task reports its
-  end. The new story then shows no work and can be started.
-- **A run whose story is gone is not shown or obeyed.** `work`, the board's decoration and `propose` ignore a run
-  whose story is not on the board read under the same lock and that has no task at work; the next write of the record
-  drops it. A run with a task at work stays, as `stop` needs it.
-- **Tests, red first.**
-  - Unit, core (`HandedIdeasTest`, `WorkRunTest`): an ended run of ST1 is dropped when an idea is saved as ST1, and
-    the proposal for the new ST1 is not refused; a run with a task at work is halted, its offers voided, still
-    stoppable, and dropped after its last end; a run whose story left the board is neither shown nor refusing, and is
-    gone after the next write; a run of a story still on the board is untouched. Harm: a new story blocked by an old
-    run, or an old task's end judged against a new story's issues.
-  - Integration, app (`WorkRunHttpTest`): run 27's case over HTTP: a run ended for ST1, the store reset, an idea
-    handed in as ST1, then the story's work is empty and the proposal answers.
+- **No run outlives its story into a new one.** Before a handed idea is saved, `HandedIdeas` drops every run whose
+  story is no longer on the board and that has no task at work (`WorkRun.withoutGoneRuns`), in the same write that
+  records the save as pending, so a stop between the store's save and the record's write keeps no such run. A story
+  saved under one of those IDs then starts with no run. The record holds one run per story ID, so a gone story's run
+  with a task still at work cannot stand beside a new one: the hand-in is refused (`WorkRunning`, naming the old story
+  and its tasks) and nothing is saved, until the person stops that task, which stays stoppable. Runs of stories still
+  on the board are untouched.
+- **Tests, red first.** Unit, core (`HandedIdeasTest`): a gone story's ended run is dropped and the new story's work
+  reads as none; it is dropped even when the save then fails; a hand-in is refused while a gone story's task works,
+  with nothing saved and the record unchanged; a run of a story still on the board is kept. Harm: a new story blocked
+  by an old run, an old run ordering work on a new story, a task left unstoppable, a shown story's work lost. The app
+  passes the hand-in to `WorkRun.idea` unchanged, so no HTTP test repeats it.
 
 ## Acceptance
 
-- Run 27's case passes without a hand repair: a story saved anew under an old ID shows no work and its proposal
-  answers. Every new test seen red; the suite and the documents' checks pass.
+- Run 27's case passes without a hand repair: a story saved anew under an old ID shows no work and can be started. Every new test seen red; the suite and the documents' checks pass.
 
 ## Not covered
 

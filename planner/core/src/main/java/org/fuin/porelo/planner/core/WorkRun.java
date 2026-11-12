@@ -1586,6 +1586,41 @@ public final class WorkRun {
                 o.rework());
     }
 
+    /**
+     * Drops every run whose story is no longer on the board and that has no task at work, so a
+     * story saved later under that ID starts without it; a run with a task still at work is refused
+     * instead, since dropping it would leave the task unstoppable.
+     *
+     * @param snapshot the record
+     * @param board the board as read now
+     * @return the record without those runs
+     * @throws WorkRefusal WorkRunning, naming the story and its tasks, while such a task works
+     */
+    static Snapshot withoutGoneRuns(final Snapshot snapshot, final Board board) {
+        final java.util.Set<String> shown =
+                board.stories().stream()
+                        .map(org.fuin.porelo.planner.store.Story::id)
+                        .collect(java.util.stream.Collectors.toSet());
+        final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
+        for (final Run run : snapshot.runs().values()) {
+            if (shown.contains(run.story())) {
+                continue;
+            }
+            final List<String> working =
+                    run.offers().stream()
+                            .filter(o -> o.status().equals("STARTED"))
+                            .map(o -> String.valueOf(o.task()))
+                            .toList();
+            if (!working.isEmpty()) {
+                throw WorkRefusal.workRunning(run.story(), working);
+            }
+            runs.remove(run.story());
+        }
+        return runs.size() == snapshot.runs().size()
+                ? snapshot
+                : new Snapshot(snapshot.generation(), runs, snapshot.ideas());
+    }
+
     private static Snapshot replace(final Snapshot snapshot, final Run run) {
         final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
         runs.put(run.story(), run);

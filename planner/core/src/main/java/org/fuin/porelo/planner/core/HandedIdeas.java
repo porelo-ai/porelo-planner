@@ -123,8 +123,13 @@ public final class HandedIdeas {
         }
         Board board = store.board();
         NewIdea checked = NewIdeas.check(board, idea, shape);
+        // A run whose story is gone would be taken over by a new story saved under its ID; it goes
+        // in the same write that records the save as pending, so no stop between them keeps it.
         final WorkRun.Snapshot pending =
-                with(snapshot, offer, new Handed(PENDING, null, List.of(), next(snapshot)));
+                with(
+                        WorkRun.withoutGoneRuns(snapshot, board),
+                        offer,
+                        new Handed(PENDING, null, List.of(), next(snapshot)));
         session.preflight(pending);
         session.write(pending);
         final NewIdea.Added added;

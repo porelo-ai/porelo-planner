@@ -65,7 +65,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl95"></a>[PL95](PL95-A-Run-Ends-With-Its-Story.md) | M | - | The planner's local record of a story's run ends with the story: a run whose story is gone from the store is dropped, and a story saved anew under an old ID starts without the run recorded before it |
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | - | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
@@ -75,6 +74,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | M | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
+| <a id="pl95"></a>[PL95](PL95-A-Run-Ends-With-Its-Story.md) | M | - | The planner's local record of a story's run ends with the story: a run whose story is gone from the store is dropped, and a story saved anew under an old ID starts without the run recorded before it |
 | <a id="pl92"></a>[PL92](PL92-The-Rework-Dialog-Says-Why-It-Cannot-Rework.md) | S | - | The Rework dialog of a stopped reading says why Rework cannot be chosen when the Reworking rule names no agent, and the screen's fake planner names models on its rules and sends its rules with every board it pushes, as a planner does |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and the stage records a commit carries are checked by the planner's command line, `check-commits`, with the build tools' fault lines and exit codes |

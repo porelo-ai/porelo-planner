@@ -231,6 +231,100 @@ class HandedIdeasTest {
                 OFFER, new HandedIdeas.Handed(HandedIdeas.PARTLY, null, List.of("porelo-x"), 0));
     }
 
+    @Test
+    void aStorySavedAnewUnderTheIdOfAnEndedRunStartsWithoutThatRun() {
+        // A new story taking over an old ended run shows its tasks and refuses its start.
+        final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
+        final var offer = f.order().tasks().getFirst();
+        f.run.report(
+                "task",
+                new WorkRun.Report(offer.offer(), WorkRun.Event.STARTED, "box", "box", null));
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "box",
+                        WorkRunTest.ended("Built")));
+        record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
+        assertThat(record.value.runs()).as("the old run of ST1").containsKey("ST1");
+
+        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
+                .as("the idea is saved under the old run's id")
+                .isEqualTo("ST1");
+
+        assertThat(record.value.runs()).as("the new ST1 has no run").doesNotContainKey("ST1");
+        assertThat(run.work("ST1")).as("its work reads as none").isNull();
+    }
+
+    @Test
+    void aRunWhoseStoryIsGoneIsDroppedBeforeTheSaveEvenWhenTheSaveFails() {
+        // A run kept past a save that did not end would be taken over by the story saved next.
+        final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
+        f.order();
+        record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
+        store.failures.add(new StoreException.NotSavable("", "no prefix"));
+
+        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("the store refuses the save")
+                .isInstanceOf(StoreException.NotSavable.class);
+
+        assertThat(record.value.runs()).as("the gone story's run is dropped").isEmpty();
+    }
+
+    @Test
+    void aHandInIsRefusedWhileATaskOfAGoneStorysRunStillWorks() {
+        // Dropping that run would leave its task unstoppable; keeping it would hand it the new
+        // story.
+        final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
+        final var offer = f.order().tasks().getFirst();
+        f.run.report(
+                "task",
+                new WorkRun.Report(offer.offer(), WorkRun.Event.STARTED, "box", "box", null));
+        final WorkRun.Snapshot before = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
+        record.value = before;
+
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class, () -> run.idea(OFFER, NewIdeasTest.idea(), List.of()));
+
+        assertThat(refused).as("the hand-in is refused").isNotNull();
+        assertThat(refused.name()).as("as work still running").isEqualTo("WorkRunning");
+        assertThat(refused.parameters())
+                .as("naming the old story and its task")
+                .containsEntry("story", "ST1")
+                .containsEntry("tasks", List.of("task"));
+        assertThat(store.attempts).as("nothing is saved").isZero();
+        assertThat(record.value)
+                .as("the record is untouched, the task stays stoppable")
+                .isEqualTo(before);
+    }
+
+    @Test
+    void aRunWhoseStoryIsStillOnTheBoardIsKeptWhenAnIdeaIsSaved() {
+        // A hand-in that dropped the runs of stories still shown would lose their work.
+        final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
+        f.order();
+        record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
+        final Board bare = NewIdeasTest.BOARD;
+        store.shown =
+                new Board(
+                        bare.revision(),
+                        f.store.board().workflow(),
+                        f.store.board().stories(),
+                        bare.issues(),
+                        bare.work(),
+                        bare.repositories(),
+                        bare.faults());
+
+        run.idea(OFFER, NewIdeasTest.idea(), List.of());
+
+        assertThat(record.value.runs())
+                .as("the run of ST1, still on the board")
+                .containsOnlyKeys("ST1");
+    }
+
     /** A store that adds ideas as story numbers and can refuse a save before it. */
     private static final class Store implements PlanningStore {
 
@@ -246,15 +340,17 @@ class HandedIdeasTest {
 
         int refreshes;
 
+        Board shown = NewIdeasTest.BOARD;
+
         @Override
         public Board board() {
-            return NewIdeasTest.BOARD;
+            return shown;
         }
 
         @Override
         public Board refresh() {
             refreshes++;
-            return NewIdeasTest.BOARD;
+            return shown;
         }
 
         @Override
