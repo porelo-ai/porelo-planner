@@ -14,8 +14,10 @@
 }
 ```
 
-**Size:** M - a probe script and its part of one acceptance run on a local VM; no code of the planner and no
-contract changes.
+**Size:** M - a probe script and its part of one acceptance run on a local VM, and the narrow fixes of the
+planner the run found: the story and wait patterns widened to any repository name, which the build tools' copy
+of the schemas takes alike, a reader's order naming the build it reads, and a save's refusal naming a missing Git
+identity.
 
 **Estimate:** 67 min, the measured median of M. Uncertain: the run waits on the window's steps and one real agent
 task.
@@ -87,6 +89,20 @@ Test levels: no unit test (a test script, no code of the planner changes); the p
   after the person's move; each state in the API, in the issue's file, its stage records and the story's file alike,
   each planning commit ending in `[skip ci]`, and the agent's commits on the forge.
 - Seen failing first: the probe's state check against a state the board does not show exits 1 and prints both.
+
+## Found by the run
+
+- A story could name, and an issue wait on, only issues of `porelo*` repositories; both now take any repository
+  name a project may have.
+- A reader's order named no build, so the reader took it for a build order and pushed; `{tasks}` now names the
+  Porelo task that built the work and its branch `porelo/<task>`, and with no known build no reader is offered.
+- A save on an account whose Git has no name and email answered with Git's own words; the refusal now says what is
+  missing and where to set it.
+- The reading of these changes by another model found two points, both declined here: an issue waiting on an issue
+  of another repository is refused by the board as a fault, as a `porelo*` one was before, since the board's
+  `blockedBy` carries ids of the issue's own repository only - that is [PL88](README.md#pl88); and `issues convert`
+  still takes only `porelo*` names in waits, which stays, since the command is to be removed and converts only
+  repositories written before issue heads.
 
 ## To be checked
 
