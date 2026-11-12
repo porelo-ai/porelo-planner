@@ -8,7 +8,7 @@
   "state": "Backlog",
   "size": "S",
   "priority": "Highest",
-  "rank": 2,
+  "rank": 4,
   "blockedBy": [],
   "covers": "A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together"
 }

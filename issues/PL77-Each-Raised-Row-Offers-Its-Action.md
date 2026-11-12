@@ -8,7 +8,7 @@
   "state": "Backlog",
   "size": "L",
   "priority": "Highest",
-  "rank": 3,
+  "rank": 5,
   "blockedBy": [],
   "covers": "Every row in Needs you offers what answers its reason: start again or stop after a failed next step or a refused save, move on or start again after a stop, open the task to push its commits, read again or go to Review after invalid findings"
 }

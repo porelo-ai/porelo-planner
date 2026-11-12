@@ -8,7 +8,7 @@
   "state": "Backlog",
   "size": "L",
   "priority": "Highest",
-  "rank": 1,
+  "rank": 3,
   "blockedBy": [],
   "covers": "A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel"
 }
