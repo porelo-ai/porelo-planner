@@ -6,7 +6,7 @@
   "id": "PL87",
   "title": "The Planner Reads Private Repositories With Porelo's Login",
   "state": "Backlog",
-  "size": "S",
+  "size": "M",
   "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
@@ -14,7 +14,10 @@
 }
 ```
 
-**Size:** S - one class of the Git store, `GitCall`, and its tests; how Porelo starts the planner is Porelo's own.
+**Size:** M - the Git store's calls and its tests, and a contract with the window and with Porelo, which each change
+their own side.
+
+**Estimate:** 67 min, the measured median of M.
 
 **What must be true.** A person whose project lives in private repositories opens the planning screen and sees the
 board: the planner Porelo started reaches those repositories with the login Porelo's vault holds for their forge,
@@ -29,21 +32,32 @@ run on a local VM needed a configuration file written by hand, naming `porelo va
 
 ## Plan
 
-- When Porelo starts the planner and says so in the environment it hands over (Porelo's vault named), every Git call
-  of the planner gets Porelo's credential helper as one more `-c` in `GitCall.SAFE_CONFIG`, scoped to the https
-  addresses of the project's centrals, after the person's own helpers; without it nothing changes. Nothing the
-  person's environment names is run as a helper but Porelo's own executable, taken by path.
-- Red first, unit, `GitCallTest`: with Porelo's vault named, a call's line carries the helper for the central's host
-  and no token; without it, the line is as today; a `GIT_CONFIG_*` variable of the environment still never reaches Git.
-- Integration, over the store's local HTTPS test server: a private repository is read with a helper that answers
-  from the environment Porelo would give it, and refused without.
+- **The contract, agreed with the window and with Porelo.**
+  - The window resolves Porelo's executable once at its start, as an absolute path with its links followed, and
+    hands it to the planner it starts in the environment variable `PORELO_EXECUTABLE`. The planner refuses it, and
+    lends no login, when the file or its directory may be written by another account.
+  - For every https address of the project's centrals, each Git call of the planner carries
+    `-c credential.<address>.helper=!<porelo path> vault credential --for <address>`, after the person's own helpers.
+    Porelo finds the vault entry for the address itself and answers only in Git's credential protocol on Git's
+    pipe. No token, entry or forge mapping passes through the planner.
+  - Porelo answers https with a token only, an ssh address with nothing, compares hosts exactly (ASCII, lower
+    case), and fails with a message when its vault is shut, never prompting. The planner reports such a failure as
+    `CredentialRefused`, as today.
+  - Without `PORELO_EXECUTABLE`, nothing changes: the person's own Git configuration is the only helper.
+- **The change.** `GitCall` takes the helper line when the variable is set and its path passes the check; the
+  address is quoted for the shell Git runs the helper in. A `GIT_CONFIG_*` variable of the environment still never
+  reaches Git.
+- **Tests, red first.**
+  - Unit, `GitCallTest`: with a valid path, a call's line carries the helper for the central's address and no token;
+    with a path others may write, or a relative one, it carries none and says why; without the variable, the line is
+    as today; a `GIT_CONFIG_*` variable still never reaches Git. Harm: a login lent through a program another account
+    placed, or a token on a command line.
+  - Integration, over the store's local HTTPS test server: a private repository is read with a stand-in helper at
+    the path that answers in Git's protocol, and refused without it.
+- **Not before** Porelo's `vault credential --for` and the window's passing of the path are published; until then the
+  planner's side changes nothing without the variable.
 
 ## Acceptance
 
-- The tests above, each seen red first; on a local VM, a planner Porelo starts reads a private project without a Git
-  configuration of the person's.
-
-## To be checked
-
-- How Porelo starts the planner and which variable names its vault, and the exact helper command Porelo gives for
-  it (`porelo vault credential`), asked of Porelo's agent; whether Porelo's executable path is known to the planner.
+- The tests above, each seen red first; on a local VM, a planner the window starts reads a private project without a
+  Git configuration of the person's.
