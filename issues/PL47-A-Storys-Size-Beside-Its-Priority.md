@@ -7,7 +7,7 @@
   "title": "A Story's Size Beside Its Priority",
   "state": "Estimated",
   "size": "M",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 30,
   "blockedBy": [],
   "covers": "A story carries its own size, XS to XL, set when it is estimated; the board's answer carries it beside its priority, and an issue's size, which the answer already carries, shows the same way"
@@ -18,7 +18,7 @@
 reads too, and the board's answer in the OpenAPI description; the rest is one field passed through four layers.
 
 **Estimate:** 67 min, the measured median of M. Uncertain: whether the other stories index accepts the new field
-as it stands; about 25 constructor calls of the store's `Story` in tests change with it.
+as it stands; 37 constructor calls of the store's `Story` in tests change with it.
 
 **What must be true.** A person sees each story's size beside its priority on the board, as each issue's; a story's
 size is its own, given when it is estimated, not added up from its issues.
@@ -29,7 +29,7 @@ size is its own, given when it is estimated, not added up from its issues.
   `Issue.size` is `[string, 'null']`). A story carries none: `story-2.json` and `StorySchema` (store/git `stories`)
   refuse any field they do not name, so a head with `size` is refused today and `StoreReader` drops the story into
   the board's faults. `stories.Story`, the store's `org.fuin.porelo.planner.store.Story`, `GitStore` (the mapping
-  near line 1095), `Answers.Story`/`StoryDetail`, `BoardController.story` and OpenAPI `Story` have no size.
+  near line 1497), `Answers.Story`/`StoryDetail`, `BoardController.story` and OpenAPI `Story` have no size.
 - **The head.** An optional `size` in the story head, one of `XS`, `S`, `M`, `L`, `XL`; a story without one omits it.
   It is added to `story-2.json` and to `StorySchema` together, as an optional field (no new schema version: every
   head valid today stays valid). It is not derived from the issues: sizes do not add up, and an estimate of the whole

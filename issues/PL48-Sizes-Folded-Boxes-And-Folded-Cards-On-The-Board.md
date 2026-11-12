@@ -7,7 +7,7 @@
   "title": "Sizes, Folded Boxes And Folded Cards On The Board",
   "state": "Estimated",
   "size": "M",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 31,
   "blockedBy": ["PL47"],
   "covers": "Every story card and issue row shows its size as a badge beside its priority; a state's box folds to its heading with name and count, its content hidden and the column as wide as before; a single story card folds to its heading with number and priority"
@@ -38,7 +38,9 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
   priority chip, on the issue row in place of the plain text (an issue carries no priority; the badge stands beside
   its state), and on the compact tile beside the mark. An empty size or `-` shows no badge.
 - **A folded box.** Today `foldState` (`PlanningBoard` in `screen/lib/src/planning_board.dart`) toggles
-  `PlanningPreferences.foldedStates`, and `_state` draws a folded state as compact tiles; the column's width already
+  `PlanningPreferences.foldedStates`, and `_state` (`planning_view.dart`, `phaseFolded ||
+  foldedStates.contains(...)`) draws a state folded by its own chevron as compact tiles, the same as a narrowed
+  column - the box's "v" narrows its tiles instead of folding the box; the column's width already
   depends only on `foldedPhases` (`_phase`). Change: a state folded by its own chevron shows its heading row only
   (name, count, chevron) and no tile; a state inside a folded phase keeps the compact tiles, so only the column's
   chevron narrows the column and shows tiles. The box stays a `DragTarget`, so a story can still be dropped on it.
@@ -48,6 +50,8 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
   `expandedStories` and `expand`. The card's top row gets a fold button (`planning-fold-story <id>`); folded, the card
   shows number, priority, size, menu and a pending move or its refusal, and hides title, work line, reading line,
   issue list and progress bar. The fold flag joins the inputs of `_card`'s cache, or a folded card is served stale.
+- **Not here.** The story's own page (`planning_story_view.dart`) keeps its priority chip without a size; the story's
+  test names the board's cards and tiles only.
 - Tests, all widget tests in `screen/test` over `FakePlanningSource` (`screen/test/support/fake_planning.dart`),
   red first:
   - Folding a box finds none of its cards and the phase at `PlanningStyle.column` width; harm: a fold that hides
