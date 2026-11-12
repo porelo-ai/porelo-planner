@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL84",
   "title": "The Board Says A Story's Given State",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 29,
