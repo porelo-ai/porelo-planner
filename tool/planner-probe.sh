@@ -18,7 +18,8 @@
 #   events <seconds>                     the changes stream sends a board within this time
 #   store-issue <clone-url> <issue> <state>
 #                                        the issue's file on the branch's tip says this state, its
-#                                        stage records end in it and the commit that set it starts no build
+#                                        stage records end in it and the commit that set it starts no build;
+#                                        a closed issue has no file, only its unlinked index row
 #   store-story <clone-url> <story> <issue> <state>
 #                                        the story's file lists the issue in this state
 #   forge-head <clone-url>               prints the branch's tip as the forge has it
@@ -173,6 +174,14 @@ file_of() {
     printf '%s' "$name"
 }
 
+# Whether the issue has no file and its index row stands unlinked, as the store settles a closed one.
+settled_row() {
+    local id=$1
+    [[ -z $(git --git-dir "$CLONE/repo.git" ls-tree --name-only "$BRANCH" -- issues/ |
+        grep -E "^issues/${id}(-[^/]*)?\.md$" || true) ]] || return 1
+    show issues/README.md | grep -qF "<a id=\"${id,,}\"></a>${id} " || return 1
+}
+
 check=${1:-}
 [[ -n $check ]] || die "usage: $PROBE <check> [arguments]; see the head of the script"
 shift
@@ -258,9 +267,15 @@ store-issue)
     issue_arg "${2:-}"
     want=${3:?store-issue needs a state}
     clone "$1"
-    file=$(file_of issues "$2")
-    got=$(show "$file" | awk '/^```json$/{on=1;next} /^```$/{if(on)exit} on' | jq -r '.state')
-    [[ $got == "$want" ]] || fail "store-issue $2" "$file says $want" "$got"
+    if settled_row "$2"; then
+        # A closed issue's file goes; its index row, unlinked, is all that is left of it.
+        file=issues/README.md
+        printf '%s: %s is settled: no file, its row in %s stands without a link\n' "$PROBE" "$2" "$file"
+    else
+        file=$(file_of issues "$2")
+        got=$(show "$file" | awk '/^```json$/{on=1;next} /^```$/{if(on)exit} on' | jq -r '.state')
+        [[ $got == "$want" ]] || fail "store-issue $2" "$file says $want" "$got"
+    fi
     record=$(show "stats/$2.jsonl" 2>/dev/null | tail -n 1 | jq -r '.status_after' || true)
     # A new issue gets its stage records with its first move; until then it has none.
     if [[ -z $record && $want == Idea ]]; then
