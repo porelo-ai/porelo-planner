@@ -42,19 +42,28 @@ token and log.
   - `status` stays `UP`. `Health` gains both fields as required in the description. Today's readers that parse the
     JSON and take `status` read on unchanged.
 - **The build.**
-  - `planner/app/pom.xml` writes both into a resource, `planner-build.properties`: the version from
-    `planner.package.version`, the commit from the checkout's `HEAD` at build time.
+  - The package version is computed in every build, not only under `dist`, where `pom.xml` computes
+    `planner.package.version` today. A JVM build, the native build, the packages, the published executable's path and
+    `/health` all take that one value.
+  - `planner/app/pom.xml` writes the version and the commit into a resource, `planner-build.properties`: the commit
+    from the checkout's `HEAD` at build time, empty when there is no checkout.
   - The resource is in the native image's resources.
-  - `HealthController` answers from it. A resource that is missing or malformed fails the start loud; the planner
-    never answers a made-up version.
+  - `HealthController` answers a record, `Health(status, version, commit)`, not a `Map`. `Map.of` refuses a null
+    value, so it could not answer `"commit": null`. The record is added to the records `ApiMatchesDescriptionTest`
+    holds to the description. A resource that is missing or malformed fails the start loud; the planner never
+    answers a made-up version.
 - **What changes with it.** The Windows install check's ready script compares the answer verbatim today. It reads
   the JSON and checks `status` instead, in the change that ships it.
 - **Tests, by level.**
   - Unit, app: the build file's values are answered as they stand. A malformed version or commit in the file fails
     the start. Harm: a window showing a planner version that is not the one running.
-  - Integration, app: `ApiMatchesDescriptionTest` holds `/health` to the description.
+  - Integration, app: an HTTP call to `/health` answers a known commit as 40 lowercase hex, and a build file without
+    a commit as an explicit JSON `null`, with every required field present. `ApiMatchesDescriptionTest` holds the
+    `Health` record to the description. Harm: a checkout-free build answering 500, or leaving `commit` out.
   - Native: the built executable's `/health` names the version and the commit of its build; the native start test
     reads it.
+- **The plan reading's points**, all taken: one version in every build; a record instead of a map; HTTP checks for
+  both a hash and `null`.
 
 ## Acceptance
 
