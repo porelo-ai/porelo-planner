@@ -5,14 +5,17 @@
   "$schema": "issue-1.json",
   "id": "PL81",
   "title": "The Push Check And Stage Commands In The Planner",
-  "state": "Idea",
-  "size": "-",
+  "state": "Implementing",
+  "size": "L",
   "priority": "High",
   "rank": 1,
   "blockedBy": ["PL60"],
   "covers": "The checks of the pushes to main and the agents' stage commands are given by the planner's command line, `check-pushes` and `stage`, with the build tools' rules, fault lines and exit codes, so the build tools hold none of the work format"
 }
 ```
+
+**Size:** L - about 1,300 lines of commands and 1,400 of tests taken over, and a token for GitHub's API read from the
+environment, a trust boundary.
 
 **What must be true.** Every repository's build checks its pushes to `main`, and an agent records its stages, with the
 planner's command line, with the same rules, fault lines and exit codes as the build tools' `check-pushes` and `stage`
