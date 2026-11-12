@@ -177,36 +177,19 @@ public final class NextStep {
                 derive);
     }
 
-    /** Judges continuation without allowing a bad next rule to refuse the accepted end. */
+    /**
+     * Judges continuation without allowing a bad next rule to refuse the accepted end; {@code
+     * ended} is the Porelo task that ended, whose work a following reader is told to read.
+     */
     public static Result after(
             final Board board,
             final Binding binding,
             final WorkEnds.Judgment judgment,
             final Map<String, Progress> previous,
             final String comment,
-            final Moves.StoryState derive) {
-        return after(board, binding, judgment, previous, comment, derive, true, "", null);
-    }
-
-    /** Resumes a deferred transition from its saved findings without judging or counting again. */
-    public static Result resume(
-            final Board board,
-            final Binding binding,
-            final Map<String, Progress> previous,
-            final String comment,
-            final Moves.StoryState derive) {
-        return resume(board, binding, previous, comment, derive, false);
-    }
-
-    /** Retains an explicit review choice while a parent waits for its children. */
-    public static Result resume(
-            final Board board,
-            final Binding binding,
-            final Map<String, Progress> previous,
-            final String comment,
             final Moves.StoryState derive,
-            final boolean reviewAnyway) {
-        return resume(board, binding, previous, comment, derive, reviewAnyway, "", null);
+            final String ended) {
+        return after(board, binding, judgment, previous, comment, derive, true, "", null, ended);
     }
 
     /**
@@ -221,7 +204,8 @@ public final class NextStep {
             final Moves.StoryState derive,
             final boolean reviewAnyway,
             final String operatorWords,
-            final @Nullable Settings rework) {
+            final @Nullable Settings rework,
+            final String ended) {
         final WorkEnds.Judgment judgment =
                 binding.role().equals("READER")
                         ? new WorkEnds.Read(
@@ -231,7 +215,16 @@ public final class NextStep {
                                                 .findings())
                         : new WorkEnds.Done();
         return after(
-                board, binding, judgment, previous, comment, derive, false, operatorWords, rework);
+                board,
+                binding,
+                judgment,
+                previous,
+                comment,
+                derive,
+                false,
+                operatorWords,
+                rework,
+                ended);
     }
 
     private static Result after(
@@ -243,7 +236,8 @@ public final class NextStep {
             final Moves.StoryState derive,
             final boolean countReading,
             final String operatorWords,
-            final @Nullable Settings rework) {
+            final @Nullable Settings rework,
+            final String ended) {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         binding.issues().forEach(id -> progress.putIfAbsent(id, Progress.start(2)));
         if (!owns(board, binding)) {
@@ -341,7 +335,8 @@ public final class NextStep {
                                     settings,
                                     comment,
                                     words,
-                                    judgment instanceof WorkEnds.Read ? "BUILDER" : "READER"));
+                                    judgment instanceof WorkEnds.Read ? "BUILDER" : "READER",
+                                    ended));
                 } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
                     progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
                 }
@@ -379,7 +374,8 @@ public final class NextStep {
 
     /**
      * Builds a single-issue reading or rework with the person's settings, or with the rule's first
-     * mode and first model when the planner starts it by itself.
+     * mode and first model when the planner starts it by itself; a reading's order names the Porelo
+     * task {@code built} whose work it reads.
      */
     public static Planned task(
             final Board board,
@@ -390,7 +386,8 @@ public final class NextStep {
             final @Nullable Settings chosen,
             final String comment,
             final String words,
-            final String role) {
+            final String role,
+            final String built) {
         final Settings settings = Settings.of(rule, chosen);
         final Story story =
                 board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));
@@ -404,7 +401,7 @@ public final class NextStep {
                         rule,
                         story,
                         WorkOrder.issueText(board, story, state, List.of(issue.id())),
-                        "",
+                        role.equals("READER") ? builtBy(built) : "",
                         fence(comment));
         if (!words.isEmpty()) {
             prompt += "\n\nReading and operator words:\n" + fence(words);
@@ -426,6 +423,17 @@ public final class NextStep {
                         prompt),
                 state,
                 rule);
+    }
+
+    /**
+     * Names the task whose work a reader reads, and the branch Porelo gives that work, so the
+     * reader does not take its order for a build.
+     */
+    static String builtBy(final String task) {
+        if (task.isEmpty()) {
+            throw new IllegalArgumentException("No task built the work to read");
+        }
+        return "Porelo task " + task + ", its work on the branch porelo/" + task;
     }
 
     /** Fences untrusted words with a delimiter they cannot close. */

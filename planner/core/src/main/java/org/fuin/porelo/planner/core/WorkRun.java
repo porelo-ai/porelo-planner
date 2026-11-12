@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -584,7 +585,8 @@ public final class WorkRun {
                                             known.binding(),
                                             judgment,
                                             draft.progress,
-                                            draft.comment);
+                                            draft.comment,
+                                            task);
                             draft.progress.putAll(next.progress());
                             writes = next.writes();
                             for (final NextStep.Planned planned : next.tasks()) {
@@ -866,7 +868,8 @@ public final class WorkRun {
                                                                         : "\n" + comment),
                                                         counted.next() == ReadingCycle.Next.READ
                                                                 ? "READER"
-                                                                : "BUILDER"),
+                                                                : "BUILDER",
+                                                        lastBuild(run, issueId)),
                                                 story);
                                 draft.offers.add(next);
                                 following.add(next.id());
@@ -1142,6 +1145,19 @@ public final class WorkRun {
         }
     }
 
+    /** The Porelo task that last built the issue, whose work a new reading reads. */
+    private static String lastBuild(final Run run, final String issueId) {
+        return run.offers().stream()
+                .filter(
+                        o ->
+                                !o.binding().role().equals("READER")
+                                        && o.binding().issues().contains(issueId)
+                                        && o.task() != null)
+                .reduce((left, right) -> right)
+                .map(Offer::task)
+                .orElse("");
+    }
+
     private Writes reconcile(
             final Board board,
             final Draft draft,
@@ -1174,7 +1190,8 @@ public final class WorkRun {
                             store::storyState,
                             old.reviewAnyway(),
                             old.reworkComment(),
-                            old.rework());
+                            old.rework(),
+                            Objects.requireNonNullElse(old.task(), ""));
             draft.progress.putAll(next.progress());
             targets.putAll(next.writes().issues());
             final List<String> ids = new ArrayList<>(old.following());
@@ -1233,9 +1250,11 @@ public final class WorkRun {
             final NextStep.Binding binding,
             final WorkEnds.Judgment judgment,
             final Map<String, NextStep.Progress> progress,
-            final String comment) {
+            final String comment,
+            final String ended) {
         try {
-            return NextStep.after(board, binding, judgment, progress, comment, store::storyState);
+            return NextStep.after(
+                    board, binding, judgment, progress, comment, store::storyState, ended);
         } catch (final WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotBuild) {

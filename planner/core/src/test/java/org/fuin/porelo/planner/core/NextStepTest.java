@@ -31,7 +31,8 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(next.writes().issues())
                 .as("the parent waits for its participating child")
                 .isEmpty();
@@ -52,7 +53,8 @@ class NextStepTest {
                         new WorkEnds.Read(List.of(BLOCKING)),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(stopped.tasks()).as("no rework is offered").isEmpty();
         assertThat(stopped.writes().none()).as("the issue stays in Reading").isTrue();
         assertThat(stopped.deferred())
@@ -89,7 +91,8 @@ class NextStepTest {
                         states -> states.getFirst(),
                         false,
                         "Preserve bytes",
-                        chosen);
+                        chosen,
+                        "foo-1-2");
         assertThat(resumed.writes().issues())
                 .as("blocking findings still require rework")
                 .containsEntry("AA1", "Reworking");
@@ -116,12 +119,51 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(next.progress().get("AA1").needsYou()).as("nothing is refused").isFalse();
         final WorkOrder.Task reader = next.tasks().getFirst().task();
         assertThat(List.of(reader.role(), reader.mode(), reader.agent(), reader.model()))
                 .as("the reader takes the Reading rule's first mode and first model")
                 .containsExactly("READER", "UNATTENDED", "claude", "opus");
+    }
+
+    @Test
+    void aReadersOrderNamesTheTaskWhoseWorkItReadsAndItsBranch() {
+        // A reader not told whose work to read takes its order for a build and pushes work unread.
+        final Board board = board("Building", "Finished");
+        final NextStep.Result next =
+                NextStep.after(
+                        board,
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst(),
+                        "foo-1-2");
+        assertThat(next.tasks().getFirst().task().prompt())
+                .as("the order's {tasks} names the ended builder and the branch of its work")
+                .contains(
+                        "Work ST1: ",
+                        "; Porelo task foo-1-2, its work on the branch porelo/foo-1-2");
+    }
+
+    @Test
+    void aReadingWithNoKnownBuilderIsNotOfferedAndNeedsThePerson() {
+        // A reader with an empty order reads nothing and may rebuild the issue instead.
+        final NextStep.Result next =
+                NextStep.after(
+                        board("Building", "Finished"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst(),
+                        "");
+        assertThat(next.tasks()).as("no reader is offered without the builder").isEmpty();
+        assertThat(next.progress().get("AA1").needsYou())
+                .as("the person is asked instead")
+                .isTrue();
     }
 
     @Test
@@ -134,7 +176,8 @@ class NextStepTest {
                         new WorkEnds.Read(List.of()),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(result.writes().none())
                 .as("display order does not make rework complete")
                 .isTrue();
@@ -163,7 +206,11 @@ class NextStepTest {
                                         "NONE",
                                         "")),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        false,
+                        "",
+                        null,
+                        "foo-1-2");
         assertThat(next.writes().issues())
                 .as("only the reader's issue changes")
                 .containsExactlyEntriesOf(Map.of("AA1", "Reworking"));
@@ -197,7 +244,8 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(next.tasks()).as("unsound work releases no offer").isEmpty();
         assertThat(next.progress().get("AA1").needsYou())
                 .as("the end remains visible for attention")
@@ -254,7 +302,8 @@ class NextStepTest {
                         new WorkEnds.Read(List.of()),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
         assertThat(result.writes().none()).as("a parent cannot close over an open child").isTrue();
         assertThat(result.progress().get("AA1").rounds().rounds())
                 .as("the parsed reading remains counted")
@@ -285,7 +334,8 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> null);
+                        states -> null,
+                        "foo-1-2");
         assertThat(next.writes().none()).as("foreign ownership produces no store write").isTrue();
         assertThat(next.progress().get("AA1").needsYou())
                 .as("lost ownership needs attention")
@@ -304,7 +354,8 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst());
+                        states -> states.getFirst(),
+                        "foo-1-2");
 
         assertThat(next.tasks()).as("no task for the person's issue").isEmpty();
         assertThat(next.writes().issues())
