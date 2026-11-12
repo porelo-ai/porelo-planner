@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL89",
   "title": "The Planner Names Its Version To The Window",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 29,
