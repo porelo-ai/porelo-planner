@@ -89,6 +89,8 @@ Order: 1, 3, 2.
   states before anything is saved, and cancelling leaves every repository unchanged; a story with a running task asks
   to stop it first; a move with no warning is pushed at once, with no wait; the board shows no Save or Undo; a move
   racing a rebind of the project reaches no other repository.
+- A move against a story's issues: Cancel leaves the card where it stood and sends nothing; a move that fits its issues
+  asks nothing.
 
 ## To be checked
 

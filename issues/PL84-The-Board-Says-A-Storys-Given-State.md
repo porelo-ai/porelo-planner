@@ -54,7 +54,8 @@ state answers as today.
 ## Acceptance
 
 - The board's answer says for every story whether its state is given and lists the issues that do not fit it; a
-  story without a given state answers with none; the screen shows both; every new test was seen red.
+  story without a given state answers with none; the screen shows both; a card keeps its given state after the
+  board is read again; every new test was seen red.
 - The suite, the screen's Maven build and the documents' checks pass.
 
 ## Decided by the operator (2026-11-12)
