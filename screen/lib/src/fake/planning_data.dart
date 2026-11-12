@@ -2080,7 +2080,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     },
     {
       "state": "Under estimation",
@@ -2101,7 +2104,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     },
     {
       "state": "Implementing",
@@ -2122,7 +2128,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     },
     {
       "state": "Reading",
@@ -2143,7 +2152,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     },
     {
       "state": "Reworking",
@@ -2164,7 +2176,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     },
     {
       "state": "Finishing",
@@ -2185,7 +2200,10 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "UNATTENDED",
         "AGENT"
       ],
-      "order": "Read the story and complete its work."
+      "order": "Read the story and complete its work.",
+      "models": {
+        "claude": "claude-opus-5-5"
+      }
     }
   ],
   "faults": []
@@ -2229,4 +2247,7 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   ],
   'revision': board['revision'],
   if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
+  // A planner's event is a whole board, so the screen takes changed rules from it.
+  for (final part in const ['states', 'phases', 'work', 'faults'])
+    if (board[part] case final List<dynamic> value) part: value,
 };

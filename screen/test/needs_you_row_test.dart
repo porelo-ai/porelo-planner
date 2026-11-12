@@ -30,7 +30,12 @@ Map<String, dynamic> _task(String name, String issue, Map<String, dynamic> ended
   'ended': ended,
 };
 
-Map<String, dynamic> _rule(String state, {String? blocked, required List<String> modes}) => {
+Map<String, dynamic> _rule(
+  String state, {
+  String? blocked,
+  required List<String> modes,
+  Map<String, String> models = const {'claude': 'opus', 'codex': 'model'},
+}) => {
   'state': state,
   'from': ['Building'],
   'done': 'Review',
@@ -39,11 +44,11 @@ Map<String, dynamic> _rule(String state, {String? blocked, required List<String>
   'per': 'repository',
   'modes': modes,
   'order': 'Work {issues}',
-  'models': {'claude': 'opus', 'codex': 'model'},
+  'models': models,
 };
 
 /// A board whose story holds a failed, an unpushed, a lost and a stopped issue, and one whose task changed later.
-Map<String, dynamic> _board() => {
+Map<String, dynamic> _board({Map<String, String>? reworkingModels}) => {
   'states': [
     {'name': 'Ready', 'kind': 'WAITING'},
     {'name': 'Building', 'kind': 'WORKING'},
@@ -58,7 +63,10 @@ Map<String, dynamic> _board() => {
   ],
   'work': [
     _rule('Reading', blocked: 'Reworking', modes: ['UNATTENDED']),
-    _rule('Reworking', modes: ['UNATTENDED', 'AGENT']),
+    if (reworkingModels == null)
+      _rule('Reworking', modes: ['UNATTENDED', 'AGENT'])
+    else
+      _rule('Reworking', modes: ['UNATTENDED', 'AGENT'], models: reworkingModels),
   ],
   'stories': [
     {
@@ -214,6 +222,59 @@ void main() {
       ['REWORK', 'UNATTENDED', 'claude', 'opus'],
       reason: 'the Reworking rule\'s first mode and model, as preselected',
     );
+  });
+
+  // Harm: a person left in a Reworking dialog that cannot rework, not told why, cannot do what they came for.
+  testWidgets('a Reworking rule that names no agent keeps Rework disabled and says why', (tester) async {
+    final bare = MockPlanningSource()..boards['checkout'] = _board(reworkingModels: const {});
+    bare.work.findings['Stopped'] = [
+      {'number': 1, 'severity': 'BLOCKING', 'text': 'A credential would escape.'},
+    ];
+    final agentless = PlanningBoard(bare, 'checkout');
+    addTearDown(() async {
+      agentless.dispose();
+      await bare.end();
+    });
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    final stopped = PlanningBoards.storyAttention(
+      agentless,
+      agentless.stories.firstWhere((each) => each.id == 'Held'),
+    ).firstWhere((row) => row.issue?.id == 'Stopped');
+    await show(tester, stopped);
+    await tester.tap(find.byKey(const Key('reading-resolve Stopped REWORK')));
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('reading-rework-comment')), 'Keep the credential in.');
+    await settle(tester);
+
+    final send = tester.widget<FilledButton>(find.byKey(const Key('reading-rework-send')));
+    expect(send.onPressed, isNull, reason: 'no agent can take the rework');
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('reading-rework-no-agent')),
+        matching: find.textContaining('names no agent'),
+        matchRoot: true,
+      ),
+      findsOneWidget,
+      reason: 'the dialog says why Rework cannot be chosen',
+    );
+    for (final other in ['reading-rework-review', 'reading-rework-more']) {
+      expect(
+        tester.widget<TextButton>(find.byKey(Key(other))).onPressed,
+        isNotNull,
+        reason: '$other stays a way out of the dialog',
+      );
+    }
+  });
+
+  // Harm: a reason not to rework stands beside a Rework that can run, and the person does not use it.
+  testWidgets('a Reworking rule that names an agent enables Rework without a reason against it', (tester) async {
+    await show(tester, row('Held', 'Stopped'));
+    await tester.tap(find.byKey(const Key('reading-resolve Stopped REWORK')));
+    await settle(tester);
+
+    final send = tester.widget<FilledButton>(find.byKey(const Key('reading-rework-send')));
+    expect(send.onPressed, isNotNull, reason: 'an agent can take the rework');
+    expect(find.byKey(const Key('reading-rework-no-agent')), findsNothing, reason: 'nothing stands against Rework');
   });
 
   // Harm: a failed task leaves its card looking as if work went on, so nobody comes to it.

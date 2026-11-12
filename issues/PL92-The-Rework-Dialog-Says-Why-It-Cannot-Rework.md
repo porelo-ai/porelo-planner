@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL92",
   "title": "The Rework Dialog Says Why It Cannot Rework",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 2,
@@ -29,10 +29,12 @@ workflow"); today it pushes stories only, so changed rules never reach the scree
 - **The dialog.** `_ReworkingDialog` in `screen/lib/src/ui/story_work_attention.dart` builds its choice of agent from
   the Reworking rule's models; with none, its rework choice stays null and Rework stays disabled with no word. Change:
   a rule that names no agent shows the reason in the dialog ("The Reworking rule names no agent; name one under
-  `models` in the project's work rules") and keeps Rework disabled; Review and Stop stay available.
-- **The fake planner.** `screen/lib/src/fake/mock_planning.dart` names models on every work rule it serves, as the
-  planner's mock board does, and a board it pushes carries its states and rules, so the screen takes changed rules from
-  a whole board as it does from the planner.
+  `models` in the project's work rules") in place of the agent choice and keeps Rework disabled; Review anyway and One
+  more reading stay available.
+- **The fake planner.** `MockPlanningSource` in `screen/lib/src/fake/mock_planning.dart` serves the board of
+  `mockPlanningBoard` and pushes it through `planningSummary`, both in `screen/lib/src/fake/planning_data.dart`: the
+  board names models on every work rule, as the planner's mock board does, and the summary carries the board's states,
+  phases, rules and faults, so the screen takes changed rules from a whole board as it does from the planner.
 - **Tests, widget, red first.** A stopped reading whose Reworking rule names no models shows the reason and keeps Rework
   disabled; with models, Rework enables. A rule changed in a board the fake pushes reaches the screen. Harm: a person
   left in a dialog that cannot do what they came for, and window tests passing over rules the planner never serves.

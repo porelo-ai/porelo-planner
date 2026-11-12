@@ -362,18 +362,24 @@ class _ReworkingDialogState extends State<_ReworkingDialog> {
                 ],
                 onChanged: (value) => setState(() => _mode = value),
               ),
-              DropdownButton<String>(
-                key: const Key('reading-rework-agent'),
-                value: _agent,
-                items: [
-                  for (final entry in rule.models.entries)
-                    DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(planningShown('${entry.key} · ${entry.value}', multiline: false)),
-                    ),
-                ],
-                onChanged: (value) => setState(() => _agent = value),
-              ),
+              if (rule.models.isEmpty)
+                const Text(
+                  'The Reworking rule names no agent; name one under `models` in the project\'s work rules.',
+                  key: Key('reading-rework-no-agent'),
+                )
+              else
+                DropdownButton<String>(
+                  key: const Key('reading-rework-agent'),
+                  value: _agent,
+                  items: [
+                    for (final entry in rule.models.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(planningShown('${entry.key} · ${entry.value}', multiline: false)),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _agent = value),
+                ),
             ],
             TextField(
               key: const Key('reading-rework-comment'),

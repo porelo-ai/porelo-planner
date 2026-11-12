@@ -71,6 +71,52 @@ void main() {
     expect(seen.map((board) => board.revision), [isNot('changed'), 'changed']);
   });
 
+  // Harm: the window's tests open a Reworking dialog that cannot rework, over rules the planner never serves.
+  test('every work rule the stand-in serves names an agent and its model, as the planner\'s do', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+
+    final rules = (await source.planningWorkflow('demo')).work;
+
+    expect(rules.map((rule) => rule.state), [
+      'In analysis',
+      'Under estimation',
+      'Implementing',
+      'Reading',
+      'Reworking',
+      'Finishing',
+    ], reason: 'the working states the stand-in has rules for');
+    expect(
+      rules.where((rule) => rule.models.isEmpty).map((rule) => rule.state),
+      isEmpty,
+      reason: 'a planner\'s rule names the agents that may work under it',
+    );
+  });
+
+  // Harm: a rule changed on the stand-in never reaches the screen, so the window's tests pass over the old rules.
+  test('a rule changed in a board the stand-in pushes reaches the screen\'s board', () async {
+    final source = MockPlanningSource();
+    final board = PlanningBoard(source, 'demo');
+    addTearDown(() async {
+      board.dispose();
+      await source.end();
+    });
+    await pumpEventQueue();
+    final changed = mockPlanningBoard()..['revision'] = 'changed';
+    final reworking = (changed['work'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (rule) => rule['state'] == 'Reworking',
+    );
+    reworking['models'] = {'codex': 'changed-model'};
+
+    source.push('demo', changed);
+    await pumpEventQueue();
+
+    expect(board.snapshot?.revision, 'changed', reason: 'the pushed board is shown');
+    expect(board.snapshot?.work.firstWhere((rule) => rule.state == 'Reworking').models, {
+      'codex': 'changed-model',
+    }, reason: 'the pushed board brings its own rules, as a planner\'s does');
+  });
+
   // Harm: a save goes through although its story is refused, and a scenario of a refusal proves nothing.
   test('a refused story stops the whole save and leaves the board as it was', () async {
     final source = MockPlanningSource()
