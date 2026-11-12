@@ -13,6 +13,7 @@ import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -87,6 +88,8 @@ public final class WorkRequests {
      * @param unpushed the commits not pushed
      * @param landed where the work landed, copied from Porelo's task row; absent while it waits at
      *     the gate
+     * @param outcome the outcome the task declared, copied from Porelo's end record; absent when it
+     *     declared none
      */
     public record TaskEnded(
             String at,
@@ -94,7 +97,8 @@ public final class WorkRequests {
             String why,
             String answer,
             int unpushed,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed,
+            @JsonInclude(JsonInclude.Include.NON_NULL) WorkEnds.@Nullable Declared outcome) {}
 
     /**
      * One choice against a completed, stopped reading.
@@ -422,7 +426,7 @@ public final class WorkRequests {
         WorkRun.Ended ended = null;
         if (body.has("ended")) {
             final JsonNode end = body.path("ended");
-            fields(end, Set.of("at", "finished", "why", "answer", "unpushed", "landed"));
+            fields(end, Set.of("at", "finished", "why", "answer", "unpushed", "landed", "outcome"));
             if (!end.path("finished").isBoolean()) {
                 throw WorkRefusal.invalidSettings();
             }
@@ -433,7 +437,8 @@ public final class WorkRequests {
                             text(end, "why"),
                             text(end, "answer"),
                             integer(end, "unpushed"),
-                            landings(end));
+                            landings(end),
+                            declared(end));
         }
         if (body.has("landed") && event != WorkRun.Event.LANDED) {
             throw WorkRefusal.invalidSettings();
@@ -445,6 +450,20 @@ public final class WorkRequests {
                 machine,
                 ended,
                 landings(body));
+    }
+
+    /** Reads the outcome a task declared, exactly one of its names; none when absent. */
+    private static WorkEnds.@Nullable Declared declared(final JsonNode end) {
+        if (!end.has("outcome")) {
+            return null;
+        }
+        final String name = text(end, "outcome");
+        for (final WorkEnds.Declared declared : WorkEnds.Declared.values()) {
+            if (declared.name().equals(name)) {
+                return declared;
+            }
+        }
+        throw WorkRefusal.invalidSettings();
     }
 
     /** Reads where a task's work landed, each entry exactly its four names; none when absent. */

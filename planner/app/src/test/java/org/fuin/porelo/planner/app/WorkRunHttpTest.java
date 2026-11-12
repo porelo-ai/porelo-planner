@@ -543,6 +543,82 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aTaskThatEndsDeclaringItsWorkBlockedKeepsItsIssueUnderNeedsYouWithItsWhy()
+            throws Exception {
+        // A task that said its work cannot go on, taken as done, moves its issue on with no work.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final String before = store.board().issue("AA1").orElseThrow().state();
+        final JsonNode ended =
+                call("/tasks/build/events", declaring(offer, "BLOCKED", "A key is missing"), 200);
+        assertThat(ended.path("tasks").size()).as("a blocked end offers no reader").isZero();
+        assertThat(store.board().issue("AA1").orElseThrow().state())
+                .as("a blocked end leaves the issue where it stands")
+                .isEqualTo(before);
+        final JsonNode issue = ended.at("/work/issues/0");
+        assertThat(issue.path("needsYou").asBoolean()).as("the issue needs the person").isTrue();
+        assertThat(issue.path("reason").asString())
+                .as("the issue is raised as blocked")
+                .isEqualTo("BLOCKED");
+        assertThat(ended.at("/work/tasks/0/ended/why").asString())
+                .as("the task's why is answered with its end")
+                .isEqualTo("A key is missing");
+        assertThat(ended.at("/work/tasks/0/ended/outcome").asString())
+                .as("the end answers the outcome the task declared")
+                .isEqualTo("BLOCKED");
+        assertThat(
+                        call(
+                                        "/tasks/build/events",
+                                        declaring(offer, "BLOCKED", "A key is missing"),
+                                        200)
+                                .path("tasks")
+                                .size())
+                .as("the resent end offers nothing")
+                .isZero();
+    }
+
+    @Test
+    void anEndWithoutAnOutcomeAnswersNoneAndAMalformedOutcomeIsRefused() throws Exception {
+        // An outcome taken in another spelling or form would be judged as none, and a blocked
+        // task would move on as done.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final String done = declaring(offer, "DONE", "");
+        for (final String body :
+                List.of(
+                        done.replace("\"DONE\"", "\"blocked\""),
+                        done.replace("\"DONE\"", "\"UNPUSHED\""),
+                        done.replace("\"DONE\"", "\" BLOCKED\""),
+                        done.replace("\"DONE\"", "\"\""),
+                        done.replace("\"DONE\"", "null"),
+                        done.replace("\"DONE\"", "1"),
+                        done.replace("\"DONE\"", "[\"BLOCKED\"]"))) {
+            assertThat(call("/tasks/build/events", body, 400).path("type").asString())
+                    .as("the malformed outcome in %s is refused", body)
+                    .endsWith(":InvalidSettings");
+        }
+        final JsonNode ended = call("/tasks/build/events", event(offer, "ENDED", "Built"), 200);
+        assertThat(ended.at("/work/tasks/0/ended").has("outcome"))
+                .as("an end that declared nothing answers no outcome")
+                .isFalse();
+        assertThat(ended.path("tasks").size())
+                .as("the refused ends left the task to end as usual")
+                .isEqualTo(1);
+    }
+
+    @Test
     void invalidReportsAreBoundedAndNeverEchoUncheckedSubjects() throws Exception {
         // Prevents malformed reports or unchecked subjects from reaching tasks or refusals.
         for (final String body :
@@ -812,6 +888,18 @@ class WorkRunHttpTest {
         if (event.equals("LANDED")) {
             body.put("landed", landed);
         }
+        return JSON.writeValueAsString(body);
+    }
+
+    /** An end that finished and pushed everything, declaring {@code outcome} with {@code why}. */
+    private static String declaring(final String offer, final String outcome, final String why)
+            throws Exception {
+        final var body =
+                (tools.jackson.databind.node.ObjectNode)
+                        JSON.readTree(event(offer, "ENDED", "Built"));
+        final var ended = (tools.jackson.databind.node.ObjectNode) body.path("ended");
+        ended.put("why", why);
+        ended.put("outcome", outcome);
         return JSON.writeValueAsString(body);
     }
 

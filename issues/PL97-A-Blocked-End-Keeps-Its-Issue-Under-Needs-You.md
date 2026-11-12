@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL97",
   "title": "A Blocked End Keeps Its Issue Under Needs You",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 34,
@@ -37,15 +37,36 @@ finish behave as today.
   only to a planner published with it.
 - **The judging.** `WorkEnds.Outcome` gains BLOCKED, taken whenever the declared outcome is BLOCKED, whatever
   `finished` says, and FAILED whenever the declared outcome is FAILED. `NextStep.after` treats BLOCKED as it treats FAILED: no move, no next task, the issues raised with
-  attention `BLOCKED` and the why the window reported shown with the issue, as FAILED's why is today. The ended record
-  keeps the outcome, so a replayed end matches its fingerprint and an older record without it reads as before.
+  attention `BLOCKED` and the why the window reported shown with the issue, as FAILED's why is today. A declared DONE
+  decides nothing by itself: an unfinished run is still FAILED and unpushed commits still UNPUSHED. The same judging
+  holds where `WorkRun.landed` checks that a build ended done, so a blocked build's landing is refused as a conflict.
+- **The record.** `WorkRun.Ended` keeps the outcome, through a canonical constructor declared in full, since the
+  app's NullAway reads no nullness from a compact constructor's parameters, and every rebuild of it (the landing, the compaction of an older
+  reading) carries it. The fingerprint adds the outcome only when one was declared, so an end recorded before keeps its
+  print and a replay with another outcome is a conflict. `WorkRecord.tree` backfills an absent `ended.outcome` with
+  null, so an older record reads as before. The answers echo the outcome in `PlanWorkTask.ended`, left out when none
+  was declared, and `PlanWorkIssue.reason` and `Issue.attention` gain `BLOCKED`.
+- **The screen.** `PlanningTaskEnded`, which the window fills from Porelo's end record, gains `outcome` and sends it only
+  when set; `WorkEnded` reads it back, a declared BLOCKED or FAILED end counts as one needing attention, and BLOCKED
+  has its words and opens the task's result like FAILED.
 - **Tests, red first.**
-  - Unit, core (`WorkEndsTest`, `NextStepTest`, `WorkRunTest`): a build that finished declaring BLOCKED moves nothing,
+  - Unit, core (`WorkEndsTest`, `WorkRunTest`; `NextStep` needs no change, since it raises any reason the judging
+    gives): a build that finished declaring BLOCKED moves nothing,
     offers no reader and raises its issues with its why; DONE declared moves as today; no outcome behaves as today; a
     reader declaring BLOCKED does not take its reading as clean. Harm: work that said it could not be done moving on as
     done, a reading skipped.
   - Integration, app (`WorkRunHttpTest`): ENDED with `outcome: BLOCKED` keeps the issue in its state with `needsYou`
     and its attention; a malformed outcome is refused; both against the description.
+  - Unit, core: a declared DONE over an unfinished or unpushed run is judged as without it; a landing after a blocked
+    end is refused; a replayed blocked end offers nothing new, and one with another outcome is a conflict. Harm:
+    unfinished work moving on, a reader started on blocked work, an end counted twice.
+  - Integration, app (`ApiMatchesDescriptionTest`): the described outcomes are exactly those the planner takes, and
+    both reason lists name every reason it raises; the old guard that `TaskEnded` has no outcome goes with the agreed
+    contract. Harm: a window that sends an outcome the planner refuses, or refuses an answer naming BLOCKED.
+  - Integration, app (`WorkRecordTest`): a record whose ended task has no outcome reads as before. Harm: a planner
+    that cannot read its own record after the update.
+  - Unit, screen: `PlanningTaskEnded` sends a set outcome and leaves an unset one out; a declared BLOCKED end raises
+    attention. Harm: the window's outcome lost on the wire, so a blocked end is judged done.
 
 ## Acceptance
 

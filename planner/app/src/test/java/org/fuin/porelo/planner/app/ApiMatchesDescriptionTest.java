@@ -21,6 +21,7 @@ import java.util.TreeSet;
 import org.fuin.porelo.planner.app.mock.MockController;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -471,12 +472,33 @@ class ApiMatchesDescriptionTest {
                         .path("post");
         assertThat(stop.has("requestBody")).as("stop takes no JSON object").isFalse();
         final JsonNode event = description.path("components").path("schemas").path("TaskEnded");
-        assertThat(event.path("properties").has("outcome"))
-                .as("the window sends Porelo's end unmapped")
-                .isFalse();
         assertThat(event.path("required").toString())
                 .as("all of Porelo's facts are required")
-                .contains("at", "finished", "why", "answer", "unpushed");
+                .contains("at", "finished", "why", "answer", "unpushed")
+                .doesNotContain("outcome");
+    }
+
+    @Test
+    void theDescribedOutcomesAndReasonsAreExactlyThoseThePlannerTakesAndRaises() {
+        // A window built against the description would send an outcome the planner refuses, so a
+        // blocked end is never told, or refuse an answer raising a reason the description lacks.
+        final JsonNode schemas = description.path("components").path("schemas");
+        final Set<String> outcomes = new TreeSet<>();
+        schemas.at("/TaskEnded/properties/outcome/enum")
+                .forEach(outcome -> outcomes.add(outcome.asText()));
+        final Set<String> declared = new TreeSet<>();
+        Arrays.stream(WorkEnds.Declared.values()).forEach(d -> declared.add(d.name()));
+        assertThat(outcomes).as("the outcomes a task may declare").isEqualTo(declared);
+        final Set<String> raised = new TreeSet<>();
+        Arrays.stream(WorkEnds.Reason.values()).forEach(reason -> raised.add(reason.name()));
+        for (final String reasons :
+                List.of(
+                        "/PlanWorkIssue/properties/reason/enum",
+                        "/Issue/properties/attention/enum")) {
+            final Set<String> described = new TreeSet<>();
+            schemas.at(reasons).forEach(reason -> described.add(reason.asText()));
+            assertThat(described).as("the reasons described at %s", reasons).containsAll(raised);
+        }
     }
 
     @Test

@@ -114,7 +114,8 @@ public final class WorkRun {
 
     /**
      * Porelo's end record, kept unmapped at the boundary; {@code landed} is where the task's work
-     * landed as Porelo reports it, empty while that work still waits at the gate.
+     * landed as Porelo reports it, empty while that work still waits at the gate, and {@code
+     * outcome} the outcome the task declared, null when it declared none.
      */
     public record Ended(
             String at,
@@ -122,11 +123,48 @@ public final class WorkRun {
             String why,
             String answer,
             int unpushed,
-            List<NextStep.Landing> landed) {
+            List<NextStep.Landing> landed,
+            WorkEnds.@Nullable Declared outcome) {
 
-        /** Keeps the landings as they were reported. */
-        public Ended {
-            landed = List.copyOf(landed);
+        /**
+         * Keeps the landings as they were reported.
+         *
+         * @param at when the task ended
+         * @param finished whether the agent's run finished
+         * @param why why it ended
+         * @param answer the agent's last message
+         * @param unpushed how many commits it left unpushed
+         * @param landed where its work landed
+         * @param outcome the outcome it declared, or null for none
+         */
+        // Declared in full, since a compact constructor's parameters carry no nullness that the
+        // app's NullAway reads from the compiled class.
+        public Ended(
+                final String at,
+                final boolean finished,
+                final String why,
+                final String answer,
+                final int unpushed,
+                final List<NextStep.Landing> landed,
+                final WorkEnds.@Nullable Declared outcome) {
+            this.at = at;
+            this.finished = finished;
+            this.why = why;
+            this.answer = answer;
+            this.unpushed = unpushed;
+            this.landed = List.copyOf(landed);
+            this.outcome = outcome;
+        }
+
+        /** An end that declared no outcome. */
+        public Ended(
+                final String at,
+                final boolean finished,
+                final String why,
+                final String answer,
+                final int unpushed,
+                final List<NextStep.Landing> landed) {
+            this(at, finished, why, answer, unpushed, landed, null);
         }
 
         /** An end whose work has not landed yet. */
@@ -634,7 +672,10 @@ public final class WorkRun {
                             final WorkEnds.Judgment judgment =
                                     WorkEnds.judge(
                                             known.binding().role(),
-                                            WorkEnds.Outcome.of(ended.finished(), ended.unpushed()),
+                                            WorkEnds.Outcome.of(
+                                                    ended.finished(),
+                                                    ended.unpushed(),
+                                                    ended.outcome()),
                                             ended.answer());
                             final NextStep.Result next =
                                     next(
@@ -726,7 +767,8 @@ public final class WorkRun {
                     }
                     if (!(WorkEnds.judge(
                                     known.binding().role(),
-                                    WorkEnds.Outcome.of(ended.finished(), ended.unpushed()),
+                                    WorkEnds.Outcome.of(
+                                            ended.finished(), ended.unpushed(), ended.outcome()),
                                     ended.answer())
                             instanceof WorkEnds.Done)) {
                         throw conflict(task, Event.LANDED, "The task did not end done.");
@@ -768,7 +810,8 @@ public final class WorkRun {
                                             ended.why(),
                                             ended.answer(),
                                             ended.unpushed(),
-                                            landed),
+                                            landed,
+                                            ended.outcome()),
                                     known.fingerprint(),
                                     following,
                                     known.deferred(),
@@ -1939,6 +1982,11 @@ public final class WorkRun {
                                     landing.remote(),
                                     landing.commit()));
                 }
+                // Only a declared outcome adds it, so an end recorded before keeps its print.
+                final WorkEnds.Declared declared = end.outcome();
+                if (declared != null) {
+                    fields.addAll(List.of("outcome", declared.name()));
+                }
             }
             for (final String field : fields) {
                 final byte[] bytes = field.getBytes(StandardCharsets.UTF_8);
@@ -2079,7 +2127,8 @@ public final class WorkRun {
                                                 end.why(),
                                                 "",
                                                 end.unpushed(),
-                                                end.landed()),
+                                                end.landed(),
+                                                end.outcome()),
                                 o.fingerprint(),
                                 o.following(),
                                 o.deferred(),

@@ -351,7 +351,8 @@ public final class WorkAnswers {
                         ended.why(),
                         ended.answer(),
                         ended.unpushed(),
-                        ended.landed().isEmpty() ? null : ended.landed());
+                        ended.landed().isEmpty() ? null : ended.landed(),
+                        ended.outcome());
     }
 
     private static Repository repository(final WorkProposal.Repository repository) {

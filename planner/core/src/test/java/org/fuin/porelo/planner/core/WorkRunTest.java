@@ -2335,6 +2335,151 @@ class WorkRunTest {
     }
 
     @Test
+    void aBuildThatDeclaresItsWorkBlockedMovesNothingOffersNoReaderAndKeepsItsWhy() {
+        // A task that said its work cannot go on, taken as done, moves its issue on with no work.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final String before = f.store.board().issue("AA1").orElseThrow().state();
+        final int saves = f.store.saves;
+        final var answer = f.run.report("task", blocked(build, WorkEnds.Declared.BLOCKED));
+        assertThat(answer.tasks()).as("a blocked end offers no reader").isEmpty();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("a blocked end leaves the issue where it stands")
+                .isEqualTo(before);
+        assertThat(f.store.saves).as("a blocked end writes no state").isEqualTo(saves);
+        final NextStep.Progress progress = answer.work().issues().get("AA1");
+        assertThat(progress.needsYou()).as("a blocked end needs the person").isTrue();
+        assertThat(progress.reason()).as("the issue is raised as blocked").isEqualTo("BLOCKED");
+        assertThat(
+                        answer.work().offers().stream()
+                                .filter(o -> o.id().equals(build.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .ended())
+                .as("the end keeps the task's why and its declared outcome")
+                .extracting(WorkRun.Ended::why, WorkRun.Ended::outcome)
+                .containsExactly("A key is missing", WorkEnds.Declared.BLOCKED);
+    }
+
+    @Test
+    void aBlockedEndReplaysAsItselfAndAnEndWithAnotherOutcomeIsAConflict() {
+        // An end replayed with another outcome taken as the same would hide which end counted.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        f.run.report("task", blocked(build, WorkEnds.Declared.BLOCKED));
+        final var snapshot = f.record.value;
+        assertThat(
+                        new WorkRun(f.store, f.record, f.clock)
+                                .report("task", blocked(build, WorkEnds.Declared.BLOCKED))
+                                .tasks())
+                .as("the same blocked end replays offering nothing")
+                .isEmpty();
+        assertThat(f.record.value).as("the replay records nothing new").isEqualTo(snapshot);
+        for (final WorkEnds.@Nullable Declared other :
+                java.util.Arrays.asList(WorkEnds.Declared.DONE, null)) {
+            assertThatThrownBy(() -> f.run.report("task", blocked(build, other)))
+                    .as("the end resent declaring %s", other)
+                    .isInstanceOf(WorkRefusal.class)
+                    .satisfies(
+                            refused ->
+                                    assertThat(conflictOf(refused))
+                                            .as("another outcome is another end")
+                                            .isEqualTo("TaskEventConflict"));
+        }
+        assertThat(f.record.value).as("the refused ends record nothing").isEqualTo(snapshot);
+    }
+
+    @Test
+    void aLandingOfABuildThatDeclaredItsWorkBlockedOrFailedIsRefusedAndOffersNothing() {
+        // A reader started on blocked work reads what its builder said is not there.
+        for (final WorkEnds.Declared declared :
+                List.of(WorkEnds.Declared.BLOCKED, WorkEnds.Declared.FAILED)) {
+            final Fixture f = new Fixture();
+            final var build = f.order().tasks().getFirst();
+            f.start(build);
+            f.run.report("task", blocked(build, declared));
+            final var snapshot = f.record.value;
+            assertThatThrownBy(() -> f.run.report("task", landed(build, "work/built")))
+                    .as("the landing of a build that declared %s", declared)
+                    .isInstanceOf(WorkRefusal.class)
+                    .satisfies(
+                            refused ->
+                                    assertThat(conflictOf(refused))
+                                            .as("it did not end done")
+                                            .isEqualTo("TaskEventConflict"));
+            assertThat(f.record.value)
+                    .as("the refused landing records nothing")
+                    .isEqualTo(snapshot);
+        }
+    }
+
+    @Test
+    void aReaderThatDeclaresItsWorkBlockedCountsNoReadingWhateverItsAnswerSays() {
+        // A clean block from a reader that could not read would pass an issue nobody read.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final var answer =
+                f.run.report(
+                        "reader",
+                        new WorkRun.Report(
+                                reader.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                new WorkRun.Ended(
+                                        "2026-01-01T00:00:00Z",
+                                        true,
+                                        "The work is not there",
+                                        "Findings: none",
+                                        0,
+                                        List.of(),
+                                        WorkEnds.Declared.BLOCKED)));
+        final NextStep.Progress progress = answer.work().issues().get("AA1");
+        assertThat(progress.rounds().rounds()).as("a blocked reading counts none").isZero();
+        assertThat(progress.reason()).as("the issue is raised as blocked").isEqualTo("BLOCKED");
+        assertThat(answer.tasks()).as("nothing follows a blocked reading").isEmpty();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue does not reach review")
+                .isEqualTo("Reading");
+    }
+
+    /** A build's end that finished and pushed everything, declaring {@code declared}. */
+    private static WorkRun.Report blocked(
+            final WorkRun.Offered build, final WorkEnds.@Nullable Declared declared) {
+        return new WorkRun.Report(
+                build.offer(),
+                WorkRun.Event.ENDED,
+                "box",
+                "workstation",
+                new WorkRun.Ended(
+                        "2026-01-01T00:00:00Z",
+                        true,
+                        "A key is missing",
+                        "Built",
+                        0,
+                        List.of(),
+                        declared));
+    }
+
+    @Test
     void capacityForAFollowUpCannotRefuseTheAcceptedEnd() {
         // Prevents a full follow-up record from losing an accepted task end.
         final Fixture f = new Fixture();

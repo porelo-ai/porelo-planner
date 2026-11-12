@@ -380,8 +380,13 @@ public final class WorkRecord implements AutoCloseable {
                             && !arguments.has("reads")) {
                         arguments.putArray("reads");
                     }
-                    if (offer.path("ended") instanceof ObjectNode ended && !ended.has("landed")) {
-                        ended.putArray("landed");
+                    if (offer.path("ended") instanceof ObjectNode ended) {
+                        if (!ended.has("landed")) {
+                            ended.putArray("landed");
+                        }
+                        if (!ended.has("outcome")) {
+                            ended.putNull("outcome");
+                        }
                     }
                     // A record written before the risks names no effort and no rule's risks.
                     if (offer.path("arguments") instanceof ObjectNode arguments

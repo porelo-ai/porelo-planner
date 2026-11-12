@@ -120,6 +120,71 @@ class WorkRecordTest {
     }
 
     @Test
+    void aDeclaredOutcomeSurvivesRestartAndAnEndRecordedWithoutOneReadsAsNone() throws Exception {
+        // A blocked end forgotten on restart replays as another end; an older record that cannot
+        // open loses the person's running work.
+        writeTaskRecord(
+                "workstation",
+                "ENDED",
+                new WorkRun.Ended(
+                        "2026-01-01T00:00:00Z",
+                        true,
+                        "A key is missing",
+                        "Built",
+                        0,
+                        List.of(),
+                        WorkEnds.Declared.BLOCKED));
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Ended restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .ended());
+            assertThat(restored.outcome())
+                    .as("the end keeps the outcome its task declared across a restart")
+                    .isEqualTo(WorkEnds.Declared.BLOCKED);
+        }
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        assertThat(((ObjectNode) offer.path("ended")).remove("outcome"))
+                .as("the reference record holds the declared outcome")
+                .isNotNull();
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Ended older =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .ended());
+            assertThat(older.outcome())
+                    .as("an end recorded before outcomes were kept declared none")
+                    .isNull();
+            assertThat(older.why())
+                    .as("the rest of the end reads as it was")
+                    .isEqualTo("A key is missing");
+        }
+    }
+
+    @Test
     void aRecordWithoutAMachineKeepsTheTaskAndAnswersNull() throws Exception {
         // Prevents older records from losing task bindings or inventing a machine on restart.
         writeTaskRecord("WSL Ubuntu Äpfel");

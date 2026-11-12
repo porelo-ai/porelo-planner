@@ -1890,7 +1890,7 @@ components:
             work started elsewhere or set by a commit; it is shown, not raised.
         attention:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
           description: Why the person must act, the reason the run reported; NONE when needsYou is false.
         findings:
           type: array
@@ -2224,6 +2224,13 @@ components:
             work still waits at the gate.
           items:
             $ref: '#/components/schemas/Landing'
+        outcome:
+          type: string
+          enum: [DONE, BLOCKED, FAILED]
+          description: >-
+            The outcome the task declared, copied unchanged from Porelo's end record; absent when it declared none.
+            BLOCKED and FAILED leave the task's issues in their state under Needs you, whatever finished says, and why
+            carries the task's reason; DONE and an absent outcome are judged by finished and unpushed.
     ReadingRequest:
       type: object
       additionalProperties: false
@@ -2378,12 +2385,13 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
-            reading with blocking findings, readingStopped true: below the readings granted and at them. A move of
-            the issue by hand clears its reason and its stop.
+            reading with blocking findings, readingStopped true: below the readings granted and at them. BLOCKED says
+            the task declared its work blocked; the issue stays in its state and the task's why says what blocks it.
+            A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer
           minimum: 0

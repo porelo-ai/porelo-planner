@@ -119,11 +119,71 @@ void main() {
       );
     });
 
+    // Harm: a task that declared its work blocked or failed, after a run that finished and pushed, is not raised,
+    // so its issue is taken as done and nobody opens its why.
+    test('a declared blocked or failed end raises its own reason and no other', () {
+      PlanWorkTask task(String role, String? outcome) => PlanWorkTask.from({
+        'role': role,
+        'issues': ['A'],
+        'ended': {
+          'at': '2026-01-01T00:00:00Z',
+          'finished': true,
+          'why': 'A key is missing',
+          'answer': 'Findings: none',
+          'unpushed': 0,
+          'outcome': ?outcome,
+        },
+      });
+      final blocked = task('READER', 'BLOCKED');
+      expect(planningEndRaised('BLOCKED', blocked), isTrue, reason: 'the blocked end raises BLOCKED');
+      expect(planningEndRaised('INVALID_FINDINGS', blocked), isFalse, reason: 'a blocked reader is no bad reading');
+      expect(planningEndRaised('FAILED', blocked), isFalse, reason: 'a blocked end is not a failure');
+      expect(
+        planningEndRaised('FAILED', task('BUILDER', 'FAILED')),
+        isTrue,
+        reason: 'a declared failure raises FAILED',
+      );
+      expect(planningEndRaised('BLOCKED', task('BUILDER', 'DONE')), isFalse, reason: 'a done end raises nothing');
+      expect(planningEndRaised('BLOCKED', task('BUILDER', null)), isFalse, reason: 'no outcome raises nothing');
+      expect(planningTaskEndReasons, contains('BLOCKED'), reason: "a blocked end's result can be opened");
+      final work = PlanWork.from({
+        'tasks': [
+          {
+            'ended': {
+              'at': '',
+              'finished': true,
+              'why': 'A key is missing',
+              'answer': '',
+              'unpushed': 0,
+              'outcome': 'BLOCKED',
+            },
+          },
+        ],
+      });
+      expect(work.ended?.why, 'A key is missing', reason: 'the story shows the blocked end and its why');
+    });
+
+    // Harm: the window's declared outcome is lost on the wire, so the planner judges a blocked end done.
+    test('a task end sends a declared outcome unchanged and leaves an undeclared one out', () {
+      const declared = PlanningTaskEnded(
+        at: '',
+        finished: true,
+        why: 'Why',
+        answer: '',
+        unpushed: 0,
+        outcome: 'BLOCKED',
+      );
+      expect(declared.toMap()['outcome'], 'BLOCKED', reason: 'the declared outcome is sent');
+      const none = PlanningTaskEnded(at: '', finished: true, why: '', answer: '', unpushed: 0);
+      expect(none.toMap().containsKey('outcome'), isFalse, reason: 'a planner without outcomes refuses the field');
+    });
+
     // Harm: a reason is shown as a bare wire name, or as nothing at all.
     test('every reason has words and an unknown one shows its wire name', () {
       const known = [
         'ROUND_LIMIT',
         'FAILED',
+        'BLOCKED',
         'UNPUSHED',
         'INVALID_FINDINGS',
         'STOPPED',

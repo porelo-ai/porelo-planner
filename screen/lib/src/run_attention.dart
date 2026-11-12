@@ -7,6 +7,7 @@ String planningReasonWords(String reason) => switch (reason) {
   'BLOCKING_FINDINGS' => 'its reading found what blocks it',
   'ROUND_LIMIT' => 'its reading rounds ran out',
   'FAILED' => 'its work failed',
+  'BLOCKED' => 'its work is blocked',
   'UNPUSHED' => 'its work was not pushed',
   'INVALID_FINDINGS' => 'its findings could not be read',
   'STOPPED' => 'its work was stopped',
@@ -18,18 +19,19 @@ String planningReasonWords(String reason) => switch (reason) {
 /// The reasons of a stopped reading, which the Reworking dialog answers.
 const planningStopReasons = {'BLOCKING_FINDINGS', 'ROUND_LIMIT'};
 
-/// The reasons of a task's end whose result the window can open: the task failed, left its work unpushed, or
-/// read without a findings block.
-const planningTaskEndReasons = {'FAILED', 'UNPUSHED', 'INVALID_FINDINGS'};
+/// The reasons of a task's end whose result the window can open: the task failed, declared its work blocked, left
+/// its work unpushed, or read without a findings block.
+const planningTaskEndReasons = {'FAILED', 'BLOCKED', 'UNPUSHED', 'INVALID_FINDINGS'};
 
 /// Whether [task]'s end is one that raises [reason], so a row may open that task's result.
 bool planningEndRaised(String reason, PlanWorkTask task) {
   final ended = task.ended;
   if (ended == null) return false;
   return switch (reason) {
-    'FAILED' => ended.finished == false,
-    'UNPUSHED' => ended.finished == true && (ended.unpushed ?? 0) > 0,
-    'INVALID_FINDINGS' => task.role == 'READER' && ended.finished == true && ended.unpushed == 0,
+    'BLOCKED' => ended.outcome == 'BLOCKED',
+    'FAILED' => ended.outcome != 'BLOCKED' && (ended.finished == false || ended.outcome == 'FAILED'),
+    'UNPUSHED' => !ended.declaredStop && ended.finished == true && (ended.unpushed ?? 0) > 0,
+    'INVALID_FINDINGS' => task.role == 'READER' && !ended.declaredStop && ended.finished == true && ended.unpushed == 0,
     _ => false,
   };
 }

@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.fuin.porelo.planner.core.WorkEnds.Declared;
 import org.fuin.porelo.planner.core.WorkEnds.Done;
 import org.fuin.porelo.planner.core.WorkEnds.Finding;
 import org.fuin.porelo.planner.core.WorkEnds.NeedsOperator;
@@ -31,6 +32,39 @@ class WorkEndsTest {
         assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 0), ""))
                 .as("finished and pushed")
                 .isEqualTo(new Done());
+    }
+
+    @Test
+    void aDeclaredBlockOrFailureNeedsTheOperatorWhateverTheRunSaysAndADeclaredDoneDecidesNothing() {
+        // A blocked or failed task taken as done moves on work that is not there; a declared DONE
+        // over a run that did not finish or push would do the same.
+        assertThat(Outcome.of(true, 0, Declared.BLOCKED))
+                .as("finished and pushed, declared blocked")
+                .isEqualTo(Outcome.BLOCKED);
+        assertThat(Outcome.of(false, 3, Declared.BLOCKED))
+                .as("unfinished and unpushed, declared blocked")
+                .isEqualTo(Outcome.BLOCKED);
+        assertThat(Outcome.of(true, 0, Declared.FAILED))
+                .as("finished and pushed, declared failed")
+                .isEqualTo(Outcome.FAILED);
+        assertThat(Outcome.of(false, 0, Declared.DONE))
+                .as("unfinished, declared done")
+                .isEqualTo(Outcome.FAILED);
+        assertThat(Outcome.of(true, 2, Declared.DONE))
+                .as("unpushed, declared done")
+                .isEqualTo(Outcome.UNPUSHED);
+        assertThat(Outcome.of(true, 0, Declared.DONE))
+                .as("finished and pushed, declared done")
+                .isEqualTo(Outcome.DONE);
+        assertThat(Outcome.of(true, 0, null))
+                .as("finished and pushed, nothing declared")
+                .isEqualTo(Outcome.DONE);
+        assertThat(WorkEnds.judge("READER", Outcome.BLOCKED, "Findings: none"))
+                .as("a reader's clean block from a blocked end")
+                .isEqualTo(new NeedsOperator(Reason.BLOCKED));
+        assertThat(WorkEnds.judge("BUILDER", Outcome.BLOCKED, ""))
+                .as("a blocked builder")
+                .isEqualTo(new NeedsOperator(Reason.BLOCKED));
     }
 
     @Test

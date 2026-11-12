@@ -34,6 +34,16 @@ public final class WorkEnds {
 
     private WorkEnds() {}
 
+    /** The outcome a task declared at its end, copied unchanged from Porelo's record. */
+    public enum Declared {
+        /** The task says its work is done. */
+        DONE,
+        /** The task says its work cannot go on; its why says what blocks it. */
+        BLOCKED,
+        /** The task says its work failed. */
+        FAILED
+    }
+
     /** How a task ended, read from Porelo's record of the agent's end. */
     public enum Outcome {
         /** The agent finished and left nothing unpushed. */
@@ -41,7 +51,9 @@ public final class WorkEnds {
         /** The agent finished but left commits unpushed, so its work did not arrive. */
         UNPUSHED,
         /** The run did not finish. */
-        FAILED;
+        FAILED,
+        /** The task declared its work blocked. */
+        BLOCKED;
 
         /**
          * Reads the outcome from Porelo's record, which says no more than this.
@@ -51,7 +63,24 @@ public final class WorkEnds {
          * @return the outcome
          */
         public static Outcome of(final boolean finished, final int unpushed) {
-            if (!finished) {
+            return of(finished, unpushed, null);
+        }
+
+        /**
+         * Reads the outcome from Porelo's record and the outcome the task declared; a declared DONE
+         * decides nothing the record does not already say.
+         *
+         * @param finished whether the agent's run finished
+         * @param unpushed how many commits it left unpushed
+         * @param declared the outcome the task declared, or null for none
+         * @return the outcome
+         */
+        public static Outcome of(
+                final boolean finished, final int unpushed, final @Nullable Declared declared) {
+            if (declared == Declared.BLOCKED) {
+                return BLOCKED;
+            }
+            if (!finished || declared == Declared.FAILED) {
                 return FAILED;
             }
             return unpushed == 0 ? DONE : UNPUSHED;
@@ -72,6 +101,8 @@ public final class WorkEnds {
         UNPUSHED,
         /** The run did not finish. */
         FAILED,
+        /** The task declared its work blocked. */
+        BLOCKED,
         /** The window stopped the task. */
         STOPPED,
         /** A reader's answer held no single well-formed findings block. */
@@ -146,6 +177,7 @@ public final class WorkEnds {
         return switch (outcome) {
             case UNPUSHED -> new NeedsOperator(Reason.UNPUSHED);
             case FAILED -> new NeedsOperator(Reason.FAILED);
+            case BLOCKED -> new NeedsOperator(Reason.BLOCKED);
             case DONE -> {
                 if (!"READER".equals(role)) {
                     yield new Done();

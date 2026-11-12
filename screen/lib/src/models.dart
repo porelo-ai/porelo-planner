@@ -93,7 +93,7 @@ class PlanWork {
   WorkEnded? get ended => tasks
       .map((task) => task.ended)
       .whereType<WorkEnded>()
-      .where((end) => end.finished != true || (end.unpushed ?? 0) > 0)
+      .where((end) => end.finished != true || (end.unpushed ?? 0) > 0 || end.declaredStop)
       .firstOrNull;
 
   /// The reported value presented to the window.
@@ -765,12 +765,19 @@ class WorkEnded {
       finished = map['finished'] is bool ? map['finished'] as bool : null,
       unpushed = map['unpushed'] is int ? map['unpushed'] as int : null,
       why = _planText(map, 'why'),
-      answer = _planText(map, 'answer');
+      answer = _planText(map, 'answer'),
+      outcome = map['outcome'] is String ? map['outcome'] as String : null;
 
   /// The original end record, without mapping the agent’s result.
   final String at, why, answer;
   final bool? finished;
   final int? unpushed;
+
+  /// The outcome the task declared, absent when it declared none.
+  final String? outcome;
+
+  /// Whether the task declared its work blocked or failed, which no finished run overrides.
+  bool get declaredStop => outcome == 'BLOCKED' || outcome == 'FAILED';
 
   /// The reported value presented to the window.
   String get reason => [why, answer].where((text) => text.isNotEmpty).join('\n');
@@ -1162,11 +1169,15 @@ class PlanningTaskEnded {
     required this.answer,
     required this.unpushed,
     this.landed = const [],
+    this.outcome,
   });
 
   final String at, why, answer;
   final bool finished;
   final int unpushed;
+
+  /// The outcome the task declared, Porelo's `DONE`, `BLOCKED` or `FAILED`; null when it declared none.
+  final String? outcome;
 
   /// Where the work landed; empty while it still waits at Porelo's gate.
   final List<PlanningLanding> landed;
@@ -1179,6 +1190,7 @@ class PlanningTaskEnded {
     'answer': answer,
     'unpushed': unpushed,
     if (landed.isNotEmpty) 'landed': [for (final landing in landed) landing.toMap()],
+    if (outcome != null) 'outcome': outcome,
   };
 }
 
