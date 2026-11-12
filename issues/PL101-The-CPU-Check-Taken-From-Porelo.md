@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL101",
   "title": "The CPU Check Taken From Porelo",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "XS",
   "priority": "High",
   "rank": 26,

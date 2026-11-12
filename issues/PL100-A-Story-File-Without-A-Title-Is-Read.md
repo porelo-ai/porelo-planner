@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL100",
   "title": "A Story File Without A Title Is Read",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 21,
