@@ -19,19 +19,16 @@ left out.
 | <a id="pl80"></a>[PL80](PL80-The-Idea-Hand-Ins-And-The-Mock-Copies-Smaller-Findings.md) | - | - | A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, the push check is measured over HTTPS in the native executable, and reading Porelo's task records leaves no child running and counts no other task's call |
 | <a id="pl86"></a>[PL86](PL86-The-Stage-Rules-Remaining-Switch-Offs.md) | - | - | The commit check's stage rule cannot be passed by a workflow edit that unmarks a measured state and marks it again, nor by a merge that brings the seed in beside an issue in a measured state without its stage record |
 | <a id="pl88"></a>[PL88](PL88-The-Board-Shows-An-Issue-That-Waits-On-Another-Repository.md) | - | - | An issue whose head waits on an issue of another repository of the project stands on the board with that wait, and its work is not offered before the issue it waits on is done, instead of the issue being refused as a fault |
+| <a id="pl92"></a>[PL92](PL92-The-Rework-Dialog-Says-Why-It-Cannot-Rework.md) | - | - | The Rework dialog of a stopped reading says why Rework cannot be chosen when the Reworking rule names no agent, and the screen's fake planner names models on its rules and sends its rules with every board it pushes, as a planner does |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
-
-## Analyzed
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl84"></a>[PL84](PL84-The-Board-Says-A-Storys-Given-State.md) | M | - | The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both |
 
 ## Estimated
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl91"></a>[PL91](PL91-The-Planner-Ends-When-The-Window-That-Started-It-Ends.md) | S | - | A planner the window started ends by itself when the window's end of the pipe it was started with closes, a hard kill of the window included, so no planner of an older install keeps running beside a newer window |
+| <a id="pl84"></a>[PL84](PL84-The-Board-Says-A-Storys-Given-State.md) | M | - | The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both |
 | <a id="pl44"></a>[PL44](PL44-An-Estimate-Learns-From-The-Tokens-Spent.md) | L | [PL61](README.md#pl61) | A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one |
 | <a id="pl56"></a>[PL56](PL56-The-Board-Builds-Only-What-Is-Seen.md) | L | [PL48](README.md#pl48) | The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand |
 

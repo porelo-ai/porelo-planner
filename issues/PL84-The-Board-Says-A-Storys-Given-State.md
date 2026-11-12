@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL84",
   "title": "The Board Says A Story's Given State",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Medium",
   "rank": 1,
@@ -18,7 +18,7 @@
 from the core through the app to the screen, which shows both; no other repository reads that answer but the window
 through the screen.
 
-**Estimate:** 67 min, the measured median of M. Uncertain: the screen's look waits on the open question.
+**Estimate:** 67 min, the measured median of M.
 
 **What must be true.** A window that reads a story from the planner learns whether its state was given to it - on the
 board, by a confirmed move, or in its head - or derived from its issues by the automatic rule, the earliest open state
@@ -41,7 +41,7 @@ state answers as today.
   none), written in the description first; `Answers.Story`/`StoryDetail` and `BoardController.story` fill it; the
   mock board gives one story a given state with a misfit, so the window's tests see one.
 - **Screen.** `PlanStory` reads `stateGiven` and `misfits`; the story card and the story page show that the state was
-  given, and mark each misfit issue with its own state, as the open question settles.
+  given with a mark beside the state, whose tooltip names each misfit issue with its state.
 - **Tests, by level, red first.**
   - Unit, core: the misfit rule over a given state its issues do not give, one they do give, and a derived state;
     `Moves`' refusal names the same issues. Harm: a story shown as fitting while its issues stand elsewhere, so it is
@@ -57,7 +57,7 @@ state answers as today.
   story without a given state answers with none; the screen shows both; every new test was seen red.
 - The suite, the screen's Maven build and the documents' checks pass.
 
-## Open questions
+## Decided by the operator (2026-11-12)
 
-- How the board shows a given state and its misfits: a small mark beside the story's state on the card with the
-  misfit issues' states in its tooltip, or the misfit issues marked in the card's issue list and on the story page.
+- The board shows a given state as a mark beside the story's state; its tooltip names each misfit issue with its
+  state.
