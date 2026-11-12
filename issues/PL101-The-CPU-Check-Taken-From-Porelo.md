@@ -25,8 +25,9 @@ the check porelo publishes. The build tools stop publishing their copy, and the 
 
 - **Today, read in the code.** `planner/app/pom.xml` takes `org.fuin.porelo:porelo-cpu-check` at
   `${porelo.buildtools.version}`, in the native profile's check of the executable.
-- **The change.** The root `pom.xml` names porelo's version in a property of its own, and the check's dependency takes
-  it. Nothing else changes. Built with `-U`, so the snapshot is read from Central.
+- **The change.** The root `pom.xml` names porelo's version of the check, `0.5.1-SNAPSHOT`, in a property of its own,
+  and the check's dependency takes it. The build tools publish the same artifact at their own, higher versions until
+  they drop it, so the version is named, never taken from the build tools'. Nothing else changes. Built with `-U`, so the snapshot is read from Central.
 - **Test.** No new test: the native build's check of the executable is the test. It is seen red once, by asking it
   for a narrower instruction set than the executable has, before the hand-over.
 
@@ -34,9 +35,3 @@ the check porelo publishes. The build tools stop publishing their copy, and the 
 
 - The native build resolves `porelo-cpu-check` at porelo's version, checks the executable and passes.
 - No module of the build reads the build tools' copy: `dependency:tree` shows none.
-
-## To be checked
-
-- The version under which porelo publishes `porelo-cpu-check`. porelo's tree builds it at its own version
-  (0.2.2-SNAPSHOT). Central's snapshot index of the artifact lists 0.5.0, 0.5.1 and 0.5.2-SNAPSHOT, which are the
-  build tools' versions.

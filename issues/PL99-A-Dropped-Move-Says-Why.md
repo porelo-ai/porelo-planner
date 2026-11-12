@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL99",
   "title": "A Dropped Move Says Why",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 6,
