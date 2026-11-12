@@ -11,15 +11,21 @@ left out.
 |---|---|---|---|
 | <a id="pl78"></a>[PL78](PL78-The-Planners-Executable-Published-For-The-CI.md) | - | - | The Build publishes the planner's bare native executable with its sha256 beside it, so every repository's CI downloads it pinned by version and digest to check its issues, stories, commits and pushes |
 | <a id="pl83"></a>[PL83](PL83-The-Work-Numbers-Per-Phase-Kept-And-Served.md) | - | - | A task is started with the phase it works in, the Git store keeps a finished issue's numbers from Porelo's records in stats/, and the velocity and an issue's tokens per phase reach the window and the stage command from those records |
+| <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | - | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
 | <a id="pl89"></a>[PL89](PL89-The-Planner-Names-Its-Version-To-The-Window.md) | - | - | The planner answers its own version and the commit it was built from to the window, so the window's About names which planner it talks to, and a planner left running from an older install is seen at once |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
 | <a id="pl80"></a>[PL80](PL80-The-Idea-Hand-Ins-And-The-Mock-Copies-Smaller-Findings.md) | - | - | A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, the push check is measured over HTTPS in the native executable, and reading Porelo's task records leaves no child running and counts no other task's call |
-| <a id="pl84"></a>[PL84](PL84-The-Board-Says-A-Storys-Given-State.md) | - | - | The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both |
 | <a id="pl86"></a>[PL86](PL86-The-Stage-Rules-Remaining-Switch-Offs.md) | - | - | The commit check's stage rule cannot be passed by a workflow edit that unmarks a measured state and marks it again, nor by a merge that brings the seed in beside an issue in a measured state without its stage record |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
+
+## Analyzed
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl84"></a>[PL84](PL84-The-Board-Says-A-Storys-Given-State.md) | M | - | The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both |
 
 ## Estimated
 
