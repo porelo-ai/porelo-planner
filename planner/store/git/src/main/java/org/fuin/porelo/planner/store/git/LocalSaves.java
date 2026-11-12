@@ -62,7 +62,7 @@ public final class LocalSaves {
 
     /** A story's or an issue's file, whose name carries a number each repository gives once. */
     private static final Pattern NUMBERED =
-            Pattern.compile("(?:issues|stories)/[A-Z]{1,3}[0-9]+-[^/]*\\.md");
+            Pattern.compile("issues/[A-Z]{1,3}[0-9]+-[^/]*\\.md|stories/ST[0-9]+(?:-[^/]*)?\\.md");
 
     private final List<Repository> repositories;
 

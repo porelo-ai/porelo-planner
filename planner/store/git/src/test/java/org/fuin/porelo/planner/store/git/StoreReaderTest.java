@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
+import org.fuin.porelo.planner.store.git.stories.Story;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -181,6 +182,40 @@ class StoreReaderTest {
         assertThatThrownBy(() -> new StoreReader(tree, 100).read(OWN, "c1", null))
                 .as("the project's own repository without stories/workflow.yml")
                 .isInstanceOf(StoreException.WorkflowMissing.class);
+    }
+
+    @Test
+    void aStoryFileWithoutATitleIsReadOntoTheBoardBesideOneWithATitle() {
+        // Prevents a story the stories index lists from missing on the board without a word, when
+        // its file is named ST<n>.md, which the work format allows beside ST<n>-<Title>.md.
+        final Tree tree = new Tree();
+        tree.files.put("stories/workflow.yml", WORKFLOW);
+        tree.files.put("issues/XY01-One.md", issue("XY01", "Idea"));
+        tree.files.put("stories/ST7.md", story("ST7"));
+        tree.files.put("stories/ST8-Titled.md", story("ST8"));
+
+        final Part part = new StoreReader(tree, 100).read(OWN, "c1", null);
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.stories())
+                .as("the untitled story read as the titled one is")
+                .extracting(Story::id)
+                .containsExactlyInAnyOrder("ST7", "ST8");
+        assertThat(part.paths())
+                .as("each story kept with the file a move writes")
+                .containsEntry(Part.story("ST7"), "stories/ST7.md")
+                .containsEntry(Part.story("ST8"), "stories/ST8-Titled.md");
+    }
+
+    private static String story(final String id) {
+        return "# "
+                + id
+                + " — A story\n\n## Data\n\n```json\n{\n  \"$schema\": \"story-2.json\",\n"
+                + "  \"id\": \""
+                + id
+                + "\",\n  \"title\": \"A story\",\n  \"state\": \"Idea\",\n"
+                + "  \"gain\": \"Something.\",\n  \"test\": \"A test.\",\n  \"priority\": \"High\",\n"
+                + "  \"issues\": [\"porelo-store#XY01\"],\n  \"tested\": null\n}\n```\n";
     }
 
     @Test

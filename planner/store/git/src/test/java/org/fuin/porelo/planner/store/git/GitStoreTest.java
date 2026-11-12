@@ -197,6 +197,15 @@ class GitStoreTest {
     }
 
     @Test
+    void aDroppedSaveThatAddedAStoryWithoutATitleNamesTheStory() {
+        // Prevents a story added as ST<n>.md and dropped by a push from being told by a path
+        // instead of the story the person planned, so the person can tell what is lost.
+        assertThat(GitStore.dropped(null, List.of("stories/ST7.md", "stories/ST8-Titled.md")))
+                .as("each added story named by its id, the untitled one as the titled one")
+                .isEqualTo("ST7, ST8");
+    }
+
+    @Test
     void theBoardKeepsTheOwnRepositoryEvenWhenItsPartHasNoIssues() {
         // Story work must not pick another repository just because the own checkout has no issues.
         final PartReader reader =

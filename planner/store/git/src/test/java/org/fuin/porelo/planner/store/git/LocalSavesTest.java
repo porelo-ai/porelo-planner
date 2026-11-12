@@ -173,6 +173,23 @@ class LocalSavesTest {
                                 LocalSaves.Kind.DROPPED, "", List.of("stories/ST2-Mine.md")));
     }
 
+    // Prevents two stories under one number when one side added it as ST<n>.md, without a title.
+    @Test
+    void aPushOverAStoryAddedElsewhereWithoutATitleDropsTheSaveThatAddedOneToo() throws Exception {
+        final LocalSaves saves = new LocalSaves(repositories, remote, refs, Runnable::run);
+        save(saves, OWN, Map.of("stories/ST2-Mine.md", "mine\n"));
+        final String theirs = change(OWN, "stories/ST2.md", "theirs\n");
+
+        saves.push();
+
+        assertThat(remoteHead(OWN)).as("the other's story stays the remote's").isEqualTo(theirs);
+        assertThat(saves.state().get(OWN))
+                .as("told with the story dropped, not made again beside the other")
+                .isEqualTo(
+                        new LocalSaves.PushState(
+                                LocalSaves.Kind.DROPPED, "", List.of("stories/ST2-Mine.md")));
+    }
+
     // Prevents a stories index pushed naming states its repositories do not hold.
     @Test
     void aPushOverAFileWithoutANumberAddedElsewhereIsMadeAgainNotDropped() throws Exception {

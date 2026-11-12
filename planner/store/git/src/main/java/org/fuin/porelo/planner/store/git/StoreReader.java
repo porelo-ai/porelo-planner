@@ -33,7 +33,8 @@ public final class StoreReader implements PartReader {
     private static final Pattern ISSUE_FILE =
             Pattern.compile("[A-Z]{1,4}[0-9]{1,5}(\\.[0-9]{1,3})?-[^/]*\\.md");
 
-    private static final Pattern STORY_FILE = Pattern.compile("ST[0-9]{1,5}-[^/]*\\.md");
+    /** A story's file: its id, and a dash and its title where the file names one. */
+    private static final Pattern STORY_FILE = Pattern.compile("ST[0-9]{1,5}(-[^/]*)?\\.md");
 
     /** The file naming whole files that hold an issue number's shape on purpose. */
     private static final String EXEMPT = "citations-exempt.txt";

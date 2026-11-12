@@ -64,7 +64,7 @@ public final class GitStore implements PlanningStore {
     /** A story's or an issue's file, its id the first group. */
     private static final java.util.regex.Pattern ADDED =
             java.util.regex.Pattern.compile(
-                    "(?:stories/(ST[0-9]+)|issues/(?:[^/]+/)?([A-Z]{1,3}[0-9]{2,3}))-[^/]*\\.md");
+                    "stories/(ST[0-9]+)(?:-[^/]*)?\\.md|issues/(?:[^/]+/)?([A-Z]{1,3}[0-9]{2,3})-[^/]*\\.md");
 
     /** The writes of a save that only adds. */
     private static final Writes NO_WRITES = new Writes(Map.of(), Map.of(), List.of());
@@ -1345,7 +1345,7 @@ public final class GitStore implements PlanningStore {
     }
 
     /** The items whose files a dropped save changed, or its files where they name none. */
-    private static String dropped(final @Nullable Part part, final List<String> paths) {
+    static String dropped(final @Nullable Part part, final List<String> paths) {
         final Set<String> items = new java.util.TreeSet<>();
         final Set<String> known = new HashSet<>();
         if (part != null) {
