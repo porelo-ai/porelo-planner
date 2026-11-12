@@ -34,7 +34,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | M | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
 | <a id="pl92"></a>[PL92](PL92-The-Rework-Dialog-Says-Why-It-Cannot-Rework.md) | S | - | The Rework dialog of a stopped reading says why Rework cannot be chosen when the Reworking rule names no agent, and the screen's fake planner names models on its rules and sends its rules with every board it pushes, as a planner does |
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | L | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
 | <a id="pl43"></a>[PL43](PL43-A-Slow-Save-Told-As-Slow-Not-As-A-Failure.md) | S | - | A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together |
@@ -60,6 +59,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | M | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 
 ## Review
