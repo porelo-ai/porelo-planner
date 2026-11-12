@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL97",
   "title": "A Blocked End Keeps Its Issue Under Needs You",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 34,
