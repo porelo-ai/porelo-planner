@@ -963,4 +963,83 @@ void main() {
     });
     expect(story(published['demo']!, 'ST1')['state'], 'Review');
   });
+
+  PlanIssue issueOne() => board.stories.expand((story) => story.issues).firstWhere((issue) => issue.id == 'IssueOne');
+
+  // Harm: a person's move lost without a word, or staged from a state the issue has already left.
+  test('a move chosen from a menu built before the issue moved on is refused with its new state', () async {
+    final shown = issueOne();
+    final moved = _fixture();
+    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Done';
+    moved['revision'] = 'moved by a task';
+    backend.changes.add(PlanningSnapshot.from(moved));
+    await Future<void>.delayed(Duration.zero);
+    board.moveIssue('IssueOne', 'Elsewhere', reported: shown);
+    expect(board.pending, isEmpty, reason: 'nothing is staged from a state the issue has left');
+    expect(board.moveProblem, contains('Done'), reason: 'the person reads where the issue stands now');
+  });
+
+  // Harm: a person's move lost without a word while a save runs.
+  test('a move chosen while a save runs is refused with words', () async {
+    board.move('StoryTwo', 'Done');
+    backend.gate = Completer<void>();
+    final saving = board.save();
+    board.moveIssue('IssueOne', 'Done', reported: issueOne());
+    expect(board.pending.keys, isNot(contains('issue IssueOne')), reason: 'nothing is staged while saving');
+    expect(board.moveProblem, isNotNull, reason: 'the person reads why the move was not taken');
+    backend.gate!.complete();
+    await saving;
+  });
+
+  // Harm: a person's move lost without a word when its destination is not one the issue may enter.
+  test('a move to a state the issue may not enter is refused with words', () async {
+    board.moveIssue('IssueOne', 'Building', reported: issueOne());
+    expect(board.pending, isEmpty, reason: 'a working state is entered only by an issue worked by hand');
+    expect(board.moveProblem, contains('Building'), reason: 'the person reads which destination was refused');
+  });
+
+  // Harm: a move asked from a menu that showed an older state staged from the issue's new state.
+  test('a move chosen from a menu that showed another state than the board holds now is refused', () async {
+    final moved = _fixture();
+    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Done';
+    moved['revision'] = 'moved by a task';
+    backend.changes.add(PlanningSnapshot.from(moved));
+    await Future<void>.delayed(Duration.zero);
+    board.moveIssue('IssueOne', 'Elsewhere', reported: issueOne(), shown: 'Ready');
+    expect(board.pending, isEmpty, reason: 'the menu showed Ready; the issue stands in Done');
+    expect(board.moveProblem, contains('Done'), reason: 'the person reads where the issue stands now');
+  });
+
+  // Harm: an issue worked by an agent put into a working state on a stale copy that says it is worked by hand.
+  test("whether a move may enter a working state is judged on the board's issue, not the page's copy", () async {
+    final copy = PlanIssue.from({'id': 'IssueOne', 'state': 'Ready', 'worker': 'MANUAL'});
+    board.moveIssue('IssueOne', 'Building', reported: copy);
+    expect(board.pending, isEmpty, reason: 'on the board the issue is not worked by hand');
+    expect(board.moveProblem, contains('Building'), reason: 'the person reads which destination was refused');
+  });
+
+  // Harm: a move staged for an issue that left the board while the menu stood open.
+  test('a move for an issue no longer on the board is refused', () async {
+    final shown = issueOne();
+    final gone = _fixture();
+    ((gone['stories'] as List).first['issues'] as List).removeAt(0);
+    gone['revision'] = 'issue gone';
+    backend.changes.add(PlanningSnapshot.from(gone));
+    await Future<void>.delayed(Duration.zero);
+    board.moveIssue('IssueOne', 'Done', reported: shown);
+    expect(board.pending, isEmpty, reason: 'nothing is staged for an issue the board no longer holds');
+    expect(board.moveProblem, isNotNull, reason: 'the person reads why');
+  });
+
+  // Harm: a person cannot take back a draft once a task moved the issue it drafts.
+  test('undo takes a draft back even after the board reports its issue elsewhere', () async {
+    board.moveIssue('IssueOne', 'Done', reported: issueOne());
+    final moved = _fixture();
+    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Elsewhere';
+    moved['revision'] = 'moved by a task';
+    backend.changes.add(PlanningSnapshot.from(moved));
+    await Future<void>.delayed(Duration.zero);
+    board.moveIssue('IssueOne', 'Ready', shown: 'Ready', undo: true);
+    expect(board.pending.keys, isNot(contains('issue IssueOne')), reason: 'the draft is taken back');
+  });
 }

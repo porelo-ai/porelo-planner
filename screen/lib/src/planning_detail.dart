@@ -90,14 +90,13 @@ class PlanningDetail extends ChangeNotifier {
 
   /// Stages one issue in the board's pending batch.
   void queueMove(String id, String to) {
-    if (_disposed || board.disposed || moveUnavailable != null) return;
-    final issue = issues?.issues.where((issue) => issue.id == id).firstOrNull;
-    if (issue == null ||
-        issue.state.isEmpty ||
-        to != issue.state && !moveStatesOf(issue).any((state) => state.name == to)) {
-      return;
+    if (_disposed || board.disposed) return;
+    if (moveUnavailable case final why?) return board.refuseMove(id, why);
+    final shown = issues?.issues.where((issue) => issue.id == id).firstOrNull;
+    if (shown == null) {
+      return board.refuseMove(id, "it is not listed on this story's page.");
     }
-    board.moveIssue(id, to, reported: issue);
+    board.moveIssue(id, to, reported: shown);
   }
 
   /// The planner's words for the last refused worker change, until the next one is asked.

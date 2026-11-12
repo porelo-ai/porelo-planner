@@ -198,6 +198,22 @@ void main() {
     await backend.end();
   });
 
+  // Harm: a story's page stages a move for an issue of another story, which it does not show.
+  test('a story page refuses a move for an issue it does not list', () async {
+    final backend = MockPlanningSource();
+    final board = PlanningBoard(backend, 'demo');
+    await _flush();
+    final detail = PlanningDetail(board, 'ST291', null);
+    await _flush();
+    detail.queueMove('B553', 'Review');
+    expect(detail.pendingMoves, isEmpty, reason: 'B553 belongs to ST292, not to the page shown');
+    expect(board.pending, isEmpty, reason: 'nothing is staged on the board either');
+    expect(detail.moveProblem, contains('B553'), reason: 'the person reads which move was not taken');
+    detail.dispose();
+    board.dispose();
+    await backend.end();
+  });
+
   // Harm: a draft edits sibling states or appears saved before the daemon acknowledgement.
   test('one issue stays pending until its confirmed save is reread', () async {
     final backend = MockPlanningSource();

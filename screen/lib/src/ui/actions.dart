@@ -70,16 +70,18 @@ PlanningAction openPlanningAction(
 );
 
 /// A staged issue change always belongs to the board's reviewed batch.
-PlanningAction movePlanningIssueAction(PlanningBoard board, PlanIssue issue, String to) => PlanningAction(
-  id: 'planning.moveIssue/${board.project}/${issue.id}/$to',
-  label: '${issue.id} → $to',
-  unavailable: board.disposed || !board.live
-      ? 'The planning board is not live.'
-      : board.saving
-      ? 'Planning is saving.'
-      : null,
-  run: () => board.moveIssue(issue.id, to, reported: issue),
-);
+PlanningAction movePlanningIssueAction(PlanningBoard board, PlanIssue issue, String to, {bool undo = false}) =>
+    PlanningAction(
+      id: 'planning.moveIssue/${board.project}/${issue.id}/$to',
+      label: '${issue.id} → $to',
+      unavailable: board.disposed || !board.live
+          ? 'The planning board is not live.'
+          : board.saving
+          ? 'Planning is saving.'
+          : null,
+      // The state shown is the one the list was built with, so a move after a task moved the issue is refused.
+      run: () => board.moveIssue(issue.id, to, shown: issue.state, undo: undo),
+    );
 
 /// Sets a story's priority at once, saved as a move is; the story's current priority is listed but cannot be chosen.
 PlanningAction setPriorityAction(PlanningBoard board, PlanStory story, String priority) => PlanningAction(
@@ -140,7 +142,7 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           host.openLink,
           onError: board.reportActionProblem,
         ),
-        if (board.pendingIssues.containsKey(issue.id)) movePlanningIssueAction(board, issue, issue.state),
+        if (board.pendingIssues.containsKey(issue.id)) movePlanningIssueAction(board, issue, issue.state, undo: true),
         for (final state in board.states.where((state) => PlanningBoard.issueMayEnter(issue, state)))
           movePlanningIssueAction(board, issue, state.name),
       ],

@@ -235,17 +235,18 @@ class PlanningStoryView extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      PopupMenuButton<String>(
+      PopupMenuButton<(String, String, bool)>(
         key: Key('planning-move ${issue.id}'),
         tooltip: _moveUnavailable(issue) ?? 'Change the state of ${issue.id}',
         enabled: _moveUnavailable(issue) == null,
-        onSelected: (to) => movePlanningIssueAction(detail.board, issue, to).run(),
+        // Each item carries the state shown when the menu opened; a rebuild while it stands open changes no item.
+        onSelected: (choice) => detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, undo: choice.$3),
         itemBuilder: (_) => [
           if (detail.pendingMoves.containsKey(issue.id))
-            PopupMenuItem(value: issue.state, child: const Text('Undo this move')),
+            PopupMenuItem(value: (issue.state, issue.state, true), child: const Text('Undo this move')),
           for (final state in detail.moveStatesOf(issue))
             PopupMenuItem(
-              value: state.name,
+              value: (issue.state, state.name, false),
               key: Key('planning-move-to ${issue.id} ${state.name}'),
               child: Text(state.name),
             ),

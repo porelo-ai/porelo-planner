@@ -872,21 +872,37 @@ class PlanningBoard extends ChangeNotifier {
   }
 
   /// Stages one issue without changing its reported state or any sibling.
-  void moveIssue(String id, String to, {PlanIssue? reported}) {
-    if (_disposed || saving || snapshot?.complete != true || !live || snapshot!.revision.isEmpty) return;
-    final issue = reported?.id == id
-        ? reported
-        : stories.expand((story) => story.issues).where((issue) => issue.id == id).firstOrNull;
-    final target = state(to);
-    if (issue == null || issue.state.isEmpty) return;
+  ///
+  /// [shown] is the state the person saw when choosing, or [reported]'s; [undo] takes the issue's draft back.
+  void moveIssue(String id, String to, {PlanIssue? reported, String? shown, bool undo = false}) {
+    if (_disposed) return;
+    if (saving) return refuseMove(id, 'planning is saving; choose again once it is saved.');
     final key = 'issue $id';
-    if (to == issue.state) {
-      undo(key);
-      return;
+    if (undo) return this.undo(key);
+    if (snapshot?.complete != true || !live || snapshot!.revision.isEmpty) {
+      return refuseMove(id, 'the board is not live and complete.');
     }
-    if (!issueMayEnter(issue, target)) return;
+    // Judged on the board's issue: the page's copy may be older or newer in any field.
+    final onBoard = stories.expand((story) => story.issues).where((issue) => issue.id == id).firstOrNull;
+    // Only a board that reports every story's issues can say an issue is gone; otherwise the page's copy stands.
+    final issue = onBoard ?? (stories.every((story) => story.issuesReported) || reported?.id != id ? null : reported);
+    if (issue == null) return refuseMove(id, 'it is no longer on the board.');
+    if (issue.state.isEmpty) return refuseMove(id, 'its state was not reported.');
+    // A menu shows the issue as it stood when it opened; a task may have moved it since.
+    final seen = shown ?? (reported?.id == id ? reported!.state : null);
+    if (seen != null && seen != issue.state) return refuseMove(id, 'it now stands in ${issue.state}; choose again.');
+    final target = state(to);
+    if (to == issue.state) return this.undo(key);
+    if (!issueMayEnter(issue, target)) return refuseMove(id, 'it may not enter $to from ${issue.state}.');
     _pending[key] = PendingPlanningMove(issue.state, to, isIssue: true);
     moveProblem = null;
+    moveNotice = null;
+    _changed();
+  }
+
+  /// Says why a move of issue [id] was not staged, where the board and the story's page show it.
+  void refuseMove(String id, String why) {
+    moveProblem = '$id was not moved: $why';
     moveNotice = null;
     _changed();
   }
