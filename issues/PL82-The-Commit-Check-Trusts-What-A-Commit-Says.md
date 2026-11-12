@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL82",
   "title": "The Commit Check Trusts What A Commit Says",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 1,
@@ -37,36 +37,31 @@ itself; the planner's command and the build tools' `check-commits` stay alike wh
 
 ## Plan
 
-Read in today's code, `planner/store/git/.../stories/CommitRules.java`:
+What was built, in `planner/store/git/.../stories/CommitRules.java`:
 
-1. **No exemption by name for a pull request from outside.** `Commit.exempt()` trusts the recorded author
-   (`EXEMPT_AUTHORS`) and committer (`WEB_COMMITTER`), which whoever writes a commit sets. `check(range, outside)`
-   gives the exemption only when `outside` is false - a push or a pull request from a branch of the repository itself,
-   whose writer already has the right to push; with `outside` every commit is held to every rule, its author's
-   `Signed-off-by:` among them. Red first, unit, `CommitRulesTest`: a commit of author `dependabot[bot]` and one of
-   committer `GitHub`, with a requirement number and no sign-off, checked with `outside`, are refused with exit 1.
-2. **The trailers are read too.** The value of every trailer joins the words searched for a requirement number, and
-   every trailer but `Signed-off-by:` (which names its author by design) the words searched for who asked or made it.
-   `Co-authored-by` leaves `TRAILER`: below the subject it is a line that is not an allowed trailer. Red first, unit:
-   `Assisted-by: PL82` and `Co-authored-by: A <a@example.org>` are each refused.
-3. **The stage rule cannot be switched off by deleting its files.** A commit whose first parent's tree holds
-   `stats/seed.csv` or a `stats/<id>.jsonl` the commit's tree lacks is refused, naming each file it deletes; the seed
-   brought back later then has no passing commit that deleted it. Red first, unit: a commit deleting the seed, and one
-   deleting one stage record alone, are each refused; a commit that changes nothing under `stats/` still passes.
+1. **No exemption by name for a pull request from outside.** With `outside`, every commit is held to every rule,
+   its author's `Signed-off-by:` among them, whatever author or committer it records; without it (a push, or a pull
+   request from the repository itself) the bots' and GitHub's web merges stay exempt, since that writer may push
+   anyway. The *Shared rules check* workflow passes no `--outside` for a pull request whose login is
+   `dependabot[bot]` from the repository itself, as it already did for `github-actions[bot]`: the login is GitHub's
+   word, not the commit's.
+2. **The trailers are read too.** Every trailer's value joins the words searched for a requirement number; every
+   trailer's value but a sign-off by the commit's own author or committer joins those searched for who asked or made
+   it. `Co-authored-by` is no longer an allowed trailer, and a `Signed-off-by:` must give a name and an address.
+3. **The stage rule cannot be switched off by deleting its files.** A commit whose tree lacks `stats/seed.csv` or a
+   `stats/<id>.jsonl` that any of its parents held is refused, naming each file; a merge is compared with every
+   parent, not only its first.
 4. **Forged records.** The planner already counts the commits with `git rev-list --count` and gives no answer when
-   the separators do not add up; a unit test pins it: a message holding a record separator and five field separators
-   exits 2. The build tools' copy is patched by their own agent.
+   the separators do not add up, pinned by `aMessageHoldingGitsSeparatorsIsNoAnswer`.
 
-Tests: unit only, in `CommitRulesTest` over its fake `Git`; each seen red under a break of `CommitRules`. The
-`check-commits` command's own test, `CommitCommandTest`, runs unchanged.
+Tests: unit only, in `CommitRulesTest`, each new one seen red before its code: a bot's or GitHub's recorded name
+exempts nothing from outside; a requirement number in any trailer, the sign-off's address among them (seen red under
+a break of the trailer search); a credit in a trailer and in somebody else's sign-off; `Co-authored-by` and a sign-off
+without an address refused; a deleted seed, a deleted stage record, and a merge dropping its second parent's seed
+refused; a commit leaving `stats/` alone passes. Two older tests used a `Co-authored-by` trailer and a deleted stage
+record as incidental fixtures and were changed to keep their own point.
 
 ## Acceptance
 
-- Each case above refused with its fault line and exit 1 (exit 2 for the forged record), each test seen red first;
-  `check-commits` on this repository's own history since the stage rule's rollout still passes.
-
-## To be checked
-
-- Whether a stage record is ever deleted on purpose (a rejected issue's), and if so, which commit may do it.
-- How the workflows decide `outside`: Dependabot's pull requests come from a branch of the repository itself and
-  must keep their exemption.
+- Each case above refused with its fault line and exit 1, each test seen red first; `check-commits` on main's commits
+  of the last day, as the scheduled check reads them, still passes.

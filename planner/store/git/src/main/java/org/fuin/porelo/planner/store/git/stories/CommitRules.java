@@ -25,14 +25,17 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A subject of one line of at most 72 characters, {@code [skip ci]} counted; below it only a
  * blank line and trailers; no requirement number, since the issue is deleted once it is done; and
- * nobody named as having asked for or made the change, as far as {@link Who} can tell. A commit
- * Dependabot or GitHub's Actions bot authored, or GitHub committed in its web interface, is exempt
- * from these checks: told by the author and committer the commit records, never by what its message
- * says. Other trees' stage records must be closed, and a tree with a seed must hold stats for each
- * issue it adds in a workflow state marked measured, and for each whose state or size it changes
- * while that issue ends in such a state; both are read as {@link #issue} reads them, in the commit
- * and in its first parent, and a parent's version that cannot be read is refused, never taken as
- * unchanged.
+ * nobody named as having asked for or made the change, as far as {@link Who} can tell, in the
+ * subject, the body and every trailer's value. A commit Dependabot or GitHub's Actions bot
+ * authored, or GitHub committed in its web interface, is exempt from these checks on a push or a
+ * pull request from the repository itself, whose writer may push anyway; a pull request from
+ * outside sets the names it records itself, so there no commit is exempt. Other trees' stage
+ * records must be closed, and a tree with a seed must hold stats for each issue it adds in a
+ * workflow state marked measured, and for each whose state or size it changes while that issue ends
+ * in such a state; both are read as {@link #issue} reads them, in the commit and in its first
+ * parent, and a parent's version that cannot be read is refused, never taken as unchanged. A commit
+ * that deletes the seed or a stage record its first parent held is refused, so the rule cannot be
+ * switched off and brought back.
  */
 public final class CommitRules {
 
@@ -60,10 +63,15 @@ public final class CommitRules {
      */
     private static final Pattern TRAILER =
             Pattern.compile(
-                    "^(?:(?:Assisted-by|Signed-off-by|Co-authored-by): \\S.*"
+                    "^(?:Assisted-by: \\S.*"
+                            + "|Signed-off-by: [^<>]+ <[^<>\\s]+>"
                             + "|Porelo-Change-Id: \\S+"
                             + "|Porelo-Signs-Anew: (?!/)(?!(?:.*/)?\\.\\.(?:/|$))[A-Za-z0-9._/-]+)$",
                     Pattern.CASE_INSENSITIVE);
+
+    /** A sign-off's key, in any case, and the name it gives. */
+    private static final Pattern SIGN_OFF_KEY =
+            Pattern.compile("^Signed-off-by: ([^<>]+) <", Pattern.CASE_INSENSITIVE);
 
     /** A sign-off, its key in any case, and the address it names. */
     private static final Pattern SIGN_OFF =
@@ -120,6 +128,11 @@ public final class CommitRules {
          */
         default Optional<String> parent(String hash) throws IOException {
             return Optional.empty();
+        }
+
+        /** Names every parent of a commit, the first first; none for a root. */
+        default List<String> parents(String hash) throws IOException {
+            return parent(hash).map(List::of).orElse(List.of());
         }
 
         /** Reads a file from that commit, never from the working tree. */
@@ -211,6 +224,19 @@ public final class CommitRules {
                                     .strip()
                                     .split("\\s+");
                     return ancestry.length > 1 ? Optional.of(ancestry[1]) : Optional.empty();
+                }
+
+                /** Names every parent of that commit. */
+                @Override
+                public List<String> parents(String hash) throws IOException {
+                    final String[] ancestry =
+                            execute(
+                                            directory,
+                                            environment,
+                                            List.of("rev-list", "--parents", "-n", "1", hash, "--"))
+                                    .strip()
+                                    .split("\\s+");
+                    return List.of(ancestry).subList(1, ancestry.length);
                 }
 
                 /** Reads a file from that commit's tree. */
@@ -469,7 +495,7 @@ public final class CommitRules {
         int breaking = 0;
         boolean rolloutNote = false;
         for (final Commit commit : commits) {
-            if (commit.exempt()) {
+            if (!outside && commit.exempt()) {
                 exempt++;
                 continue;
             }
@@ -482,7 +508,8 @@ public final class CommitRules {
                                     + " rolled out there");
                     rolloutNote = true;
                 }
-                broken = stageFaults(commit.hash(), files);
+                broken = deleted(commit.hash(), files);
+                broken.addAll(stageFaults(commit.hash(), files));
             } catch (IOException | IllegalArgumentException ex) {
                 err.println(commit.hash() + "  could not check stage records: " + ex.getMessage());
                 return UNANSWERED;
@@ -530,6 +557,33 @@ public final class CommitRules {
                         + range
                         + ": commit messages and stage records must follow the shared rules");
         return REFUSED;
+    }
+
+    /** Names each stage file a parent of the commit held and the commit's own tree lacks. */
+    private List<String> deleted(String hash, Set<String> files) throws IOException {
+        final Set<String> gone = new java.util.TreeSet<>();
+        for (final String path : git.changed(hash)) {
+            if (stage(path) && !files.contains(path)) {
+                gone.add(path);
+            }
+        }
+        // A merge's tree may drop what only a later parent held, which the first-parent diff
+        // misses.
+        final List<String> parents = git.parents(hash);
+        for (final String parent : parents.subList(Math.min(1, parents.size()), parents.size())) {
+            for (final String path : git.files(parent)) {
+                if (stage(path) && !files.contains(path)) {
+                    gone.add(path);
+                }
+            }
+        }
+        final List<String> faults = new ArrayList<>();
+        gone.forEach(path -> faults.add("deletes " + path + ", which the stage rule reads"));
+        return faults;
+    }
+
+    private static boolean stage(String path) {
+        return path.equals("stats/seed.csv") || path.matches("stats/[^/]+\\.jsonl");
     }
 
     private List<String> stageFaults(String hash, Set<String> files) throws IOException {
@@ -653,19 +707,26 @@ public final class CommitRules {
             faults.add("the subject is not followed by a blank line");
         }
         final StringBuilder words = new StringBuilder(subject);
+        final StringBuilder numbered = new StringBuilder(subject);
         final List<String> trailers = new ArrayList<>();
         final int first = lines.length > 1 && lines[1].isEmpty() ? 2 : 1;
         for (int i = first; i < lines.length; i++) {
             if (TRAILER.matcher(lines[i]).matches()) {
                 trailers.add(lines[i]);
+                final String value = lines[i].substring(lines[i].indexOf(':') + 1);
+                numbered.append('\n').append(value);
+                if (!ownSignOff(lines[i], commit)) {
+                    words.append('\n').append(value);
+                }
             } else {
                 faults.add(
                         "below the subject, a line that is not a trailer: "
                                 + (lines[i].isBlank() ? "(a blank line)" : lines[i]));
                 words.append('\n').append(lines[i]);
+                numbered.append('\n').append(lines[i]);
             }
         }
-        final Matcher number = NUMBER.matcher(words);
+        final Matcher number = NUMBER.matcher(numbered);
         while (number.find()) {
             if (known.contains(number.group(1))) {
                 faults.add("names a requirement number: " + number.group());
@@ -680,6 +741,17 @@ public final class CommitRules {
                             + ">, which a pull request from outside carries on every commit");
         }
         return faults;
+    }
+
+    /** A sign-off names its author or committer by design; any other name is read as words. */
+    private static boolean ownSignOff(String trailer, Commit commit) {
+        final Matcher signOff = SIGN_OFF_KEY.matcher(trailer);
+        if (!signOff.lookingAt()) {
+            return false;
+        }
+        final String name = signOff.group(1).strip();
+        return name.equalsIgnoreCase(commit.author().strip())
+                || name.equalsIgnoreCase(commit.committer().strip());
     }
 
     private static boolean signedOffByAuthor(List<String> trailers, String mail) {

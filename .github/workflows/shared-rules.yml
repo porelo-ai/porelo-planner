@@ -60,7 +60,8 @@ jobs:
                   outside=--outside
                   if [ "$PR_REPOSITORY" = "$GITHUB_REPOSITORY" ]; then
                       case "$PR_ASSOCIATION" in OWNER | MEMBER) outside= ;; esac
-                      if [ "$PR_AUTHOR" = 'github-actions[bot]' ]; then
+                      # The pull request's login is GitHub's word; with --outside no commit is exempt by the names it records.
+                      if [ "$PR_AUTHOR" = 'github-actions[bot]' ] || [ "$PR_AUTHOR" = 'dependabot[bot]' ]; then
                           outside=
                       fi
                       if [ "$PR_SERVER" != 'https://github.com' ]; then

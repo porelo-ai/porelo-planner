@@ -130,7 +130,7 @@ class CommitRulesTest {
         commit(
                 "a000011",
                 "Give every rented machine a host key made per run\n\n"
-                        + "Co-authored-by: Jane Doe <jane@example.org>\n"
+                        + "Signed-off-by: Alice Example <alice@example.org>\n"
                         + AGENT);
 
         assertThat(check()).as(stderr()).isEqualTo(0);
@@ -139,11 +139,10 @@ class CommitRulesTest {
 
     @Test
     void readsATrailersKeyInAnyCaseAsGitDoes() {
-        // Claude Code writes "Co-Authored-By", and git takes trailer keys in any case.
         commit(
                 "a000090",
                 "Give every rented machine a host key made per run\n\n"
-                        + "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
+                        + "Signed-Off-By: Alice Example <alice@example.org>\n"
                         + "assisted-by: Claude Code, claude-opus-5-5");
 
         assertThat(check()).as(stderr()).isEqualTo(0);
@@ -381,17 +380,81 @@ class CommitRulesTest {
         assertThat(checkOutside()).as(stderr()).isEqualTo(0);
     }
 
-    @Test
-    void exemptsDependabotFromTheSignOffOfAPullRequestFromOutside() {
+    // Prevents a pull request from a fork from skipping every rule under a bot's recorded name.
+    @ParameterizedTest
+    @ValueSource(strings = {"dependabot[bot]", "github-actions[bot]", "web"})
+    void exemptsNoCommitOfAPullRequestFromOutsideByItsRecordedName(String name) {
         commit(
                 "a000022",
-                "dependabot[bot]",
-                "49699333+dependabot[bot]@users.noreply.github.com",
-                "dependabot[bot]",
-                "49699333+dependabot[bot]@users.noreply.github.com",
-                "Bump actions/checkout");
+                name.equals("web") ? HUMAN : name,
+                HUMAN_MAIL,
+                name.equals("web") ? "GitHub" : name,
+                "noreply@github.com",
+                "Bump actions/checkout and close SL27");
 
-        assertThat(checkOutside()).as(stderr()).isEqualTo(0);
+        assertThat(checkOutside()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr())
+                .as("every rule holds for a commit from outside, whoever it names as its author")
+                .contains("a000022  names a requirement number: SL27")
+                .contains("a000022  no Signed-off-by: naming its author <" + HUMAN_MAIL + ">");
+        assertThat(stdout()).as("nothing passed").doesNotContain("OK");
+    }
+
+    // Prevents a requirement number or a credit from hiding in a trailer's value.
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Assisted-by: SL27",
+                "Porelo-Change-Id: SL27",
+                "Porelo-Signs-Anew: issues/SL27-Sample.md",
+                "Signed-off-by: Alice Example <alice+SL27@example.org>"
+            })
+    void refusesARequirementNumberInATrailer(String trailer) {
+        commit("a000025", "Read the pins once\n\n" + trailer);
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("a000025  names a requirement number: SL27");
+    }
+
+    @Test
+    void refusesWhoMadeTheChangeNamedInATrailer() {
+        commit("a000026", "Read the pins once\n\nAssisted-by: Agent Core");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("a000026  says who:");
+    }
+
+    // Prevents a sign-off of somebody else from carrying a credit past the check.
+    @Test
+    void refusesWhoMadeTheChangeNamedInAnothersSignOff() {
+        commit(
+                "a000028",
+                "Read the pins once\n\nSigned-off-by: Agent Core, as the operator chose"
+                        + " <core@example.org>");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("a000028  says who:");
+    }
+
+    @Test
+    void refusesASignOffWithoutAnAddress() {
+        commit("a000029", "Read the pins once\n\nSigned-off-by: as the lead chose");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr())
+                .contains(
+                        "a000029  below the subject, a line that is not a trailer: Signed-off-by:");
+    }
+
+    // Prevents a credit the shared rules forbid an agent from passing as a trailer.
+    @Test
+    void refusesACoAuthoredByTrailer() {
+        commit("a000027", "Read the pins once\n\nCo-authored-by: Jane Doe <jane@example.org>");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr())
+                .contains(
+                        "a000027  below the subject, a line that is not a trailer: Co-authored-by:");
     }
 
     @Test
@@ -815,15 +878,13 @@ class CommitRulesTest {
         write("issues/workflow.yml", Files.readString(Path.of("src/test/resources/workflow.yml")));
         write("stats/seed.csv", "size,minutes\nM,53\n");
         write("issues/core/EX12-Sample.md", "**Status:** Implementing.\n**Size:** M - sample.\n");
-        write("stats/EX12.jsonl", CommitFixtures.closed("EX12"));
         git("add", "issues", "stats");
         git("commit", "-q", "-m", "Describe work");
-        git("rm", "-q", "stats/EX12.jsonl");
         write("issues/core/EX12.sub/builder.md", "Builds it.\n");
         git("add", "issues");
         git("commit", "-q", "-m", "Brief the builder");
 
-        assertThat(checkRepository()).as(stderr()).isZero();
+        assertThat(checkLast()).as(stderr()).isZero();
     }
 
     // Moving an issue's lines into a head touches every issue file, older ones without stats too.
@@ -952,6 +1013,72 @@ class CommitRulesTest {
                         defect.equals("unreadable")
                                 ? "which cannot be read"
                                 : "which is no valid issue");
+    }
+
+    // Prevents a commit from switching the stage rule off by deleting the seed it keys on.
+    @Test
+    void refusesACommitThatDeletesTheSeed() throws Exception {
+        commitIssueWithoutStats(head("Backlog", "M"));
+        git("rm", "-q", "stats/seed.csv");
+        git("commit", "-q", "-m", "Drop the estimates");
+
+        assertThat(checkLast()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("deletes stats/seed.csv");
+    }
+
+    // Prevents an issue's measured stages from going missing without a word.
+    @Test
+    void refusesACommitThatDeletesAStageRecord() throws Exception {
+        git("init", "-q", "-b", "main");
+        final String workflow = Files.readString(Path.of("src/test/resources/workflow.yml"));
+        write("issues/workflow.yml", workflow);
+        write("stats/seed.csv", "size,minutes\nM,53\n");
+        write("issues/EX12-Sample.md", head("Review", "M"));
+        write(
+                "stats/EX12.jsonl",
+                StageRecords.move(
+                        null,
+                        "EX12",
+                        "M",
+                        "Backlog",
+                        "Review",
+                        java.time.Instant.parse("2026-01-01T10:00:00Z"),
+                        Workflow.read(workflow)));
+        git("add", "issues", "stats");
+        git("commit", "-q", "-m", "Describe work");
+        git("rm", "-q", "stats/EX12.jsonl");
+        git("commit", "-q", "-m", "Tidy the records");
+
+        assertThat(checkLast()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("deletes stats/EX12.jsonl");
+    }
+
+    // Prevents a merge from dropping what its second parent's tree held.
+    @Test
+    void refusesAMergeThatDropsAStageRecordOfItsSecondParent() throws Exception {
+        git("init", "-q", "-b", "main");
+        write("issues/workflow.yml", Files.readString(Path.of("src/test/resources/workflow.yml")));
+        git("add", "issues");
+        git("commit", "-q", "-m", "Describe work");
+        git("branch", "side");
+        write("stats/seed.csv", "size,minutes\nM,53\n");
+        git("add", "stats");
+        git("commit", "-q", "-m", "Seed estimates");
+        git("checkout", "-q", "side");
+        git("merge", "-q", "-s", "ours", "main", "-m", "Merge main");
+
+        assertThat(checkLast()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr()).contains("deletes stats/seed.csv");
+    }
+
+    @Test
+    void passesACommitThatLeavesTheStageRecordsAlone() throws Exception {
+        commitIssueWithoutStats(head("Backlog", "M"));
+        write("notes.txt", "a note\n");
+        git("add", "notes.txt");
+        git("commit", "-q", "-m", "Add a note");
+
+        assertThat(checkLast()).as(stderr()).isZero();
     }
 
     @Test

@@ -1,0 +1,2 @@
+title: The commit check exempts no commit of a pull request from outside by the names it records, reads every trailer's value for issue numbers and credits, refuses `Co-authored-by:`, and refuses a commit that deletes the seed or a stage record.
+type: security

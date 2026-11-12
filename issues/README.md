@@ -51,12 +51,6 @@ left out.
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl82"></a>[PL82](PL82-The-Commit-Check-Trusts-What-A-Commit-Says.md) | S | - | The commit check gives no exemption, no trailer and no switch-off of the stage rule to whoever writes a commit, in the planner and in the build tools alike |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -71,6 +65,7 @@ left out.
 | <a id="pl73"></a>[PL73](PL73-A-Storys-Priority-Changed-On-The-Board.md) | M | - | A person changes a story's priority - Highest, High, Medium, Low or Lowest - on its page and from its card's menu, saved like a move in one commit with the stories index, and the board re-sorts by it |
 | <a id="pl74"></a>[PL74](PL74-A-Disabled-Action-Names-The-Run-And-Leads-There.md) | M | - | An action the board offers but cannot do now, such as Start work on a story whose run needs attention, names that run and what needs attention, and leads there in one step |
 | <a id="pl81"></a>[PL81](PL81-The-Push-Check-And-Stage-Commands-In-The-Planner.md) | L | [PL60](README.md#pl60) | The checks of the pushes to main and the agents' stage commands are given by the planner's command line, `check-pushes` and `stage`, with the build tools' rules, fault lines and exit codes, so the build tools hold none of the work format |
+| <a id="pl82"></a>[PL82](PL82-The-Commit-Check-Trusts-What-A-Commit-Says.md) | S | - | The commit check gives no exemption, no trailer and no switch-off of the stage rule to whoever writes a commit, in the planner and in the build tools alike |
 | <a id="pl50"></a>[PL50](PL50-Needs-You-Only-For-What-A-Person-Must-Do.md) | M | [PL64](README.md#pl64) | The planner marks an issue as needing the person only from its run, naming the run's reason; an issue in a working state with no run of this planner is shown as such, not raised; a person can put a raised issue away until it changes |
 | <a id="pl54"></a>[PL54](PL54-The-Planner-Keeps-A-Log-Beside-The-Windows.md) | M | - | The planner writes what it does and what only informs - its start and address, each store read and the faults it left out, each save, each task's start and end - to a log file of bounded size beside the window's log, at the level a person chose, never with a credential in it |
 | <a id="pl55"></a>[PL55](PL55-The-Window-Sets-The-Planners-Log-Level.md) | M | [PL54](README.md#pl54) | The window sets the planner's log level - ERROR, WARN, INFO or DEBUG, INFO by default - through the planner's REST API, and a level set there holds from the next start too |
