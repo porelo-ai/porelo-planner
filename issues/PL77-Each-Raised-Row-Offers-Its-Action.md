@@ -29,7 +29,7 @@ Today's code stands in the way, read in it:
 - `StoryWorkAttentionView` has no start hooks (start task, agents, machines), so a row cannot open the Start dialog;
   "move on" and "go to Review" could only stage a move the person still saves.
 
-## Proposed rules
+## Rules
 
 1. **A Start from a raised row passes over the reason it answers, and only that.** The row of
    `NEXT_STEP_UNAVAILABLE`, `SAVE_REFUSED` or `STOPPED` offers Start again; the Start names the issue, the reason and
@@ -50,6 +50,3 @@ Today's code stands in the way, read in it:
    and says why. "Move on" (after `STOPPED`) and "Go to Review" (after `INVALID_FINDINGS`) stage the move on the
    board and open the story with its Save, which the person still presses.
 
-## Open questions
-
-- Do the four proposed rules hold as written?

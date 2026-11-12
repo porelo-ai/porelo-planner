@@ -19,14 +19,9 @@ against the sha256 published beside it and runs `porelo-planner issues check iss
 is published as a library.
 
 The command line stands in the executable: `issues index|check` and `stories index|check|cut`, with the build tools'
-output and exit codes. Missing is its place: no Artifactory repository holds a file of the planner today (the
-generic ones are the host's, the window's for Windows, the IntelliJ plugin's and a test repository).
+output and exit codes. Its place is the generic Artifactory repository `files`, readable without credentials:
+`files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`, releases only, uploaded with its SHA-1 and
+SHA-256, which a CI step pins together with the version; no snapshot clean-up reads that repository.
 
-- The Build of a push to main publishes the executable on its own, with its sha256 beside it, to the same channel and
-  under the same version as the packages.
+- The Build of a release publishes the executable there; the publishing token may write to `files`.
 - This repository's own hand-over checks `issues index` and `issues check` run with the downloaded executable.
-
-## To be checked
-
-- The Artifactory repository the operator creates or names for it, and its path and published name, agreed in the
-  channel with the build tools' agent, since every repository's workflow downloads it.
