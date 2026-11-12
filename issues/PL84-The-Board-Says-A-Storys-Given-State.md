@@ -5,10 +5,10 @@
   "$schema": "issue-1.json",
   "id": "PL84",
   "title": "The Board Says A Story's Given State",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "M",
   "priority": "Medium",
-  "rank": 1,
+  "rank": 29,
   "blockedBy": [],
   "covers": "The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both"
 }

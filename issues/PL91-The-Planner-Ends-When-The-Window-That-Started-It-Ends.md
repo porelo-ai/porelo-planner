@@ -5,10 +5,10 @@
   "$schema": "issue-1.json",
   "id": "PL91",
   "title": "The Planner Ends When The Window That Started It Ends",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "S",
   "priority": "High",
-  "rank": 1,
+  "rank": 32,
   "blockedBy": [],
   "covers": "A planner the window started ends by itself when the window's end of the pipe it was started with closes, a hard kill of the window included, so no planner of an older install keeps running beside a newer window"
 }
