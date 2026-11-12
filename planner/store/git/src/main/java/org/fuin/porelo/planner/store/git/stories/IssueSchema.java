@@ -14,7 +14,7 @@ final class IssueSchema {
     static final String ID = "^[A-Z]{1,3}[0-9]{2,3}(\\.[1-9][0-9]{0,2})?$";
     static final String PARENT = "^[A-Z]{1,3}[0-9]{2,3}$";
     static final String WAIT =
-            "^(porelo(-[a-z0-9]+)*(\\.github\\.io)?#)?[A-Z]{1,3}[0-9]{2,3}(\\.[1-9][0-9]{0,2})?$";
+            "^([a-z0-9][a-z0-9._-]{0,99}#)?[A-Z]{1,3}[0-9]{2,3}(\\.[1-9][0-9]{0,2})?$";
     static final List<String> PRIORITIES = List.of("Highest", "High", "Medium", "Low", "Lowest");
     static final List<String> WORKERS = List.of("Agent", "Manual");
     static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL", "-");

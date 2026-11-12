@@ -55,6 +55,7 @@ class IssueSchemaTest {
                         "{\"blockedBy\": []}",
                         "{\"blockedBy\": [\"BT56.1\", \"B559\"]}",
                         "{\"blockedBy\": [\"porelo#B539\", \"porelo-frontend#F12.1\"]}",
+                        "{\"blockedBy\": [\"foo-1#TP01\", \"foo-2#TQ01.1\"]}",
                         "{\"id\": \"BT56.1\", \"parent\": \"BT56\", \"role\": \"builder\"}",
                         "{\"severity\": \"Major\", \"kind\": \"Bug\", \"openQuestions\": 0}",
                         "{\"worker\": \"Agent\"}",
@@ -103,6 +104,7 @@ class IssueSchemaTest {
                         "{\"blockedBy\": [\"BT46\", \"BT46\"]}",
                         "{\"blockedBy\": [\"Porelo#B12\"]}",
                         "{\"blockedBy\": [\"porelo#\"]}",
+                        "{\"blockedBy\": [\"foo/1#TP01\"]}",
                         "{\"role\": \"writer\"}",
                         "{\"severity\": \"High\"}",
                         "{\"kind\": \"Story\"}",
@@ -119,8 +121,8 @@ class IssueSchemaTest {
         }
         for (final String faulty : List.of("null", "[]", "42", "{}"))
             bad.add(JSON.readTree(faulty));
-        assertThat(good).as("the valid reference set").hasSize(15);
-        assertThat(bad).as("the faulty reference set").hasSize(9 * 7 - 1 + 26 + 4);
+        assertThat(good).as("the valid reference set").hasSize(16);
+        assertThat(bad).as("the faulty reference set").hasSize(9 * 7 - 1 + 27 + 4);
 
         for (final JsonNode head : good) {
             assertThat(schema.validate(head)).as("the schema takes %s", head).isEmpty();
