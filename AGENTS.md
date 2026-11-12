@@ -28,6 +28,8 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
 - **A changelog entry is one YAML file under `changelog/unreleased/`** with a one-sentence `title` and a `type`.
 - **The tests tagged `documents` run alone with `./mvnw -B -s settings.xml -Pdocuments test`.**
 - **Issue prefix: `PL`**, in `issues/`.
+- **`tool/planner-probe.sh` is bash, not Java**: it reads a real run's effects on a VM beside the native
+  executable, where there is no Java.
 - **Skills used:** `spring-boot-patterns`, `graal`, `api-contract-review`.
 
 ## Shared across the Porelo repositories
