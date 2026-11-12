@@ -129,8 +129,10 @@ class NextStepTest {
     }
 
     @Test
-    void aReadersOrderNamesTheTaskWhoseWorkItReadsAndItsBranch() {
-        // A reader not told whose work to read takes its order for a build and pushes work unread.
+    void aReadersOrderNamesTheTaskWhoseWorkItReadsAndNoBranchItCannotKnow() {
+        // A reader not told whose work to read takes its order for a build and pushes work unread;
+        // one sent to a
+        // branch the planner guessed waits for work that never appears there.
         final Board board = board("Building", "Finished");
         final NextStep.Result next =
                 NextStep.after(
@@ -141,11 +143,14 @@ class NextStepTest {
                         "",
                         states -> states.getFirst(),
                         "foo-1-2");
-        assertThat(next.tasks().getFirst().task().prompt())
-                .as("the order's {tasks} names the ended builder and the branch of its work")
-                .contains(
-                        "Work ST1: ",
-                        "; Porelo task foo-1-2, its work on the branch porelo/foo-1-2");
+        final String prompt = next.tasks().getFirst().task().prompt();
+        assertThat(prompt)
+                .as("the order's {tasks} names the ended builder")
+                .contains("Work ST1: ", "; the work of Porelo task foo-1-2");
+        assertThat(prompt)
+                .as(
+                        "Porelo names a task's branch by the project's scheme, which the planner does not know")
+                .doesNotContain("porelo/");
     }
 
     @Test

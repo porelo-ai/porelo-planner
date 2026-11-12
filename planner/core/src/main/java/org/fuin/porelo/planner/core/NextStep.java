@@ -426,14 +426,14 @@ public final class NextStep {
     }
 
     /**
-     * Names the task whose work a reader reads, and the branch Porelo gives that work, so the
-     * reader does not take its order for a build.
+     * Names the task whose work a reader reads, so the reader does not take its order for a build;
+     * not its branch, which Porelo names by the project's branch scheme.
      */
     static String builtBy(final String task) {
         if (task.isEmpty()) {
             throw new IllegalArgumentException("No task built the work to read");
         }
-        return "Porelo task " + task + ", its work on the branch porelo/" + task;
+        return "the work of Porelo task " + task;
     }
 
     /** Fences untrusted words with a delimiter they cannot close. */
