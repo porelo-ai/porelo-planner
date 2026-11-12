@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL102",
   "title": "The Executable Published On Every Push",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 30,
