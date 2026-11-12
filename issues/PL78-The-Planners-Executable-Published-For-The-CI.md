@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL78",
   "title": "The Planner's Executable Published For The CI",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 26,
