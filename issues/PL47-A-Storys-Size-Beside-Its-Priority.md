@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL47",
   "title": "A Story's Size Beside Its Priority",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 30,
@@ -32,14 +32,16 @@ size is its own, given when it is estimated, not added up from its issues.
   near line 1497), `Answers.Story`/`StoryDetail`, `BoardController.story` and OpenAPI `Story` have no size.
 - **The head.** An optional `size` in the story head, one of `XS`, `S`, `M`, `L`, `XL`; a story without one omits it.
   It is added to `story-2.json` and to `StorySchema` together, as an optional field (no new schema version: every
-  head valid today stays valid). It is not derived from the issues: sizes do not add up, and an estimate of the whole
-  says what the parts do not. The planner only reads it; whoever estimates the story writes it into the file, as the
-  other head fields.
+  head valid today stays valid); a `story-1.json` head, which names no `$schema`, still refuses it. It is not
+  derived from the issues: sizes do not add up, and an estimate of the whole says what the parts do not. The
+  planner only reads it; whoever estimates the story writes it into the file, as the other head fields. The other
+  stories index takes the same optional field in a change of its own; no story carries a size until it has.
 - **Through the layers.** `stories.Story.read` reads it; the store's `Story` gets `@Nullable String size`; `GitStore`
   passes it; `Answers.Story` and `StoryDetail` carry it beside `priority`; OpenAPI `Story` gets
   `size: [string, 'null']`, required as on `Issue`, `null` when the head has none. The mock board
   (`mock/board.json`, read with `FAIL_ON_MISSING_CREATOR_PROPERTIES` by `MockStore`) gets a `size` on every story,
-  a few of them set, so the window's tests see both.
+  a few of them set, so the window's tests see both; a mock move keeps it, and the screen's recorded copies of the
+  mock's answers (`screen/test/served/mock`) are recorded again with it.
 - **Not here.** The badge on the story card and the issue row is the screen package's, built in
   [PL48](README.md#pl48); `PlanStory.from` in `screen/lib/src/models.dart` reads by key and ignores the new member
   until then.
@@ -52,14 +54,12 @@ size is its own, given when it is estimated, not added up from its issues.
   - Integration, app: `BoardReadsTest` answers `size` M and `null`; `ApiMatchesDescriptionTest` holds the answer to
     the description. Harm: the window reading a field the contract does not name.
 
+- **The code reading's findings (Sonnet).** Nothing grave. Taken: a test that a story-1 head with a size is refused
+  by both checks, seen red with the story-1 refusal removed. Not taken: a malformed size end to end through the store
+  for every bad value, which the schema test already covers for both checks.
+
 ## Acceptance
 
 - A story's size from its head is in the board's answer and in the story's own answer; a story without one is
   answered with `null`; a head with a size outside XS to XL is refused by both checks, named in the store's faults.
 - The suite and the documents' checks pass; the schema test was seen red with `size` taken out of `StorySchema`.
-
-## To be checked
-
-- Whether the stories index another repository runs over the project's stories checks heads against its own copy of
-  `story-2.json`; if so, the optional `size` is agreed in the channel and accepted there before any story carries
-  one, since a head with it would be refused.

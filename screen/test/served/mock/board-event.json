@@ -146,6 +146,7 @@
     "state" : "In analysis",
     "stateGiven" : false,
     "priority" : "High",
+    "size" : "L",
     "link" : "https://example.org/stories/ST294",
     "issues" : [ ],
     "work" : null
@@ -155,6 +156,7 @@
     "state" : "Under estimation",
     "stateGiven" : false,
     "priority" : "Medium",
+    "size" : null,
     "link" : "https://example.org/stories/ST72",
     "issues" : [ {
       "id" : "PJ74",
@@ -254,6 +256,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : "M",
     "link" : "https://example.org/stories/ST21",
     "issues" : [ ],
     "work" : null
@@ -263,6 +266,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : "XL",
     "link" : "https://example.org/stories/ST11",
     "issues" : [ ],
     "work" : null
@@ -272,6 +276,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST13",
     "issues" : [ ],
     "work" : null
@@ -281,6 +286,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST28",
     "issues" : [ ],
     "work" : null
@@ -290,6 +296,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Medium",
+    "size" : null,
     "link" : "https://example.org/stories/ST87",
     "issues" : [ ],
     "work" : null
@@ -299,6 +306,7 @@
     "state" : "Idea",
     "stateGiven" : false,
     "priority" : "Low",
+    "size" : null,
     "link" : "https://example.org/stories/ST182",
     "issues" : [ ],
     "work" : null
@@ -308,6 +316,7 @@
     "state" : "Accepted",
     "stateGiven" : false,
     "priority" : "Medium",
+    "size" : null,
     "link" : "https://example.org/stories/ST114",
     "issues" : [ ],
     "work" : null
@@ -317,6 +326,7 @@
     "state" : "Accepted",
     "stateGiven" : false,
     "priority" : "Medium",
+    "size" : null,
     "link" : "https://example.org/stories/ST111",
     "issues" : [ ],
     "work" : null
@@ -326,6 +336,7 @@
     "state" : "Accepted",
     "stateGiven" : false,
     "priority" : "Low",
+    "size" : null,
     "link" : "https://example.org/stories/ST144",
     "issues" : [ ],
     "work" : null
@@ -335,6 +346,7 @@
     "state" : "Analyzed",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : "S",
     "link" : "https://example.org/stories/ST14",
     "issues" : [ {
       "id" : "PJ58",
@@ -359,6 +371,7 @@
     "state" : "Analyzed",
     "stateGiven" : false,
     "priority" : "High",
+    "size" : "XS",
     "link" : "https://example.org/stories/ST39",
     "issues" : [ ],
     "work" : null
@@ -368,6 +381,7 @@
     "state" : "Analyzed",
     "stateGiven" : false,
     "priority" : "High",
+    "size" : null,
     "link" : "https://example.org/stories/ST35",
     "issues" : [ ],
     "work" : null
@@ -377,6 +391,7 @@
     "state" : "Estimated",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST15",
     "issues" : [ {
       "id" : "SI05",
@@ -401,6 +416,7 @@
     "state" : "Estimated",
     "stateGiven" : false,
     "priority" : "Medium",
+    "size" : null,
     "link" : "https://example.org/stories/ST106",
     "issues" : [ ],
     "work" : null
@@ -410,6 +426,7 @@
     "state" : "Estimated",
     "stateGiven" : false,
     "priority" : "Low",
+    "size" : null,
     "link" : "https://example.org/stories/ST198",
     "issues" : [ ],
     "work" : null
@@ -419,6 +436,7 @@
     "state" : "Backlog",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST291",
     "issues" : [ {
       "id" : "B540",
@@ -668,6 +686,7 @@
     "state" : "Backlog",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST292",
     "issues" : [ {
       "id" : "B553",
@@ -797,6 +816,7 @@
     "state" : "Backlog",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST293",
     "issues" : [ ],
     "work" : null
@@ -806,6 +826,7 @@
     "state" : "Backlog",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST23",
     "issues" : [ {
       "id" : "MX24",
@@ -890,6 +911,7 @@
     "state" : "Backlog",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : "M",
     "link" : "https://example.org/stories/ST6",
     "issues" : [ ],
     "work" : null
@@ -899,6 +921,7 @@
     "state" : "Implementing",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST27",
     "issues" : [ {
       "id" : "IJ14",
@@ -923,6 +946,7 @@
     "state" : "Implementing",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST12",
     "issues" : [ {
       "id" : "BT35",
@@ -1037,6 +1061,7 @@
     "state" : "Implementing",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST5",
     "issues" : [ {
       "id" : "PI43",
@@ -1136,6 +1161,7 @@
     "state" : "Implementing",
     "stateGiven" : false,
     "priority" : "Low",
+    "size" : null,
     "link" : "https://example.org/stories/ST193",
     "issues" : [ {
       "id" : "PJ106",
@@ -1160,6 +1186,7 @@
     "state" : "Implementing",
     "stateGiven" : false,
     "priority" : "Low",
+    "size" : null,
     "link" : "https://example.org/stories/ST127",
     "issues" : [ ],
     "work" : null
@@ -1169,6 +1196,7 @@
     "state" : "Review",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST1",
     "issues" : [ {
       "id" : "BT42",
@@ -1283,6 +1311,7 @@
     "state" : "Review",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST2",
     "issues" : [ {
       "id" : "SL35",
@@ -1307,6 +1336,7 @@
     "state" : "Review",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST3",
     "issues" : [ {
       "id" : "B306",
@@ -1331,6 +1361,7 @@
     "state" : "Review",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST10",
     "issues" : [ {
       "id" : "HO12",
@@ -1385,6 +1416,7 @@
     "state" : "Finished",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST264",
     "issues" : [ ],
     "work" : null
@@ -1394,6 +1426,7 @@
     "state" : "Finished",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST268",
     "issues" : [ ],
     "work" : null
@@ -1403,6 +1436,7 @@
     "state" : "Finished",
     "stateGiven" : false,
     "priority" : "Highest",
+    "size" : null,
     "link" : "https://example.org/stories/ST243",
     "issues" : [ {
       "id" : "PJ62",

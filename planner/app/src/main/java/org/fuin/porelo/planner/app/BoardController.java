@@ -525,6 +525,7 @@ public class BoardController {
                         story.state(),
                         story.stateGiven(),
                         story.priority(),
+                        story.size(),
                         link(story.link()),
                         issues(board, story, snapshot),
                         WorkAnswers.work(board, snapshot.runs().get(checked)),
@@ -868,6 +869,7 @@ public class BoardController {
                 story.state(),
                 story.stateGiven(),
                 story.priority(),
+                story.size(),
                 link(story.link()),
                 issues(board, story, snapshot),
                 WorkAnswers.work(board, snapshot.runs().get(story.id())));

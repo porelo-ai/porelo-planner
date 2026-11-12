@@ -79,6 +79,7 @@ class BoardReadsTest {
                                 "Review",
                                 true,
                                 "High",
+                                "M",
                                 List.of("AB01"),
                                 "The story's text.",
                                 URI.create("https://example.org/ST1")),
@@ -88,6 +89,7 @@ class BoardReadsTest {
                                 "Backlog",
                                 false,
                                 "Low",
+                                null,
                                 List.of("AB01.1", "AB01"),
                                 "Another text.",
                                 null)),
@@ -203,7 +205,8 @@ class BoardReadsTest {
 
     @Test
     void theStoriesCarryTheirIssuesAndWhetherTheirStateWasGivenButNoDescription() throws Exception {
-        // A story whose state was given by hand must not be moved by its issues' states.
+        // A story whose state was given by hand must not be moved by its issues' states; a story's
+        // size must reach the window as its head gives it, and as null without one.
         given();
         mvc.perform(get("/projects/alpha/stories"))
                 .andExpect(status().isOk())
@@ -213,6 +216,9 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.stories[0].description").doesNotExist())
                 .andExpect(jsonPath("$.stories[0].work").isEmpty())
                 .andExpect(jsonPath("$.stories[0]", org.hamcrest.Matchers.hasKey("work")))
+                .andExpect(jsonPath("$.stories[0].size").value("M"))
+                .andExpect(jsonPath("$.stories[1].size").isEmpty())
+                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("size")))
                 .andExpect(jsonPath("$.stories[1].stateGiven").value(false))
                 .andExpect(jsonPath("$.stories[1].issues[0].id").value("AB01.1"))
                 .andExpect(jsonPath("$.stories[1].issues[1].id").value("AB01"));
@@ -228,6 +234,7 @@ class BoardReadsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("porelo-store@c1"))
                 .andExpect(jsonPath("$.story.description").value("The story's text."))
+                .andExpect(jsonPath("$.story.size").value("M"))
                 .andExpect(jsonPath("$.story.issues[0].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories/ST2/issues"))
                 .andExpect(status().isOk())

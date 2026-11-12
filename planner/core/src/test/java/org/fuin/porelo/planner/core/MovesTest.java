@@ -313,7 +313,7 @@ class MovesTest {
 
     private static Story story(
             final String id, final String state, final boolean given, final String... issues) {
-        return new Story(id, "A story", state, given, "High", List.of(issues), "", null);
+        return new Story(id, "A story", state, given, "High", null, List.of(issues), "", null);
     }
 
     private static Issue issue(final String id, final String state, final @Nullable String parent) {

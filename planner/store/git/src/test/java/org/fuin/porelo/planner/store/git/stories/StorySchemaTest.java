@@ -227,6 +227,58 @@ class StorySchemaTest {
         }
     }
 
+    // Prevents the handwritten check and story-2.json drifting on a story's size, so the index
+    // takes a head the board refuses or the other way round.
+    @Test
+    void agreesWithStoryTwoOnEverySizeAndRefusesAnyOther() throws Exception {
+        final JsonSchema schema;
+        try (var in =
+                getClass()
+                        .getResourceAsStream(
+                                "/org/fuin/porelo/planner/store/git/stories/schemas/story-2.json")) {
+            schema =
+                    JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
+                            .getSchema(
+                                    in,
+                                    SchemaValidatorsConfig.builder()
+                                            .locale(Locale.ENGLISH)
+                                            .pathType(PathType.JSON_POINTER)
+                                            .build());
+        }
+        final ObjectNode valid =
+                (ObjectNode)
+                        JSON.readTree(
+                                """
+                {"$schema":"story-2.json","id":"ST1","title":"A title","priority":"High","gain":"A gain.","test":"A test.","issues":["porelo#AB01"],"tested":null}
+                """);
+        assertThat(schema.validate(valid)).as("the head without a size").isEmpty();
+        assertThat(StorySchema.faults(valid, 2)).as("the head without a size").isEmpty();
+        for (final String size : List.of("XS", "S", "M", "L", "XL")) {
+            final ObjectNode head = valid.deepCopy();
+            head.put("size", size);
+            assertThat(schema.validate(head)).as("the schema takes size %s", size).isEmpty();
+            assertThat(StorySchema.faults(head, 2))
+                    .as("the handwritten check takes size %s", size)
+                    .isEmpty();
+        }
+        for (final String size : List.of("\"XXL\"", "3", "\"-\"", "null", "\"m\"")) {
+            final ObjectNode head = valid.deepCopy();
+            head.set("size", JSON.readTree(size));
+            assertThat(schema.validate(head)).as("the schema refuses size %s", size).isNotEmpty();
+            assertThat(StorySchema.faults(head, 2))
+                    .as("the handwritten check refuses size %s", size)
+                    .isNotEmpty()
+                    .anyMatch(fault -> fault.startsWith("/size"));
+        }
+        final ObjectNode older = valid.deepCopy();
+        older.remove("$schema");
+        older.put("size", "M");
+        assertThat(schema().validate(older)).as("story-1.json refuses a size").isNotEmpty();
+        assertThat(StorySchema.faults(older, 1))
+                .as("the handwritten check refuses a size in a story-1 head")
+                .anyMatch(fault -> fault.contains("'size'"));
+    }
+
     // Prevents the new format refusing a state given beside issues, or accepting a faulty head.
     @Test
     void agreesWithStoryTwoOnFixtureHeadsAndInvalidVariants() throws Exception {

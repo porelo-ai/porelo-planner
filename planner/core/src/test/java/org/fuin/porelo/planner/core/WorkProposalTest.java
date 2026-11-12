@@ -84,6 +84,7 @@ class WorkProposalTest {
                                         "Backlog",
                                         true,
                                         "High",
+                                        null,
                                         List.of("AA1", "AA1.1"),
                                         "",
                                         null)),
@@ -239,6 +240,7 @@ class WorkProposalTest {
                                         "Review",
                                         true,
                                         "High",
+                                        null,
                                         List.of("AA1"),
                                         "",
                                         null)),
@@ -292,8 +294,8 @@ class WorkProposalTest {
                         original.workflow(),
                         List.of(
                                 new Story(
-                                        "ST1", "Empty", "Backlog", true, "High", List.of(), "",
-                                        null)),
+                                        "ST1", "Empty", "Backlog", true, "High", null, List.of(),
+                                        "", null)),
                         List.of(),
                         original.work(),
                         original.repositories());
@@ -333,6 +335,7 @@ class WorkProposalTest {
                                         story.state(),
                                         story.stateGiven(),
                                         story.priority(),
+                                        null,
                                         List.of("AA1.1", "BB1"),
                                         story.description(),
                                         null)),
@@ -469,8 +472,8 @@ class WorkProposalTest {
                         original.workflow(),
                         List.of(
                                 new Story(
-                                        "ST1", "Story", "Backlog", true, "High", List.of(), "",
-                                        null)),
+                                        "ST1", "Story", "Backlog", true, "High", null, List.of(),
+                                        "", null)),
                         original.issues(),
                         original.work(),
                         original.repositories());
@@ -543,6 +546,7 @@ class WorkProposalTest {
                                 "Idea",
                                 false,
                                 "High",
+                                null,
                                 List.of("AA1", "BB1"),
                                 "",
                                 null)),
@@ -602,6 +606,7 @@ class WorkProposalTest {
                                 "Backlog",
                                 true,
                                 "High",
+                                null,
                                 List.of("AA1", "AA1.1", "BB1", "CC1"),
                                 "SECRET DESCRIPTION",
                                 null)),

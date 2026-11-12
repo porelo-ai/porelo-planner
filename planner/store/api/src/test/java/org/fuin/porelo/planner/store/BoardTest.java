@@ -17,7 +17,7 @@ class BoardTest {
                     List.of("Finished"));
 
     private static Story story(final String id, final String state) {
-        return new Story(id, "A story", state, true, "High", List.of("XY03"), "Text", null);
+        return new Story(id, "A story", state, true, "High", null, List.of("XY03"), "Text", null);
     }
 
     private static Issue issue(final String id, final String state) {

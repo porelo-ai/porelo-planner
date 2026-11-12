@@ -58,7 +58,15 @@ class LogLinesTest {
                         List.of("Backlog", "Review", "Finished"), List.of(), List.of("Finished")),
                 List.of(
                         new Story(
-                                "ST1", "A story", state, false, "High", List.of("AB01"), "", null)),
+                                "ST1",
+                                "A story",
+                                state,
+                                false,
+                                "High",
+                                null,
+                                List.of("AB01"),
+                                "",
+                                null)),
                 List.of(
                         new Issue(
                                 "AB01",

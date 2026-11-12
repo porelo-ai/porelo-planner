@@ -206,6 +206,7 @@ class WorkRunTest {
                                         "Backlog",
                                         false,
                                         "High",
+                                        null,
                                         List.of("AA1"),
                                         "",
                                         null)),
@@ -420,6 +421,7 @@ class WorkRunTest {
                                             "Backlog",
                                             false,
                                             "High",
+                                            null,
                                             List.of("AA1"),
                                             "",
                                             null)),
@@ -590,6 +592,7 @@ class WorkRunTest {
                                 story.state(),
                                 stateGiven,
                                 story.priority(),
+                                null,
                                 story.issues(),
                                 story.description(),
                                 story.link())),
@@ -611,6 +614,7 @@ class WorkRunTest {
                                 story.state(),
                                 false,
                                 story.priority(),
+                                null,
                                 List.of("AA1", "BB1"),
                                 story.description(),
                                 story.link())),
@@ -641,6 +645,7 @@ class WorkRunTest {
                                         "Backlog",
                                         false,
                                         "High",
+                                        null,
                                         List.of("AA1.1"),
                                         "",
                                         null)),
@@ -2114,7 +2119,9 @@ class WorkRunTest {
         f.start(f.order().tasks().getFirst());
         final Board board = f.store.current;
         final List<Story> stories = new java.util.ArrayList<>(board.stories());
-        stories.add(new Story("ST2", "Other", "Backlog", false, "High", List.of("AA2"), "", null));
+        stories.add(
+                new Story(
+                        "ST2", "Other", "Backlog", false, "High", null, List.of("AA2"), "", null));
         final List<Issue> issues = new java.util.ArrayList<>(board.issues());
         issues.add(new Issue("AA2", "alpha", "Other", "Backlog", null, List.of(), null, null, ""));
         f.store.current =
@@ -2790,6 +2797,7 @@ class WorkRunTest {
                                                                                     .toList())),
                                                     false,
                                                     s.priority(),
+                                                    null,
                                                     s.issues(),
                                                     s.description(),
                                                     s.link()))

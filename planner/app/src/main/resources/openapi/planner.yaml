@@ -1774,7 +1774,7 @@ components:
     Story:
       description: One story as the board shows it.
       type: object
-      required: [id, title, state, stateGiven, priority, link, issues, work]
+      required: [id, title, state, stateGiven, priority, size, link, issues, work]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -1787,6 +1787,11 @@ components:
           description: True when the story's head states its state, false when its issues give it.
         priority:
           type: string
+        size:
+          type: [string, 'null']
+          description: >-
+            The story's size, XS to XL, given when it was estimated, or null when it has none. It is the story's
+            own, never added up from its issues' sizes.
         link:
           type: [string, 'null']
           format: uri

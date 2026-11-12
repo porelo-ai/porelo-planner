@@ -244,19 +244,19 @@ class PublicReadersTest {
     @Test
     void aStoryIsBuiltOnlyWhole() {
         final List<String> none = List.of();
-        assertThatThrownBy(() -> new Story(null, "A title", null, "High", none, ""))
+        assertThatThrownBy(() -> new Story(null, "A title", null, "High", null, none, ""))
                 .as("no id")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("id");
-        assertThatThrownBy(() -> new Story("ST1", null, null, "High", none, ""))
+        assertThatThrownBy(() -> new Story("ST1", null, null, "High", null, none, ""))
                 .as("no title")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("title");
-        assertThatThrownBy(() -> new Story("ST1", "A title", null, null, none, ""))
+        assertThatThrownBy(() -> new Story("ST1", "A title", null, null, null, none, ""))
                 .as("no priority")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("priority");
-        assertThatThrownBy(() -> new Story("ST1", "A title", null, "High", null, ""))
+        assertThatThrownBy(() -> new Story("ST1", "A title", null, "High", null, null, ""))
                 .as("no issues")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("issues");
@@ -267,11 +267,12 @@ class PublicReadersTest {
                                         "A title",
                                         null,
                                         "High",
+                                        null,
                                         Arrays.asList("porelo#B10", null),
                                         ""))
                 .as("an issue that is null")
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new Story("ST1", "A title", null, "High", none, null))
+        assertThatThrownBy(() -> new Story("ST1", "A title", null, "High", null, none, null))
                 .as("no body")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("body");
@@ -311,6 +312,26 @@ class PublicReadersTest {
 
         assertThat(story.state()).as("no state stated").isNull();
         assertThat(story.body()).as("the person's text").isEqualTo("Written by a person.");
+    }
+
+    // Prevents a story whose head gives a size from vanishing from the board, or losing the size.
+    @Test
+    void aStorysSizeIsReadFromItsHeadAndIsNullWithoutOne() throws IOException {
+        final Story sized =
+                Story.read(
+                        story(
+                                """
+                                {"$schema":"story-2.json","id":"ST1","title":"A title","priority":"High","size":"M","gain":"A gain.","test":"A test.","issues":["porelo#B10"],"tested":null}"""),
+                        workflow());
+        final Story unsized =
+                Story.read(
+                        story(
+                                """
+                                {"$schema":"story-2.json","id":"ST1","title":"A title","priority":"High","gain":"A gain.","test":"A test.","issues":["porelo#B10"],"tested":null}"""),
+                        workflow());
+
+        assertThat(sized.size()).as("the size the head gives").isEqualTo("M");
+        assertThat(unsized.size()).as("no size without one in the head").isNull();
     }
 
     // Prevents a body that opens with an indented block from losing the indentation that makes it

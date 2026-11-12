@@ -12,6 +12,8 @@ import org.jspecify.annotations.Nullable;
  * @param state its state, one of the workflow's
  * @param stateGiven whether its head states the state, rather than its issues giving it
  * @param priority its priority
+ * @param size the size given when it was estimated, {@code XS} to {@code XL}, or null when its head
+ *     gives none; its own, never added up from its issues' sizes
  * @param issues the ids of the issues it needs, in its order
  * @param description its body, the text below the head
  * @param link where a person reads it on the forge, if known
@@ -22,6 +24,7 @@ public record Story(
         String state,
         boolean stateGiven,
         String priority,
+        @Nullable String size,
         List<String> issues,
         String description,
         @Nullable URI link) {

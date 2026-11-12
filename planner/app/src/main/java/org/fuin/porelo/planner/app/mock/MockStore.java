@@ -304,6 +304,7 @@ public final class MockStore implements PlanningStore {
                         "Idea",
                         false,
                         idea.priority(),
+                        null,
                         ids,
                         idea.gain() + "\n\n" + idea.test(),
                         null));
@@ -471,6 +472,7 @@ public final class MockStore implements PlanningStore {
                 state,
                 given,
                 story.priority(),
+                story.size(),
                 story.issues(),
                 story.description(),
                 story.link());

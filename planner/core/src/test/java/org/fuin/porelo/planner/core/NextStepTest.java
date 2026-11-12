@@ -379,7 +379,7 @@ class NextStepTest {
         // Prevents an old offer from writing work reassigned outside its bound scope.
         final Board source = board("Building", "Review");
         final Story story =
-                new Story("ST1", "Story", "Building", false, "High", List.of(), "", null);
+                new Story("ST1", "Story", "Building", false, "High", null, List.of(), "", null);
         final Board board =
                 new Board(
                         source.revision(),
@@ -738,7 +738,17 @@ class NextStepTest {
                                 "Finished"),
                         List.of(),
                         List.of("Finished")),
-                List.of(new Story("ST1", "Story", parent, false, "High", List.of("AA1"), "", null)),
+                List.of(
+                        new Story(
+                                "ST1",
+                                "Story",
+                                parent,
+                                false,
+                                "High",
+                                null,
+                                List.of("AA1"),
+                                "",
+                                null)),
                 List.of(
                         new Issue(
                                 "AA1",

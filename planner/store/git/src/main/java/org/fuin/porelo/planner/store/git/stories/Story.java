@@ -15,6 +15,8 @@ import org.jspecify.annotations.Nullable;
  * @param title the title its heading repeats
  * @param state the state its head states, or null when a story-2 head leaves it to its issues
  * @param priority Jira's priority, {@code Highest} to {@code Lowest}
+ * @param size the size given when the story was estimated, {@code XS} to {@code XL}, or null when
+ *     its head gives none
  * @param issues the issues it needs, each {@code <repository>#<number>}, in the head's order
  * @param body the text between the heading and {@code ## Data}, its leading and trailing blank
  *     lines dropped and every other line kept as it stands, indentation included
@@ -24,13 +26,14 @@ public record Story(
         String title,
         @Nullable String state,
         String priority,
+        @Nullable String size,
         List<String> issues,
         String body) {
 
     /**
      * Refuses a missing field and copies the issues to keep the story immutable.
      *
-     * @throws NullPointerException when a field but the state is null, or an issue is
+     * @throws NullPointerException when a field but the state or the size is null, or an issue is
      */
     public Story {
         Objects.requireNonNull(id, "id");
@@ -68,6 +71,7 @@ public record Story(
                 data.get("title").asText(),
                 data.has("state") ? data.get("state").asText() : null,
                 data.get("priority").asText(),
+                data.has("size") ? data.get("size").asText() : null,
                 issues,
                 String.join("\n", lines.subList(first, end)));
     }

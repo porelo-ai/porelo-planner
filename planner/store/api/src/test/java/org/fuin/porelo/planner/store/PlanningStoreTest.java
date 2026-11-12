@@ -13,7 +13,10 @@ class PlanningStoreTest {
             new Board(
                     new Revision("r1"),
                     new Workflow(List.of("Idea"), List.of(), List.of()),
-                    List.of(new Story("ST1", "A story", "Idea", true, "High", List.of(), "", null)),
+                    List.of(
+                            new Story(
+                                    "ST1", "A story", "Idea", true, "High", null, List.of(), "",
+                                    null)),
                     List.of(
                             new Issue(
                                     "XY03",

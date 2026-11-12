@@ -131,6 +131,7 @@ class WorkAnswersTest {
                                 "Building",
                                 false,
                                 "High",
+                                null,
                                 List.of("AA1", "AA2"),
                                 "",
                                 null)),

@@ -7,18 +7,23 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** The constraints documented by story-1.json, with the command's existing diagnostics. */
+/**
+ * The constraints documented by story-1.json and story-2.json, with the command's existing
+ * diagnostics.
+ */
 final class StorySchema {
     private static final List<String> REQUIRED =
             List.of("id", "title", "state", "priority", "gain", "test", "issues", "tested");
     private static final List<String> PROPERTIES =
-            List.of("id", "title", "priority", "gain", "test", "issues", "tested", "state");
+            List.of("id", "title", "priority", "size", "gain", "test", "issues", "tested", "state");
     private static final String ID = "^ST[1-9][0-9]{0,4}$";
     private static final String LINE = "^[^\\s](.*[^\\s])?$";
     static final String ISSUE = "^[a-z0-9][a-z0-9._-]{0,99}#[A-Z]{1,3}[0-9]{2,5}$";
     private static final String DAY = "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$";
     private static final List<String> PRIORITIES =
             List.of("Highest", "High", "Medium", "Low", "Lowest");
+    private static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL");
+    private static final List<String> SINCE_TWO = List.of("$schema", "size");
 
     private StorySchema() {}
 
@@ -34,7 +39,7 @@ final class StorySchema {
         }
         for (final String field : PROPERTIES) {
             final JsonNode value = data.get(field);
-            if (value == null) continue;
+            if (value == null || (version == 1 && SINCE_TWO.contains(field))) continue;
             final String at = "/" + field;
             switch (field) {
                 case "id" -> {
@@ -57,8 +62,8 @@ final class StorySchema {
                         pattern(value, LINE, at, faults);
                     }
                 }
-                case "priority" -> {
-                    final List<String> values = PRIORITIES;
+                case "priority", "size" -> {
+                    final List<String> values = field.equals("size") ? SIZES : PRIORITIES;
                     if (!value.isTextual() || !values.contains(value.asText()))
                         faults.add(
                                 at
@@ -97,8 +102,9 @@ final class StorySchema {
         data.fieldNames()
                 .forEachRemaining(
                         field -> {
-                            if (!PROPERTIES.contains(field)
-                                    && !(version == 2 && field.equals("$schema")))
+                            if ((!PROPERTIES.contains(field)
+                                            || (version == 1 && SINCE_TWO.contains(field)))
+                                    && !(version == 2 && SINCE_TWO.contains(field)))
                                 faults.add(
                                         "/: property '"
                                                 + field

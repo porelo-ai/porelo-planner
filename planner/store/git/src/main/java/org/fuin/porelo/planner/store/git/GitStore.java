@@ -1500,6 +1500,7 @@ public final class GitStore implements PlanningStore {
                 state,
                 stated != null,
                 story.priority(),
+                story.size(),
                 ids,
                 story.body(),
                 null);

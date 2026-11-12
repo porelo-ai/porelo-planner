@@ -157,6 +157,7 @@ public final class Answers {
      * @param state its state
      * @param stateGiven whether its head states the state, rather than its issues giving it
      * @param priority its priority
+     * @param size its size, given when it was estimated, or null when it has none
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
      * @param work its current recorded run, or null
@@ -167,6 +168,7 @@ public final class Answers {
             String state,
             boolean stateGiven,
             String priority,
+            @Nullable String size,
             @Nullable String link,
             List<Issue> issues,
             WorkAnswers.@Nullable PlanWork work) {}
@@ -179,6 +181,7 @@ public final class Answers {
      * @param state its state
      * @param stateGiven whether its head states the state, rather than its issues giving it
      * @param priority its priority
+     * @param size its size, given when it was estimated, or null when it has none
      * @param link where a person reads it, if known
      * @param issues its issues, in its order
      * @param work its current recorded run, or null
@@ -190,6 +193,7 @@ public final class Answers {
             String state,
             boolean stateGiven,
             String priority,
+            @Nullable String size,
             @Nullable String link,
             List<Issue> issues,
             WorkAnswers.@Nullable PlanWork work,

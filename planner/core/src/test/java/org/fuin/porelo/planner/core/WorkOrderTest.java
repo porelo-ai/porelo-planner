@@ -562,6 +562,7 @@ class WorkOrderTest {
                                         "Backlog",
                                         true,
                                         "High",
+                                        null,
                                         manyIssues.stream().map(Issue::id).toList(),
                                         "",
                                         null)),

@@ -241,6 +241,41 @@ class GitStoreReadTest {
                 .containsExactly("ST1", "ST2");
     }
 
+    // Prevents a story's size from being lost between its head and the board, and a size outside
+    // XS to XL from reaching the board.
+    @Test
+    void aStorysSizeIsTheOneItsHeadGivesAndOneOutsideTheSizesIsAFault() throws Exception {
+        repositories.repository(
+                "porelo-store",
+                Map.of(
+                        "stories/ST3-Sized.md",
+                        story(
+                                "ST3",
+                                "Sized",
+                                "\"state\": \"Idea\",\n  \"size\": \"M\",",
+                                "\"porelo-store#AB01\""),
+                        "stories/ST5-Oversized.md",
+                        story(
+                                "ST5",
+                                "Oversized",
+                                "\"state\": \"Idea\",\n  \"size\": \"XXL\",",
+                                "\"porelo-store#AB01\"")));
+        final Board board = store(null).board();
+        assertThat(board.stories())
+                .as("the size the head gives, and none for a head without one")
+                .extracting(Story::id, Story::size)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ST1", null),
+                        org.assertj.core.groups.Tuple.tuple("ST2", null),
+                        org.assertj.core.groups.Tuple.tuple("ST3", "M"));
+        assertThat(board.faults())
+                .as("the story with a size outside XS to XL is named and left out")
+                .anyMatch(
+                        fault ->
+                                fault.startsWith("porelo-store: stories/ST5-Oversized.md: ")
+                                        && fault.contains("/size"));
+    }
+
     @Test
     void anIssueWhoseHeadBrokeIsLeftOutAndNotShownFromItsIndexRow() throws Exception {
         // Shown from its row, the issue would hand an agent an empty brief and refuse every move.

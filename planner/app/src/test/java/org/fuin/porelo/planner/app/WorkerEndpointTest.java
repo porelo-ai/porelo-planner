@@ -60,6 +60,7 @@ class WorkerEndpointTest {
                                 "Backlog",
                                 false,
                                 "High",
+                                null,
                                 List.of("AB01", "AB02"),
                                 "",
                                 null)),

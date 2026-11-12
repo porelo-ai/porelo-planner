@@ -219,6 +219,7 @@
       "state": "In analysis",
       "stateGiven": false,
       "priority": "High",
+      "size": "L",
       "issues": [],
       "description": "The operator sees every story by state, the most important first, opens a story or an issue, and changes a story’s state by drag and drop, read from and written through a story API whose states are configured, not built in; a state change calls an action API.\n\nOpen Planning, find each story in its state’s column sorted by priority, open a story and one of its issues, drag a story to another state and save; the change is in porelo-project’s checkout. Rename a state in the configuration and the board shows it.",
       "link": "https://example.org/stories/ST294"
@@ -229,6 +230,7 @@
       "state": "Under estimation",
       "stateGiven": false,
       "priority": "Medium",
+      "size": null,
       "issues": [
         "PJ74",
         "FC03",
@@ -246,6 +248,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Highest",
+      "size": "M",
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST21"
@@ -256,6 +259,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Highest",
+      "size": "XL",
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST11"
@@ -266,6 +270,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST13"
@@ -276,6 +281,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST28"
@@ -286,6 +292,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Medium",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST87"
@@ -296,6 +303,7 @@
       "state": "Idea",
       "stateGiven": false,
       "priority": "Low",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST182"
@@ -306,6 +314,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "priority": "Medium",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST114"
@@ -316,6 +325,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "priority": "Medium",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST111"
@@ -326,6 +336,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "priority": "Low",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST144"
@@ -336,6 +347,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "priority": "Highest",
+      "size": "S",
       "issues": [
         "PJ58"
       ],
@@ -348,6 +360,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "priority": "High",
+      "size": "XS",
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST39"
@@ -358,6 +371,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "priority": "High",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST35"
@@ -368,6 +382,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "SI05"
       ],
@@ -380,6 +395,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "priority": "Medium",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST106"
@@ -390,6 +406,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "priority": "Low",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST198"
@@ -400,6 +417,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "B540",
         "B541",
@@ -427,6 +445,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "B553",
         "B554",
@@ -446,6 +465,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST293"
@@ -456,6 +476,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "MX24",
         "MX36",
@@ -472,6 +493,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "priority": "Highest",
+      "size": "M",
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST6"
@@ -482,6 +504,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "IJ14"
       ],
@@ -494,6 +517,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "BT35",
         "BT36",
@@ -512,6 +536,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "PI43",
         "OM44",
@@ -529,6 +554,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "priority": "Low",
+      "size": null,
       "issues": [
         "PJ106"
       ],
@@ -541,6 +567,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "priority": "Low",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST127"
@@ -551,6 +578,7 @@
       "state": "Review",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "BT42",
         "BT39",
@@ -569,6 +597,7 @@
       "state": "Review",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "SL35"
       ],
@@ -581,6 +610,7 @@
       "state": "Review",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "B306"
       ],
@@ -593,6 +623,7 @@
       "state": "Review",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "HO12",
         "BT24",
@@ -607,6 +638,7 @@
       "state": "Finished",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST264"
@@ -617,6 +649,7 @@
       "state": "Finished",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [],
       "description": "",
       "link": "https://example.org/stories/ST268"
@@ -627,6 +660,7 @@
       "state": "Finished",
       "stateGiven": false,
       "priority": "Highest",
+      "size": null,
       "issues": [
         "PJ62",
         "GH18"

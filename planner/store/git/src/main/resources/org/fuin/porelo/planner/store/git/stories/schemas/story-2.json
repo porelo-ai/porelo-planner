@@ -36,6 +36,16 @@
         "Lowest"
       ]
     },
+    "size": {
+      "description": "The size given when the story is estimated, its own and not added up from its issues' sizes; a story without one omits it.",
+      "enum": [
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL"
+      ]
+    },
     "gain": {
       "description": "What a user gains, in one sentence.",
       "$ref": "#/$defs/line",
