@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL91",
   "title": "The Planner Ends When The Window That Started It Ends",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 32,
