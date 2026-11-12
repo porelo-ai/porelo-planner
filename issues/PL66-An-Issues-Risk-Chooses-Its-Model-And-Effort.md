@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL66",
   "title": "An Issue's Risk Chooses Its Model And Effort",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 1,
