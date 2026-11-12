@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
@@ -35,7 +36,9 @@ public final class WorkReader {
                             .build());
 
     private static final Set<String> KEYS =
-            Set.of("from", "done", "then", "blocked", "per", "modes", "order", "models");
+            Set.of("from", "done", "then", "blocked", "per", "modes", "order", "models", "risks");
+
+    private static final Set<String> RISK_KEYS = Set.of("models", "effort");
 
     /** Longest part of a parser's message a fault quotes. */
     private static final int MESSAGE = 200;
@@ -90,12 +93,7 @@ public final class WorkReader {
         if (!node.isObject()) {
             throw new Fault("is no mapping");
         }
-        for (final var names = node.fieldNames(); names.hasNext(); ) {
-            final String name = names.next();
-            if (!KEYS.contains(name)) {
-                throw new Fault("unknown key '" + name + "'");
-            }
-        }
+        known(node, KEYS);
         return new WorkRule(
                 strings(node, "from", "states"),
                 text(node, "done"),
@@ -104,7 +102,55 @@ public final class WorkReader {
                 per(text(node, "per")),
                 strings(node, "modes", "modes"),
                 text(node, "order"),
-                models(node));
+                models(node),
+                risks(node));
+    }
+
+    private static void known(final JsonNode node, final Set<String> keys) throws Fault {
+        for (final var names = node.fieldNames(); names.hasNext(); ) {
+            final String name = names.next();
+            if (!keys.contains(name)) {
+                throw new Fault("unknown key '" + name + "'");
+            }
+        }
+    }
+
+    /** A rule's risks, each read whole or failing with the risk's name. */
+    private static Map<Risk, WorkRule.ForRisk> risks(final JsonNode node) throws Fault {
+        final JsonNode value = node.get("risks");
+        if (value == null) {
+            return Map.of();
+        }
+        if (!value.isObject()) {
+            throw new Fault("risks is no mapping of risk to models and effort");
+        }
+        final Map<Risk, WorkRule.ForRisk> result = new LinkedHashMap<>();
+        for (final var entries = value.fields(); entries.hasNext(); ) {
+            final Map.Entry<String, JsonNode> entry = entries.next();
+            final Risk risk;
+            try {
+                risk = Risk.of(entry.getKey());
+            } catch (final IllegalArgumentException e) {
+                throw new Fault("risks: " + e.getMessage());
+            }
+            result.put(risk, forRisk(entry.getValue(), "risks: " + entry.getKey() + ": "));
+        }
+        return result;
+    }
+
+    private static WorkRule.ForRisk forRisk(final JsonNode node, final String at) throws Fault {
+        try {
+            if (!node.isObject()) {
+                throw new Fault("is no mapping of models and effort");
+            }
+            known(node, RISK_KEYS);
+            return new WorkRule.ForRisk(
+                    node.has("models") ? models(node) : Map.of(), optional(node, "effort"));
+        } catch (final Fault e) {
+            throw new Fault(at + e.getMessage());
+        } catch (final IllegalArgumentException e) {
+            throw new Fault(at + e.getMessage());
+        }
     }
 
     private static WorkRule.Per per(final String per) throws Fault {

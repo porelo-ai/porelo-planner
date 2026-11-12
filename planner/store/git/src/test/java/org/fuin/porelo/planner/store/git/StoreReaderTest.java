@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
@@ -405,6 +406,102 @@ class StoreReaderTest {
                         org.assertj.core.groups.Tuple.tuple("XY01.2", Worker.MANUAL),
                         org.assertj.core.groups.Tuple.tuple("XY02", Worker.AGENT),
                         org.assertj.core.groups.Tuple.tuple("XY02.1", Worker.AGENT));
+    }
+
+    @Test
+    void anIssueReadsTheRiskItsHeadNamesAndOrdinaryWhereItNamesNone() {
+        // An issue that can do harm read as ordinary would be worked with a light model and effort.
+        final Tree tree = new Tree();
+        tree.files.put(
+                "issues/README.md",
+                """
+                # Issues
+
+                ## Finished
+
+                | # | Title | What was built |
+                |---|---|---|
+                | <a id="xy03"></a>XY03 | Done Long Ago | It was built. |
+                """);
+        tree.files.put("issues/XY01-One.md", risked(issue("XY01", "Idea"), "harm"));
+        tree.files.put("issues/XY02-Two.md", risked(issue("XY02", "Idea"), "small"));
+        tree.files.put("issues/XY04-Four.md", issue("XY04", "Idea"));
+        tree.files.put("issues/XY05-Five.md", risked(issue("XY05", "Idea"), "ordinary"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("each issue's risk")
+                .extracting(Issue::id, Issue::risk)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("XY01", Risk.HARM),
+                        org.assertj.core.groups.Tuple.tuple("XY02", Risk.SMALL),
+                        org.assertj.core.groups.Tuple.tuple("XY03", Risk.ORDINARY),
+                        org.assertj.core.groups.Tuple.tuple("XY04", Risk.ORDINARY),
+                        org.assertj.core.groups.Tuple.tuple("XY05", Risk.ORDINARY));
+    }
+
+    @Test
+    void aRiskOtherThanTheThreeSpellingsIsAFaultNamingTheFileAndLeavesTheIssueOut() {
+        // A risk misspelled and read as ordinary would hide harm the head meant to name.
+        final Tree tree = new Tree();
+        tree.files.put("issues/XY01-One.md", risked(issue("XY01", "Idea"), "Harm"));
+        tree.files.put("issues/XY02-Two.md", risked(issue("XY02", "Idea"), "high"));
+        tree.files.put("issues/XY03-Three.md", issue("XY03", "Idea"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.issues())
+                .as("only the issue whose head the schema takes")
+                .extracting(Issue::id)
+                .containsExactly("XY03");
+        assertThat(part.faults())
+                .as("each faulty head named with its file and its risk")
+                .hasSize(2)
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the first")
+                                        .startsWith("porelo-other: issues/XY01-One.md: ")
+                                        .contains("/risk"))
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("the second")
+                                        .startsWith("porelo-other: issues/XY02-Two.md: ")
+                                        .contains("/risk"));
+    }
+
+    @Test
+    void aSubIssueIsWorkedWithTheHigherOfItsOwnRiskAndItsParents() {
+        // A sub-issue whose own head or whose parent's names harm, read lower, is worked lightly.
+        final Tree tree = new Tree();
+        tree.files.put("issues/XY01-One.md", risked(issue("XY01", "Idea"), "harm"));
+        tree.files.put("issues/XY01.1-Part.md", risked(sub("XY01.1", "XY01"), "small"));
+        tree.files.put("issues/XY01.2-Part.md", sub("XY01.2", "XY01"));
+        tree.files.put("issues/XY02-Two.md", risked(issue("XY02", "Idea"), "small"));
+        tree.files.put("issues/XY02.1-Part.md", risked(sub("XY02.1", "XY02"), "harm"));
+        tree.files.put("issues/XY02.2-Part.md", sub("XY02.2", "XY02"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("each sub-issue's risk is the higher of its own and its parent's")
+                .extracting(Issue::id, Issue::risk)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("XY01", Risk.HARM),
+                        org.assertj.core.groups.Tuple.tuple("XY01.1", Risk.HARM),
+                        org.assertj.core.groups.Tuple.tuple("XY01.2", Risk.HARM),
+                        org.assertj.core.groups.Tuple.tuple("XY02", Risk.SMALL),
+                        org.assertj.core.groups.Tuple.tuple("XY02.1", Risk.HARM),
+                        org.assertj.core.groups.Tuple.tuple("XY02.2", Risk.ORDINARY));
+    }
+
+    /** The issue's head with a risk as its last member. */
+    private static String risked(final String text, final String risk) {
+        return last(text, "risk", risk);
     }
 
     /** The issue's head with a worker as its last member. */

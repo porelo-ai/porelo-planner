@@ -28,6 +28,8 @@ import org.jspecify.annotations.Nullable;
  * @param kind what the work is, else null
  * @param openQuestions the questions waiting on the operator, else null
  * @param worker who works it, {@code Agent} or {@code Manual}, else null, read as {@code Agent}
+ * @param risk how much harm its change can do, {@code harm}, {@code ordinary} or {@code small},
+ *     else null, read as {@code ordinary}
  */
 public record IssueHead(
         String id,
@@ -43,7 +45,8 @@ public record IssueHead(
         @Nullable String severity,
         @Nullable String kind,
         @Nullable Integer openQuestions,
-        @Nullable String worker) {
+        @Nullable String worker,
+        @Nullable String risk) {
 
     /** The fence that opens a head. */
     static final String FENCE = "```json";
@@ -59,7 +62,7 @@ public record IssueHead(
     }
 
     /**
-     * A head that names no worker.
+     * A head that names neither worker nor risk.
      *
      * @param id the issue's id, a sub-issue's with its dot
      * @param title the title its heading repeats
@@ -103,6 +106,7 @@ public record IssueHead(
                 severity,
                 kind,
                 openQuestions,
+                null,
                 null);
     }
 
@@ -271,7 +275,8 @@ public record IssueHead(
                         text(data, "severity"),
                         text(data, "kind"),
                         data.has("openQuestions") ? data.get("openQuestions").intValue() : null,
-                        text(data, "worker"));
+                        text(data, "worker"),
+                        text(data, "risk"));
         return new Located(head, lines.getFirst(), lines, close + 1);
     }
 
@@ -300,7 +305,7 @@ public record IssueHead(
 
     /**
      * Writes the head as a file holds it: one field a line in the schema's order, the waits on one
-     * line.
+     * line, the risk last, after the worker, as the build tools write it.
      *
      * @return the JSON, without fences
      */
@@ -328,6 +333,7 @@ public record IssueHead(
         if (openQuestions != null)
             fields.add(field("openQuestions", Integer.toString(openQuestions)));
         if (worker != null) fields.add(field("worker", quoted(worker)));
+        if (risk != null) fields.add(field("risk", quoted(risk)));
         return "{\n" + String.join(",\n", fields) + "\n}";
     }
 

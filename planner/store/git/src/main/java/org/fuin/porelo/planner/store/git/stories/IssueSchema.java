@@ -17,6 +17,7 @@ final class IssueSchema {
             "^([a-z0-9][a-z0-9._-]{0,99}#)?[A-Z]{1,3}[0-9]{2,3}(\\.[1-9][0-9]{0,2})?$";
     static final List<String> PRIORITIES = List.of("Highest", "High", "Medium", "Low", "Lowest");
     static final List<String> WORKERS = List.of("Agent", "Manual");
+    static final List<String> RISKS = List.of("harm", "ordinary", "small");
     static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL", "-");
     private static final String LINE = "^[^\\s](.*[^\\s])?$";
     private static final List<String> REQUIRED =
@@ -43,7 +44,9 @@ final class IssueSchema {
                     "kind",
                     List.of("Feature", "Bug", "Task"),
                     "worker",
-                    WORKERS);
+                    WORKERS,
+                    "risk",
+                    RISKS);
     private static final List<String> PROPERTIES =
             List.of(
                     "$schema",
@@ -60,7 +63,8 @@ final class IssueSchema {
                     "severity",
                     "kind",
                     "openQuestions",
-                    "worker");
+                    "worker",
+                    "risk");
 
     private IssueSchema() {}
 
@@ -86,7 +90,7 @@ final class IssueSchema {
                     if (type(value, "string", at, faults)) pattern(value, PARENT, at, faults);
                 }
                 case "title", "state", "covers" -> line(value, at, maximum(field), faults);
-                case "size", "priority", "role", "severity", "kind", "worker" -> {
+                case "size", "priority", "role", "severity", "kind", "worker", "risk" -> {
                     final List<String> values = java.util.Objects.requireNonNull(ENUMS.get(field));
                     if (!value.isTextual() || !values.contains(value.asText()))
                         faults.add(

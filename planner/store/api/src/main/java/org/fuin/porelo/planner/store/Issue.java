@@ -18,6 +18,8 @@ import org.jspecify.annotations.Nullable;
  * @param link where a person reads it on the forge, if known
  * @param text its body, the text below the head
  * @param worker who works it; a head that names none is worked by an agent
+ * @param risk how much harm its change can do; a head that names none is ordinary, and a sub-issue
+ *     is worked with the higher of its own and its parent's
  */
 public record Issue(
         String id,
@@ -29,7 +31,8 @@ public record Issue(
         @Nullable String parent,
         @Nullable URI link,
         String text,
-        Worker worker) {
+        Worker worker,
+        Risk risk) {
 
     /** Checks the ids and the repository's name and copies the list. */
     public Issue {
@@ -47,7 +50,7 @@ public record Issue(
     }
 
     /**
-     * An issue whose head names no worker, so an agent works it.
+     * An issue whose head names neither worker nor risk, so an agent works it as an ordinary one.
      *
      * @param id the issue's id
      * @param repository the name of the repository that holds it
@@ -69,6 +72,17 @@ public record Issue(
             final @Nullable String parent,
             final @Nullable URI link,
             final String text) {
-        this(id, repository, title, state, size, blockedBy, parent, link, text, Worker.AGENT);
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                Worker.AGENT,
+                Risk.ORDINARY);
     }
 }

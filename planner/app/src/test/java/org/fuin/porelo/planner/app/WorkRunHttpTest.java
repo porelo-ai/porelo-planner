@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -171,7 +172,8 @@ class WorkRunHttpTest {
                         null,
                         null,
                         "",
-                        Worker.MANUAL);
+                        Worker.MANUAL,
+                        Risk.ORDINARY);
         final Issue agents =
                 new Issue(
                         "AA2", "alpha", "An agent's", "Building", null, List.of(), null, null, "");
@@ -661,7 +663,8 @@ class WorkRunHttpTest {
                                         old.parent(),
                                         old.link(),
                                         old.text(),
-                                        old.worker())),
+                                        old.worker(),
+                                        old.risk())),
                         board.work(),
                         board.repositories());
         final var refused =
@@ -935,7 +938,8 @@ class WorkRunHttpTest {
                                             null,
                                             null,
                                             "",
-                                            writes.workers().getOrDefault(old.id(), old.worker()))),
+                                            writes.workers().getOrDefault(old.id(), old.worker()),
+                                            Risk.ORDINARY)),
                             current.work(),
                             current.repositories());
             return current;

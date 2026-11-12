@@ -8,6 +8,7 @@ import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -529,6 +530,149 @@ class NextStepTest {
                 + " on origin/landed/foo-1-2/"
                 + name
                 + ", after `git fetch origin`";
+    }
+
+    @Test
+    void aReadingStartedByItselfForAHarmIssueTakesTheRulesModelAndEffortForHarm() {
+        // Work that can do harm read by the rule's light default would pass a careless reading.
+        final Board board =
+                risked(
+                        withRule(board("Building", "Finished"), "Reading", risky("Building")),
+                        Risk.HARM);
+        final NextStep.Planned planned =
+                NextStep.after(
+                                board,
+                                binding(List.of("AA1"), "MAIN", "Building"),
+                                new WorkEnds.Done(),
+                                Map.of(),
+                                "",
+                                states -> states.getFirst(),
+                                BUILT)
+                        .tasks()
+                        .getFirst();
+        final WorkOrder.Task reader = planned.task();
+        assertThat(List.of(reader.role(), reader.agent(), reader.model()))
+                .as("the reader takes the model the rule names for harm")
+                .containsExactly("READER", "codex", "careful");
+        assertThat(reader.effort()).as("the effort the rule names for harm").isEqualTo("max");
+        assertThat(planned.basis())
+                .as("where the choice came from")
+                .isEqualTo("Reading, risk harm");
+    }
+
+    @Test
+    void aReadingForAnIssueThatNamesNoRiskTakesTheOrdinaryChoice() {
+        // An issue that names no risk worked by harm's choice would spend care where none is asked.
+        final Board board = withRule(board("Building", "Finished"), "Reading", risky("Building"));
+        final NextStep.Planned planned =
+                NextStep.after(
+                                board,
+                                binding(List.of("AA1"), "MAIN", "Building"),
+                                new WorkEnds.Done(),
+                                Map.of(),
+                                "",
+                                states -> states.getFirst(),
+                                BUILT)
+                        .tasks()
+                        .getFirst();
+        assertThat(List.of(planned.task().agent(), planned.task().model()))
+                .as("the rule's own first model, which ordinary does not replace")
+                .containsExactly("claude", "opus");
+        assertThat(planned.task().effort())
+                .as("the effort the rule names for ordinary")
+                .isEqualTo("medium");
+        assertThat(planned.basis())
+                .as("where the choice came from")
+                .isEqualTo("Reading, risk ordinary");
+    }
+
+    @Test
+    void aReworkChosenWithAModelHarmDoesNotOfferIsRefusedForAHarmIssue() {
+        // A person's choice of the rule's light model for work that can do harm would bypass
+        // harm's.
+        final Board board = risked(board("Reading", "Finished"), Risk.HARM);
+        final Issue issue = board.issue("AA1").orElseThrow();
+        assertThatThrownBy(
+                        () ->
+                                NextStep.task(
+                                        board,
+                                        "ST1",
+                                        issue,
+                                        "Reworking",
+                                        risky("Reading"),
+                                        new NextStep.Settings("AGENT", "claude", "opus"),
+                                        "",
+                                        "",
+                                        "BUILDER",
+                                        BUILT))
+                .as("a model offered only for ordinary work")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(
+                        NextStep.task(
+                                        board,
+                                        "ST1",
+                                        issue,
+                                        "Reworking",
+                                        risky("Reading"),
+                                        new NextStep.Settings("AGENT", "gemini", "deep"),
+                                        "",
+                                        "",
+                                        "BUILDER",
+                                        BUILT)
+                                .task()
+                                .model())
+                .as("a model harm offers, though the rule's own models do not name it")
+                .isEqualTo("deep");
+    }
+
+    /** {@link #choices} with an effort for ordinary and its own models and effort for harm. */
+    static WorkRule risky(final String from) {
+        final WorkRule plain = choices(from);
+        final Map<String, String> harm = new java.util.LinkedHashMap<>();
+        harm.put("codex", "careful");
+        harm.put("gemini", "deep");
+        return new WorkRule(
+                plain.from(),
+                plain.done(),
+                plain.then(),
+                plain.blocked(),
+                plain.per(),
+                plain.modes(),
+                plain.order(),
+                plain.models(),
+                Map.of(
+                        Risk.HARM,
+                        new WorkRule.ForRisk(harm, "max"),
+                        Risk.ORDINARY,
+                        new WorkRule.ForRisk(Map.of(), "medium")));
+    }
+
+    /** The board with the parent issue AA1 given a risk. */
+    static Board risked(final Board board, final Risk risk) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        i.id().equals("AA1")
+                                                ? new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        i.title(),
+                                                        i.state(),
+                                                        i.size(),
+                                                        i.blockedBy(),
+                                                        i.parent(),
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        risk)
+                                                : i)
+                        .toList(),
+                board.work(),
+                board.repositories());
     }
 
     /** A rule offering two modes and two agents, the first of each not the fixture's AGENT. */

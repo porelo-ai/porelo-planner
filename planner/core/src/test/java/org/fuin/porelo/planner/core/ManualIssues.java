@@ -41,7 +41,8 @@ final class ManualIssues {
                                                         i.parent(),
                                                         i.link(),
                                                         i.text(),
-                                                        Worker.MANUAL)
+                                                        Worker.MANUAL,
+                                                        i.risk())
                                                 : i)
                         .toList(),
                 board.work(),

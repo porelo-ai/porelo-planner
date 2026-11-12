@@ -12,7 +12,8 @@
   "blockedBy": [
     "AB01"
   ],
-  "covers": "The second step follows the first"
+  "covers": "The second step follows the first",
+  "risk": "harm"
 }
 ```
 

@@ -114,10 +114,18 @@
       "maximum": 999
     },
     "worker": {
-      "description": "Who works it: Agent through the tasks the planner starts, Manual by a person; a head without it is worked by an agent. Written last.",
+      "description": "Who works it: Agent through the tasks the planner starts, Manual by a person; a head without it is worked by an agent. Written after openQuestions.",
       "enum": [
         "Agent",
         "Manual"
+      ]
+    },
+    "risk": {
+      "description": "How much harm its change can do; the work rules choose a task's model and effort by it, and a sub-issue is worked with the higher of its own and its parent's. A head without it is ordinary. Written last, after worker.",
+      "enum": [
+        "harm",
+        "ordinary",
+        "small"
       ]
     }
   },

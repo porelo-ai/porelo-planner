@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
+import org.jspecify.annotations.Nullable;
 
 /** The immutable choices proposed from one board, with no runtime or store changes. */
 public record WorkProposal(
@@ -31,10 +32,34 @@ public record WorkProposal(
         manual = List.copyOf(manual);
     }
 
-    /** The proposed main participant; only its offered agent/model pair is a choice. */
-    public record Main(String name, String role, String agent, String model, String brief) {}
+    /**
+     * The proposed main participant; only its offered agent/model pair is a choice. The effort and
+     * where the choice came from are the proposal's; a decision does not choose them.
+     */
+    public record Main(
+            String name,
+            String role,
+            String agent,
+            String model,
+            String brief,
+            @Nullable String effort,
+            String basis) {
 
-    /** A stable sub-issue identity with an explicit participant choice. */
+        /** A main as a decision names it, without the proposal's effort and basis. */
+        public Main(
+                final String name,
+                final String role,
+                final String agent,
+                final String model,
+                final String brief) {
+            this(name, role, agent, model, brief, null, "");
+        }
+    }
+
+    /**
+     * A stable sub-issue identity with an explicit participant choice. The effort and where the
+     * choice came from are the proposal's; a decision does not choose them.
+     */
     public record Assignment(
             String id,
             String issue,
@@ -44,7 +69,24 @@ public record WorkProposal(
             String model,
             String workingState,
             String brief,
-            String choice) {}
+            String choice,
+            @Nullable String effort,
+            String basis) {
+
+        /** An assignment as a decision names it, without the proposal's effort and basis. */
+        public Assignment(
+                final String id,
+                final String issue,
+                final String name,
+                final String kind,
+                final String agent,
+                final String model,
+                final String workingState,
+                final String brief,
+                final String choice) {
+            this(id, issue, name, kind, agent, model, workingState, brief, choice, null, "");
+        }
+    }
 
     /** The issues, main and helpers of one proposed repository group. */
     public record Repository(
@@ -116,28 +158,40 @@ public record WorkProposal(
                         story.state(), to, "Repository work needs an open issue.");
             }
         }
-        final Map.Entry<String, String> model = rule.models().entrySet().iterator().next();
         final List<Repository> repositories = new ArrayList<>();
         for (final Map.Entry<String, List<Issue>> group : groups.entrySet()) {
             final List<Assignment> helpers = new ArrayList<>();
             for (final Issue issue : group.getValue()) {
                 final String brief = brief(issue, story, to);
                 if (issue.parent() != null && story.issues().contains(issue.parent())) {
+                    final Choice own = Choice.of(to, rule, List.of(issue));
                     helpers.add(
                             new Assignment(
                                     group.getKey() + "/" + issue.id() + "/BUILDER",
                                     issue.id(),
                                     "builder",
                                     "BUILDER",
-                                    model.getKey(),
-                                    model.getValue(),
+                                    own.agent(),
+                                    own.model(),
                                     to,
                                     brief,
-                                    "KEEP"));
+                                    "KEEP",
+                                    own.effort(),
+                                    own.basis()));
                 }
             }
+            // A careful choice for one issue of the repository is never lost to a lighter beside
+            // it.
+            final Choice chosen = Choice.of(to, rule, group.getValue());
             final Main main =
-                    new Main("main", "MAIN", model.getKey(), model.getValue(), rule.order());
+                    new Main(
+                            "main",
+                            "MAIN",
+                            chosen.agent(),
+                            chosen.model(),
+                            rule.order(),
+                            chosen.effort(),
+                            chosen.basis());
             repositories.add(
                     new Repository(
                             group.getKey(),

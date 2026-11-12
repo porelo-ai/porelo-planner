@@ -25,6 +25,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
@@ -362,6 +363,12 @@ public final class WorkRecord implements AutoCloseable {
                 root.putObject("ideas");
             }
             for (final JsonNode run : tree.path("runs")) {
+                for (final JsonNode repository : run.path("repositories")) {
+                    olderChoice(repository.path("main"));
+                    for (final JsonNode sub : repository.path("subAgents")) {
+                        olderChoice(sub);
+                    }
+                }
                 for (final JsonNode offer : run.path("offers")) {
                     // Only the newer fields may be absent in older records.
                     for (final String newer : List.of("machine", "rework")) {
@@ -376,9 +383,30 @@ public final class WorkRecord implements AutoCloseable {
                     if (offer.path("ended") instanceof ObjectNode ended && !ended.has("landed")) {
                         ended.putArray("landed");
                     }
+                    // A record written before the risks names no effort and no rule's risks.
+                    if (offer.path("arguments") instanceof ObjectNode arguments
+                            && !arguments.has("effort")) {
+                        arguments.putNull("effort");
+                    }
+                    if (offer.path("binding").path("rule") instanceof ObjectNode rule
+                            && !rule.has("risks")) {
+                        rule.putObject("risks");
+                    }
                 }
             }
             return tree;
+        }
+
+        // A repository's main or sub-agent written before the risks names no effort and no basis.
+        private static void olderChoice(final JsonNode participant) {
+            if (participant instanceof ObjectNode object) {
+                if (!object.has("effort")) {
+                    object.putNull("effort");
+                }
+                if (!object.has("basis")) {
+                    object.put("basis", "");
+                }
+            }
         }
 
         private Document document(final JsonNode tree) {
@@ -647,6 +675,11 @@ public final class WorkRecord implements AutoCloseable {
                                                             "OFFERED", "STARTED", "ENDED",
                                                             "STOPPED", "VOID")
                                                     .contains(offer.status())) {
+                                        throw new IllegalArgumentException(
+                                                "an offer fails its check");
+                                    }
+                                    final String effort = offer.arguments().effort();
+                                    if (effort != null && !WorkRule.sound(effort)) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }

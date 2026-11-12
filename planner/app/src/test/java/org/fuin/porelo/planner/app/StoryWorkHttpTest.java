@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
@@ -219,7 +220,8 @@ class StoryWorkHttpTest {
                                                         null,
                                                         null,
                                                         "",
-                                                        Worker.MANUAL)))
+                                                        Worker.MANUAL,
+                                                        Risk.ORDINARY)))
                                 .toList(),
                         board.work(),
                         board.repositories());

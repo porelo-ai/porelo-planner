@@ -23,6 +23,9 @@ final class HeadEdit {
     /** A top-level worker member, as the heads are written. */
     private static final Pattern WORKER = Pattern.compile("  \"worker\": \"[^\"\\\\]*\",?");
 
+    /** A top-level risk member, written last, as the heads are written. */
+    private static final Pattern RISK = Pattern.compile("  \"risk\": \"[^\"\\\\]*\"");
+
     /** A top-level priority member, as the heads are written. */
     private static final Pattern PRIORITY = Pattern.compile("  \"priority\": \"[^\"\\\\]*\",?");
 
@@ -73,7 +76,8 @@ final class HeadEdit {
 
     /**
      * Sets who works an issue in the head its file opens with: replaced where the head names one,
-     * else written as its last member.
+     * else written as its last member, or before a risk, which stays last as the build tools write
+     * it.
      *
      * @param text the issue's file
      * @param worker who works it
@@ -105,6 +109,10 @@ final class HeadEdit {
         final int last = end - 2;
         if (last <= fence + 1 || lines[last].endsWith(",")) {
             throw new IllegalArgumentException("the JSON head is not written one member a line");
+        }
+        if (RISK.matcher(lines[last]).matches()) {
+            out.add(last, value + ",");
+            return String.join("\n", out);
         }
         out.set(last, lines[last] + ",");
         out.add(last + 1, value);

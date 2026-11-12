@@ -9,6 +9,7 @@ import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -431,6 +432,101 @@ class WorkProposalTest {
                 .isInstanceOf(WorkRefusal.class);
     }
 
+    @Test
+    void aRepositoryOfASmallAndAHarmIssueIsProposedHarmsChoiceAndEachHelperItsOwn() {
+        // A main proposed the light choice of the small issue beside one that can do harm would
+        // build the harmful change carelessly.
+        final Board board =
+                risked(
+                        board(WorkRule.Per.REPOSITORY),
+                        Map.of("AA1", Risk.SMALL, "AA1.1", Risk.HARM, "BB1", Risk.SMALL));
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+        final WorkProposal.Main alpha = proposal.repositories().getFirst().main();
+        assertThat(List.of(alpha.agent(), alpha.model()))
+                .as("the main of a repository holding a harm issue takes harm's model")
+                .containsExactly("omega", "huge");
+        assertThat(alpha.effort()).as("and harm's effort").isEqualTo("max");
+        assertThat(alpha.basis()).as("named as harm's").isEqualTo("Building, risk harm");
+        final WorkProposal.Assignment builder =
+                proposal.repositories().getFirst().subAgents().getFirst();
+        assertThat(List.of(builder.issue(), builder.model(), builder.basis()))
+                .as("the harm sub-issue's builder takes harm's choice")
+                .containsExactly("AA1.1", "huge", "Building, risk harm");
+        final WorkProposal.Main beta = proposal.repositories().get(1).main();
+        assertThat(List.of(beta.agent(), beta.model(), beta.basis()))
+                .as("the repository of only a small issue takes small's choice")
+                .containsExactly("alpha", "small", "Building, risk small");
+        assertThat(beta.effort()).as("small's effort").isEqualTo("low");
+    }
+
+    @Test
+    void aStoryOfNoOpenIssueIsProposedTheOrdinaryChoice() {
+        // A story's own work with no issue to weigh must still get a choice, the ordinary one.
+        final Board original = risked(board(WorkRule.Per.STORY), Map.of());
+        final Board board =
+                new Board(
+                        original.revision(),
+                        original.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1", "Story", "Backlog", true, "High", List.of(), "",
+                                        null)),
+                        original.issues(),
+                        original.work(),
+                        original.repositories());
+        final WorkProposal.Main main =
+                WorkProposal.propose(board, "ST1", "Building").repositories().getFirst().main();
+        assertThat(List.of(main.agent(), main.model(), main.basis()))
+                .as("the rule's own first model, named as ordinary")
+                .containsExactly("zeta", "large", "Building, risk ordinary");
+        assertThat(main.effort()).as("the rule names no effort for ordinary").isNull();
+    }
+
+    /** The board with its Building rule naming harm and small, and the issues given their risks. */
+    static Board risked(final Board board, final Map<String, Risk> risks) {
+        final WorkRule plain = board.work().rules().get("Building");
+        final Map<String, String> harm = new LinkedHashMap<>();
+        harm.put("omega", "huge");
+        harm.put("zeta", "large");
+        final WorkRule rule =
+                new WorkRule(
+                        plain.from(),
+                        plain.done(),
+                        plain.then(),
+                        plain.blocked(),
+                        plain.per(),
+                        plain.modes(),
+                        plain.order(),
+                        plain.models(),
+                        Map.of(
+                                Risk.HARM,
+                                new WorkRule.ForRisk(harm, "max"),
+                                Risk.SMALL,
+                                new WorkRule.ForRisk(Map.of("alpha", "small"), "low")));
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        new Issue(
+                                                i.id(),
+                                                i.repository(),
+                                                i.title(),
+                                                i.state(),
+                                                i.size(),
+                                                i.blockedBy(),
+                                                i.parent(),
+                                                i.link(),
+                                                i.text(),
+                                                i.worker(),
+                                                risks.getOrDefault(i.id(), i.risk())))
+                        .toList(),
+                new Work(Map.of("Building", rule), List.of()),
+                board.repositories());
+    }
+
     /** A story in Idea: AA1 in Backlog, BB1 in Idea, each with the worker given. */
     private static Board staggered(final Worker inBacklog, final Worker inIdea) {
         final Board original = board(WorkRule.Per.REPOSITORY);
@@ -452,11 +548,29 @@ class WorkProposalTest {
                                 null)),
                 List.of(
                         new Issue(
-                                "AA1", "alpha", "Ready", "Backlog", null, List.of(), null, null, "",
-                                inBacklog),
+                                "AA1",
+                                "alpha",
+                                "Ready",
+                                "Backlog",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "",
+                                inBacklog,
+                                Risk.ORDINARY),
                         new Issue(
-                                "BB1", "beta", "Behind", "Idea", null, List.of(), null, null, "",
-                                inIdea)),
+                                "BB1",
+                                "beta",
+                                "Behind",
+                                "Idea",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "",
+                                inIdea,
+                                Risk.ORDINARY)),
                 original.work(),
                 original.repositories());
     }

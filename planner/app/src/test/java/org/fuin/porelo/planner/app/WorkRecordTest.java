@@ -23,8 +23,10 @@ import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
+import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.jspecify.annotations.Nullable;
@@ -34,6 +36,8 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 class WorkRecordTest {
+    private static final String MADE_UP_ISSUE = "AB01"; // not-a-citation: a made-up issue
+
     @TempDir Path directory;
 
     @Test
@@ -161,6 +165,118 @@ class WorkRecordTest {
     }
 
     @Test
+    void aRecordWrittenBeforeRisksOpensAndAnEffortThatIsNoNameDoesNot() throws Exception {
+        // An upgrade must not make a running story's work record unreadable; a forged effort in
+        // the record must not reach a task.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        final ObjectNode rule = (ObjectNode) offer.path("binding").get("rule");
+        assertThat(arguments.has("effort")).as("the reference record holds the effort").isTrue();
+        assertThat(rule.has("risks")).as("the reference record holds the rule's risks").isTrue();
+        arguments.remove("effort");
+        rule.remove("risks");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored.offers()).as("the older record retains its bound task").hasSize(1);
+            assertThat(restored.offers().getFirst().arguments().effort())
+                    .as("an absent effort stays none")
+                    .isNull();
+            assertThat(restored.offers().getFirst().binding().rule().risks())
+                    .as("an absent rule's risks name none")
+                    .isEmpty();
+            arguments.put("effort", "max\nrm -rf /");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("an effort holding a line break is refused")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void aRecordWrittenBeforeRisksOpensWithItsRepositoriesMainAndSubAgent() throws Exception {
+        // An upgrade must not make a running story's work record unreadable when its run names
+        // repositories, whose main and sub-agents were written without an effort and a basis.
+        writeTaskRecord(
+                "box",
+                List.of(
+                        new WorkProposal.Repository(
+                                "alpha",
+                                List.of(MADE_UP_ISSUE),
+                                new WorkProposal.Main(
+                                        "main",
+                                        "MAIN",
+                                        "codex",
+                                        "careful",
+                                        "brief",
+                                        "max",
+                                        "Building, risk harm"),
+                                List.of(
+                                        new WorkProposal.Assignment(
+                                                "sub",
+                                                MADE_UP_ISSUE,
+                                                "helper",
+                                                "BUILDER",
+                                                "codex",
+                                                "careful",
+                                                "Building",
+                                                "brief",
+                                                "KEEP",
+                                                "max",
+                                                "Building, risk harm")))));
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode repository =
+                (ObjectNode) document.path("runs").iterator().next().path("repositories").get(0);
+        final ObjectNode main = (ObjectNode) repository.get("main");
+        final ObjectNode sub = (ObjectNode) repository.path("subAgents").get(0);
+        for (final ObjectNode older : List.of(main, sub)) {
+            assertThat(older.has("effort") && older.has("basis"))
+                    .as("the reference record holds the effort and the basis")
+                    .isTrue();
+            older.remove("effort");
+            older.remove("basis");
+        }
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            final WorkProposal.Repository read = restored.repositories().getFirst();
+            assertThat(read.main().agent())
+                    .as("the older record keeps its repository's main")
+                    .isEqualTo("codex");
+            assertThat(read.main().effort()).as("the main's absent effort stays none").isNull();
+            assertThat(read.main().basis()).as("the main's absent basis stays empty").isEmpty();
+            assertThat(read.subAgents())
+                    .as("the older record keeps its sub-agent")
+                    .singleElement()
+                    .satisfies(
+                            helper -> {
+                                assertThat(helper.effort())
+                                        .as("the sub-agent's absent effort stays none")
+                                        .isNull();
+                                assertThat(helper.basis())
+                                        .as("the sub-agent's absent basis stays empty")
+                                        .isEmpty();
+                            });
+        }
+    }
+
+    @Test
     void handedIdeasSurviveRestartAndARecordWrittenBeforeThemReads() throws Exception {
         // A lost offer would save a repeated hand-in as a second story; an older record must open.
         final String offer = "4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f";
@@ -226,11 +342,24 @@ class WorkRecordTest {
     }
 
     private WorkRun.Run writeTaskRecord(final String machine) {
-        return writeTaskRecord(machine, "STARTED", null);
+        return writeTaskRecord(machine, "STARTED", null, List.of());
     }
 
     private WorkRun.Run writeTaskRecord(
             final String machine, final String status, final WorkRun.@Nullable Ended ended) {
+        return writeTaskRecord(machine, status, ended, List.of());
+    }
+
+    private WorkRun.Run writeTaskRecord(
+            final String machine, final List<WorkProposal.Repository> repositories) {
+        return writeTaskRecord(machine, "STARTED", null, repositories);
+    }
+
+    private WorkRun.Run writeTaskRecord(
+            final String machine,
+            final String status,
+            final WorkRun.@Nullable Ended ended,
+            final List<WorkProposal.Repository> repositories) {
         final String story = String.format("ST%d", 1);
         final var rule =
                 new WorkRule(
@@ -241,9 +370,11 @@ class WorkRecordTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Build",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")));
         final var task =
-                new WorkOrder.Task("alpha", List.of(), "MAIN", "codex", "model", "AGENT", "Build");
+                new WorkOrder.Task(
+                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build");
         final String since = java.time.Instant.EPOCH.toString();
         final var offer =
                 new WorkRun.Offer(
@@ -271,7 +402,7 @@ class WorkRecordTest {
                         "START",
                         2,
                         List.of(),
-                        List.of(),
+                        repositories,
                         since,
                         List.of(offer),
                         Map.of(),

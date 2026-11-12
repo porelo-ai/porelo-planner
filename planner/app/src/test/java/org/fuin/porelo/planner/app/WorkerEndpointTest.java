@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
@@ -81,7 +82,8 @@ class WorkerEndpointTest {
                 parent,
                 null,
                 "",
-                worker);
+                worker,
+                Risk.ORDINARY);
     }
 
     @BeforeEach
@@ -253,7 +255,8 @@ class WorkerEndpointTest {
                                         "AB01",
                                         null,
                                         "",
-                                        Worker.MANUAL),
+                                        Worker.MANUAL,
+                                        Risk.ORDINARY),
                                 new Issue(
                                         "AB02",
                                         "porelo-store",
@@ -264,7 +267,8 @@ class WorkerEndpointTest {
                                         null,
                                         null,
                                         "",
-                                        Worker.MANUAL)),
+                                        Worker.MANUAL,
+                                        Risk.ORDINARY)),
                         new Work(Map.of("Implementing", implement), List.of()));
 
         for (final String issue : List.of("AB02", "AB01")) {

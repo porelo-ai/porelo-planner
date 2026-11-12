@@ -83,18 +83,20 @@ public final class NextStep {
          * The settings a task of the rule runs with.
          *
          * @param rule the rule the task works under
-         * @param chosen the person's choice, or null for the rule's first mode and first model
-         * @return the chosen settings, or the rule's first ones
+         * @param choice the rule's choice for the task's risk
+         * @param chosen the person's choice, or null for the rule's first mode and the risk's agent
+         *     and model
+         * @return the chosen settings, or the proposed ones
          * @throws WorkRefusal {@code InvalidSettings} when the choice is not one of the rule's
-         *     modes together with one of its agents and that agent's model
+         *     modes together with an agent and model the risk offers
          */
-        public static Settings of(final WorkRule rule, final @Nullable Settings chosen) {
+        public static Settings of(
+                final WorkRule rule, final Choice choice, final @Nullable Settings chosen) {
             if (chosen == null) {
-                final Map.Entry<String, String> first = rule.models().entrySet().iterator().next();
-                return new Settings(rule.modes().getFirst(), first.getKey(), first.getValue());
+                return new Settings(rule.modes().getFirst(), choice.agent(), choice.model());
             }
             if (!rule.modes().contains(chosen.mode())
-                    || !chosen.model().equals(rule.models().get(chosen.agent()))) {
+                    || !choice.offers(chosen.agent(), chosen.model())) {
                 throw WorkRefusal.invalidSettings();
             }
             return chosen;
@@ -126,8 +128,11 @@ public final class NextStep {
         }
     }
 
-    /** An offer's Start arguments together with the working state it will enter. */
-    public record Planned(WorkOrder.Task task, String state, WorkRule rule) {}
+    /**
+     * An offer's Start arguments together with the working state it will enter and where its agent,
+     * model and effort came from.
+     */
+    public record Planned(WorkOrder.Task task, String state, WorkRule rule, String basis) {}
 
     /** A complete next step; deferred parents wait for their participating children. */
     public record Result(
@@ -464,7 +469,8 @@ public final class NextStep {
 
     /**
      * Builds a single-issue reading or rework with the person's settings, or with the rule's first
-     * mode and first model when the planner starts it by itself; a reading's order names the Porelo
+     * mode and the agent and model it names for the issue's risk when the planner starts it by
+     * itself, always with the effort it names for that risk; a reading's order names the Porelo
      * task {@code built} whose work it reads and where that work landed, and its offer reads that
      * task.
      */
@@ -479,7 +485,8 @@ public final class NextStep {
             final String words,
             final String role,
             final Build built) {
-        final Settings settings = Settings.of(rule, chosen);
+        final Choice choice = Choice.of(state, rule, List.of(issue));
+        final Settings settings = Settings.of(rule, choice, chosen);
         final Story story =
                 board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));
         if (settings.agent().length() > 128
@@ -510,11 +517,13 @@ public final class NextStep {
                         role,
                         settings.agent(),
                         settings.model(),
+                        choice.effort(),
                         settings.mode(),
                         prompt,
                         role.equals("READER") ? List.of(built.task()) : List.of()),
                 state,
-                rule);
+                rule,
+                choice.basis());
     }
 
     /**

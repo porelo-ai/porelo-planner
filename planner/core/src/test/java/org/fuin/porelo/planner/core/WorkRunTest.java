@@ -12,6 +12,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
@@ -688,7 +689,8 @@ class WorkRunTest {
                         null,
                         null,
                         "",
-                        Worker.MANUAL));
+                        Worker.MANUAL,
+                        Risk.ORDINARY));
         f.store.current =
                 new Board(
                         board.revision(),
@@ -1556,6 +1558,7 @@ class WorkRunTest {
                         a.role(),
                         a.agent(),
                         a.model(),
+                        a.effort(),
                         a.mode(),
                         a.prompt()),
                 o.binding(),
@@ -1764,6 +1767,112 @@ class WorkRunTest {
         assertThat(List.of(defaulted.mode(), defaulted.agent(), defaulted.model()))
                 .as("no choice takes the Reworking rule's first mode and model")
                 .containsExactly("UNATTENDED", "claude", "opus");
+    }
+
+    @Test
+    void aReworkChosenWithNoSettingsForAHarmIssueRunsWithHarmsModelAndEffort() {
+        // A rework given the rule's light first model for work that can do harm would rework it
+        // carelessly.
+        final Fixture f = stoppedOnFirstOfTwo();
+        f.store.current =
+                NextStepTest.risked(
+                        NextStepTest.withRule(
+                                f.store.board(), "Reworking", NextStepTest.risky("Reading")),
+                        Risk.HARM);
+        final WorkOrder.Task task =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst()
+                        .task();
+        assertThat(List.of(task.agent(), task.model()))
+                .as("the model the Reworking rule names for harm")
+                .containsExactly("codex", "careful");
+        assertThat(task.effort()).as("the effort it names for harm").isEqualTo("max");
+    }
+
+    @Test
+    void aDeferredHarmParentResumedAfterItsChildKeepsHarmsChoice() {
+        // A parent's risk lost while it waits for its child would rework harmful work lightly.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        for (final WorkRun.Offered reader : f.readers()) {
+            f.run.report(
+                    "reader-" + reader.task().issues().getFirst(),
+                    new WorkRun.Report(
+                            reader.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Findings:\n1. blocking | - | - | Preserve data")));
+        }
+        f.store.current =
+                NextStepTest.risked(
+                        NextStepTest.withRule(
+                                f.store.board(), "Reworking", NextStepTest.risky("Reading")),
+                        Risk.HARM);
+        final var waiting =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        1,
+                        ReadingCycle.Choice.REWORK,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(waiting.tasks()).as("the stopped child holds its parent's rework").isEmpty();
+        final var chosen =
+                f.run.choose(
+                        "ST1",
+                        "AA1.1",
+                        1,
+                        ReadingCycle.Choice.REVIEW_ANYWAY,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        final WorkOrder.Task resumed = chosen.tasks().getFirst().task();
+        assertThat(List.of(resumed.issues().getFirst(), resumed.model()))
+                .as("the resumed parent's rework takes harm's model")
+                .containsExactly("AA1", "careful");
+        assertThat(resumed.effort()).as("and harm's effort").isEqualTo("max");
+    }
+
+    @Test
+    void anOrderedTaskIsOfferedWithItsRisksEffort() {
+        // An effort dropped where the run saves the window's order would start work that can do
+        // harm without the care the rule names.
+        final Fixture f = new Fixture();
+        final WorkRule building = NextStepTest.rule("Building");
+        f.store.current =
+                NextStepTest.risked(
+                        NextStepTest.withRule(
+                                f.store.board(),
+                                "Building",
+                                new WorkRule(
+                                        building.from(),
+                                        building.done(),
+                                        building.then(),
+                                        building.blocked(),
+                                        building.per(),
+                                        building.modes(),
+                                        building.order(),
+                                        building.models(),
+                                        Map.of(
+                                                Risk.HARM,
+                                                new WorkRule.ForRisk(
+                                                        Map.of("codex", "careful"), "max")))),
+                        Risk.HARM);
+        final WorkOrder.Task task = f.order().tasks().getFirst().task();
+        assertThat(List.of(task.issues().getFirst(), task.model()))
+                .as("the offered task of a harm issue takes harm's model")
+                .containsExactly("AA1", "careful");
+        assertThat(task.effort()).as("and keeps harm's effort").isEqualTo("max");
     }
 
     /** One issue whose first of two readings stopped on a blocking finding. */
@@ -2505,7 +2614,8 @@ class WorkRunTest {
                                                     i.parent(),
                                                     i.link(),
                                                     i.text(),
-                                                    i.worker()))
+                                                    i.worker(),
+                                                    i.risk()))
                             .toList();
             final List<Story> stories =
                     current.stories().stream()

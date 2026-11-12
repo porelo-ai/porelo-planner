@@ -424,9 +424,11 @@ public final class WorkRun {
                                         task.role(),
                                         task.agent(),
                                         task.model(),
+                                        task.effort(),
                                         task.mode(),
                                         prompt);
-                        offers.add(offer(new NextStep.Planned(scoped, to, rule), storyId));
+                        // The proposal named the choice's basis when the person decided on it.
+                        offers.add(offer(new NextStep.Planned(scoped, to, rule, ""), storyId));
                     }
                     final List<String> covered =
                             offers.stream().flatMap(o -> o.binding().issues().stream()).toList();
@@ -943,7 +945,7 @@ public final class WorkRun {
                     }
                     final NextStep.Settings settings =
                             counted.next() == ReadingCycle.Next.REWORK
-                                    ? reworkSettings(board, reading.binding().rule(), rework)
+                                    ? reworkSettings(board, reading.binding().rule(), issue, rework)
                                     : null;
                     final Draft draft = new Draft(run);
                     draft.progress.put(
@@ -1410,23 +1412,30 @@ public final class WorkRun {
     }
 
     /**
-     * Checks a rework's settings against the Reworking rule before anything is saved; without that
-     * rule the rework cannot be built, so only no choice passes on to say so as attention.
+     * Checks a rework's settings against the Reworking rule for the issue's risk before anything is
+     * saved; without that rule the rework cannot be built, so only no choice passes on to say so as
+     * attention. No choice stays none, so the rework takes what the rule names for the risk.
      */
     private static NextStep.@Nullable Settings reworkSettings(
-            final Board board, final WorkRule reading, final NextStep.@Nullable Settings chosen) {
+            final Board board,
+            final WorkRule reading,
+            final Issue issue,
+            final NextStep.@Nullable Settings chosen) {
         final String blocked = reading.blocked();
         final WorkRule rule =
                 blocked == null
                         ? null
                         : WorkRules.check(board.workflow(), board.work()).rules().get(blocked);
-        if (rule == null) {
+        if (blocked == null || rule == null) {
             if (chosen != null) {
                 throw WorkRefusal.invalidSettings();
             }
             return null;
         }
-        return NextStep.Settings.of(rule, chosen);
+        if (chosen == null) {
+            return null;
+        }
+        return NextStep.Settings.of(rule, Choice.of(blocked, rule, List.of(issue)), chosen);
     }
 
     private NextStep.Result next(
@@ -1539,6 +1548,7 @@ public final class WorkRun {
                                     arguments.role(),
                                     arguments.agent(),
                                     arguments.model(),
+                                    arguments.effort(),
                                     arguments.mode(),
                                     arguments.prompt(),
                                     List.of(built))));
@@ -1778,7 +1788,8 @@ public final class WorkRun {
                                                 i.parent(),
                                                 i.link(),
                                                 i.text(),
-                                                i.worker()))
+                                                i.worker(),
+                                                i.risk()))
                         .toList(),
                 board.work(),
                 board.repositories());
@@ -2050,6 +2061,7 @@ public final class WorkRun {
                                         arguments.role(),
                                         arguments.agent(),
                                         arguments.model(),
+                                        arguments.effort(),
                                         arguments.mode(),
                                         "",
                                         arguments.reads()),

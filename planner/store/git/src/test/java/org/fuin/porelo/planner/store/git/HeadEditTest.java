@@ -111,6 +111,23 @@ class HeadEditTest {
     }
 
     @Test
+    void anIssuesWorkerIsInsertedBeforeItsRiskWhichStaysLast() {
+        // A worker written after the risk would differ from the head the build tools write, and
+        // their index check would rewrite the issue a person set.
+        final String risked =
+                ISSUE.replace(
+                        "  \"covers\": \"Something.\"\n}",
+                        "  \"covers\": \"Something.\",\n  \"risk\": \"harm\"\n}");
+        assertThat(HeadEdit.issueWorker(risked, Worker.MANUAL))
+                .as("inserted after covers and before the risk, which keeps its place")
+                .isEqualTo(
+                        ISSUE.replace(
+                                "  \"covers\": \"Something.\"\n}",
+                                "  \"covers\": \"Something.\",\n  \"worker\": \"Manual\",\n"
+                                        + "  \"risk\": \"harm\"\n}"));
+    }
+
+    @Test
     void aHeadWithTwoWorkersIsRefused() {
         // Which of two a reader takes is not certain, so setting one would save nothing sure.
         final String twice =

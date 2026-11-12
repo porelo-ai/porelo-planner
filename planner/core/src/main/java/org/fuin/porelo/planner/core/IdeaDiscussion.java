@@ -7,18 +7,29 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One task that discusses an idea with a person over every repository of the project, read only,
  * and hands back the idea in the planner's idea format; offering it records and writes nothing.
  *
- * @param agent the default agent, the first of the first sound work rule
+ * @param agent the default agent, the first the first sound work rule names for ordinary work, as a
+ *     discussion has no issue
  * @param model that agent's model
+ * @param effort the effort that rule names for ordinary work, or null when it names none
  * @param mode the mode a conversation runs in
  * @param prompt the complete brief
+ * @param basis where the agent, model and effort came from in words
  */
-public record IdeaDiscussion(String agent, String model, String mode, String prompt) {
+public record IdeaDiscussion(
+        String agent,
+        String model,
+        @Nullable String effort,
+        String mode,
+        String prompt,
+        String basis) {
 
     /** The name of the file the task hands back. */
     public static final String RESULT = "idea.json";
@@ -46,15 +57,21 @@ public record IdeaDiscussion(String agent, String model, String mode, String pro
         if (board.repositories().isEmpty()) {
             throw WorkRefusal.noDiscussion("The project names no repository to discuss.");
         }
-        for (final WorkRule rule :
-                WorkRules.check(board.workflow(), board.work()).rules().values()) {
-            final Map.Entry<String, String> first = rule.models().entrySet().iterator().next();
-            if (named(first.getKey()) && named(first.getValue())) {
+        for (final Map.Entry<String, WorkRule> rule :
+                WorkRules.check(board.workflow(), board.work()).rules().entrySet()) {
+            final Choice first = Choice.of(rule.getKey(), rule.getValue(), Risk.ORDINARY);
+            if (named(first.agent()) && named(first.model())) {
                 final String prompt = brief(board, idea);
                 if (prompt.getBytes(StandardCharsets.UTF_8).length > PROMPT) {
                     throw WorkRefusal.noDiscussion("The brief exceeds 65536 UTF-8 bytes.");
                 }
-                return new IdeaDiscussion(first.getKey(), first.getValue(), "AGENT", prompt);
+                return new IdeaDiscussion(
+                        first.agent(),
+                        first.model(),
+                        first.effort(),
+                        "AGENT",
+                        prompt,
+                        first.basis());
             }
         }
         throw WorkRefusal.noDiscussion("The project has no sound work rule that offers an agent.");

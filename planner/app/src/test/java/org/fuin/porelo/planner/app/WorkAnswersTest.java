@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -33,7 +34,8 @@ class WorkAnswersTest {
                     null,
                     null,
                     "",
-                    Worker.MANUAL);
+                    Worker.MANUAL,
+                    Risk.ORDINARY);
 
     private static final WorkRun.Snapshot NO_RUN = new WorkRun.Snapshot(0, Map.of());
 

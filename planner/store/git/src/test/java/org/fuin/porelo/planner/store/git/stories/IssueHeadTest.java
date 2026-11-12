@@ -20,7 +20,7 @@ class IssueHeadTest {
                     """);
 
     @Test
-    void theHeadWritesTheWorkerLastAfterEveryOtherOptionalFieldAndReadsItBack() {
+    void theHeadWritesTheWorkerAfterEveryOtherOptionalFieldButTheRiskAndReadsItBack() {
         // A worker written elsewhere would differ from the head the build tools write, and their
         // index check would rewrite every issue a person set.
         final IssueHead head =
@@ -38,13 +38,45 @@ class IssueHeadTest {
                         "Major",
                         "Bug",
                         2,
-                        "Manual");
+                        "Manual",
+                        null);
 
         final String json = head.json();
 
         assertThat(json)
                 .as("the worker follows openQuestions and closes the head")
                 .endsWith("  \"openQuestions\": 2,\n  \"worker\": \"Manual\"\n}");
+        assertThat(IssueHead.read(head.file("Body.\n"), WORKFLOW))
+                .as("the written head reads back as itself")
+                .isEqualTo(head);
+    }
+
+    @Test
+    void theHeadWritesTheRiskLastAfterTheWorkerAndReadsItBack() {
+        // A risk dropped where the planner writes a head would work an issue that can do harm as an
+        // ordinary one; written elsewhere, it would differ from the build tools' head.
+        final IssueHead head =
+                new IssueHead(
+                        "XY07",
+                        "Served",
+                        "Idea",
+                        "S",
+                        "Medium",
+                        1,
+                        List.of(),
+                        "Something.",
+                        null,
+                        null,
+                        null,
+                        null,
+                        2,
+                        "Manual",
+                        "harm");
+
+        assertThat(head.json())
+                .as("the worker follows openQuestions and the risk closes the head")
+                .endsWith(
+                        "  \"openQuestions\": 2,\n  \"worker\": \"Manual\",\n  \"risk\": \"harm\"\n}");
         assertThat(IssueHead.read(head.file("Body.\n"), WORKFLOW))
                 .as("the written head reads back as itself")
                 .isEqualTo(head);

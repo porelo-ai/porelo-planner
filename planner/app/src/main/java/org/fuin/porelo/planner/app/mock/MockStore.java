@@ -18,6 +18,7 @@ import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
@@ -287,7 +288,8 @@ public final class MockStore implements PlanningStore {
                             null,
                             null,
                             "**What must be true.** " + issue.mustBeTrue() + "\n",
-                            issue.worker()));
+                            issue.worker(),
+                            Risk.ORDINARY));
         }
         int story = 0;
         for (final Story known : board.stories()) {
@@ -422,7 +424,8 @@ public final class MockStore implements PlanningStore {
                             issue.parent(),
                             issue.link(),
                             issue.text(),
-                            writes.workers().getOrDefault(issue.id(), issue.worker())));
+                            writes.workers().getOrDefault(issue.id(), issue.worker()),
+                            issue.risk()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {

@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
@@ -206,14 +207,17 @@ public final class StoreReader implements PartReader {
     }
 
     /**
-     * Gives each sub-issue its parent's worker, whatever its own head says; a sub-issue whose
-     * parent was not read is worked by an agent, as a head naming none is.
+     * Gives each sub-issue its parent's worker, whatever its own head says, and the higher of its
+     * own risk and its parent's; a sub-issue whose parent was not read is worked by an agent, as a
+     * head naming none is, with its own risk.
      */
     private static List<Issue> parentsWorkers(final List<Issue> read) {
         final Map<String, Worker> workers = new HashMap<>();
+        final Map<String, Risk> risks = new HashMap<>();
         for (final Issue issue : read) {
             if (issue.parent() == null) {
                 workers.put(issue.id(), issue.worker());
+                risks.put(issue.id(), issue.risk());
             }
         }
         final List<Issue> issues = new ArrayList<>(read.size());
@@ -234,7 +238,11 @@ public final class StoreReader implements PartReader {
                             parent,
                             issue.link(),
                             issue.text(),
-                            workers.getOrDefault(parent, Worker.AGENT)));
+                            workers.getOrDefault(parent, Worker.AGENT),
+                            Risk.highest(
+                                    List.of(
+                                            issue.risk(),
+                                            risks.getOrDefault(parent, issue.risk())))));
         }
         return issues;
     }
@@ -427,7 +435,8 @@ public final class StoreReader implements PartReader {
                 head.parent(),
                 null,
                 text,
-                worker(head.worker()));
+                worker(head.worker()),
+                head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk()));
     }
 
     /** The worker a head names; the schema took only these spellings, or none. */

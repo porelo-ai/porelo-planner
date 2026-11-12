@@ -61,7 +61,7 @@ public final class Ids {
         return value;
     }
 
-    private static String quoted(final String value) {
+    static String quoted(final String value) {
         final String shown = value.length() > 40 ? value.substring(0, 40) + "..." : value;
         return "'" + shown.replaceAll("\\p{Cntrl}", "?") + "'";
     }

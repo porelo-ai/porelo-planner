@@ -31,6 +31,16 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
     /**
      * The complete arguments for one call to Start; {@code reads} names the Porelo tasks whose work
      * a reader reads, so Porelo's gate gives it their branches, and is empty for every other role.
+     *
+     * @param repository the repository the task works in
+     * @param issues the issues it owns
+     * @param role its role
+     * @param agent its agent
+     * @param model the agent's model
+     * @param effort the effort the rule names for the task's risk, or null when it names none
+     * @param mode its mode
+     * @param prompt its order
+     * @param reads the Porelo tasks whose work it reads
      */
     public record Task(
             String repository,
@@ -38,6 +48,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             String role,
             String agent,
             String model,
+            @Nullable String effort,
             String mode,
             String prompt,
             List<String> reads) {
@@ -54,9 +65,10 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                 final String role,
                 final String agent,
                 final String model,
+                final @Nullable String effort,
                 final String mode,
                 final String prompt) {
-            this(repository, issues, role, agent, model, mode, prompt, List.of());
+            this(repository, issues, role, agent, model, effort, mode, prompt, List.of());
         }
     }
 
@@ -139,7 +151,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                 throw refused(story, to, "The repository was not proposed.");
             }
             final List<WorkProposal.Assignment> helpers =
-                    validate(story, to, rule, source, choice, comment);
+                    validate(board, story, to, rule, source, choice, comment);
             final List<WorkProposal.Assignment> kept =
                     helpers.stream().filter(helper -> !helper.choice().equals("DROP")).toList();
             final List<String> dropped =
@@ -165,6 +177,8 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                             "MAIN",
                             choice.main().agent(),
                             choice.main().model(),
+                            // The proposal's effort: a decision does not choose one.
+                            source.main().effort(),
                             decision.mode(),
                             mainPrompt));
             for (final WorkProposal.Assignment helper : kept) {
@@ -178,6 +192,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                                 helper.kind(),
                                 helper.agent(),
                                 helper.model(),
+                                helper.effort(),
                                 decision.mode(),
                                 prompt(
                                         rule,
@@ -191,6 +206,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
     }
 
     private static List<WorkProposal.Assignment> validate(
+            final Board board,
             final Story story,
             final String to,
             final WorkRule rule,
@@ -203,7 +219,15 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                 || !choice.main().role().equals("MAIN")) {
             throw refused(story, to, "A main identity, brief or repository's issues were changed.");
         }
-        offered(story, to, rule, choice.main().agent(), choice.main().model());
+        offered(
+                story,
+                to,
+                Choice.of(
+                        to,
+                        rule,
+                        source.issues().stream().map(id -> board.issue(id).orElseThrow()).toList()),
+                choice.main().agent(),
+                choice.main().model());
         final Map<String, WorkProposal.Assignment> selected = new LinkedHashMap<>();
         for (final WorkProposal.Assignment helper : choice.subAgents()) {
             if (selected.put(helper.id(), helper) != null) {
@@ -243,7 +267,12 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                 throw refused(story, to, "A kept participant's agent or model was changed.");
             }
             if (helper.choice().equals("CHANGE")) {
-                offered(story, to, rule, helper.agent(), helper.model());
+                offered(
+                        story,
+                        to,
+                        Choice.of(to, rule, List.of(board.issue(original.issue()).orElseThrow())),
+                        helper.agent(),
+                        helper.model());
             }
             checked.add(
                     new WorkProposal.Assignment(
@@ -255,7 +284,9 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                             helper.choice().equals("CHANGE") ? helper.model() : original.model(),
                             original.workingState(),
                             original.brief(),
-                            helper.choice()));
+                            helper.choice(),
+                            original.effort(),
+                            original.basis()));
         }
         return checked;
     }
@@ -263,10 +294,10 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
     private static void offered(
             final Story story,
             final String to,
-            final WorkRule rule,
+            final Choice choice,
             final String agent,
             final String model) {
-        if (agent.isBlank() || model.isBlank() || !model.equals(rule.models().get(agent))) {
+        if (!choice.offers(agent, model)) {
             throw refused(story, to, "Choose an agent and model offered by the rule.");
         }
     }
@@ -376,12 +407,13 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             final String role,
             final String agent,
             final String model,
+            final @Nullable String effort,
             final String mode,
             final String prompt) {
         if (prompt.getBytes(StandardCharsets.UTF_8).length > 65536) {
             throw refused(story, to, "A task prompt exceeds 65536 UTF-8 bytes.");
         }
-        return new Task(repository, issues, role, agent, model, mode, prompt);
+        return new Task(repository, issues, role, agent, model, effort, mode, prompt);
     }
 
     private static WorkRefusal refused(final Story story, final String to, final String reason) {

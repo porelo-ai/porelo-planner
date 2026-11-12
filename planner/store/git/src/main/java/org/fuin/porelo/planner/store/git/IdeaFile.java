@@ -115,7 +115,9 @@ final class IdeaFile {
                         null,
                         null,
                         // An agent's issue names none, so its head holds to the schema before it.
-                        issue.worker() == Worker.MANUAL ? "Manual" : null);
+                        issue.worker() == Worker.MANUAL ? "Manual" : null,
+                        // An idea names no risk, so its issue is ordinary until a person says more.
+                        null);
         final String path = "issues/" + id + "-" + words(issue.title()) + ".md";
         final Path file = root.resolve(RepoPath.checked(path));
         Files.createDirectories(issues);

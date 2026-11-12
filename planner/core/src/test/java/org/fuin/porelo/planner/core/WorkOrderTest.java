@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -593,6 +594,60 @@ class WorkOrderTest {
                                         .containsEntry(
                                                 "reason",
                                                 "A task prompt exceeds 65536 UTF-8 bytes."));
+    }
+
+    @Test
+    void aDecisionForAHarmTaskMayChooseOnlyWhatHarmOffersAndItsTasksKeepHarmsEffort() {
+        // A window choosing the rule's light model for work that can do harm would bypass harm's
+        // choice; an effort lost on the way would start it without the care the rule names.
+        final Board board =
+                WorkProposalTest.risked(
+                        WorkProposalTest.board(WorkRule.Per.REPOSITORY),
+                        Map.of("AA1.1", Risk.HARM));
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        final WorkProposal.Repository first = proposed.getFirst();
+        final WorkProposal.Main main = first.main();
+        refused(
+                board,
+                List.of(
+                        new WorkProposal.Repository(
+                                first.repository(),
+                                first.issues(),
+                                new WorkProposal.Main(
+                                        main.name(), main.role(), "alpha", "small", main.brief()),
+                                first.subAgents()),
+                        proposed.get(1)),
+                "Lighter.");
+        refused(board, changed(proposed, sub -> sub(sub, "CHANGE", "alpha", "small")), "Lighter.");
+        final WorkOrder order =
+                WorkOrder.accept(
+                        board,
+                        "ST1",
+                        "Building",
+                        decision(
+                                List.of(
+                                        new WorkProposal.Repository(
+                                                first.repository(),
+                                                first.issues(),
+                                                new WorkProposal.Main(
+                                                        main.name(),
+                                                        main.role(),
+                                                        "zeta",
+                                                        "large",
+                                                        main.brief()),
+                                                first.subAgents()),
+                                        proposed.get(1)),
+                                null,
+                                null,
+                                null));
+        assertThat(order.tasks())
+                .as("a model harm offers is taken, and each task keeps its risk's effort")
+                .extracting(WorkOrder.Task::role, WorkOrder.Task::model, WorkOrder.Task::effort)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("MAIN", "large", "max"),
+                        org.assertj.core.groups.Tuple.tuple("BUILDER", "huge", "max"),
+                        org.assertj.core.groups.Tuple.tuple("MAIN", "large", null));
     }
 
     private static WorkOrder.Decision decision(

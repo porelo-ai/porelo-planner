@@ -2,7 +2,10 @@ package org.fuin.porelo.planner.store.git;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.junit.jupiter.api.Test;
@@ -134,6 +137,98 @@ class WorkReaderTest {
         assertThat(work.faults().get(0))
                 .as("refused as YAML")
                 .startsWith("stories/work.yml: not YAML: ");
+    }
+
+    @Test
+    void aRulesRisksAreReadWithTheirModelsInOrderAndTheirEffort() {
+        // A risk's choice not read would work an issue that can do harm with the rule's lighter
+        // one.
+        final Work work =
+                WorkReader.read(
+                        SOUND.replace(
+                                "    models: {agy: gemini-4-argon-high}\n",
+                                """
+                                    models: {agy: gemini-4-argon-high}
+                                    risks:
+                                      harm: {models: {codex: gpt-6.1-sol, agy: gemini-4-argon-max}, effort: max}
+                                      small: {effort: low}
+                                """));
+        assertThat(work.faults()).as("no fault").isEmpty();
+        final WorkRule reading = work.rules().get("Reading");
+        assertThat(reading.risks())
+                .as("the risks the rule names, and only those")
+                .containsOnlyKeys(Risk.HARM, Risk.SMALL);
+        final WorkRule.ForRisk harm = reading.risks().get(Risk.HARM);
+        assertThat(harm.models().keySet())
+                .as("the harm entry's agents in the file's order, the first the default")
+                .containsExactly("codex", "agy");
+        assertThat(harm.models().get("agy"))
+                .as("each agent's model")
+                .isEqualTo("gemini-4-argon-max");
+        assertThat(harm.effort()).as("the harm entry's effort").isEqualTo("max");
+        assertThat(reading.risks().get(Risk.SMALL))
+                .as("an entry naming only an effort takes its models from elsewhere")
+                .isEqualTo(new WorkRule.ForRisk(Map.of(), "low"));
+        assertThat(work.rules().get("Implementing").risks()).as("a rule naming no risks").isEmpty();
+    }
+
+    @Test
+    void aWrongRiskDropsOnlyItsRuleWithItsWords() {
+        // A wrong entry read as none would quietly work harm as ordinary; one dropping every rule
+        // would stop all work.
+        final Map<String, String> wrong = new LinkedHashMap<>();
+        wrong.put("risks: [harm]", "risks is no mapping of risk to models and effort");
+        wrong.put(
+                "risks: {Harm: {effort: max}}",
+                "risks: risk 'Harm' is none of harm, ordinary and small");
+        wrong.put(
+                "risks: {high: {effort: max}}",
+                "risks: risk 'high' is none of harm, ordinary and small");
+        wrong.put("risks: {harm: max}", "risks: harm: is no mapping of models and effort");
+        wrong.put("risks: {harm: null}", "risks: harm: is no mapping of models and effort");
+        wrong.put("risks: {harm: {}}", "risks: harm: names neither models nor effort");
+        wrong.put("risks: {harm: {models: {}}}", "risks: harm: names neither models nor effort");
+        wrong.put("risks: {harm: {model: x}}", "risks: harm: unknown key 'model'");
+        wrong.put("risks: {harm: {effort: 3}}", "risks: harm: effort is no text");
+        wrong.put(
+                "risks: {harm: {models: [codex]}}",
+                "risks: harm: models is no mapping of agent to model");
+        wrong.put(
+                "risks: {harm: {effort: \"\"}}",
+                "risks: harm: names an effort that is blank, longer than 128 characters or holds a"
+                        + " control character");
+        wrong.put(
+                "risks: {harm: {effort: \"max\\nrm -rf /\"}}",
+                "risks: harm: names an effort that is blank, longer than 128 characters or holds a"
+                        + " control character");
+        wrong.put(
+                "risks: {harm: {effort: " + "e".repeat(129) + "}}",
+                "risks: harm: names an effort that is blank, longer than 128 characters or holds a"
+                        + " control character");
+        wrong.put(
+                "risks: {harm: {models: {codex: \"gpt\\u2028x\"}}}",
+                "risks: harm: names a model that is blank, longer than 128 characters or holds a"
+                        + " control character");
+        wrong.put(
+                "risks: {harm: {models: {\" \": gpt}}}",
+                "risks: harm: names an agent that is blank, longer than 128 characters or holds a"
+                        + " control character");
+        assertThat(wrong).as("the faulty reference set").hasSize(15);
+        for (final Map.Entry<String, String> entry : wrong.entrySet()) {
+            final Work work =
+                    WorkReader.read(
+                            SOUND.replace(
+                                    "    models: {agy: gemini-4-argon-high}\n",
+                                    "    models: {agy: gemini-4-argon-high}\n    "
+                                            + entry.getKey()
+                                            + "\n"));
+            assertThat(work.faults())
+                    .as("the fault of %s named with its state", entry.getKey())
+                    .containsExactly("stories/work.yml: Reading: " + entry.getValue());
+            assertThat(work.rules().keySet())
+                    .as("only the rule of %s dropped", entry.getKey())
+                    .containsExactly("Implementing");
+        }
     }
 
     @Test
