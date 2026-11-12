@@ -69,11 +69,32 @@ class WorkEndsTest {
     }
 
     @Test
+    void aBlockThatSaysNoneIsACleanReading() {
+        // A reader that writes "(none)" for a clean reading, as a real reader did, would stop for
+        // the person.
+        for (final String answer :
+                List.of(
+                        "Read it.\n\nFindings: (none)",
+                        "Findings: none\n",
+                        "Findings:\n(none)\n",
+                        "Findings:\nNone")) {
+            final WorkEnds.Judgment judged = WorkEnds.judge("READER", Outcome.DONE, answer);
+            assertThat(judged).as("a reading: %s", answer).isInstanceOf(Read.class);
+            assertThat(((Read) judged).findings()).as("no findings: %s", answer).isEmpty();
+        }
+    }
+
+    @Test
     void anAnswerWithoutOneWellFormedBlockCountsNoReading() {
         // A malformed reading passed on would reach Review without a reading anyone could check.
         for (final String answer :
                 List.of(
                         "No block at all.",
+                        "Findings: (none)\n1. blocking | - | - | none beside a finding",
+                        "Findings:\n(none)\n1. blocking | - | - | none beside a finding",
+                        "Findings:\n1. blocking | - | - | a finding\n(none)",
+                        "Findings: (none)\nFindings:\n",
+                        "Findings: two words",
                         "Findings:\nFindings:\n",
                         "Findings:\n1. note | - | - | a\nFindings:\n",
                         "Findings:\n2. note | - | - | skips one",

@@ -172,7 +172,8 @@ public final class WorkEnds {
         final List<String> lines = List.of(answer.replace("\r\n", "\n").split("\n", -1));
         int block = -1;
         for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).strip().equals(BLOCK)) {
+            final String line = lines.get(i).strip();
+            if (line.equals(BLOCK) || line.startsWith(BLOCK + " ")) {
                 if (block >= 0) {
                     // A second block could hide the reader's own behind one written by another.
                     return null;
@@ -183,9 +184,17 @@ public final class WorkEnds {
         if (block < 0) {
             return null;
         }
+        final String after = lines.get(block).strip().substring(BLOCK.length()).strip();
         final List<String> rows = new ArrayList<>(lines.subList(block + 1, lines.size()));
         while (!rows.isEmpty() && rows.get(rows.size() - 1).isBlank()) {
             rows.remove(rows.size() - 1);
+        }
+        // A reader may say "none" for its empty block, but never beside a finding.
+        if (!after.isEmpty()) {
+            return none(after) && rows.isEmpty() ? List.of() : null;
+        }
+        if (rows.size() == 1 && none(rows.get(0).strip())) {
+            return List.of();
         }
         if (rows.size() > MOST_FINDINGS) {
             return null;
@@ -199,6 +208,10 @@ public final class WorkEnds {
             findings.add(finding);
         }
         return findings;
+    }
+
+    private static boolean none(final String words) {
+        return words.equalsIgnoreCase("none") || words.equalsIgnoreCase("(none)");
     }
 
     private static @Nullable Finding finding(final String row, final int expected) {
