@@ -1198,7 +1198,9 @@ components:
     SaveRefused:
       description: >-
         The store could not save: a repository refused after others took the save (PartlySaved, naming those pushed and
-        the one that failed), or the store could not be read (WorkflowMissing, CredentialRefused, Unreadable).
+        the one that failed), or the store could not be read or written (WorkflowMissing, CredentialRefused,
+        Unreadable; an account whose Git has no name and email to commit with is refused as Unreadable, with words
+        that say so).
       content:
         application/problem+json:
           schema:

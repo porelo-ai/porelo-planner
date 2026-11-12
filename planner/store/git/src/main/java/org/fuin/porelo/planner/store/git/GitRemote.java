@@ -275,18 +275,38 @@ public final class GitRemote implements Remote {
             runIndexed(clone, index, remove);
         }
         final String tree = text(runIndexed(clone, index, List.of("write-tree"))).strip();
-        return commit(
-                text(run(
-                                clone,
-                                List.of(
-                                        "commit-tree",
-                                        "-p",
-                                        base,
-                                        "-m",
-                                        subject,
-                                        "--end-of-options",
-                                        tree)))
-                        .strip());
+        try {
+            return commit(
+                    text(run(
+                                    clone,
+                                    List.of(
+                                            "commit-tree",
+                                            "-p",
+                                            base,
+                                            "-m",
+                                            subject,
+                                            "--end-of-options",
+                                            tree)))
+                            .strip());
+        } catch (final GitFailure failure) {
+            throw identityMissing(clone).orElse(failure);
+        }
+    }
+
+    /** Git's own words on a missing name or email tell the person nothing they can act on. */
+    private Optional<GitFailure> identityMissing(final Path clone) {
+        for (final String ident : List.of("GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT")) {
+            try {
+                run(clone, List.of("var", ident));
+            } catch (final GitFailure missing) {
+                return Optional.of(
+                        new GitFailure(
+                                GitFailure.Kind.FAILED,
+                                "Git has no name and email to commit with on this account; set"
+                                        + " user.name and user.email in its Git configuration"));
+            }
+        }
+        return Optional.empty();
     }
 
     /** Writes each file's blob in one call, which answers one id per line in their order. */
