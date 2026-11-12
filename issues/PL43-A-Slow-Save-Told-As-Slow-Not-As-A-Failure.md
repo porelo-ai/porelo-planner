@@ -5,10 +5,10 @@
   "$schema": "issue-1.json",
   "id": "PL43",
   "title": "A Slow Save Told As Slow, Not As A Failure",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "S",
-  "priority": "Medium",
-  "rank": 26,
+  "priority": "Highest",
+  "rank": 2,
   "blockedBy": [],
   "covers": "A save that takes longer than the screen waits is shown as still saving and, once the board shows it done, as saved; two messages never run together"
 }

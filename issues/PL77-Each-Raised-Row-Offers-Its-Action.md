@@ -5,14 +5,21 @@
   "$schema": "issue-1.json",
   "id": "PL77",
   "title": "Each Raised Row Offers Its Action",
-  "state": "Idea",
-  "size": "-",
-  "priority": "High",
-  "rank": 1,
+  "state": "Backlog",
+  "size": "L",
+  "priority": "Highest",
+  "rank": 3,
   "blockedBy": [],
   "covers": "Every row in Needs you offers what answers its reason: start again or stop after a failed next step or a refused save, move on or start again after a stop, open the task to push its commits, read again or go to Review after invalid findings"
 }
 ```
+
+**Size:** L - it crosses repositories: the window hands the start hooks to the boards it makes; and it changes the
+contract, since a Start names the reason it passes over; four layers (core, app, screen, window) each with tests.
+
+**Estimate:** 113 min, the measured median of L. Uncertain: how far `WorkRun`'s start path bends to replace a run
+in one step under its lock; with [PL38](README.md#pl38) built first, "move on" and "go to Review" save at once with
+its warning instead of staging a Save.
 
 **What must be true.** A person who sees a row in *Needs you* can answer it from the row: `NEXT_STEP_UNAVAILABLE` and
 `SAVE_REFUSED` look at the failure and start again or stop; `STOPPED` moves the issue on or starts again; `UNPUSHED`
@@ -50,3 +57,35 @@ Today's code stands in the way, read in it:
    and says why. "Move on" (after `STOPPED`) and "Go to Review" (after `INVALID_FINDINGS`) stage the move on the
    board and open the story with its Save, which the person still presses.
 
+## Plan
+
+- **Core (`planner/core`, `WorkRun`).** The start of a story's work takes an optional pass-over: issue, reason and the
+  board revision the row showed. `WorkRun.allowed` accepts a run with reasons, or a halted one, only for a Start whose
+  pass-over names exactly that issue's reason (`NEXT_STEP_UNAVAILABLE`, `SAVE_REFUSED`, `STOPPED`), no other issue's
+  reason in the run, and no task at work; a changed reason or revision is a conflict (`RunConflict`). The old run is
+  recorded stopped and the new one started in one step under the work record's lock. A move by hand whose save
+  stands clears a halted run. The stop already takes an ended or halted run; it stays.
+- **Contract and app (`planner.yaml`, the work controller).** The work request gains an optional `passOver`
+  (`issue`, `reason`, `revision`); without it nothing changes. Written in the description first, then served.
+- **Screen (`screen/`).** `PlanningBoard._startUnavailable` lets a row's own Start through for its reason;
+  `PlanningBoard.stopWork` no longer asks for `atWork`, and the card and the row offer Stop while the run is not
+  stopped; `PlanningBoards` takes `startTask`, `agents` and `machines` when it is made and gives them to each board;
+  `StoryWorkAttentionView` opens the Start dialog through them with the pass-over, or offers no Start and says why.
+- **Window.** It hands the three hooks to `PlanningBoards` where it makes them: a change in the window's repository,
+  asked of its agent in the channel; until it stands the row says why it offers no Start.
+- **Tests, by level, red first.**
+  - Unit, core (`WorkRunTest`): a Start passing over `SAVE_REFUSED` replaces the halted run; one naming a reason that
+    changed meanwhile, or another issue's, is refused with a conflict; a task still at work refuses it; a move by hand
+    clears a halted run. Harm: an agent started over a failure nobody looked at, or over work still running.
+  - Integration, app: the work call with `passOver` against the description (`ApiMatchesDescriptionTest`) and its
+    conflict. Harm: the window and the planner reading the contract differently.
+  - Widget, screen (over `FakePlanningSource`): a `SAVE_REFUSED` row offers Start and sends the pass-over; an
+    `INVALID_FINDINGS` row offers none; Stop shows on an ended run with reasons. Harm: a row that offers the wrong
+    action.
+
+## Acceptance
+
+- From each raised row the person can do what its reason asks, as in *What must be true*; a Start from a row passes
+  over only that row's reason and is refused when it changed; every new test was seen red.
+- The suite, the screen's Maven build (`dart format`, `dart analyze --fatal-infos`, `flutter test`) and the
+  documents' checks pass.

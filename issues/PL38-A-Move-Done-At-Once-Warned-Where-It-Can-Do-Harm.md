@@ -5,10 +5,10 @@
   "$schema": "issue-1.json",
   "id": "PL38",
   "title": "A Move Done At Once, Warned Where It Can Do Harm",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "L",
-  "priority": "High",
-  "rank": 25,
+  "priority": "Highest",
+  "rank": 1,
   "blockedBy": [],
   "covers": "A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel"
 }
