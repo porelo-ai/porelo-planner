@@ -16,7 +16,6 @@ left out.
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
 | <a id="pl80"></a>[PL80](PL80-The-Idea-Hand-Ins-And-The-Mock-Copies-Smaller-Findings.md) | - | - | A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, the push check is measured over HTTPS in the native executable, and reading Porelo's task records leaves no child running and counts no other task's call |
-| <a id="pl82"></a>[PL82](PL82-The-Commit-Check-Trusts-What-A-Commit-Says.md) | - | - | The commit check gives no exemption, no trailer and no switch-off of the stage rule to whoever writes a commit, in the planner and in the build tools alike |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
 
@@ -46,6 +45,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl82"></a>[PL82](PL82-The-Commit-Check-Trusts-What-A-Commit-Says.md) | S | - | The commit check gives no exemption, no trailer and no switch-off of the stage rule to whoever writes a commit, in the planner and in the build tools alike |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 | <a id="pl30"></a>[PL30](PL30-The-Screen-Finds-The-Planner-On-Windows.md) | M | [PL29](README.md#pl29) | The screen package's HTTP source reads planner.json from %LOCALAPPDATA%\porelo-planner on Windows and refuses one another account could read, replace or redirect, checked through the file's owner and access control list |
 
