@@ -40,6 +40,7 @@ class ApiMatchesDescriptionTest {
 
     private static final Map<String, Class<?>> SCHEMAS =
             Map.ofEntries(
+                    Map.entry("Health", HealthController.Health.class),
                     Map.entry("ProjectSource", BoardController.ProjectSource.class),
                     Map.entry("Workflow", Answers.Workflow.class),
                     Map.entry("State", Answers.State.class),
@@ -203,6 +204,19 @@ class ApiMatchesDescriptionTest {
                         .isEqualTo(required);
             }
         }
+    }
+
+    @Test
+    void theHealthPatternsAreTheFormsThePlannerChecks() {
+        // A description that lets the window accept a version or commit the planner refuses, or
+        // the reverse.
+        final JsonNode health = description.at("/components/schemas/Health/properties");
+        assertThat(health.at("/version/pattern").asText())
+                .as("the description's version pattern against PlannerBuild's")
+                .isEqualTo("^" + PlannerBuild.VERSION.pattern() + "$");
+        assertThat(health.at("/commit/pattern").asText())
+                .as("the description's commit pattern against PlannerBuild's")
+                .isEqualTo("^" + PlannerBuild.COMMIT.pattern() + "$");
     }
 
     @Test
@@ -601,7 +615,7 @@ class ApiMatchesDescriptionTest {
                 .filter(entry -> entry.getValue().equals(type))
                 .map(Map.Entry::getKey)
                 .findFirst()
-                .orElse(type == Map.class ? "Health" : type.getSimpleName());
+                .orElse(type.getSimpleName());
     }
 
     private static void fields(

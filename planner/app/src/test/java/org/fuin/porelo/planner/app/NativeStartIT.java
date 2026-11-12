@@ -516,11 +516,12 @@ class NativeStartIT {
             final RuntimeDirectories.Address address;
             try {
                 address = addressWithin(runtime, planner, output);
+                // An executable without its build resource fails to start or names another build.
                 assertThat(health(address.port(), address.token()))
                         .as(
                                 "the health answer with the token; the planner wrote:%n%s",
                                 Files.readString(output))
-                        .isEqualTo("200 {\"status\":\"UP\"}");
+                        .isEqualTo("200 " + expectedHealth());
                 if (callWithoutToken) {
                     assertThat(health(address.port(), null))
                             .as("the health answer without the token")
@@ -565,6 +566,17 @@ class NativeStartIT {
                                 : "the planner ended with exit code " + planner.exitValue())
                         + "; it wrote:\n"
                         + Files.readString(output));
+    }
+
+    /** The health answer of this build, from the version and commit the build computed. */
+    private static String expectedHealth() {
+        final String version = System.getProperty("planner.version", "missing");
+        final String commit = System.getProperty("planner.commit", "");
+        return "{\"status\":\"UP\",\"version\":\""
+                + version
+                + "\",\"commit\":"
+                + (commit.isEmpty() ? "null" : "\"" + commit + "\"")
+                + "}";
     }
 
     /** The status and body of a health call. */

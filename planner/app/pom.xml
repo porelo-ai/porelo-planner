@@ -24,6 +24,7 @@
         <package.glibc.ceiling>2.41</package.glibc.ceiling>
         <!-- The Build's run number makes each snapshot package newer than the last; 0 for a local build. -->
         <planner.snapshot.run>0</planner.snapshot.run>
+        <properties-maven-plugin.version>1.3.0</properties-maven-plugin.version>
     </properties>
 
     <dependencies>
@@ -76,7 +77,46 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>planner-build.properties</exclude>
+                </excludes>
+            </resource>
+            <!-- The one filtered resource, so no other file's text is taken for a property. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>planner-build.properties</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
+            <!-- The package version in every build, so the executable, the packages and /health name one value. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>package-version</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <configuration>
+                            <!-- '~' sorts below everything in dpkg and rpm, so 0.1.0~snapshot.N is older than
+                                 0.1.0, and the run number makes each snapshot newer than the last. -->
+                            <name>planner.package.version</name>
+                            <value>${project.version}</value>
+                            <regex>-SNAPSHOT$</regex>
+                            <replacement>~snapshot.${planner.snapshot.run}</replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Any work command of the planner, in a JVM of its own at the repository's root, for a workflow that
                  builds no executable: '-pl planner/app exec:exec@planner -Dplanner.args=...' after an install. -->
             <plugin>
@@ -102,6 +142,76 @@
     </build>
 
     <profiles>
+        <!-- Without a checkout the commit is empty, answered as null. Set only here, since a property the pom sets
+             is fixed when the pom is read, before the checkout's commit is. -->
+        <profile>
+            <id>no-checkout</id>
+            <activation>
+                <file>
+                    <missing>${basedir}/../../.git</missing>
+                </file>
+            </activation>
+            <properties>
+                <planner.commit></planner.commit>
+            </properties>
+        </profile>
+        <!-- Only in a checkout: the commit it stands on, read with git into planner.commit before the resources are
+             filtered. A git that fails there fails the build. -->
+        <profile>
+            <id>checkout-commit</id>
+            <activation>
+                <file>
+                    <exists>${basedir}/../../.git</exists>
+                </file>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>${exec-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>checkout-commit</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>git</executable>
+                                    <workingDirectory>${project.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>log</argument>
+                                        <argument>-1</argument>
+                                        <argument>--format=planner.commit=%H</argument>
+                                    </arguments>
+                                    <outputFile>${project.build.directory}/planner-commit.properties</outputFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>properties-maven-plugin</artifactId>
+                        <version>${properties-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>checkout-commit</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>read-project-properties</goal>
+                                </goals>
+                                <configuration>
+                                    <files>
+                                        <file>${project.build.directory}/planner-commit.properties</file>
+                                    </files>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- The planner from the source, for a person who works on it: DevTools restarts it in a moment when any
              module's classes change, and nothing of it reaches a package, which never has this profile. It writes the
              account's own address file, so the window on this computer uses it once no other planner runs. -->
@@ -222,6 +332,8 @@
                                 <configuration>
                                     <systemPropertyVariables>
                                         <planner.executable>${project.build.directory}/${planner.image}</planner.executable>
+                                        <planner.version>${planner.package.version}</planner.version>
+                                        <planner.commit>${planner.commit}</planner.commit>
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>
@@ -240,29 +352,6 @@
             </properties>
             <build>
                 <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>package-version</id>
-                                <phase>validate</phase>
-                                <goals>
-                                    <goal>regex-property</goal>
-                                </goals>
-                                <configuration>
-                                    <!-- '~' sorts below everything in dpkg and rpm, so 0.1.0~snapshot.N is older than
-                                         0.1.0, and the run number makes each snapshot newer than the last. -->
-                                    <name>planner.package.version</name>
-                                    <value>${project.version}</value>
-                                    <regex>-SNAPSHOT$</regex>
-                                    <replacement>~snapshot.${planner.snapshot.run}</replacement>
-                                    <failIfNoMatch>false</failIfNoMatch>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-
                     <!-- The third-party notices: the runtime classpath and the bill it is held to, both before the
                          package phase, and the notices from them by porelo-release, declared below. -->
                     <plugin>

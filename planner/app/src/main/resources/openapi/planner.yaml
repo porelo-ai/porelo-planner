@@ -15,7 +15,8 @@ paths:
     get:
       operationId: getHealth
       summary: Health
-      description: Answers UP while the planner serves calls.
+      description: >-
+        Answers UP while the planner serves calls, with the planner's version and the commit it was built from.
       tags: [health]
       responses:
         '200':
@@ -1379,11 +1380,20 @@ components:
 
     Health:
       type: object
-      required: [status]
+      required: [status, version, commit]
       properties:
         status:
           type: string
           const: UP
+        version:
+          description: The planner's package version, as its .deb and .rpm carry it.
+          type: string
+          pattern: '^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}(~snapshot\.(0|[1-9][0-9]*))?$'
+          examples: ['0.1.0~snapshot.36']
+        commit:
+          description: The commit the planner was built from; null for a build without a Git checkout.
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{40}$'
 
     ProjectSource:
       description: Where a project's planning is kept.

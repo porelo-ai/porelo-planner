@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL89",
   "title": "The Planner Names Its Version To The Window",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 29,
@@ -45,23 +45,38 @@ token and log.
   - The package version is computed in every build, not only under `dist`, where `pom.xml` computes
     `planner.package.version` today. A JVM build, the native build, the packages, the published executable's path and
     `/health` all take that one value.
-  - `planner/app/pom.xml` writes the version and the commit into a resource, `planner-build.properties`: the commit
-    from the checkout's `HEAD` at build time, empty when there is no checkout.
-  - The resource is in the native image's resources.
+  - `planner/app/pom.xml` computes `planner.package.version` with `build-helper-maven-plugin` in the main build,
+    and filters that one resource, `planner-build.properties`, with the version and `planner.commit`.
+  - The commit: the profile `checkout-commit`, active when the repository's `.git` exists, runs
+    `git log -1 --format=planner.commit=%H` with `exec-maven-plugin` at `initialize` and reads the line into the
+    project with `properties-maven-plugin` 1.3.0; a git that fails there fails the build. The profile
+    `no-checkout`, active when `.git` is missing, sets `planner.commit` empty. The empty value stands in that
+    profile alone, since a property the pom sets is fixed when the pom is read, and the native test would expect it.
+  - `PlannerBuild(version, commit)` reads the resource and refuses a version not `x.y.z` or `x.y.z~snapshot.N`, a
+    commit neither empty nor 40 lowercase hex, a missing key or a missing file, so its bean fails the start loud;
+    the planner never answers a made-up version. `HealthController` registers the resource for the native image
+    with a `RuntimeHintsRegistrar`, as the mock board's is.
   - `HealthController` answers a record, `Health(status, version, commit)`, not a `Map`. `Map.of` refuses a null
     value, so it could not answer `"commit": null`. The record is added to the records `ApiMatchesDescriptionTest`
-    holds to the description. A resource that is missing or malformed fails the start loud; the planner never
-    answers a made-up version.
-- **What changes with it.** The Windows install check's ready script compares the answer verbatim today. It reads
-  the JSON and checks `status` instead, in the change that ships it.
+    holds to the description.
+- **What changes with it.** The Windows install check's ready script, which compares the answer verbatim, is not in
+  this change; it changes with the change that ships it.
 - **Tests, by level.**
-  - Unit, app: the build file's values are answered as they stand. A malformed version or commit in the file fails
-    the start. Harm: a window showing a planner version that is not the one running.
-  - Integration, app: an HTTP call to `/health` answers a known commit as 40 lowercase hex, and a build file without
-    a commit as an explicit JSON `null`, with every required field present. `ApiMatchesDescriptionTest` holds the
-    `Health` record to the description. Harm: a checkout-free build answering 500, or leaving `commit` out.
-  - Native: the built executable's `/health` names the version and the commit of its build; the native start test
-    reads it.
+  - Unit, app (`PlannerBuildTest`): the build file's values are answered as they stand, an empty commit as none,
+    and a malformed version or commit, a missing key or a missing file fails the start. Harm: a window showing a
+    planner version that is not the one running.
+  - Integration, app (`HealthAnswerTest`): an HTTP call to `/health` answers a known commit as 40 lowercase hex,
+    and a build without a commit as an explicit JSON `null`, with every required field present.
+    `ApiMatchesDescriptionTest` holds the `Health` record to the description. Harm: a checkout-free build
+    answering 500, or leaving `commit` out.
+  - Native: the built executable's `/health` names the version and the commit of its build; `NativeStartIT` reads
+    it against the values the build computed, handed in as system properties.
+- **A changed tree.** `git log -1` names HEAD, so a local build from a tree with uncommitted changes names its
+  HEAD; CI builds from a clean checkout.
+- **The code reading's points**, all taken: `BuildResourceTest` holds the resource's commit to `git rev-parse HEAD`
+  of the checkout, or to none without one, so the source of the commit is guarded apart from the native test, which
+  takes the same property that filtered the resource; `ApiMatchesDescriptionTest` holds `Health`'s two patterns to
+  the forms `PlannerBuild` checks; the changed tree is the point above.
 - **The plan reading's points**, all taken: one version in every build; a record instead of a map; HTTP checks for
   both a hash and `null`.
 
