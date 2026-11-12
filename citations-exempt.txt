@@ -396,6 +396,7 @@ planner/core/src/test/java/org/fuin/porelo/planner/core/HandedIdeasTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/IdeasEndpointTest.java
 # The screen's copies of the planner's mock answers and the test that serves them: the mock board's made-up ids.
 planner/app/src/test/java/org/fuin/porelo/planner/app/MockAnswersTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/PoreloTaskRecordsTest.java
 screen/test/mock_served_test.dart
 screen/test/served/mock/board-event.json
 screen/test/served/mock/issue-B541.json

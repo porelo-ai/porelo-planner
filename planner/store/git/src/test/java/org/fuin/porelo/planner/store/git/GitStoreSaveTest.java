@@ -544,35 +544,6 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void theVelocityIsTheSeedsAndFinishedWorksMedianAndAMoveOutOfFinishedTakesItOut()
-            throws Exception {
-        // A velocity counting work no longer finished, or taken from no seed, would mislead an
-        // estimate.
-        Files.createDirectories(repositories.work(OTHER).resolve("stats"));
-        Files.writeString(
-                repositories.work(OTHER).resolve("stats/seed.csv"),
-                "size,minutes\nXS,8\nS,27\nM,53\nL,80\n");
-        Files.writeString(
-                repositories.work(OTHER).resolve("stats/CD01.jsonl"),
-                AGENT_LINE.replace(
-                        "\"status_after\":\"Backlog\"", "\"status_after\":\"Finished\""));
-        repositories.commit(OTHER);
-        final GitStore store = store();
-        final Board board = store.board();
-
-        assertThat(store.velocity(OTHER, "S"))
-                .as("the median of the seed's 27 and the finished issue's 4")
-                .contains(15.5);
-        store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
-        assertThat(store.velocity(OTHER, "S"))
-                .as("moved back to Review: no longer finished work, the seed's 27 alone")
-                .contains(27.0);
-        assertThat(store.velocity(OWN, "S"))
-                .as("a repository without a seed has no velocity yet")
-                .isEmpty();
-    }
-
-    @Test
     void anIssueSavedInTheStateItHasRecordsNoMoveAndCommitsNothing() throws Exception {
         // A line for a move nobody made would stand in the issue's history as a state change.
         final GitStore store = store();

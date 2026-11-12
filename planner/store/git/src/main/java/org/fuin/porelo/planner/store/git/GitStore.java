@@ -415,53 +415,6 @@ public final class GitStore implements PlanningStore {
         return workflow.storyState(null, issueStates);
     }
 
-    /**
-     * Answers what a size took in one of the project's repositories, from its stage records at the
-     * board's commit, as {@code stage median} computes it; a person's moves count for nothing.
-     *
-     * @param repository the repository's name
-     * @param size the size, {@code XS} to {@code XL}
-     * @return the median minutes, or empty when the repository keeps no {@code stats/seed.csv}
-     * @throws StoreException.Unreadable when its seed or a record cannot be read, naming why
-     */
-    public Optional<Double> velocity(final String repository, final String size) {
-        final Snapshot snapshot = current.get();
-        if (snapshot == null) {
-            throw new IllegalStateException("No board was read yet");
-        }
-        final String commit = snapshot.commits().get(repository);
-        if (commit == null) {
-            throw new IllegalArgumentException(repository + " is no repository of the project");
-        }
-        try {
-            final Optional<String> seed = remote.read(repository, commit, "stats/seed.csv");
-            if (seed.isEmpty()) {
-                return Optional.empty();
-            }
-            final Map<String, String> files = new LinkedHashMap<>();
-            for (final String path : remote.list(repository, commit, "stats")) {
-                if (!path.endsWith(".jsonl")) {
-                    continue;
-                }
-                files.put(
-                        path.substring(path.lastIndexOf('/') + 1),
-                        remote.read(repository, commit, path).orElse(""));
-            }
-            return Optional.of(
-                    StageRecords.statistic(
-                            seed.get(),
-                            files,
-                            size,
-                            false,
-                            project(of(snapshot.parts(), repositories.get(0).name()))));
-        } catch (final GitFailure e) {
-            throw refusal(repository, e);
-        } catch (final IllegalArgumentException e) {
-            throw new StoreException.Unreadable(
-                    repository, "its velocity cannot be read: " + e.getMessage());
-        }
-    }
-
     /** Each written issue's file and new state, by repository; every issue checked savable. */
     private Map<String, Map<String, String>> byRepository(
             final Snapshot snapshot, final Writes writes) {

@@ -5,101 +5,101 @@
   "$schema": "issue-1.json",
   "id": "PL61",
   "title": "The Work Numbers Come From Porelo's Own Record Of Each Task",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "The project's velocity and an issue's stages are read from the record Porelo keeps of each task, through the store's interface and whatever the backend, and an agent's own stage line counts only until that record exists"
+  "covers": "The minutes a repository's issues of one size took are computed in core from the record Porelo keeps of each task over the board's issues, whatever the backend, and the Git store's own velocity goes"
 }
 ```
 
-**Size:** L - it crosses repositories: the task's issue and phase go through the window's contract into Porelo's
-start, and the planner reads Porelo's records through an interface it does not call today; the velocity moves from the
-Git store into the store's interface and `core`.
+**Size:** L - it builds against another repository's answer, Porelo's task records, read through a command the
+planner runs, and moves the velocity out of the Git store into `core`.
 
-**Estimate:** 113 min, the measured median of L. Uncertain: it builds against Porelo's task records, whose answer and
-the field naming each call's issue are still being built elsewhere; until they stand, only the parts over fakes
-can be built.
+**Estimate:** 113 min, the measured median of L.
 
-**What must be true.** The time and tokens an issue's work cost are those Porelo itself measured for the tasks that
-worked it, never what an agent wrote about itself, and the velocity an estimate is given comes from them, whatever
-backend holds the project's issues.
+**What must be true.** The minutes a repository's issues of one size took are those Porelo itself measured for the
+tasks that worked them, never what an agent wrote about itself, whatever backend holds the project's issues.
 
 ## Plan
 
 What stands today, read in the code:
 
-- The velocity is `GitStore.velocity(repository, size)`, a method of the Git store alone, not of the `Store`
-  interface in `store/api`: `StageRecords.statistic` over `stats/seed.csv` and the repository's `stats/*.jsonl`, the
-  seed's minutes plus, per finished issue, the sum of the agent's measured stages of that size; a person's moves are
-  left out. A store over Jira or GitHub Issues would have no velocity at all.
-- The planner never starts a task and never talks to Porelo's daemon: it answers `PlanningStartTask` (offer,
-  repository, issues, role MAIN, BUILDER, READER or DISCUSSION, agent, model, mode, prompt) and the window starts
-  it with Porelo's `Start`, then reports STARTED, ENDED or STOPPED with the container's label.
-- A task does not always work one issue. A MAIN task works every issue of a story in its repository
-  (`WorkProposal`); a BUILDER and a READER work one. The record must carry the issues a task worked.
-- Inside a task, each issue is worked by a sub-agent of its own, named by the issue's id, as the work rules' orders
-  say. Porelo's record joins each call of a sub-agent to the issue its name gives, and a call outside any such
-  sub-agent to no issue. An issue's time is its sub-agent's span plus an even share of the task's own time outside
-  every sub-agent; its tokens are counted the same way.
-- Porelo answers a single task's token totals today (`Usage`, by task); a record per task listed for a project since
-  a time is not there yet.
+- The velocity is `GitStore.velocity(repository, size)`, a method of the Git store alone, called by nothing but its
+  test; the number agents' estimates come from is the stage command's `median` and `p80`, which read the agents'
+  own stage lines and answer as the build tools do while those carry `stage`. That answer stays as it is.
+- `Board` gives every issue of the project, a settled one from its index row, with its repository, size and state,
+  and `Workflow.closed` the states that end the work; `Rejected` ends it without a result.
 
-The contract the planner builds against, in words: Porelo keeps one record per task - task, project, repository,
-the issues it works and its phase, agent, model, effort, start, end, how it ended, token totals - kept after the task
-is removed, and answers a project's records since a time through its daemon's socket or `porelo task records
---project <p> --since <t> --json`.
-
-The planner assumes no backend for the numbers. It reads them from Porelo's records and asks the store only for
-what every backend has: each issue's size and whether it is finished. Only the Git store may keep a copy of the
-numbers, in the repository's `stats/`, as data beside its issues; another store keeps none and loses nothing.
+The contract the planner builds against, in words: `porelo task records -p <project> --since <instant> --json`
+prints one JSON array, the oldest start first, of one record per task of the project whose end is at or after the
+instant, a running task's always. A record carries `task`, `project`, `repository` (or null), `work` (one
+`{issue, phase}`, or null), `agent`, `model`, `modelFrom`, `effort`, `startedAt`, `endedAt` (null while it runs),
+`end` (`done`, `failed`, `stopped`, `removed`, null while it runs), `totals` (requests and, per kind of token, the
+tokens and how many answers named none), `toolCallsAsked` and `toolCalls`; each call carries `task`, `tool`, `kind`,
+`start`, `startFrom`, `end`, `endFrom`, `command` (shell calls only), `background` and `issue`, the issue whose
+sub-agent made it, or null. Times are UTC instants. Exit 74 means the records cannot be read, 64 a time it refuses;
+no records is `[]` with exit 0. It runs on Linux; how the window reaches it elsewhere is not this issue's.
 
 The steps:
 
-1. **The phase at the start.** `PlanningStartTask` gains `phase`, the working state of the project's workflow the
-   task works in (Implementing, Reading, Reworking), as the work rules name it; the window hands issues and phase to
-   Porelo's `Start`. A change to the window's contract in `openapi/planner.yaml`, `core` (`WorkProposal`,
-   `NextStep`) and the screen package.
-2. **The records read.** A port in `core`, `TaskRecords.since(project, instant)`, with an adapter in `app` that calls
-   Porelo's command line (the socket only if the command line cannot serve), validating every field before use and
-   failing closed with the reason when Porelo cannot answer.
-3. **The velocity in `core`.** `Velocity.of(repository, size)` in `core` over the task records and the store's
-   issues (size, finished), with no Git: a finished issue's sample is the sum, over the tasks that worked it, of its
-   sub-agent's span and its even share of the task's own time. The `Store` interface gains only what the
-   computation needs and every backend can answer; `GitStore.velocity` and its caller go, and the app asks `core`.
-4. **The Git store's copy.** The `Store` interface gains an optional keeping of an issue's numbers when it is
-   finished, which the Git store implements by writing the records' lines into `stats/<ID>.jsonl` and another store
-   leaves empty. Where Porelo's records are gone (another computer, an issue finished before them), `core` reads
-   the samples the store kept, and the agent's own stage lines and `seed.csv` count only for issues no record
-   covers, so nothing is counted twice.
+1. **The records in `core`.** `TaskRecord` holds what the velocity reads - task, project, repository, the work's
+   issue, start, end, how it ended, and each call's issue, start and end - and refuses an end before its start or
+   an end without how it ended. The port `TaskRecords.since(project, instant)` answers them or throws
+   `TaskRecords.Unanswered` with the reason.
+2. **The velocity in `core`.** `Velocity.median(records, board, repository, size)` over the records and the board,
+   with no Git. Two records of one task are refused, so no task counts twice. A task counts once it ended, however
+   it ended, since a failed, stopped or removed attempt cost time too. Its time goes to its issues, the work's and
+   the calls' named once each: an issue named by calls gets the union of its calls' intervals, each cut to the
+   task's own start and end, a call without an end giving none; where those spans add up to more than the task's
+   time, as parallel sub-agents do, they are scaled down to it, so a task never gives more than it lasted; the rest
+   is split evenly among all its issues. The task's `repository` is not read: the board says which repository an
+   issue is in. An issue gives a sample, the sum over its tasks, only when the board has it in this repository, of
+   this size, and in a closed state other than `Rejected`; a share given to any other issue is no sample and goes to
+   no one else. One sample is a velocity; none is no velocity, not zero.
+3. **The adapter in `app`.** `PoreloTaskRecords` runs Porelo's executable, given by an absolute path, with each
+   argument its own element and no shell: the project checked as a repository name, which never starts with a dash,
+   and the instant written by the planner in UTC. The child gets only `PATH`, `HOME`, `LANG` and the `XDG_` state
+   and runtime directories, so no secret of the planner's environment reaches it. It reads at most 16 MiB of answer
+   and 64 KiB of errors, both drained while it runs, and kills the process and its children after 60 seconds. Every
+   field of every record is validated against the contract above before use: a missing or mistyped field, an
+   unknown `end`, `kind` or source, an instant not in UTC with a `Z`, an issue id of the wrong shape, a duplicate
+   key, or a record of another project fails the whole answer with the record and field named, since an answer
+   that holds one wrong record cannot be trusted for the others. Exit 74, exit 64, any other failure, an answer cut
+   off and Porelo not found each fail with the reason, never with fewer records.
+4. **The Git store's own velocity goes.** `GitStore.velocity` and its test are deleted; `StageRecords.statistic`
+   stays for the stage command.
 
-Tests, red first:
+Tests, red first, all unit tests over fakes:
 
-- Unit, `core`, over a fake store and fake records: a task record of two hours on a finished issue of size M gives
-  a velocity sample of 120 minutes for M; a task of two issues whose sub-agents ran 50 and 30 minutes and whose own
-  time outside them was 20 minutes gives samples of 60 and 40 minutes; a stage line the store kept for the same
-  issue and phase is not counted twice; a store that keeps nothing still gives the velocity from the records alone.
-- Unit, the adapter over a fake command: a record with a negative duration, an unknown phase or a project other
-  than the one asked is refused with the field named; Porelo unreachable fails the velocity with the reason, never
-  an answer from less.
-- Unit, `store/git`: an issue's records kept on finishing are read back from a fresh clone as its samples.
-- Unit, `WorkProposalTest`: each planned task carries the phase it starts in.
+- `core`, `VelocityTest`: a two-hour task on a finished M issue gives 120 minutes for M; a task whose calls name two
+  issues for 50 and 30 minutes, with 20 minutes outside them, gives 60 and 40; a task with no work and no call issue
+  gives nothing; a running task, a rejected issue, another repository's issue and an issue of another size give no
+  sample; two tasks on one issue add up; an issue's calls with a gap between them count only the calls; two
+  sub-agents in parallel over a whole task share its time; a call outside the task is cut to it; a task given twice
+  is refused.
+- `core`, `TaskRecordTest`: an end before the start, or an end time without how it ended, is refused.
+- `app`, `PoreloTaskRecordsTest`, over a fake runner: a whole record from Porelo's own form is read; each field
+  missing or mistyped is refused with its name; another project, an instant with an offset, exit 74, exit 64, an
+  unknown exit and a cut-off answer each fail with the reason. One case runs a real process, a script standing in for Porelo, so the arguments,
+  the time limit, the environment it gets and the exit code are those of a process.
+
+What is left for [PL83](README.md#pl83): the phase a task starts in handed through the window's contract, the Git
+store keeping an issue's numbers in `stats/`, the stage command's median moved onto the records, the velocity
+served to the window, and tokens per issue. Porelo's records do not yet give what an exact split needs - a
+sub-agent's own span names no issue and its calls name no parent, tokens are counted per task only, not per
+sub-agent or call, and an id with a hyphen never names an issue - so the even split stands in for them.
+
+The reading of the code left two findings as they are: an answer of 16 MiB held as a tree is several times that in
+memory, bounded and read once per call, and Jackson's own limits on nesting and string length stand; an assertion
+inside a lambda that checks a value already described by the outer `.as(...)` carries no second one.
 
 ## Acceptance
 
-- The tests above, each seen red first; the full build green.
-- On a local VM with Porelo's records available, one issue built by a task through Reading to Review gives a velocity
-  sample equal to the task's wall time as Porelo shows it.
+- The tests above, each seen red first; the full build and the hand-over checks green.
 
 ## To be checked
 
-- The names and form of Porelo's records answer, agreed in the channel, and whether the daemon's socket reaches the
-  planner on Windows.
-- How an agent's stage name (`implement`, `review`, ...) maps to the workflow state a task record names, so the same
-  work is recognized.
-- Whether the window already hands Porelo's `Start` an issue, and what it must add for the phase.
-- How Porelo's record names, for each call, the issue whose sub-agent made it, and the form of a sub-agent's start
-  and end in it, agreed in the channel.
-- Which store call the velocity needs beyond the board the store already answers (size and state of every issue,
-  settled ones too), read in `store/api`.
+- That a task's `end` is null exactly while its `endedAt` is, in records Porelo writes, read on a real record once
+  one exists.

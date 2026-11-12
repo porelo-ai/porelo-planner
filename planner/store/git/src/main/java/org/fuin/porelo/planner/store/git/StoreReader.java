@@ -240,7 +240,7 @@ public final class StoreReader implements PartReader {
 
     /**
      * Names each stage record file that cannot be read or holds a stage still open, which the
-     * repository's commit check refuses and the velocity cannot count.
+     * repository's commit check refuses and the stage command's median cannot count.
      */
     private List<String> records(
             final String repository, final String commit, final Workflow workflow) {

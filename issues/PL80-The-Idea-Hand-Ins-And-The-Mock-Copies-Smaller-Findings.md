@@ -10,7 +10,7 @@
   "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, and the push check is measured over HTTPS in the native executable"
+  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, the push check is measured over HTTPS in the native executable, and reading Porelo's task records leaves no child running and counts no other task's call"
 }
 ```
 
@@ -46,3 +46,9 @@ frames it.
   `begin` is read whole by the baseline.
 - `check-pushes` has not yet run over HTTPS in the native executable, whose trust store and TLS provider come from
   the image; one call against `api.github.com` is measured before a workflow uses the planner's `check-pushes`.
+- Reading Porelo's task records kills the command's children only while the command itself still runs, so a child
+  that outlives it holding its output open is left running, with the two threads reading that output, until it
+  ends; the call itself fails within its limit.
+- A tool call in Porelo's task records names a task that is never compared with its record's own, so a call of
+  another task listed there is counted to it; whether a sub-agent's calls name the sub-agent's task or the
+  record's is read on a real record first.

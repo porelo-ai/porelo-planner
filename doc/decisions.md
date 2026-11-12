@@ -67,8 +67,9 @@ project's repositories as one tree, since an agent needs one.
 ## The store owns the checks and records of its stories and issues
 
 The checks of issue and story heads, of the issue indexes and of the links between issue pages belong to the store
-that keeps them; a store kept in an outside tool checks as that tool does. Recording an issue's stages and answering
-the project's velocity belong to the store too. Every repository's issues are checked against the project's one
-workflow, and which issue prefixes a repository owns stays in `project.yml`, since the prefixes mark the project and
-not only its issues.
+that keeps them; a store kept in an outside tool checks as that tool does. Recording an issue's stages belongs to the
+store too. The velocity does not: `core` computes it from Porelo's own record of each task over the issues the store
+answers, so every store has it alike. Every repository's issues are checked against the project's one workflow, and
+which issue prefixes a repository owns stays in `project.yml`, since the prefixes mark the project and not only its
+issues.
 
