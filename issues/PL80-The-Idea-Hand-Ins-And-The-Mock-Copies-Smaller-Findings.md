@@ -10,7 +10,7 @@
   "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues"
+  "covers": "A handed-in idea's offer never stays pending for good, is never saved twice after the record drops or resets it, and its paragraph takes no control character; the screen's test of the mock's answers reads the stream as the planner frames it; the commit check bounds its file listing, says every commit's faults and reads only the repository's own issues; the stage command never leaves a partial record or reads a swapped session, and the push check is measured over HTTPS in the native executable"
 }
 ```
 
@@ -39,3 +39,10 @@ frames it.
   cannot be read, so the other commits' faults go unsaid.
 - `check-commits` takes an issue file at any depth below `issues/` as measured, a fixture's among them, though the
   prefixes are read only from the repository's own issues.
+- `stage begin` appends its record in place, so a write that fails part-way leaves an incomplete final line that
+  refuses every later `stage` command of that issue and every median until the line is removed by hand.
+- `stage` checks a session file's kind and size before it reads it, not on the file it reads, so a session swapped
+  for a FIFO or a larger file in between holds or inflates the read; a subagent's session that did not exist at
+  `begin` is read whole by the baseline.
+- `check-pushes` has not yet run over HTTPS in the native executable, whose trust store and TLS provider come from
+  the image; one call against `api.github.com` is measured before a workflow uses the planner's `check-pushes`.

@@ -56,6 +56,30 @@ final class CommitFixtures {
         return json(record(issue, "implement", "agent", 4, "Review", "M")) + "\n";
     }
 
+    /** Reads JSON as the build tools' reader does: every number a {@code Double}. */
+    static @Nullable Object parse(final String text) {
+        try {
+            return doubles(JSON.readValue(text, Object.class));
+        } catch (final JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static @Nullable Object doubles(final @Nullable Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof Map<?, ?> map) {
+            final Map<Object, @Nullable Object> result = new LinkedHashMap<>();
+            map.forEach((key, each) -> result.put(key, doubles(each)));
+            return result;
+        }
+        if (value instanceof java.util.List<?> list) {
+            return list.stream().map(CommitFixtures::doubles).toList();
+        }
+        return value;
+    }
+
     static String json(final Object value) {
         try {
             return JSON.writeValueAsString(value);

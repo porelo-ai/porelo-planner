@@ -249,6 +249,9 @@ public final class CommitRules {
             command.addAll(arguments);
             final ProcessBuilder builder = new ProcessBuilder(command);
             builder.environment().putAll(environment);
+            // None of these commands runs a configured program, but the forge's token is git's
+            // business in no case.
+            builder.environment().remove("GITHUB_TOKEN");
             builder.environment().put("LC_ALL", "C");
             // To files rather than pipes: reading a pipe to its end would wait out a hang, not the
             // timeout.
@@ -367,11 +370,18 @@ public final class CommitRules {
      * beside the work is not read; in a tree exported from a commit, which holds nothing else,
      * every file.
      */
+    private static ProcessBuilder withoutToken(ProcessBuilder builder) {
+        builder.environment().remove("GITHUB_TOKEN");
+        return builder;
+    }
+
     private static List<Path> committed(Path root) throws IOException {
         if (Files.exists(root.resolve(".git"))) {
             final Process git =
-                    new ProcessBuilder("git", "-C", root.toString(), "ls-files", "-z")
-                            .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    withoutToken(
+                                    new ProcessBuilder(
+                                                    "git", "-C", root.toString(), "ls-files", "-z")
+                                            .redirectError(ProcessBuilder.Redirect.DISCARD))
                             .start();
             final String listed =
                     new String(git.getInputStream().readAllBytes(), StandardCharsets.UTF_8);

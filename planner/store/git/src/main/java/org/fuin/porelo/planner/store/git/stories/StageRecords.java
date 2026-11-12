@@ -211,7 +211,8 @@ public final class StageRecords {
     /**
      * Computes what a size took, as {@code stage median} and {@code stage p80} compute it: the
      * seed's minutes and, per finished issue, the sum of its agent's measured stages of that size.
-     * A person's moves are left out entirely, so a move never shifts the answer.
+     * A person's move adds no minutes, but the last entry of an issue, a move among them, says
+     * whether it ended: an issue a person moves to a closed state counts, one moved back does not.
      *
      * @param seed the text of {@code stats/seed.csv}
      * @param files each record file's text, by its name below {@code stats/}
@@ -258,10 +259,12 @@ public final class StageRecords {
             if (!file.getKey().endsWith(".jsonl")) {
                 continue;
             }
+            final List<Map<String, @Nullable Object>> all =
+                    read(file.getValue(), file.getKey(), false, workflow);
+            // A person's move adds no minutes, but the last entry, a move too, says whether it
+            // ended.
             final List<Map<String, @Nullable Object>> records =
-                    read(file.getValue(), file.getKey(), false, workflow).stream()
-                            .filter(record -> !moved(record))
-                            .toList();
+                    all.stream().filter(record -> !moved(record)).toList();
             if (records.isEmpty()) {
                 continue;
             }
@@ -282,7 +285,7 @@ public final class StageRecords {
             }
             require(Double.isFinite(total), "stage minutes overflow");
             if (closed && measured) {
-                final String last = string(records.getLast(), "status_after");
+                final String last = string(all.getLast(), "status_after");
                 if (workflow.closed(last) && !workflow.rejected(last)) {
                     samples.add(total);
                 }
@@ -323,7 +326,10 @@ public final class StageRecords {
         return result;
     }
 
-    private static void validate(
+    /**
+     * Checks one record by the format, as {@link #read} checks each line; for the stage command.
+     */
+    static void validate(
             final Map<String, @Nullable Object> record,
             final boolean closed,
             final Workflow workflow) {

@@ -544,8 +544,10 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void theVelocityIsTheSeedsAndFinishedWorksMedianAndAMoveLeavesItAsItWas() throws Exception {
-        // A velocity counting a person's move, or taken from no seed, would mislead an estimate.
+    void theVelocityIsTheSeedsAndFinishedWorksMedianAndAMoveOutOfFinishedTakesItOut()
+            throws Exception {
+        // A velocity counting work no longer finished, or taken from no seed, would mislead an
+        // estimate.
         Files.createDirectories(repositories.work(OTHER).resolve("stats"));
         Files.writeString(
                 repositories.work(OTHER).resolve("stats/seed.csv"),
@@ -563,8 +565,8 @@ class GitStoreSaveTest {
                 .contains(15.5);
         store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
         assertThat(store.velocity(OTHER, "S"))
-                .as("the move is recorded but counts for nothing")
-                .contains(15.5);
+                .as("moved back to Review: no longer finished work, the seed's 27 alone")
+                .contains(27.0);
         assertThat(store.velocity(OWN, "S"))
                 .as("a repository without a seed has no velocity yet")
                 .isEmpty();

@@ -1,0 +1,2 @@
+title: The planner's executable checks the recent pushes to main with `check-pushes` and records an agent's stages with `stage`, as the build tools do, and counts an issue a person finishes on the board in a size's median.
+type: added

@@ -36,10 +36,12 @@ planner/core/src/test/java/org/fuin/porelo/planner/core/WorkProposalTest.java
 planner/core/src/test/java/org/fuin/porelo/planner/core/WorkOrderTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/StoryWorkHttpTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/CommitCommandTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/StageCommandProcessTest.java
 # The Git store's own stories code: its tests and fixture copies of other repositories' issues name issues and
 # stories on purpose, to watch the reading take them.
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueIndexesTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/CommitRulesTest.java
+planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StageCommandTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueSchemaTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueSourceTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssuesIndexTest.java

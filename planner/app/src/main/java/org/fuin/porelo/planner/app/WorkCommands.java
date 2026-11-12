@@ -17,10 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.git.pushes.PushRules;
 import org.fuin.porelo.planner.store.git.stories.CommitRules;
 import org.fuin.porelo.planner.store.git.stories.IssueSource;
 import org.fuin.porelo.planner.store.git.stories.IssuesIndex;
 import org.fuin.porelo.planner.store.git.stories.Project;
+import org.fuin.porelo.planner.store.git.stories.StageCommand;
 import org.fuin.porelo.planner.store.git.stories.StoriesIndex;
 
 /**
@@ -46,6 +48,12 @@ final class WorkCommands {
 
     private static final String COMMITS = "check-commits RANGE [--outside]";
 
+    private static final String PUSHES = "check-pushes --since HOURS";
+
+    /** The work commands by their first argument. */
+    private static final Set<String> NAMES =
+            Set.of("issues", "stories", "check-commits", "check-pushes", "stage");
+
     private static final String STORIES =
             "stories index <dir> | stories check <dir>"
                     + " | stories cut <version> <dir> --after <yyyy-mm-dd>";
@@ -63,21 +71,17 @@ final class WorkCommands {
      * Whether the arguments name a work tool rather than the server.
      *
      * @param args the command line
-     * @return whether the first argument is {@code issues}, {@code stories} or {@code
-     *     check-commits}
+     * @return whether the first argument is {@code issues}, {@code stories}, {@code check-commits},
+     *     {@code check-pushes} or {@code stage}
      */
     static boolean named(final String... args) {
-        return args.length > 0
-                && (args[0].equals("issues")
-                        || args[0].equals("stories")
-                        || args[0].equals("check-commits"));
+        return args.length > 0 && NAMES.contains(args[0]);
     }
 
     /**
      * Runs a work tool.
      *
-     * @param args the command line, its first argument {@code issues}, {@code stories} or {@code
-     *     check-commits}
+     * @param args the command line, its first argument one of the work commands' names
      * @param out where an answer goes
      * @param err where each fault and every failure goes
      * @return the exit code: 0, {@value #REFUSED} or {@value #UNANSWERED}
@@ -89,6 +93,8 @@ final class WorkCommands {
             return switch (args.getFirst()) {
                 case "issues" -> commands.issues(rest);
                 case "check-commits" -> commands.checkCommits(rest);
+                case "check-pushes" -> commands.checkPushes(rest);
+                case "stage" -> commands.stage(rest);
                 default -> commands.stories(rest);
             };
         } catch (RuntimeException | StackOverflowError | OutOfMemoryError ex) {
@@ -113,18 +119,79 @@ final class WorkCommands {
         }
         if (range == null) return usage(COMMITS);
         final Path here = Path.of(".");
+        final String checked = range;
+        final boolean fromOutside = outside;
+        return said(
+                (sayer, faulter) ->
+                        new CommitRules(
+                                        sayer,
+                                        faulter,
+                                        CommitRules.Git.in(here, Map.of()),
+                                        () -> CommitRules.prefixes(here))
+                                .check(checked, fromOutside));
+    }
+
+    /**
+     * Checks every push to the main branch within a window, read from GitHub's activity with the
+     * token from the environment, each push's range as {@code check-commits} checks it.
+     */
+    private int checkPushes(final List<String> rest) {
+        String since = null;
+        for (int i = 0; i < rest.size(); i++) {
+            final String arg = rest.get(i);
+            if (arg.startsWith("--since=") && since == null) since = arg.substring(8);
+            else if (arg.equals("--since") && since == null && i + 1 < rest.size())
+                since = rest.get(++i);
+            else return usage(PUSHES);
+        }
+        if (since == null || !since.matches("[1-9][0-9]{0,3}")) return usage(PUSHES);
+        final Path here = Path.of(".");
+        final int hours = Integer.parseInt(since);
+        return said(
+                (sayer, faulter) ->
+                        new PushRules(
+                                        sayer,
+                                        faulter,
+                                        PushRules.Activity.overHttp(),
+                                        System.getenv(),
+                                        java.time.Clock.systemUTC(),
+                                        range ->
+                                                new CommitRules(
+                                                                sayer,
+                                                                faulter,
+                                                                CommitRules.Git.in(here, Map.of()),
+                                                                () -> CommitRules.prefixes(here))
+                                                        .check(range, false))
+                                .check(java.time.Duration.ofHours(hours)));
+    }
+
+    /** Opens or closes an agent's stage record, or answers a size's median or 80th percentile. */
+    private int stage(final List<String> rest) {
+        return said(
+                (sayer, faulter) ->
+                        new StageCommand(
+                                        Path.of("."),
+                                        java.time.Clock.systemUTC(),
+                                        sayer,
+                                        faulter,
+                                        System.getenv())
+                                .run(rest));
+    }
+
+    /** A command that says its lines to two streams and answers an exit code. */
+    @FunctionalInterface
+    private interface Saying {
+        int run(PrintStream out, PrintStream err);
+    }
+
+    /** Runs a command on captured streams, then says each of its lines escaped. */
+    private int said(final Saying command) {
         final ByteArrayOutputStream said = new ByteArrayOutputStream();
         final ByteArrayOutputStream faults = new ByteArrayOutputStream();
         final int code;
         try (PrintStream sayer = new PrintStream(said, true, StandardCharsets.UTF_8);
                 PrintStream faulter = new PrintStream(faults, true, StandardCharsets.UTF_8)) {
-            code =
-                    new CommitRules(
-                                    sayer,
-                                    faulter,
-                                    CommitRules.Git.in(here, Map.of()),
-                                    () -> CommitRules.prefixes(here))
-                            .check(range, outside);
+            code = command.run(sayer, faulter);
         }
         escaped(said, out);
         escaped(faults, err);

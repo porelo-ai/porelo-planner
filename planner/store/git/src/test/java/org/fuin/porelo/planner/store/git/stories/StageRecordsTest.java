@@ -418,10 +418,11 @@ class StageRecordsTest {
                 .isEqualTo(50.0);
     }
 
-    // Prevents a person's move from shifting what a size took, however it moves an issue.
+    // Prevents a person's move from adding minutes, or an issue a person finished on the board
+    // from being left out of what a size took.
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void aMoveDoesNotShiftTheMedianOrP80(final boolean p80) throws Exception {
+    void aMoveDecidesWhetherAnIssueEndedButAddsNoMinutes(final boolean p80) throws Exception {
         final String finished =
                 measured("EX13", "implement", "agent", 30, "Implementing")
                         + measured("EX13", "handover", "agent", 5, "Finished");
@@ -438,10 +439,14 @@ class StageRecordsTest {
                         "EX16.jsonl",
                         StageRecords.move(null, "EX16", "M", "Review", "Finished", AT, workflow()));
 
-        assertThat(StageRecords.statistic(SEED, with, "M", p80, workflow()))
-                .as("moves left out: the same answer as without them")
-                .isEqualTo(StageRecords.statistic(SEED, without, "M", p80, workflow()))
+        assertThat(StageRecords.statistic(SEED, without, "M", p80, workflow()))
+                .as("the seed's 53 and EX13's 35 minutes")
                 .isEqualTo(p80 ? 53.0 : 44.0);
+        assertThat(StageRecords.statistic(SEED, with, "M", p80, workflow()))
+                .as(
+                        "EX13 moved back out of Finished, EX14 moved into it with its 1000 minutes,"
+                                + " EX16 with no minutes of its own: the seed's 53 and 1000")
+                .isEqualTo(p80 ? 1000.0 : 526.5);
     }
 
     // Prevents rejected effort from biasing either estimate statistic.
