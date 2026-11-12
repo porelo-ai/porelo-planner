@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL91",
   "title": "The Planner Ends When The Window That Started It Ends",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 32,
@@ -38,6 +38,11 @@ is killed hard and runs none of its own ending; a planner started by hand runs o
   closing and removes its address file; one started without the option keeps running when its input closes. Harm: a
   planner of an older build serving a newer window, as the operator met. The native executable's start test
   (`NativeStartIT`) gains the same case, since the window starts the native one.
+- **The code's reading.** A stop that fails, or an input that breaks instead of closing, still ends the process, with
+  code 1 and a line at ERROR or WARN; a closed input ends it with code 0, and the tests read that code. The code is
+  taken by a thread that is no daemon, since once the stop has closed the server nothing else keeps the process up
+  long enough to take it, and it ended with 0 whatever the stop answered. The tests' fixed waits of 15 seconds stay:
+  they make a run slower but cannot turn it red falsely.
 
 ## Acceptance
 

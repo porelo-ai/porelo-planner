@@ -25,6 +25,8 @@ class NativeStartIT {
 
     private static final Duration STOP = Duration.ofSeconds(5);
 
+    private static final Duration END = Duration.ofSeconds(10);
+
     @Test
     void theNativeExecutableIsFoundThroughItsAddressFileAndLetsInOnlyItsToken() throws Exception {
         // An executable that builds but does not start - missing metadata, a wrong CPU target -
@@ -227,6 +229,58 @@ class NativeStartIT {
                         .contains("Built", "\"atWork\":false");
             } finally {
                 stop(planner);
+            }
+        } finally {
+            Files.deleteIfExists(output);
+            RuntimeDirectories.delete(runtime);
+        }
+    }
+
+    @Test
+    void theNativeExecutableEndsWithItsInputOnlyWhenToldTo() throws Exception {
+        // The window starts the native executable; one that outlives the window serves the next,
+        // newer window from an older build, and one started by hand must not end with its input.
+        assertThat(endsWhenItsInputCloses(List.of(PlannerApplication.END_WITH_INPUT)))
+                .as(
+                        "a planner started with %s, after its input closed",
+                        PlannerApplication.END_WITH_INPUT)
+                .isTrue();
+        assertThat(endsWhenItsInputCloses(List.of()))
+                .as("a planner started without it, after its input closed")
+                .isFalse();
+    }
+
+    /** Starts the executable, closes its input, and answers whether it ended with its address. */
+    private static boolean endsWhenItsInputCloses(final List<String> options) throws Exception {
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        final Path runtime = RuntimeDirectories.create();
+        final Path output = Files.createTempFile("porelo-planner-input", ".log");
+        try {
+            final List<String> command = new ArrayList<>();
+            command.add(executable.toString());
+            command.addAll(options);
+            final ProcessBuilder builder =
+                    new ProcessBuilder(command)
+                            .redirectErrorStream(true)
+                            .redirectOutput(output.toFile());
+            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            builder.environment().put("XDG_STATE_HOME", runtime.toString());
+            final Process planner = builder.start();
+            try {
+                addressWithin(runtime, planner, output);
+                planner.getOutputStream().close();
+                final boolean ended = planner.waitFor(END.toSeconds(), TimeUnit.SECONDS);
+                if (ended) {
+                    assertThat(planner.exitValue())
+                            .as("the exit code of a planner whose input closed")
+                            .isZero();
+                    assertThat(runtime.resolve(AddressFile.DIRECTORY).resolve(AddressFile.FILE))
+                            .as("the address file after the planner ended with its input")
+                            .doesNotExist();
+                }
+                return ended;
+            } finally {
+                planner.destroyForcibly().waitFor();
             }
         } finally {
             Files.deleteIfExists(output);

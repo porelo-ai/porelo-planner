@@ -1,0 +1,2 @@
+title: A planner started with `--end-with-input` ends by itself once its standard input closes, so a planner the window started ends with the window, a hard kill included.
+type: added

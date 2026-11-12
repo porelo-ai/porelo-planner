@@ -60,6 +60,9 @@ exits. Each command is run from the repository's root:
 - **Only its owner reaches it.** It listens on the loopback address alone, on a port the system chooses, and refuses
   to start on any other address. One planner runs per account and serves every project; a second start refuses
   while the first runs.
+- **`--end-with-input` ends it with the window.** The window starts the planner with this option and its standard input
+  a pipe the window holds; when that pipe closes, a hard kill of the window included, the planner stops as on any stop
+  and deletes its address file. Without the option the planner reads nothing on its input and runs until stopped.
 - **The address file** is `porelo-planner/planner.json` in the account's runtime directory (`XDG_RUNTIME_DIR`),
   written once the planner listens and deleted when it stops:
 
