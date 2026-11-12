@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL49",
   "title": "Work Moves On By Itself From A Move On The Board",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 25,
