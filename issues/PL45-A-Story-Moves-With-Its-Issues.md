@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL45",
   "title": "A Story Moves With Its Issues",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "M",
   "priority": "Medium",
   "rank": 28,

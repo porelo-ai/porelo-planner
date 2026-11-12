@@ -5,10 +5,10 @@
   "$schema": "issue-1.json",
   "id": "PL49",
   "title": "Work Moves On By Itself From A Move On The Board",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "L",
   "priority": "High",
-  "rank": 24,
+  "rank": 25,
   "blockedBy": [
     "PL64",
     "PL65"

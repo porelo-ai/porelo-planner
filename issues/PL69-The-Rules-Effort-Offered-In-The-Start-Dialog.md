@@ -8,7 +8,7 @@
   "state": "Backlog",
   "size": "L",
   "priority": "Medium",
-  "rank": 1,
+  "rank": 2,
   "blockedBy": ["PL66"],
   "covers": "The model and effort the work rules choose for an issue's risk reach the window with where the choice came from; the start dialog proposes the rule's effort, the person may change it, and the effort chosen is handed to the window's Start"
 }

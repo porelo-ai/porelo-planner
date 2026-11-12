@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL62",
   "title": "Findings In The Git Store's Refusal Texts",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "S",
   "priority": "Low",
   "rank": 1,
