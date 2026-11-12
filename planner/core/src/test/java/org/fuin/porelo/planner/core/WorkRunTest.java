@@ -915,6 +915,690 @@ class WorkRunTest {
     }
 
     @Test
+    void aBuildEndedBeforeItsWorkLandedOffersItsReaderOnlyWhenItLandsAndOnlyOnce() {
+        // A reader offered before the work left the gate starts on nothing and polls; one offered
+        // twice reads the same work twice.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final var ended =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                unlanded("Built")));
+        assertThat(ended.tasks()).as("no reader while the work waits at the gate").isEmpty();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the end still moves the issue to reading")
+                .isEqualTo("Reading");
+        assertThat(ended.work().issues().get("AA1").needsYou())
+                .as("waiting for the landing asks nobody")
+                .isFalse();
+        final var landed = f.run.report("task", landed(build, "feature/landed"));
+        assertThat(landed.tasks()).as("the landing offers exactly one reader").hasSize(1);
+        final WorkOrder.Task reader = landed.tasks().getFirst().task();
+        assertThat(reader.role()).as("the offer is the build's reading").isEqualTo("READER");
+        assertThat(reader.reads())
+                .as("the reader is started naming the landed task")
+                .containsExactly("task");
+        assertThat(reader.prompt())
+                .as("its order names the task and the commit Porelo reported")
+                .contains(readsWork("feature/landed"));
+        assertThat(
+                        landed.work().offers().stream()
+                                .filter(o -> o.id().equals(build.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .ended()
+                                .landed())
+                .as("the build's end keeps where its work landed")
+                .containsExactly(landing("feature/landed"));
+        final var snapshot = f.record.value;
+        final int saves = f.store.saves;
+        assertThatThrownBy(() -> f.run.report("task", landed(build, "feature/landed")))
+                .as("a second landing of the same build is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a resend is a conflict, which the window may ignore")
+                                        .isEqualTo("TaskEventConflict"));
+        assertThat(f.record.value)
+                .as("the refused landing offers no second reader")
+                .isEqualTo(snapshot);
+        assertThat(f.store.saves).as("the refused landing writes nothing").isEqualTo(saves);
+    }
+
+    @Test
+    void aBuildEndedWithItsLandingOffersItsReaderAtOnceAndALandingAfterIsRefused() {
+        // A landing after a reader was already offered would offer a second reader of one build.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final var ended =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
+        assertThat(ended.tasks()).as("the reader comes with the end").hasSize(1);
+        assertThat(ended.tasks().getFirst().task().reads())
+                .as("it reads the ended task")
+                .containsExactly("task");
+        assertThat(ended.tasks().getFirst().task().prompt())
+                .as("where the end said it landed")
+                .contains(readsWork("work/built"));
+        assertThatThrownBy(() -> f.run.report("task", landed(build, "work/built")))
+                .as("the build's landing is already known")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a known landing is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+    }
+
+    @Test
+    void aLandingOfAParentBuildWhoseReaderCameWithItsChildsEndIsRefused() {
+        // The parent's reader follows its child's end, not its own; a landing taken then would
+        // offer the parent's work a second reader.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<WorkRun.Offered> readers = f.readers();
+        assertThat(readers)
+                .as("the child's end offers a reader for the parent and the child")
+                .hasSize(2);
+        final WorkRun.Offer main =
+                f.record.value.runs().get("ST1").offers().stream()
+                        .filter(o -> o.binding().role().equals("MAIN"))
+                        .findFirst()
+                        .orElseThrow();
+        final var snapshot = f.record.value;
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                main.id(),
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("work/built")))))
+                .as("the parent's end already named where it landed")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a known landing is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+        assertThat(f.record.value)
+                .as("the refused landing offers no second reader")
+                .isEqualTo(snapshot);
+    }
+
+    @Test
+    void aLandingOfAParentBuildFromAnOlderRecordWhoseReaderCameWithItsChildsEndIsRefused() {
+        // An older record keeps no landing; a landing of a parent already being read would offer
+        // the parent's work a second reader.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        assertThat(f.readers()).as("the parent's reader came with its child's end").hasSize(2);
+        f.record.value = withoutLandings(f.record.value);
+        final WorkRun.Offer main =
+                f.record.value.runs().get("ST1").offers().stream()
+                        .filter(o -> o.binding().role().equals("MAIN"))
+                        .findFirst()
+                        .orElseThrow();
+        final var snapshot = f.record.value;
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                main.id(),
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("work/built")))))
+                .as("a reader of the parent's issue already followed the build")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a build already read is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+        assertThat(f.record.value)
+                .as("the refused landing offers no second reader")
+                .isEqualTo(snapshot);
+    }
+
+    @Test
+    void anUnstartedReaderFromAnOlderRecordIsServedNamingTheBuildItReads() {
+        // A reader served without the tasks it reads is refused by the window and never starts,
+        // or starts without the build's work.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final WorkRun.Report end =
+                new WorkRun.Report(
+                        build.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built"));
+        final WorkRun.Offered reader = f.run.report("task", end).tasks().getFirst();
+        f.record.value = withoutReads(withoutLandings(f.record.value));
+        final var replayed = f.run.report("task", end);
+        assertThat(replayed.tasks())
+                .as("the replay answers the same unstarted reader")
+                .extracting(WorkRun.Offered::offer)
+                .containsExactly(reader.offer());
+        assertThat(replayed.tasks().getFirst().task().reads())
+                .as("the older reader names the build it follows")
+                .containsExactly("task");
+    }
+
+    @Test
+    void anUnstartedReaderFromAnOlderRecordWithNoKnownBuildIsVoidedAndNeedsThePerson() {
+        // A reader that names no build would start reading nothing.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final WorkRun.Offered reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        final WorkRun.Snapshot older = withoutReads(withoutLandings(f.record.value));
+        final WorkRun.Run run = older.runs().get("ST1");
+        f.record.value =
+                new WorkRun.Snapshot(
+                        older.generation(),
+                        Map.of(
+                                "ST1",
+                                new WorkRun.Run(
+                                        run.id(),
+                                        run.story(),
+                                        run.to(),
+                                        run.mode(),
+                                        run.comment(),
+                                        run.coordinator(),
+                                        run.readingRounds(),
+                                        run.issueReadingRounds(),
+                                        run.repositories(),
+                                        run.since(),
+                                        run.offers().stream()
+                                                .filter(o -> !o.id().equals(build.offer()))
+                                                .toList(),
+                                        run.issues(),
+                                        run.stopped(),
+                                        run.halted(),
+                                        run.pending())),
+                        older.ideas());
+        final WorkRun.Run read = f.run.work("ST1");
+        assertThat(
+                        read.offers().stream()
+                                .filter(o -> o.id().equals(reader.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .status())
+                .as("a reader that cannot name its build is no longer offered")
+                .isEqualTo("VOID");
+        assertThat(read.issues().get("AA1").reason())
+                .as("the person is asked instead")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+    }
+
+    @Test
+    void aLandingOfAnUnknownUnendedFailedOrReadingTaskIsRefusedAndOffersNothing() {
+        // A landing taken for work that is not a finished build would start a reader on nothing.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                "00000000-0000-4000-8000-000000000000",
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("work/built")))))
+                .as("an unknown offer has no build that landed")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("an unknown offer is a conflict, not a missing item")
+                                        .isEqualTo("TaskEventConflict"));
+        f.start(build);
+        assertThatThrownBy(() -> f.run.report("task", landed(build, "work/built")))
+                .as("a started task that has not ended has not landed")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("an unended task is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended("2026-01-01T00:00:00Z", false, "Died", "", 0)));
+        final var snapshot = f.record.value;
+        assertThatThrownBy(() -> f.run.report("task", landed(build, "work/built")))
+                .as("a build that failed did not end done")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a failed build is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+        assertThat(f.record.value).as("the refused landings record nothing").isEqualTo(snapshot);
+
+        final Fixture reading = new Fixture();
+        final WorkRun.Offered builder = reading.order().tasks().getFirst();
+        reading.start(builder);
+        final var reader =
+                reading.run
+                        .report(
+                                "task",
+                                new WorkRun.Report(
+                                        builder.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        reading.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        reading.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Findings:\n")));
+        assertThatThrownBy(
+                        () ->
+                                reading.run.report(
+                                        "reader",
+                                        new WorkRun.Report(
+                                                reader.offer(),
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("work/read")))))
+                .as("a reading is no build whose work lands")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(conflictOf(refused))
+                                        .as("a reading's landing is a conflict")
+                                        .isEqualTo("TaskEventConflict"));
+    }
+
+    @Test
+    void aReadingTakenUpAgainReadsTheLastBuildWhereItLanded() {
+        // A reading taken up again that named no landing, or another build's, reads the wrong work.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+        final var reader = f.run.report("task", landed(build, "feature/aa1")).tasks().getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        final var again =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        1,
+                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(again.tasks()).as("one more reading is offered").hasSize(1);
+        assertThat(again.tasks().getFirst().task().reads())
+                .as("it reads the last build's task")
+                .containsExactly("task");
+        assertThat(again.tasks().getFirst().task().prompt())
+                .as("where that build landed")
+                .contains(readsWork("feature/aa1"));
+    }
+
+    @Test
+    void aReadingTakenUpAgainOfABuildWithNoKnownLandingIsNotOfferedAndNeedsThePerson() {
+        // A reader of a build whose landing is unknown starts on nothing, so the person is asked.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        f.record.value = withoutLandings(f.record.value);
+        assertThatThrownBy(() -> f.run.report("task", landed(build, "work/built")))
+                .as(
+                        "a build whose reader came with its end, as an older record holds it, has landed")
+                .isInstanceOf(WorkRefusal.class);
+        final var again =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        1,
+                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(again.tasks()).as("no reader without the build's landing").isEmpty();
+        assertThat(again.work().issues().get("AA1").reason())
+                .as("the person is asked instead")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+    }
+
+    @Test
+    void aLandingIsTakenOnlyWithWellFormedNamesAndCommit() {
+        // A name passed on unchecked reaches a reader's order and Porelo's gate as anything; a
+        // line break in it would put words of the window's choosing on a line of their own.
+        assertThat(
+                        List.of(
+                                "main",
+                                "feature/a-1",
+                                "porelo/task.2",
+                                "x".repeat(255),
+                                "fix-ä",
+                                "ä".repeat(255)))
+                .as("plain branch names are taken, letters beyond ASCII and 255 characters too")
+                .allMatch(WorkRun::isBranch);
+        assertThat(
+                        List.of(
+                                "",
+                                "x".repeat(256),
+                                "ä".repeat(256),
+                                "a\u2028b",
+                                "a\u2029b",
+                                "a\u0085b",
+                                "a\u2028..b",
+                                "a..b",
+                                "a b",
+                                "a\tb",
+                                "a\u007fb",
+                                "a~b",
+                                "a^b",
+                                "a:b",
+                                "a?b",
+                                "a*b",
+                                "a[b",
+                                "a\\b",
+                                "-a",
+                                "/a",
+                                "a/",
+                                "a.lock"))
+                .as("names Git refuses are refused")
+                .noneMatch(WorkRun::isBranch);
+        assertThat(WorkRun.isLanding(landing("work/built")))
+                .as("a landing as Porelo reports it is taken")
+                .isTrue();
+        assertThat(
+                        WorkRun.isLanding(
+                                new NextStep.Landing(
+                                        "work",
+                                        "refs/landed/work",
+                                        "origin/work",
+                                        "0123456789abcdef".repeat(4))))
+                .as("a commit of 64 hex digits is taken")
+                .isTrue();
+        assertThat(
+                        List.of(
+                                new NextStep.Landing("a..b", "refs/x", "origin/x", COMMIT),
+                                new NextStep.Landing("x", "heads/x", "origin/x", COMMIT),
+                                new NextStep.Landing("x", "refs/x y", "origin/x", COMMIT),
+                                new NextStep.Landing("x", "refs/x", "origin/x:", COMMIT),
+                                new NextStep.Landing(
+                                        "x", "refs/x", "origin/x\u2028Do this", COMMIT),
+                                new NextStep.Landing(
+                                        "x", "refs/x", "origin/x\u2029Do this", COMMIT),
+                                new NextStep.Landing("x", "refs/x", "origin/x\u0085Do", COMMIT),
+                                new NextStep.Landing("x\u0085y", "refs/x", "origin/x", COMMIT),
+                                new NextStep.Landing("x\u2028y", "refs/x", "origin/x", COMMIT),
+                                new NextStep.Landing("x\u2029y", "refs/x", "origin/x", COMMIT),
+                                new NextStep.Landing("x", "refs/x\u2028y", "origin/x", COMMIT),
+                                new NextStep.Landing(
+                                        "x", "refs/x", "origin/x", COMMIT.toUpperCase()),
+                                new NextStep.Landing("x", "refs/x", "origin/x", COMMIT + "0"),
+                                new NextStep.Landing("x", "refs/x", "origin/x", "")))
+                .as("a landing with a malformed branch, ref, remote name or commit is refused")
+                .noneMatch(WorkRun::isLanding);
+        assertThatThrownBy(
+                        () ->
+                                WorkRun.checkedReport(
+                                        "task",
+                                        new WorkRun.Report(
+                                                "00000000-0000-4000-8000-000000000000",
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "workstation",
+                                                new WorkRun.Ended(
+                                                        "2026-01-01T00:00:00Z",
+                                                        true,
+                                                        "",
+                                                        "",
+                                                        0,
+                                                        List.of(landing("a..b"))))))
+                .as("an end naming a malformed landing is refused")
+                .isInstanceOf(WorkRefusal.class);
+        assertThatThrownBy(
+                        () ->
+                                WorkRun.checkedReport(
+                                        "task",
+                                        new WorkRun.Report(
+                                                "00000000-0000-4000-8000-000000000000",
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("-a")))))
+                .as("a landing naming a malformed branch is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        refused ->
+                                assertThat(((WorkRefusal) refused).parameters().get("detail"))
+                                        .as("the refusal names the malformed part, not its value")
+                                        .isEqualTo("The landing's branch is malformed."));
+        assertThatThrownBy(
+                        () ->
+                                WorkRun.checkedReport(
+                                        "task",
+                                        new WorkRun.Report(
+                                                "00000000-0000-4000-8000-000000000000",
+                                                WorkRun.Event.LANDED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of())))
+                .as("a landing that names nowhere is refused")
+                .isInstanceOf(WorkRefusal.class);
+        assertThatThrownBy(
+                        () ->
+                                WorkRun.checkedReport(
+                                        "task",
+                                        new WorkRun.Report(
+                                                "00000000-0000-4000-8000-000000000000",
+                                                WorkRun.Event.STOPPED,
+                                                "box",
+                                                "workstation",
+                                                null,
+                                                List.of(landing("main")))))
+                .as("only a landing carries where work landed beside its end")
+                .isInstanceOf(WorkRefusal.class);
+    }
+
+    /** The record as one written before ends carried where their work landed reads. */
+    private static WorkRun.Snapshot withoutLandings(final WorkRun.Snapshot snapshot) {
+        final Map<String, WorkRun.Run> runs = new java.util.LinkedHashMap<>();
+        snapshot.runs()
+                .forEach(
+                        (story, run) ->
+                                runs.put(
+                                        story,
+                                        new WorkRun.Run(
+                                                run.id(),
+                                                run.story(),
+                                                run.to(),
+                                                run.mode(),
+                                                run.comment(),
+                                                run.coordinator(),
+                                                run.readingRounds(),
+                                                run.issueReadingRounds(),
+                                                run.repositories(),
+                                                run.since(),
+                                                run.offers().stream()
+                                                        .map(WorkRunTest::withoutLanding)
+                                                        .toList(),
+                                                run.issues(),
+                                                run.stopped(),
+                                                run.halted(),
+                                                run.pending())));
+        return new WorkRun.Snapshot(snapshot.generation(), runs, snapshot.ideas());
+    }
+
+    /** The record as one written before offers named the tasks a reader reads. */
+    private static WorkRun.Snapshot withoutReads(final WorkRun.Snapshot snapshot) {
+        final Map<String, WorkRun.Run> runs = new java.util.LinkedHashMap<>();
+        snapshot.runs()
+                .forEach(
+                        (story, run) ->
+                                runs.put(
+                                        story,
+                                        new WorkRun.Run(
+                                                run.id(),
+                                                run.story(),
+                                                run.to(),
+                                                run.mode(),
+                                                run.comment(),
+                                                run.coordinator(),
+                                                run.readingRounds(),
+                                                run.issueReadingRounds(),
+                                                run.repositories(),
+                                                run.since(),
+                                                run.offers().stream()
+                                                        .map(WorkRunTest::withoutReads)
+                                                        .toList(),
+                                                run.issues(),
+                                                run.stopped(),
+                                                run.halted(),
+                                                run.pending())));
+        return new WorkRun.Snapshot(snapshot.generation(), runs, snapshot.ideas());
+    }
+
+    private static WorkRun.Offer withoutReads(final WorkRun.Offer o) {
+        final WorkOrder.Task a = o.arguments();
+        return new WorkRun.Offer(
+                o.id(),
+                new WorkOrder.Task(
+                        a.repository(),
+                        a.issues(),
+                        a.role(),
+                        a.agent(),
+                        a.model(),
+                        a.mode(),
+                        a.prompt()),
+                o.binding(),
+                o.status(),
+                o.task(),
+                o.containerId(),
+                o.machine(),
+                o.since(),
+                o.ended(),
+                o.fingerprint(),
+                o.following(),
+                o.deferred(),
+                o.refusal(),
+                o.reviewAnyway(),
+                o.reworkComment(),
+                o.rework());
+    }
+
+    private static WorkRun.Offer withoutLanding(final WorkRun.Offer o) {
+        final WorkRun.Ended end = o.ended();
+        return new WorkRun.Offer(
+                o.id(),
+                o.arguments(),
+                o.binding(),
+                o.status(),
+                o.task(),
+                o.containerId(),
+                o.machine(),
+                o.since(),
+                end == null
+                        ? null
+                        : new WorkRun.Ended(
+                                end.at(), end.finished(), end.why(), end.answer(), end.unpushed()),
+                o.fingerprint(),
+                o.following(),
+                o.deferred(),
+                o.refusal(),
+                o.reviewAnyway(),
+                o.reworkComment(),
+                o.rework());
+    }
+
+    @Test
     void aHandMoveThatLeavesAnIssueWhereItStandsKeepsItsNeedsYou() {
         // An issue stuck in a working state with its warning cleared is seen by nobody and worked
         // on by nothing.
@@ -1600,8 +2284,47 @@ class WorkRunTest {
         assertThat(f.store.saves).as("startup never retries the pending save").isEqualTo(1);
     }
 
+    /** An end whose work already landed, as Porelo reports it once its work left the gate. */
     static WorkRun.Ended ended(final String answer) {
-        return new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", answer, 0);
+        return new WorkRun.Ended(
+                "2026-01-01T00:00:00Z", true, "", answer, 0, List.of(landing("work/built")));
+    }
+
+    /** An end whose work still waits at the gate. */
+    static WorkRun.Ended unlanded(final String answer) {
+        return new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", answer, 0, List.of());
+    }
+
+    static WorkRun.Report landed(final WorkRun.Offered offer, final String branch) {
+        return new WorkRun.Report(
+                offer.offer(),
+                WorkRun.Event.LANDED,
+                "box",
+                "workstation",
+                null,
+                List.of(landing(branch)));
+    }
+
+    /** A commit as Porelo names it on a task's row. */
+    static final String COMMIT = "0123456789abcdef0123456789abcdef01234567";
+
+    /** Where Porelo reports a task's work landed on {@code branch}. */
+    static NextStep.Landing landing(final String branch) {
+        return new NextStep.Landing(
+                branch, "refs/landed/task/" + branch, "origin/landed/task/" + branch, COMMIT);
+    }
+
+    /** The order's words for the task's work landed on {@code branch}. */
+    static String readsWork(final String branch) {
+        return "the work of Porelo task task: commit "
+                + COMMIT
+                + " on origin/landed/task/"
+                + branch
+                + ", after `git fetch origin`";
+    }
+
+    static String conflictOf(final Throwable refused) {
+        return ((WorkRefusal) refused).name();
     }
 
     static final class Memory implements WorkRun.Record {

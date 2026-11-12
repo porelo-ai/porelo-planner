@@ -59,6 +59,7 @@ class _Source extends FakePlanningSource {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) async {
     reports.add((project, task, event, offer, container, machine, ended));
     if (reportError case final error?) throw error;

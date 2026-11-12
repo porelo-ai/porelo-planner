@@ -1587,6 +1587,7 @@ void main() {
       why: '  Raw why.\n',
       answer: 'é\n{answer}',
       unpushed: 3,
+      landed: [_landing],
     );
     planner.routes['POST /projects/demo/tasks/main-task/events'] = () => _Reply(200, {
       'revision': 'r1',
@@ -1602,17 +1603,50 @@ void main() {
         container: 'container-main-task',
         machine: machine,
         ended: event == PlanningTaskEvent.ended ? ended : null,
+        landed: event == PlanningTaskEvent.landed ? const [_landing] : const [],
       );
       expect(jsonDecode(planner.calls.last.body), {
         'offer': servedOffer(1),
         'event': event.name.toUpperCase(),
         'container': 'container-main-task',
         'machine': machine,
-        if (event == PlanningTaskEvent.ended) 'ended': ended.toMap(),
-      });
+        if (event == PlanningTaskEvent.ended)
+          'ended': {
+            ...ended.toMap(),
+            'landed': [_landingMap],
+          },
+        if (event == PlanningTaskEvent.landed) 'landed': [_landingMap],
+      }, reason: 'Porelo\'s landing reaches the planner unchanged, or the reader is never offered');
       expect(planner.calls.last.target, '/projects/demo/tasks/main-task/events');
       expect(answer.tasks.map((task) => task.offer), [servedOffer(10)]);
     }
+  });
+
+  // Harm: a landing sent without its event, or a landed report naming none, offers a reader on nothing.
+  test('a landing travels only with a landed report that names one', () async {
+    final (planner, source) = await _started();
+    final calls = planner.calls.length;
+    for (final (event, landed) in [
+      (PlanningTaskEvent.landed, const <PlanningLanding>[]),
+      (PlanningTaskEvent.started, const [_landing]),
+      (PlanningTaskEvent.ended, const [_landing]),
+      (PlanningTaskEvent.stopped, const [_landing]),
+    ]) {
+      await expectLater(
+        source.taskEvent(
+          'demo',
+          'main-task',
+          event,
+          offer: servedOffer(1),
+          container: 'container-main-task',
+          machine: 'Machine',
+          landed: landed,
+        ),
+        throwsArgumentError,
+        reason: '$event with ${landed.length} landing(s)',
+      );
+    }
+    expect(planner.calls.length, calls, reason: 'a refused report reaches no planner');
   });
 
   // Harm: a damaged report answer or an oversized raw answer is retained as permission to start more work.
@@ -2114,3 +2148,17 @@ void main() {
     expect(planner.calls, isEmpty, reason: 'nothing reaches the planner');
   });
 }
+
+const _landing = PlanningLanding(
+  branch: 'foo-1',
+  ref: 'refs/porelo/landed/porelo-foo-project_foo-1/foo-1',
+  remote: 'origin/landed/porelo-foo-project_foo-1/foo-1',
+  commit: '0123456789abcdef0123456789abcdef01234567',
+);
+
+const _landingMap = {
+  'branch': 'foo-1',
+  'ref': 'refs/porelo/landed/porelo-foo-project_foo-1/foo-1',
+  'remote': 'origin/landed/porelo-foo-project_foo-1/foo-1',
+  'commit': '0123456789abcdef0123456789abcdef01234567',
+};

@@ -32,6 +32,7 @@ import org.jspecify.annotations.Nullable;
 public final class WorkRun {
 
     private static final Pattern LABEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
+    private static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
     private static final Pattern AT =
             Pattern.compile(
                     "[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})");
@@ -99,22 +100,73 @@ public final class WorkRun {
         }
     }
 
-    /** The window's three lifecycle reports. */
+    /** The window's lifecycle reports. */
     public enum Event {
         /** The window successfully started the offered task. */
         STARTED,
         /** Porelo supplied the agent's end record. */
         ENDED,
         /** The window stopped the bound task. */
-        STOPPED
+        STOPPED,
+        /** A build's work left the gate after its end, where Porelo reports it landed. */
+        LANDED
     }
 
-    /** Porelo's end record, kept unmapped at the boundary. */
-    public record Ended(String at, boolean finished, String why, String answer, int unpushed) {}
+    /**
+     * Porelo's end record, kept unmapped at the boundary; {@code landed} is where the task's work
+     * landed as Porelo reports it, empty while that work still waits at the gate.
+     */
+    public record Ended(
+            String at,
+            boolean finished,
+            String why,
+            String answer,
+            int unpushed,
+            List<NextStep.Landing> landed) {
 
-    /** A report carries no ownership or state; both come from the saved offer. */
+        /** Keeps the landings as they were reported. */
+        public Ended {
+            landed = List.copyOf(landed);
+        }
+
+        /** An end whose work has not landed yet. */
+        public Ended(
+                final String at,
+                final boolean finished,
+                final String why,
+                final String answer,
+                final int unpushed) {
+            this(at, finished, why, answer, unpushed, List.of());
+        }
+    }
+
+    /**
+     * A report carries no ownership or state; both come from the saved offer. Only ENDED carries
+     * {@code ended}, and only LANDED carries {@code landed}, never empty.
+     */
     public record Report(
-            String offer, Event event, String container, String machine, @Nullable Ended ended) {}
+            String offer,
+            Event event,
+            String container,
+            String machine,
+            @Nullable Ended ended,
+            List<NextStep.Landing> landed) {
+
+        /** Keeps the landings as they were reported. */
+        public Report {
+            landed = List.copyOf(landed);
+        }
+
+        /** A report that names no landing. */
+        public Report(
+                final String offer,
+                final Event event,
+                final String container,
+                final String machine,
+                final @Nullable Ended ended) {
+            this(offer, event, container, machine, ended, List.of());
+        }
+    }
 
     /** The immutable arguments and identity offered to the window. */
     public record Offered(String offer, WorkOrder.Task task) {}
@@ -419,6 +471,9 @@ public final class WorkRun {
      */
     public Answer report(final String task, final Report report) {
         checkedReport(task, report);
+        if (report.event() == Event.LANDED) {
+            return landed(task, report);
+        }
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
@@ -586,7 +641,7 @@ public final class WorkRun {
                                             judgment,
                                             draft.progress,
                                             draft.comment,
-                                            task);
+                                            new NextStep.Build(task, ended.landed()));
                             draft.progress.putAll(next.progress());
                             writes = next.writes();
                             for (final NextStep.Planned planned : next.tasks()) {
@@ -619,6 +674,127 @@ public final class WorkRun {
                             save(session, snapshot, draft, writes, accepted.id(), board, null);
                     return answer(saved, following);
                 });
+    }
+
+    /**
+     * Records where a build's work landed and offers its readers exactly then; refused as a
+     * conflict for an unknown offer, one that did not end done, or one that already landed, so a
+     * resend offers no second reader.
+     */
+    private Answer landed(final String task, final Report report) {
+        final List<NextStep.Landing> landed = report.landed();
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Run run =
+                            snapshot.runs().values().stream()
+                                    .filter(
+                                            r ->
+                                                    r.offers().stream()
+                                                            .anyMatch(
+                                                                    o ->
+                                                                            o.id().equals(
+                                                                                            report
+                                                                                                    .offer())))
+                                    .findFirst()
+                                    .orElseThrow(
+                                            () ->
+                                                    conflict(
+                                                            task,
+                                                            Event.LANDED,
+                                                            "No offer answers this task."));
+                    final Offer known =
+                            run.offers().stream()
+                                    .filter(o -> o.id().equals(report.offer()))
+                                    .findFirst()
+                                    .orElseThrow();
+                    if (!task.equals(known.task())
+                            || !report.container().equals(known.containerId())
+                            || known.machine() != null
+                                    && !report.machine().equals(known.machine())) {
+                        throw conflict(
+                                task, Event.LANDED, "The report contradicts the task binding.");
+                    }
+                    final Ended ended = known.ended();
+                    if (ended == null) {
+                        throw conflict(task, Event.LANDED, "The task has not ended.");
+                    }
+                    if (!ended.landed().isEmpty() || readerFollows(run, known)) {
+                        throw conflict(task, Event.LANDED, "The task's work has already landed.");
+                    }
+                    if (!(WorkEnds.judge(
+                                    known.binding().role(),
+                                    WorkEnds.Outcome.of(ended.finished(), ended.unpushed()),
+                                    ended.answer())
+                            instanceof WorkEnds.Done)) {
+                        throw conflict(task, Event.LANDED, "The task did not end done.");
+                    }
+                    if (run.stopped() || run.halted()) {
+                        throw conflict(task, Event.LANDED, "The run no longer offers work.");
+                    }
+                    final Draft draft = new Draft(run);
+                    final Board board = store.board();
+                    final NextStep.Result next =
+                            landedNext(
+                                    board,
+                                    known.binding(),
+                                    draft.progress,
+                                    draft.comment,
+                                    new NextStep.Build(task, landed));
+                    draft.progress.putAll(next.progress());
+                    final List<String> readers = new ArrayList<>();
+                    for (final NextStep.Planned planned : next.tasks()) {
+                        final Offer offer = offer(planned, run.story());
+                        draft.offers.add(offer);
+                        readers.add(offer.id());
+                    }
+                    final List<String> following = new ArrayList<>(known.following());
+                    following.addAll(readers);
+                    draft.set(
+                            new Offer(
+                                    known.id(),
+                                    known.arguments(),
+                                    known.binding(),
+                                    known.status(),
+                                    known.task(),
+                                    known.containerId(),
+                                    known.machine(),
+                                    known.since(),
+                                    new Ended(
+                                            ended.at(),
+                                            ended.finished(),
+                                            ended.why(),
+                                            ended.answer(),
+                                            ended.unpushed(),
+                                            landed),
+                                    known.fingerprint(),
+                                    following,
+                                    known.deferred(),
+                                    known.refusal(),
+                                    known.reviewAnyway(),
+                                    known.reworkComment(),
+                                    known.rework()));
+                    draft.compact(known.id());
+                    final Run saved =
+                            save(session, snapshot, draft, NOTHING, known.id(), board, null);
+                    return answer(saved, readers);
+                });
+    }
+
+    /**
+     * A reader of the build's issues offered after it, as an older record holds one offered at the
+     * end, or at its child's end for a parent, before an end could come without its landing.
+     */
+    private static boolean readerFollows(final Run run, final Offer build) {
+        final List<Offer> after =
+                run.offers().subList(run.offers().indexOf(build) + 1, run.offers().size());
+        return after.stream()
+                .anyMatch(
+                        o ->
+                                o.binding().role().equals("READER")
+                                        && !o.status().equals("VOID")
+                                        && o.binding().issues().stream()
+                                                .anyMatch(build.binding().issues()::contains));
     }
 
     /** Reads the run without inferring anything from a working state when its record was lost. */
@@ -1145,8 +1321,8 @@ public final class WorkRun {
         }
     }
 
-    /** The Porelo task that last built the issue, whose work a new reading reads. */
-    private static String lastBuild(final Run run, final String issueId) {
+    /** The build that last built the issue, whose landed work a new reading reads. */
+    private static NextStep.Build lastBuild(final Run run, final String issueId) {
         return run.offers().stream()
                 .filter(
                         o ->
@@ -1154,8 +1330,16 @@ public final class WorkRun {
                                         && o.binding().issues().contains(issueId)
                                         && o.task() != null)
                 .reduce((left, right) -> right)
-                .map(Offer::task)
-                .orElse("");
+                .map(WorkRun::build)
+                .orElse(new NextStep.Build("", List.of()));
+    }
+
+    /** An offer's task with where its work landed, if it has. */
+    private static NextStep.Build build(final Offer offer) {
+        final Ended ended = offer.ended();
+        return new NextStep.Build(
+                Objects.requireNonNullElse(offer.task(), ""),
+                ended == null ? List.of() : ended.landed());
     }
 
     private Writes reconcile(
@@ -1191,7 +1375,7 @@ public final class WorkRun {
                             old.reviewAnyway(),
                             old.reworkComment(),
                             old.rework(),
-                            Objects.requireNonNullElse(old.task(), ""));
+                            build(old));
             draft.progress.putAll(next.progress());
             targets.putAll(next.writes().issues());
             final List<String> ids = new ArrayList<>(old.following());
@@ -1251,10 +1435,31 @@ public final class WorkRun {
             final WorkEnds.Judgment judgment,
             final Map<String, NextStep.Progress> progress,
             final String comment,
-            final String ended) {
+            final NextStep.Build ended) {
         try {
             return NextStep.after(
                     board, binding, judgment, progress, comment, store::storyState, ended);
+        } catch (final WorkRefusal
+                | IllegalArgumentException
+                | UnsupportedOperationException cannotBuild) {
+            final Map<String, NextStep.Progress> attention = new LinkedHashMap<>(progress);
+            binding.issues()
+                    .forEach(
+                            id ->
+                                    attention.computeIfPresent(
+                                            id, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE")));
+            return new NextStep.Result(NOTHING, List.of(), attention, List.of());
+        }
+    }
+
+    private NextStep.Result landedNext(
+            final Board board,
+            final NextStep.Binding binding,
+            final Map<String, NextStep.Progress> progress,
+            final String comment,
+            final NextStep.Build build) {
+        try {
+            return NextStep.landed(board, binding, progress, comment, build);
         } catch (final WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotBuild) {
@@ -1281,7 +1486,104 @@ public final class WorkRun {
                 session.write(snapshot);
             }
         }
+        for (final Run run : List.copyOf(snapshot.runs().values())) {
+            final Run named = readersNamingTheirBuilds(run);
+            if (named != run) {
+                snapshot = replace(snapshot, named);
+                session.write(snapshot);
+            }
+        }
         return snapshot;
+    }
+
+    /**
+     * Names the build each unstarted reader of an older record reads, which that record did not
+     * keep; a reader whose build is unknown is voided and its issue asks the person, since it would
+     * read nothing.
+     */
+    private static Run readersNamingTheirBuilds(final Run run) {
+        final Draft draft = new Draft(run);
+        boolean changed = false;
+        for (int index = 0; index < run.offers().size(); index++) {
+            final Offer reader = run.offers().get(index);
+            final WorkOrder.Task arguments = reader.arguments();
+            if (!reader.binding().role().equals("READER")
+                    || !reader.status().equals("OFFERED")
+                    || !arguments.reads().isEmpty()) {
+                continue;
+            }
+            final String issue = reader.binding().issues().getFirst();
+            final String built =
+                    run.offers().subList(0, index).stream()
+                            .filter(
+                                    o ->
+                                            !o.binding().role().equals("READER")
+                                                    && o.binding().issues().contains(issue)
+                                                    && o.task() != null)
+                            .reduce((left, right) -> right)
+                            .map(Offer::task)
+                            .orElse(null);
+            changed = true;
+            if (built == null) {
+                draft.set(withStatus(reader, "VOID"));
+                draft.progress.computeIfPresent(
+                        issue, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+                continue;
+            }
+            draft.set(
+                    withArguments(
+                            reader,
+                            new WorkOrder.Task(
+                                    arguments.repository(),
+                                    arguments.issues(),
+                                    arguments.role(),
+                                    arguments.agent(),
+                                    arguments.model(),
+                                    arguments.mode(),
+                                    arguments.prompt(),
+                                    List.of(built))));
+        }
+        return changed ? draft.freeze() : run;
+    }
+
+    private static Offer withStatus(final Offer o, final String status) {
+        return new Offer(
+                o.id(),
+                o.arguments(),
+                o.binding(),
+                status,
+                o.task(),
+                o.containerId(),
+                o.machine(),
+                o.since(),
+                o.ended(),
+                o.fingerprint(),
+                List.of(),
+                List.of(),
+                o.refusal(),
+                o.reviewAnyway(),
+                o.reworkComment(),
+                o.rework());
+    }
+
+    private static Offer withArguments(final Offer o, final WorkOrder.Task arguments) {
+        return new Offer(
+                o.id(),
+                arguments,
+                o.binding(),
+                o.status(),
+                o.task(),
+                o.containerId(),
+                o.machine(),
+                o.since(),
+                o.ended(),
+                o.fingerprint(),
+                o.following(),
+                o.deferred(),
+                o.refusal(),
+                o.reviewAnyway(),
+                o.reworkComment(),
+                o.rework());
     }
 
     private static Snapshot replace(final Snapshot snapshot, final Run run) {
@@ -1454,11 +1756,14 @@ public final class WorkRun {
             if (!LABEL.matcher(task).matches()
                     || !LABEL.matcher(report.container()).matches()
                     || !UUID.fromString(report.offer()).toString().equals(report.offer())
-                    || (report.event() == Event.ENDED) != (report.ended() != null)) {
+                    || (report.event() == Event.ENDED) != (report.ended() != null)
+                    || (report.event() == Event.LANDED) == report.landed().isEmpty()) {
                 throw WorkRefusal.invalidSettings();
             }
+            report.landed().forEach(WorkRun::checkedLanding);
             final Ended ended = report.ended();
             if (ended != null) {
+                ended.landed().forEach(WorkRun::checkedLanding);
                 if (ended.at().length() > 128
                         || !AT.matcher(ended.at()).matches()
                         || ended.unpushed() < 0
@@ -1472,6 +1777,68 @@ public final class WorkRun {
         } catch (final IllegalArgumentException | DateTimeParseException invalid) {
             throw WorkRefusal.invalidSettings();
         }
+    }
+
+    /**
+     * Answers whether a landing is one Porelo may report: a branch and a remote-tracking name that
+     * are branch names, a ref under {@code refs/} by the same rules, and a commit of 40 or 64
+     * lowercase hex digits.
+     *
+     * @param landing the landing
+     * @return whether each of its names is well formed
+     */
+    public static boolean isLanding(final NextStep.Landing landing) {
+        return fault(landing) == null;
+    }
+
+    /** Refuses a malformed landing, naming the part that is malformed but never its value. */
+    private static void checkedLanding(final NextStep.Landing landing) {
+        final String part = fault(landing);
+        if (part != null) {
+            throw WorkRefusal.invalidSettings("The landing's " + part + " is malformed.");
+        }
+    }
+
+    private static @Nullable String fault(final NextStep.Landing landing) {
+        if (!isBranch(landing.branch())) {
+            return "branch";
+        }
+        if (!landing.ref().startsWith("refs/") || !isBranch(landing.ref())) {
+            return "ref";
+        }
+        if (!isBranch(landing.remote())) {
+            return "remote";
+        }
+        return COMMIT.matcher(landing.commit()).matches() ? null : "commit";
+    }
+
+    /**
+     * Answers whether a text is a Git ref name as Porelo may report one: 1 to 255 characters
+     * (Unicode code points), none of them a control character, a space, a line or paragraph
+     * separator or any of {@code ~^:?*[\}, without "..", not starting with - or /, not ending with
+     * / or .lock. Letters beyond ASCII are names Git takes.
+     *
+     * @param name the text
+     * @return whether it is a ref name
+     */
+    public static boolean isBranch(final String name) {
+        return !name.isEmpty()
+                && name.codePointCount(0, name.length()) <= 255
+                && !name.contains("..")
+                && !name.startsWith("-")
+                && !name.startsWith("/")
+                && !name.endsWith("/")
+                && !name.endsWith(".lock")
+                && name.codePoints().noneMatch(WorkRun::refusedInName);
+    }
+
+    /** A line break of any kind would put words on a line of their own in a reader's order. */
+    private static boolean refusedInName(final int point) {
+        return point <= 0x20
+                || point >= 0x7F && point <= 0x9F
+                || point == 0x2028
+                || point == 0x2029
+                || "~^:?*[\\".indexOf(point) >= 0;
     }
 
     /** Checks a verbatim display name without interpreting it as a machine address. */
@@ -1506,15 +1873,27 @@ public final class WorkRun {
             final List<String> fields =
                     end == null
                             ? List.of(report.event().name(), report.container(), report.machine())
-                            : List.of(
-                                    report.event().name(),
-                                    report.container(),
-                                    report.machine(),
-                                    end.at(),
-                                    Boolean.toString(end.finished()),
-                                    end.why(),
-                                    end.answer(),
-                                    Integer.toString(end.unpushed()));
+                            : new ArrayList<>(
+                                    List.of(
+                                            report.event().name(),
+                                            report.container(),
+                                            report.machine(),
+                                            end.at(),
+                                            Boolean.toString(end.finished()),
+                                            end.why(),
+                                            end.answer(),
+                                            Integer.toString(end.unpushed())));
+            if (end != null) {
+                // Only an end with a landing adds it, so an end recorded before keeps its print.
+                for (final NextStep.Landing landing : end.landed()) {
+                    fields.addAll(
+                            List.of(
+                                    landing.branch(),
+                                    landing.ref(),
+                                    landing.remote(),
+                                    landing.commit()));
+                }
+            }
             for (final String field : fields) {
                 final byte[] bytes = field.getBytes(StandardCharsets.UTF_8);
                 digest.update(
@@ -1637,7 +2016,8 @@ public final class WorkRun {
                                         arguments.agent(),
                                         arguments.model(),
                                         arguments.mode(),
-                                        ""),
+                                        "",
+                                        arguments.reads()),
                                 o.binding(),
                                 o.status(),
                                 o.task(),
@@ -1651,7 +2031,8 @@ public final class WorkRun {
                                                 end.finished(),
                                                 end.why(),
                                                 "",
-                                                end.unpushed()),
+                                                end.unpushed(),
+                                                end.landed()),
                                 o.fingerprint(),
                                 o.following(),
                                 o.deferred(),

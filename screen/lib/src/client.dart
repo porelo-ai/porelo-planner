@@ -76,6 +76,16 @@ enum PlanningTaskEvent {
 
   /// The task was stopped.
   stopped,
+
+  /// The work of a task that ended while it still waited at Porelo's gate has landed.
+  landed,
+}
+
+/// Refuses a report whose landings do not fit its event: only [PlanningTaskEvent.landed] carries them, at least one.
+void checkLanded(PlanningTaskEvent event, List<PlanningLanding> landed) {
+  if (event == PlanningTaskEvent.landed ? landed.isEmpty : landed.isNotEmpty) {
+    throw ArgumentError.value(landed, 'landed', 'Only a landed report names where the work landed');
+  }
 }
 
 /// Where the planning screen reads and writes: the providers of planning and what the window tells them.
@@ -100,6 +110,7 @@ abstract interface class PlanningClient implements Listenable {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   });
 }
 
@@ -207,6 +218,7 @@ abstract interface class PlanningSource {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   });
 
   /// Reads the issue's last findings.

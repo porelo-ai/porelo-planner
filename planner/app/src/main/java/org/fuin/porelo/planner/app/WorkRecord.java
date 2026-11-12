@@ -369,6 +369,13 @@ public final class WorkRecord implements AutoCloseable {
                             object.putNull(newer);
                         }
                     }
+                    if (offer.path("arguments") instanceof ObjectNode arguments
+                            && !arguments.has("reads")) {
+                        arguments.putArray("reads");
+                    }
+                    if (offer.path("ended") instanceof ObjectNode ended && !ended.has("landed")) {
+                        ended.putArray("landed");
+                    }
                 }
             }
             return tree;

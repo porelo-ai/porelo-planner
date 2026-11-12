@@ -1,0 +1,2 @@
+title: A reader is offered only once its build's work has landed, its order names the landed commit and remote-tracking name, and its start names the tasks it reads, with a new LANDED event for work that lands after its end.
+type: added

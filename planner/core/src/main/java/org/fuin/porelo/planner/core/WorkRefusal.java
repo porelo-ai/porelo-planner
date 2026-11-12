@@ -121,7 +121,16 @@ public final class WorkRefusal extends RuntimeException {
 
     /** Refuses unreadable input without echoing its contents. */
     public static WorkRefusal invalidSettings() {
-        final String detail = "The work request is invalid.";
+        return invalidSettings("The work request is invalid.");
+    }
+
+    /**
+     * Refuses a malformed request, saying in fixed words which part is malformed.
+     *
+     * @param detail the fixed words, never the refused value
+     * @return the refusal
+     */
+    public static WorkRefusal invalidSettings(final String detail) {
         return new WorkRefusal("InvalidSettings", detail, Map.of("detail", detail));
     }
 }

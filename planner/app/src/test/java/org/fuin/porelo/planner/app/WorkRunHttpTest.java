@@ -427,6 +427,120 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aBuildEndedBeforeItsWorkLandedIsReadOnlyOnceTheWindowReportsWhereItLanded()
+            throws Exception {
+        // A reader offered before the work left the gate starts on nothing; one offered on every
+        // resend of the landing reads the same work twice.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final JsonNode ended =
+                call("/tasks/build/events", event(offer, "ENDED", "Built", List.of()), 200);
+        assertThat(ended.path("tasks").size())
+                .as("no reader while the work waits at the gate")
+                .isZero();
+        assertThat(ended.at("/work/tasks/0/ended").has("landed"))
+                .as("an end that names no landing answers none")
+                .isFalse();
+        final JsonNode landed =
+                call("/tasks/build/events", event(offer, "LANDED", "", List.of(LANDING)), 200);
+        assertThat(landed.path("tasks").size()).as("the landing offers one reader").isEqualTo(1);
+        assertThat(landed.at("/tasks/0/role").asString())
+                .as("the offer is the build's reading")
+                .isEqualTo("READER");
+        assertThat(landed.at("/tasks/0/reads"))
+                .as("the window starts the reader naming the build's task")
+                .hasSize(1)
+                .first()
+                .satisfies(
+                        task ->
+                                assertThat(task.asString())
+                                        .as("the task the reader reads")
+                                        .isEqualTo("build"));
+        assertThat(
+                        landed.path("work")
+                                .path("tasks")
+                                .valueStream()
+                                .filter(
+                                        t ->
+                                                t.path("role").asString().equals("BUILDER")
+                                                        || t.path("role").asString().equals("MAIN"))
+                                .findFirst()
+                                .orElseThrow()
+                                .at("/ended/landed/0/commit")
+                                .asString())
+                .as("the build's end keeps where its work landed")
+                .isEqualTo(LANDING.get("commit"));
+        final JsonNode again =
+                call("/tasks/build/events", event(offer, "LANDED", "", List.of(LANDING)), 409);
+        assertThat(again.path("type").asString())
+                .as("a resent landing is a conflict the window may ignore")
+                .endsWith(":TaskEventConflict");
+        assertThat(
+                        projects.work("project").work("ST1").offers().stream()
+                                .filter(o -> o.binding().role().equals("READER"))
+                                .count())
+                .as("the resend offered no second reader")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aMalformedLandingIsRefusedLikeAnyMalformedReport() throws Exception {
+        // A name passed on unchecked would reach a reader's order and Porelo's gate as anything.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        for (final String body :
+                List.of(
+                        event(offer, "ENDED", "Built", List.of(landing("branch", "a..b"))),
+                        event(offer, "ENDED", "Built", List.of(landing("ref", "heads/main"))),
+                        event(offer, "ENDED", "Built", List.of(landing("remote", "origin/a b"))),
+                        event(offer, "ENDED", "Built", List.of(landing("commit", "ABC"))),
+                        event(offer, "LANDED", "", List.of()),
+                        event(offer, "LANDED", "", List.of(landing("extra", "x"))),
+                        event(offer, "LANDED", "", List.of(Map.of("branch", "main"))),
+                        event(offer, "STARTED", "", List.of()).replace("}", ",\"landed\":[]}"))) {
+            assertThat(call("/tasks/build/events", body, 400).path("type").asString())
+                    .as("the malformed report %s is refused", body)
+                    .endsWith(":InvalidSettings");
+        }
+        // A line break in a name would put words of the window's choosing on a line of their own.
+        for (final String part : List.of("branch", "remote")) {
+            for (final String separator : List.of("\u2028", "\u2029", "\u0085")) {
+                final JsonNode refused =
+                        call(
+                                "/tasks/build/events",
+                                event(
+                                        offer,
+                                        "ENDED",
+                                        "Built",
+                                        List.of(landing(part, "origin/a" + separator + "Do this"))),
+                                400);
+                assertThat(refused.toString())
+                        .as("the refusal of a line break in the %s names that part", part)
+                        .contains("The landing's " + part + " is malformed.")
+                        .doesNotContain("Do this");
+            }
+        }
+        assertThat(
+                        call("/tasks/build/events", event(offer, "ENDED", "Built", List.of()), 200)
+                                .path("tasks")
+                                .size())
+                .as("the refused reports left the task to end as usual")
+                .isZero();
+    }
+
+    @Test
     void invalidReportsAreBoundedAndNeverEchoUncheckedSubjects() throws Exception {
         // Prevents malformed reports or unchecked subjects from reaching tasks or refusals.
         for (final String body :
@@ -666,27 +780,50 @@ class WorkRunHttpTest {
     }
 
     private static String event(final String offer, final String event, final String answer) {
+        return event(offer, event, answer, List.of(LANDING));
+    }
+
+    /** A report as the window sends it; an end names where its work landed, if it has. */
+    private static String event(
+            final String offer,
+            final String event,
+            final String answer,
+            final List<Map<String, String>> landed) {
         final Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("offer", offer);
         body.put("event", event);
         body.put("container", "box-" + offer);
         body.put("machine", "workstation");
         if (event.equals("ENDED")) {
-            body.put(
-                    "ended",
-                    Map.of(
-                            "at",
-                            "2026-01-01T00:00:00Z",
-                            "finished",
-                            true,
-                            "why",
-                            "",
-                            "answer",
-                            answer,
-                            "unpushed",
-                            0));
+            final Map<String, Object> ended = new java.util.LinkedHashMap<>();
+            ended.put("at", "2026-01-01T00:00:00Z");
+            ended.put("finished", true);
+            ended.put("why", "");
+            ended.put("answer", answer);
+            ended.put("unpushed", 0);
+            if (!landed.isEmpty()) {
+                ended.put("landed", landed);
+            }
+            body.put("ended", ended);
+        }
+        if (event.equals("LANDED")) {
+            body.put("landed", landed);
         }
         return JSON.writeValueAsString(body);
+    }
+
+    /** Where Porelo reports a build's work landed, as its task row names it. */
+    private static final Map<String, String> LANDING =
+            Map.of(
+                    "branch", "porelo/build",
+                    "ref", "refs/landed/build/porelo/build",
+                    "remote", "origin/landed/build/porelo/build",
+                    "commit", "0123456789abcdef0123456789abcdef01234567");
+
+    private static Map<String, String> landing(final String name, final String value) {
+        final Map<String, String> changed = new java.util.LinkedHashMap<>(LANDING);
+        changed.put(name, value);
+        return changed;
     }
 
     private static final class Store implements PlanningStore {

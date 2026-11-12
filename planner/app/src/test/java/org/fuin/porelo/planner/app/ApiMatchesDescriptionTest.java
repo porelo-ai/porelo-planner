@@ -20,6 +20,8 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import org.fuin.porelo.planner.app.mock.MockController;
 import org.fuin.porelo.planner.core.NewIdeas;
+import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -73,6 +75,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("PlanningStartTask", WorkAnswers.StartTask.class),
                     Map.entry("TaskEventRequest", WorkRequests.TaskEventRequest.class),
                     Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
+                    Map.entry("Landing", NextStep.Landing.class),
                     Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class),
                     Map.entry("StoryWorkReply", WorkAnswers.StoryWorkReply.class),
                     Map.entry("TaskEventReply", WorkAnswers.TaskEventReply.class),
@@ -264,6 +267,7 @@ class ApiMatchesDescriptionTest {
                         WorkAnswers.StartTask.class,
                         WorkRequests.TaskEventRequest.class,
                         WorkRequests.TaskEnded.class,
+                        NextStep.Landing.class,
                         WorkRequests.ReadingRequest.class,
                         WorkAnswers.StoryWorkReply.class,
                         WorkAnswers.TaskEventReply.class,
@@ -274,7 +278,7 @@ class ApiMatchesDescriptionTest {
                         WorkAnswers.Finding.class);
         assertThat(workTypes)
                 .as("every work request, response and nested wire record participates")
-                .hasSize(19)
+                .hasSize(20)
                 .isSubsetOf(SCHEMAS.values());
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
@@ -473,6 +477,89 @@ class ApiMatchesDescriptionTest {
         assertThat(event.path("required").toString())
                 .as("all of Porelo's facts are required")
                 .contains("at", "finished", "why", "answer", "unpushed");
+    }
+
+    @Test
+    void theDescribedEventsAndLandingNamesAreExactlyThoseThePlannerTakes() {
+        // A window built against the description would send a landing the planner refuses, or
+        // the planner would take one the description forbids, and no reader would ever start.
+        final JsonNode schemas = description.path("components").path("schemas");
+        final Set<String> events = new TreeSet<>();
+        schemas.at("/TaskEventRequest/properties/event/enum")
+                .forEach(event -> events.add(event.asText()));
+        final Set<String> taken = new TreeSet<>();
+        Arrays.stream(WorkRun.Event.values()).forEach(event -> taken.add(event.name()));
+        assertThat(events).as("the events the window may report").isEqualTo(taken);
+        final java.util.regex.Pattern name =
+                java.util.regex.Pattern.compile(schemas.at("/RefName/pattern").asText());
+        final java.util.regex.Pattern ref =
+                java.util.regex.Pattern.compile(
+                        schemas.at("/Landing/properties/ref/pattern").asText());
+        final java.util.regex.Pattern commit =
+                java.util.regex.Pattern.compile(
+                        schemas.at("/Landing/properties/commit/pattern").asText());
+        final String sha = "0123456789abcdef0123456789abcdef01234567";
+        for (final String sample :
+                List.of(
+                        "main",
+                        "feature/a-1",
+                        "refs/landed/t/main",
+                        "origin/landed/t/main",
+                        "x".repeat(255),
+                        "x".repeat(256),
+                        "fix-ä",
+                        "ä".repeat(255),
+                        "ä".repeat(256),
+                        "a\u2028b",
+                        "a\u2029b",
+                        "a\u0085b",
+                        "a\u2028..b",
+                        "a\u2028.lock",
+                        "refs/a\u2029..b",
+                        "main\n",
+                        "a..b",
+                        "a b",
+                        "a\tb",
+                        "a\u007fb",
+                        "a~b",
+                        "a^b",
+                        "a:b",
+                        "a?b",
+                        "a*b",
+                        "a[b",
+                        "a\\b",
+                        "-a",
+                        "/a",
+                        "a/",
+                        "a.lock",
+                        "refs/a..b",
+                        "heads/main")) {
+            // A described length counts characters (Unicode code points), as JSON Schema does.
+            final int length = sample.codePointCount(0, sample.length());
+            final boolean described =
+                    name.matcher(sample).matches()
+                            && length <= schemas.at("/RefName/maxLength").asInt();
+            assertThat(described)
+                    .as("the description and the planner agree on the name %s", sample)
+                    .isEqualTo(WorkRun.isBranch(sample));
+            final boolean describedRef =
+                    ref.matcher(sample).matches()
+                            && length <= schemas.at("/Landing/properties/ref/maxLength").asInt();
+            assertThat(describedRef)
+                    .as("the description and the planner agree on the ref %s", sample)
+                    .isEqualTo(
+                            WorkRun.isLanding(
+                                    new NextStep.Landing("main", sample, "origin/main", sha)));
+        }
+        for (final String sample :
+                List.of(sha, "0123456789abcdef".repeat(4), sha.toUpperCase(), sha + "0", "")) {
+            assertThat(commit.matcher(sample).matches())
+                    .as("the description and the planner agree on the commit %s", sample)
+                    .isEqualTo(
+                            WorkRun.isLanding(
+                                    new NextStep.Landing(
+                                            "main", "refs/main", "origin/main", sample)));
+        }
     }
 
     private static String answer(final JsonNode operation) {

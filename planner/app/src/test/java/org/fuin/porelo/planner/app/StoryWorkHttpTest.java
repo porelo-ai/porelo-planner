@@ -173,7 +173,8 @@ class StoryWorkHttpTest {
                         "agent",
                         "model",
                         "mode",
-                        "prompt");
+                        "prompt",
+                        "reads");
         assertThat(order.get("tasks").get(1).get("prompt").asString())
                 .as("the selected operator comment reaches helpers")
                 .contains("Keep the proposal.", "Keep the data.")
@@ -253,7 +254,8 @@ class StoryWorkHttpTest {
         assertThat(task.propertyNames())
                 .as("a Start argument record without a repository, with the file it hands back")
                 .containsExactlyInAnyOrder(
-                        "offer", "issues", "role", "agent", "model", "mode", "prompt", "result");
+                        "offer", "issues", "role", "agent", "model", "mode", "prompt", "result",
+                        "reads");
         assertThat(
                         List.of(
                                 task.get("role").asString(),

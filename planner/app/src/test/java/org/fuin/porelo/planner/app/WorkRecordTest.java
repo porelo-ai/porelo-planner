@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.json.JsonMapper;
@@ -54,6 +55,63 @@ class WorkRecordTest {
             assertThat(WorkAnswers.knownWork(restored, issue -> false).tasks().getFirst().machine())
                     .as("the restored story answers the original machine name")
                     .isEqualTo(machine);
+        }
+    }
+
+    @Test
+    void whereABuildLandedSurvivesRestartAndARecordWrittenBeforeLandingsReads() throws Exception {
+        // A landing lost on restart starts no reader; an older record that cannot open loses the
+        // person's running work.
+        final NextStep.Landing landing =
+                new NextStep.Landing(
+                        "porelo/task",
+                        "refs/landed/task/porelo/task",
+                        "origin/landed/task/porelo/task",
+                        "0123456789abcdef0123456789abcdef01234567");
+        writeTaskRecord(
+                "workstation",
+                "ENDED",
+                new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", "Built", 0, List.of(landing)));
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored.offers().getFirst().ended().landed())
+                    .as("the build's end keeps where its work landed across a restart")
+                    .containsExactly(landing);
+        }
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        assertThat(((ObjectNode) offer.path("arguments")).remove("reads"))
+                .as("the reference record holds the tasks a reader reads")
+                .isNotNull();
+        assertThat(((ObjectNode) offer.path("ended")).remove("landed"))
+                .as("the reference record holds where the work landed")
+                .isNotNull();
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Offer older =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst());
+            assertThat(older.ended().landed())
+                    .as("an end recorded before landings were kept has not landed")
+                    .isEmpty();
+            assertThat(older.arguments().reads())
+                    .as("a task recorded before reads were kept reads no other task")
+                    .isEmpty();
         }
     }
 
@@ -168,6 +226,11 @@ class WorkRecordTest {
     }
 
     private WorkRun.Run writeTaskRecord(final String machine) {
+        return writeTaskRecord(machine, "STARTED", null);
+    }
+
+    private WorkRun.Run writeTaskRecord(
+            final String machine, final String status, final WorkRun.@Nullable Ended ended) {
         final String story = String.format("ST%d", 1);
         final var rule =
                 new WorkRule(
@@ -188,12 +251,12 @@ class WorkRecordTest {
                         task,
                         new NextStep.Binding(
                                 story, "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
-                        "STARTED",
+                        status,
                         "task",
                         "box",
                         machine,
                         since,
-                        null,
+                        ended,
                         "",
                         List.of(),
                         List.of(),

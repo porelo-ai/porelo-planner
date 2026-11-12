@@ -101,6 +101,31 @@ public final class NextStep {
         }
     }
 
+    /**
+     * Where a build's work landed, copied unchanged from Porelo's task row; the planner never
+     * derives one of these names.
+     *
+     * @param branch the branch the work landed on
+     * @param ref the ref Porelo serves it under
+     * @param remote the remote-tracking name a reader sees after a plain {@code git fetch}
+     * @param commit the landed commit
+     */
+    public record Landing(String branch, String ref, String remote, String commit) {}
+
+    /**
+     * The build whose work a reader reads: its Porelo task, and where Porelo reports its work
+     * landed, empty while that work still waits at the gate.
+     *
+     * @param task the Porelo task that built the work, empty when none is known
+     * @param landed where the work landed, empty while it has not landed
+     */
+    public record Build(String task, List<Landing> landed) {
+        /** Keeps the landings as they were reported. */
+        public Build {
+            landed = List.copyOf(landed);
+        }
+    }
+
     /** An offer's Start arguments together with the working state it will enter. */
     public record Planned(WorkOrder.Task task, String state, WorkRule rule) {}
 
@@ -179,7 +204,8 @@ public final class NextStep {
 
     /**
      * Judges continuation without allowing a bad next rule to refuse the accepted end; {@code
-     * ended} is the Porelo task that ended, whose work a following reader is told to read.
+     * ended} is the build that ended, whose work a following reader is told to read. A reader of a
+     * build whose work has not landed yet is not offered here, but by {@link #landed}.
      */
     public static Result after(
             final Board board,
@@ -188,7 +214,7 @@ public final class NextStep {
             final Map<String, Progress> previous,
             final String comment,
             final Moves.StoryState derive,
-            final String ended) {
+            final Build ended) {
         return after(board, binding, judgment, previous, comment, derive, true, "", null, ended);
     }
 
@@ -205,7 +231,7 @@ public final class NextStep {
             final boolean reviewAnyway,
             final String operatorWords,
             final @Nullable Settings rework,
-            final String ended) {
+            final Build ended) {
         final WorkEnds.Judgment judgment =
                 binding.role().equals("READER")
                         ? new WorkEnds.Read(
@@ -237,7 +263,7 @@ public final class NextStep {
             final boolean countReading,
             final String operatorWords,
             final @Nullable Settings rework,
-            final String ended) {
+            final Build ended) {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         binding.issues().forEach(id -> progress.putIfAbsent(id, Progress.start(2)));
         if (!owns(board, binding)) {
@@ -323,7 +349,8 @@ public final class NextStep {
                 progress.put(id, progress(progress, id).manual());
                 continue;
             }
-            if (next != null) {
+            final String role = judgment instanceof WorkEnds.Read ? "BUILDER" : "READER";
+            if (next != null && !awaitsLanding(role, ended)) {
                 try {
                     tasks.add(
                             task(
@@ -335,7 +362,7 @@ public final class NextStep {
                                     settings,
                                     comment,
                                     words,
-                                    judgment instanceof WorkEnds.Read ? "BUILDER" : "READER",
+                                    role,
                                     ended));
                 } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
                     progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
@@ -347,6 +374,69 @@ public final class NextStep {
             return finish(board, binding, targets, target, derive, tasks, progress, deferred);
         }
         return finish(board, binding, targets, null, derive, tasks, progress, deferred);
+    }
+
+    /**
+     * Offers the readers of a build whose work has now landed where {@code build} names, for each
+     * of its issues that stands in the state its end moved it to; an issue moved on, or still
+     * waiting for its children, gets none here.
+     *
+     * @param board the board as it stands
+     * @param binding the build's binding
+     * @param previous the run's progress
+     * @param comment the run's comment
+     * @param build the build with where its work landed
+     * @return the readers, writing nothing
+     */
+    public static Result landed(
+            final Board board,
+            final Binding binding,
+            final Map<String, Progress> previous,
+            final String comment,
+            final Build build) {
+        final Map<String, Progress> progress = new LinkedHashMap<>(previous);
+        final List<Planned> tasks = new ArrayList<>();
+        final String target = successState(binding.rule());
+        final WorkRule next = WorkRules.check(board.workflow(), board.work()).rules().get(target);
+        final boolean owned = owns(board, binding);
+        // As at a build's end, a reading the build's state leads to must have a sound rule.
+        final boolean reading =
+                board.work().rules().containsKey(target) || target.equals(binding.rule().then());
+        for (final String id : binding.issues()) {
+            final Issue issue = board.issue(id).orElse(null);
+            if (issue != null
+                    && (issue.worker() == Worker.MANUAL
+                            || !issue.state().equals(target)
+                            || next == null && !reading)) {
+                // A person works it, moved it on, or its children hold it; none waits on a reader.
+                continue;
+            }
+            try {
+                if (issue == null || !owned || next == null) {
+                    throw new IllegalArgumentException("No reader can follow the landed build");
+                }
+                tasks.add(
+                        task(
+                                board,
+                                binding.story(),
+                                issue,
+                                target,
+                                next,
+                                null,
+                                comment,
+                                "",
+                                "READER",
+                                build));
+            } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
+                progress.computeIfPresent(id, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+            }
+        }
+        return new Result(new Writes(Map.of(), Map.of(), List.of()), tasks, progress, List.of());
+    }
+
+    /** A reader of a known build whose work still waits at the gate is offered on its landing. */
+    private static boolean awaitsLanding(final String role, final Build build) {
+        return role.equals("READER") && !build.task().isEmpty() && build.landed().isEmpty();
     }
 
     private static Result finish(
@@ -375,7 +465,8 @@ public final class NextStep {
     /**
      * Builds a single-issue reading or rework with the person's settings, or with the rule's first
      * mode and first model when the planner starts it by itself; a reading's order names the Porelo
-     * task {@code built} whose work it reads.
+     * task {@code built} whose work it reads and where that work landed, and its offer reads that
+     * task.
      */
     public static Planned task(
             final Board board,
@@ -387,7 +478,7 @@ public final class NextStep {
             final String comment,
             final String words,
             final String role,
-            final String built) {
+            final Build built) {
         final Settings settings = Settings.of(rule, chosen);
         final Story story =
                 board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));
@@ -420,20 +511,34 @@ public final class NextStep {
                         settings.agent(),
                         settings.model(),
                         settings.mode(),
-                        prompt),
+                        prompt,
+                        role.equals("READER") ? List.of(built.task()) : List.of()),
                 state,
                 rule);
     }
 
     /**
-     * Names the task whose work a reader reads, so the reader does not take its order for a build;
-     * not its branch, which Porelo names by the project's branch scheme.
+     * Names the task whose work a reader reads and each commit Porelo reported it landed as, with
+     * the remote-tracking name a plain fetch gives it, so the reader neither takes its order for a
+     * build nor reads other work; never a made-up name.
      */
-    static String builtBy(final String task) {
-        if (task.isEmpty()) {
-            throw new IllegalArgumentException("No task built the work to read");
+    static String builtBy(final Build built) {
+        if (built.task().isEmpty() || built.landed().isEmpty()) {
+            throw new IllegalArgumentException("No landed build to read");
         }
-        return "the work of Porelo task " + task;
+        return String.join(
+                "; ",
+                built.landed().stream()
+                        .map(
+                                landing ->
+                                        "the work of Porelo task "
+                                                + built.task()
+                                                + ": commit "
+                                                + landing.commit()
+                                                + " on "
+                                                + landing.remote()
+                                                + ", after `git fetch origin`")
+                        .toList());
     }
 
     /** Fences untrusted words with a delimiter they cannot close. */

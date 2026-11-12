@@ -614,9 +614,11 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) async {
     // A task is a URL component; the machine is only a JSON value and is preserved verbatim.
     if (!validTaskLabel(task)) throw const PlanningRefusal('InvalidName', {}, 'The task name is invalid.');
+    checkLanded(event, landed);
     final answer = await _write(
       project,
       ['tasks', task, 'events'],
@@ -626,6 +628,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'container': container,
         'machine': machine,
         if (ended != null) 'ended': ended.toMap(),
+        if (event == PlanningTaskEvent.landed) 'landed': [for (final landing in landed) landing.toMap()],
       },
     );
     try {

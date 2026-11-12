@@ -264,6 +264,7 @@ class FakePlanningSource implements PlanningSource {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) async => _notServed('TaskEvent');
 
   @override
@@ -316,9 +317,19 @@ class FakePlanningClient extends ChangeNotifier with PlanningTaskReports {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) async {
     events.add((project, task, event, offer, container, machine, ended));
-    await super.taskEvent(project, task, event, offer: offer, container: container, machine: machine, ended: ended);
+    await super.taskEvent(
+      project,
+      task,
+      event,
+      offer: offer,
+      container: container,
+      machine: machine,
+      ended: ended,
+      landed: landed,
+    );
   }
 }
 

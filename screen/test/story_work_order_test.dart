@@ -73,6 +73,29 @@ void main() {
     }
   });
 
+  // Harm: a reader started naming no build reads nothing and polls; another task given a build's work could change it.
+  test('only a reader names the tasks whose work it reads, and it names at least one', () {
+    expect(PlanningTaskOrder.from(servedFollowUp(1)..['reads'] = ['porelo-foo-project_foo-1']).reads, [
+      'porelo-foo-project_foo-1',
+    ], reason: 'the window passes the served tasks to Start unchanged');
+    expect(
+      PlanningTaskOrder.from(servedFollowUp(1, role: 'BUILDER')..remove('reads')).reads,
+      isEmpty,
+      reason: 'a builder reads no other task\'s work',
+    );
+    final changes = <String, Map<String, dynamic>>{
+      'reader reading nothing': servedFollowUp(1)..['reads'] = <String>[],
+      'reader without reads': servedFollowUp(1)..remove('reads'),
+      'reader reading a bad name': servedFollowUp(1)..['reads'] = ['../foo'],
+      'reader reading a non-string': servedFollowUp(1)..['reads'] = [4],
+      'builder reading a build': servedFollowUp(1, role: 'BUILDER')..['reads'] = ['porelo-foo-project_foo-1'],
+      'discussion reading a build': _discussion()..['reads'] = ['porelo-foo-project_foo-1'],
+    };
+    for (final MapEntry(key: name, value: map) in changes.entries) {
+      expect(() => PlanningTaskOrder.from(map), throwsFormatException, reason: name);
+    }
+  });
+
   // Harm: a story's work order smuggles a discussion or a result file into a story's Start.
   test('a story order refuses a task that carries a result', () {
     final answer = servedOrder();

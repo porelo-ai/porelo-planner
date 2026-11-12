@@ -21,6 +21,7 @@ mixin PlanningTaskReports implements PlanningClient {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) {
     retainPlanningSources();
     return PlanningRun.report(
@@ -31,6 +32,7 @@ mixin PlanningTaskReports implements PlanningClient {
       container: container,
       machine: machine,
       ended: ended,
+      landed: landed,
       sources: _reportSources,
     );
   }
@@ -146,6 +148,7 @@ class PlanningRun {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
     required Set<PlanningSource> sources,
   }) async {
     // Do not permanently bind an offer to a machine name the planner must refuse.
@@ -184,6 +187,7 @@ class PlanningRun {
         container: container,
         machine: machine,
         ended: ended,
+        landed: landed,
       );
       boundHere = false;
       run.observe(answer.work);

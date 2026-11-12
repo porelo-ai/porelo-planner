@@ -733,8 +733,11 @@ paths:
       operationId: taskEvent
       summary: Report the lifecycle of an offered task
       description: >-
-        Accepts STARTED, ENDED or STOPPED against an offer. Only ENDED carries Porelo's unmapped ended record.
-        STARTED binds task and container once. Unknown, void or foreign offers and contradictory bindings are refused.
+        Accepts STARTED, ENDED, STOPPED or LANDED against an offer. Only ENDED carries Porelo's unmapped ended record.
+        STARTED binds task and container once. LANDED reports once where a build's work landed after its ENDED,
+        when that end named no landing; only then is the build's reader offered. LANDED for an unknown offer, an
+        offer that did not end done, or one that already landed is refused as TaskEventConflict, so a resend
+        changes nothing. Unknown, void or foreign offers and contradictory bindings are refused.
         Identical reports replay their disposition after restart, without saving or counting twice, and return only
         still-valid offers. The report is at most 131072 bytes, its answer at most 65536 UTF-8 bytes. Every save
         refusal halts the run and voids unstarted work. A late end after cancellation only clears activity.
@@ -2087,7 +2090,7 @@ components:
           description: The person's first words of the idea, not blank, counted in Unicode code points.
     PlanningStartTask:
       type: object
-      required: [offer, issues, role, agent, model, mode, prompt]
+      required: [offer, issues, role, agent, model, mode, prompt, reads]
       description: >-
         repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present for
         DISCUSSION alone.
@@ -2117,10 +2120,50 @@ components:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
           description: The plain name of the file the task hands back, without a directory.
+        reads:
+          type: array
+          description: >-
+            The Porelo task names whose work a READER reads, so Porelo's gate gives it their branches read only;
+            empty for every other role.
+          items:
+            $ref: '#/components/schemas/TaskLabel'
 
     TaskLabel:
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'
+    RefName:
+      type: string
+      minLength: 1
+      maxLength: 255
+      pattern: '^(?![-/])(?![\s\S]*\.\.)(?![\s\S]*/$)(?![\s\S]*\.lock$)[^\u0000-\u0020\u007F-\u009F\u2028\u2029~^:?*\[\\]+$'
+      description: >-
+        A Git ref name of 1 to 255 characters (Unicode code points), letters beyond ASCII included, without "..",
+        control characters, spaces, line or paragraph separators or any of ~^:?*[\, not starting with - or /, not
+        ending with / or .lock.
+    Landing:
+      type: object
+      additionalProperties: false
+      required: [branch, ref, remote, commit]
+      description: >-
+        Where a task's work landed, copied unchanged from Porelo's task row; the planner never derives one of
+        these names. A reader's order names the commit and the remote-tracking name, read after
+        `git fetch origin`.
+      properties:
+        branch:
+          $ref: '#/components/schemas/RefName'
+        ref:
+          type: string
+          minLength: 6
+          maxLength: 255
+          pattern: '^refs/(?![\s\S]*\.\.)(?![\s\S]*/$)(?![\s\S]*\.lock$)[^\u0000-\u0020\u007F-\u009F\u2028\u2029~^:?*\[\\]+$'
+          description: The ref Porelo serves the work under, a RefName starting with refs/.
+        remote:
+          $ref: '#/components/schemas/RefName'
+          description: The remote-tracking name a reader sees after a plain git fetch, such as origin/landed/t/b.
+        commit:
+          type: string
+          pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'
+          description: The landed commit, 40 or 64 lowercase hex digits.
     TaskEventRequest:
       type: object
       additionalProperties: false
@@ -2131,7 +2174,7 @@ components:
           format: uuid
         event:
           type: string
-          enum: [STARTED, ENDED, STOPPED]
+          enum: [STARTED, ENDED, STOPPED, LANDED]
         container:
           $ref: '#/components/schemas/TaskLabel'
         machine:
@@ -2145,7 +2188,14 @@ components:
             Kept and answered back verbatim, never used as a path, a file name or a URL.
         ended:
           $ref: '#/components/schemas/TaskEnded'
-      description: ended is required only for ENDED and forbidden for STARTED and STOPPED.
+        landed:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Landing'
+      description: >-
+        ended is required only for ENDED and forbidden for STARTED, STOPPED and LANDED; landed, with at least one
+        entry, is required only for LANDED and forbidden for the others, whose end carries its own.
     TaskEnded:
       type: object
       additionalProperties: false
@@ -2167,6 +2217,13 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+        landed:
+          type: array
+          description: >-
+            Where the task's work landed, copied unchanged from Porelo's task row; absent or empty while the
+            work still waits at the gate.
+          items:
+            $ref: '#/components/schemas/Landing'
     ReadingRequest:
       type: object
       additionalProperties: false
@@ -2425,7 +2482,7 @@ components:
               format: uuid
             event:
               type: string
-              enum: [STARTED, ENDED, STOPPED]
+              enum: [STARTED, ENDED, STOPPED, LANDED]
             rounds:
               type: integer
             tasks:

@@ -59,16 +59,42 @@ public final class WorkRequests {
     /** An explicitly supplied reading bound, kept numeric until core validation. */
     public record IssueLimit(String issue, Number rounds) {}
 
-    /** The checked lifecycle request; ended is present only for ENDED. */
+    /**
+     * The checked lifecycle request; ended is present only for ENDED, landed only for LANDED.
+     *
+     * @param offer the offer
+     * @param event the event
+     * @param container the task's container
+     * @param machine the machine's name as the person sees it
+     * @param ended Porelo's end record
+     * @param landed where a build's work landed after its end
+     */
     public record TaskEventRequest(
             String offer,
             String event,
             String container,
             String machine,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskEnded ended) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskEnded ended,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed) {}
 
-    /** Porelo's ended record with no outcome invented by the window. */
-    public record TaskEnded(String at, boolean finished, String why, String answer, int unpushed) {}
+    /**
+     * Porelo's ended record with no outcome invented by the window.
+     *
+     * @param at when the task ended
+     * @param finished whether the agent finished
+     * @param why why it ended
+     * @param answer the agent's answer
+     * @param unpushed the commits not pushed
+     * @param landed where the work landed, copied from Porelo's task row; absent while it waits at
+     *     the gate
+     */
+    public record TaskEnded(
+            String at,
+            boolean finished,
+            String why,
+            String answer,
+            int unpushed,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed) {}
 
     /**
      * One choice against a completed, stopped reading.
@@ -384,7 +410,7 @@ public final class WorkRequests {
     }
 
     static WorkRun.Report event(final JsonNode body) {
-        fields(body, Set.of("offer", "event", "container", "machine", "ended"));
+        fields(body, Set.of("offer", "event", "container", "machine", "ended", "landed"));
         final String machine = text(body, "machine");
         WorkRun.checkedMachine(machine);
         final WorkRun.Event event;
@@ -396,7 +422,7 @@ public final class WorkRequests {
         WorkRun.Ended ended = null;
         if (body.has("ended")) {
             final JsonNode end = body.path("ended");
-            fields(end, Set.of("at", "finished", "why", "answer", "unpushed"));
+            fields(end, Set.of("at", "finished", "why", "answer", "unpushed", "landed"));
             if (!end.path("finished").isBoolean()) {
                 throw WorkRefusal.invalidSettings();
             }
@@ -406,10 +432,37 @@ public final class WorkRequests {
                             end.path("finished").asBoolean(),
                             text(end, "why"),
                             text(end, "answer"),
-                            integer(end, "unpushed"));
+                            integer(end, "unpushed"),
+                            landings(end));
+        }
+        if (body.has("landed") && event != WorkRun.Event.LANDED) {
+            throw WorkRefusal.invalidSettings();
         }
         return new WorkRun.Report(
-                text(body, "offer"), event, text(body, "container"), machine, ended);
+                text(body, "offer"),
+                event,
+                text(body, "container"),
+                machine,
+                ended,
+                landings(body));
+    }
+
+    /** Reads where a task's work landed, each entry exactly its four names; none when absent. */
+    private static List<NextStep.Landing> landings(final JsonNode node) {
+        if (!node.has("landed")) {
+            return List.of();
+        }
+        final List<NextStep.Landing> landed = new ArrayList<>();
+        for (final JsonNode entry : array(node, "landed")) {
+            fields(entry, Set.of("branch", "ref", "remote", "commit"));
+            landed.add(
+                    new NextStep.Landing(
+                            text(entry, "branch"),
+                            text(entry, "ref"),
+                            text(entry, "remote"),
+                            text(entry, "commit")));
+        }
+        return landed;
     }
 
     static ReadingRequest reading(final JsonNode body) {

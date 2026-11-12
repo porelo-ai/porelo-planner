@@ -79,6 +79,9 @@ class MockStoryWork {
       if (parameters['event'] != 'STARTED') {
         task['atWork'] = false;
         if (parameters['event'] == 'ENDED') task['ended'] = parameters['ended'];
+        if (parameters['event'] == 'LANDED' && task['ended'] is Map) {
+          (task['ended'] as Map)['landed'] = parameters['landed'];
+        }
       }
       work['atWork'] = (work['tasks'] as List).any((task) => (task as Map)['atWork'] == true);
       if (!deferEcho) changed(project, board);

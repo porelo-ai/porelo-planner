@@ -16,6 +16,12 @@ import org.junit.jupiter.api.Test;
 
 class NextStepTest {
 
+    /** A build whose work landed, as Porelo reports it on the build's end. */
+    private static final NextStep.Build BUILT =
+            new NextStep.Build("foo-1-2", List.of(landing("one")));
+
+    private static final String COMMIT = "0123456789abcdef0123456789abcdef01234567";
+
     private static final WorkEnds.Finding BLOCKING =
             new WorkEnds.Finding(1, WorkEnds.Severity.BLOCKING, null, null, "Preserve data");
 
@@ -32,7 +38,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(next.writes().issues())
                 .as("the parent waits for its participating child")
                 .isEmpty();
@@ -54,7 +60,7 @@ class NextStepTest {
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(stopped.tasks()).as("no rework is offered").isEmpty();
         assertThat(stopped.writes().none()).as("the issue stays in Reading").isTrue();
         assertThat(stopped.deferred())
@@ -92,7 +98,7 @@ class NextStepTest {
                         false,
                         "Preserve bytes",
                         chosen,
-                        "foo-1-2");
+                        BUILT);
         assertThat(resumed.writes().issues())
                 .as("blocking findings still require rework")
                 .containsEntry("AA1", "Reworking");
@@ -120,7 +126,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(next.progress().get("AA1").needsYou()).as("nothing is refused").isFalse();
         final WorkOrder.Task reader = next.tasks().getFirst().task();
         assertThat(List.of(reader.role(), reader.mode(), reader.agent(), reader.model()))
@@ -129,10 +135,9 @@ class NextStepTest {
     }
 
     @Test
-    void aReadersOrderNamesTheTaskWhoseWorkItReadsAndNoBranchItCannotKnow() {
-        // A reader not told whose work to read takes its order for a build and pushes work unread;
-        // one sent to a
-        // branch the planner guessed waits for work that never appears there.
+    void aReadersOrderNamesTheBuildsTaskAndTheCommitItsWorkLandedAsAndItsOfferReadsThatTask() {
+        // A reader not told whose work to read, or on which branch, starts on nothing: it takes
+        // its order for a build, polls for work, or reads another task's work.
         final Board board = board("Building", "Finished");
         final NextStep.Result next =
                 NextStep.after(
@@ -142,15 +147,65 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
-        final String prompt = next.tasks().getFirst().task().prompt();
-        assertThat(prompt)
-                .as("the order's {tasks} names the ended builder")
-                .contains("Work ST1: ", "; the work of Porelo task foo-1-2");
-        assertThat(prompt)
-                .as(
-                        "Porelo names a task's branch by the project's scheme, which the planner does not know")
-                .doesNotContain("porelo/");
+                        BUILT);
+        final WorkOrder.Task reader = next.tasks().getFirst().task();
+        assertThat(reader.prompt())
+                .as("the order's {tasks} names the ended build and the commit Porelo reported")
+                .contains("Work ST1: ", "; " + reads("one"));
+        assertThat(reader.reads())
+                .as("the reader is started naming the task whose work Porelo's gate gives it")
+                .containsExactly("foo-1-2");
+    }
+
+    @Test
+    void aBuildWhoseWorkHasNotLandedOffersNoReaderYetButMovesItsIssueWithoutAskingThePerson() {
+        // A reader offered before the build's work left the gate starts on nothing and polls.
+        final NextStep.Result next =
+                NextStep.after(
+                        board("Building", "Finished"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst(),
+                        new NextStep.Build("foo-1-2", List.of()));
+        assertThat(next.tasks()).as("no reader before the work has landed").isEmpty();
+        assertThat(next.writes().issues())
+                .as("the build's end still moves its issue to reading")
+                .containsEntry("AA1", "Reading");
+        assertThat(next.progress().get("AA1").needsYou())
+                .as("waiting for the landing needs nobody")
+                .isFalse();
+    }
+
+    @Test
+    void aLandedBuildOffersOneReaderOfItsCommitForAnIssueThatStandsInReading() {
+        // A build whose reader never comes once its work landed leaves that work unread.
+        final NextStep.Result next =
+                NextStep.landed(
+                        board("Reading", "Finished"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        Map.of("AA1", NextStep.Progress.start(2)),
+                        "",
+                        BUILT);
+        assertThat(next.tasks()).as("exactly one reader for the one issue").hasSize(1);
+        final WorkOrder.Task reader = next.tasks().getFirst().task();
+        assertThat(reader.role())
+                .as("the landed build's follow-up is a reading")
+                .isEqualTo("READER");
+        assertThat(reader.reads()).as("it reads the landed task").containsExactly("foo-1-2");
+        assertThat(reader.prompt()).as("its order names the landed commit").contains(reads("one"));
+        assertThat(next.writes().none()).as("a landing moves no issue").isTrue();
+        assertThat(
+                        NextStep.landed(
+                                        board("Review", "Finished"),
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        Map.of("AA1", NextStep.Progress.start(2)),
+                                        "",
+                                        BUILT)
+                                .tasks())
+                .as("an issue moved on by hand gets no reader of the old build")
+                .isEmpty();
     }
 
     @Test
@@ -164,7 +219,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "");
+                        new NextStep.Build("", List.of()));
         assertThat(next.tasks()).as("no reader is offered without the builder").isEmpty();
         assertThat(next.progress().get("AA1").needsYou())
                 .as("the person is asked instead")
@@ -182,7 +237,7 @@ class NextStepTest {
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(result.writes().none())
                 .as("display order does not make rework complete")
                 .isTrue();
@@ -215,7 +270,7 @@ class NextStepTest {
                         false,
                         "",
                         null,
-                        "foo-1-2");
+                        BUILT);
         assertThat(next.writes().issues())
                 .as("only the reader's issue changes")
                 .containsExactlyEntriesOf(Map.of("AA1", "Reworking"));
@@ -250,7 +305,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(next.tasks()).as("unsound work releases no offer").isEmpty();
         assertThat(next.progress().get("AA1").needsYou())
                 .as("the end remains visible for attention")
@@ -308,7 +363,7 @@ class NextStepTest {
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
         assertThat(result.writes().none()).as("a parent cannot close over an open child").isTrue();
         assertThat(result.progress().get("AA1").rounds().rounds())
                 .as("the parsed reading remains counted")
@@ -340,7 +395,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> null,
-                        "foo-1-2");
+                        BUILT);
         assertThat(next.writes().none()).as("foreign ownership produces no store write").isTrue();
         assertThat(next.progress().get("AA1").needsYou())
                 .as("lost ownership needs attention")
@@ -360,7 +415,7 @@ class NextStepTest {
                         Map.of(),
                         "",
                         states -> states.getFirst(),
-                        "foo-1-2");
+                        BUILT);
 
         assertThat(next.tasks()).as("no task for the person's issue").isEmpty();
         assertThat(next.writes().issues())
@@ -388,6 +443,92 @@ class NextStepTest {
                 .as("the start of the stale offer is refused")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessageContaining("AA1");
+    }
+
+    @Test
+    void aLandingThatCanOfferNoReaderAsksThePersonAsAnEndThatCannotDoes() {
+        // A build whose reader cannot come after its landing would wait unread with nobody asked.
+        final Board board = board("Reading", "Finished");
+        final Board withoutIssue =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues().stream().filter(i -> !i.id().equals("AA1")).toList(),
+                        board.work(),
+                        board.repositories());
+        assertThat(
+                        NextStep.landed(
+                                        withoutIssue,
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        Map.of("AA1", NextStep.Progress.start(2)),
+                                        "",
+                                        BUILT)
+                                .progress()
+                                .get("AA1")
+                                .reason())
+                .as("an issue gone from the board asks the person")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        final Board withoutReading =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues(),
+                        new Work(Map.of("Building", rule("Building")), List.of()),
+                        board.repositories());
+        assertThat(
+                        NextStep.landed(
+                                        withoutReading,
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        Map.of("AA1", NextStep.Progress.start(2)),
+                                        "",
+                                        BUILT)
+                                .progress()
+                                .get("AA1")
+                                .reason())
+                .as("a reading the board no longer has a rule for asks the person")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(
+                        NextStep.landed(
+                                        board("Review", "Finished"),
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        Map.of("AA1", NextStep.Progress.start(2)),
+                                        "",
+                                        BUILT)
+                                .progress()
+                                .get("AA1")
+                                .needsYou())
+                .as("an issue a person moved on needs nobody")
+                .isFalse();
+    }
+
+    @Test
+    void aBuildLandedInSeveralPlacesHasItsReaderReadEveryOne() {
+        // A reader told of only one of several landed commits leaves the others unread.
+        final NextStep.Result next =
+                NextStep.landed(
+                        board("Reading", "Finished"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        Map.of("AA1", NextStep.Progress.start(2)),
+                        "",
+                        new NextStep.Build("foo-1-2", List.of(landing("one"), landing("fix-ä"))));
+        assertThat(next.tasks().getFirst().task().prompt())
+                .as("every landed commit is named as Porelo gave it, in its order")
+                .contains(reads("one") + "; " + reads("fix-ä"));
+    }
+
+    static NextStep.Landing landing(final String name) {
+        return new NextStep.Landing(
+                name, "refs/landed/foo-1-2/" + name, "origin/landed/foo-1-2/" + name, COMMIT);
+    }
+
+    static String reads(final String name) {
+        return "the work of Porelo task foo-1-2: commit "
+                + COMMIT
+                + " on origin/landed/foo-1-2/"
+                + name
+                + ", after `git fetch origin`";
     }
 
     /** A rule offering two modes and two agents, the first of each not the fixture's AGENT. */

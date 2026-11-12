@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'models.dart';
+import 'work_reply.dart';
 
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
 final _issueName = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
@@ -110,6 +111,7 @@ class StoryWorkOrder {
           request.mode,
           '',
           null,
+          const [],
         ),
       );
       for (final sub in helpers) {
@@ -134,6 +136,7 @@ class StoryWorkOrder {
             request.mode,
             '',
             null,
+            const [],
           ),
         );
       }
@@ -203,6 +206,7 @@ class PlanningTaskOrder {
     this.mode,
     this.prompt,
     this.result,
+    this.reads,
   );
 
   /// Reads one served offer without inventing missing Start arguments.
@@ -230,6 +234,10 @@ class PlanningTaskOrder {
     }
     final prompt = _text(map, 'prompt', blank: true);
     if (utf8.encode(prompt).length > 65536) _invalid('The task prompt exceeds 64 KiB.');
+    final reads = map.containsKey('reads') ? _strings(map['reads']) : const <String>[];
+    // A reader started naming no build reads nothing; any other task given another's work could change it.
+    if (reads.any((task) => !validTaskLabel(task))) _invalid('A task the reader reads has an invalid name.');
+    if (role == 'READER' ? reads.isEmpty : reads.isNotEmpty) _invalid('Only a reader names the tasks it reads.');
     final offer = _text(map, 'offer');
     if (!RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$').hasMatch(offer)) {
       _invalid('The task offer is not a UUID.');
@@ -244,6 +252,7 @@ class PlanningTaskOrder {
       mode,
       prompt,
       result,
+      List.unmodifiable(reads),
     );
   }
 
@@ -274,6 +283,9 @@ class PlanningTaskOrder {
   /// The plain file name a discussion hands back from its result directory; null for every other role.
   final String? result;
 
+  /// The Porelo task names whose work a reader reads, passed to Start; empty for every other role.
+  final List<String> reads;
+
   bool _matches(PlanningTaskOrder other) =>
       repository == other.repository &&
       listEquals(issues, other.issues) &&
@@ -281,5 +293,6 @@ class PlanningTaskOrder {
       agent == other.agent &&
       model == other.model &&
       mode == other.mode &&
-      result == other.result;
+      result == other.result &&
+      listEquals(reads, other.reads);
 }

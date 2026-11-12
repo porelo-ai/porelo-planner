@@ -65,7 +65,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | M | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
 | <a id="pl95"></a>[PL95](PL95-A-Run-Ends-With-Its-Story.md) | M | - | The planner's local record of a story's run ends with the story: a run whose story is gone from the store is dropped, and a story saved anew under an old ID starts without the run recorded before it |
 | <a id="pl92"></a>[PL92](PL92-The-Rework-Dialog-Says-Why-It-Cannot-Rework.md) | S | - | The Rework dialog of a stopped reading says why Rework cannot be chosen when the Reworking rule names no agent, and the screen's fake planner names models on its rules and sends its rules with every board it pushes, as a planner does |
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
@@ -76,6 +75,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl90"></a>[PL90](PL90-A-Reader-Is-Started-With-The-Work-It-Reads.md) | M | - | A reader's order names the branch each task it reads landed on, as Porelo reports it with that task's end, and the reader is started naming those tasks, so Porelo's gate gives the reader their work to read |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and the stage records a commit carries are checked by the planner's command line, `check-commits`, with the build tools' fault lines and exit codes |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The minutes a repository's issues of one size took are computed in core from the record Porelo keeps of each task over the board's issues, whatever the backend, and the Git store's own velocity goes |

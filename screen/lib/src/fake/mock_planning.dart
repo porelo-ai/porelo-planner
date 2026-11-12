@@ -362,17 +362,22 @@ class MockPlanningSource implements PlanningSource {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
-  }) async => TaskEventResolution.from(
-    work.call('TaskEvent', {
-      'project': project,
-      'task': task,
-      'event': event.name.toUpperCase(),
-      'offer': offer,
-      'container': container,
-      'machine': machine,
-      if (ended != null) 'ended': ended.toMap(),
-    }),
-  );
+    List<PlanningLanding> landed = const [],
+  }) async {
+    checkLanded(event, landed);
+    return TaskEventResolution.from(
+      work.call('TaskEvent', {
+        'project': project,
+        'task': task,
+        'event': event.name.toUpperCase(),
+        'offer': offer,
+        'container': container,
+        'machine': machine,
+        if (ended != null) 'ended': ended.toMap(),
+        if (event == PlanningTaskEvent.landed) 'landed': [for (final landing in landed) landing.toMap()],
+      }),
+    );
+  }
 
   @override
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue) async =>
@@ -485,8 +490,18 @@ class MockPlanningClient extends ChangeNotifier with PlanningTaskReports {
     required String container,
     required String machine,
     PlanningTaskEnded? ended,
+    List<PlanningLanding> landed = const [],
   }) async {
     events.add((project, task, event, offer, container, machine, ended));
-    await super.taskEvent(project, task, event, offer: offer, container: container, machine: machine, ended: ended);
+    await super.taskEvent(
+      project,
+      task,
+      event,
+      offer: offer,
+      container: container,
+      machine: machine,
+      ended: ended,
+      landed: landed,
+    );
   }
 }

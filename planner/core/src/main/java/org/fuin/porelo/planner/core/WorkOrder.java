@@ -28,7 +28,10 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
         tasks = List.copyOf(tasks);
     }
 
-    /** The complete arguments for one call to Start. */
+    /**
+     * The complete arguments for one call to Start; {@code reads} names the Porelo tasks whose work
+     * a reader reads, so Porelo's gate gives it their branches, and is empty for every other role.
+     */
     public record Task(
             String repository,
             List<String> issues,
@@ -36,10 +39,24 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             String agent,
             String model,
             String mode,
-            String prompt) {
+            String prompt,
+            List<String> reads) {
         /** Copies issue identities to preserve the accepted scope. */
         public Task {
             issues = List.copyOf(issues);
+            reads = List.copyOf(reads);
+        }
+
+        /** A task that reads no other task's work. */
+        public Task(
+                final String repository,
+                final List<String> issues,
+                final String role,
+                final String agent,
+                final String model,
+                final String mode,
+                final String prompt) {
+            this(repository, issues, role, agent, model, mode, prompt, List.of());
         }
     }
 

@@ -59,7 +59,8 @@ public final class WorkAnswers {
 
     /**
      * The arguments passed individually to Porelo's Start: a story's task names its repository, a
-     * discussion reads every repository and names the file it hands back instead.
+     * discussion reads every repository and names the file it hands back instead; a reader names
+     * the Porelo tasks whose work it reads.
      */
     public record StartTask(
             String offer,
@@ -70,7 +71,8 @@ public final class WorkAnswers {
             String model,
             String mode,
             String prompt,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String result) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String result,
+            List<String> reads) {}
 
     static StartTask discussion(final IdeaDiscussion discussion) {
         return new StartTask(
@@ -82,7 +84,8 @@ public final class WorkAnswers {
                 discussion.model(),
                 discussion.mode(),
                 discussion.prompt(),
-                IdeaDiscussion.RESULT);
+                IdeaDiscussion.RESULT,
+                List.of());
     }
 
     static Proposal proposal(final WorkProposal proposal) {
@@ -175,7 +178,8 @@ public final class WorkAnswers {
                                     task.model(),
                                     task.mode(),
                                     task.prompt(),
-                                    null);
+                                    null,
+                                    task.reads());
                         })
                 .toList();
     }
@@ -346,7 +350,8 @@ public final class WorkAnswers {
                         ended.finished(),
                         ended.why(),
                         ended.answer(),
-                        ended.unpushed());
+                        ended.unpushed(),
+                        ended.landed().isEmpty() ? null : ended.landed());
     }
 
     private static Repository repository(final WorkProposal.Repository repository) {

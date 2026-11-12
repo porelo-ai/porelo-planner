@@ -1142,6 +1142,17 @@ class ReadingResolution {
   final String revision;
 }
 
+/// Where a task's work landed, copied unchanged from Porelo's task row; the planner checks it.
+class PlanningLanding {
+  const PlanningLanding({required this.branch, required this.ref, required this.remote, required this.commit});
+
+  /// The branch, the ref Porelo serves it under, the name a reader sees after a plain fetch, and the commit.
+  final String branch, ref, remote, commit;
+
+  /// The exact fields Porelo supplied.
+  Map<String, dynamic> toMap() => {'branch': branch, 'ref': ref, 'remote': remote, 'commit': commit};
+}
+
 /// Porelo's original end record, sent without interpreting or rewriting any field.
 class PlanningTaskEnded {
   const PlanningTaskEnded({
@@ -1150,14 +1161,25 @@ class PlanningTaskEnded {
     required this.why,
     required this.answer,
     required this.unpushed,
+    this.landed = const [],
   });
 
   final String at, why, answer;
   final bool finished;
   final int unpushed;
 
+  /// Where the work landed; empty while it still waits at Porelo's gate.
+  final List<PlanningLanding> landed;
+
   /// The exact fields Porelo supplied.
-  Map<String, dynamic> toMap() => {'at': at, 'finished': finished, 'why': why, 'answer': answer, 'unpushed': unpushed};
+  Map<String, dynamic> toMap() => {
+    'at': at,
+    'finished': finished,
+    'why': why,
+    'answer': answer,
+    'unpushed': unpushed,
+    if (landed.isNotEmpty) 'landed': [for (final landing in landed) landing.toMap()],
+  };
 }
 
 /// A checked task report answer, including every still-valid follow-up offer.

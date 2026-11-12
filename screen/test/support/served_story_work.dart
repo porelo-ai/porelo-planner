@@ -81,6 +81,7 @@ Map<String, dynamic> servedFollowUp(int number, {String role = 'READER'}) => {
   'model': role == 'READER' ? 'reader-model' : 'builder-model',
   'mode': 'AGENT',
   'prompt': 'Continue this issue.\n',
+  'reads': role == 'READER' ? ['builder-task'] : <String>[],
 };
 
 /// After the last running task ends, an OFFERED continuation does not count as active work.
