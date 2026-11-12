@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL37",
   "title": "A Story's Page With A Folding Description And A Searchable Issue List",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "S",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 24,
   "blockedBy": [],
   "covers": "A story's description can be folded and unfolded, and its issue list has the window's list design: a search field, filters and sorting"

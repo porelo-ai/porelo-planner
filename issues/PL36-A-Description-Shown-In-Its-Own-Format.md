@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL36",
   "title": "A Description Shown In Its Own Format",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "L",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 23,
   "blockedBy": [],
   "covers": "Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text"

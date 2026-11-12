@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL69",
   "title": "The Rule's Effort Offered In The Start Dialog",
-  "state": "Estimated",
+  "state": "Backlog",
   "size": "L",
   "priority": "Medium",
   "rank": 1,
