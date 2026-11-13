@@ -47,6 +47,8 @@ final class WindowsPrivateFiles implements PrivateFiles {
     static final String SCRIPT =
             """
             $ErrorActionPreference = 'Stop'
+            Import-Module -Name "$PSHOME\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1"
+            Import-Module -Name "$PSHOME\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1"
             $sidType = [System.Security.Principal.SecurityIdentifier]
             $self = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
             function Lines($text) { @($text -split "`n" | Where-Object { $_ -ne '' }) }
@@ -252,9 +254,23 @@ final class WindowsPrivateFiles implements PrivateFiles {
 
     private static String powershell(
             final Map<String, String> environment, final String protect, final String paths) {
-        final String program =
-                drivePath(environment, "SystemRoot")
-                        + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        final ProcessBuilder builder = powershellCall(environment, protect, paths);
+        return answer(builder, builder.command().getFirst(), LIMIT);
+    }
+
+    /**
+     * Prepares the call of Windows PowerShell that runs the script, with the system's modules only.
+     *
+     * @param environment the planner's environment, naming {@code SystemRoot}
+     * @param protect the paths to make the account's alone
+     * @param paths the paths to check
+     * @return the call, not yet started
+     */
+    static ProcessBuilder powershellCall(
+            final Map<String, String> environment, final String protect, final String paths) {
+        final String system =
+                drivePath(environment, "SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0";
+        final String program = system + "\\powershell.exe";
         final ProcessBuilder builder =
                 new ProcessBuilder(
                         program,
@@ -268,8 +284,12 @@ final class WindowsPrivateFiles implements PrivateFiles {
                                 .encodeToString(SCRIPT.getBytes(StandardCharsets.UTF_16LE)));
         builder.environment().put("PORELO_PROTECT", protect);
         builder.environment().put("PORELO_PATHS", paths);
+        // PowerShell 7's module path, inherited when it started the planner, breaks Set-Acl here;
+        // the script imports its modules by $PSHOME, past an all-users copy or a disabled autoload.
+        builder.environment().keySet().removeIf(name -> name.equalsIgnoreCase("PSModulePath"));
+        builder.environment().put("PSModulePath", system + "\\Modules");
         builder.redirectInput(ProcessBuilder.Redirect.from(Path.of("NUL").toFile()));
-        return answer(builder, program, LIMIT);
+        return builder;
     }
 
     /**

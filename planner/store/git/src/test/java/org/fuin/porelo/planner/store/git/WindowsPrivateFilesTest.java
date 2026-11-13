@@ -21,6 +21,45 @@ import org.junit.jupiter.params.provider.ValueSource;
 class WindowsPrivateFilesTest {
 
     @Test
+    void powerShellLoadsOnlyTheSystemsOwnModules() {
+        // Harm: started from PowerShell 7, or with a module folder another account may write, the
+        // ACL script loads modules that are not Windows PowerShell's, and the planner cannot start
+        // or
+        // runs code it never chose.
+        final Map<String, String> module =
+                WindowsPrivateFiles.powershellCall(Map.of("SystemRoot", "C:\\Windows"), "", "")
+                        .environment()
+                        .entrySet()
+                        .stream()
+                        .filter(variable -> variable.getKey().equalsIgnoreCase("PSModulePath"))
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertThat(module)
+                .as("one module path, Windows PowerShell's own, whatever the planner inherited")
+                .containsExactly(
+                        Map.entry(
+                                "PSModulePath",
+                                "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules"));
+    }
+
+    @Test
+    void theScriptTakesItsAclCmdletsFromPowerShellsOwnModulesBeforeUsingThem() {
+        // Harm: an all-users module of the same name, or autoloading switched off by the caller's
+        // environment, leaves Set-Acl foreign or missing, and the planner cannot protect its files.
+        final String script = WindowsPrivateFiles.SCRIPT;
+        for (final String module :
+                new String[] {"Microsoft.PowerShell.Security", "Microsoft.PowerShell.Management"}) {
+            final String importing =
+                    "Import-Module -Name \"$PSHOME\\Modules\\" + module + "\\" + module + ".psd1\"";
+            assertThat(script)
+                    .as("%s is imported from PowerShell's own folder", module)
+                    .contains(importing);
+            assertThat(script.indexOf(importing))
+                    .as("%s is imported before the first cmdlet that needs it", module)
+                    .isLessThan(Math.min(script.indexOf("Set-Acl"), script.indexOf("Get-Item")));
+        }
+    }
+
+    @Test
     void aDrivesAbsolutePathIsTheBase() {
         assertThat(
                         WindowsPrivateFiles.drivePath(
