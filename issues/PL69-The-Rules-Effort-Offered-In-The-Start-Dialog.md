@@ -15,7 +15,8 @@
 ```
 
 **Size:** L - the window's contract, the app's answers and the mock board, and the screen's start dialog, with their
-tests; it waits until the window's Start takes an effort.
+tests. It carries the effort through the contract and the screen; the effort takes hold once Porelo's Start takes
+one, which this issue does not wait for.
 
 **Estimate:** 113 min, the measured median of L; its steps sum to 100 (M, S).
 
@@ -63,9 +64,11 @@ Order: 1, 2. Built after [PL66](README.md#pl66), whose choice it serves.
 
 Needs from other repositories, in words:
 
-- The window hands an effort from the planning hook to Porelo's Start, and Start takes an effort and maps it for each
-  agent. This issue waits until the window's Start takes an effort; without it the window starts as today and the
-  served `effort` is not used.
+- The window agreed to the members: `PlanningStartTask`, `PlanWorker` and `PlanAssignment` gain `effort` and
+  `chosenBy`, `PlanWorkTask` gains `effort`; `effort` is an open string, not an enum, since its values are Porelo's
+  per agent, and it is optional (null) in `PlanWorker`, which carries back the effort actually used.
+- Neither the window's Start nor Porelo's takes an effort yet. Until Porelo's does, the window starts without one,
+  says so on its form, and sends back no effort; the screen shows the offered effort as not used.
 
 ## Acceptance
 
@@ -74,9 +77,3 @@ Needs from other repositories, in words:
   effort changed reaches the hook with the changed effort; a project whose rules name no `risks` starts as today. Each
   test named above is seen red first.
 - The screen module's Maven build passes locally: `dart format`, `dart analyze --fatal-infos` and `flutter test`.
-
-## To be checked
-
-- What the window's Start takes for an effort, its name and values, and whether Porelo maps one effort scale per
-  agent, so the dialog offers the values an agent takes: not visible in this repository's contract or screen package,
-  so asked of the window's agent.
