@@ -23,7 +23,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL90](README.md#pl90), [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 
 ## Estimated
@@ -37,7 +36,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl87"></a>[PL87](PL87-The-Planner-Reads-Private-Repositories-With-Porelos-Login.md) | L | - | A planner Porelo starts reads and writes a project's private repositories with the login Porelo's vault holds, without a credential helper the person sets up by hand, the token never on disk or a command line |
 | <a id="pl112"></a>[PL112](PL112-A-Save-Says-When-It-Is-Pushed.md) | S | - | The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet |
 | <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | M | - | Before the window sends the planner's token or names a project, the listener at the address file's port proves it holds the token without receiving it, so a process that took the port after the planner ended learns neither |
 | <a id="pl114"></a>[PL114](PL114-A-Failed-Or-Blocked-Task-Offers-A-Way-On.md) | M | [PL77](README.md#pl77) | The Needs-you row of an issue whose task ended FAILED offers Start again and Move on, and one that ended BLOCKED offers Move on, so the person is not left with a move by hand alone |
@@ -59,6 +57,8 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
+| <a id="pl87"></a>[PL87](PL87-The-Planner-Reads-Private-Repositories-With-Porelos-Login.md) | L | - | A planner Porelo starts reads and writes a project's private repositories with the login Porelo's vault holds, without a credential helper the person sets up by hand, the token never on disk or a command line |
+| <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 
 ## Review
 

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL93",
   "title": "Start Instructions Per Working State From The Store",
-  "state": "Analyzed",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -17,6 +17,8 @@
 **Size:** L - the store interface, the Git store's reading and its save (a clean reading's file deleted with the move),
 the order building in `core` and the offer's record in `app`; and a value Porelo or the window must report with
 `STARTED`, agreed across repositories.
+
+**Estimate:** 113 min, the measured median of L.
 
 **What must be true.** A task started for a working state is told by its order where its results go and what to do with
 findings it finds, as the project's settings say, so readers and reworks across repositories follow one place without a

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL87",
   "title": "The Planner Reads Private Repositories With Porelo's Login",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 1,
