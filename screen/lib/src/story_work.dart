@@ -161,11 +161,20 @@ class StoryWork extends ChangeNotifier {
               sub.role == 'BUILDER' &&
                   chosen!.agent?.isNotEmpty == true &&
                   chosen.model?.isNotEmpty == true &&
-                  (chosen.agent != sub.agent || chosen.model != sub.model),
+                  _soundEffort(chosen.effort) &&
+                  (chosen.agent != sub.agent || chosen.model != sub.model || chosen.effort != sub.effort),
             _ => false,
           };
         }),
   );
+
+  /// An effort typed empty is none.
+  static String? _chosenEffort(String typed) => typed.trim().isEmpty ? null : typed;
+
+  /// Whether an effort may reach Start: none, or one line of at most 128 characters.
+  static bool _soundEffort(String? effort) =>
+      effort == null ||
+      effort.runes.length <= 128 && !RegExp(r'[\u0000-\u001F\u007F-\u009F\u2028\u2029]').hasMatch(effort);
 
   static int? _rounds(String text) {
     final value = int.tryParse(text);
@@ -184,7 +193,9 @@ class StoryWork extends ChangeNotifier {
       proposal!.modes.contains(mode) &&
       ['UNATTENDED', 'AGENT'].contains(mode) &&
       repositories.length == proposal!.repositories.length &&
-      repositories.values.every((repo) => repo.agent.isNotEmpty && repo.model.isNotEmpty) &&
+      repositories.values.every(
+        (repo) => repo.agent.isNotEmpty && repo.model.isNotEmpty && _soundEffort(repo.effort),
+      ) &&
       (!needsComment || comment.trim().isNotEmpty) &&
       _rounds(rounds) != null &&
       issueRounds.values.every((value) => value.isEmpty || _rounds(value) != null) &&
@@ -243,6 +254,7 @@ class StoryWork extends ChangeNotifier {
           repository: repo.repository,
           agent: repo.agent,
           model: repo.model,
+          effort: repo.main.effort,
         );
         for (final sub in repo.subAgents) {
           choices[(repo.repository, sub.id)] = StoryWorkChoice(
@@ -322,7 +334,7 @@ class StoryWork extends ChangeNotifier {
   }
 
   /// Selects a repository's main agent or model.
-  void chooseMain(String repository, {String? agent, String? model}) {
+  void chooseMain(String repository, {String? agent, String? model, String? effort}) {
     if (!current || busy) return;
     final previous = repositories[repository];
     if (previous == null) return;
@@ -330,6 +342,7 @@ class StoryWork extends ChangeNotifier {
       repository: repository,
       agent: agent ?? previous.agent,
       model: model ?? previous.model,
+      effort: effort == null ? previous.effort : _chosenEffort(effort),
     );
     _changed();
   }
@@ -362,7 +375,7 @@ class StoryWork extends ChangeNotifier {
   }
 
   /// Selects Keep, Change or Drop; Change requires an explicitly chosen model.
-  void choose(String repository, PlanAssignment sub, String choice, {String? agent, String? model}) {
+  void choose(String repository, PlanAssignment sub, String choice, {String? agent, String? model, String? effort}) {
     if (busy || !current || sub.role != 'BUILDER') return;
     final previous = choices[(repository, sub.id)];
     choices[(repository, sub.id)] = StoryWorkChoice(
@@ -371,6 +384,13 @@ class StoryWork extends ChangeNotifier {
       choice: choice,
       agent: choice == 'CHANGE' ? agent ?? previous?.agent ?? sub.agent : null,
       model: choice == 'CHANGE' ? model ?? (previous?.choice == 'CHANGE' ? previous?.model : null) ?? sub.model : null,
+      effort: choice != 'CHANGE'
+          ? null
+          : effort != null
+          ? _chosenEffort(effort)
+          : previous?.choice == 'CHANGE'
+          ? previous?.effort
+          : sub.effort,
     );
     _changed();
   }

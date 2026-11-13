@@ -94,6 +94,22 @@ void main() {
     expect(selected['model'], 'chosen-model');
   });
 
+  // Harm: the rule's effort dropped, or the person's replaced, before the window's Start.
+  test('the rule\'s effort is proposed selected and a changed one is the one sent', () async {
+    final repo = work.proposal!.repositories.first;
+    expect(work.repositories[repo.repository]!.effort, repo.main.effort, reason: 'the rule\'s effort is selected');
+    expect(repo.main.effort, isNotNull, reason: 'the fake proposes an effort, so the choice below is a change');
+    work.chooseMain(repo.repository, effort: 'low');
+    expect(await work.start(), isTrue);
+    final request = backend.work.calls.where((call) => call.$1 == 'StartStoryWork').single.$2;
+    final main =
+        ((request['repositories'] as List).cast<Map<String, dynamic>>().firstWhere(
+              (item) => item['repository'] == repo.repository,
+            ))['main']
+            as Map<String, dynamic>;
+    expect(main['effort'], 'low', reason: 'the changed effort is sent back');
+  });
+
   // Harm: invalid limits disable reading or send a different value from the one entered.
   test('invalid reading limits prevent any start', () async {
     for (final value in ['', '0', '-1', '1.5', '11', 'many']) {

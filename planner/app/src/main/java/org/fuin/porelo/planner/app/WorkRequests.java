@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -668,14 +669,16 @@ public final class WorkRequests {
             issues.add(issue.asString());
         }
         final JsonNode main = node.path("main");
-        fields(main, Set.of("name", "role", "agent", "model", "brief"));
+        fields(main, Set.of("name", "role", "agent", "model", "brief", "effort", "chosenBy"));
         final WorkAnswers.Worker worker =
                 new WorkAnswers.Worker(
                         text(main, "name"),
                         text(main, "role"),
                         text(main, "agent"),
                         text(main, "model"),
-                        text(main, "brief"));
+                        text(main, "brief"),
+                        effort(main),
+                        chosenBy(main));
         final List<WorkAnswers.Assignment> helpers = new ArrayList<>();
         for (final JsonNode sub : array(node, "subAgents")) {
             fields(
@@ -689,7 +692,9 @@ public final class WorkRequests {
                             "model",
                             "workingState",
                             "brief",
-                            "choice"));
+                            "choice",
+                            "effort",
+                            "chosenBy"));
             helpers.add(
                     new WorkAnswers.Assignment(
                             text(sub, "id"),
@@ -700,7 +705,9 @@ public final class WorkRequests {
                             text(sub, "model"),
                             text(sub, "workingState"),
                             text(sub, "brief"),
-                            text(sub, "choice")));
+                            text(sub, "choice"),
+                            effort(sub),
+                            chosenBy(sub)));
         }
         return new WorkAnswers.Repository(text(node, "repository"), issues, worker, helpers);
     }
@@ -710,8 +717,15 @@ public final class WorkRequests {
         return new WorkProposal.Repository(
                 repository.repository(),
                 repository.issues(),
+                // Where the choice came from is the core's to say; a caller's words are not taken.
                 new WorkProposal.Main(
-                        main.name(), main.role(), main.agent(), main.model(), main.brief()),
+                        main.name(),
+                        main.role(),
+                        main.agent(),
+                        main.model(),
+                        main.brief(),
+                        main.effort(),
+                        ""),
                 repository.subAgents().stream()
                         .map(
                                 sub ->
@@ -724,8 +738,32 @@ public final class WorkRequests {
                                                 sub.model(),
                                                 sub.workingState(),
                                                 sub.brief(),
-                                                sub.choice()))
+                                                sub.choice(),
+                                                sub.effort(),
+                                                ""))
                         .toList());
+    }
+
+    /** An effort sent back: absent or null for none, else a sound name. */
+    private static @Nullable String effort(final JsonNode node) {
+        final JsonNode value = node.path("effort");
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (!value.isString() || !WorkRule.sound(value.asString())) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return value.asString();
+    }
+
+    /** A chosenBy sent back is checked as a string and then not taken. */
+    /** Checks a chosenBy sent back is text; it is the planner's own and is never taken. */
+    private static @Nullable String chosenBy(final JsonNode node) {
+        final JsonNode value = node.path("chosenBy");
+        if (!value.isMissingNode() && !value.isNull() && !value.isString()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return null;
     }
 
     private static void fields(final JsonNode node, final Set<String> allowed) {

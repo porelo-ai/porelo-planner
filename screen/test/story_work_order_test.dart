@@ -326,4 +326,67 @@ void main() {
       );
     }
   });
+  // Harm: an effort dropped or replaced between the planner, the person and the window.
+  test('an order keeps the effort and its origin as served, and one served without an effort has none', () {
+    final served = PlanningTaskOrder.from(
+      servedFollowUp(1)..addAll(<String, Object>{'effort': 'max', 'chosenBy': 'Reading, risk harm'}),
+    );
+    expect([served.effort, served.chosenBy], ['max', 'Reading, risk harm'], reason: 'both reach the hook as served');
+    final none = PlanningTaskOrder.from(servedFollowUp(1));
+    expect([none.effort, none.chosenBy], [null, null], reason: 'an order without an effort starts with none');
+    for (final value in <Object>['', ' ', 'high\u0001', 'high\u2028', 'e' * 129, 4]) {
+      expect(
+        () => PlanningTaskOrder.from(servedFollowUp(1)..['effort'] = value),
+        throwsFormatException,
+        reason: 'effort $value',
+      );
+    }
+  });
+
+  // Harm: the window starts another effort than the one the person confirmed.
+  test('an order whose effort differs from the one sent back is refused before any start', () {
+    final map = servedProposal();
+    final repo = (map['repositories'] as List).single as Map<String, dynamic>;
+    (repo['main'] as Map).addAll(<String, String>{'effort': 'max', 'chosenBy': 'Building, risk harm'});
+    ((repo['subAgents'] as List).single as Map).addAll(<String, String>{
+      'effort': 'max',
+      'chosenBy': 'Building, risk harm',
+    });
+    final proposal = StoryWorkOrder.readProposal(map);
+    expect(proposal.repositories.single.main.effort, 'max', reason: 'the rule\'s effort is read');
+    final request = StoryWorkRequest(
+      project: 'demo',
+      story: 'ST1',
+      to: 'Building',
+      mode: 'AGENT',
+      revision: 'r1',
+      subAgents: const [StoryWorkChoice(repository: 'repo', name: 'builder', choice: 'KEEP')],
+      repositories: const [StoryWorkMainAgent(repository: 'repo', agent: 'codex', model: 'main-model', effort: 'low')],
+      proposedRepositories: proposal.repositories,
+    );
+    final sent = (request.toMap()['repositories'] as List).single as Map<String, dynamic>;
+    expect((sent['main'] as Map)['effort'], 'low', reason: 'the changed effort is sent back');
+    expect((sent['main'] as Map).containsKey('chosenBy'), isFalse, reason: 'where it came from is the planner\'s');
+    expect(((sent['subAgents'] as List).single as Map)['effort'], 'max', reason: 'a kept helper keeps the offer\'s');
+    Map<String, dynamic> answer(Object? main, Object? builder) {
+      final served = servedOrder();
+      final tasks = [for (final task in served['tasks'] as List) Map<String, dynamic>.from(task as Map)];
+      if (main != null) tasks.first['effort'] = main;
+      if (builder != null) tasks.last['effort'] = builder;
+      return served..['tasks'] = tasks;
+    }
+
+    expect(
+      StoryWorkOrder.from(answer('low', 'max'), request: request, proposal: proposal).tasks.map((task) => task.effort),
+      ['low', 'max'],
+      reason: 'the efforts sent back reach the hook',
+    );
+    for (final (main, builder) in [('max', 'max'), (null, 'max'), ('low', null), ('low', 'low')]) {
+      expect(
+        () => StoryWorkOrder.from(answer(main, builder), request: request, proposal: proposal),
+        throwsFormatException,
+        reason: 'main $main, builder $builder',
+      );
+    }
+  });
 }

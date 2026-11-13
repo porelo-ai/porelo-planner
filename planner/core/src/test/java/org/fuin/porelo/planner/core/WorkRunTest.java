@@ -2487,6 +2487,60 @@ class WorkRunTest {
     }
 
     @Test
+    void aReadingStartedByHandWithAChangedEffortStartsEachReaderWithIt() {
+        // A person's effort replaced by the rule's on the way to the readers it starts.
+        final Fixture f = readInReview();
+        final WorkProposal proposal = f.run.propose("ST1", "Reading", List.of("AA1"));
+        final List<WorkProposal.Repository> chosen =
+                proposal.repositories().stream()
+                        .map(
+                                repository -> {
+                                    final WorkProposal.Main main = repository.main();
+                                    return new WorkProposal.Repository(
+                                            repository.repository(),
+                                            repository.issues(),
+                                            new WorkProposal.Main(
+                                                    main.name(),
+                                                    main.role(),
+                                                    main.agent(),
+                                                    main.model(),
+                                                    main.brief(),
+                                                    "low",
+                                                    main.basis()),
+                                            repository.subAgents());
+                                })
+                        .toList();
+        final var order =
+                f.run.order(
+                        "ST1",
+                        "Reading",
+                        new WorkOrder.Decision(
+                                "AGENT",
+                                f.store.board().revision().value(),
+                                chosen,
+                                "",
+                                null,
+                                null,
+                                List.of("AA1")));
+        assertThat(order.tasks())
+                .as("every reader starts with the effort the person chose, and used it")
+                .extracting(o -> o.task().effort(), o -> o.task().used())
+                .containsOnly(org.assertj.core.groups.Tuple.tuple("low", "low"));
+    }
+
+    @Test
+    void aTaskStartedByItselfNamesItsRulesChoiceAndNoEffortUsed() {
+        // An offered effort answered as the one a task used, which nobody confirmed.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final WorkRun.Offered reader = f.readers().getFirst();
+        assertThat(reader.task().basis())
+                .as("a reader started by itself names where its choice came from")
+                .isEqualTo("Reading, risk ordinary");
+        assertThat(reader.task().used()).as("nobody said which effort it used").isNull();
+    }
+
+    @Test
     void aReadingStartedByHandReadsTheLastBuildAndCountsOnFromTheRun() {
         // A reader started on nothing, or a reading that counted as a build, passes an issue to
         // Review nobody read.

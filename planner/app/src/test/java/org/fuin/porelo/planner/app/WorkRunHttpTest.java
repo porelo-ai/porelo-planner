@@ -404,6 +404,32 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aStartedTaskAnswersTheEffortItsOrderSaidItUses() throws Exception {
+        // A run that answers another effort than the one its task was started with.
+        final String story = store.board().stories().getFirst().id();
+        final JsonNode proposal =
+                call("/stories/" + story + "/proposal", "{\"to\":\"Building\"}", 200);
+        final var repositories =
+                (tools.jackson.databind.node.ArrayNode) proposal.get("repositories");
+        for (final JsonNode repository : repositories) {
+            ((tools.jackson.databind.node.ObjectNode) repository.get("main")).put("effort", "low");
+        }
+        final var decision = JSON.createObjectNode();
+        decision.put("project", "project");
+        decision.put("story", story);
+        decision.put("to", "Building");
+        decision.put("mode", "AGENT");
+        decision.put("revision", store.board().revision().value());
+        decision.set("repositories", repositories);
+        final JsonNode order = call("/stories/" + story + "/work", decision.toString(), 200);
+        final String offer = order.at("/tasks/0/offer").asString();
+        final JsonNode started = call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        assertThat(started.at("/work/tasks/0/effort").asString())
+                .as("the started task answers the effort its order named")
+                .isEqualTo("low");
+    }
+
+    @Test
     void theStoryAnswersTheReportedMachineAndCountsItsNameInCodePoints() throws Exception {
         // Prevents lost machine routing and rejection of valid supplementary Unicode names.
         final String story = store.board().stories().getFirst().id();

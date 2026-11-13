@@ -199,6 +199,13 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
             enabled: enabled,
             onChanged: (value) => work.chooseMain(repo.repository, model: value),
           ),
+          _effortField(
+            key: Key('story-work-main-effort ${repo.repository}'),
+            value: work.repositories[repo.repository]!.effort,
+            chosenBy: repo.main.chosenBy,
+            enabled: enabled,
+            onChanged: (value) => work.chooseMain(repo.repository, effort: value),
+          ),
           for (final sub in repo.subAgents) _sub(repo.repository, sub, enabled && sub.role == 'BUILDER'),
           ExpansionTile(
             title: Text('The work order for ${_said(repo.task)}'),
@@ -362,12 +369,43 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
               hint: 'Choose a model',
               onChanged: (value) => work.choose(repository, sub, 'CHANGE', model: value),
             ),
+            _effortField(
+              key: Key('story-work-effort $repository ${sub.id}'),
+              value: chosen.effort,
+              chosenBy: sub.chosenBy,
+              enabled: enabled,
+              onChanged: (value) => work.choose(repository, sub, 'CHANGE', effort: value),
+            ),
           ],
         ],
       ),
     );
   }
 }
+
+/// The effort a task starts with, as the rule proposes it; empty is none.
+Widget _effortField({
+  required Key key,
+  required String? value,
+  required String? chosenBy,
+  required bool enabled,
+  required ValueChanged<String> onChanged,
+}) => TextFormField(
+  key: key,
+  initialValue: value,
+  enabled: enabled,
+  decoration: InputDecoration(
+    labelText: 'Effort',
+    hintText: 'none',
+    border: const OutlineInputBorder(),
+    helperText: [
+      if (chosenBy != null && chosenBy.isNotEmpty) 'Proposed by ${planningShown(chosenBy)}.',
+      'An agent that knows no effort starts without it.',
+    ].join(' '),
+    helperMaxLines: 4,
+  ),
+  onChanged: onChanged,
+);
 
 /// A model typed as it is named, or the one a proposal names.
 class PlanningModelField extends StatelessWidget {

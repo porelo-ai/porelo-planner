@@ -174,6 +174,7 @@ class StoryWorkHttpTest {
                         "role",
                         "agent",
                         "model",
+                        "chosenBy",
                         "mode",
                         "prompt",
                         "reads");
@@ -258,7 +259,15 @@ class StoryWorkHttpTest {
         assertThat(task.propertyNames())
                 .as("a Start argument record without a repository, with the file it hands back")
                 .containsExactlyInAnyOrder(
-                        "offer", "issues", "role", "agent", "model", "mode", "prompt", "result",
+                        "offer",
+                        "issues",
+                        "role",
+                        "agent",
+                        "model",
+                        "chosenBy",
+                        "mode",
+                        "prompt",
+                        "result",
                         "reads");
         assertThat(
                         List.of(
@@ -311,6 +320,117 @@ class StoryWorkHttpTest {
                                 .asString())
                 .as("the path is checked before the body, as every work call does")
                 .isEqualTo("urn:porelo-planner:InvalidName");
+    }
+
+    @Test
+    void aHarmTasksRuleEffortIsProposedAndStartedAndAChangedOneReachesStartInstead()
+            throws Exception {
+        // The window starting another effort than the rule set or the person chose.
+        harm();
+        final JsonNode proposal = json(call(BASE + "/proposal", "{\"to\":\"Building\"}"), 200);
+        assertThat(proposal.at("/repositories/0/main/effort").asString())
+                .as("the rule's effort for harm is proposed for the main")
+                .isEqualTo("max");
+        assertThat(proposal.at("/repositories/0/main/chosenBy").asString())
+                .as("with where the choice came from")
+                .isEqualTo("Building, risk harm");
+        assertThat(proposal.at("/repositories/0/subAgents/0/effort").asString())
+                .as("and for the helper")
+                .isEqualTo("max");
+        final JsonNode kept = json(call(BASE + "/work", withMain(",\"effort\":\"max\"")), 200);
+        assertThat(kept.at("/tasks/0/effort").asString())
+                .as("the effort sent back is the one Start gets")
+                .isEqualTo("max");
+        assertThat(kept.at("/tasks/0/chosenBy").asString())
+                .as("Start is told where the choice came from")
+                .isEqualTo("Building, risk harm");
+        final JsonNode changed =
+                json(
+                        call(
+                                BASE + "/work",
+                                withMain(",\"effort\":\"low\",\"chosenBy\":\"Forged\"")),
+                        200);
+        assertThat(changed.at("/tasks/0/effort").asString())
+                .as("an effort the person changed reaches Start")
+                .isEqualTo("low");
+        assertThat(changed.at("/tasks/0/chosenBy").asString())
+                .as("a chosenBy sent back is not taken")
+                .isEqualTo("Building, risk harm");
+        assertThat(json(call(BASE + "/work", withMain("")), 200).at("/tasks/0").has("effort"))
+                .as("a main sent back without an effort starts with none")
+                .isFalse();
+    }
+
+    @Test
+    void anEffortThatIsNoStringOrNoSoundNameIsRefusedAndStartsNothing() throws Exception {
+        // A name reaching the window's Start unchecked.
+        harm();
+        for (final String effort :
+                List.of(
+                        ",\"effort\":\"\"",
+                        ",\"effort\":\"  \"",
+                        ",\"effort\":\"high\\u0001\"",
+                        ",\"effort\":\"high\\u2028\"",
+                        ",\"effort\":\"" + "x".repeat(WorkRule.LONGEST + 1) + "\"",
+                        ",\"effort\":3",
+                        ",\"effort\":[\"high\"]",
+                        ",\"chosenBy\":3")) {
+            final MockHttpServletResponse response = call(BASE + "/work", withMain(effort));
+            assertThat(response.getStatus()).as("refused: %s", effort).isEqualTo(400);
+            assertThat(response.getContentAsString())
+                    .as("no task is offered: %s", effort)
+                    .doesNotContain("\"tasks\"");
+        }
+    }
+
+    /** {@link #SELECTED} with these members added to its main. */
+    private static String withMain(final String members) {
+        return SELECTED.replace(
+                "\"brief\":\"Build {story}: {issues}; {tasks}\"}",
+                "\"brief\":\"Build {story}: {issues}; {tasks}\"" + members + "}");
+    }
+
+    /** Makes both issues harm and gives the rule an effort for harm. */
+    private void harm() {
+        final WorkRule rule = board.work().rules().get("Building");
+        board =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues().stream()
+                                .map(
+                                        issue ->
+                                                new Issue(
+                                                        issue.id(),
+                                                        issue.repository(),
+                                                        issue.title(),
+                                                        issue.state(),
+                                                        issue.size(),
+                                                        issue.blockedBy(),
+                                                        issue.parent(),
+                                                        issue.link(),
+                                                        issue.text(),
+                                                        issue.worker(),
+                                                        Risk.HARM))
+                                .toList(),
+                        new Work(
+                                Map.of(
+                                        "Building",
+                                        new WorkRule(
+                                                rule.from(),
+                                                rule.done(),
+                                                rule.then(),
+                                                rule.blocked(),
+                                                rule.per(),
+                                                rule.modes(),
+                                                rule.order(),
+                                                rule.models(),
+                                                Map.of(
+                                                        Risk.HARM,
+                                                        new WorkRule.ForRisk(Map.of(), "max")))),
+                                List.of()),
+                        board.repositories());
     }
 
     @Test

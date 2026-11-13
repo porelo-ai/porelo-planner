@@ -2046,6 +2046,18 @@ components:
           type: string
           maxLength: 4000
           description: The rule's order, expanded after the operator's final choices.
+        effort:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The effort chosen: the rule's for the issues' risk as proposed, or the person's as sent back; null for none.
+            An open name, not an enum, since its values are Porelo's per agent.
+        chosenBy:
+          type: string
+          description: >-
+            Where the rule's choice of agent, model and effort came from, for example "Reading, risk harm"; the
+            planner's words, which it never takes back from a caller. Empty when not known.
     PlanAssignment:
       type: object
       additionalProperties: false
@@ -2074,6 +2086,21 @@ components:
           type: string
           enum: [KEEP, CHANGE, DROP]
           default: KEEP
+          description: >-
+            KEEP starts the helper as proposed, with the proposed effort whether it is sent back or not, and refuses
+            another; CHANGE takes the agent, model and effort sent back.
+        effort:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The effort chosen: the rule's for the issues' risk as proposed, or the person's as sent back; null for none.
+            An open name, not an enum, since its values are Porelo's per agent.
+        chosenBy:
+          type: string
+          description: >-
+            Where the rule's choice of agent, model and effort came from, for example "Reading, risk harm"; the
+            planner's words, which it never takes back from a caller. Empty when not known.
     ReadingRounds:
       type: integer
       minimum: 1
@@ -2162,6 +2189,16 @@ components:
           type: string
         model:
           type: string
+        effort:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The effort Start is handed: the one the person's order sent back for a task started by hand, the rule's
+            for the issues' risk for one that starts by itself; absent for none.
+        chosenBy:
+          type: string
+          description: Where the rule's choice of agent, model and effort came from; absent when not known.
         mode:
           type: string
         prompt:
@@ -2386,7 +2423,7 @@ components:
             $ref: '#/components/schemas/PlanWorkIssue'
     PlanWorkTask:
       type: object
-      required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, role, since, atWork, ended]
+      required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, effort, role, since, atWork, ended]
       properties:
         task:
           type: string
@@ -2417,6 +2454,11 @@ components:
           type: string
         model:
           type: string
+        effort:
+          type: [string, 'null']
+          description: >-
+            The effort the task's order said it starts with, as the person's order sent it back; null when nobody
+            said, as for a task that started by itself, never the offered effort.
         role:
           type: string
           enum: [MAIN, BUILDER, READER]

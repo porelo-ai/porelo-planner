@@ -39,10 +39,23 @@ public final class WorkAnswers {
     public record Repository(
             String repository, List<String> issues, Worker main, List<Assignment> subAgents) {}
 
-    /** The immutable identity and brief of the main, with its offered agent/model choice. */
-    public record Worker(String name, String role, String agent, String model, String brief) {}
+    /**
+     * The immutable identity and brief of the main, with its offered agent/model choice, the effort
+     * chosen, null for none, and where the rule's choice came from, which the planner alone says.
+     */
+    public record Worker(
+            String name,
+            String role,
+            String agent,
+            String model,
+            String brief,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
 
-    /** An assignment's immutable facts and explicit KEEP, CHANGE or DROP choice. */
+    /**
+     * An assignment's immutable facts and explicit KEEP, CHANGE or DROP choice, with the effort
+     * chosen, null for none, and where the rule's choice came from.
+     */
     public record Assignment(
             String id,
             String issue,
@@ -52,7 +65,9 @@ public final class WorkAnswers {
             String model,
             String workingState,
             String brief,
-            String choice) {}
+            String choice,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
 
     /** An issue's proposed reading limit. */
     public record IssueRounds(String issue, int rounds) {}
@@ -69,6 +84,8 @@ public final class WorkAnswers {
             String role,
             String agent,
             String model,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy,
             String mode,
             String prompt,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String result,
@@ -82,6 +99,8 @@ public final class WorkAnswers {
                 "DISCUSSION",
                 discussion.agent(),
                 discussion.model(),
+                discussion.effort(),
+                said(discussion.basis()),
                 discussion.mode(),
                 discussion.prompt(),
                 IdeaDiscussion.RESULT,
@@ -126,6 +145,7 @@ public final class WorkAnswers {
             String mode,
             String agent,
             String model,
+            @Nullable String effort,
             String role,
             String since,
             boolean atWork,
@@ -176,6 +196,8 @@ public final class WorkAnswers {
                                     task.role(),
                                     task.agent(),
                                     task.model(),
+                                    task.effort(),
+                                    said(task.basis()),
                                     task.mode(),
                                     task.prompt(),
                                     null,
@@ -213,6 +235,9 @@ public final class WorkAnswers {
                                                 o.arguments().mode(),
                                                 o.arguments().agent(),
                                                 o.arguments().model(),
+                                                // The effort its order said it uses, never the
+                                                // offer's.
+                                                o.arguments().used(),
                                                 o.arguments().role(),
                                                 String.valueOf(o.since()),
                                                 o.status().equals("STARTED"),
@@ -360,7 +385,14 @@ public final class WorkAnswers {
         return new Repository(
                 repository.repository(),
                 repository.issues(),
-                new Worker(main.name(), main.role(), main.agent(), main.model(), main.brief()),
+                new Worker(
+                        main.name(),
+                        main.role(),
+                        main.agent(),
+                        main.model(),
+                        main.brief(),
+                        main.effort(),
+                        said(main.basis())),
                 repository.subAgents().stream()
                         .map(
                                 sub ->
@@ -373,7 +405,14 @@ public final class WorkAnswers {
                                                 sub.model(),
                                                 sub.workingState(),
                                                 sub.brief(),
-                                                sub.choice()))
+                                                sub.choice(),
+                                                sub.effort(),
+                                                said(sub.basis())))
                         .toList());
+    }
+
+    /** Where a choice came from, or null when the rule said nothing. */
+    private static @Nullable String said(final String basis) {
+        return basis.isEmpty() ? null : basis;
     }
 }

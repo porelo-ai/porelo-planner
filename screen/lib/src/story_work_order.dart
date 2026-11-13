@@ -37,6 +37,27 @@ List<Map<String, dynamic>> _records(Object? value) {
   return value.cast<Map<String, dynamic>>();
 }
 
+// An effort reaches the window's Start as a name: one line, no control or separator character, as the planner checks.
+final _unsound = RegExp(r'[\u0000-\u001F\u007F-\u009F\u2028\u2029]');
+
+/// The effort a record names: absent or null for none, else a sound name.
+String? _effort(Map<String, dynamic> map) {
+  final value = map['effort'];
+  if (value == null) return null;
+  if (value is! String || value.trim().isEmpty || value.runes.length > 128 || _unsound.hasMatch(value)) {
+    _invalid('The work answer has an invalid effort.');
+  }
+  return value;
+}
+
+/// Where a choice came from: the planner's words, absent or a string.
+String? _chosenBy(Map<String, dynamic> map) {
+  final value = map['chosenBy'];
+  if (value == null) return null;
+  if (value is! String || value.runes.length > 4000) _invalid('The work answer has an invalid chosenBy.');
+  return value;
+}
+
 void _rounds(Object? value) {
   if (value is! int || value < 1 || value > 10) _invalid('Initial reading rounds must be between 1 and 10.');
 }
@@ -52,6 +73,8 @@ void _repository(Map<String, dynamic> repo) {
   for (final key in ['name', 'agent', 'model', 'brief']) {
     _text(main, key, blank: key == 'name' || key == 'brief', most: key == 'brief' ? 4000 : null);
   }
+  _effort(main);
+  _chosenBy(main);
   final seen = <String>{};
   for (final sub in _records(repo['subAgents'])) {
     if (!seen.add(_text(sub, 'id')) || !issues.contains(_text(sub, 'issue'))) {
@@ -61,6 +84,8 @@ void _repository(Map<String, dynamic> repo) {
       _text(sub, key, blank: true, most: key == 'brief' ? 4000 : null);
     }
     if (!['KEEP', 'CHANGE', 'DROP'].contains(sub['choice'])) _invalid('The helper choice is invalid.');
+    _effort(sub);
+    _chosenBy(sub);
     if (sub['kind'] == 'BUILDER') {
       _text(sub, 'agent');
       _text(sub, 'model');
@@ -118,6 +143,7 @@ class StoryWorkOrder {
               '',
               null,
               const [],
+              effort: _effort(main),
             ),
           );
         }
@@ -135,6 +161,7 @@ class StoryWorkOrder {
           '',
           null,
           const [],
+          effort: _effort(main),
         ),
       );
       for (final sub in helpers) {
@@ -145,6 +172,9 @@ class StoryWorkOrder {
         }
         if (sub['choice'] == 'KEEP' && (sub['agent'] != source.agent || sub['model'] != source.model)) {
           _invalid('A kept helper changes its proposed agent or model.');
+        }
+        if (sub['choice'] == 'KEEP' && _effort(sub) != null && _effort(sub) != source.effort) {
+          _invalid('A kept helper changes its proposed effort.');
         }
         if (sub['choice'] == 'DROP') continue;
         if (sub['kind'] != 'BUILDER') _invalid('Only a builder may be kept or changed at start.');
@@ -160,6 +190,7 @@ class StoryWorkOrder {
             '',
             null,
             const [],
+            effort: _effort(sub),
           ),
         );
       }
@@ -229,8 +260,10 @@ class PlanningTaskOrder {
     this.mode,
     this.prompt,
     this.result,
-    this.reads,
-  );
+    this.reads, {
+    this.effort,
+    this.chosenBy,
+  });
 
   /// Reads one served offer without inventing missing Start arguments.
   factory PlanningTaskOrder.from(Map<String, dynamic> map) => PlanningTaskOrder._read(map);
@@ -276,8 +309,16 @@ class PlanningTaskOrder {
       prompt,
       result,
       List.unmodifiable(reads),
+      effort: _effort(map),
+      chosenBy: _chosenBy(map),
     );
   }
+
+  /// The effort Start is handed, null for none.
+  final String? effort;
+
+  /// Where the rule's choice of agent, model and effort came from, as the planner says it; null when unsaid.
+  final String? chosenBy;
 
   /// The required offer identity in a checked order.
   final String? offer;
@@ -315,6 +356,8 @@ class PlanningTaskOrder {
       role == other.role &&
       agent == other.agent &&
       model == other.model &&
+      // The effort the person confirmed, none included, is the one the window may start.
+      effort == other.effort &&
       mode == other.mode &&
       result == other.result &&
       // An expected reader names no build; the planner's names one, which reading it refuses otherwise.

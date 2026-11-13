@@ -645,7 +645,15 @@ class PlanWorker {
       role = _planText(map, 'role'),
       agent = _planText(map, 'agent'),
       model = _planText(map, 'model'),
-      brief = _planText(map, 'brief');
+      brief = _planText(map, 'brief'),
+      effort = map['effort'] is String ? map['effort'] as String : null,
+      chosenBy = map['chosenBy'] is String ? map['chosenBy'] as String : null;
+
+  /// The effort proposed, null for none.
+  final String? effort;
+
+  /// Where the rule's choice of agent, model and effort came from, as the planner says it; null when unsaid.
+  final String? chosenBy;
 
   /// Its name.
   final String name;
@@ -814,7 +822,15 @@ class PlanAssignment {
       model = _planText(map, 'model'),
       workingState = _planText(map, 'workingState'),
       brief = _planText(map, 'brief'),
-      choice = _planText(map, 'choice');
+      choice = _planText(map, 'choice'),
+      effort = map['effort'] is String ? map['effort'] as String : null,
+      chosenBy = map['chosenBy'] is String ? map['chosenBy'] as String : null;
+
+  /// The effort proposed, null for none.
+  final String? effort;
+
+  /// Where the rule's choice of agent, model and effort came from, as the planner says it; null when unsaid.
+  final String? chosenBy;
 
   /// The id, issue, name, role, agent, model, workingState, brief, choice reported by the daemon.
   final String id, issue, name, kind, agent, model, workingState, brief, choice;
@@ -833,6 +849,7 @@ class PlanAssignment {
     'workingState': workingState,
     'brief': brief,
     'choice': choice,
+    'effort': ?effort,
   };
 }
 
@@ -873,7 +890,14 @@ class PlanRepositoryWork {
   Map<String, dynamic> toMap() => {
     'repository': repository,
     'issues': issues,
-    'main': {'name': main.name, 'role': main.role, 'agent': main.agent, 'model': main.model, 'brief': main.brief},
+    'main': {
+      'name': main.name,
+      'role': main.role,
+      'agent': main.agent,
+      'model': main.model,
+      'brief': main.brief,
+      'effort': ?main.effort,
+    },
     'subAgents': subAgents.map((sub) => sub.toMap()).toList(),
   };
 }
@@ -935,7 +959,7 @@ class StoryWorkProposal {
 /// The main agent and model chosen for one repository.
 class StoryWorkMainAgent {
   /// Keeps the repository identity and explicit main-agent choice.
-  const StoryWorkMainAgent({required this.repository, required this.agent, required this.model});
+  const StoryWorkMainAgent({required this.repository, required this.agent, required this.model, this.effort});
 
   /// The repository the choice applies to.
   final String repository;
@@ -945,12 +969,22 @@ class StoryWorkMainAgent {
 
   /// The chosen model identifier.
   final String model;
+
+  /// The chosen effort, null for none.
+  final String? effort;
 }
 
 /// The explicit choice for one proposed sub-agent.
 class StoryWorkChoice {
   /// Keeps the source facts and choices for this view or decision.
-  const StoryWorkChoice({required this.repository, required this.name, required this.choice, this.agent, this.model});
+  const StoryWorkChoice({
+    required this.repository,
+    required this.name,
+    required this.choice,
+    this.agent,
+    this.model,
+    this.effort,
+  });
 
   /// The repository name supplied by the machine.
   final String repository;
@@ -966,6 +1000,9 @@ class StoryWorkChoice {
 
   /// The model identifier, including an explicitly empty default.
   final String? model;
+
+  /// The effort chosen for a replacement, null for none.
+  final String? effort;
 }
 
 /// A revision-bound start decision.
@@ -1024,25 +1061,36 @@ class StoryWorkRequest {
 
   Map<String, dynamic> _selectedRepository(PlanRepositoryWork repo) {
     final main = repositories.where((each) => each.repository == repo.repository).firstOrNull;
+    final worker = {
+      ...(repo.toMap()['main'] as Map<String, dynamic>),
+      if (main != null) 'agent': main.agent,
+      if (main != null) 'model': main.model,
+    };
+    // The effort chosen is sent back as chosen; none is no effort, never the proposal's.
+    if (main != null) {
+      worker.remove('effort');
+      if (main.effort != null) worker['effort'] = main.effort;
+    }
     return {
       ...repo.toMap(),
-      'main': {
-        ...(repo.toMap()['main'] as Map<String, dynamic>),
-        if (main != null) 'agent': main.agent,
-        if (main != null) 'model': main.model,
-      },
+      'main': worker,
       'subAgents': [for (final sub in repo.subAgents) _selectedAssignment(repo.repository, sub)],
     };
   }
 
   Map<String, dynamic> _selectedAssignment(String repository, PlanAssignment sub) {
     final choice = subAgents.where((each) => each.repository == repository && each.name == sub.id).firstOrNull;
-    return {
+    final selected = {
       ...sub.toMap(),
       'choice': sub.role != 'BUILDER' ? 'DROP' : choice?.choice ?? sub.choice,
       if (choice?.choice == 'CHANGE') 'agent': choice!.agent,
       if (choice?.choice == 'CHANGE') 'model': choice!.model,
     };
+    if (choice?.choice == 'CHANGE') {
+      selected.remove('effort');
+      if (choice!.effort != null) selected['effort'] = choice.effort;
+    }
+    return selected;
   }
 
   /// Serializes the exact fields sent to the daemon, omitting absent overrides.

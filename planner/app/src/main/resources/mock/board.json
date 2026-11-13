@@ -93,7 +93,8 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
-      }
+      },
+      "risks": {}
     },
     "Under estimation": {
       "from": [
@@ -116,7 +117,8 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
-      }
+      },
+      "risks": {}
     },
     "Implementing": {
       "from": [
@@ -139,6 +141,12 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
+      },
+      "risks": {
+        "HARM": {
+          "models": {},
+          "effort": "high"
+        }
       }
     },
     "Reading": {
@@ -162,7 +170,8 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
-      }
+      },
+      "risks": {}
     },
     "Reworking": {
       "from": [
@@ -185,7 +194,8 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
-      }
+      },
+      "risks": {}
     },
     "Finishing": {
       "from": [
@@ -208,7 +218,8 @@
       "order": "Read the story and complete its work.",
       "models": {
         "claude": "claude-opus-5-5"
-      }
+      },
+      "risks": {}
     }
   },
   "faults": [],

@@ -636,19 +636,204 @@ class WorkOrderTest {
                                                         main.role(),
                                                         "zeta",
                                                         "large",
-                                                        main.brief()),
+                                                        main.brief(),
+                                                        main.effort(),
+                                                        main.basis()),
                                                 first.subAgents()),
                                         proposed.get(1)),
                                 null,
                                 null,
                                 null));
         assertThat(order.tasks())
-                .as("a model harm offers is taken, and each task keeps its risk's effort")
+                .as(
+                        "a model harm offers is taken, and each task keeps the effort its decision kept")
                 .extracting(WorkOrder.Task::role, WorkOrder.Task::model, WorkOrder.Task::effort)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("MAIN", "large", "max"),
                         org.assertj.core.groups.Tuple.tuple("BUILDER", "huge", "max"),
                         org.assertj.core.groups.Tuple.tuple("MAIN", "large", null));
+    }
+
+    @Test
+    void theEffortAPersonChoseIsTheOneTheMainStartsWithAndNoneIsNone() {
+        // The window starting another effort than the person chose, or the rule's where the
+        // window said it starts none.
+        final Board board = harmBoard();
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        assertThat(
+                        WorkOrder.accept(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        decision(mainEffort(proposed, "low"), null, null, null))
+                                .tasks()
+                                .getFirst())
+                .as("the changed effort reaches the main's Start, and is the one it used")
+                .extracting(WorkOrder.Task::effort, WorkOrder.Task::used)
+                .containsExactly("low", "low");
+        assertThat(
+                        WorkOrder.accept(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        decision(mainEffort(proposed, null), null, null, null))
+                                .tasks()
+                                .getFirst()
+                                .effort())
+                .as("a main sent back without an effort starts with none")
+                .isNull();
+    }
+
+    @Test
+    void anEffortThatIsNoSoundNameIsRefusedBeforeAnyTask() {
+        // A name reaching the window's Start unchecked.
+        final Board board = harmBoard();
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        for (final String unsound :
+                List.of("", "  ", "high\nlow", "high ", "x".repeat(WorkRule.LONGEST + 1))) {
+            refused(board, mainEffort(proposed, unsound), "");
+            refused(
+                    board,
+                    changed(proposed, sub -> effort(sub, "CHANGE", unsound)),
+                    "Another effort.");
+        }
+    }
+
+    @Test
+    void aKeptHelperStartsWithTheOffersEffortSentBackOrNotAndOnlyAChangeChangesIt() {
+        // A person who kept the proposal gets a helper started without the effort they were shown,
+        // or with one nobody chose for it.
+        final Board board = harmBoard();
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        refused(board, changed(proposed, sub -> effort(sub, "KEEP", "low")), "");
+        assertThat(builder(board, changed(proposed, sub -> effort(sub, "KEEP", null)), ""))
+                .as("a kept helper sent back without an effort starts with the offer's")
+                .extracting(WorkOrder.Task::effort)
+                .isEqualTo("max");
+        assertThat(builder(board, changed(proposed, sub -> effort(sub, "KEEP", "max")), ""))
+                .as("a kept helper keeps the offer's effort")
+                .extracting(WorkOrder.Task::effort)
+                .isEqualTo("max");
+        assertThat(
+                        builder(
+                                board,
+                                changed(proposed, sub -> effort(sub, "CHANGE", "low")),
+                                "Lighter."))
+                .as("a changed helper starts with the effort chosen")
+                .extracting(WorkOrder.Task::effort, WorkOrder.Task::used)
+                .containsExactly("low", "low");
+    }
+
+    @Test
+    void whereAChoiceCameFromIsTheRulesWhateverTheDecisionSays() {
+        // A caller's words standing as the rule's reason for a model and effort.
+        final Board board = harmBoard();
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        final WorkProposal.Repository first = proposed.getFirst();
+        final WorkProposal.Main main = first.main();
+        final List<WorkProposal.Repository> forged =
+                List.of(
+                        new WorkProposal.Repository(
+                                first.repository(),
+                                first.issues(),
+                                new WorkProposal.Main(
+                                        main.name(),
+                                        main.role(),
+                                        main.agent(),
+                                        main.model(),
+                                        main.brief(),
+                                        "low",
+                                        "Forged"),
+                                first.subAgents().stream()
+                                        .map(
+                                                sub ->
+                                                        new WorkProposal.Assignment(
+                                                                sub.id(),
+                                                                sub.issue(),
+                                                                sub.name(),
+                                                                sub.kind(),
+                                                                sub.agent(),
+                                                                sub.model(),
+                                                                sub.workingState(),
+                                                                sub.brief(),
+                                                                sub.choice(),
+                                                                sub.effort(),
+                                                                "Forged"))
+                                        .toList()),
+                        proposed.get(1));
+        final WorkOrder order =
+                WorkOrder.accept(board, "ST1", "Building", decision(forged, null, null, null));
+        assertThat(order.repositories().getFirst().main().basis())
+                .as("the accepted main names the rule's choice")
+                .isEqualTo(main.basis());
+        assertThat(order.repositories().getFirst().subAgents().getFirst().basis())
+                .as("the accepted helper names the rule's choice")
+                .isEqualTo(first.subAgents().getFirst().basis());
+        assertThat(order.tasks())
+                .as("every task names the rule's choice, none the caller's")
+                .extracting(WorkOrder.Task::basis)
+                .doesNotContain("Forged")
+                .doesNotContain("");
+        assertThat(order.repositories().getFirst().main().effort())
+                .as("the accepted main keeps the effort chosen")
+                .isEqualTo("low");
+    }
+
+    private static Board harmBoard() {
+        return WorkProposalTest.risked(
+                WorkProposalTest.board(WorkRule.Per.REPOSITORY), Map.of("AA1.1", Risk.HARM));
+    }
+
+    private static WorkOrder.Task builder(
+            final Board board, final List<WorkProposal.Repository> repos, final String comment) {
+        return WorkOrder.accept(board, "ST1", "Building", decision(repos, comment, null, null))
+                .tasks()
+                .stream()
+                .filter(task -> task.role().equals("BUILDER"))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static List<WorkProposal.Repository> mainEffort(
+            final List<WorkProposal.Repository> proposed, final @Nullable String effort) {
+        final WorkProposal.Repository first = proposed.getFirst();
+        final WorkProposal.Main main = first.main();
+        return List.of(
+                new WorkProposal.Repository(
+                        first.repository(),
+                        first.issues(),
+                        new WorkProposal.Main(
+                                main.name(),
+                                main.role(),
+                                main.agent(),
+                                main.model(),
+                                main.brief(),
+                                effort,
+                                main.basis()),
+                        first.subAgents()),
+                proposed.get(1));
+    }
+
+    private static WorkProposal.Assignment effort(
+            final WorkProposal.Assignment source,
+            final String choice,
+            final @Nullable String effort) {
+        return new WorkProposal.Assignment(
+                source.id(),
+                source.issue(),
+                source.name(),
+                source.kind(),
+                source.agent(),
+                source.model(),
+                source.workingState(),
+                source.brief(),
+                choice,
+                effort,
+                source.basis());
     }
 
     private static WorkOrder.Decision decision(

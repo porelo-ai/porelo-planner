@@ -427,6 +427,7 @@ public final class WorkRun {
                                                                 task.mode(),
                                                                 task.agent(),
                                                                 task.model()),
+                                                        task.effort(),
                                                         decision.comment() == null
                                                                 ? ""
                                                                 : decision.comment()),
@@ -534,9 +535,14 @@ public final class WorkRun {
                                         task.model(),
                                         task.effort(),
                                         task.mode(),
-                                        prompt);
-                        // The proposal named the choice's basis when the person decided on it.
-                        offers.add(offer(new NextStep.Planned(scoped, to, rule, ""), storyId));
+                                        prompt,
+                                        task.reads(),
+                                        task.basis(),
+                                        task.used());
+                        offers.add(
+                                offer(
+                                        new NextStep.Planned(scoped, to, rule, task.basis()),
+                                        storyId));
                     }
                     final List<String> covered =
                             offers.stream().flatMap(o -> o.binding().issues().stream()).toList();
@@ -558,9 +564,8 @@ public final class WorkRun {
                                     proposal.coordinator(),
                                     rounds,
                                     overrides,
-                                    decision.repositories() == null
-                                            ? proposal.repositories()
-                                            : decision.repositories(),
+                                    // As accepted: the person's choices, the rule's reasons.
+                                    order.repositories(),
                                     clock.instant().toString(),
                                     offers,
                                     progress,
@@ -1499,6 +1504,7 @@ public final class WorkRun {
             final @Nullable Run run,
             final String issueId,
             final NextStep.Settings settings,
+            final @Nullable String effort,
             final String comment) {
         final NextStep.Build built =
                 run == null ? new NextStep.Build("", List.of()) : lastBuild(run, issueId);
@@ -1508,7 +1514,17 @@ public final class WorkRun {
                     issue.state(), to, "No landed build of " + issueId + " is known to read.");
         }
         return NextStep.task(
-                board, storyId, issue, to, rule, settings, comment, "", "READER", built);
+                board,
+                storyId,
+                issue,
+                to,
+                rule,
+                settings,
+                comment,
+                "",
+                "READER",
+                built,
+                new NextStep.Chosen(effort));
     }
 
     /** The build that last built the issue, whose landed work a new reading reads. */
@@ -1739,7 +1755,9 @@ public final class WorkRun {
                                     arguments.effort(),
                                     arguments.mode(),
                                     arguments.prompt(),
-                                    List.of(built))));
+                                    List.of(built),
+                                    arguments.basis(),
+                                    arguments.used())));
         }
         return changed ? draft.freeze() : run;
     }
@@ -2257,7 +2275,9 @@ public final class WorkRun {
                                         arguments.effort(),
                                         arguments.mode(),
                                         "",
-                                        arguments.reads()),
+                                        arguments.reads(),
+                                        arguments.basis(),
+                                        arguments.used()),
                                 o.binding(),
                                 o.status(),
                                 o.task(),

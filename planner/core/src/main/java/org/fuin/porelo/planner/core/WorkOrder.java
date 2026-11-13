@@ -18,14 +18,19 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
-/** The tasks the window may start, computed without changing the board or recording a run. */
-public record WorkOrder(Revision revision, List<Task> tasks) {
+/**
+ * The tasks the window may start, computed without changing the board or recording a run, with the
+ * repositories as accepted: the person's choices, and where each choice came from as the rule says.
+ */
+public record WorkOrder(
+        Revision revision, List<Task> tasks, List<WorkProposal.Repository> repositories) {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(story|issues|tasks)\\}");
 
     /** Copies tasks so a prepared order cannot be changed through its input. */
     public WorkOrder {
         tasks = List.copyOf(tasks);
+        repositories = List.copyOf(repositories);
     }
 
     /**
@@ -37,10 +42,13 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
      * @param role its role
      * @param agent its agent
      * @param model the agent's model
-     * @param effort the effort the rule names for the task's risk, or null when it names none
+     * @param effort the effort Start is handed: the person's choice for a task started by hand, the
+     *     rule's for the task's risk for one that starts by itself; null for none
      * @param mode its mode
      * @param prompt its order
      * @param reads the Porelo tasks whose work it reads
+     * @param basis where the rule's choice of agent, model and effort came from, empty when unknown
+     * @param used the effort the window said the task starts with, null while nobody said
      */
     public record Task(
             String repository,
@@ -51,11 +59,27 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             @Nullable String effort,
             String mode,
             String prompt,
-            List<String> reads) {
+            List<String> reads,
+            String basis,
+            @Nullable String used) {
         /** Copies issue identities to preserve the accepted scope. */
         public Task {
             issues = List.copyOf(issues);
             reads = List.copyOf(reads);
+        }
+
+        /** A task whose choice's origin is unknown and whose effort nobody confirmed. */
+        public Task(
+                final String repository,
+                final List<String> issues,
+                final String role,
+                final String agent,
+                final String model,
+                final @Nullable String effort,
+                final String mode,
+                final String prompt,
+                final List<String> reads) {
+            this(repository, issues, role, agent, model, effort, mode, prompt, reads, "", null);
         }
 
         /** A task that reads no other task's work. */
@@ -171,6 +195,7 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             throw refused(story, to, "Choose every proposed repository exactly once.");
         }
         final List<Task> tasks = new ArrayList<>();
+        final List<WorkProposal.Repository> accepted = new ArrayList<>();
         for (final WorkProposal.Repository source : proposal.repositories()) {
             final WorkProposal.Repository choice = byRepository.get(source.repository());
             if (choice == null) {
@@ -178,6 +203,20 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             }
             final List<WorkProposal.Assignment> helpers =
                     validate(board, story, to, rule, source, choice, comment);
+            final String mainEffort = effort(story, to, choice.main().effort());
+            accepted.add(
+                    new WorkProposal.Repository(
+                            source.repository(),
+                            source.issues(),
+                            new WorkProposal.Main(
+                                    source.main().name(),
+                                    source.main().role(),
+                                    choice.main().agent(),
+                                    choice.main().model(),
+                                    source.main().brief(),
+                                    mainEffort,
+                                    source.main().basis()),
+                            helpers));
             final List<WorkProposal.Assignment> kept =
                     helpers.stream().filter(helper -> !helper.choice().equals("DROP")).toList();
             final List<String> dropped =
@@ -203,10 +242,10 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                             "MAIN",
                             choice.main().agent(),
                             choice.main().model(),
-                            // The proposal's effort: a decision does not choose one.
-                            source.main().effort(),
+                            mainEffort,
                             decision.mode(),
-                            mainPrompt));
+                            mainPrompt,
+                            source.main().basis()));
             for (final WorkProposal.Assignment helper : kept) {
                 final Issue issue = board.issue(helper.issue()).orElseThrow();
                 tasks.add(
@@ -225,10 +264,11 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                                         story,
                                         issueText(board, story, to, List.of(helper.issue())),
                                         "",
-                                        comment)));
+                                        comment),
+                                helper.basis()));
             }
         }
-        return new WorkOrder(board.revision(), tasks);
+        return new WorkOrder(board.revision(), tasks, accepted);
     }
 
     private static List<WorkProposal.Assignment> validate(
@@ -292,6 +332,12 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                             || !original.model().equals(helper.model()))) {
                 throw refused(story, to, "A kept participant's agent or model was changed.");
             }
+            // A kept helper starts with the offer's effort, whether the caller sent it back or not.
+            if (helper.choice().equals("KEEP")
+                    && helper.effort() != null
+                    && !helper.effort().equals(original.effort())) {
+                throw refused(story, to, "A kept participant's effort was changed.");
+            }
             if (helper.choice().equals("CHANGE")) {
                 offered(
                         story,
@@ -311,10 +357,21 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
                             original.workingState(),
                             original.brief(),
                             helper.choice(),
-                            original.effort(),
+                            helper.choice().equals("CHANGE")
+                                    ? effort(story, to, helper.effort())
+                                    : original.effort(),
                             original.basis()));
         }
         return checked;
+    }
+
+    /** An effort is a plain name or none, since it reaches the window's Start. */
+    private static @Nullable String effort(
+            final Story story, final String to, final @Nullable String effort) {
+        if (effort != null && !WorkRule.sound(effort)) {
+            throw refused(story, to, "Choose an effort that is a plain name, or none.");
+        }
+        return effort;
     }
 
     private static void offered(
@@ -435,11 +492,24 @@ public record WorkOrder(Revision revision, List<Task> tasks) {
             final String model,
             final @Nullable String effort,
             final String mode,
-            final String prompt) {
+            final String prompt,
+            final String basis) {
         if (prompt.getBytes(StandardCharsets.UTF_8).length > 65536) {
             throw refused(story, to, "A task prompt exceeds 65536 UTF-8 bytes.");
         }
-        return new Task(repository, issues, role, agent, model, effort, mode, prompt);
+        // A task started by hand starts with the effort the person's order names.
+        return new Task(
+                repository,
+                issues,
+                role,
+                agent,
+                model,
+                effort,
+                mode,
+                prompt,
+                List.of(),
+                basis,
+                effort);
     }
 
     private static WorkRefusal refused(final Story story, final String to, final String reason) {

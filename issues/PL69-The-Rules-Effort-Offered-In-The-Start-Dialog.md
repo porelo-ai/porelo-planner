@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL69",
   "title": "The Rule's Effort Offered In The Start Dialog",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 2,
@@ -83,6 +83,20 @@ What the plan's reading asks, and the build takes:
 - **`chosenBy` is the planner's.** It is derived in the core and answered; a `chosenBy` sent back in a `PlanWorker`
   or `PlanAssignment` is ignored, never stored or answered. After a person changes the effort, `chosenBy` still names
   the rule's choice, and the dialog shows the effort as changed.
+
+- **Built.**
+  - Core: `WorkOrder` takes the main's effort from the decision, where none means none, and checks it as `WorkRule.sound`
+    does a rule's name. It refuses a KEEP helper whose effort differs from the offer's, while a CHANGE may change
+    it. Each task carries `basis`, the rule's words, and `used`, the effort its order said it starts with, null for a
+    task that starts by itself. A Reading started by hand carries the person's effort to each reader through
+    `NextStep.Chosen`.
+  - App: `WorkRequests` refuses an effort that is no string or no sound name, and checks and ignores a `chosenBy`
+    sent back. `WorkAnswers` answers `effort` and `chosenBy` where they are set, and `PlanWorkTask.effort` from
+    `used`. A work record written before carries `basis` "" and `used` null. The mock board's Implementing rule
+    names effort `high` for `harm`; no mock issue is harm, so the window's mock board answers as before.
+  - Screen: `PlanningTaskOrder` refuses an effort that is no sound name, and an answer whose effort differs from the
+    one sent, absence included. The start dialog shows an Effort field beside each model, the rule's selected and
+    `chosenBy` beneath. A cleared field is none, and the effort is sent back as chosen.
 
 These grow step 1 by the core's start by hand (`NextStep.Settings`, `WorkRun`) and the helper rules, and step 2 by the
 order's comparison: about 180 min in all instead of 113, still L.

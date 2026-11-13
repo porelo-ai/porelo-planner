@@ -485,6 +485,33 @@ public final class NextStep {
             final String words,
             final String role,
             final Build built) {
+        return task(board, storyId, issue, state, rule, chosen, comment, words, role, built, null);
+    }
+
+    /**
+     * The effort a person chose for a task started by hand.
+     *
+     * @param effort the effort chosen, or null for none
+     */
+    public record Chosen(@Nullable String effort) {}
+
+    /**
+     * Builds a single-issue task as {@link #task(Board, String, Issue, String, WorkRule, Settings,
+     * String, String, String, Build)} does, with the effort a person chose when {@code effort} is
+     * given, which is then the one the task is said to use.
+     */
+    public static Planned task(
+            final Board board,
+            final String storyId,
+            final Issue issue,
+            final String state,
+            final WorkRule rule,
+            final @Nullable Settings chosen,
+            final String comment,
+            final String words,
+            final String role,
+            final Build built,
+            final @Nullable Chosen effort) {
         final Choice choice = Choice.of(state, rule, List.of(issue));
         final Settings settings = Settings.of(rule, choice, chosen);
         final Story story =
@@ -517,10 +544,12 @@ public final class NextStep {
                         role,
                         settings.agent(),
                         settings.model(),
-                        choice.effort(),
+                        effort == null ? choice.effort() : effort.effort(),
                         settings.mode(),
                         prompt,
-                        role.equals("READER") ? List.of(built.task()) : List.of()),
+                        role.equals("READER") ? List.of(built.task()) : List.of(),
+                        choice.basis(),
+                        effort == null ? null : effort.effort()),
                 state,
                 rule,
                 choice.basis());

@@ -293,6 +293,29 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  // Harm: the effort a person types or clears in the dialog is not the one the task starts with.
+  testWidgets('the dialog offers the rule\'s effort and what the person types or clears is the one chosen', (
+    tester,
+  ) async {
+    final (_, board) = await _open(tester, _board());
+    final work = planningStoryWork(board, board.stories.single, 'Implementing');
+    addTearDown(work.dispose);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await settle(tester);
+    final field = find.byKey(const Key('story-work-main-effort repo'));
+    expect(
+      tester.widget<EditableText>(find.descendant(of: field, matching: find.byType(EditableText))).controller.text,
+      'high',
+      reason: 'the rule\'s effort is offered as proposed',
+    );
+    await tester.enterText(field, 'low');
+    expect(work.repositories['repo']!.effort, 'low', reason: 'the typed effort is the one chosen');
+    await tester.enterText(field, '');
+    expect(work.repositories['repo']!.effort, isNull, reason: 'a cleared effort is none');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   // Harm: a story whose every issue a person works starts agents with nothing to do.
   test('the stand-in proposes no task for a story whose every issue a person works', () async {
     final source = MockPlanningSource()..boards['demo'] = _board();

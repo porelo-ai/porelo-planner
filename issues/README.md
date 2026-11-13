@@ -65,7 +65,6 @@ left out.
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
-| <a id="pl69"></a>[PL69](PL69-The-Rules-Effort-Offered-In-The-Start-Dialog.md) | L | [PL66](README.md#pl66) | The model and effort the work rules choose for an issue's risk reach the window with where the choice came from; the start dialog proposes the rule's effort, the person may change it, and the effort chosen is handed to the window's Start |
 
 ## Review
 
@@ -108,6 +107,7 @@ left out.
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | - | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |
+| <a id="pl69"></a>[PL69](PL69-The-Rules-Effort-Offered-In-The-Start-Dialog.md) | L | [PL66](README.md#pl66) | The model and effort the work rules choose for an issue's risk reach the window with where the choice came from; the start dialog proposes the rule's effort, the person may change it, and the effort chosen is handed to the window's Start |
 | <a id="pl10"></a>[PL10](PL10-A-Mock-Mode-For-The-Windows-Tests.md) | M | - | `--mock` serves the window's mock board through the same API and SSE, a reset between tests |
 | <a id="pl25"></a>[PL25](PL25-Findings-In-The-Screens-Older-Code.md) | M | - | Every agent's or repository's text the screen shows is stripped of control and bidirectional characters; a held-back board is not live, each watch tells its own reconnect, and a disposed board opens no watch; a discussion whose Start the person cancelled shows no error |
 | <a id="pl26"></a>[PL26](PL26-The-Mock-Board-Saves-Moves.md) | M | - | The mock mode saves moves into its in-memory board with a new revision and a change event, answers PartlySaved for one fixed story, and serves a story with sub-issues so a refused move can be reached |

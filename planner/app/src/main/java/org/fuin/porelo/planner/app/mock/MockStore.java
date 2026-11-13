@@ -85,6 +85,7 @@ public final class MockStore implements PlanningStore {
      * @param modes the modes, the first the default
      * @param order the order the task is given
      * @param models the model per agent
+     * @param risks what the rule chooses per risk, by the risk's name, or null for nothing
      */
     record RuleFile(
             List<String> from,
@@ -94,7 +95,16 @@ public final class MockStore implements PlanningStore {
             String per,
             List<String> modes,
             String order,
-            Map<String, String> models) {}
+            Map<String, String> models,
+            @Nullable Map<String, RiskFile> risks) {}
+
+    /**
+     * What a rule of the mock board chooses for one risk.
+     *
+     * @param models the model per agent, empty when it names none
+     * @param effort the effort, or null when it names none
+     */
+    record RiskFile(Map<String, String> models, @Nullable String effort) {}
 
     private final Board initial;
 
@@ -189,7 +199,20 @@ public final class MockStore implements PlanningStore {
                 per,
                 rule.modes(),
                 rule.order(),
-                rule.models());
+                rule.models(),
+                risks(rule.risks()));
+    }
+
+    private static Map<Risk, WorkRule.ForRisk> risks(final @Nullable Map<String, RiskFile> risks) {
+        final Map<Risk, WorkRule.ForRisk> chosen = new LinkedHashMap<>();
+        if (risks != null) {
+            risks.forEach(
+                    (name, risk) ->
+                            chosen.put(
+                                    Risk.valueOf(name),
+                                    new WorkRule.ForRisk(risk.models(), risk.effort())));
+        }
+        return chosen;
     }
 
     @Override

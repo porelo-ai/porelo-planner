@@ -393,6 +393,16 @@ public final class WorkRecord implements AutoCloseable {
                             && !arguments.has("effort")) {
                         arguments.putNull("effort");
                     }
+                    // A record written before the effort was offered names no basis and no effort
+                    // used.
+                    if (offer.path("arguments") instanceof ObjectNode arguments) {
+                        if (!arguments.has("basis")) {
+                            arguments.put("basis", "");
+                        }
+                        if (!arguments.has("used")) {
+                            arguments.putNull("used");
+                        }
+                    }
                     if (offer.path("binding").path("rule") instanceof ObjectNode rule
                             && !rule.has("risks")) {
                         rule.putObject("risks");
@@ -684,7 +694,10 @@ public final class WorkRecord implements AutoCloseable {
                                                 "an offer fails its check");
                                     }
                                     final String effort = offer.arguments().effort();
-                                    if (effort != null && !WorkRule.sound(effort)) {
+                                    final String used = offer.arguments().used();
+                                    if (effort != null && !WorkRule.sound(effort)
+                                            || used != null && !WorkRule.sound(used)
+                                            || offer.arguments().basis().length() > 4000) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }
