@@ -159,7 +159,8 @@ abstract interface class PlanningSource {
   Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision);
 
   /// Adds an idea as a new issue in state Idea of [repository], against the board at [revision]; [size] is one of
-  /// `XS` to `XL`, or null when it is not known yet.
+  /// `XS` to `XL`, or null when it is not known yet; [task] names the Porelo task that proposed it, null when a person
+  /// did.
   Future<PlanningIssueAdded> createIssue(
     String project,
     String repository,
@@ -168,6 +169,7 @@ abstract interface class PlanningSource {
     String? size,
     String revision, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   });
 
   /// Sets who works [issue], against the board at [revision]; a sub-issue is refused, as it takes its parent's.

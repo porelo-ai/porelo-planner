@@ -184,6 +184,7 @@ class FakePlanningSource implements PlanningSource {
     String? size,
     String revision, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   }) async {
     added.add((project, repository, title, mustBeTrue, size, revision));
     addedWorkers.add(worker);

@@ -11,6 +11,8 @@ public final class Ids {
 
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9._-]{0,99}");
 
+    private static final Pattern TASK = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
+
     private Ids() {}
 
     /**
@@ -51,6 +53,32 @@ public final class Ids {
                             + " characters");
         }
         return name;
+    }
+
+    /**
+     * Whether a text has the shape of a Porelo task's name or label: no space, no line break and
+     * nothing Markdown reads, so it can stand in a file or a refusal as it is.
+     *
+     * @param task the text to check
+     * @return whether it is one
+     */
+    public static boolean isTask(final String task) {
+        return TASK.matcher(task).matches();
+    }
+
+    /**
+     * Refuses a text that is not a Porelo task's name.
+     *
+     * @param task the text to check
+     * @return the name
+     */
+    public static String task(final String task) {
+        // A refused name is never shown: it may carry a bidi control or a line separator.
+        if (!isTask(task)) {
+            throw new IllegalArgumentException(
+                    "Not a task name (" + TASK.pattern() + "), " + task.length() + " characters");
+        }
+        return task;
     }
 
     private static String checked(final Pattern pattern, final String value, final String what) {

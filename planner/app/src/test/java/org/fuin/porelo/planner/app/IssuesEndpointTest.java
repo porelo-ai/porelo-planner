@@ -142,6 +142,20 @@ class IssuesEndpointTest {
     }
 
     @Test
+    void anIdeaATaskProposedIsHandedToTheStoreNamingThatTask() throws Exception {
+        // A task's name lost on the way leaves the person without the task to ask.
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"task\": \"t-7.2\", \"revision\": \"r1\"}")
+                .andExpect(status().isCreated());
+
+        assertThat(added)
+                .as("the task handed to the store as it was sent")
+                .extracting(NewIssue::task)
+                .containsExactly("t-7.2");
+    }
+
+    @Test
     void anIdeaAgainstAnotherRevisionIsRefusedAsStaleAndAddsNothing() throws Exception {
         // An idea numbered on a board the window no longer shows could take a number taken since.
         issue(
@@ -188,6 +202,22 @@ class IssuesEndpointTest {
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
                         + " \"worker\": 1, \"revision\": \"r1\"}",
                 "worker");
+        for (final String task :
+                List.of(
+                        "\"\"",
+                        "\" token123secret\"",
+                        "\"token123secret\\n## Forged\"",
+                        "\"token123secret`\"",
+                        "null",
+                        "7",
+                        "[\"token123secret\"]")) {
+            refused(
+                    "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                            + " \"task\": "
+                            + task
+                            + ", \"revision\": \"r1\"}",
+                    "task");
+        }
         refused("{\"revision\": token123secret}", "");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \""

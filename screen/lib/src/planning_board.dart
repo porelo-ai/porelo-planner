@@ -606,6 +606,7 @@ class PlanningBoard extends ChangeNotifier {
     String mustBeTrue,
     String? size, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   }) async {
     if (newIssueUnavailable case final reason?) {
       actionProblem = 'No new issue: $reason.';
@@ -620,7 +621,16 @@ class PlanningBoard extends ChangeNotifier {
     actionProblem = null;
     _changed();
     try {
-      return (await source.createIssue(name, repository, title, mustBeTrue, size, revision, worker: worker)).id;
+      return (await source.createIssue(
+        name,
+        repository,
+        title,
+        mustBeTrue,
+        size,
+        revision,
+        worker: worker,
+        task: task,
+      )).id;
     } catch (error) {
       if (!_disposed && generation == _generation) {
         reportActionProblem(error);

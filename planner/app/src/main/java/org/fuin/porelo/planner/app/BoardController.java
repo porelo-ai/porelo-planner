@@ -226,7 +226,8 @@ public class BoardController {
                         body.title(),
                         body.mustBeTrue(),
                         body.size(),
-                        body.worker());
+                        body.worker(),
+                        body.task());
         final NewIssue.Added added = store.createIssue(board.revision(), issue);
         LOG.info(
                 "Added issue {} to project {} as revision {}",

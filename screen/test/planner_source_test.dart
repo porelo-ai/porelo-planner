@@ -624,6 +624,9 @@ void main() {
     await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1', worker: IssueWorker.manual);
     expect(jsonDecode(planner.calls.last.body)['size'], 'S', reason: 'a known size is sent');
     expect(jsonDecode(planner.calls.last.body)['worker'], 'MANUAL', reason: 'a person chosen is sent');
+    // Harm: the proposing task's name lost on the way, or an empty member the planner refuses.
+    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, 'r1', task: 't-7.2');
+    expect(jsonDecode(planner.calls.last.body)['task'], 't-7.2', reason: 'the task that proposed it is named');
     for (final answer in [
       {'revision': 'r2'},
       {'id': 'wrong', 'revision': 'r2'},

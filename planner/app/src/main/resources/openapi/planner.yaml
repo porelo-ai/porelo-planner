@@ -1656,6 +1656,12 @@ components:
             - $ref: '#/components/schemas/Worker'
         revision:
           $ref: '#/components/schemas/Revision'
+        task:
+          description: >-
+            The Porelo task that proposed the idea, named in the new issue's file under what must be true; left out
+            when no task did. An empty or malformed name is refused, never taken as none.
+          allOf:
+            - $ref: '#/components/schemas/TaskLabel'
     IssueAdded:
       description: The new issue's id and the board's revision after the save.
       type: object

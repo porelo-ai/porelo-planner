@@ -841,6 +841,7 @@ class GitStoreSaveTest {
                 .as("the heading and what must be true")
                 .startsWith("# CD03 — A new idea's words\n")
                 .contains("\n**What must be true.** It is there.\n");
+        assertThat(text).as("no task proposed it, so none is named").doesNotContain("Porelo task");
         assertThat(Files.readString(clone.resolve("issues/README.md")))
                 .as("the index has its row")
                 .contains("<a id=\"cd03\"></a>");
@@ -849,6 +850,30 @@ class GitStoreSaveTest {
                 .as("a subject starting no build")
                 .singleElement()
                 .satisfies(subject -> assertThat(subject).as("marked").endsWith(" [skip ci]"));
+    }
+
+    @Test
+    void anIssueATaskProposedNamesThatTaskInItsOwnParagraphUnderWhatMustBeTrue() throws Exception {
+        // A person reading the issue must learn which task to ask, and the line must not glue
+        // itself onto what must be true.
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final NewIssue.Added added =
+                store.createIssue(
+                        board.revision(),
+                        new NewIssue(
+                                OTHER,
+                                "From a task",
+                                "It is there.\n",
+                                "S",
+                                Worker.AGENT,
+                                "t-7.2"));
+
+        assertThat(read(OTHER, "issues/" + added.id() + "-From-a-task.md"))
+                .as("what must be true, a blank line, then the task's own line")
+                .endsWith(
+                        "**What must be true.** It is there.\n\nProposed by Porelo task `t-7.2`.\n");
     }
 
     @Test

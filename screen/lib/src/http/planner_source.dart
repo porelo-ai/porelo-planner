@@ -402,6 +402,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     String? size,
     String revision, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   }) async {
     final answer = await _write(
       project,
@@ -413,6 +414,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'size': ?size,
         'worker': worker.wire,
         'revision': revision,
+        'task': ?task,
       },
     );
     final id = answer['id'];

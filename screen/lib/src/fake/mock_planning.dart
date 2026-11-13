@@ -190,6 +190,7 @@ class MockPlanningSource implements PlanningSource {
     String? size,
     String revision, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   }) async {
     issueCalls.add({
       'project': project,
@@ -199,6 +200,7 @@ class MockPlanningSource implements PlanningSource {
       'size': size,
       'worker': worker.wire,
       'revision': revision,
+      'task': task,
     });
     final current = board(project);
     if (revision != current['revision']) {

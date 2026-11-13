@@ -151,6 +151,7 @@ public final class WorkRequests {
      * @param size the size
      * @param worker who works it
      * @param revision the board's revision the person saw
+     * @param task the Porelo task that proposed it, or null
      */
     public record IssueRequest(
             @Nullable String repository,
@@ -158,10 +159,11 @@ public final class WorkRequests {
             @Nullable String mustBeTrue,
             @Nullable String size,
             @Nullable String worker,
-            @Nullable String revision) {}
+            @Nullable String revision,
+            @Nullable String task) {}
 
     private static final Set<String> ISSUE_MEMBERS =
-            Set.of("repository", "title", "mustBeTrue", "size", "worker", "revision");
+            Set.of("repository", "title", "mustBeTrue", "size", "worker", "revision", "task");
 
     /**
      * The idea a discussion wrote, as the window hands it in.
@@ -312,7 +314,8 @@ public final class WorkRequests {
                 member(body, "mustBeTrue"),
                 member(body, "size"),
                 member(body, "worker"),
-                member(body, "revision"));
+                member(body, "revision"),
+                member(body, "task"));
     }
 
     /**

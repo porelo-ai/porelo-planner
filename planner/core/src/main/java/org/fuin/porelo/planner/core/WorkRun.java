@@ -31,7 +31,6 @@ import org.jspecify.annotations.Nullable;
 /** Runs story work under one project record lock; only the window starts and stops tasks. */
 public final class WorkRun {
 
-    private static final Pattern LABEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
     private static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
     private static final Pattern AT =
             Pattern.compile(
@@ -1988,8 +1987,8 @@ public final class WorkRun {
     public static void checkedReport(final String task, final Report report) {
         checkedMachine(report.machine());
         try {
-            if (!LABEL.matcher(task).matches()
-                    || !LABEL.matcher(report.container()).matches()
+            if (!Ids.isTask(task)
+                    || !Ids.isTask(report.container())
                     || !UUID.fromString(report.offer()).toString().equals(report.offer())
                     || (report.event() == Event.ENDED) != (report.ended() != null)
                     || (report.event() == Event.LANDED) == report.landed().isEmpty()) {

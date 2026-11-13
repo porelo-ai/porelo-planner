@@ -43,9 +43,10 @@ class _HeldSource extends _Source {
     String? size,
     String revision, {
     IssueWorker worker = IssueWorker.agent,
+    String? task,
   }) async {
     await answer.future;
-    return super.createIssue(project, repository, title, mustBeTrue, size, revision, worker: worker);
+    return super.createIssue(project, repository, title, mustBeTrue, size, revision, worker: worker, task: task);
   }
 }
 

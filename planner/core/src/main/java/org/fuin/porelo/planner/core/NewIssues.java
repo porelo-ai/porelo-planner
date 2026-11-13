@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
@@ -53,6 +54,30 @@ public final class NewIssues {
             final @Nullable String mustBeTrue,
             final @Nullable String size,
             final @Nullable String worker) {
+        return check(board, repository, title, mustBeTrue, size, worker, null);
+    }
+
+    /**
+     * Checks the fields, the proposing task's name too, and answers the issue the store writes.
+     *
+     * @param board the board the window shows
+     * @param repository the repository's name
+     * @param title the title
+     * @param mustBeTrue what must be true
+     * @param size the size, or null
+     * @param worker who works it, {@code AGENT} or {@code MANUAL}; null for {@code AGENT}
+     * @param task the Porelo task that proposed it, as it was sent, or null when none did
+     * @return the issue, its title without the spaces around it
+     * @throws Moves.Refused {@code IssueNotAllowed} naming the first field out of bounds
+     */
+    public static NewIssue check(
+            final Board board,
+            final @Nullable String repository,
+            final @Nullable String title,
+            final @Nullable String mustBeTrue,
+            final @Nullable String size,
+            final @Nullable String worker,
+            final @Nullable String task) {
         if (repository == null || !board.repositories().contains(repository)) {
             throw refused("repository", "The repository is no repository of the project.");
         }
@@ -70,7 +95,11 @@ public final class NewIssues {
         if (size != null && !SIZES.contains(size)) {
             throw refused("size", "The size must be one of " + String.join(", ", SIZES) + ".");
         }
-        return new NewIssue(repository, line, mustBeTrue, size, worker(worker));
+        // Taken as sent, never stripped: the name is written into the file as it stands.
+        if (task != null && !Ids.isTask(task)) {
+            throw refused("task", "The task must be a Porelo task's name.");
+        }
+        return new NewIssue(repository, line, mustBeTrue, size, worker(worker), task);
     }
 
     private static Worker worker(final @Nullable String worker) {

@@ -11,13 +11,43 @@ import org.jspecify.annotations.Nullable;
  * @param mustBeTrue what must be true, the paragraph its file opens with
  * @param size its size, or null when it is not known yet
  * @param worker who works it
+ * @param task the Porelo task that proposed it, or null when none did
  */
 public record NewIssue(
-        String repository, String title, String mustBeTrue, @Nullable String size, Worker worker) {
+        String repository,
+        String title,
+        String mustBeTrue,
+        @Nullable String size,
+        Worker worker,
+        @Nullable String task) {
 
-    /** Checks the repository's name, so no store resolves a path from an unchecked one. */
+    /**
+     * Checks the repository's name, so no store resolves a path from an unchecked one, and the
+     * task's, so none writes a line from a malformed one.
+     */
     public NewIssue {
         Ids.name(repository);
+        if (task != null) {
+            Ids.task(task);
+        }
+    }
+
+    /**
+     * A new issue no task proposed.
+     *
+     * @param repository the name of the project's repository it belongs to
+     * @param title its title, one line
+     * @param mustBeTrue what must be true
+     * @param size its size, or null when it is not known yet
+     * @param worker who works it
+     */
+    public NewIssue(
+            final String repository,
+            final String title,
+            final String mustBeTrue,
+            final @Nullable String size,
+            final Worker worker) {
+        this(repository, title, mustBeTrue, size, worker, null);
     }
 
     /**

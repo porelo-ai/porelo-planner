@@ -82,6 +82,48 @@ class IdsTest {
                 .hasMessageNotContaining("host");
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "",
+                " t1",
+                "t1 ",
+                "a b",
+                "t`1",
+                "t1\n## Forged",
+                "t1\u2028x",
+                "t1\u0085x",
+                "t1\u202ex",
+                "*t1*",
+                "-t1",
+            })
+    void aTaskNameThatCouldBreakOrMarkUpALineOfAnIssueFileIsRefused(final String task) {
+        // A task's name is written into a committed issue file; a break or a mark there forges a
+        // line.
+        assertThat(Ids.isTask(task)).as("'%s' is no task name", task).isFalse();
+        assertThatThrownBy(() -> new NewIssue("porelo-other", "T", "W", null, Worker.AGENT, task))
+                .as("no issue is made naming '%s'", task)
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aRefusedTaskNameIsNeverRepeated() {
+        // A forged name repeated into a log or an answer reads there as the planner's own words.
+        assertThatThrownBy(() -> Ids.task("t1\u202eclaimed\u2028line"))
+                .as("the refusal does not repeat what it refused")
+                .hasMessageNotContaining("claimed")
+                .hasMessageNotContaining("\u202e")
+                .hasMessageNotContaining("\u2028");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"t1", "porelo-planner-task_7.2", "A"})
+    void aTaskNameOfPorelosShapeIsTaken(final String task) {
+        assertThat(new NewIssue("porelo-other", "T", "W", null, Worker.AGENT, task).task())
+                .as("a real task name passes unchanged")
+                .isEqualTo(task);
+    }
+
     @Test
     void aRefusedIdIsShownShortAndPrintable() {
         // A refusal reaches a log; a control character there rewrites the person's terminal.

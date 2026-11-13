@@ -126,7 +126,13 @@ final class IdeaFile {
         }
         Files.writeString(
                 file,
-                head.file("**What must be true.** " + issue.mustBeTrue().strip() + "\n"),
+                head.file(
+                        "**What must be true.** "
+                                + issue.mustBeTrue().strip()
+                                + "\n"
+                                + (issue.task() == null
+                                        ? ""
+                                        : "\nProposed by Porelo task `" + issue.task() + "`.\n")),
                 StandardCharsets.UTF_8);
         return new Written(id, path);
     }

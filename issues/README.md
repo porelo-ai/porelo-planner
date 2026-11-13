@@ -72,7 +72,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
-| <a id="pl96"></a>[PL96](PL96-A-New-Issue-Names-The-Task-It-Came-From.md) | S | - | An issue the window hands in for an idea a task proposed names that Porelo task, which the new issue's file shows, so a person sees where the idea came from |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
 
 ## Review
@@ -105,6 +104,7 @@ left out.
 | <a id="pl47"></a>[PL47](PL47-A-Storys-Size-Beside-Its-Priority.md) | M | - | A story carries its own size, XS to XL, set when it is estimated; the board's answer carries it beside its priority, and an issue's size, which the answer already carries, shows the same way |
 | <a id="pl102"></a>[PL102](PL102-The-Executable-Published-On-Every-Push.md) | M | - | Every push to main that builds publishes the planner's native executable under its package version, never replaced, with its sha256 beside it, so a repository's CI can pin a change before a release |
 | <a id="pl91"></a>[PL91](PL91-The-Planner-Ends-When-The-Window-That-Started-It-Ends.md) | S | - | A planner the window started ends by itself when the window's end of the pipe it was started with closes, a hard kill of the window included, so no planner of an older install keeps running beside a newer window |
+| <a id="pl96"></a>[PL96](PL96-A-New-Issue-Names-The-Task-It-Came-From.md) | S | - | An issue the window hands in for an idea a task proposed names that Porelo task, which the new issue's file shows, so a person sees where the idea came from |
 | <a id="pl97"></a>[PL97](PL97-A-Blocked-End-Keeps-Its-Issue-Under-Needs-You.md) | M | - | A task that ends declaring its work BLOCKED, with why, keeps its issues where they stand, under Needs you with that why, instead of being taken as done and moved on |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
