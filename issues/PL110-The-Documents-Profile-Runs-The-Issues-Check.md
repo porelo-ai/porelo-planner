@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL110",
   "title": "The Documents Profile Runs The Issues Check",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Low",
   "rank": 46,
