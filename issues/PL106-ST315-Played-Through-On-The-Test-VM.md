@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL106",
   "title": "ST315 Played Through On The Test VM",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 42,
@@ -47,6 +47,15 @@ are written and checked by the planner's Git store alone, and a broken head show
   [PL62](README.md#pl62) (the Git store's refusal texts) and [PL15](README.md#pl15) (answer types generated from the
   description). No step is known to need them; the run names them with `--expect` as expected failures of the story,
   and a failing step is read against them before it is taken as a fault.
+- **Built.** `tool/story-tests/st315.sh` on the shared ground, and `st_skip` added to `story-test.sh` for a step a
+  run names but does not play. Step 2 moves AB01 from Analyzed to Estimated, two planning states, since a working
+  state is entered only by work or by an issue worked by hand; every move of a top-level issue writes its
+  `stats/<issue>.jsonl` line, which step 4 reads. A head in a state the workflow does not know leaves its issue out
+  and names it as a fault `<repository>: issues/<file>: ...` in `GET /projects/{p}/workflow`'s `faults`, which step 5
+  reads, while `GET /stories` still answers the story with its other issue. The repository a new issue goes to is
+  named by the last part of its clone URL, `st-alpha`. The fixture, step 1 and step 5's edit were run locally with the
+  executable and `file://` remotes, without a VM: the fixture's checks pass and `issues check` refuses the edited
+  head.
 
 **Rules for this story test (operator)**
 
@@ -59,10 +68,3 @@ are written and checked by the planner's Git store alone, and a broken head show
 
 - One run of `st315.sh` on the local test VM, its output naming each step passed, failed or skipped and the missing
   issues as expected failures, and the VM cleaned up: no planner running, no key authorized, no directory of the run.
-
-## To be checked
-
-- Which moves `POST /moves` takes for the fixture's issue in step 2: an issue an agent works enters no working state
-  this way, so the step moves between planning states, or moves an issue that is worked by hand.
-- Whether the board names a broken head in `GET /projects/{p}/workflow`'s faults or beside the board, so step 5
-  reads the right field.

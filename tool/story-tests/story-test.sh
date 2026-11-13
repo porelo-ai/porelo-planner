@@ -5,8 +5,8 @@
 # interrupt too, and names anything it left.
 #
 # A story script sets ST_STORY and ST_LIBRARY=1, sources this file, calls st_setup "$@", builds its fixture with
-# st_repo, st_write, st_copy and st_push, starts the planner with st_planner, runs each step with st_step and ends
-# with st_finish. Run directly, 'story-test.sh leftovers' names what an earlier run left on this account and exits 1
+# st_repo, st_write, st_copy and st_push, starts the planner with st_planner, runs each step with st_step, names a
+# step it does not play with st_skip and ends with st_finish. Run directly, 'story-test.sh leftovers' names what an earlier run left on this account and exits 1
 # if anything.
 #
 # Arguments every story script takes:
@@ -341,6 +341,11 @@ st_step() {
         printf 'STEP %s %s: FAIL\n  asked: %s\n  got:   %s\n' "$number" "$what" "$ST_ASKED" "$ST_GOT"
         ST_FAILED=1
     fi
+}
+
+# Reports a step the story's test names but this run does not play, with the reason: st_skip N WHAT REASON.
+st_skip() {
+    printf 'STEP %s %s: SKIPPED, %s\n' "$1" "$2" "$3"
 }
 
 st_finish() {
