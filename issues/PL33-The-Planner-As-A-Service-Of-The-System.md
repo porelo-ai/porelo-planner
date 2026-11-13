@@ -66,6 +66,39 @@ Steps, Linux first, since it waits for nothing:
    where none is, as for the ZIP, it keeps its own start. Agreed in the channel and changed in the window's
    repository.
 
+The plan's reading by another model, each point checked in the code where it rests on it, asks the plan to state:
+
+- **Consent and opt-out.** A global enable runs the planner at every account's sign-in, and a user's
+  `systemctl --user disable` does not undo a global enable; only `systemctl --user mask porelo-planner` does. The
+  person's opt-out is that mask, documented, and an upgrade keeps it.
+- **What the package scripts may do.** Only fixed package-owned paths and named service-manager calls:
+  `deb-systemd-helper --user enable|purge` and `deb-systemd-invoke --user restart|stop` on Debian, which act on running
+  user managers through `systemctl --user --machine <uid>@`, and the systemd user macros on the `.rpm`. No script
+  sources a profile, runs a user's Git or credential helper, reads a token, or touches a runtime directory.
+- **Upgrade and removal.** An upgrade restarts the unit in every running user manager, so no planner of the older
+  install serves a newer window; a removal stops it there and removes the global enable while the unit still exists.
+- **No restart loop.** `AddressFile.open` refuses a second planner (`alreadyRuns`); under `Restart=on-failure` that
+  refusal would restart forever. The planner ends a refused start with an exit code of its own, which the unit names
+  in `RestartPreventExitStatus=`, and the unit bounds restarts with `StartLimitIntervalSec=`/`StartLimitBurst=`.
+- **The lock stays.** No cleanup unlinks `planner.lock` or replaces its directory, and the unit sets no
+  `RuntimeDirectory=`, whose cleanup would; `AddressFile.close` releases the lock and leaves the file, as now.
+- **The Git login.** The window imports no environment into the user manager wholesale; only `SSH_AUTH_SOCK` and the
+  display variables a credential helper needs, and never a credential's value.
+- **Windows.** A startup task's switch in the Task Manager turns the start at sign-in on or off; it neither stops nor
+  shows a running planner. Stopping and seeing it need their own way, and "start at sign-in off" is never shown as
+  "stopped".
+
+**Proposed contract with the window, Linux** (a proposal until agreed in the channel):
+
+- The unit is `porelo-planner.service`, a user unit at `/usr/lib/systemd/user/porelo-planner.service`.
+- The window takes the unit as installed when that file exists. Then it never starts a planner of its own: it starts
+  the unit with `systemctl --user start porelo-planner.service`, sees it with
+  `systemctl --user is-active porelo-planner.service` beside the address file, and stops it with
+  `systemctl --user stop porelo-planner.service`. When `/health` names a version other than the installed one, it
+  restarts the unit.
+- Without the file, as from a ZIP or a build of one's own, the window starts the planner itself as today, with
+  `--end-with-input`.
+
 ## Acceptance
 
 - On Linux, after installing the package and signing in again: `systemctl --user status porelo-planner` shows the
@@ -77,7 +110,8 @@ Steps, Linux first, since it waits for nothing:
 - Whether the person's Git login reaches a user service: `SSH_AUTH_SOCK` and a credential helper's display are set in
   a graphical session's environment but not always in the user manager's; measured on the desktops the packages
   target.
-- Whether `AddressFile` removes `planner.json` and its lock on a SIGTERM today, read and measured on the JVM.
+- Whether `AddressFile` removes `planner.json` on a SIGTERM today: read, it does, through the context's close, and
+  `NativeStartIT` already sees the file gone after a stop; the lock file stays by design.
 - Whether an MSIX startup task of a desktop app runs at the next sign-in before the app was launched once, and how a
   person ends it and turns it off, measured on a Windows machine.
 - Whether a user preset or `systemctl --global enable` is the one the `.deb` and `.rpm` both honor, measured on the
