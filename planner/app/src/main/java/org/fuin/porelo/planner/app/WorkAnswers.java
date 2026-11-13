@@ -1,11 +1,23 @@
 package org.fuin.porelo.planner.app;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
+import org.fuin.porelo.planner.app.answers.Finding;
+import org.fuin.porelo.planner.app.answers.IssueReadingRounds;
+import org.fuin.porelo.planner.app.answers.Landing;
+import org.fuin.porelo.planner.app.answers.PlanAssignment;
+import org.fuin.porelo.planner.app.answers.PlanRepositoryWork;
+import org.fuin.porelo.planner.app.answers.PlanWork;
+import org.fuin.porelo.planner.app.answers.PlanWorkIssue;
+import org.fuin.porelo.planner.app.answers.PlanWorkTask;
+import org.fuin.porelo.planner.app.answers.PlanWorker;
+import org.fuin.porelo.planner.app.answers.PlanningStartTask;
+import org.fuin.porelo.planner.app.answers.StoryWorkOrder;
+import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
+import org.fuin.porelo.planner.app.answers.TaskEnded;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -16,87 +28,20 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.jspecify.annotations.Nullable;
 
-/** The work proposal and Start argument records described by the HTTP contract. */
+/**
+ * Builds the work answers {@code openapi/planner.yaml} describes from the core's runs and
+ * proposals; the answer records themselves are generated from the description.
+ */
 public final class WorkAnswers {
 
     private WorkAnswers() {}
 
-    /** The complete proposal as the window reads it directly. */
-    public record Proposal(
-            List<String> modes,
-            List<Repository> repositories,
-            String coordinator,
-            String comment,
-            int readingRounds,
-            List<IssueRounds> issueReadingRounds,
-            String revision,
-            List<String> manual) {}
-
-    /** The unchanged revision and individual tasks the window starts. */
-    public record Order(String revision, List<StartTask> tasks) {}
-
-    /** A proposed repository and the participants whose choices the window echoes. */
-    public record Repository(
-            String repository, List<String> issues, Worker main, List<Assignment> subAgents) {}
-
-    /**
-     * The immutable identity and brief of the main, with its offered agent/model choice, the effort
-     * chosen, null for none, and where the rule's choice came from, which the planner alone says.
-     */
-    public record Worker(
-            String name,
-            String role,
-            String agent,
-            String model,
-            String brief,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
-
-    /**
-     * An assignment's immutable facts and explicit KEEP, CHANGE or DROP choice, with the effort
-     * chosen, null for none, and where the rule's choice came from.
-     */
-    public record Assignment(
-            String id,
-            String issue,
-            String name,
-            String kind,
-            String agent,
-            String model,
-            String workingState,
-            String brief,
-            String choice,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
-
-    /** An issue's proposed reading limit. */
-    public record IssueRounds(String issue, int rounds) {}
-
-    /**
-     * The arguments passed individually to Porelo's Start: a story's task names its repository, a
-     * discussion reads every repository and names the file it hands back instead; a reader names
-     * the Porelo tasks whose work it reads.
-     */
-    public record StartTask(
-            String offer,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String repository,
-            List<String> issues,
-            String role,
-            String agent,
-            String model,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy,
-            String mode,
-            String prompt,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String result,
-            List<String> reads) {}
-
-    static StartTask discussion(final IdeaDiscussion discussion) {
-        return new StartTask(
+    static PlanningStartTask discussion(final IdeaDiscussion discussion) {
+        return new PlanningStartTask(
                 UUID.randomUUID().toString(),
                 null,
                 List.of(),
-                "DISCUSSION",
+                PlanningStartTask.RoleEnum.DISCUSSION,
                 discussion.agent(),
                 discussion.model(),
                 discussion.effort(),
@@ -107,94 +52,34 @@ public final class WorkAnswers {
                 List.of());
     }
 
-    static Proposal proposal(final WorkProposal proposal) {
-        return new Proposal(
+    static StoryWorkProposal proposal(final WorkProposal proposal) {
+        return new StoryWorkProposal(
                 proposal.modes(),
                 proposal.repositories().stream().map(WorkAnswers::repository).toList(),
-                proposal.coordinator(),
+                StoryWorkProposal.CoordinatorEnum.fromValue(proposal.coordinator()),
                 proposal.comment(),
                 proposal.readingRounds(),
                 proposal.issueReadingRounds().stream()
-                        .map(limit -> new IssueRounds(limit.issue(), limit.rounds()))
+                        .map(limit -> new IssueReadingRounds(limit.issue(), limit.rounds()))
                         .toList(),
                 proposal.revision().value(),
                 proposal.manual());
     }
 
-    /** One story's run, including its known reading state. */
-    public record PlanWork(
-            String run,
-            List<PlanWorkTask> tasks,
-            @Nullable String coordinator,
-            String since,
-            boolean atWork,
-            List<Repository> repositories,
-            String comment,
-            int readingRounds,
-            List<IssueRounds> issueReadingRounds,
-            List<PlanWorkIssue> issues) {}
-
-    /** A task actually bound by a STARTED report. */
-    public record PlanWorkTask(
-            String task,
-            String containerId,
-            @Nullable String machine,
-            String repository,
-            List<String> issues,
-            String state,
-            String done,
-            String mode,
-            String agent,
-            String model,
-            @Nullable String effort,
-            String role,
-            String since,
-            boolean atWork,
-            WorkRequests.@Nullable TaskEnded ended) {}
-
-    /** A known issue's latest readings and reason for attention. */
-    public record PlanWorkIssue(
-            String issue,
-            String reason,
-            int rounds,
-            int roundsMost,
-            boolean atWork,
-            boolean needsYou,
-            boolean readingStopped,
-            List<Finding> findings) {}
-
-    /** A parsed, display-only finding. */
-    public record Finding(
-            int number,
-            String severity,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String file,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Integer line,
-            String text) {}
-
-    /** The read and stop envelope, including null when no run is known. */
-    public record StoryWorkReply(@Nullable PlanWork work) {}
-
-    /** An accepted lifecycle report and any follow-up Start arguments. */
-    public record TaskEventReply(String revision, PlanWork work, List<StartTask> tasks) {}
-
-    /** A reading choice and the issue after its save. */
-    public record ReadingReply(
-            Answers.Issue issue, PlanWork work, String revision, List<StartTask> tasks) {}
-
-    static Order order(final WorkRun.Order order) {
-        return new Order(order.revision(), starts(order.tasks()));
+    static StoryWorkOrder order(final WorkRun.Order order) {
+        return new StoryWorkOrder(order.revision(), starts(order.tasks()));
     }
 
-    static List<StartTask> starts(final List<WorkRun.Offered> tasks) {
+    static List<PlanningStartTask> starts(final List<WorkRun.Offered> tasks) {
         return tasks.stream()
                 .map(
                         offer -> {
                             final WorkOrder.Task task = offer.task();
-                            return new StartTask(
+                            return new PlanningStartTask(
                                     offer.offer(),
                                     task.repository(),
                                     task.issues(),
-                                    task.role(),
+                                    PlanningStartTask.RoleEnum.fromValue(task.role()),
                                     task.agent(),
                                     task.model(),
                                     task.effort(),
@@ -239,7 +124,8 @@ public final class WorkAnswers {
                                                 // The effort its order said it uses, never the
                                                 // offer's.
                                                 o.arguments().used(),
-                                                o.arguments().role(),
+                                                PlanWorkTask.RoleEnum.fromValue(
+                                                        o.arguments().role()),
                                                 String.valueOf(o.since()),
                                                 o.status().equals("STARTED"),
                                                 ended(o.ended())))
@@ -248,7 +134,7 @@ public final class WorkAnswers {
                 run.id(),
                 tasks,
                 tasks.stream()
-                        .filter(t -> t.role().equals("MAIN") && t.atWork())
+                        .filter(t -> t.role() == PlanWorkTask.RoleEnum.MAIN && t.atWork())
                         .map(PlanWorkTask::task)
                         .findFirst()
                         .orElse(null),
@@ -258,7 +144,7 @@ public final class WorkAnswers {
                 run.comment(),
                 run.readingRounds(),
                 run.issueReadingRounds().stream()
-                        .map(l -> new IssueRounds(l.issue(), l.rounds()))
+                        .map(l -> new IssueReadingRounds(l.issue(), l.rounds()))
                         .toList(),
                 run.issues().entrySet().stream()
                         .sorted(java.util.Map.Entry.comparingByKey())
@@ -269,7 +155,7 @@ public final class WorkAnswers {
                                             person ? entry.getValue().manual() : entry.getValue();
                                     return new PlanWorkIssue(
                                             entry.getKey(),
-                                            p.reason(),
+                                            PlanWorkIssue.ReasonEnum.fromValue(p.reason()),
                                             p.rounds().rounds(),
                                             p.rounds().roundsMost(),
                                             atWork(run, entry.getKey()),
@@ -298,7 +184,7 @@ public final class WorkAnswers {
                         f ->
                                 new Finding(
                                         f.number(),
-                                        f.severity().name(),
+                                        Finding.SeverityEnum.fromValue(f.severity().name()),
                                         f.file(),
                                         f.line(),
                                         f.text()))
@@ -341,15 +227,14 @@ public final class WorkAnswers {
                         .anyMatch(s -> !snapshot.runs().containsKey(s.id()));
     }
 
-    static Answers.Issue issue(
+    static org.fuin.porelo.planner.app.answers.Issue issue(
             final Board board, final Issue issue, final WorkRun.Snapshot snapshot) {
         // A person's issue needs no agent's choice, whatever a run recorded before the switch.
         final boolean manual = issue.worker() == org.fuin.porelo.planner.store.Worker.MANUAL;
         final NextStep.Progress progress = progress(snapshot, issue.id());
         // Work this planner did not start is only shown; it asks the person for nothing here.
         final boolean raised = !manual && progress != null && progress.needsYou();
-        final var link = issue.link();
-        return new Answers.Issue(
+        return new org.fuin.porelo.planner.app.answers.Issue(
                 issue.id(),
                 issue.repository(),
                 issue.title(),
@@ -357,39 +242,47 @@ public final class WorkAnswers {
                 issue.size(),
                 issue.blockedBy(),
                 issue.parent(),
-                link == null ? null : link.toString(),
-                issue.worker().name(),
+                issue.link(),
+                org.fuin.porelo.planner.app.answers.Worker.fromValue(issue.worker().name()),
                 progress == null ? null : progress.rounds().rounds(),
                 progress == null ? null : progress.rounds().roundsMost(),
                 atWork(snapshot, issue.id()),
                 raised,
                 !manual && progress != null && progress.rounds().stopped(),
                 progress == null && lost(board, snapshot, issue),
-                raised && progress != null ? progress.reason() : "NONE",
+                org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
+                        raised && progress != null ? progress.reason() : "NONE"),
                 progress == null ? null : findings(progress.findings()));
     }
 
-    private static WorkRequests.@Nullable TaskEnded ended(final WorkRun.@Nullable Ended ended) {
-        return ended == null
-                ? null
-                : new WorkRequests.TaskEnded(
-                        ended.at(),
-                        ended.finished(),
-                        ended.why(),
-                        ended.answer(),
-                        ended.unpushed(),
-                        ended.landed().isEmpty() ? null : ended.landed(),
-                        ended.outcome());
+    private static @Nullable TaskEnded ended(final WorkRun.@Nullable Ended ended) {
+        if (ended == null) {
+            return null;
+        }
+        final WorkEnds.Declared outcome = ended.outcome();
+        return new TaskEnded(
+                ended.at(),
+                ended.finished(),
+                ended.why(),
+                ended.answer(),
+                ended.unpushed(),
+                // Left out while the work still waits at the gate.
+                ended.landed().isEmpty()
+                        ? null
+                        : ended.landed().stream()
+                                .map(l -> new Landing(l.branch(), l.ref(), l.remote(), l.commit()))
+                                .toList(),
+                outcome == null ? null : TaskEnded.OutcomeEnum.fromValue(outcome.name()));
     }
 
-    private static Repository repository(final WorkProposal.Repository repository) {
+    private static PlanRepositoryWork repository(final WorkProposal.Repository repository) {
         final WorkProposal.Main main = repository.main();
-        return new Repository(
+        return new PlanRepositoryWork(
                 repository.repository(),
                 repository.issues(),
-                new Worker(
+                new PlanWorker(
                         main.name(),
-                        main.role(),
+                        PlanWorker.RoleEnum.fromValue(main.role()),
                         main.agent(),
                         main.model(),
                         main.brief(),
@@ -398,7 +291,7 @@ public final class WorkAnswers {
                 repository.subAgents().stream()
                         .map(
                                 sub ->
-                                        new Assignment(
+                                        new PlanAssignment(
                                                 sub.id(),
                                                 sub.issue(),
                                                 sub.name(),
@@ -407,7 +300,7 @@ public final class WorkAnswers {
                                                 sub.model(),
                                                 sub.workingState(),
                                                 sub.brief(),
-                                                sub.choice(),
+                                                PlanAssignment.ChoiceEnum.fromValue(sub.choice()),
                                                 sub.effort(),
                                                 said(sub.basis())))
                         .toList());

@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.app;
 
+import org.fuin.porelo.planner.app.answers.Level;
 import org.jspecify.annotations.Nullable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,7 +29,7 @@ public class LogLevelController {
      */
     @GetMapping("/log/level")
     public Level get() {
-        return new Level(level.level());
+        return new Level(Level.LevelEnum.fromValue(level.level()));
     }
 
     /**
@@ -38,14 +39,15 @@ public class LogLevelController {
      * @return the level now in force
      */
     @PutMapping("/log/level")
-    public Level put(@RequestBody final Level chosen) {
-        return new Level(level.set(chosen.level()));
+    public Level put(@RequestBody final Chosen chosen) {
+        return new Level(Level.LevelEnum.fromValue(level.set(chosen.level())));
     }
 
     /**
-     * A level of the log.
+     * The level the window sends, read by hand so a level of another name is refused as an
+     * InvalidLevel, never while it is read.
      *
      * @param level one of ERROR, WARN, INFO and DEBUG
      */
-    public record Level(@Nullable String level) {}
+    public record Chosen(@Nullable String level) {}
 }

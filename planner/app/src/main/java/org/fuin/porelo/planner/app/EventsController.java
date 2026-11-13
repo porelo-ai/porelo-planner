@@ -3,6 +3,9 @@ package org.fuin.porelo.planner.app;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
+import org.fuin.porelo.planner.app.answers.Board;
+import org.fuin.porelo.planner.app.answers.PlanWork;
+import org.fuin.porelo.planner.app.answers.Refreshed;
 import org.fuin.porelo.planner.core.Changes;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.slf4j.Logger;
@@ -22,7 +25,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @RestController
 // The board goes out through SseEmitter, so no return type tells the native image of it.
-@RegisterReflectionForBinding({Answers.Board.class, WorkAnswers.PlanWork.class})
+@RegisterReflectionForBinding({Board.class, PlanWork.class})
 public class EventsController {
 
     private static final Logger LOG = LoggerFactory.getLogger(EventsController.class);
@@ -70,8 +73,8 @@ public class EventsController {
      * @return the revision after the fetch
      */
     @PostMapping("/projects/{project}/refresh")
-    public Answers.Refreshed refresh(@PathVariable("project") final String project) {
-        return new Answers.Refreshed(changes.refresh(BoardController.name(project)));
+    public Refreshed refresh(@PathVariable("project") final String project) {
+        return new Refreshed(changes.refresh(BoardController.name(project)));
     }
 
     private void send(final SseEmitter emitter, final Changes.Subscription subscription) {

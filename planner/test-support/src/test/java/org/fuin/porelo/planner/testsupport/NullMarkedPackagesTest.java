@@ -46,4 +46,19 @@ class NullMarkedPackagesTest {
                     .containsPattern("(?m)^@(?:org\\.jspecify\\.annotations\\.)?NullMarked\\b");
         }
     }
+
+    @Test
+    void thePackageOfTheGeneratedAnswerRecordsIsNullMarked() throws Exception {
+        // An unmarked generated package makes NullAway check nothing in the answer records.
+        final Path info =
+                PLANNER.resolve(
+                        "app/target/generated-sources/openapi/src/main/java/org/fuin/porelo/planner"
+                                + "/app/answers/package-info.java");
+        assertThat(info)
+                .as("the answer records' package, generated before this module's tests run")
+                .exists();
+        assertThat(Files.readString(info))
+                .as("the generated answer records are checked by NullAway")
+                .containsPattern("(?m)^@(?:org\\.jspecify\\.annotations\\.)?NullMarked\\b");
+    }
 }

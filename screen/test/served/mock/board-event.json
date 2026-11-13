@@ -1,5 +1,6 @@
 {
   "revision" : "mock@1",
+  "repositories" : [ "porelo-project", "porelo-forge-clients", "porelo-ai.github.io", "porelo", "porelo-host", "porelo-frontend", "porelo-message-matrix", "porelo-intellij", "porelo-buildtools", "porelo-pi", "porelo-omp", "porelo-claude-code", "porelo-message-sluice", "porelo-adapters" ],
   "states" : [ {
     "name" : "Idea",
     "kind" : "WAITING"
@@ -139,7 +140,6 @@
     }
   } ],
   "faults" : [ ],
-  "repositories" : [ "porelo-project", "porelo-forge-clients", "porelo-ai.github.io", "porelo", "porelo-host", "porelo-frontend", "porelo-message-matrix", "porelo-intellij", "porelo-buildtools", "porelo-pi", "porelo-omp", "porelo-claude-code", "porelo-message-sluice", "porelo-adapters" ],
   "stories" : [ {
     "id" : "ST294",
     "title" : "Plan the stories on a board in the window",

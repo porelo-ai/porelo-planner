@@ -254,12 +254,12 @@ class BoardReadsTest {
     @Test
     void theStreamedBoardNamesTheMisfitsOfAGivenState() {
         // Harm: a window following the stream losing the mark the board's read showed.
-        final Answers.Board streamed =
+        final org.fuin.porelo.planner.app.answers.Board streamed =
                 BoardController.boardOf(
                         board(), new WorkRun.Snapshot(0, Map.of()), BoardReadsTest::storyState);
         assertThat(streamed.stories())
                 .as("ST1 given Review over AB01 in Backlog; ST2 by its issues")
-                .extracting(Answers.Story::misfits)
+                .extracting(org.fuin.porelo.planner.app.answers.Story::misfits)
                 .containsExactly(List.of("AB01"), List.of());
     }
 

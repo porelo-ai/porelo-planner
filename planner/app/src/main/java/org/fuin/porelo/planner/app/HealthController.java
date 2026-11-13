@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.app;
 
+import org.fuin.porelo.planner.app.answers.Health;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -42,15 +43,6 @@ public class HealthController {
         }
     }
 
-    /**
-     * The health answer.
-     *
-     * @param status always {@code UP}
-     * @param version the planner's package version
-     * @param commit the commit it was built from, or {@code null} for a build without a checkout
-     */
-    public record Health(String status, String version, @Nullable String commit) {}
-
     private final Health health;
 
     /**
@@ -59,7 +51,7 @@ public class HealthController {
      * @param build the build the planner runs
      */
     public HealthController(final PlannerBuild build) {
-        this.health = new Health("UP", build.version(), build.commit());
+        this.health = new Health(Health.StatusEnum.UP, build.version(), build.commit());
     }
 
     /**

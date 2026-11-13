@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import org.fuin.porelo.planner.app.answers.ReadingReply;
+import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.app.mock.MockStore;
 import org.fuin.porelo.planner.store.git.CloneUrl;
@@ -124,8 +126,8 @@ public class StoreConfiguration {
     @Bean(destroyMethod = "close")
     @RegisterReflectionForBinding({
         WorkRecord.Document.class,
-        WorkAnswers.TaskEventReply.class,
-        WorkAnswers.ReadingReply.class
+        TaskEventReply.class,
+        ReadingReply.class
     })
     public WorkRecord workRecord(final ObjectProvider<MockMode> mode) {
         return new WorkRecord(System.getenv(), mode.getIfAvailable() != null);

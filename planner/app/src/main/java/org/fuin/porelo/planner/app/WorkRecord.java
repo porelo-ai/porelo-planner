@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+import org.fuin.porelo.planner.app.answers.ReadingReply;
+import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -485,7 +487,7 @@ public final class WorkRecord implements AutoCloseable {
                     // A person's issue answers within the same reserve, so the bound needs no
                     // board.
                     final var answer =
-                            new WorkAnswers.TaskEventReply(
+                            new TaskEventReply(
                                     "",
                                     WorkAnswers.knownWork(run, issue -> false),
                                     WorkAnswers.starts(offers));
@@ -516,7 +518,7 @@ public final class WorkRecord implements AutoCloseable {
                                     .map(o -> new WorkRun.Offered(o.id(), o.arguments()))
                                     .toList();
                     final var answer =
-                            new WorkAnswers.ReadingReply(
+                            new ReadingReply(
                                     WorkAnswers.issue(
                                             board,
                                             found,

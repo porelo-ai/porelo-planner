@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.fuin.porelo.planner.app.answers.Proof;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,13 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 public class ProofController {
-
-    /**
-     * The proof's answer.
-     *
-     * @param proof The HMAC in base64url without padding.
-     */
-    public record Proof(String proof) {}
 
     private final AccessToken token;
 

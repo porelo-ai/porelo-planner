@@ -58,8 +58,7 @@ public final class WorkRequests {
             String to,
             String mode,
             String revision,
-            @JsonInclude(JsonInclude.Include.NON_NULL)
-                    @Nullable List<WorkAnswers.Repository> repositories,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<Repository> repositories,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String comment,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Number readingRounds,
             @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -74,6 +73,66 @@ public final class WorkRequests {
      * @param run the run, or null for whichever stands
      */
     public record StopRequest(@JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String run) {}
+
+    /**
+     * A repository's work as the window sends it back, read by hand so an unknown role or choice is
+     * refused by the core after the revision check.
+     *
+     * @param repository the repository
+     * @param issues the proposal's issues in order
+     * @param main the main's identity, brief and choice
+     * @param subAgents each helper's facts and choice
+     */
+    public record Repository(
+            String repository, List<String> issues, Main main, List<Assignment> subAgents) {}
+
+    /**
+     * The main as the window sends it back, with the effort chosen, null for none.
+     *
+     * @param name its name
+     * @param role its role
+     * @param agent its agent
+     * @param model its model
+     * @param brief its brief
+     * @param effort the effort chosen, or null
+     * @param chosenBy where the rule's choice came from, never taken from the window
+     */
+    public record Main(
+            String name,
+            String role,
+            String agent,
+            String model,
+            String brief,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
+
+    /**
+     * A helper as the window sends it back, with its KEEP, CHANGE or DROP choice.
+     *
+     * @param id its id
+     * @param issue its issue
+     * @param name its name
+     * @param kind its role
+     * @param agent its agent
+     * @param model its model
+     * @param workingState its working state
+     * @param brief its brief
+     * @param choice the choice
+     * @param effort the effort chosen, or null
+     * @param chosenBy where the rule's choice came from, never taken from the window
+     */
+    public record Assignment(
+            String id,
+            String issue,
+            String name,
+            String kind,
+            String agent,
+            String model,
+            String workingState,
+            String brief,
+            String choice,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
 
     /** The pattern of a run's id, as the planner draws it. */
     private static final java.util.regex.Pattern RUN =
@@ -579,7 +638,7 @@ public final class WorkRequests {
                         "issues",
                         "replaces",
                         "passOver"));
-        final List<WorkAnswers.Repository> repositories;
+        final List<Repository> repositories;
         if (body.has("repositories")) {
             repositories = new ArrayList<>();
             for (final JsonNode repository : array(body, "repositories")) {
@@ -720,7 +779,7 @@ public final class WorkRequests {
     private static final int MOST_CHOSEN = 1000;
 
     static WorkOrder.Decision decision(final Request request) {
-        final List<WorkAnswers.Repository> repositories = request.repositories();
+        final List<Repository> repositories = request.repositories();
         final List<IssueLimit> overrides = request.issueReadingRounds();
         return new WorkOrder.Decision(
                 request.mode(),
@@ -738,7 +797,7 @@ public final class WorkRequests {
                 request.issues());
     }
 
-    private static WorkAnswers.Repository repository(final JsonNode node) {
+    private static Repository repository(final JsonNode node) {
         fields(node, Set.of("repository", "issues", "main", "subAgents"));
         final List<String> issues = new ArrayList<>();
         for (final JsonNode issue : array(node, "issues")) {
@@ -749,8 +808,8 @@ public final class WorkRequests {
         }
         final JsonNode main = node.path("main");
         fields(main, Set.of("name", "role", "agent", "model", "brief", "effort", "chosenBy"));
-        final WorkAnswers.Worker worker =
-                new WorkAnswers.Worker(
+        final Main worker =
+                new Main(
                         text(main, "name"),
                         text(main, "role"),
                         text(main, "agent"),
@@ -758,7 +817,7 @@ public final class WorkRequests {
                         text(main, "brief"),
                         effort(main),
                         chosenBy(main));
-        final List<WorkAnswers.Assignment> helpers = new ArrayList<>();
+        final List<Assignment> helpers = new ArrayList<>();
         for (final JsonNode sub : array(node, "subAgents")) {
             fields(
                     sub,
@@ -775,7 +834,7 @@ public final class WorkRequests {
                             "effort",
                             "chosenBy"));
             helpers.add(
-                    new WorkAnswers.Assignment(
+                    new Assignment(
                             text(sub, "id"),
                             text(sub, "issue"),
                             text(sub, "name"),
@@ -788,11 +847,11 @@ public final class WorkRequests {
                             effort(sub),
                             chosenBy(sub)));
         }
-        return new WorkAnswers.Repository(text(node, "repository"), issues, worker, helpers);
+        return new Repository(text(node, "repository"), issues, worker, helpers);
     }
 
-    private static WorkProposal.Repository coreRepository(final WorkAnswers.Repository repository) {
-        final WorkAnswers.Worker main = repository.main();
+    private static WorkProposal.Repository coreRepository(final Repository repository) {
+        final Main main = repository.main();
         return new WorkProposal.Repository(
                 repository.repository(),
                 repository.issues(),

@@ -1,0 +1,2 @@
+title: The planner's answer records are generated from its OpenAPI description when it is built, so a controller that no longer fits the description fails to compile.
+type: changed

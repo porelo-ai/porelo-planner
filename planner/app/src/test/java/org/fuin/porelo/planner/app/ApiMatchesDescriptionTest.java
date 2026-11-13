@@ -11,6 +11,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -18,8 +19,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import org.fuin.porelo.planner.app.mock.MockController;
-import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -39,63 +40,101 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** The window builds against openapi/planner.yaml; the planner must serve exactly what it says. */
 class ApiMatchesDescriptionTest {
 
+    /** The package the answer records are generated into from the description. */
+    private static final String GENERATED = "org.fuin.porelo.planner.app.answers";
+
+    /** Each schema's record: an answer's generated one, a body's read by hand. */
     private static final Map<String, Class<?>> SCHEMAS =
             Map.ofEntries(
-                    Map.entry("Health", HealthController.Health.class),
-                    Map.entry("Proof", ProofController.Proof.class),
+                    Map.entry("Health", org.fuin.porelo.planner.app.answers.Health.class),
+                    Map.entry("Proof", org.fuin.porelo.planner.app.answers.Proof.class),
+                    Map.entry("Workflow", org.fuin.porelo.planner.app.answers.Workflow.class),
+                    Map.entry("State", org.fuin.porelo.planner.app.answers.State.class),
+                    Map.entry("Phase", org.fuin.porelo.planner.app.answers.Phase.class),
+                    Map.entry("WorkRule", org.fuin.porelo.planner.app.answers.WorkRule.class),
+                    Map.entry("StoryList", org.fuin.porelo.planner.app.answers.StoryList.class),
+                    Map.entry("StoryReply", org.fuin.porelo.planner.app.answers.StoryReply.class),
+                    Map.entry("Story", org.fuin.porelo.planner.app.answers.Story.class),
+                    Map.entry("StoryDetail", org.fuin.porelo.planner.app.answers.StoryDetail.class),
+                    Map.entry("IssueList", org.fuin.porelo.planner.app.answers.IssueList.class),
+                    Map.entry("IssueReply", org.fuin.porelo.planner.app.answers.IssueReply.class),
+                    Map.entry("Issue", org.fuin.porelo.planner.app.answers.Issue.class),
+                    Map.entry("IssueDetail", org.fuin.porelo.planner.app.answers.IssueDetail.class),
+                    Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
+                    Map.entry("Refreshed", org.fuin.porelo.planner.app.answers.Refreshed.class),
+                    Map.entry("Moved", org.fuin.porelo.planner.app.answers.Moved.class),
+                    Map.entry("StoppedRun", org.fuin.porelo.planner.app.answers.StoppedRun.class),
+                    Map.entry("StoppedTask", org.fuin.porelo.planner.app.answers.StoppedTask.class),
+                    Map.entry("MovePreview", org.fuin.porelo.planner.app.answers.MovePreview.class),
+                    Map.entry("MovedIssue", org.fuin.porelo.planner.app.answers.MovedIssue.class),
+                    Map.entry("MovedStory", org.fuin.porelo.planner.app.answers.MovedStory.class),
+                    Map.entry("MoveWarning", org.fuin.porelo.planner.app.answers.MoveWarning.class),
+                    Map.entry("IssueAdded", org.fuin.porelo.planner.app.answers.IssueAdded.class),
+                    Map.entry("IdeaAdded", org.fuin.porelo.planner.app.answers.IdeaAdded.class),
+                    Map.entry("WorkerSaved", org.fuin.porelo.planner.app.answers.WorkerSaved.class),
+                    Map.entry(
+                            "PrioritySaved",
+                            org.fuin.porelo.planner.app.answers.PrioritySaved.class),
+                    Map.entry(
+                            "StoryWorkProposal",
+                            org.fuin.porelo.planner.app.answers.StoryWorkProposal.class),
+                    Map.entry(
+                            "StoryWorkOrder",
+                            org.fuin.porelo.planner.app.answers.StoryWorkOrder.class),
+                    Map.entry(
+                            "PlanRepositoryWork",
+                            org.fuin.porelo.planner.app.answers.PlanRepositoryWork.class),
+                    Map.entry("PlanWorker", org.fuin.porelo.planner.app.answers.PlanWorker.class),
+                    Map.entry(
+                            "PlanAssignment",
+                            org.fuin.porelo.planner.app.answers.PlanAssignment.class),
+                    Map.entry(
+                            "IssueReadingRounds",
+                            org.fuin.porelo.planner.app.answers.IssueReadingRounds.class),
+                    Map.entry(
+                            "PlanningStartTask",
+                            org.fuin.porelo.planner.app.answers.PlanningStartTask.class),
+                    Map.entry("TaskEnded", org.fuin.porelo.planner.app.answers.TaskEnded.class),
+                    Map.entry("Landing", org.fuin.porelo.planner.app.answers.Landing.class),
+                    Map.entry(
+                            "StoryWorkReply",
+                            org.fuin.porelo.planner.app.answers.StoryWorkReply.class),
+                    Map.entry(
+                            "TaskEventReply",
+                            org.fuin.porelo.planner.app.answers.TaskEventReply.class),
+                    Map.entry(
+                            "ReadingReply", org.fuin.porelo.planner.app.answers.ReadingReply.class),
+                    Map.entry("PlanWork", org.fuin.porelo.planner.app.answers.PlanWork.class),
+                    Map.entry(
+                            "PlanWorkTask", org.fuin.porelo.planner.app.answers.PlanWorkTask.class),
+                    Map.entry(
+                            "PlanWorkIssue",
+                            org.fuin.porelo.planner.app.answers.PlanWorkIssue.class),
+                    Map.entry("Finding", org.fuin.porelo.planner.app.answers.Finding.class),
                     Map.entry("ProjectSource", BoardController.ProjectSource.class),
-                    Map.entry("Workflow", Answers.Workflow.class),
-                    Map.entry("State", Answers.State.class),
-                    Map.entry("Phase", Answers.Phase.class),
-                    Map.entry("WorkRule", Answers.WorkRule.class),
-                    Map.entry("StoryList", Answers.StoryList.class),
-                    Map.entry("StoryReply", Answers.StoryReply.class),
-                    Map.entry("Story", Answers.Story.class),
-                    Map.entry("StoryDetail", Answers.StoryDetail.class),
-                    Map.entry("IssueList", Answers.IssueList.class),
-                    Map.entry("IssueReply", Answers.IssueReply.class),
-                    Map.entry("Issue", Answers.Issue.class),
-                    Map.entry("IssueDetail", Answers.IssueDetail.class),
-                    Map.entry("Board", Answers.Board.class),
-                    Map.entry("Refreshed", Answers.Refreshed.class),
-                    Map.entry("Moved", Answers.Moved.class),
-                    Map.entry("StoppedRun", Answers.StoppedRun.class),
-                    Map.entry("StoppedTask", Answers.StoppedTask.class),
-                    Map.entry("MovePreview", Answers.MovePreview.class),
-                    Map.entry("MovedIssue", MovePreview.MovedIssue.class),
-                    Map.entry("MovedStory", MovePreview.MovedStory.class),
-                    Map.entry("MoveWarning", MovePreview.Warning.class),
-                    Map.entry("IssueAdded", Answers.IssueAdded.class),
+                    Map.entry("Level", org.fuin.porelo.planner.app.answers.Level.class),
                     Map.entry("IdeaRequest", WorkRequests.IdeaRequest.class),
                     Map.entry("Idea", NewIdeas.Idea.class),
                     Map.entry("IdeaStory", NewIdeas.Story.class),
-                    Map.entry("IdeaAdded", Answers.IdeaAdded.class),
                     Map.entry("WorkerRequest", WorkRequests.WorkerRequest.class),
-                    Map.entry("WorkerSaved", Answers.WorkerSaved.class),
                     Map.entry("PriorityRequest", WorkRequests.PriorityRequest.class),
-                    Map.entry("PrioritySaved", Answers.PrioritySaved.class),
                     Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
                     Map.entry("StoryWorkRequest", WorkRequests.Request.class),
                     Map.entry("PassOver", WorkRun.PassOver.class),
                     Map.entry("StopRequest", WorkRequests.StopRequest.class),
-                    Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),
-                    Map.entry("StoryWorkOrder", WorkAnswers.Order.class),
-                    Map.entry("PlanRepositoryWork", WorkAnswers.Repository.class),
-                    Map.entry("PlanWorker", WorkAnswers.Worker.class),
-                    Map.entry("PlanAssignment", WorkAnswers.Assignment.class),
-                    Map.entry("IssueReadingRounds", WorkAnswers.IssueRounds.class),
-                    Map.entry("PlanningStartTask", WorkAnswers.StartTask.class),
                     Map.entry("TaskEventRequest", WorkRequests.TaskEventRequest.class),
+                    Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class));
+
+    /** The bodies' own records of schemas an answer carries too, each read by hand. */
+    private static final Map<String, Class<?>> READ_BY_HAND =
+            Map.ofEntries(
+                    Map.entry("PlanRepositoryWork", WorkRequests.Repository.class),
+                    Map.entry("PlanWorker", WorkRequests.Main.class),
+                    Map.entry("PlanAssignment", WorkRequests.Assignment.class),
+                    Map.entry("IssueReadingRounds", WorkRequests.IssueLimit.class),
                     Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
                     Map.entry("Landing", NextStep.Landing.class),
-                    Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class),
-                    Map.entry("StoryWorkReply", WorkAnswers.StoryWorkReply.class),
-                    Map.entry("TaskEventReply", WorkAnswers.TaskEventReply.class),
-                    Map.entry("ReadingReply", WorkAnswers.ReadingReply.class),
-                    Map.entry("PlanWork", WorkAnswers.PlanWork.class),
-                    Map.entry("PlanWorkTask", WorkAnswers.PlanWorkTask.class),
-                    Map.entry("PlanWorkIssue", WorkAnswers.PlanWorkIssue.class),
-                    Map.entry("Finding", WorkAnswers.Finding.class));
+                    Map.entry("Level", LogLevelController.Chosen.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
@@ -185,7 +224,9 @@ class ApiMatchesDescriptionTest {
     void everyAnswerRecordHasExactlyTheFieldsOfItsSchema() {
         // Missing or unexpectedly required fields can silently change the window's decisions.
         final JsonNode schemas = description.get("components").get("schemas");
-        for (final Map.Entry<String, Class<?>> entry : SCHEMAS.entrySet()) {
+        final List<Map.Entry<String, Class<?>>> records = new ArrayList<>(SCHEMAS.entrySet());
+        records.addAll(READ_BY_HAND.entrySet());
+        for (final Map.Entry<String, Class<?>> entry : records) {
             final JsonNode schema = schemas.get(entry.getKey());
             assertThat(schema).as("schema %s in the description", entry.getKey()).isNotNull();
             final Set<String> properties = new TreeSet<>();
@@ -214,6 +255,77 @@ class ApiMatchesDescriptionTest {
                         .isEqualTo(required);
             }
         }
+    }
+
+    @Test
+    void everySchemaAnOperationAnswersIsAGeneratedRecord() {
+        // A hand-written answer record slipping back in drifts from the description unseen.
+        final JsonNode schemas = description.get("components").get("schemas");
+        final Set<String> answered = answered(description);
+        assertThat(answered)
+                .as("the schemas the operations answer, nested ones too")
+                .contains("Health", "Board", "Issue", "PlanWork", "TaskEnded", "Landing");
+        for (final String schema : answered) {
+            if (!schemas.path(schema).has("properties") && !schemas.path(schema).has("allOf")) {
+                continue;
+            }
+            final Class<?> record = SCHEMAS.get(schema);
+            assertThat(record == null ? "none" : record.getPackageName())
+                    .as("the package of the record answering %s", schema)
+                    .isEqualTo(GENERATED);
+        }
+    }
+
+    /**
+     * The schemas the operations of a description answer with success, nested ones too.
+     *
+     * @param description the description
+     * @return the schemas' names
+     */
+    static Set<String> answered(final JsonNode description) {
+        final JsonNode schemas = description.get("components").get("schemas");
+        final Set<String> answered = new TreeSet<>();
+        description
+                .get("paths")
+                .forEach(
+                        path ->
+                                path.forEach(
+                                        operation ->
+                                                operation
+                                                        .path("responses")
+                                                        .properties()
+                                                        .forEach(
+                                                                response -> {
+                                                                    if (response.getKey()
+                                                                            .startsWith("2")) {
+                                                                        reached(
+                                                                                schemas,
+                                                                                response.getValue(),
+                                                                                answered);
+                                                                    }
+                                                                })));
+        // The events stream names its data, a Board, in words only.
+        reached(
+                schemas,
+                new ObjectMapper().createObjectNode().put("$ref", "#/components/schemas/Board"),
+                answered);
+        return answered;
+    }
+
+    /** Collects every schema a part of the description refers to, however deep. */
+    private static void reached(
+            final JsonNode schemas, final JsonNode part, final Set<String> found) {
+        if (part.isObject() && part.has("$ref")) {
+            final String ref = part.get("$ref").asText();
+            if (ref.startsWith("#/components/schemas/")) {
+                final String name = ref.replace("#/components/schemas/", "");
+                if (found.add(name)) {
+                    reached(schemas, schemas.get(name), found);
+                }
+            }
+            return;
+        }
+        part.forEach(child -> reached(schemas, child, found));
     }
 
     @Test
@@ -276,7 +388,7 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
-    void everyNestedWorkFieldMatchesItsWireType() {
+    void everyNestedWorkFieldReadByHandMatchesItsWireType() {
         // Flat field checks alone miss an array or nested record becoming the wrong wire shape.
         final JsonNode schemas = description.get("components").get("schemas");
         final Set<Class<?>> workTypes =
@@ -285,28 +397,20 @@ class ApiMatchesDescriptionTest {
                         WorkRequests.Request.class,
                         WorkRun.PassOver.class,
                         WorkRequests.StopRequest.class,
-                        WorkAnswers.Proposal.class,
-                        WorkAnswers.Order.class,
-                        WorkAnswers.Repository.class,
-                        WorkAnswers.Worker.class,
-                        WorkAnswers.Assignment.class,
-                        WorkAnswers.IssueRounds.class,
-                        WorkAnswers.StartTask.class,
+                        WorkRequests.Repository.class,
+                        WorkRequests.Main.class,
+                        WorkRequests.Assignment.class,
+                        WorkRequests.IssueLimit.class,
                         WorkRequests.TaskEventRequest.class,
                         WorkRequests.TaskEnded.class,
                         NextStep.Landing.class,
-                        WorkRequests.ReadingRequest.class,
-                        WorkAnswers.StoryWorkReply.class,
-                        WorkAnswers.TaskEventReply.class,
-                        WorkAnswers.ReadingReply.class,
-                        WorkAnswers.PlanWork.class,
-                        WorkAnswers.PlanWorkTask.class,
-                        WorkAnswers.PlanWorkIssue.class,
-                        WorkAnswers.Finding.class);
+                        WorkRequests.ReadingRequest.class);
+        final Set<Class<?>> described = new HashSet<>(SCHEMAS.values());
+        described.addAll(READ_BY_HAND.values());
         assertThat(workTypes)
-                .as("every work request, response and nested wire record participates")
-                .hasSize(22)
-                .isSubsetOf(SCHEMAS.values());
+                .as("every work body and nested record read by hand participates")
+                .hasSize(12)
+                .isSubsetOf(described);
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
             for (final RecordComponent component : type.getRecordComponents()) {
@@ -316,17 +420,6 @@ class ApiMatchesDescriptionTest {
                         component.getGenericType(),
                         type.getSimpleName() + "." + component.getName());
             }
-        }
-        assertThat(names(WorkRequests.IssueLimit.class.getRecordComponents()))
-                .as("the input issue-limit record shares the answer's complete field set")
-                .isEqualTo(names(WorkAnswers.IssueRounds.class.getRecordComponents()));
-        for (final RecordComponent component :
-                WorkRequests.IssueLimit.class.getRecordComponents()) {
-            wireType(
-                    schemas,
-                    schemas.get("IssueReadingRounds").get("properties").get(component.getName()),
-                    component.getGenericType(),
-                    "IssueLimit." + component.getName());
         }
     }
 
@@ -403,11 +496,7 @@ class ApiMatchesDescriptionTest {
         if (raw.isRecord()) {
             assertThat(field.path("$ref").asText())
                     .as("%s refers to its complete nested schema", name)
-                    .isEqualTo(
-                            "#/components/schemas/"
-                                    + (raw == WorkRequests.IssueLimit.class
-                                            ? "IssueReadingRounds"
-                                            : schemaOf(raw)));
+                    .isEqualTo("#/components/schemas/" + schemaOf(raw));
             return;
         }
         final JsonNode resolved =
@@ -650,7 +739,7 @@ class ApiMatchesDescriptionTest {
         if (type == ResponseEntity.class || type == SseEmitter.class) {
             return "";
         }
-        return SCHEMAS.entrySet().stream()
+        return Stream.concat(SCHEMAS.entrySet().stream(), READ_BY_HAND.entrySet().stream())
                 .filter(entry -> entry.getValue().equals(type))
                 .map(Map.Entry::getKey)
                 .findFirst()

@@ -58,6 +58,10 @@
         <porelo.checks.version>0.5.1-SNAPSHOT</porelo.checks.version>
         <!-- Every surefire and failsafe fork is capped, so several agents' test runs fit the host's memory together. -->
         <argLine>-Xmx1g</argLine>
+        <!-- The generator the answer records are generated with, the version the templates are written for. -->
+        <openapi-generator.version>7.27.0</openapi-generator.version>
+        <!-- The templates for null-checked records; moved to their first release when there is one. -->
+        <porelo.openapi.templates.version>0.1.0-SNAPSHOT</porelo.openapi.templates.version>
     </properties>
 
     <modules>

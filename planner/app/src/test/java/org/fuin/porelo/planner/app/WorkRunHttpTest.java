@@ -271,7 +271,8 @@ class WorkRunHttpTest {
         assertThat(stopped.runs().get("ST1").issues().get("AA1").rounds().stopped())
                 .as("the fixture's reading of AA1 stopped")
                 .isTrue();
-        final Answers.Issue answered = WorkAnswers.issue(board, manual, stopped);
+        final org.fuin.porelo.planner.app.answers.Issue answered =
+                WorkAnswers.issue(board, manual, stopped);
         assertThat(answered.needsYou() || answered.readingStopped())
                 .as("a stop left from before the switch asks the person for no choice")
                 .isFalse();

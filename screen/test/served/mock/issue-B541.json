@@ -10,13 +10,13 @@
     "parent" : null,
     "link" : "https://example.org/issues/B541",
     "worker" : "AGENT",
-    "text" : "**What must be true.** The work meets the story description.\n",
-    "subIssues" : [ ],
-    "whatMustBeTrue" : "The work meets the story description.",
     "atWork" : false,
     "needsYou" : false,
     "readingStopped" : false,
     "noRunHere" : true,
-    "attention" : "NONE"
+    "attention" : "NONE",
+    "text" : "**What must be true.** The work meets the story description.\n",
+    "subIssues" : [ ],
+    "whatMustBeTrue" : "The work meets the story description."
   }
 }

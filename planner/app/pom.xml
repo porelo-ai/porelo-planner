@@ -124,6 +124,63 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- The answer records, generated from the description so a schema's change changes them and a controller
+                 that no longer fits fails to compile; the controllers and the request bodies stay hand-written. -->
+            <plugin>
+                <groupId>org.openapitools</groupId>
+                <artifactId>openapi-generator-maven-plugin</artifactId>
+                <version>${openapi-generator.version}</version>
+                <executions>
+                    <execution>
+                        <id>answers</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/resources/openapi/planner.yaml</inputSpec>
+                            <generatorName>spring</generatorName>
+                            <library>spring-boot</library>
+                            <templateResourcePath>org/fuin/porelo/forge/openapi/templates</templateResourcePath>
+                            <modelPackage>org.fuin.porelo.planner.app.answers</modelPackage>
+                            <generateApis>false</generateApis>
+                            <generateModelTests>false</generateModelTests>
+                            <generateModelDocumentation>false</generateModelDocumentation>
+                            <supportingFilesToGenerate>package-info.java</supportingFilesToGenerate>
+                            <importMappings>
+                                <importMapping>DateTimeFormat=java.time.OffsetDateTime</importMapping>
+                            </importMappings>
+                            <!-- A reported time and an offer stay the strings the core holds, never re-spelled or
+                                 refused while an answer is built. -->
+                            <typeMappings>
+                                <typeMapping>OffsetDateTime=String</typeMapping>
+                                <typeMapping>UUID=String</typeMapping>
+                            </typeMappings>
+                            <openapiNormalizer>REMOVE_ANYOF_ONEOF_AND_KEEP_PROPERTIES_ONLY=true</openapiNormalizer>
+                            <configOptions>
+                                <useRecords>true</useRecords>
+                                <useJspecify>true</useJspecify>
+                                <useSpringBoot4>true</useSpringBoot4>
+                                <useJakartaEe>true</useJakartaEe>
+                                <openApiNullable>false</openApiNullable>
+                                <useBeanValidation>false</useBeanValidation>
+                                <annotationLibrary>none</annotationLibrary>
+                                <documentationProvider>none</documentationProvider>
+                                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                                <!-- An optional list left out stays left out, never written as []. -->
+                                <containerDefaultToNull>true</containerDefaultToNull>
+                            </configOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.fuin.porelo</groupId>
+                        <artifactId>porelo-forge-client-openapi-templates</artifactId>
+                        <version>${porelo.openapi.templates.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
             <!-- Any work command of the planner, in a JVM of its own at the repository's root, for a workflow that
                  builds no executable: '-pl planner/app exec:exec@planner -Dplanner.args=...' after an install. -->
             <plugin>

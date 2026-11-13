@@ -20,6 +20,52 @@ import org.junit.jupiter.api.Test;
 
 class WorkAnswersTest {
 
+    // Harm: a value the core can give that the answer's enum lacks fails every board read with a
+    // 500.
+    @Test
+    void everyValueOfTheCoresEnumsIsOneTheAnswersCanWrite() {
+        for (final org.fuin.porelo.planner.core.WorkEnds.Reason reason :
+                org.fuin.porelo.planner.core.WorkEnds.Reason.values()) {
+            assertThat(
+                            org.fuin.porelo.planner.app.answers.PlanWorkIssue.ReasonEnum.fromValue(
+                                            reason.name())
+                                    .getValue())
+                    .as("the run's reason %s", reason)
+                    .isEqualTo(reason.name());
+            assertThat(
+                            org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
+                                            reason.name())
+                                    .getValue())
+                    .as("the issue's attention %s", reason)
+                    .isEqualTo(reason.name());
+        }
+        for (final org.fuin.porelo.planner.core.WorkEnds.Severity severity :
+                org.fuin.porelo.planner.core.WorkEnds.Severity.values()) {
+            assertThat(
+                            org.fuin.porelo.planner.app.answers.Finding.SeverityEnum.fromValue(
+                                            severity.name())
+                                    .getValue())
+                    .as("the severity %s", severity)
+                    .isEqualTo(severity.name());
+        }
+        for (final org.fuin.porelo.planner.core.WorkEnds.Declared declared :
+                org.fuin.porelo.planner.core.WorkEnds.Declared.values()) {
+            assertThat(
+                            org.fuin.porelo.planner.app.answers.TaskEnded.OutcomeEnum.fromValue(
+                                            declared.name())
+                                    .getValue())
+                    .as("the declared outcome %s", declared)
+                    .isEqualTo(declared.name());
+        }
+        for (final Worker worker : Worker.values()) {
+            assertThat(
+                            org.fuin.porelo.planner.app.answers.Worker.fromValue(worker.name())
+                                    .getValue())
+                    .as("the worker %s", worker)
+                    .isEqualTo(worker.name());
+        }
+    }
+
     private static final Issue AGENTS =
             new Issue("AA1", "alpha", "An agent's", "Building", null, List.of(), null, null, "");
 
@@ -42,7 +88,8 @@ class WorkAnswersTest {
     @Test
     void anAgentsIssueInAWorkingStateWithNoRunHereIsShownAndNotRaised() {
         // Work started elsewhere raised as needing the person buries the rows that really do.
-        final Answers.Issue answered = WorkAnswers.issue(board(), AGENTS, NO_RUN);
+        final org.fuin.porelo.planner.app.answers.Issue answered =
+                WorkAnswers.issue(board(), AGENTS, NO_RUN);
 
         assertThat(answered.needsYou())
                 .as("an issue with no run here asks the person for nothing")
@@ -50,14 +97,17 @@ class WorkAnswersTest {
         assertThat(answered.noRunHere())
                 .as("the board says the issue is worked outside this planner")
                 .isTrue();
-        assertThat(answered.attention()).as("no reason is given for it").isEqualTo("NONE");
+        assertThat(answered.attention().getValue())
+                .as("no reason is given for it")
+                .isEqualTo("NONE");
     }
 
     @Test
     void aPersonsIssueInAWorkingStateIsNeitherRaisedNorWorkedOutsideThePlanner() {
         // A person's own issue counted as work outside this planner would warn of work that is
         // theirs.
-        final Answers.Issue answered = WorkAnswers.issue(board(), MANUAL, NO_RUN);
+        final org.fuin.porelo.planner.app.answers.Issue answered =
+                WorkAnswers.issue(board(), MANUAL, NO_RUN);
 
         assertThat(answered.needsYou()).as("a person's issue is not raised").isFalse();
         assertThat(answered.noRunHere()).as("a person's issue has no run by design").isFalse();
@@ -66,21 +116,25 @@ class WorkAnswersTest {
     @Test
     void aRaisedIssueNamesItsRunsReasonAndAnUnraisedOneNone() {
         // A raised row without its reason cannot offer the action that answers it.
-        final Answers.Issue stopped =
+        final org.fuin.porelo.planner.app.answers.Issue stopped =
                 WorkAnswers.issue(
                         board(),
                         AGENTS,
                         run(new NextStep.Progress(rounds(), List.of(), true, "STOPPED", "")));
-        final Answers.Issue quiet =
+        final org.fuin.porelo.planner.app.answers.Issue quiet =
                 WorkAnswers.issue(
                         board(),
                         AGENTS,
                         run(new NextStep.Progress(rounds(), List.of(), false, "NONE", "")));
 
         assertThat(stopped.needsYou()).as("a stopped run raises its issue").isTrue();
-        assertThat(stopped.attention()).as("the raised issue names why").isEqualTo("STOPPED");
+        assertThat(stopped.attention().getValue())
+                .as("the raised issue names why")
+                .isEqualTo("STOPPED");
         assertThat(stopped.noRunHere()).as("the issue has a run here").isFalse();
-        assertThat(quiet.attention()).as("an issue not raised names no reason").isEqualTo("NONE");
+        assertThat(quiet.attention().getValue())
+                .as("an issue not raised names no reason")
+                .isEqualTo("NONE");
     }
 
     private static ReadingCycle.Rounds rounds() {

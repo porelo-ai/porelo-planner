@@ -2227,11 +2227,13 @@ components:
           allOf:
             - $ref: '#/components/schemas/Worker'
         rounds:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: integer
           minimum: 0
           maximum: 2147483647
           description: Absent when no reading record is known.
         roundsMost:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: integer
           minimum: 1
           maximum: 2147483647
@@ -2257,6 +2259,7 @@ components:
             reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
             FAILED and BLOCKED of a reader stop its reading the same way.
         findings:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
           maxItems: 100
           items:
@@ -2276,6 +2279,7 @@ components:
               items:
                 $ref: '#/components/schemas/IssueId'
             whatMustBeTrue:
+              x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
               type: string
               description: The issue's What must be true paragraph; absent when the text has none.
 
@@ -2380,6 +2384,7 @@ components:
           maxLength: 4000
           description: The rule's order, expanded after the operator's final choices.
         effort:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: [string, 'null']
           minLength: 1
           maxLength: 128
@@ -2387,6 +2392,7 @@ components:
             The effort chosen: the rule's for the issues' risk as proposed, or the person's as sent back; null for none.
             An open name, not an enum, since its values are Porelo's per agent.
         chosenBy:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           description: >-
             Where the rule's choice of agent, model and effort came from, for example "Reading, risk harm"; the
@@ -2423,6 +2429,7 @@ components:
             KEEP starts the helper as proposed, with the proposed effort whether it is sent back or not, and refuses
             another; CHANGE takes the agent, model and effort sent back.
         effort:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: [string, 'null']
           minLength: 1
           maxLength: 128
@@ -2430,6 +2437,7 @@ components:
             The effort chosen: the rule's for the issues' risk as proposed, or the person's as sent back; null for none.
             An open name, not an enum, since its values are Porelo's per agent.
         chosenBy:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           description: >-
             Where the rule's choice of agent, model and effort came from, for example "Reading, risk harm"; the
@@ -2538,6 +2546,7 @@ components:
           type: string
           format: uuid
         repository:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           $ref: '#/components/schemas/Name'
         issues:
           type: array
@@ -2551,6 +2560,7 @@ components:
         model:
           type: string
         effort:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           minLength: 1
           maxLength: 128
@@ -2558,6 +2568,7 @@ components:
             The effort Start is handed: the one the person's order sent back for a task started by hand, the rule's
             for the issues' risk for one that starts by itself; absent for none.
         chosenBy:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           description: Where the rule's choice of agent, model and effort came from; absent when not known.
         mode:
@@ -2566,6 +2577,7 @@ components:
           type: string
           description: The complete starting prompt, at most 65536 UTF-8 bytes.
         result:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
           description: The plain name of the file the task hands back, without a directory.
@@ -2667,6 +2679,7 @@ components:
           minimum: 0
           maximum: 2147483647
         landed:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
           description: >-
             Where the task's work landed, copied unchanged from Porelo's task row; absent or empty while the
@@ -2674,6 +2687,7 @@ components:
           items:
             $ref: '#/components/schemas/Landing'
         outcome:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           enum: [DONE, BLOCKED, FAILED]
           description: >-
@@ -2884,10 +2898,12 @@ components:
           type: string
           enum: [BLOCKING, NOTE]
         file:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           maxLength: 512
           description: A display-only relative label, without a leading slash or backslash or any parent segment.
         line:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: integer
           minimum: 1
           maximum: 2147483647
