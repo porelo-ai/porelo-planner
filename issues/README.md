@@ -48,6 +48,12 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl120"></a>[PL120](PL120-A-Blank-Line-Under-The-Findings-Header-Is-Read.md) | XS | - | A reader's Findings block with blank lines between its header and its first row, as Markdown writes a list under a heading, is read with its rows instead of stopping the reading as unreadable |
+
 ## Review
 
 | # | Size | Blocked by | What it covers |
