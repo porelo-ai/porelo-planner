@@ -7,7 +7,7 @@
   "title": "ST311 Played Through On The Test VM",
   "state": "Backlog",
   "size": "M",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 41,
   "blockedBy": ["PL104"],
   "covers": "A script plays the test of story ST311 once on the local test VM through the planning screen against the real planner, as a person opens Planning, and lays the screen driver the other screen story tests use"

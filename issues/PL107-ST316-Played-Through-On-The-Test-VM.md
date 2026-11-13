@@ -7,7 +7,7 @@
   "title": "ST316 Played Through On The Test VM",
   "state": "Backlog",
   "size": "S",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 43,
   "blockedBy": ["PL104", "PL105"],
   "covers": "A script plays the test of story ST316 once on the local test VM through the planning screen against the real planner, as a person reads sizes and folds a state's box and a story card"

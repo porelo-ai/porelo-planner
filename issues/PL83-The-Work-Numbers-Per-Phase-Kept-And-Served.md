@@ -7,7 +7,7 @@
   "title": "The Work Numbers Per Phase Kept And Served",
   "state": "Idea",
   "size": "-",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
   "covers": "A task is started with the phase it works in, the Git store keeps a finished issue's numbers from Porelo's records in stats/, and the velocity and an issue's tokens per phase reach the window and the stage command from those records"

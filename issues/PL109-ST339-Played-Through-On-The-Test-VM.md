@@ -7,7 +7,7 @@
   "title": "ST339 Played Through On The Test VM",
   "state": "Backlog",
   "size": "S",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 45,
   "blockedBy": ["PL104"],
   "covers": "A script plays the test of story ST339 once on the local test VM as a person would, running the screen's test app from the source under a virtual display and driving it against its mock, with no window, planner or forge"

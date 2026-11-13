@@ -7,7 +7,7 @@
   "title": "Old Snapshot Executables Cleaned Up",
   "state": "Review",
   "size": "M",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 31,
   "blockedBy": [],
   "covers": "A clean-up removes the planner's old snapshot executables from Artifactory by a rule, and never one a repository pins, a release or anything outside its prefix"
