@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL116",
   "title": "The Board Opens With Its Cards Shown",
-  "state": "Estimated",
+  "state": "Implementing",
   "size": "XS",
   "priority": "Medium",
   "rank": 52,
