@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL43",
   "title": "A Slow Save Told As Slow, Not As A Failure",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 4,
