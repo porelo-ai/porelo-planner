@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL118",
   "title": "A Reading Takes A Line Range And An Unreadable One Is Read Again",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 54,

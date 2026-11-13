@@ -32,7 +32,6 @@ left out.
 |---|---|---|---|
 | <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | M | - | Before the window sends the planner's token or names a project, the listener at the address file's port proves it holds the token without receiving it, so a process that took the port after the planner ended learns neither |
 | <a id="pl114"></a>[PL114](PL114-A-Failed-Or-Blocked-Task-Offers-A-Way-On.md) | M | [PL77](README.md#pl77) | The Needs-you row of an issue whose task ended FAILED offers Start again and Move on, and one that ended BLOCKED offers Move on, so the person is not left with a move by hand alone |
-| <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL90](README.md#pl90), [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
@@ -47,6 +46,12 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl110"></a>[PL110](PL110-The-Documents-Profile-Runs-The-Issues-Check.md) | S | - | `-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |
 
 ## Review
 
