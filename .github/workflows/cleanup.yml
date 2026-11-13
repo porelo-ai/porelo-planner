@@ -1,0 +1,116 @@
+# Deletes the planner's old snapshot executables from Artifactory's porelo-files/porelo-planner/, by the rule the
+# clean-up module holds: a snapshot build goes only when it is older than 30 days, not among the newest 10, and its
+# version is written on no default branch of a repository the project file names. A release, a path outside the
+# prefix and a version not x.y.z~snapshot.N never go; a listing that cannot be read whole deletes nothing. A repository
+# sets or moves its planner pin only to a build younger than 7 days, so reading the pins and deleting need no lock.
+name: Clean-up of old snapshot executables
+
+# Mondays at 04:41 UTC, outside the hours the repositories are worked in, and by hand.
+on:
+    schedule:
+        - cron: '41 4 * * 1'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+# One clean-up at a time; a second waits rather than deleting from the same listing.
+concurrency:
+    group: cleanup
+    cancel-in-progress: false
+
+jobs:
+    cleanup:
+        name: Old snapshot executables
+        # Only from main: a dispatch on another branch runs that branch's rule.
+        if: github.ref == 'refs/heads/main'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            - name: The clean-up's choice, built
+              run: ./mvnw -B -s settings.xml -pl cleanup -am install -DskipTests
+
+            # Anonymous over https: the project file and every repository it names, each on its default branch. A
+            # repository that cannot be read stops the run here, before anything is listed or deleted.
+            - name: Every repository's default branch, for its pins
+              env:
+                  GIT_TERMINAL_PROMPT: '0'
+                  PROJECT: ${{ github.server_url }}/${{ github.repository_owner }}/porelo-project.git
+              run: |
+                  set -euo pipefail
+                  work="$RUNNER_TEMP/cleanup"
+                  rm -rf "$work"
+                  mkdir -p "$work/checkouts"
+                  git clone --quiet --depth 1 --no-tags -- "$PROJECT" "$work/project"
+                  ./mvnw -B -q -s settings.xml -pl cleanup exec:exec@cleanup \
+                      -Dcleanup.args="repositories $work/project/project.yml $work/repositories.txt"
+                  while read -r name url; do
+                      [[ "$name" =~ ^[a-z0-9][a-z0-9._-]*$ && "$url" == https://* ]] \
+                          || { echo "::error::the project file's repository line '$name $url' is not <name> <https URL>"; exit 1; }
+                      git clone --quiet --depth 1 --no-tags -- "$url" "$work/checkouts/$name" \
+                          || { echo "::error::$url could not be cloned, so its pins are unknown"; exit 1; }
+                      echo "  read  $name $url at $(git -C "$work/checkouts/$name" rev-parse HEAD)"
+                  done < "$work/repositories.txt"
+
+            # Read whole with the clean-up's own token, which reaches curl as config on standard input, never on a
+            # command line; no redirect is followed, so the token stays with this host. Only a 200 is a listing.
+            - name: The listing of porelo-files/porelo-planner
+              timeout-minutes: 5
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_CLEANUP_TOKEN: ${{ secrets.JF_CLEANUP_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  case "$JF_URL" in
+                      https://?*) ;;
+                      *) echo "::error::variable JF_URL is '$JF_URL', not an https:// address the token may go to"; exit 1 ;;
+                  esac
+                  [ -n "$JF_CLEANUP_TOKEN" ] || { echo "::error::secret JF_CLEANUP_TOKEN is not set"; exit 1; }
+                  listing="${JF_URL%/}/artifactory/api/storage/porelo-files/porelo-planner?list&deep=1&listFolders=0"
+                  status="$(printf 'header = "Authorization: Bearer %s"\n' "$JF_CLEANUP_TOKEN" |
+                      curl -sS --retry 5 --proto =https --max-time 120 -K - \
+                          -o "$RUNNER_TEMP/cleanup/listing.json" -w '%{http_code}' "$listing")"
+                  [ "$status" = 200 ] \
+                      || { echo "::error::Artifactory answered $status to the listing of porelo-files/porelo-planner, not 200"; exit 1; }
+
+            # No token here: the choice reads only files. It writes its answer only once the whole answer stands.
+            - name: The choice
+              run: |
+                  set -euo pipefail
+                  work="$RUNNER_TEMP/cleanup"
+                  ./mvnw -B -q -s settings.xml -pl cleanup exec:exec@cleanup \
+                      -Dcleanup.args="choose $work/listing.json $work/project/project.yml $work/checkouts $work/chosen.txt"
+
+            # Each chosen folder is checked against the rule's shape once more, deleted, and named. Only a 2xx is a
+            # delete, and no redirect is followed with the token.
+            - name: Delete what was chosen
+              timeout-minutes: 10
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_CLEANUP_TOKEN: ${{ secrets.JF_CLEANUP_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  base="${JF_URL%/}/artifactory"
+                  deleted=0
+                  while read -r path; do
+                      [[ "$path" =~ ^porelo-files/porelo-planner/[0-9]+\.[0-9]+\.[0-9]+~snapshot\.[0-9]+/$ ]] \
+                          || { echo "::error::the choice named '$path', not a snapshot build's folder under porelo-files/porelo-planner/"; exit 1; }
+                      status="$(printf 'header = "Authorization: Bearer %s"\n' "$JF_CLEANUP_TOKEN" |
+                          curl -sS --retry 5 --proto =https --max-time 60 -K - -o /dev/null -w '%{http_code}' \
+                              -X DELETE "$base/$path")"
+                      case "$status" in
+                          2??) ;;
+                          *) echo "::error::Artifactory answered $status to deleting $path, not a 2xx"; exit 1 ;;
+                      esac
+                      echo "  deleted  $path"
+                      echo "- deleted \`$path\`" >> "$GITHUB_STEP_SUMMARY"
+                      deleted=$((deleted + 1))
+                  done < "$RUNNER_TEMP/cleanup/chosen.txt"
+                  echo "deleted $deleted snapshot build(s)"

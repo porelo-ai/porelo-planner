@@ -13,11 +13,14 @@ class NullMarkedPackagesTest {
     /** The planner's modules, seen from this module's directory. */
     private static final Path PLANNER = Path.of("..");
 
+    /** The CI's clean-up, a module beside the planner's parts. */
+    private static final Path CLEANUP = Path.of("../../cleanup");
+
     @Test
     void everyMainPackageOfThePlannerIsNullMarked() throws Exception {
         // An unmarked package bypasses NullAway, and an unchecked null there crashes a request.
         final List<Path> packages;
-        try (Stream<Path> paths = Files.walk(PLANNER)) {
+        try (Stream<Path> paths = Stream.concat(Files.walk(PLANNER), Files.walk(CLEANUP))) {
             packages =
                     paths.filter(path -> path.toString().contains("/src/main/java/"))
                             .filter(path -> path.toString().endsWith(".java"))
@@ -33,7 +36,8 @@ class NullMarkedPackagesTest {
                         PLANNER.resolve("store/api/src/main/java/org/fuin/porelo/planner/store"),
                         PLANNER.resolve(
                                 "store/git/src/main/java/org/fuin/porelo/planner/store/git"),
-                        PLANNER.resolve("app/src/main/java/org/fuin/porelo/planner/app"));
+                        PLANNER.resolve("app/src/main/java/org/fuin/porelo/planner/app"),
+                        CLEANUP.resolve("src/main/java/org/fuin/porelo/planner/cleanup"));
         for (final Path pkg : packages) {
             final Path info = pkg.resolve("package-info.java");
             assertThat(info).as("%s declares its null safety", pkg).exists();

@@ -1,0 +1,182 @@
+{
+  "uri": "https://artifactory.example.org/artifactory/api/storage/porelo-files/porelo-planner",
+  "created": "2026-11-13T00:00:01.000Z",
+  "files": [
+    {
+      "uri": "/0.2.0~snapshot.1/porelo-planner-0.2.0~snapshot.1-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-01T10:00:00.000Z",
+      "folder": false,
+      "sha1": "8f6049fd4c3068c2db2896188510e86ae63dfa6d",
+      "sha2": "8f6049fd4c3068c2db2896188510e86ae63dfa6d5887a67d4b39a12ddc3ab39d"
+    },
+    {
+      "uri": "/0.2.0~snapshot.2/porelo-planner-0.2.0~snapshot.2-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-02T10:00:00.000Z",
+      "folder": false,
+      "sha1": "caa3281777eec6484b25e22c15b4b8246998b4a9",
+      "sha2": "caa3281777eec6484b25e22c15b4b8246998b4a92f8661f14a5d2f4d0dcdb604"
+    },
+    {
+      "uri": "/0.2.0~snapshot.3/porelo-planner-0.2.0~snapshot.3-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-03T10:00:00.000Z",
+      "folder": false,
+      "sha1": "fa4efef26a944c850d80eac03551eee2ac989ba8",
+      "sha2": "fa4efef26a944c850d80eac03551eee2ac989ba871410b127a4035f53158c82f"
+    },
+    {
+      "uri": "/0.2.0~snapshot.4/porelo-planner-0.2.0~snapshot.4-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-04T10:00:00.000Z",
+      "folder": false,
+      "sha1": "22b89e6c386402db1bb0f08cdce05d5d7fedaa2a",
+      "sha2": "22b89e6c386402db1bb0f08cdce05d5d7fedaa2a82f209162f338ab5d03b68c0"
+    },
+    {
+      "uri": "/0.2.0~snapshot.5/porelo-planner-0.2.0~snapshot.5-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-05T10:00:00.000Z",
+      "folder": false,
+      "sha1": "937dcb0176db3f968af3a1da9737d8da0ba15a52",
+      "sha2": "937dcb0176db3f968af3a1da9737d8da0ba15a52aa5e5a5d508e3892f225296b"
+    },
+    {
+      "uri": "/0.2.0~snapshot.6/porelo-planner-0.2.0~snapshot.6-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-06T10:00:00.000Z",
+      "folder": false,
+      "sha1": "8ec726584f785e8957bf59ce8ca91d853dc78306",
+      "sha2": "8ec726584f785e8957bf59ce8ca91d853dc78306b8dac7470d14e4df01545b11"
+    },
+    {
+      "uri": "/0.2.0~snapshot.7/porelo-planner-0.2.0~snapshot.7-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-07T10:00:00.000Z",
+      "folder": false,
+      "sha1": "22ebd86c5a6a05782b51c4c77ce9005747d3f8b4",
+      "sha2": "22ebd86c5a6a05782b51c4c77ce9005747d3f8b441685e2c55b64d2e37306c13"
+    },
+    {
+      "uri": "/0.2.0~snapshot.8/porelo-planner-0.2.0~snapshot.8-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-08T10:00:00.000Z",
+      "folder": false,
+      "sha1": "29105ffa65082a4137d6f80fa480ead22311b629",
+      "sha2": "29105ffa65082a4137d6f80fa480ead22311b6295b8c13e841021bb67cb51e66"
+    },
+    {
+      "uri": "/0.2.0~snapshot.9/porelo-planner-0.2.0~snapshot.9-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-09T10:00:00.000Z",
+      "folder": false,
+      "sha1": "efc23a6bffe37df179a2046a4b68c6d497b3a9df",
+      "sha2": "efc23a6bffe37df179a2046a4b68c6d497b3a9dfd02230045b7c66eefe8ebc30"
+    },
+    {
+      "uri": "/0.2.0~snapshot.10/porelo-planner-0.2.0~snapshot.10-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-11-10T10:00:00.000Z",
+      "folder": false,
+      "sha1": "eae4b1bee84d9ab536bf99829e019d0b689b5ee3",
+      "sha2": "eae4b1bee84d9ab536bf99829e019d0b689b5ee33eb9635890829b00d8fac9e7"
+    },
+    {
+      "uri": "/0.1.0~snapshot.1/porelo-planner-0.1.0~snapshot.1-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-08-01T10:00:00.000Z",
+      "folder": false,
+      "sha1": "4d7bf4fd1d024d264ed6f425f35e33477eccdbcc",
+      "sha2": "4d7bf4fd1d024d264ed6f425f35e33477eccdbcc68e4dcaf3f9c273ea36627ba"
+    },
+    {
+      "uri": "/0.1.0/porelo-planner-0.1.0-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-01T10:00:00.000Z",
+      "folder": false,
+      "sha1": "9b0b898cb1863fbf555f5599097cc6bc188e6e75",
+      "sha2": "9b0b898cb1863fbf555f5599097cc6bc188e6e7551c1e0b3c57a6d8e5d3c30d4"
+    },
+    {
+      "uri": "/0.0.9/porelo-planner-0.0.9-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-06-01T10:00:00.000Z",
+      "folder": false,
+      "sha1": "1ece2d3c01846b48a3ac90e8e1e8629cccc0a0a7",
+      "sha2": "1ece2d3c01846b48a3ac90e8e1e8629cccc0a0a703afbf47d8ad5d845aea7ac4"
+    },
+    {
+      "uri": "/../porelo-other/0.1.0~snapshot.2/porelo-planner-0.1.0~snapshot.2-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-02T10:00:00.000Z",
+      "folder": false,
+      "sha1": "00ad8cd19ccc42a04ecd07afda2ea89197e50f21",
+      "sha2": "00ad8cd19ccc42a04ecd07afda2ea89197e50f214e6c7e9f26ed3044fd97a0ef"
+    },
+    {
+      "uri": "/%2E%2E/0.1.0~snapshot.3/porelo-planner-0.1.0~snapshot.3-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-03T10:00:00.000Z",
+      "folder": false,
+      "sha1": "b14df69b29cbe5e713899347ae59cbebc7b0a6cc",
+      "sha2": "b14df69b29cbe5e713899347ae59cbebc7b0a6cc3b4eae7c10344d77ffc7fb63"
+    },
+    {
+      "uri": "/porelo-planner-0.1.0~snapshot.4-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-04T10:00:00.000Z",
+      "folder": false,
+      "sha1": "f27cda923fef37d3862726c79688fc7998a65820",
+      "sha2": "f27cda923fef37d3862726c79688fc7998a658202fe25d49128e2105b0d002e3"
+    },
+    {
+      "uri": "/0.1.0-SNAPSHOT/porelo-planner-0.1.0-SNAPSHOT-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-05T10:00:00.000Z",
+      "folder": false,
+      "sha1": "8c0ad3d1aba21539aa0a79031c5bfcccc18c5f4c",
+      "sha2": "8c0ad3d1aba21539aa0a79031c5bfcccc18c5f4cc652e2e6a525bd2d099d98aa"
+    },
+    {
+      "uri": "/0.1.0~snapshot.6.bak/porelo-planner-0.1.0~snapshot.6.bak-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-06T10:00:00.000Z",
+      "folder": false,
+      "sha1": "b04b215b04a551cb9583d5c8de6fd808bc07e1af",
+      "sha2": "b04b215b04a551cb9583d5c8de6fd808bc07e1af41298ae4f6d9ba658a58664f"
+    },
+    {
+      "uri": "/v0.1.0~snapshot.7/porelo-planner-v0.1.0~snapshot.7-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-07T10:00:00.000Z",
+      "folder": false,
+      "sha1": "0f97ea5a492de095cac5791dd0c31f1075f309db",
+      "sha2": "0f97ea5a492de095cac5791dd0c31f1075f309db4b236688564f78a955aca9ab"
+    },
+    {
+      "uri": "/0.1~snapshot.8/porelo-planner-0.1~snapshot.8-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-08T10:00:00.000Z",
+      "folder": false,
+      "sha1": "027888625ac34487dc8176abc418ff4a9fa36f33",
+      "sha2": "027888625ac34487dc8176abc418ff4a9fa36f3358830def8b322279eb3164f9"
+    },
+    {
+      "uri": "/0.1.0~snapshot./porelo-planner-0.1.0~snapshot.-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-09T10:00:00.000Z",
+      "folder": false,
+      "sha1": "4a7ddc1797011335f7a9e4f3f5300652edfe4d82",
+      "sha2": "4a7ddc1797011335f7a9e4f3f5300652edfe4d8296a6e0b492afecefabff3aa7"
+    },
+    {
+      "uri": "/%2E%2E%2Fporelo-other%2F0.1.0~snapshot.12/porelo-planner-0.1.0~snapshot.12-linux-x86_64",
+      "size": 77072640,
+      "lastModified": "2026-07-12T10:00:00.000Z",
+      "folder": false,
+      "sha1": "958dd3823c386975e2c0080898be4f870e1c5101",
+      "sha2": "958dd3823c386975e2c0080898be4f870e1c5101f767a5d075287183c9b2dfc9"
+    }
+  ]
+}

@@ -60,6 +60,7 @@
 
     <modules>
         <module>planner</module>
+        <module>cleanup</module>
     </modules>
 
     <dependencyManagement>

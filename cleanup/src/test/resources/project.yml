@@ -1,0 +1,15 @@
+# A project file as the project's own repository holds it, cut to what the clean-up reads.
+project:
+    name: "example"
+    description: "A project whose repositories pin the planner"
+    central: "git@github.com:example-org/example-project.git"
+
+repositories:
+    core:
+        central: "git@github.com:example-org/example-core.git"
+        description: "A repository that pins the planner in its workflow"
+        issues: ["C"]
+    planner:
+        central: "https://github.com/example-org/example-planner.git"
+        description: "The planner itself"
+        issues: ["PL"]
