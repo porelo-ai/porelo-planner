@@ -934,7 +934,16 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         return _answer(method, response, bytes, revision: revision, answers: answers);
       }().timeout(timeout);
     } on TimeoutException {
-      request?.abort();
+      final opened = request;
+      // Without a connection nothing was sent, so nothing can still be under way at the planner.
+      if (opened == null) {
+        throw PlanningRefusal(
+          'PlannerUnreachable',
+          const {},
+          'the planner cannot be reached: no connection within ${timeout.inSeconds} s',
+        );
+      }
+      opened.abort();
       throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${timeout.inSeconds} s');
     } on SocketException catch (error) {
       throw PlanningRefusal(

@@ -1,0 +1,2 @@
+title: A save the planning screen stops waiting for is shown as still saving and then as saved once the board shows it, instead of as a failure, and each move message stands on its own line.
+type: fixed

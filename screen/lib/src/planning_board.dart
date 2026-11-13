@@ -87,6 +87,9 @@ class PendingPlanningMove {
 
   /// The daemon's refusal, if this move failed.
   String? problem;
+
+  /// Whether a save of this move went unanswered in time and may still land.
+  bool unanswered = false;
 }
 
 class _StoryStart {
@@ -97,8 +100,13 @@ class _StoryStart {
 /// A project's board, replaced only by whole replies from its machine.
 class PlanningBoard extends ChangeNotifier {
   /// Starts a watch with independently retained view choices.
-  PlanningBoard(this.backend, this.project, {PlanningPreferences? preferences})
-    : preferences = preferences ?? PlanningPreferences() {
+  PlanningBoard(
+    this.backend,
+    this.project, {
+    PlanningPreferences? preferences,
+    // Past the planner's own bounds on a save: 30 s for the store's lock and a few Git calls of 60 s each.
+    this.unansweredWait = const Duration(minutes: 5),
+  }) : preferences = preferences ?? PlanningPreferences() {
     _listen();
   }
 
@@ -110,6 +118,11 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Choices belonging to the project.
   final PlanningPreferences preferences;
+
+  /// How long moves of a save answered too late may wait to show on the board before they are told as not saved.
+  final Duration unansweredWait;
+
+  Timer? _unansweredDeadline;
 
   /// The last whole reply, retained visibly stale after a failure.
   PlanningSnapshot? snapshot;
@@ -1006,6 +1019,7 @@ class PlanningBoard extends ChangeNotifier {
     _reconcilePriorities(reply);
     if (!reply.complete || reply.revision.isEmpty) return;
     final reconciled = <String>[];
+    final landed = <PendingPlanningMove>[];
     for (final entry in _pending.entries.toList()) {
       final reported = _reportedState(reply, entry.key, entry.value);
       if (!reconcile) {
@@ -1020,16 +1034,55 @@ class PlanningBoard extends ChangeNotifier {
         reconciled.add(planningShown('${entry.key} is no longer reported by the planner.', multiline: false));
       } else if (reported == entry.value.to) {
         _pending.remove(entry.key);
-        reconciled.add(planningShown('${entry.key} was moved to ${entry.value.to} elsewhere.', multiline: false));
+        if (entry.value.unanswered) {
+          landed.add(entry.value);
+        } else {
+          reconciled.add(planningShown('${entry.key} was moved to ${entry.value.to} elsewhere.', multiline: false));
+        }
       } else {
         entry.value.from = reported;
       }
     }
+    if (!_pending.values.any((move) => move.unanswered)) {
+      _unansweredDeadline?.cancel();
+      _unansweredDeadline = null;
+      if (landed.isNotEmpty) moveNotice = _savedNotice(landed);
+    }
     if (reconciled.isNotEmpty) {
-      final detail = reconciled.join(' ');
-      moveProblem = moveProblem == null ? detail : '$moveProblem $detail';
+      final detail = reconciled.join('\n');
+      moveProblem = moveProblem == null ? detail : '$moveProblem\n$detail';
     }
   }
+
+  void _awaitUnanswered() {
+    if (_disposed || _unansweredDeadline != null || !_pending.values.any((move) => move.unanswered)) return;
+    _unansweredDeadline = Timer(unansweredWait, _unansweredTooLong);
+  }
+
+  void _unansweredTooLong() {
+    _unansweredDeadline = null;
+    // A save running now arms the deadline again when it ends.
+    if (_disposed || saving) return;
+    final late = _pending.values.where((move) => move.unanswered).toList();
+    if (late.isEmpty) return;
+    const words = 'The save was not seen on the planning board. Save again.';
+    for (final move in late) {
+      move.unanswered = false;
+      move.problem = words;
+    }
+    moveNotice = null;
+    moveProblem = moveProblem == null ? words : '$moveProblem\n$words';
+    _changed();
+  }
+
+  void _forgetUnanswered(Iterable<String> keys) {
+    for (final key in keys) {
+      _pending[key]?.unanswered = false;
+    }
+  }
+
+  static String _savedNotice(Iterable<PendingPlanningMove> moves) =>
+      moves.every((move) => move.isIssue) ? 'Issue changes saved.' : 'Planning changes saved.';
 
   void _finishOperation({bool reconcile = true}) {
     if (_disposed) return;
@@ -1073,6 +1126,8 @@ class PlanningBoard extends ChangeNotifier {
   Future<void> save() async {
     if (_disposed || saving || _pending.isEmpty || !live || unavailableActions.containsKey('SaveMoves')) return;
     saving = true;
+    _unansweredDeadline?.cancel();
+    _unansweredDeadline = null;
     final generation = _generation;
     final revision = snapshot?.revision ?? '';
     final batch = Map.of(_pending);
@@ -1130,7 +1185,7 @@ class PlanningBoard extends ChangeNotifier {
         reconcile: false,
       );
       if (_pending.isEmpty) {
-        moveNotice = batch.values.every((move) => move.isIssue) ? 'Issue changes saved.' : 'Planning changes saved.';
+        moveNotice = _savedNotice(batch.values);
       }
       _changed();
       // SaveMoves does not return computed story states; read them from the store.
@@ -1148,7 +1203,17 @@ class PlanningBoard extends ChangeNotifier {
       _acceptNewest(latest, latestOrder);
     } on PlanningRefusal catch (error) {
       if (_disposed || generation != _generation) return;
+      if (error.name == 'TimedOut') {
+        // Only the screen stopped waiting; the planner finishes the save, and the streamed board shows when it landed.
+        for (final key in batch.keys) {
+          _pending[key]?.unanswered = true;
+        }
+        moveNotice = 'Still saving. The moves show as saved once planning shows them.';
+        return;
+      }
       refused = true;
+      // Refused, the move cannot land anymore; a board showing it later shows another person's move.
+      if (error.name != 'StaleRevision') _forgetUnanswered(batch.keys);
       moveRefusal = error;
       final detail = planningFailureWords(error);
       moveProblem = detail;
@@ -1168,21 +1233,24 @@ class PlanningBoard extends ChangeNotifier {
               moveProblem = null;
               moveRefusal = null;
               refused = false;
+              moveNotice = null;
               _acceptNewest(reply.$1, reply.$2);
+              // A save that landed late has already told itself saved.
               moveNotice = _pending.isEmpty
-                  ? 'The pending moves were made elsewhere.'
+                  ? moveNotice ?? 'The pending moves were made elsewhere.'
                   : 'Planning changed. Review the pending moves and save again.';
             } else {
               _acceptNewest(reply.$1, reply.$2, reconcile: false);
             }
           }
         } catch (readError) {
-          if (!_disposed && generation == _generation) moveProblem = '$detail ${planningFailureWords(readError)}';
+          if (!_disposed && generation == _generation) moveProblem = '$detail\n${planningFailureWords(readError)}';
         }
       }
     } catch (error) {
       if (!_disposed && generation == _generation) {
         refused = true;
+        _forgetUnanswered(batch.keys);
         moveProblem = planningFailureWords(error);
         for (final key in batch.keys) {
           _pending[key]?.problem = moveProblem;
@@ -1190,6 +1258,7 @@ class PlanningBoard extends ChangeNotifier {
       }
     } finally {
       _finishOperation(reconcile: !refused);
+      _awaitUnanswered();
     }
   }
 
@@ -1380,6 +1449,7 @@ class PlanningBoard extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _unansweredDeadline?.cancel();
     live = false;
     catchingUp = false;
     _stopFollowingReconnect();

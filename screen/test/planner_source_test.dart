@@ -1373,6 +1373,37 @@ void main() {
     expect(refusal.name, 'TimedOut');
   });
 
+  // Harm: a save that never left the window is told as still saving, and the person leaves a lost change behind.
+  test('a planner that takes no connection in time is refused as unreachable, not as unanswered', () async {
+    // A listener that never accepts, its queue filled, so the next connection waits in the handshake.
+    final silent = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0, backlog: 1);
+    addTearDown(silent.close);
+    final waiting = <Socket>[];
+    addTearDown(() {
+      for (final socket in waiting) {
+        socket.destroy();
+      }
+    });
+    for (var i = 0; i < 4; i++) {
+      try {
+        waiting.add(await Socket.connect(silent.address, silent.port, timeout: const Duration(milliseconds: 200)));
+      } on SocketException {
+        break;
+      }
+    }
+    final source = HttpPlanningSource(
+      Uri.parse('http://127.0.0.1:${silent.port}'),
+      _token,
+      (project) => PlannerProject('https://example.org/$project.git', 'main'),
+      timeout: const Duration(milliseconds: 300),
+    );
+    addTearDown(source.close);
+
+    final refusal = await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'));
+
+    expect(refusal.name, 'PlannerUnreachable', reason: 'nothing was sent, so nothing can still be saving');
+  });
+
   // Harm: an endless answer fills the window's memory.
   test('an answer larger than the bound is refused', () async {
     final (_, source) = await _started(maxBody: 64);

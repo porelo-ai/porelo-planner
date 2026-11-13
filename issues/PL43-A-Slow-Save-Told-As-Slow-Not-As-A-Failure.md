@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL43",
   "title": "A Slow Save Told As Slow, Not As A Failure",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 4,
@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** S - the screen package alone (`PlanningBoard` and its tests); the planner and the contract stay as they are.
+**Size:** S - the screen package alone (`PlanningBoard`, `HttpPlanningSource._call` and their tests); the planner and the contract stay as they are.
 
 **Estimate:** 33 min, the measured median of S. Uncertain: if the move flow is first rewritten to one save per move
 ([PL38](README.md#pl38), ranked before this one), the same rules land in that flow's save instead of the batch's.
@@ -29,9 +29,16 @@ Today, read in `screen/lib/src`:
 - `HttpPlanningSource._call` (`http/planner_source.dart`) waits `timeout`, 30 s, aborts the request and throws
   `PlanningRefusal('TimedOut', ..., 'the planner did not answer within 30 s')`. The name `TimedOut` is only this
   deadline of the screen's own: the planner's own store timeout arrives as `Unreachable` (`Problems`, HTTP 504).
-- The planner goes on with the save after the screen stops waiting: a save is a fetch, a commit and a push, each Git
-  call bounded at 60 s (`StoreConfiguration.gitProjects`), behind a lock waited on up to 30 s (`GitStore.LOCK_WAIT`);
-  `BoardController.saveMoves` calls `changes.saved(project)` in `finally`, so the stream sends the board afterwards.
+- The planner goes on with the save after the screen stops waiting. The move request runs on a servlet thread
+  (`spring-boot-starter-web`), and a connection the screen closes interrupts nothing: the handler finishes and only
+  the answer's write fails. `BoardController.saveMoves` runs inside `WorkRun.moves`, which holds the project's work
+  record lock (`WorkRecord.locked`, waited on without a bound), then `GitStore` waits up to 30 s for the store's lock
+  (`LOCK_WAIT`) and commits in the planner's own clones; the save answers once those commits stand, and `LocalSaves`
+  pushes them in the background. What makes the screen wait is the two locks and the local commit, not the push.
+  `saveMoves` calls `changes.saved(project)` in `finally`, so the stream sends the board afterwards.
+- A second save sent while the first still runs waits for the work record lock behind it; `BoardController.saveMoves`
+  then compares the revision it carries with the store's board and refuses it as `StaleRevision` before the store is
+  asked, and `GitStore` checks the revision once more under its own lock. The store is written once.
 - `PlanningBoard.save` (`planning_board.dart`) takes the `TimedOut` refusal as refused: `moveProblem` and each moved
   entry's `problem` get the words, and `_finishOperation(reconcile: false)`. The next streamed board goes through
   `_accept` with reconciliation, finds each pending move at its destination and appends `'<id> was moved to <to>
@@ -47,9 +54,16 @@ Steps, all in `PlanningBoard` and `PendingPlanningMove`:
 2. In `_accept`, an `unanswered` entry the board reports at its destination is removed without a message; once no
    `unanswered` entry is left, `moveNotice` is the same `Issue changes saved.` or `Planning changes saved.` a
    confirmed save shows. An `unanswered` entry the board reports elsewhere stays pending, so Save is offered again: it
-   carries the revision of the board shown, and the planner refuses it as `StaleRevision` if the slow push landed after
+   carries the revision of the board shown, and the planner refuses it as `StaleRevision` if the slow save landed after
    that board, so it is never written twice.
-3. `moveProblem` joins its parts with a line break instead of a space, in `_accept` and in the reread after
+3. `unanswered` moves wait at most `unansweredWait`, 5 min by default, past the planner's own bounds on a save (30 s
+   for the store's lock and a few Git calls of 60 s each). Past it, each is no longer `unanswered`, stays pending
+   with a problem, and `moveProblem` says the save was not seen on the board and to save again. A later save refused
+   other than `StaleRevision`, or failing, clears `unanswered` on its moves, so a board showing them afterwards tells
+   a move made elsewhere.
+4. In `HttpPlanningSource._call`, a timeout while the connection is still being opened is `PlannerUnreachable`:
+   nothing was sent, so nothing can still be saving. Only a request sent and not answered is `TimedOut`.
+5. `moveProblem` joins its parts with a line break instead of a space, in `_accept` and in the reread after
    `PartlySaved` or `StaleRevision`; the views' `Text` shows each on its own line.
 
 Tests, unit level (`flutter test`, `test/planning_moves_test.dart`, over `FakePlanningSource`, in seconds):
@@ -60,16 +74,14 @@ Tests, unit level (`flutter test`, `test/planning_moves_test.dart`, over `FakePl
 - A save that throws `TimedOut` and whose streamed board does not show the moves keeps them pending and Save
   offered, and a second save, sent after the slow one landed in the fake's board, is refused `StaleRevision` by the
   fake, with the store written once. Harm: a move written twice.
-- The joining of messages gets no test: it only reads wrong.
+- Unanswered moves the board never shows turn into a problem after the deadline and stay pending. Harm: a save that
+  never lands is told as still saving, and the person leaves a lost change behind.
+- A planner that takes no connection in time is refused as `PlannerUnreachable` (`planner_source_test.dart`, over a
+  loopback listener that never accepts). Harm: a save that never left the window is told as still saving.
+- The joining of messages and the clearing of `unanswered` after a refusal get no test: they only read wrong.
 
 ## Acceptance
 
 - `flutter test` in `screen/` passes with both tests, the first seen red on today's `PlanningBoard.save`.
 - A save answered late shows as saving, then saved; no message says the planner did not answer, and no message runs
   into another.
-
-## To be checked
-
-- Whether a second save sent while the first is still pushing waits for the store's lock and is then refused
-  `StaleRevision`, or is refused another way, read in `GitStore` and `BoardController`.
-- That the planner finishes a save whose request the screen aborted, rather than stopping it on the closed connection.

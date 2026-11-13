@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/fake_planning.dart';
+
 Map<String, dynamic> _fixture() => {
   'states': [
     {'name': 'Ready', 'kind': 'WAITING'},
@@ -88,6 +90,47 @@ class _Backend extends Fake implements PlanningSource {
   }
 }
 
+/// A provider whose first save outlasts the screen's wait: the screen is told `TimedOut`, and the save lands later.
+class _SlowSource extends FakePlanningSource {
+  _SlowSource() : super(smallBoard());
+
+  bool _timesOut = true;
+  (String, List<PlanningMove>, String)? _late;
+
+  /// Whether a landed save's board is kept from every watch, as one not streamed yet.
+  bool holding = false;
+
+  /// How often the store was written.
+  int written = 0;
+
+  @override
+  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
+    if (_timesOut) {
+      _timesOut = false;
+      _late = (project, moves, revision);
+      throw const PlanningRefusal('TimedOut', {}, 'the planner did not answer within 30 s');
+    }
+    final saved = await super.saveMoves(project, moves, revision);
+    written++;
+    return saved;
+  }
+
+  /// Lands the save the screen stopped waiting for.
+  Future<void> land() async {
+    final (project, moves, revision) = _late!;
+    await saveMoves(project, moves, revision);
+  }
+
+  @override
+  void replace(Map<String, dynamic> next) {
+    if (holding) {
+      board = next;
+    } else {
+      super.replace(next);
+    }
+  }
+}
+
 void main() {
   late _Backend backend;
   late PlanningBoard board;
@@ -103,6 +146,67 @@ void main() {
   tearDown(() async {
     if (!disposed) board.dispose();
     await backend.changes.close();
+  });
+
+  // Harm: told a slow save failed and its moves were made elsewhere, the person makes a saved change again or undoes it.
+  test('a save answered too late shows as saving and then as saved once the board shows it', () async {
+    final source = _SlowSource();
+    final slow = PlanningBoard(source, 'demo');
+    addTearDown(slow.dispose);
+    await pumpEventQueue();
+    slow.move('S1', 'Review');
+
+    await slow.save();
+
+    expect(slow.moveProblem, isNull, reason: 'a save the screen stopped waiting for has not failed');
+    expect(slow.moveNotice, isNotNull, reason: 'the person is told the save still runs');
+    expect(slow.saving, isFalse, reason: 'the stream must be taken to see the save land');
+    await source.land();
+    await pumpEventQueue();
+    expect(slow.pending, isEmpty, reason: 'the streamed board shows the move');
+    expect(slow.moveProblem, isNull, reason: 'a landed save is no move made elsewhere');
+    expect(slow.moveNotice, 'Planning changes saved.', reason: 'the board shows the save done');
+  });
+
+  // Harm: a save that never lands is told as still saving, and the person leaves a lost change behind.
+  test('unanswered moves the board never shows turn into a problem after the deadline and stay pending', () async {
+    final source = _SlowSource();
+    final slow = PlanningBoard(source, 'demo', unansweredWait: const Duration(milliseconds: 1));
+    addTearDown(slow.dispose);
+    await pumpEventQueue();
+    slow.move('S1', 'Review');
+
+    await slow.save();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(slow.pending.keys, ['S1'], reason: 'the move was never seen saved');
+    expect(slow.pending['S1']!.unanswered, isFalse, reason: 'it is no longer awaited');
+    expect(slow.moveProblem, isNotNull, reason: 'the person is told to save again');
+    expect(slow.moveNotice, isNull, reason: 'nothing says it is still saving');
+    expect(slow.saving, isFalse, reason: 'save is offered again');
+  });
+
+  // Harm: a move written twice, once by the slow save and once by its retry.
+  test('a slow save the board does not show yet stays pending, and its retry is refused as stale', () async {
+    final source = _SlowSource();
+    final slow = PlanningBoard(source, 'demo');
+    addTearDown(slow.dispose);
+    await pumpEventQueue();
+    slow.move('S1', 'Review');
+    await slow.save();
+    source.replace(source.board);
+    await pumpEventQueue();
+    expect(slow.pending.keys, ['S1'], reason: 'the board shown does not show the move');
+    expect(slow.saving, isFalse, reason: 'save is offered again');
+
+    source.holding = true;
+    await source.land();
+    await slow.save();
+
+    expect(source.saves.map((save) => save.$3), ['r1', 'r1'], reason: 'the retry carries the board shown');
+    expect(source.written, 1, reason: 'the retry is refused as stale and the store written once');
+    expect(slow.pending, isEmpty, reason: 'the board read after the refusal shows the move');
+    expect(slow.moveProblem, isNull);
   });
 
   // Harm: a refused batch appears moved or saved while its unaccepted drafts are lost.
