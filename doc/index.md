@@ -17,8 +17,15 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 - **From the same package repositories as Porelo**, as `porelo-planner`, a `.deb` and an `.rpm` for x86-64. The
   executable is `/usr/libexec/porelo/planner`; the window starts it as it needs it, and no service of its own is
   installed. It needs glibc 2.34 or newer and zlib.
+- **On Windows, from the same Artifactory** under `porelo-dist-windows/porelo-planner/`, as an MSIX or a ZIP for
+  x86-64. The MSIX puts `porelo-planner.exe` on the PATH through an app execution alias; the ZIP is unpacked into a
+  folder the person puts on the PATH. It needs Git for Windows and nothing else. Beside them lie `SHA256SUMS`, the
+  public certificate the MSIX is signed with, and a Sigstore bundle, against which
+  `gh attestation verify <file> --bundle <name>.sigstore.json --repo porelo-ai/porelo-planner` shows that this
+  repository's Build made the file.
 - **The licenses of what it compiles in** stand in full in `THIRD-PARTY-NOTICES`, under
-  `/usr/share/doc/porelo-planner/` from the `.deb` and as a `%license` file from the `.rpm`: every library's own
+  `/usr/share/doc/porelo-planner/` from the `.deb`, as a `%license` file from the `.rpm` and beside the executable on
+  Windows: every library's own
   license and notice texts, those of what it embeds, the standard text of each license its POM names, and the Java
   runtime's.
 

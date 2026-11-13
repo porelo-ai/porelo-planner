@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The planner on Windows as an MSIX, packed by the window's packing script, which the Build takes at a pinned commit:
+  @VERSION@ is <major>.<minor>.<patch>.<run>, four numbers as an MSIX takes them.
+
+  Publisher must equal the signing certificate's subject byte for byte, or Windows refuses the package as tampered with;
+  the certificate is the window's.
+
+  A console command and nothing else: the one app execution alias puts porelo-planner.exe on the PATH, and no tile or
+  Start entry is shown. Its writes to the user's AppData are not redirected into a package-private folder
+  (unvirtualizedResources), so %LOCALAPPDATA%\porelo-planner\planner.json is the file the window reads.
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+    xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+    xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap uap5 desktop4 desktop6 rescap">
+  <Identity Name="ai.porelo.planner" Publisher="CN=porelo.ai" Version="@VERSION@" ProcessorArchitecture="x64"/>
+  <Properties>
+    <DisplayName>Porelo Planner</DisplayName>
+    <PublisherDisplayName>porelo.ai</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+  </Properties>
+  <Dependencies>
+    <!-- Windows 10 2004, the first with the write virtualization switch. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us"/>
+  </Resources>
+  <Applications>
+    <Application Id="PoreloPlanner" Executable="porelo-planner.exe" EntryPoint="Windows.FullTrustApplication"
+        desktop4:Subsystem="console">
+      <uap:VisualElements DisplayName="Porelo Planner" Description="Serves a project's stories and issues to the Porelo window"
+          BackgroundColor="transparent" Square150x150Logo="assets\Square150x150Logo.png"
+          Square44x44Logo="assets\Square44x44Logo.png" AppListEntry="none"/>
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="porelo-planner.exe"
+            EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console">
+            <uap5:ExecutionAlias Alias="porelo-planner.exe"/>
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust"/>
+    <rescap:Capability Name="unvirtualizedResources"/>
+  </Capabilities>
+</Package>

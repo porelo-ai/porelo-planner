@@ -15,10 +15,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The native executable, started and called as the window will; run by {@code -Pnative verify}. */
+/**
+ * The native executable, started and called as the window will; run by {@code -Pnative verify}. A
+ * test tagged {@code linux} needs the test's Git server, which serves over Linux paths alone.
+ */
 class NativeStartIT {
 
     private static final Duration START = Duration.ofSeconds(10);
@@ -40,6 +44,7 @@ class NativeStartIT {
     }
 
     @Test
+    @Tag("linux")
     void theNativeExecutableServesAProjectReadFromGit(@TempDir final Path dir) throws Exception {
         // Reading Git, YAML and answering JSON reach code only a native run shows to lack
         // metadata; the window would get a planner that starts and answers nothing.
@@ -95,6 +100,7 @@ class NativeStartIT {
     }
 
     @Test
+    @Tag("linux")
     void theNativeExecutablePersistsOffersAndReportsAgainstARealStore(@TempDir final Path dir)
             throws Exception {
         // Prevents missing native JSON bindings from losing offers, task bindings or accepted ends.
@@ -263,8 +269,8 @@ class NativeStartIT {
                     new ProcessBuilder(command)
                             .redirectErrorStream(true)
                             .redirectOutput(output.toFile());
-            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
-            builder.environment().put("XDG_STATE_HOME", runtime.toString());
+            // The test's address file and log, never the person's.
+            builder.environment().putAll(RuntimeDirectories.environment(runtime));
             final Process planner = builder.start();
             try {
                 addressWithin(runtime, planner, output);
@@ -294,6 +300,8 @@ class NativeStartIT {
         // told of neither starts and leaves the window's tests without a board.
         final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
         final Path runtime = RuntimeDirectories.create();
+        // On Windows the account's own base is LOCALAPPDATA, which --mock must be apart from.
+        final @Nullable Path own = RuntimeDirectories.WINDOWS ? RuntimeDirectories.create() : null;
         final Path output = Files.createTempFile("porelo-planner-mock", ".log");
         try {
             final ProcessBuilder builder =
@@ -301,7 +309,10 @@ class NativeStartIT {
                             .redirectErrorStream(true)
                             .redirectOutput(output.toFile());
             builder.environment().clear();
-            builder.environment().put("PATH", "/usr/bin:/bin");
+            builder.environment().putAll(RuntimeDirectories.system());
+            if (own != null) {
+                builder.environment().put("LOCALAPPDATA", own.toString());
+            }
             builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
             final Process planner = builder.start();
             try {
@@ -329,10 +340,14 @@ class NativeStartIT {
         } finally {
             Files.deleteIfExists(output);
             RuntimeDirectories.delete(runtime);
+            if (own != null) {
+                RuntimeDirectories.delete(own);
+            }
         }
     }
 
     @Test
+    @Tag("linux")
     void theNativeExecutableStreamsAPushMadeElsewhere(@TempDir final Path dir) throws Exception {
         // The board goes out through the event stream, which no return type names; a native image
         // told nothing of it would end the stream at its first event.
@@ -509,9 +524,8 @@ class NativeStartIT {
                     new ProcessBuilder(executable.toString())
                             .redirectErrorStream(true)
                             .redirectOutput(output.toFile());
-            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
-            // The test's log and work record, never the person's.
-            builder.environment().put("XDG_STATE_HOME", runtime.toString());
+            // The test's address file, log and work record, never the person's.
+            builder.environment().putAll(RuntimeDirectories.environment(runtime));
             final Process planner = builder.start();
             final RuntimeDirectories.Address address;
             try {
@@ -530,9 +544,13 @@ class NativeStartIT {
             } finally {
                 stop(planner);
             }
-            assertThat(runtime.resolve(AddressFile.DIRECTORY).resolve(AddressFile.FILE))
-                    .as("the address file after the planner stopped")
-                    .doesNotExist();
+            // A stop on Windows is TerminateProcess, which runs no shutdown hook; the next start
+            // removes the file under its lock.
+            if (!RuntimeDirectories.WINDOWS) {
+                assertThat(runtime.resolve(AddressFile.DIRECTORY).resolve(AddressFile.FILE))
+                        .as("the address file after the planner stopped")
+                        .doesNotExist();
+            }
             return address.token();
         } finally {
             Files.deleteIfExists(output);

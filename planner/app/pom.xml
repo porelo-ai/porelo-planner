@@ -16,6 +16,8 @@
     <properties>
         <!-- The executable's name, as the window starts it. -->
         <planner.image>porelo-planner</planner.image>
+        <!-- Its file, which native-image names with '.exe' on Windows. -->
+        <planner.executable.name>${planner.image}</planner.executable.name>
         <!-- The C library and zlib the executable needs, measured with readelf, which both packages declare by hand:
              jdeb and the rpm plugin do not read a binary. check-linkage holds the executable to them, and the floor to
              the oldest system supported, Debian 13's glibc. -->
@@ -25,6 +27,11 @@
         <!-- The Build's run number makes each snapshot package newer than the last; 0 for a local build. -->
         <planner.snapshot.run>0</planner.snapshot.run>
         <properties-maven-plugin.version>1.3.0</properties-maven-plugin.version>
+        <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
+        <!-- porelo-release for the build's own steps, above the parent's: from this version on third-party-notices
+             writes on a file system without POSIX permissions, as the Windows job's is. The work tools' comparison
+             keeps the parent's version. -->
+        <porelo.release.plugin.version>0.5.3-SNAPSHOT</porelo.release.plugin.version>
     </properties>
 
     <dependencies>
@@ -243,7 +250,7 @@
             </build>
         </profile>
         <!-- The executable the window starts: -Pnative verify writes target/porelo-planner, checks it asks for exactly
-             x86-64 v1, and starts it once. -->
+             x86-64 v1, and starts it once; and the notices of what it compiles in, which every package carries. -->
         <profile>
             <id>native</id>
             <build>
@@ -288,70 +295,6 @@
                             </execution>
                         </executions>
                     </plugin>
-                    <!-- After native-image in the same phase: the image asks for exactly x86-64 v1. -->
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>exec-maven-plugin</artifactId>
-                        <version>${exec-maven-plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>cpu-check</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>java</goal>
-                                </goals>
-                                <configuration>
-                                    <mainClass>org.fuin.porelo.cpucheck.CpuFloor</mainClass>
-                                    <includeProjectDependencies>false</includeProjectDependencies>
-                                    <includePluginDependencies>true</includePluginDependencies>
-                                    <arguments>
-                                        <argument>${project.build.directory}</argument>
-                                        <argument>${planner.image}</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                        </executions>
-                        <dependencies>
-                            <dependency>
-                                <groupId>org.fuin.porelo</groupId>
-                                <artifactId>porelo-cpu-check</artifactId>
-                                <version>${porelo.checks.version}</version>
-                            </dependency>
-                        </dependencies>
-                    </plugin>
-                    <!-- The built executable started and called, as the window will. -->
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
-                                </goals>
-                                <configuration>
-                                    <systemPropertyVariables>
-                                        <planner.executable>${project.build.directory}/${planner.image}</planner.executable>
-                                        <planner.version>${planner.package.version}</planner.version>
-                                        <planner.commit>${planner.commit}</planner.commit>
-                                    </systemPropertyVariables>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <!-- The .deb and the .rpm, with -Pnative: the executable at /usr/libexec/porelo/planner, where the window
-             finds it, held to the C library floor both packages declare. -->
-        <profile>
-            <id>dist</id>
-            <properties>
-                <package.name>porelo-planner</package.name>
-                <package.install.dir>/usr/libexec/porelo</package.install.dir>
-            </properties>
-            <build>
-                <plugins>
                     <!-- The third-party notices: the runtime classpath and the bill it is held to, both before the
                          package phase, and the notices from them by porelo-release, declared below. -->
                     <plugin>
@@ -394,6 +337,92 @@
                         </executions>
                     </plugin>
 
+                    <!-- After native-image in the same phase: the image asks for exactly x86-64 v1. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>${exec-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>third-party-notices</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main third-party-notices ${project.build.directory}/notices/classpath.txt ${project.build.directory}/notices/bom.json ${java.home} ${project.build.directory}/notices/THIRD-PARTY-NOTICES --own org\.fuin\.porelo:porelo-planner-.*</commandlineArgs>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>cpu-check</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>org.fuin.porelo.cpucheck.CpuFloor</mainClass>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <arguments>
+                                        <argument>${project.build.directory}</argument>
+                                        <argument>${planner.executable.name}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-cpu-check</artifactId>
+                                <version>${porelo.checks.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                                <version>${porelo.release.plugin.version}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                    <!-- The built executable started and called, as the window will. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <systemPropertyVariables>
+                                        <planner.executable>${project.build.directory}/${planner.executable.name}</planner.executable>
+                                        <planner.version>${planner.package.version}</planner.version>
+                                        <planner.commit>${planner.commit}</planner.commit>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The .deb and the .rpm, with -Pnative: the executable at /usr/libexec/porelo/planner, where the window
+             finds it, held to the C library floor both packages declare. -->
+        <profile>
+            <id>dist</id>
+            <properties>
+                <package.name>porelo-planner</package.name>
+                <package.install.dir>/usr/libexec/porelo</package.install.dir>
+            </properties>
+            <build>
+                <plugins>
                     <plugin>
                         <groupId>org.vafer</groupId>
                         <artifactId>jdeb</artifactId>
@@ -537,23 +566,6 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>third-party-notices</id>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <executable>${java.home}/bin/java</executable>
-                                    <includeProjectDependencies>false</includeProjectDependencies>
-                                    <includePluginDependencies>true</includePluginDependencies>
-                                    <executableDependency>
-                                        <groupId>org.fuin.porelo</groupId>
-                                        <artifactId>porelo-release</artifactId>
-                                    </executableDependency>
-                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main third-party-notices ${project.build.directory}/notices/classpath.txt ${project.build.directory}/notices/bom.json ${java.home} ${project.build.directory}/notices/THIRD-PARTY-NOTICES --own org\.fuin\.porelo:porelo-planner-.*</commandlineArgs>
-                                </configuration>
-                            </execution>
-                            <execution>
                                 <id>check-linkage</id>
                                 <phase>verify</phase>
                                 <goals>
@@ -592,9 +604,64 @@
                             <dependency>
                                 <groupId>org.fuin.porelo</groupId>
                                 <artifactId>porelo-release</artifactId>
-                                <version>${porelo.buildtools.version}</version>
+                                <version>${porelo.release.plugin.version}</version>
                             </dependency>
                         </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The ZIP for Windows, with -Pnative on Windows: porelo-planner.exe, the licenses, the notices and the bill,
+             in target/windows, where the Build's Windows job packs the MSIX from it. WindowsZipIT holds it to exactly
+             that list and to the executable NativeStartIT started. -->
+        <profile>
+            <id>windows</id>
+            <properties>
+                <planner.executable.name>${planner.image}.exe</planner.executable.name>
+                <planner.zip.name>${planner.image}-${planner.package.version}-windows-x64</planner.zip.name>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <version>${maven-assembly-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>windows-zip</id>
+                                <!-- Not 'package': native-image and the CPU check bind there. -->
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>${project.basedir}/src/assembly/windows-zip.xml</descriptor>
+                                    </descriptors>
+                                    <finalName>${planner.zip.name}</finalName>
+                                    <appendAssemblyId>false</appendAssemblyId>
+                                    <attach>false</attach>
+                                    <outputDirectory>${project.build.directory}/windows</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <systemPropertyVariables>
+                                        <planner.zip>${project.build.directory}/windows/${planner.zip.name}.zip</planner.zip>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>

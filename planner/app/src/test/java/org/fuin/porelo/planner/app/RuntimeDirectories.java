@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
@@ -17,13 +19,48 @@ final class RuntimeDirectories {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
+    /** Whether the tests run on Windows, where the planner's base is {@code LOCALAPPDATA}. */
+    static final boolean WINDOWS =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+
     private RuntimeDirectories() {}
 
-    /** A new directory, {@code 0700}, apart from the account's real one and a running planner. */
+    /**
+     * A new directory apart from the account's real one and a running planner: {@code 0700} on
+     * Linux, the temporary directory's own access list on Windows, named without an 8.3 short name,
+     * which the planner's checks refuse.
+     */
     static Path create() throws IOException {
+        if (WINDOWS) {
+            return Files.createTempDirectory("porelo-planner-runtime").toRealPath();
+        }
         return Files.createTempDirectory(
                 "porelo-planner-runtime",
                 PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+    }
+
+    /**
+     * What points a planner at a test's directory for its address file, log and work record: the
+     * runtime and state directories on Linux, {@code LOCALAPPDATA} on Windows.
+     */
+    static Map<String, String> environment(final Path runtime) {
+        if (WINDOWS) {
+            return Map.of("LOCALAPPDATA", runtime.toString());
+        }
+        return Map.of("XDG_RUNTIME_DIR", runtime.toString(), "XDG_STATE_HOME", runtime.toString());
+    }
+
+    /** The system's own variables a planner started with an empty environment needs. */
+    static Map<String, String> system() {
+        if (WINDOWS) {
+            // Without SystemRoot a Windows process has no sockets, and PowerShell is found by it.
+            final String root = System.getenv("SystemRoot");
+            if (root == null || root.isBlank()) {
+                throw new IllegalStateException("this Windows test runs without SystemRoot");
+            }
+            return Map.of("SystemRoot", root, "PATH", root + "\\System32");
+        }
+        return Map.of("PATH", "/usr/bin:/bin");
     }
 
     /** The port and token a planner wrote under a runtime directory. */

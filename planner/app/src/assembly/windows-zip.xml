@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Windows ZIP: the executable and what the Linux packages carry beside it, flat, so the unpacked folder is the
+     one a person puts on the PATH. WindowsZipIT holds it to exactly these files. -->
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 https://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>windows-x64</id>
+    <formats>
+        <format>zip</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <files>
+        <file>
+            <source>${project.build.directory}/${planner.executable.name}</source>
+        </file>
+        <file>
+            <source>${maven.multiModuleProjectDirectory}/LICENSE</source>
+        </file>
+        <file>
+            <source>${maven.multiModuleProjectDirectory}/LICENSE-GPL-3.0</source>
+        </file>
+        <file>
+            <source>${project.build.directory}/notices/THIRD-PARTY-NOTICES</source>
+        </file>
+        <!-- The libraries compiled into the executable, and their licenses. -->
+        <file>
+            <source>${project.basedir}/src/deb/copyright/copyright</source>
+        </file>
+        <file>
+            <source>${project.build.directory}/notices/bom.json</source>
+        </file>
+    </files>
+</assembly>

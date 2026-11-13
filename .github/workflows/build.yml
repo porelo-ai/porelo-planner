@@ -1,6 +1,7 @@
 # Builds the planner on every change to it: compiled, its tests run, its native executable built, held to x86-64 v1,
-# started once and packed as a .deb and an .rpm, which put it where the window finds it. A push to main publishes them
-# to the snapshots channel, a tag v<version> to the releases channel; a release depends only on releases.
+# started once and packed as a .deb and an .rpm, which put it where the window finds it; and, except on a pull request,
+# the same for Windows, packed as a ZIP and an MSIX. A push to main publishes them to the snapshots channel, a tag
+# v<version> to the releases channel; a release depends only on releases.
 name: Build
 
 on:
@@ -25,6 +26,10 @@ jobs:
         # Pinned, not ubuntu-latest: the packages' C library floor is measured on what this builds.
         runs-on: ubuntu-24.04
         timeout-minutes: 45
+        # For the Windows packages' own publishing job, which publishes what this job's checks let through.
+        outputs:
+            channel: ${{ steps.channel.outputs.channel }}
+            version: ${{ steps.channel.outputs.version }}
         steps:
             # Every commit, so the pushed range can be read.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -140,8 +145,8 @@ jobs:
                   ./mvnw -B -s settings.xml -Pall help:effective-pom -Doutput=target/effective-pom.xml
                   ./mvnw -B -s settings.xml -N exec:exec@check-releases
 
-            # Curl alone, so no downloaded tool runs beside the token; the token reaches it as config on standard input,
-            # so neither a file nor a command line holds it. A .deb without its properties is stored and never indexed.
+            # tool/artifactory.sh says how the token reaches curl and when a file counts as published. A .deb without its
+            # properties is stored and never indexed.
             - name: Publish the packages
               id: publish
               timeout-minutes: 5
@@ -186,19 +191,7 @@ jobs:
                   # Other repositories' CI pins the executable by this path, its version and its SHA-256, a snapshot's too.
                   exe="$RUNNER_TEMP/porelo-planner-${FILES}-linux-x86_64"
                   cp planner/app/target/porelo-planner "$exe"
-                  # A published release is never replaced, as on Central: each file is asked for where it would be
-                  # stored, so one uploaded by a run that failed before its index was written counts too. Anything
-                  # but a 404 stops the release, since whether it is published is then unknown.
-                  absent() {
-                      local status
-                      # Anonymous, so the redirect Artifactory answers a stored file with may be followed.
-                      status="$(curl -sSL -o /dev/null -w '%{http_code}' --retry 5 --proto =https --proto-redir =https --max-time 60 "$base/$1")"
-                      case "$status" in
-                          404) ;;
-                          200) echo "::error::$1 is published already"; exit 1 ;;
-                          *) echo "::error::asking for $1 answered $status, so whether it is published is unknown"; exit 1 ;;
-                      esac
-                  }
+                  . tool/artifactory.sh
                   if [ "$CHANNEL" = releases ]; then
                       absent "porelo-dist-deb/pool/main/p/porelo-planner/$(basename "$deb")"
                       absent "porelo-dist-rpm/releases/$(basename "$rpm")"
@@ -206,24 +199,6 @@ jobs:
                   # A pinned executable is never replaced, a snapshot's neither: its version names one run.
                   absent "files/porelo-planner/${FILES}/$(basename "$exe")"
                   [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
-                  # Assigned first, so a checksum that cannot be computed stops here instead of sending an empty header,
-                  # which curl drops; Artifactory checks the bytes against both. Only a 2xx is an upload, and a redirect
-                  # is not followed, so the token stays with this host. No -f: a refusal such as 401 is reported with
-                  # its status at once, and only a timeout or a 408, 429 or 5xx is tried again.
-                  put() {
-                      local sha1 sha256 status
-                      sha1="$(sha1sum "$1" | cut -d' ' -f1)"
-                      sha256="$(sha256sum "$1" | cut -d' ' -f1)"
-                      echo "  put   $2$(basename "$1")"
-                      status="$(printf 'header = "Authorization: Bearer %s"\n' "$JF_ACCESS_TOKEN" \
-                          | curl -sS --retry 5 --proto =https --max-time 120 -K - -o /dev/null -w '%{http_code}' -T "$1" \
-                              -H "X-Checksum-Sha1: $sha1" -H "X-Checksum-Sha256: $sha256" \
-                              "$base/$2$(basename "$1")${3:+;$3}")"
-                      case "$status" in
-                          2??) ;;
-                          *) echo "::error::Artifactory answered $status to the upload of $(basename "$1"), not a 2xx"; exit 1 ;;
-                      esac
-                  }
                   put "$deb" "porelo-dist-deb/pool/main/p/porelo-planner/" \
                       "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
                   put "$rpm" "porelo-dist-rpm/${CHANNEL}/"
@@ -337,6 +312,290 @@ jobs:
                       echo "- path: \`files/porelo-planner/${VERSION}/$name\`"
                       echo "- sha256: \`$built\`"
                   } >> "$GITHUB_STEP_SUMMARY"
+
+    # The executable for Windows, from the same commit: built and tested on GitHub's Windows runner, packed as a ZIP and
+    # an MSIX that puts porelo-planner.exe on the PATH, and attested. Never on a pull request, which gets no token for
+    # the attestation; a push to main or a tag signs and installs the MSIX, a dispatch packs it to prove it.
+    windows:
+        name: Windows
+        if: github.event_name != 'pull_request'
+        runs-on: windows-2025
+        # Each step's limit bounds a hang of its own and this bounds the whole; the first run measures it.
+        timeout-minutes: 60
+        # The attestation's two, for this job only, as check-actions' list names them.
+        permissions:
+            contents: read
+            id-token: write
+            attestations: write
+        steps:
+            # The checks compare files byte for byte with their shared copies, which have LF line ends.
+            - name: Check out with LF line ends
+              run: git config --global core.autocrlf false
+
+            # Without the job's token in .git/config: nothing here pushes with git.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.m2/repository
+                  key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+                  restore-keys: maven-${{ runner.os }}-
+
+            # By its exact key alone: mvnw.cmd checks distributionSha256Sum only when it downloads.
+            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.m2/wrapper
+                  key: maven-wrapper-${{ runner.os }}-${{ hashFiles('.mvn/wrapper/maven-wrapper.properties') }}
+
+            # As the pinned-jdk action does on Linux, whose shfmt is a Linux one: porelo-machines, run by the runner's
+            # Java 25, names the Windows zip's digest when it runs on Windows.
+            - name: The shared build tools, and the pinned GraalVM's digest
+              id: graalvm-pin
+              timeout-minutes: 20
+              shell: bash
+              run: |
+                  set -eu
+                  . .github/actions/pinned-jdk/pinned.sh
+                  [ -n "${JAVA_HOME_25_X64:-}" ] || { echo "::error::this runner has no Java 25"; exit 1; }
+                  export JAVA_HOME="$JAVA_HOME_25_X64"
+                  pinned_retry "the wrapper's Maven" ./mvnw -B -q --version >/dev/null
+                  sha256=$(./mvnw -B -q -U -s settings.xml -N exec:exec@machines -Dmachines.args="jdk --print-sha256") \
+                      || {
+                          echo "::error::porelo-machines could not name the pinned digest (exit $?)"
+                          printf '%s\n' "$sha256"
+                          exit 1
+                      }
+                  [[ $sha256 =~ ^[0-9a-f]{64}$ ]] || {
+                      echo "::error::porelo-machines named no pinned digest"
+                      printf '%s\n' "$sha256"
+                      exit 1
+                  }
+                  echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+            # Only the archive, under its digest; porelo-machines checks a cached one against it again before unpacking.
+            - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              id: graalvm-cache
+              with:
+                  path: ~/.cache/porelo-pinned/graalvm
+                  key: pinned-graalvm-${{ steps.graalvm-pin.outputs.sha256 }}
+
+            - name: Install the pinned GraalVM
+              timeout-minutes: 20
+              shell: bash
+              env:
+                  # The job's token, for a download from https://github.com alone; none on a host's forge.
+                  PORELO_PINNED_GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
+              run: |
+                  set -eu
+                  export JAVA_HOME="$JAVA_HOME_25_X64"
+                  # A Windows path: the JVM reads no /c/ of Git's shell.
+                  cache="$(cygpath -w "$HOME/.cache/porelo-pinned/graalvm")"
+                  ./mvnw -B -q -s settings.xml -N exec:exec@machines -Dmachines.args="jdk --github --cache $cache"
+
+            - if: steps.graalvm-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/porelo-pinned/graalvm
+                  key: pinned-graalvm-${{ steps.graalvm-pin.outputs.sha256 }}
+
+            # The tests tagged windows, the native executable held to x86-64 v1, NativeStartIT on it but for the tests
+            # tagged linux, and the ZIP held to its list and to that executable. The formatting is the Linux job's, where
+            # shfmt and the checkout's line ends are the ones it checks.
+            - name: Build, tests, the native executable, its checks and the ZIP
+              timeout-minutes: 40
+              shell: bash
+              run: |
+                  ./mvnw -B -U -s settings.xml -Pnative,windows verify -Dplanner.snapshot.run=${{ github.run_number }} \
+                      -Dspotless.check.skip=true
+
+            # The window's packing script and install check, which serve any package of Porelo's signer: taken from the
+            # window's repository by commit, never kept here as a copy. Pinned to porelo-frontend's main at
+            # "Clean up each leftover of the install check as a path of its own".
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  repository: porelo-ai/porelo-frontend
+                  ref: da0adf3da4ce4e8d4b830feca48c9c7a8bb8a2c8
+                  path: window-tool
+                  sparse-checkout: tool
+                  persist-credentials: false
+
+            # The MSIX from the ZIP as Maven packed it, its executable held to the tested one. The certificate reaches
+            # this step alone, and only where the Build publishes, which then stops without it.
+            - name: Pack the MSIX, signed where the Build publishes
+              timeout-minutes: 10
+              shell: pwsh
+              env:
+                  PORELO_SIGNING_REQUIRED: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+                  WINDOWS_SIGNING_PFX: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.WINDOWS_SIGNING_PFX || '' }}
+                  WINDOWS_SIGNING_PFX_PASSWORD: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.WINDOWS_SIGNING_PFX_PASSWORD || '' }}
+              run: |
+                  $zip = @(Get-ChildItem planner/app/target/windows/porelo-planner-*-windows-x64.zip)
+                  if ($zip.Count -ne 1) { throw "Asked for one ZIP; got $($zip.Count)" }
+                  $version = $zip[0].BaseName -replace '^porelo-planner-', '' -replace '-windows-x64$', ''
+                  ./window-tool/tool/windows-package.ps1 -Zip $zip[0].FullName -Prefix porelo-planner -Version $version `
+                      -Run ${{ github.run_number }} -Packaging planner/app/src/windows `
+                      -TestedExecutable planner/app/target/porelo-planner.exe -Out planner/app/target/windows `
+                      -RequireSigning:($env:PORELO_SIGNING_REQUIRED -eq 'true')
+
+            # Started as the window starts it: by its alias on the PATH, from another process, in an empty working
+            # directory; tool/windows-planner-ready.ps1 is the planner's own part, its planner.json and /health naming
+            # this build's version and commit. The planner's own directory and the log directory it shares with the
+            # window must not be there before, and are taken out after.
+            - name: Install the MSIX and start the planner through the PATH
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              timeout-minutes: 10
+              shell: pwsh
+              env:
+                  PORELO_PLANNER_COMMIT: ${{ github.sha }}
+              run: |
+                  $msix = @(Get-ChildItem planner/app/target/windows/*.msix)
+                  if ($msix.Count -ne 1) { throw "Asked for one MSIX; got $($msix.Count)" }
+                  $zip = @(Get-ChildItem planner/app/target/windows/porelo-planner-*-windows-x64.zip)
+                  if ($zip.Count -ne 1) { throw "Asked for one ZIP; got $($zip.Count)" }
+                  $env:PORELO_PLANNER_VERSION = $zip[0].BaseName -replace '^porelo-planner-', '' -replace '-windows-x64$', ''
+                  ./window-tool/tool/windows-install-check.ps1 -Msix $msix[0].FullName `
+                      -Cer planner/app/target/windows/porelo-msix.cer -ExpectedIdentity ai.porelo.planner `
+                      -Alias porelo-planner.exe `
+                      -ReadyScript tool/windows-planner-ready.ps1 `
+                      -Leftovers (Join-Path $env:LOCALAPPDATA 'porelo-planner'), (Join-Path $env:LOCALAPPDATA 'porelo')
+
+            - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+              id: attest
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              with:
+                  subject-path: |
+                      planner/app/target/windows/*.zip
+                      planner/app/target/windows/*.msix
+
+            # The Sigstore bundle beside the packages, one for both, so they can be checked from Artifactory alone:
+            # `gh attestation verify <file> --bundle <name>.sigstore.json --repo porelo-ai/porelo-planner`.
+            - name: Keep the attestation beside the packages
+              if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+              shell: pwsh
+              env:
+                  BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+              run: |
+                  $zip = @(Get-ChildItem planner/app/target/windows/*.zip)
+                  if ($zip.Count -ne 1) { throw "Asked for one ZIP; got $($zip.Count)" }
+                  Copy-Item -LiteralPath $env:BUNDLE "planner/app/target/windows/$($zip[0].BaseName).sigstore.json"
+
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: windows
+                  path: |
+                      planner/app/target/windows/*.zip
+                      planner/app/target/windows/*.msix
+                      planner/app/target/windows/*.cer
+                      planner/app/target/windows/*.sigstore.json
+                      planner/app/target/windows/SHA256SUMS
+                  if-no-files-found: error
+
+    # The Windows packages, published once the Build's own checks and the Windows job have passed, so a red Windows job
+    # never holds back the Linux packages; a rerun of the failed jobs publishes them for the same run.
+    windows-publish:
+        name: Publish the Windows packages
+        needs: [build, windows]
+        if: >-
+            github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+            && needs.build.result == 'success' && needs.windows.result == 'success'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        env:
+            CHANNEL: ${{ needs.build.outputs.channel }}
+            VERSION: ${{ needs.build.outputs.version }}
+        steps:
+            # For tool/artifactory.sh alone; without the job's token in .git/config.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: windows
+                  path: ${{ runner.temp }}/windows
+
+            # Exactly the names this run's version gives, plain files each, and SHA256SUMS over exactly the packages:
+            # nothing else in the artifact reaches a URL.
+            - name: The expected files and nothing else
+              id: files
+              run: |
+                  set -euo pipefail
+                  case "$CHANNEL:$VERSION" in
+                      releases:*-SNAPSHOT | snapshots:*[!T] | :* | *:) echo "::error::channel '$CHANNEL' and version '$VERSION' do not go together"; exit 1 ;;
+                  esac
+                  [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?$ ]] || { echo "::error::version '$VERSION' is not x.y.z[-SNAPSHOT]"; exit 1; }
+                  package="${VERSION%-SNAPSHOT}"
+                  [ "$package" = "$VERSION" ] || package="$package~snapshot.$GITHUB_RUN_NUMBER"
+                  name="porelo-planner-$package-windows-x64"
+                  dir="$RUNNER_TEMP/windows"
+                  expected="$(printf '%s\n' SHA256SUMS porelo-msix.cer "$name.msix" "$name.sigstore.json" "$name.zip" | LC_ALL=C sort)"
+                  actual="$(find "$dir" -mindepth 1 -printf '%P\n' | LC_ALL=C sort)"
+                  [ "$actual" = "$expected" ] || {
+                      echo "::error::the artifact holds other files than this version's"
+                      printf 'expected:\n%s\nreceived:\n%s\n' "$expected" "$actual"
+                      exit 1
+                  }
+                  while read -r file; do
+                      [ -f "$dir/$file" ] && [ ! -L "$dir/$file" ] || { echo "::error::$file is not a plain file"; exit 1; }
+                  done <<< "$expected"
+                  summed="$(cut -d' ' -f3- "$dir/SHA256SUMS" | LC_ALL=C sort)"
+                  [ "$summed" = "$(printf '%s\n' "$name.msix" "$name.zip" porelo-msix.cer | LC_ALL=C sort)" ] || {
+                      echo "::error::SHA256SUMS names other files than the ZIP, the MSIX and the certificate: $summed"
+                      exit 1
+                  }
+                  (cd "$dir" && sha256sum --strict -c SHA256SUMS)
+                  echo "package=$package" >> "$GITHUB_OUTPUT"
+
+            # A release's files are each asked for before the first goes up, so none is replaced; a snapshot's version
+            # carries its run, so no run overwrites another's.
+            - name: Publish the Windows packages
+              timeout-minutes: 5
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+                  PACKAGE: ${{ steps.files.outputs.package }}
+              run: |
+                  set -euo pipefail
+                  case "$JF_URL" in
+                      https://?*) ;;
+                      *) echo "::error::variable JF_URL is '$JF_URL', not an https:// address the token may go to"; exit 1 ;;
+                  esac
+                  base="${JF_URL%/}/artifactory"
+                  . tool/artifactory.sh
+                  target="porelo-dist-windows/porelo-planner/${CHANNEL}/${PACKAGE}/"
+                  dir="$RUNNER_TEMP/windows"
+                  if [ "$CHANNEL" = releases ]; then
+                      for file in "$dir"/*; do
+                          absent "$target$(basename "$file")"
+                      done
+                  fi
+                  [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
+                  for file in "$dir"/*; do
+                      put "$file" "$target"
+                  done
+
+            # As a person fetches them: without a token, each compared with what went up.
+            - name: The Windows packages read back without a token
+              timeout-minutes: 5
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  PACKAGE: ${{ steps.files.outputs.package }}
+              run: |
+                  set -euo pipefail
+                  url="${JF_URL%/}/artifactory/porelo-dist-windows/porelo-planner/${CHANNEL}/${PACKAGE}"
+                  dir="$RUNNER_TEMP/windows"
+                  for file in "$dir"/*; do
+                      name="$(basename "$file")"
+                      curl -sSfL --retry 5 --proto =https --proto-redir =https --max-time 120 -o "$RUNNER_TEMP/read-back" \
+                          "$url/$name"
+                      [ "$(sha256sum < "$RUNNER_TEMP/read-back" | cut -d' ' -f1)" = "$(sha256sum < "$file" | cut -d' ' -f1)" ] || {
+                          echo "::error::$url/$name read back is not the file uploaded"
+                          exit 1
+                      }
+                      echo "  OK    $name read back as uploaded"
+                  done
 
     # The window's planning screen, a Flutter package: analysed and tested as the window's build does it, with the
     # Flutter its pubspec pins, and the screen's test app with it. Only those modules: the Java build is the job above.

@@ -1,0 +1,2 @@
+title: The planner is built for Windows as porelo-planner.exe, tested there, and published as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation.
+type: added
