@@ -47,6 +47,12 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl122"></a>[PL122](PL122-A-Rework-That-Ends-Offers-Its-Reading.md) | S | - | A rework task that ended finished and landed moves its issue on to its reading as the rule's then says, and a next step the planner cannot take is said in words, in the log and on the row, instead of a bare NEXT_STEP_UNAVAILABLE |
+
 ## Review
 
 | # | Size | Blocked by | What it covers |
