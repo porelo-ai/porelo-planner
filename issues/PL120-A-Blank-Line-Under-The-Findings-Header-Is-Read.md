@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL120",
   "title": "A Blank Line Under The Findings Header Is Read",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 56,

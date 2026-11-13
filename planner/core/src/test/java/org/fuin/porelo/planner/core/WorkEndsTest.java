@@ -144,6 +144,32 @@ class WorkEndsTest {
     }
 
     @Test
+    void blankLinesBetweenTheHeaderAndTheFirstRowAreSkipped() {
+        // Harm: a reader's blocking findings thrown away whole because it wrote the block as
+        // Markdown
+        // does, with a blank line under its header.
+        final Read read =
+                (Read)
+                        WorkEnds.judge(
+                                "READER",
+                                Outcome.DONE,
+                                "Reported as blocking.\n\nFindings:\n\n \n"
+                                        + "1. blocking | src/A.java | 26 | a fault\n"
+                                        + "2. note | - | - | a verdict\n\n");
+        assertThat(read.findings())
+                .as("both rows read")
+                .containsExactly(
+                        new Finding(1, Severity.BLOCKING, "src/A.java", 26, "a fault"),
+                        new Finding(2, Severity.NOTE, null, null, "a verdict"));
+        final WorkEnds.Judgment none =
+                WorkEnds.judge("READER", Outcome.DONE, "Findings:\n\n(none)\n");
+        assertThat(none)
+                .as("a none under a blank line is a clean reading")
+                .isInstanceOf(Read.class);
+        assertThat(((Read) none).findings()).as("no findings").isEmpty();
+    }
+
+    @Test
     void anEmptyBlockIsACleanReading() {
         // A clean reading taken as malformed would hold every issue under Needs you.
         final Read read = (Read) WorkEnds.judge("READER", Outcome.DONE, "All good.\nFindings:\n");

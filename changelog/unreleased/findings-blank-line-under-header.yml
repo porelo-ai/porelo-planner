@@ -1,0 +1,2 @@
+title: A reader's Findings block with a blank line under its header is read with its rows instead of stopping the reading as unreadable.
+type: fixed

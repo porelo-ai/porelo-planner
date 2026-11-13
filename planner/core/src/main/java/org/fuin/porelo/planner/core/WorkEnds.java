@@ -220,6 +220,10 @@ public final class WorkEnds {
         }
         final String after = lines.get(block).strip().substring(BLOCK.length()).strip();
         final List<String> rows = new ArrayList<>(lines.subList(block + 1, lines.size()));
+        // Markdown puts a blank line under a heading; a gap between rows stays refused.
+        while (!rows.isEmpty() && rows.get(0).isBlank()) {
+            rows.remove(0);
+        }
         while (!rows.isEmpty() && rows.get(rows.size() - 1).isBlank()) {
             rows.remove(rows.size() - 1);
         }
