@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.List;
@@ -307,10 +308,69 @@ class MovesTest {
     void aStoryWithIssuesThatFitsItsTargetAgainLosesItsStatedState() {
         // A stated state left behind would hold the story where its issues no longer are.
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST3", "Finished")), false, DERIVE);
-        assertThat(planned.issues()).containsExactly(entry("PL3", "Finished"));
+                Moves.check(board, List.of(story("ST3", "Rejected")), false, DERIVE);
+        assertThat(planned.issues()).containsExactly(entry("PL3", "Rejected"));
         assertThat(planned.stories()).as("no stated state").isEmpty();
         assertThat(planned.unstated()).containsExactly("ST3");
+    }
+
+    @Test
+    void aStoryFinishedWhileAnIssueStandsBeforeReviewIsRefusedNamingItAndMovesNothing() {
+        // Harm: a story closed over open work, with that work carried to Finished unseen.
+        final Moves.Refused refused = refused(List.of(story("ST1", "Finished")), true);
+        assertThat(refused.name()).as("refused even when confirmed").isEqualTo("MoveNotAllowed");
+        assertThat(refused.parameters())
+                .as("the story, its move and the issue that stands before Review")
+                .containsEntry("item", "ST1")
+                .containsEntry("from", "Backlog")
+                .containsEntry("to", "Finished");
+        assertThat(refused.parameters().get("reason"))
+                .as("names the open issue and not the one in Review")
+                .contains("PL1:Backlog")
+                .doesNotContain("PL2");
+    }
+
+    @Test
+    void aStoryFinishedOverIssuesInReviewOrClosedMovesAloneAndTakesNoIssueAlong() {
+        // Harm: a story's Finished carrying its issues past the person's test in Review.
+        final Board ready =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Review", false, "PL1", "PL2", "PL5")),
+                        List.of(
+                                issue("PL1", "Review", null),
+                                issue("PL2", "Rejected", null),
+                                issue("PL5", "Finished", null)),
+                        WORK);
+        final Moves.Planned planned =
+                Moves.check(ready, List.of(story("ST1", "Finished")), true, DERIVE);
+        assertThat(planned.issues()).as("no issue is moved along").isEmpty();
+        assertThat(planned.moved()).as("nor named as moved to the window").isEmpty();
+        assertThat(planned.stories())
+                .as("the story alone stands Finished")
+                .containsExactly(entry("ST1", "Finished"));
+    }
+
+    @Test
+    void aStoryFinishedOverAnIssueInReviewWhoseSubIssueStandsBeforeReviewIsRefused() {
+        // Harm: a story closed over open work hidden under an issue that stands in Review.
+        final Board nested =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Review", false, "PL1")),
+                        List.of(issue("PL1", "Review", null), issue("PL1.1", "Backlog", "PL1")),
+                        WORK);
+        assertThatThrownBy(
+                        () -> Moves.check(nested, List.of(story("ST1", "Finished")), true, DERIVE))
+                .as("the sub-issue keeps the story open")
+                .isInstanceOf(Moves.Refused.class)
+                .satisfies(
+                        e ->
+                                assertThat(((Moves.Refused) e).parameters().get("reason"))
+                                        .as("names the sub-issue")
+                                        .contains("PL1.1:Backlog"));
     }
 
     @Test

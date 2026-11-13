@@ -4302,6 +4302,90 @@ class WorkRunTest {
                                 "ST1", run.id(), List.of(new WorkRun.StoppedTask("task", "box"))));
     }
 
+    @Test
+    void anIssueMoveInAStoryWhoseRunHasAStartedTaskIsRefusedAsWorkRunning() {
+        // Harm: work moved under a running agent, through an issue its task was not given.
+        final Fixture f = new Fixture();
+        f.start(role(f.order().tasks(), "MAIN"));
+        withSecondIssueAndOtherStory(f);
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA2", "Review"));
+        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        assertThat(preview.warnings())
+                .as("the story's running work is shown before the save")
+                .extracting(MovePreview.Warning::kind, MovePreview.Warning::item)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("RUNNING_WORK", "ST1"));
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        preview.revision(),
+                                        preview.digest("https://example.org/own.git", null),
+                                        false,
+                                        "https://example.org/own.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+
+        assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(refused)).as("as running work").isEqualTo("WorkRunning");
+        assertThat(saved).as("nothing reaches the store").isFalse();
+    }
+
+    @Test
+    void anIssueMoveInAStoryWithoutARunIsSaved() {
+        // Harm: a run of one story holding back the issues of every other story.
+        final Fixture f = new Fixture();
+        f.start(role(f.order().tasks(), "MAIN"));
+        withSecondIssueAndOtherStory(f);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        moved(f.run, List.of(new Moves.Move(false, "AA3", "Review")), () -> saved.getAndSet(true));
+
+        assertThat(saved).as("the move is saved").isTrue();
+    }
+
+    /** ST1 gains AA2, which its started task was not given, and ST2 without a run holds AA3. */
+    private static void withSecondIssueAndOtherStory(final Fixture f) {
+        final Board before = f.store.board();
+        f.store.current =
+                new Board(
+                        before.revision(),
+                        before.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Building",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null),
+                                new Story(
+                                        "ST2",
+                                        "Other",
+                                        "Backlog",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("AA3"),
+                                        "",
+                                        null)),
+                        List.of(
+                                before.issue("AA1").orElseThrow(),
+                                new Issue(
+                                        "AA2", "alpha", "Second", "Backlog", null, List.of(), null,
+                                        null, ""),
+                                new Issue(
+                                        "AA3", "alpha", "Other", "Backlog", null, List.of(), null,
+                                        null, "")),
+                        before.work(),
+                        before.repositories());
+    }
+
     private static WorkRun.Offered role(final List<WorkRun.Offered> tasks, final String role) {
         return tasks.stream().filter(o -> o.task().role().equals(role)).findFirst().orElseThrow();
     }

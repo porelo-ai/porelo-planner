@@ -1308,7 +1308,7 @@ class PlanningBoard extends ChangeNotifier {
       final story = previous.stories.where((story) => story.id == move.id).firstOrNull;
       final expected = move is PlanningIssueMove
           ? [move.id]
-          : story?.leastAdvancedIssues(previous.states)?.map((issue) => issue.id).toList();
+          : story?.leastAdvancedIssues(previous.states, move.to)?.map((issue) => issue.id).toList();
       _pending.remove(key);
       if (expected != null && expected.every(reply.moved.contains)) {
         for (final issue in expected) {

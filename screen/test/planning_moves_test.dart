@@ -9,7 +9,7 @@ import 'support/fake_planning.dart';
 Map<String, dynamic> _fixture() => {
   'states': [
     {'name': 'Ready', 'kind': 'WAITING'},
-    {'name': 'Done', 'kind': 'CLOSED'},
+    {'name': 'Rejected', 'kind': 'CLOSED'},
     {'name': 'Elsewhere', 'kind': 'WAITING'},
     {'name': 'Building', 'kind': 'WORKING'},
     {'name': 'Future', 'kind': 'UNKNOWN'},
@@ -17,7 +17,7 @@ Map<String, dynamic> _fixture() => {
   'phases': [
     {
       'name': 'Work',
-      'states': ['Ready', 'Done', 'Elsewhere', 'Building', 'Future'],
+      'states': ['Ready', 'Rejected', 'Elsewhere', 'Building', 'Future'],
     },
   ],
   'stories': [
@@ -242,10 +242,10 @@ void main() {
   test('every refused save puts the card back where it is reported and says why', () async {
     for (final name in ['WorkNotAllowed', 'Busy', 'NotOffered']) {
       backend.failure = PlanningRefusal(name, {'story': 'StoryOne'}, 'Refused.');
-      await board.move('StoryOne', 'Done');
+      await board.move('StoryOne', 'Rejected');
       expect(board.pending, isEmpty, reason: name);
       expect(board.moveProblem, contains('Refused.'), reason: name);
-      expect(board.cards('Done'), isEmpty, reason: name);
+      expect(board.cards('Rejected'), isEmpty, reason: name);
       expect(board.unavailableActions.keys, name == 'NotOffered' ? ['SaveMoves'] : isEmpty);
       board.unavailableActions.clear();
     }
@@ -256,14 +256,14 @@ void main() {
     backend.data = applyPlanningMove(backend.data, {
       'revision': 'initial',
       'moves': [
-        {'story': 'StoryTwo', 'to': 'Done'},
+        {'story': 'StoryTwo', 'to': 'Rejected'},
       ],
     })..['revision'] = 'initial';
     backend.failure = const PlanningRefusal('PartlySaved', {'pushed': 'repo', 'failed': 'other'}, 'Partly saved.');
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
     expect(backend.calls, hasLength(1));
     expect(backend.storyReads, 1);
-    expect(board.stories.last.state, 'Done');
+    expect(board.stories.last.state, 'Rejected');
     expect(board.moveProblem, contains('Partly saved.'));
     expect(board.moveRefusal?.parameters, {'pushed': 'repo', 'failed': 'other'});
   });
@@ -285,12 +285,12 @@ void main() {
 
   // Harm: a move with nothing to warn of waits for a Save that no longer exists, or goes out unpreviewed.
   test('a move with no warning is previewed and saved at once with the digest of its preview', () async {
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
 
     expect(backend.previewed, [
       {
         'moves': [
-          {'story': 'StoryTwo', 'to': 'Done'},
+          {'story': 'StoryTwo', 'to': 'Rejected'},
         ],
         'revision': 'initial',
       },
@@ -298,7 +298,7 @@ void main() {
     expect(backend.calls, hasLength(1), reason: 'saved once, with no wait');
     expect(backend.digests, [FakePlanningSource.digestAt('initial')], reason: 'the save carries what was shown');
     expect(board.question, isNull);
-    expect(board.stories.last.state, 'Done');
+    expect(board.stories.last.state, 'Rejected');
   });
 
   // Harm: a story's move carries an issue of another repository along unasked.
@@ -308,21 +308,21 @@ void main() {
         'kind': 'ISSUES_ALONG',
         'item': 'StoryOne',
         'from': 'Ready',
-        'to': 'Done',
+        'to': 'Rejected',
         'run': null,
         'tasks': <String>[],
         'offers': <String>[],
         'issues': [
-          {'id': 'IssueOne', 'repository': 'other', 'from': 'Ready', 'to': 'Done'},
+          {'id': 'IssueOne', 'repository': 'other', 'from': 'Ready', 'to': 'Rejected'},
         ],
         'skipped': <String>[],
       },
     ];
 
-    final moving = board.move('StoryOne', 'Done');
+    final moving = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     expect(board.question?.warnings.single.issues.single.repository, 'other', reason: 'the person sees it first');
-    expect(board.cards('Done').map((story) => story.id), ['StoryOne'], reason: 'the card keeps its new place');
+    expect(board.cards('Rejected').map((story) => story.id), ['StoryOne'], reason: 'the card keeps its new place');
     expect(backend.calls, isEmpty, reason: 'nothing is saved before a confirmation');
     board.cancelMove();
     await moving;
@@ -330,7 +330,7 @@ void main() {
     expect(board.pending, isEmpty);
     expect(board.cards('Ready').map((story) => story.id), contains('StoryOne'), reason: 'the card goes back');
 
-    final again = board.move('StoryOne', 'Done');
+    final again = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     await board.confirmMove();
     await again;
@@ -341,9 +341,9 @@ void main() {
   // Harm: a story set where its issues do not fit, confirmed without the planner knowing it was confirmed.
   test('a confirmed move whose story will not fit its issues is saved with confirm', () async {
     backend.warnings = [
-      {'kind': 'STORY_MISMATCH', 'item': 'StoryTwo', 'from': 'Ready', 'to': 'Done', 'issues': <Object>[]},
+      {'kind': 'STORY_MISMATCH', 'item': 'StoryTwo', 'from': 'Ready', 'to': 'Rejected', 'issues': <Object>[]},
     ];
-    final moving = board.move('StoryTwo', 'Done');
+    final moving = board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
     await board.confirmMove();
     await moving;
@@ -359,7 +359,7 @@ void main() {
         'kind': 'RUNNING_WORK',
         'item': 'StoryTwo',
         'from': 'Ready',
-        'to': 'Done',
+        'to': 'Rejected',
         'run': 'run-1',
         'tasks': ['build'],
         'offers': <String>[],
@@ -379,7 +379,7 @@ void main() {
         },
       ],
     };
-    final moving = board.move('StoryTwo', 'Done');
+    final moving = board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
     expect(board.question, isNotNull, reason: 'the running work is asked about');
     await board.confirmMove();
@@ -392,12 +392,12 @@ void main() {
 
   // Harm: a saved move's issue states stay stale until a watch arrives.
   test('a saved move applies the confirmed issues and rereads computed story states', () async {
-    await board.move('StoryOne', 'Done');
+    await board.move('StoryOne', 'Rejected');
     expect(backend.calls, [
       {
         'project': 'demo',
         'moves': [
-          {'story': 'StoryOne', 'to': 'Done'},
+          {'story': 'StoryOne', 'to': 'Rejected'},
         ],
         'revision': 'initial',
       },
@@ -405,10 +405,10 @@ void main() {
     expect(board.pending, isEmpty);
     expect(
       board.stories.first.state,
-      'Done',
+      'Rejected',
       reason: 'the planner writes the state of a story moved over its issues once confirmed',
     );
-    expect(board.stories.first.issues.map((issue) => issue.state), ['Done', 'Elsewhere']);
+    expect(board.stories.first.issues.map((issue) => issue.state), ['Rejected', 'Elsewhere']);
     expect(board.snapshot!.revision, 'initial:moved');
     expect(backend.workflowReads, 0);
     expect(backend.storyReads, 1);
@@ -421,7 +421,7 @@ void main() {
       () => applyPlanningMove(source, {
         'revision': 'initial',
         'moves': [
-          {'story': 'StoryOne', 'to': 'Done'},
+          {'story': 'StoryOne', 'to': 'Rejected'},
           {'story': 'StoryTwo', 'to': 'Building'},
         ],
       }),
@@ -439,8 +439,8 @@ void main() {
       () => applyPlanningMove(source, {
         'revision': 'initial',
         'moves': [
-          {'issue': 'IssueOne', 'to': 'Done'},
-          {'issue': 'missing', 'to': 'Done'},
+          {'issue': 'IssueOne', 'to': 'Rejected'},
+          {'issue': 'missing', 'to': 'Rejected'},
         ],
       }),
       throwsA(isA<PlanningRefusal>()),
@@ -456,7 +456,7 @@ void main() {
       {
         'revision': 'old',
         'moves': [
-          {'issue': 'IssueOne', 'to': 'Done'},
+          {'issue': 'IssueOne', 'to': 'Rejected'},
         ],
       },
     ]) {
@@ -465,13 +465,13 @@ void main() {
     final result = applyPlanningMove(source, {
       'revision': 'initial',
       'moves': [
-        {'issue': 'IssueOne', 'to': 'Done'},
+        {'issue': 'IssueOne', 'to': 'Rejected'},
       ],
     });
     final story = (result['stories'] as List<dynamic>).first;
     // The story's state is computed: its earliest open issue state in workflow order.
     expect(story['state'], 'Elsewhere');
-    expect(story['issues'][0]['state'], 'Done');
+    expect(story['issues'][0]['state'], 'Rejected');
     expect(story['issues'][1]['state'], 'Elsewhere');
     expect(result['revision'], allOf(isA<String>(), isNotEmpty, isNot(source['revision'])));
   });
@@ -484,7 +484,7 @@ void main() {
         'item': 'StoryTwo',
         'from': 'Ready',
         'to': 'Elsewhere',
-        'skipped': ['Done'],
+        'skipped': ['Rejected'],
       },
     ];
     final moving = board.move('StoryTwo', 'Elsewhere');
@@ -506,7 +506,7 @@ void main() {
   // Harm: a gesture begun on an older board previewed against the new one.
   test('a preview refused as stale moves nothing and reads the board again', () async {
     backend.data = {...backend.data, 'revision': 'changed'};
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
     expect(backend.calls, isEmpty);
     expect(board.pending, isEmpty);
@@ -517,7 +517,7 @@ void main() {
   // Harm: a planner without the preview answered as if the move were made.
   test('a preview the planner does not know moves nothing', () async {
     backend.previewFailure = const PlanningRefusal('Http404', {}, 'the planner answered HTTP 404');
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
     expect(backend.calls, isEmpty);
     expect(board.pending, isEmpty);
     expect(board.moveProblem, contains('404'));
@@ -532,7 +532,7 @@ void main() {
           'detail': 'The daemon refused this save',
           if (named) 'story': 'StoryOne',
         });
-        await board.move('StoryOne', 'Done');
+        await board.move('StoryOne', 'Rejected');
         expect(board.pending, isEmpty);
         expect(board.cards('Ready').map((story) => story.id), ['StoryOne', 'StoryTwo']);
         expect(board.moveProblem, contains('The daemon refused this save'));
@@ -549,7 +549,7 @@ void main() {
       if (call == 'stale save') {
         backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
       }
-      final operation = call == 'reload' ? board.reload() : board.move('StoryOne', 'Done');
+      final operation = call == 'reload' ? board.reload() : board.move('StoryOne', 'Rejected');
       await backend.listingStarted!.future;
       final streamed = _fixture()..['revision'] = 'streamed';
       (streamed['stories'] as List<dynamic>).first['state'] = 'Elsewhere';
@@ -565,7 +565,7 @@ void main() {
   for (final reread in ['answers', 'fails']) {
     test('a board streamed while a save waits loses to the saved board when the read after it $reread', () async {
       backend.gate = Completer<void>();
-      final operation = board.move('StoryTwo', 'Done');
+      final operation = board.move('StoryTwo', 'Rejected');
       await pumpEventQueue();
       backend.changes.add(PlanningSnapshot.from(_fixture()..['revision'] = 'before the save'));
       if (reread == 'fails') {
@@ -576,7 +576,7 @@ void main() {
       expect(board.snapshot!.revision, isNot('before the save'));
       expect(
         board.snapshot!.stories.firstWhere((story) => story.id == 'StoryTwo').state,
-        'Done',
+        'Rejected',
         reason: 'the saved move',
       );
     });
@@ -586,7 +586,7 @@ void main() {
   test('a board streamed while a stale save waits loses to the read after the refusal', () async {
     backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
     backend.gate = Completer<void>();
-    final operation = board.move('StoryOne', 'Done');
+    final operation = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     backend.changes.add(PlanningSnapshot.from(_fixture()..['revision'] = 'before the save'));
     backend.gate!.complete();
@@ -622,16 +622,16 @@ void main() {
     backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
     backend.listing = Completer<PlanningSnapshot>();
     backend.listingStarted = Completer<void>();
-    final operation = board.move('StoryOne', 'Done');
+    final operation = board.move('StoryOne', 'Rejected');
     await backend.listingStarted!.future;
     final streamed = _fixture()..['revision'] = 'streamed';
-    (streamed['stories'] as List<dynamic>).first['state'] = 'Done';
+    (streamed['stories'] as List<dynamic>).first['state'] = 'Rejected';
     backend.changes.add(PlanningSnapshot.from(streamed));
     backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
     await operation;
     expect(board.pending, isEmpty);
     expect(board.question, isNull, reason: 'nothing is asked about a board that moved on');
-    expect(board.moveProblem, contains('now stands in Done'));
+    expect(board.moveProblem, contains('now stands in Rejected'));
   });
 
   // Harm: missing watch fields erase the complete board returned by a successful save.
@@ -643,17 +643,17 @@ void main() {
       backend.data = _fixture();
       backend.changes.add(PlanningSnapshot.from(backend.data));
       backend.gate = Completer<void>();
-      final saved = board.move('StoryOne', 'Done');
+      final saved = board.move('StoryOne', 'Rejected');
       await pumpEventQueue();
       backend.changes.add(PlanningSnapshot.from(broken));
       backend.gate!.complete();
       await saved;
       expect(board.snapshot!.complete, isTrue);
       expect(board.snapshot!.revision, 'initial:moved');
-      expect(board.stories.first.issues.first.state, 'Done');
+      expect(board.stories.first.issues.first.state, 'Rejected');
       expect(
         board.stories.first.state,
-        'Done',
+        'Rejected',
         reason: 'the planner writes the state of a story moved over its issues once confirmed',
       );
     }
@@ -666,7 +666,7 @@ void main() {
       'story': 'StoryOne',
       'detail': 'Story unavailable',
     });
-    final saved = board.move('StoryOne', 'Done');
+    final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     final changed = _fixture()..['revision'] = 'changed';
     (changed['stories'] as List<dynamic>).first['state'] = 'Elsewhere';
@@ -688,7 +688,7 @@ void main() {
       backend.data = _fixture();
       backend.changes.add(PlanningSnapshot.from(backend.data));
       backend.reply = broken;
-      await board.move('StoryOne', 'Done');
+      await board.move('StoryOne', 'Rejected');
       expect(board.snapshot!.complete, isTrue);
       expect(board.snapshot!.revision, 'initial');
       expect(board.stories.first.state, 'Ready');
@@ -700,7 +700,7 @@ void main() {
   // Harm: a negative confirmation is accepted as a saved board.
   test('a negative move confirmation is told and leaves the card where it is reported', () async {
     backend.confirmed = false;
-    await board.move('StoryOne', 'Done');
+    await board.move('StoryOne', 'Rejected');
     expect(board.pending, isEmpty);
     expect(board.stories.first.state, 'Ready');
     expect(board.moveProblem, contains('did not confirm'));
@@ -710,7 +710,7 @@ void main() {
   // Harm: reconnects during writes lose the only request to restart the watch.
   test('a reconnect during save restarts its watch after the save finishes', () async {
     backend.gate = Completer<void>();
-    final saved = board.move('StoryOne', 'Done');
+    final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     await board.changeProject(backend, 'demo');
     expect(backend.watches, 1);
@@ -720,10 +720,10 @@ void main() {
     expect(backend.watches, 2);
     backend.changes.add(PlanningSnapshot.from(backend.data));
     expect(board.live, isTrue);
-    expect(board.stories.first.issues.first.state, 'Done');
+    expect(board.stories.first.issues.first.state, 'Rejected');
     expect(
       board.stories.first.state,
-      'Done',
+      'Rejected',
       reason: 'the planner writes the state of a story moved over its issues once confirmed',
     );
   });
@@ -731,9 +731,9 @@ void main() {
   // Harm: a second move sent while one is saved, or lost without a word.
   test('a move made while another is saved is refused with words and nothing is queued', () async {
     backend.gate = Completer<void>();
-    final saved = board.move('StoryOne', 'Done');
+    final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
     expect(board.moveProblem, contains('Saving…'));
     expect(backend.calls, hasLength(1));
     expect(board.pending.keys, ['StoryOne']);
@@ -747,7 +747,7 @@ void main() {
   test('late save replies do not notify after disposal', () async {
     backend.gate = Completer<void>();
     var notifications = 0;
-    final saved = board.move('StoryOne', 'Done');
+    final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     board.addListener(() {
       notifications++;
@@ -810,13 +810,13 @@ void main() {
     final result = applyPlanningMove(source, {
       'revision': 'initial',
       'moves': [
-        {'story': 'StoryOne', 'to': 'Done'},
+        {'story': 'StoryOne', 'to': 'Rejected'},
       ],
       'confirm': true,
     });
     final moved = (result['stories'] as List<dynamic>).first as Map<String, dynamic>;
     expect(result['moved'], ['IssueOne']);
-    expect((moved['issues'] as List<dynamic>).map((issue) => issue['state']), ['Done', 'Elsewhere']);
+    expect((moved['issues'] as List<dynamic>).map((issue) => issue['state']), ['Rejected', 'Elsewhere']);
   });
 
   // Harm: the board calls a story move the machine made unconfirmed.
@@ -825,23 +825,23 @@ void main() {
       'adapter': 'board',
       'detail': 'The store is not reachable',
     });
-    await board.move('StoryOne', 'Done');
-    // The reread failed, so the card keeps the machine's last answer while its issues stand in Done and Elsewhere.
+    await board.move('StoryOne', 'Rejected');
+    // The reread failed, so the card keeps the machine's last answer while its issues stand in Rejected and Elsewhere.
     expect(board.stories.first.state, 'Ready');
-    expect(board.stories.first.issues.map((issue) => issue.state), ['Done', 'Elsewhere']);
+    expect(board.stories.first.issues.map((issue) => issue.state), ['Rejected', 'Elsewhere']);
     backend.readFailure = null;
     backend.listing = Completer<PlanningSnapshot>();
     backend.listingStarted = Completer<void>();
-    final saving = board.move('StoryOne', 'Done');
+    final saving = board.move('StoryOne', 'Rejected');
     await backend.listingStarted!.future;
     expect(backend.calls.last['moves'], [
-      {'story': 'StoryOne', 'to': 'Done'},
+      {'story': 'StoryOne', 'to': 'Rejected'},
     ]);
     // The machine moved IssueTwo, the least advanced; the board must take that as its confirmation.
     expect(backend.data['moved'], ['IssueTwo']);
     expect(board.moveProblem, isNull);
     expect(board.pending, isEmpty);
-    expect(board.stories.first.issues.map((issue) => issue.state), ['Done', 'Done']);
+    expect(board.stories.first.issues.map((issue) => issue.state), ['Rejected', 'Rejected']);
     backend.listing!.complete(PlanningSnapshot.from(backend.data));
     await saving;
   });
@@ -850,16 +850,16 @@ void main() {
   test('a saved story with issues keeps its reported state until the machine says its new one', () async {
     backend.listing = Completer<PlanningSnapshot>();
     backend.listingStarted = Completer<void>();
-    final saving = board.move('StoryOne', 'Done');
+    final saving = board.move('StoryOne', 'Rejected');
     await backend.listingStarted!.future;
     expect(board.pending, isEmpty);
-    expect(board.stories.first.issues.map((issue) => issue.state), ['Done', 'Elsewhere']);
+    expect(board.stories.first.issues.map((issue) => issue.state), ['Rejected', 'Elsewhere']);
     expect(board.stories.first.state, 'Ready');
     backend.listing!.complete(PlanningSnapshot.from(backend.data));
     await saving;
     expect(
       board.stories.first.state,
-      'Done',
+      'Rejected',
       reason: 'the planner writes the state of a story moved over its issues once confirmed',
     );
   });
@@ -867,7 +867,7 @@ void main() {
   // Harm: a reread failing after a made save goes unsaid, or turns off moving for good.
   test('a failed reread after a confirmed save says so and leaves moving offered', () async {
     backend.readFailure = mockRefusal('org.fuin.porelo.Tasks1.NotYetBuilt', {'method': 'ListStories'});
-    await board.move('StoryTwo', 'Done');
+    await board.move('StoryTwo', 'Rejected');
     expect(board.pending, isEmpty);
     expect(board.moveProblem, isNotNull);
     expect(board.unavailableActions.keys, isNot(contains('SaveMoves')));
@@ -886,7 +886,7 @@ void main() {
       backend.changes.add(PlanningSnapshot.from(backend.data));
       await Future<void>.delayed(Duration.zero);
       backend.confirmed = false;
-      await board.move('StoryOne', 'Done');
+      await board.move('StoryOne', 'Rejected');
       expect(board.moveProblem, contains('did not confirm'), reason: '$index');
       expect(board.moveNotice, isNull, reason: '$index');
     }
@@ -898,7 +898,7 @@ void main() {
       'revision': 'initial',
       'moves': [
         {'issue': 'IssueOne', 'to': 'Elsewhere'},
-        {'story': 'StoryOne', 'to': 'Done'},
+        {'story': 'StoryOne', 'to': 'Rejected'},
       ],
       'confirm': true,
     });
@@ -916,7 +916,7 @@ void main() {
       () => applyPlanningMove(source, {
         'revision': 'initial',
         'moves': [
-          {'story': 'StoryOne', 'to': 'Done'},
+          {'story': 'StoryOne', 'to': 'Rejected'},
         ],
       }),
       throwsA(isA<PlanningRefusal>().having((error) => error.name, 'refusal', 'MoveNotAllowed')),
@@ -969,6 +969,77 @@ void main() {
     await saving;
   });
 
+  Map<String, dynamic> finishing(String first) => {
+    'states': [
+      {'name': 'Ready', 'kind': 'WAITING'},
+      {'name': 'Review', 'kind': 'WAITING'},
+      {'name': 'Finished', 'kind': 'CLOSED'},
+      {'name': 'Rejected', 'kind': 'CLOSED'},
+    ],
+    'phases': [
+      {
+        'name': 'Work',
+        'states': ['Ready', 'Review', 'Finished', 'Rejected'],
+      },
+    ],
+    'stories': [
+      {
+        'id': 'StoryOne',
+        'state': first,
+        'issues': [
+          {'id': 'IssueOne', 'state': first},
+          {'id': 'IssueTwo', 'state': 'Review'},
+          {'id': 'IssueThree', 'state': 'Rejected'},
+        ],
+      },
+    ],
+    'revision': 'finishing',
+  };
+
+  // Harm: the window's tests passing a story closed over open work, which the planner refuses.
+  test('the stand-in refuses a story finished while an issue stands before Review, naming it, and moves nothing', () {
+    final source = finishing('Ready');
+    expect(
+      () => applyPlanningMove(source, {
+        'revision': 'finishing',
+        'moves': [
+          {'story': 'StoryOne', 'to': 'Finished'},
+        ],
+        'confirm': true,
+      }),
+      throwsA(
+        isA<PlanningRefusal>()
+            .having((error) => error.name, 'refusal', 'MoveNotAllowed')
+            .having((error) => error.parameters['item'], 'the story', 'StoryOne')
+            .having((error) => '${error.parameters['reason']}', 'the open issue', contains('IssueOne:Ready'))
+            .having((error) => '${error.parameters['reason']}', 'not the one in Review', isNot(contains('IssueTwo'))),
+      ),
+    );
+    final issues = ((source['stories'] as List<dynamic>).first as Map<String, dynamic>)['issues'] as List<dynamic>;
+    expect(issues.map((issue) => issue['state']), ['Ready', 'Review', 'Rejected'], reason: 'nothing moves');
+  });
+
+  // Harm: the window's tests carrying issues past the person's test in Review, which the planner leaves there.
+  test('a story finished over issues in Review or closed moves alone and the board expects no issue along', () async {
+    final result = applyPlanningMove(finishing('Review'), {
+      'revision': 'finishing',
+      'moves': [
+        {'story': 'StoryOne', 'to': 'Finished'},
+      ],
+      'confirm': true,
+    });
+    expect(result['moved'], isEmpty, reason: 'no issue is taken along');
+    final story = (result['stories'] as List<dynamic>).first as Map<String, dynamic>;
+    expect((story['issues'] as List<dynamic>).map((issue) => issue['state']), ['Review', 'Review', 'Rejected']);
+    expect(story['state'], 'Finished', reason: 'the story alone stands Finished');
+
+    backend.data = finishing('Review');
+    backend.changes.add(PlanningSnapshot.from(backend.data));
+    await Future<void>.delayed(Duration.zero);
+    await board.move('StoryOne', 'Finished');
+    expect(board.moveProblem, isNull, reason: 'the board took the empty answer as the confirmation');
+  });
+
   // Harm: a prepared order changes planning state or a reading decision publishes an incorrect story state.
   test('the stand-in leaves an order unstarted and computes a reading decision from issue states', () {
     final board = mockPlanningBoard();
@@ -1008,21 +1079,21 @@ void main() {
   test('a move chosen from a menu built before the issue moved on is refused with its new state', () async {
     final shown = issueOne();
     final moved = _fixture();
-    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Done';
+    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Rejected';
     moved['revision'] = 'moved by a task';
     backend.changes.add(PlanningSnapshot.from(moved));
     await Future<void>.delayed(Duration.zero);
     await board.moveIssue('IssueOne', 'Elsewhere', reported: shown);
     expect(board.pending, isEmpty, reason: 'nothing is staged from a state the issue has left');
-    expect(board.moveProblem, contains('Done'), reason: 'the person reads where the issue stands now');
+    expect(board.moveProblem, contains('Rejected'), reason: 'the person reads where the issue stands now');
   });
 
   // Harm: a person's move lost without a word while a save runs.
   test('a move chosen while a save runs is refused with words', () async {
     backend.gate = Completer<void>();
-    final saving = board.move('StoryTwo', 'Done');
+    final saving = board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
-    await board.moveIssue('IssueOne', 'Done', reported: issueOne());
+    await board.moveIssue('IssueOne', 'Rejected', reported: issueOne());
     expect(board.pending.keys, isNot(contains('issue IssueOne')), reason: 'nothing is taken while saving');
     expect(board.moveProblem, contains('Saving…'), reason: 'the person reads why the move was not taken');
     backend.gate!.complete();
@@ -1039,13 +1110,13 @@ void main() {
   // Harm: a move asked from a menu that showed an older state staged from the issue's new state.
   test('a move chosen from a menu that showed another state than the board holds now is refused', () async {
     final moved = _fixture();
-    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Done';
+    ((moved['stories'] as List).first['issues'] as List).first['state'] = 'Rejected';
     moved['revision'] = 'moved by a task';
     backend.changes.add(PlanningSnapshot.from(moved));
     await Future<void>.delayed(Duration.zero);
     await board.moveIssue('IssueOne', 'Elsewhere', reported: issueOne(), shown: 'Ready');
-    expect(board.pending, isEmpty, reason: 'the menu showed Ready; the issue stands in Done');
-    expect(board.moveProblem, contains('Done'), reason: 'the person reads where the issue stands now');
+    expect(board.pending, isEmpty, reason: 'the menu showed Ready; the issue stands in Rejected');
+    expect(board.moveProblem, contains('Rejected'), reason: 'the person reads where the issue stands now');
   });
 
   // Harm: an issue worked by an agent put into a working state on a stale copy that says it is worked by hand.
@@ -1064,7 +1135,7 @@ void main() {
     gone['revision'] = 'issue gone';
     backend.changes.add(PlanningSnapshot.from(gone));
     await Future<void>.delayed(Duration.zero);
-    await board.moveIssue('IssueOne', 'Done', reported: shown);
+    await board.moveIssue('IssueOne', 'Rejected', reported: shown);
     expect(board.pending, isEmpty, reason: 'nothing is staged for an issue the board no longer holds');
     expect(board.moveProblem, isNotNull, reason: 'the person reads why');
   });

@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -12,6 +13,7 @@ import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -21,6 +23,9 @@ import org.jspecify.annotations.Nullable;
  * of them, or a refusal and nothing.
  */
 public final class Moves {
+
+    /** The closed state that is not completed work, as the stories index reads it. */
+    private static final String REJECTED = "Rejected";
 
     private Moves() {}
 
@@ -180,6 +185,34 @@ public final class Moves {
     }
 
     /**
+     * The stories whose running work a batch moves under: each story it moves, and each story
+     * holding an issue it moves by itself, directly or as a sub-issue, as a run's ownership reads
+     * them.
+     *
+     * @param board the board
+     * @param moves the moves
+     * @return the stories' ids
+     */
+    public static Set<String> stories(final Board board, final List<Move> moves) {
+        final Set<String> stories = new LinkedHashSet<>();
+        for (final Move move : moves) {
+            if (move.story()) {
+                stories.add(move.id());
+                continue;
+            }
+            final Set<String> lineage = new HashSet<>();
+            @Nullable String id = move.id();
+            while (id != null && lineage.add(id)) {
+                id = board.issue(id).map(Issue::parent).orElse(null);
+            }
+            board.stories().stream()
+                    .filter(story -> story.issues().stream().anyMatch(lineage::contains))
+                    .forEach(story -> stories.add(story.id()));
+        }
+        return stories;
+    }
+
+    /**
      * A checked batch with what its preview reads: the planned writes, each issue's state after the
      * batch, the issues each story's move carried and the stories that do not fit.
      */
@@ -214,8 +247,11 @@ public final class Moves {
         // Story moves first, so an issue's own move in the same batch wins, as the window shows it.
         for (final Move move : moves) {
             if (move.story()) {
+                // A story is completed over its issues' own moves, never by carrying them along.
                 final List<String> carried =
-                        leastAdvanced(workflow, story(board, move.id()), states);
+                        completed(workflow, move.to())
+                                ? List.of()
+                                : leastAdvanced(workflow, story(board, move.id()), states);
                 along.put(move.id(), carried);
                 for (final String id : carried) {
                     states.put(id, move.to());
@@ -232,6 +268,11 @@ public final class Moves {
             }
         }
         checkParents(board, workflow, states);
+        for (final Move move : moves) {
+            if (move.story() && completed(workflow, move.to())) {
+                checkCompleted(board, story(board, move.id()), move.to(), states);
+            }
+        }
         final Map<String, String> stories = new LinkedHashMap<>();
         final List<String> unstated = new ArrayList<>();
         final Map<String, List<String>> misfits = new LinkedHashMap<>();
@@ -350,6 +391,60 @@ public final class Moves {
                                 reason));
             }
         }
+    }
+
+    /** Whether a state completes the work: closed, but not the rejection. */
+    private static boolean completed(final Workflow workflow, final String state) {
+        return workflow.closed().contains(state) && !REJECTED.equals(state);
+    }
+
+    /**
+     * A story is completed only once each of its issues stands closed or in the state the last work
+     * of the rules leads to, where finished work waits for the person's test.
+     */
+    private static void checkCompleted(
+            final Board board,
+            final Story story,
+            final String to,
+            final Map<String, String> states) {
+        final Optional<String> done =
+                board.work().rules().values().stream()
+                        .map(WorkRule::done)
+                        .max(Comparator.comparingInt(board.workflow().states()::indexOf));
+        final Set<String> finished = new HashSet<>(board.workflow().closed());
+        done.ifPresent(finished::add);
+        final List<String> open =
+                Misfits.known(withSubIssues(board, story.issues()), states).stream()
+                        .filter(id -> !finished.contains(states.get(id)))
+                        .toList();
+        if (!open.isEmpty()) {
+            final String reason =
+                    "Its issues "
+                            + open.stream()
+                                    .map(id -> id + ":" + states.get(id))
+                                    .collect(Collectors.joining(", "))
+                            + done.map(state -> " stand neither in " + state + " nor closed.")
+                                    .orElse(" are not closed.");
+            throw new Refused(
+                    "MoveNotAllowed", reason, item(story.id(), story.state(), to, reason));
+        }
+    }
+
+    /**
+     * A story's issues followed by their sub-issues at any depth, so open work under one counts.
+     */
+    private static List<String> withSubIssues(final Board board, final List<String> issues) {
+        final Set<String> all = new LinkedHashSet<>(issues);
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (final Issue each : board.issues()) {
+                if (each.parent() != null && all.contains(each.parent()) && all.add(each.id())) {
+                    grew = true;
+                }
+            }
+        }
+        return List.copyOf(all);
     }
 
     /** A story's issues in the earliest state, among the open ones while any is open. */

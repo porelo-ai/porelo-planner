@@ -705,12 +705,15 @@ paths:
         repository it changes gets one commit in the planner's own clone of it. The answer means every commit stands
         in those clones; the pushes, under the person's own Git login, follow in the background, the other
         repositories before the project's own, and a push that fails becomes a fault on the board. A story moves its least
-        advanced issues; a working state is entered only by work, except by an issue a person works (worker
+        advanced issues, but a story moved to the completed state (closed, not Rejected) takes no issue along and is
+        refused (MoveNotAllowed) unless each of its issues stands in Review, the state the last work leads to, or
+        closed after the batch; a working state is entered only by work, except by an issue a person works (worker
         MANUAL), which a person moves into and through the working states by hand. The body carries the digest of
         the batch's preview: under the writer lock, before anything is written, the preview is computed again, and a
         batch whose preview answers another digest is refused (PreviewChanged), so a confirmation counts only for the
-        batch, the repository and the work the person was shown. A batch over running work is refused (WorkRunning)
-        unless it is confirmed; a confirmed one stops, after its digest matched and in the same step as its save,
+        batch, the repository and the work the person was shown. A batch over running work - a story it moves or moves an
+        issue of whose run has a task at work, or an issue such a task works - is refused (WorkRunning) unless it is
+        confirmed; a confirmed one stops, after its digest matched and in the same step as its save,
         each run with tasks at work over what moves, as the story's Stop does, and answers those runs with the tasks
         the window must end, so nothing is stopped that the preview did not show.
       tags: [board]
@@ -1268,7 +1271,8 @@ components:
                   issue: PL9
     MoveConflict:
       description: >-
-        WorkRunning(story,tasks[]) when a move touches an item currently owned by active work. The board moved since
+        WorkRunning(story,tasks[]) when a move touches an item currently owned by active work or moves an issue of a
+        story whose run has a task at work. The board moved since
         the given revision (StaleRevision, naming the current one), the batch's preview, computed again, answers
         another digest than the one sent (PreviewChanged, naming nothing the window could send back), or a story would
         stand where its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that
@@ -1308,7 +1312,8 @@ components:
         A move is refused: its state is entered only by work and the item is a story or an issue an agent works
         (EnteredOnlyByWork), is no waiting or closed state
         (StateNotAllowed), or the move is not allowed (MoveNotAllowed): it names no item or one twice, closes a parent
-        over an open sub-issue, the work rules have faults, the body cannot be read, or the item cannot be saved in its
+        over an open sub-issue, completes a story while an issue of it stands neither in Review nor closed (its reason
+        naming each such issue with its state), the work rules have faults, the body cannot be read, or the item cannot be saved in its
         repository.
       content:
         application/problem+json:
@@ -1810,7 +1815,7 @@ components:
           type: string
     MoveWarning:
       description: >-
-        One harm a batch can do. RUNNING_WORK - a story's run has tasks at work over what moves: item is the story,
+        One harm a batch can do. RUNNING_WORK - a story's run has tasks at work over what moves, the story itself or an issue of it: item is the story,
         run its run, tasks each task at work and offers each offer not yet started, all of which its stop ends or
         voids; an unconfirmed save is refused (WorkRunning), a confirmed one stops them. ISSUES_ALONG - a story's
         move carries issues along that stand in a working state or in another repository than the project's own: item is the story,

@@ -1499,8 +1499,7 @@ public final class WorkRun {
                         throw WorkRefusal.previewChanged();
                     }
                     final Set<String> affected = new HashSet<>(Moves.touched(board, moves));
-                    final Set<String> stories = new HashSet<>();
-                    moves.stream().filter(Moves.Move::story).forEach(m -> stories.add(m.id()));
+                    final Set<String> stories = Moves.stories(board, moves);
                     if (!confirm) {
                         refuseOwned(snapshot, affected, stories);
                     }

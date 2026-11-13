@@ -55,7 +55,9 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       if (issues.any((item) => !states.any((state) => state['name'] == item['state']))) {
         invalid('An issue of the story stands in a state outside the workflow.');
       }
-      final least = _leastAdvanced(states, issues);
+      // A story is completed over its issues' own moves, never by carrying them along, as the planner does.
+      final completes = target['kind'] == 'CLOSED' && to != _rejected;
+      final least = completes ? const <Map<String, dynamic>>[] : _leastAdvanced(states, issues);
       storyWrites.add(() {
         for (final item in least) {
           item['state'] = to;
@@ -65,6 +67,18 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       });
       storyChecks.add(() {
         if (issues.isEmpty) return;
+        if (completes) {
+          final open = [
+            for (final item in issues)
+              if (item['state'] != _review &&
+                  states.where((state) => state['name'] == item['state']).firstOrNull?['kind'] != 'CLOSED')
+                '${item['id']}:${item['state']}',
+          ];
+          if (open.isNotEmpty) {
+            final reason = 'Its issues ${open.join(', ')} stand neither in $_review nor closed.';
+            refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
+          }
+        }
         final derived = _leastAdvanced(states, issues).firstOrNull?['state'];
         if (derived == to) {
           // A story moved where its issues follow states no state of its own, as the planner unstates it.
@@ -99,6 +113,9 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   board['storyMisfits'] = storyMisfits;
   return board;
 }
+
+/// The state finished work waits in for the person's test, and the closed state that is not completed work.
+const _review = 'Review', _rejected = 'Rejected';
 
 /// Answers what a batch would do as the planner's preview does, writing nothing: every issue it carries with its
 /// repository and states, and the warnings the stand-in can tell from its board - issues a story's move carries

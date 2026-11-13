@@ -129,7 +129,7 @@ public record MovePreview(
          * Answers the runs with tasks at work over the issues or the stories given.
          *
          * @param issues the issues the batch touches
-         * @param stories the stories the batch moves
+         * @param stories the stories the batch moves or moves an issue of
          * @return each such run, once
          */
         List<Owned> over(Set<String> issues, Set<String> stories);
@@ -146,18 +146,17 @@ public record MovePreview(
             issues.add(moved(board, id, after));
         }
         final List<MovedStory> stories = new ArrayList<>();
-        final Set<String> storyIds = new HashSet<>();
         final Set<String> ownMoves = new HashSet<>();
         for (final Moves.Move move : moves) {
             if (move.story()) {
-                storyIds.add(move.id());
                 stories.add(new MovedStory(move.id(), storyState(board, move.id()), move.to()));
             } else {
                 ownMoves.add(move.id());
             }
         }
         final List<Warning> warnings = new ArrayList<>();
-        for (final Owned owned : running.over(Moves.touched(board, moves), storyIds)) {
+        for (final Owned owned :
+                running.over(Moves.touched(board, moves), Moves.stories(board, moves))) {
             warnings.add(
                     new Warning(
                             RUNNING_WORK,
