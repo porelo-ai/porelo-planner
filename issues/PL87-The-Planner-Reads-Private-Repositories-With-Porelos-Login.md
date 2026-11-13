@@ -7,7 +7,7 @@
   "title": "The Planner Reads Private Repositories With Porelo's Login",
   "state": "Backlog",
   "size": "M",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 1,
   "blockedBy": [],
   "covers": "A planner Porelo starts reads and writes a project's private repositories with the login Porelo's vault holds, without a credential helper the person sets up by hand, the token never on disk or a command line"

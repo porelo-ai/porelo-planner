@@ -7,7 +7,7 @@
   "title": "A Save Says When It Is Pushed",
   "state": "Backlog",
   "size": "S",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 48,
   "blockedBy": [],
   "covers": "The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet"
