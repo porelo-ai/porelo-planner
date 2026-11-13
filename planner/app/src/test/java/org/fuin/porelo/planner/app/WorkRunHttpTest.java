@@ -912,6 +912,48 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aReworkOfAReadingThatCouldNotBeReadIsAConflictTheWindowCanName() throws Exception {
+        // Harm: the window cannot tell a rework with nothing to work from apart from a bad request.
+        final String build =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":2}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/build/events", event(build, "STARTED", ""), 200);
+        final String reader =
+                call("/tasks/build/events", event(build, "ENDED", "Built"), 200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        call("/tasks/read/events", event(reader, "STARTED", ""), 200);
+        final JsonNode stopped =
+                call(
+                        "/tasks/read/events",
+                        event(reader, "ENDED", "Findings:\n1. blocking | a.txt | x | no line"),
+                        200);
+        assertThat(stopped.at("/work/issues/0/readingStopped").asBoolean())
+                .as("an unreadable reading stops for a choice")
+                .isTrue();
+        assertThat(stopped.at("/work/issues/0/reason").asString())
+                .as("the reason says the findings could not be read")
+                .isEqualTo("INVALID_FINDINGS");
+        final JsonNode refused =
+                call(
+                        "/issues/AA1/reading",
+                        "{\"story\":\"ST1\",\"round\":0,\"choice\":\"REWORK\",\"comment\":\"Fix it.\",\"revision\":\""
+                                + store.board().revision().value()
+                                + "\"}",
+                        409);
+        assertThat(refused.path("type").asString())
+                .as("the refusal has its own name")
+                .endsWith(":ReworkNeedsFindings");
+        assertThat(refused.at("/parameters/issue").asString())
+                .as("it names the issue")
+                .isEqualTo("AA1");
+    }
+
+    @Test
     void anOversizedReadingAnswerCannotSaveBeforeItCanBeReturned() throws Exception {
         // Prevents an oversized issue envelope from changing planning before it can be answered.
         final var order =

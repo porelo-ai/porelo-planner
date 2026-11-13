@@ -275,7 +275,9 @@ public final class NextStep {
             return attention(binding, progress, "NEXT_STEP_UNAVAILABLE");
         }
         if (judgment instanceof WorkEnds.NeedsOperator needs) {
-            return attention(binding, progress, needs.reason().name());
+            return needs.reason() == WorkEnds.Reason.INVALID_FINDINGS
+                    ? unreadable(binding, progress)
+                    : attention(binding, progress, needs.reason().name());
         }
         final Map<String, String> targets = new LinkedHashMap<>();
         final List<Planned> tasks = new ArrayList<>();
@@ -733,6 +735,31 @@ public final class NextStep {
             }
         }
         return new Writes(changed, stories, unstated);
+    }
+
+    /**
+     * Stops a reading whose findings could not be read, counting no round and keeping no findings,
+     * so the person can have the same build read again or take it to Review.
+     */
+    private static Result unreadable(final Binding binding, final Map<String, Progress> progress) {
+        binding.issues()
+                .forEach(
+                        id -> {
+                            final Progress before = progress(progress, id);
+                            progress.put(
+                                    id,
+                                    new Progress(
+                                            new ReadingCycle.Rounds(
+                                                    before.rounds().rounds(),
+                                                    before.rounds().roundsMost(),
+                                                    true),
+                                            List.of(),
+                                            true,
+                                            WorkEnds.Reason.INVALID_FINDINGS.name(),
+                                            before.answer()));
+                        });
+        return new Result(
+                new Writes(Map.of(), Map.of(), List.of()), List.of(), progress, List.of());
     }
 
     private static Result attention(

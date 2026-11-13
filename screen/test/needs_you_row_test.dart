@@ -122,6 +122,30 @@ Map<String, dynamic> _board({Map<String, String>? reworkingModels}) => {
   'revision': 'r1',
 };
 
+/// The board of [_board] with one more issue whose reading stopped because its findings could not be read.
+Map<String, dynamic> _unreadableBoard() {
+  final snapshot = _board();
+  final held = (snapshot['stories'] as List).cast<Map<String, dynamic>>().first;
+  (held['issues'] as List).add({
+    'id': 'Unreadable',
+    'repository': 'repo',
+    'state': 'Reading',
+    'readingStopped': true,
+    'needsYou': true,
+    'rounds': 0,
+    'roundsMost': 2,
+  });
+  ((held['work'] as Map<String, dynamic>)['issues'] as List).add({
+    'issue': 'Unreadable',
+    'reason': 'INVALID_FINDINGS',
+    'readingStopped': true,
+    'needsYou': true,
+    'rounds': 0,
+    'roundsMost': 2,
+  });
+  return snapshot;
+}
+
 /// The window's task hook, recording what it was asked to open.
 class _Opened extends NoTasks {
   final List<String> tasks = [];
@@ -264,6 +288,75 @@ void main() {
         reason: '$other stays a way out of the dialog',
       );
     }
+  });
+
+  // Harm: a person left with no way on after a reading nobody could read, or sent into a rework with nothing to
+  // work from.
+  testWidgets('a reading stopped for unreadable findings offers Read again and Review anyway, no Rework', (
+    tester,
+  ) async {
+    final snapshot = _unreadableBoard();
+    final source = MockPlanningSource()..boards['checkout'] = snapshot;
+    final unreadable = PlanningBoard(source, 'checkout');
+    addTearDown(() async {
+      unreadable.dispose();
+      await source.end();
+    });
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await show(
+      tester,
+      PlanningBoards.storyAttention(
+        unreadable,
+        unreadable.stories.firstWhere((each) => each.id == 'Held'),
+      ).firstWhere((row) => row.issue?.id == 'Unreadable'),
+    );
+
+    expect(find.byKey(const Key('reading-resolve Unreadable REWORK')), findsNothing, reason: 'no findings to rework');
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('reading-resolve Unreadable ONE_MORE_ROUND')),
+        matching: find.text('Read again'),
+      ),
+      findsOneWidget,
+      reason: 'the same build can be read again',
+    );
+    expect(
+      find.byKey(const Key('reading-resolve Unreadable REVIEW_ANYWAY')),
+      findsOneWidget,
+      reason: 'the issue can go to Review anyway',
+    );
+    await tester.tap(find.byKey(const Key('reading-resolve Unreadable ONE_MORE_ROUND')));
+    await settle(tester);
+    final sent = source.work.calls.where((call) => call.$1 == 'ResolveIssueReading').map((call) => call.$2);
+    expect(sent.map((call) => call['choice']), ['ONE_MORE_ROUND'], reason: 'Read again asks for one more reading');
+  });
+
+  // Harm: the window's planning tests pass a rework of an unreadable reading that the planner refuses.
+  test('the fake refuses a rework of a reading whose findings could not be read', () async {
+    final source = MockPlanningSource()..boards['checkout'] = _unreadableBoard();
+    final unreadable = PlanningBoard(source, 'checkout');
+    addTearDown(() async {
+      unreadable.dispose();
+      await source.end();
+    });
+    await Future<void>.delayed(Duration.zero);
+    final reading = ReadingDecision(
+      PlanningBoards.storyAttention(
+        unreadable,
+        unreadable.stories.firstWhere((each) => each.id == 'Held'),
+      ).firstWhere((row) => row.issue?.id == 'Unreadable'),
+    );
+    addTearDown(reading.dispose);
+    await reading.load();
+    await reading.resolve('REWORK', comment: 'Fix it anyway.');
+    expect(reading.submitted, isFalse, reason: 'the rework is refused');
+    expect(reading.problem, isNotNull, reason: 'the refusal is told');
+    final held = (source.boards['checkout']!['stories'] as List).cast<Map<String, dynamic>>().first;
+    final issue = (held['issues'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (each) => each['id'] == 'Unreadable',
+    );
+    expect(issue['state'], 'Reading', reason: 'the fake moved nothing');
+    expect(issue['readingStopped'], isTrue, reason: 'the reading still waits for a choice');
   });
 
   // Harm: a reason not to rework stands beside a Rework that can run, and the person does not use it.

@@ -41,7 +41,7 @@ class ReadingCycleTest {
         // A rework that granted readings would let reading and rework run past the person's limit.
         final Rounds stopped = ReadingCycle.count(Rounds.start(2), BLOCKING).rounds();
         final Counted rework =
-                ReadingCycle.choose(stopped, 1, Choice.REWORK, "", BLOCKING.findings());
+                ReadingCycle.choose(stopped, 1, Choice.REWORK, "", BLOCKING.findings(), false);
         assertThat(rework.rounds())
                 .as("the rounds stand as they were")
                 .isEqualTo(new Rounds(1, 2, false));
@@ -57,11 +57,16 @@ class ReadingCycleTest {
     void aReworkNeedsNoWordsOnlyWhenTheSavedFindingsBlock() {
         // A rework without words or blocking findings would start an agent with nothing to fix.
         final Rounds stopped = new Rounds(1, 2, true);
-        assertThat(ReadingCycle.choose(stopped, 1, Choice.REWORK, "", BLOCKING.findings()).next())
+        assertThat(
+                        ReadingCycle.choose(
+                                        stopped, 1, Choice.REWORK, "", BLOCKING.findings(), false)
+                                .next())
                 .as("blocking findings go with the rework")
                 .isEqualTo(Next.REWORK);
         assertThatThrownBy(
-                        () -> ReadingCycle.choose(stopped, 1, Choice.REWORK, " ", NOTES.findings()))
+                        () ->
+                                ReadingCycle.choose(
+                                        stopped, 1, Choice.REWORK, " ", NOTES.findings(), false))
                 .as("notes alone give a rework nothing to fix")
                 .hasMessage("ReworkNeedsWords");
     }
@@ -89,18 +94,20 @@ class ReadingCycleTest {
         // A choice counted as a reading, or one granting nothing, would stop the issue again at
         // once.
         final Rounds stopped = new Rounds(2, 2, true);
-        final Counted review = ReadingCycle.choose(stopped, 2, Choice.REVIEW_ANYWAY, "", List.of());
+        final Counted review =
+                ReadingCycle.choose(stopped, 2, Choice.REVIEW_ANYWAY, "", List.of(), false);
         assertThat(review.next()).as("review anyway").isEqualTo(Next.REVIEW);
         assertThat(review.rounds()).as("nothing counted").isEqualTo(new Rounds(2, 2, false));
 
-        final Counted more = ReadingCycle.choose(stopped, 2, Choice.ONE_MORE_ROUND, "", List.of());
+        final Counted more =
+                ReadingCycle.choose(stopped, 2, Choice.ONE_MORE_ROUND, "", List.of(), false);
         assertThat(more.next()).as("one more reading").isEqualTo(Next.READ);
         assertThat(more.rounds())
                 .as("one more allowed, none counted yet")
                 .isEqualTo(new Rounds(2, 3, false));
 
         final Counted rework =
-                ReadingCycle.choose(stopped, 2, Choice.REWORK, "Fix the parser.", List.of());
+                ReadingCycle.choose(stopped, 2, Choice.REWORK, "Fix the parser.", List.of(), false);
         assertThat(rework.next()).as("rework").isEqualTo(Next.REWORK);
         assertThat(rework.rounds()).as("one more allowed").isEqualTo(new Rounds(2, 3, false));
     }
@@ -116,7 +123,8 @@ class ReadingCycleTest {
                                         1,
                                         Choice.REVIEW_ANYWAY,
                                         "",
-                                        List.of()))
+                                        List.of(),
+                                        false))
                 .as("not stopped")
                 .hasMessage("ReadingNotStopped");
         assertThatThrownBy(
@@ -126,7 +134,8 @@ class ReadingCycleTest {
                                         2,
                                         Choice.ONE_MORE_ROUND,
                                         "",
-                                        List.of()))
+                                        List.of(),
+                                        false))
                 .as("an old round")
                 .hasMessage("ReadingRoundChanged");
         assertThatThrownBy(
@@ -136,7 +145,8 @@ class ReadingCycleTest {
                                         2,
                                         Choice.REWORK,
                                         "  ",
-                                        NOTES.findings()))
+                                        NOTES.findings(),
+                                        false))
                 .as("no words")
                 .hasMessage("ReworkNeedsWords");
         final Rounds most = new Rounds(Integer.MAX_VALUE, Integer.MAX_VALUE, true);
@@ -147,7 +157,8 @@ class ReadingCycleTest {
                                         Integer.MAX_VALUE,
                                         Choice.ONE_MORE_ROUND,
                                         "",
-                                        List.of()))
+                                        List.of(),
+                                        false))
                 .as("no grant past the largest count")
                 .hasMessage("ReadingRoundChanged");
     }

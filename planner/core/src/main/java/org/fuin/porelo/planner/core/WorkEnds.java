@@ -32,6 +32,8 @@ public final class WorkEnds {
 
     private static final Pattern LINE = Pattern.compile("[1-9][0-9]{0,9}");
 
+    private static final Pattern RANGE = Pattern.compile("([1-9][0-9]{0,9})-([1-9][0-9]{0,9})");
+
     private WorkEnds() {}
 
     /** The outcome a task declared at its end, copied unchanged from Porelo's record. */
@@ -271,17 +273,31 @@ public final class WorkEnds {
                 || text.codePointCount(0, text.length()) > MOST_TEXT) {
             return null;
         }
-        final Integer line;
         if (parts[2].equals("-")) {
-            line = null;
-        } else if (LINE.matcher(parts[2]).matches()
-                && file != null
-                && Long.parseLong(parts[2]) <= Integer.MAX_VALUE) {
-            line = Integer.valueOf(parts[2]);
-        } else {
+            return new Finding(expected, severity, file, null, text);
+        }
+        if (file == null) {
             return null;
         }
-        return new Finding(expected, severity, file, line, text);
+        final Matcher range = RANGE.matcher(parts[2]);
+        if (range.matches()) {
+            final Integer first = line(range.group(1));
+            final Integer last = line(range.group(2));
+            if (first == null || last == null || first > last) {
+                return null;
+            }
+            // The line field holds one line, so the text keeps the range for the person.
+            return new Finding(expected, severity, file, first, "lines " + parts[2] + ": " + text);
+        }
+        final Integer line = line(parts[2]);
+        return line == null ? null : new Finding(expected, severity, file, line, text);
+    }
+
+    /** A line number from one to the largest int, or null. */
+    private static @Nullable Integer line(final String column) {
+        return LINE.matcher(column).matches() && Long.parseLong(column) <= Integer.MAX_VALUE
+                ? Integer.valueOf(column)
+                : null;
     }
 
     /** A label shown as a file: no control character, no root, no step up. */

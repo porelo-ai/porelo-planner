@@ -95,6 +95,55 @@ class WorkEndsTest {
     }
 
     @Test
+    void aLineRangeIsReadAsItsFirstLineWithTheRangeKeptInTheText() {
+        // Harm: a reading's blocking findings thrown away whole because one row names a range.
+        final Read read =
+                (Read)
+                        WorkEnds.judge(
+                                "READER",
+                                Outcome.DONE,
+                                "Findings:\n"
+                                        + "1. blocking | core/A.java | 34-40 | a leak\n"
+                                        + "2. note | b.txt | 7-7 | one line\n"
+                                        + "3. note | c.txt | 1-2147483647 | all of it\n");
+        assertThat(read.findings())
+                .as("the first line as the line, the range in the text")
+                .containsExactly(
+                        new Finding(1, Severity.BLOCKING, "core/A.java", 34, "lines 34-40: a leak"),
+                        new Finding(2, Severity.NOTE, "b.txt", 7, "lines 7-7: one line"),
+                        new Finding(3, Severity.NOTE, "c.txt", 1, "lines 1-2147483647: all of it"));
+        assertThat(read.blocking()).as("the range's finding still blocks").isTrue();
+    }
+
+    @Test
+    void aMalformedLineRangeCountsNoReading() {
+        // Harm: a malformed block taken in as a reading nobody could check.
+        for (final String range :
+                List.of(
+                        "40-34",
+                        "0-3",
+                        "3-",
+                        "-3",
+                        "a-b",
+                        "3-0",
+                        "1-2147483648",
+                        "1--3",
+                        "1-2-3",
+                        "3 - 4")) {
+            assertThat(
+                            WorkEnds.judge(
+                                    "READER",
+                                    Outcome.DONE,
+                                    "Findings:\n1. note | a.txt | " + range + " | x\n"))
+                    .as("refused: %s", range)
+                    .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
+        }
+        assertThat(WorkEnds.judge("READER", Outcome.DONE, "Findings:\n1. note | - | 3-4 | x\n"))
+                .as("a range without a file is refused like a line without one")
+                .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
+    }
+
+    @Test
     void anEmptyBlockIsACleanReading() {
         // A clean reading taken as malformed would hold every issue under Needs you.
         final Read read = (Read) WorkEnds.judge("READER", Outcome.DONE, "All good.\nFindings:\n");

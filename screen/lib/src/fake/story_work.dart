@@ -141,6 +141,14 @@ class MockStoryWork {
       final blocking = (issue['findings'] as List? ?? const []).any(
         (finding) => finding is Map && finding['severity'] == 'BLOCKING',
       );
+      // The planner stops a reading whose findings could not be read as INVALID_FINDINGS and keeps that reason.
+      final unreadable = {
+        for (final item in ((story['work'] as Map?)?['issues'] as List? ?? const []).cast<Map>())
+          if (item['readingStopped'] == true && item['reason'] == 'INVALID_FINDINGS') item['issue'],
+      };
+      if (choice == 'REWORK' && unreadable.contains(issue['id'])) {
+        refuse('ReworkNeedsFindings', {'issue': issue['id']});
+      }
       if (!['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'].contains(choice) ||
           choice == 'REWORK' && !blocking && (parameters['comment'] as String? ?? '').trim().isEmpty) {
         refuse('WorkNotAllowed', {
@@ -178,6 +186,8 @@ class MockStoryWork {
             'findings': item['findings'],
             'reason': item['readingStopped'] != true
                 ? 'NONE'
+                : unreadable.contains(item['id'])
+                ? 'INVALID_FINDINGS'
                 : (item['rounds'] as int? ?? 0) < (item['roundsMost'] as int? ?? 0)
                 ? 'BLOCKING_FINDINGS'
                 : 'ROUND_LIMIT',

@@ -900,6 +900,8 @@ paths:
         offers a reader in the Reading rule's first mode and model, granting one more reading only at the limit;
         REWORK offers rework with the saved blocking findings and the operator's words, which it requires only
         when no saved finding blocks, in the given mode, agent and model or else the Reworking rule's first ones.
+        A reading stopped as INVALID_FINDINGS, whose findings could not be read, takes ONE_MORE_ROUND, a new reader
+        of the same build, and REVIEW_ANYWAY; it refuses REWORK as ReworkNeedsFindings, since nothing guides it.
         Neither counts a reading. Stopped or halted runs refuse choices. The body is at most 65536 bytes.
       tags: [work]
       requestBody:
@@ -968,8 +970,8 @@ components:
     RunConflict:
       description: >-
         StaleRevision(revision), WorkRunning(story,tasks[]), ReadingNotStopped(issue),
-        ReadingRoundChanged(issue,rounds), TaskEventConflict(task,event,reason) or RunChanged(story,reason). Subjects
-        are checked before echoing.
+        ReadingRoundChanged(issue,rounds), ReworkNeedsFindings(issue), TaskEventConflict(task,event,reason) or
+        RunChanged(story,reason). Subjects are checked before echoing.
       content:
         application/problem+json:
           schema:
@@ -2170,7 +2172,9 @@ components:
         attention:
           type: string
           enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
-          description: Why the person must act, the reason the run reported; NONE when needsYou is false.
+          description: >-
+            Why the person must act, the reason the run reported; NONE when needsYou is false. INVALID_FINDINGS says a
+            reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
         findings:
           type: array
           maxItems: 100
@@ -2758,7 +2762,9 @@ components:
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
-            reading with blocking findings, readingStopped true: below the readings granted and at them. BLOCKED says
+            reading with blocking findings, readingStopped true: below the readings granted and at them.
+            INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with no round
+            counted and no findings kept: the person has the same build read again or takes it to Review. BLOCKED says
             the task declared its work blocked; the issue stays in its state and the task's why says what blocks it.
             A move of the issue by hand clears its reason and its stop.
         rounds:

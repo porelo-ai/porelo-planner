@@ -121,17 +121,20 @@ public final class ReadingCycle {
      * @param choice the choice
      * @param words the operator's words, required for a rework only without blocking findings
      * @param findings the stopped reading's saved findings, never a request's word for them
+     * @param unreadable whether the reading stopped because its findings could not be read
      * @return the rounds after the choice and where the issue goes: Review, or work for one more
      *     reading or a rework; no reading is counted before it ends
-     * @throws Refused when the reading is not stopped, the round moved on, or a rework has neither
-     *     words nor blocking findings to go with it
+     * @throws Refused when the reading is not stopped, the round moved on, a rework follows a
+     *     reading that could not be read, or a rework has neither words nor blocking findings to go
+     *     with it
      */
     public static Counted choose(
             final Rounds rounds,
             final int round,
             final Choice choice,
             final String words,
-            final List<WorkEnds.Finding> findings) {
+            final List<WorkEnds.Finding> findings,
+            final boolean unreadable) {
         Objects.requireNonNull(words, "words");
         if (!rounds.stopped()) {
             throw new Refused("ReadingNotStopped");
@@ -151,6 +154,9 @@ public final class ReadingCycle {
                             new Rounds(rounds.rounds(), rounds.roundsMost(), false), Next.REVIEW);
             case ONE_MORE_ROUND -> new Counted(granted, Next.READ);
             case REWORK -> {
+                if (unreadable) {
+                    throw new Refused("ReworkNeedsFindings");
+                }
                 if (words.isBlank() && !new WorkEnds.Read(findings).blocking()) {
                     throw new Refused("ReworkNeedsWords");
                 }

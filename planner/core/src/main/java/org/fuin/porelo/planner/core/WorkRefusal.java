@@ -105,6 +105,14 @@ public final class WorkRefusal extends RuntimeException {
                 "ReadingNotStopped", "The reading is not stopped.", Map.of("issue", issue));
     }
 
+    /** Refuses a rework of a reading whose findings could not be read, so none can guide it. */
+    public static WorkRefusal reworkNeedsFindings(final String issue) {
+        return new WorkRefusal(
+                "ReworkNeedsFindings",
+                "The reading's findings could not be read, so a rework has nothing to work from.",
+                Map.of("issue", issue));
+    }
+
     /** Refuses a choice based on another completed round. */
     public static WorkRefusal readingRoundChanged(final String issue, final int rounds) {
         return new WorkRefusal(

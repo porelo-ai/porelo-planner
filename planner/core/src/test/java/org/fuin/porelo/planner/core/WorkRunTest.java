@@ -932,6 +932,171 @@ class WorkRunTest {
     }
 
     @Test
+    void aReaderEndingWithAnUnreadableBlockStopsItsReadingWithNoRoundCounted() {
+        // Harm: a person left with no way on after a reading nobody could read.
+        final Fixture f = new Fixture();
+        final var unreadable = unreadableReading(f);
+        final var progress = unreadable.work().issues().get("AA1");
+        assertThat(progress.rounds().stopped()).as("the reading stops").isTrue();
+        assertThat(progress.rounds().rounds()).as("no round counts").isZero();
+        assertThat(progress.reason()).as("the reason stays").isEqualTo("INVALID_FINDINGS");
+        assertThat(progress.needsYou()).as("the person is asked").isTrue();
+        assertThat(progress.findings()).as("no findings are kept").isEmpty();
+        assertThat(unreadable.tasks()).as("nothing starts by itself").isEmpty();
+        final var again =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        0,
+                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(again.tasks()).as("a reader is offered again").hasSize(1);
+        assertThat(again.tasks().getFirst().task().reads())
+                .as("it reads the same build")
+                .containsExactly("task");
+        assertThat(again.work().issues().get("AA1").rounds().stopped())
+                .as("the choice clears the stop")
+                .isFalse();
+    }
+
+    @Test
+    void anUnreadableReadingTakenToReviewAnywaySavesTheDoneState() {
+        // Harm: a person left with no way on after a reading nobody could read.
+        final Fixture f = new Fixture();
+        unreadableReading(f);
+        f.run.choose(
+                "ST1",
+                "AA1",
+                0,
+                ReadingCycle.Choice.REVIEW_ANYWAY,
+                "",
+                f.store.board().revision().value(),
+                null);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("review anyway saves the done state")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void anUnreadableReadingRefusesARework() {
+        // Harm: a rework started with nothing to work from.
+        final Fixture f = new Fixture();
+        unreadableReading(f);
+        final String revision = f.store.board().revision().value();
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        0,
+                                        ReadingCycle.Choice.REWORK,
+                                        "Fix it anyway.",
+                                        revision,
+                                        null))
+                .as("a rework without findings is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("named for the missing findings")
+                                        .isEqualTo("ReworkNeedsFindings"));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stays in Reading")
+                .isEqualTo("Reading");
+    }
+
+    @Test
+    void anUnreadableReadingAfterAReworkKeepsNoneOfTheEarlierFindings() {
+        // Harm: findings a rework already answered shown and sent to the next reader as current.
+        final Fixture f = new Fixture();
+        final var blocking = readingEnded(f, "Findings:\n1. blocking | - | - | Preserve data");
+        assertThat(blocking.work().issues().get("AA1").findings())
+                .as("the first reading's finding is kept")
+                .hasSize(1);
+        final var rework =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "rework",
+                new WorkRun.Report(
+                        rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final var reader =
+                f.run.report(
+                                "rework",
+                                new WorkRun.Report(
+                                        rework.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Reworked")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final var unreadable =
+                f.run.report(
+                        "again",
+                        new WorkRun.Report(
+                                reader.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Findings:\n1. blocking | a.txt | x | not a line")));
+        final var progress = unreadable.work().issues().get("AA1");
+        assertThat(progress.findings()).as("the answered finding is gone").isEmpty();
+        assertThat(progress.rounds().rounds()).as("only the first reading counts").isEqualTo(1);
+        assertThat(progress.rounds().stopped()).as("the reading stops").isTrue();
+    }
+
+    /** Builds AA1 and lets its reader end with a block that cannot be read. */
+    private static WorkRun.Answer unreadableReading(final Fixture f) {
+        return readingEnded(f, "Findings:\n1. blocking | a.txt | x | not a line");
+    }
+
+    /** Builds AA1 and lets its reader end with the given answer. */
+    private static WorkRun.Answer readingEnded(final Fixture f, final String answer) {
+        final var build =
+                f.run.order(
+                                "ST1",
+                                "Building",
+                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                        .tasks()
+                        .getFirst();
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        return f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.ENDED, "box", "workstation", ended(answer)));
+    }
+
+    @Test
     void aBuildEndedBeforeItsWorkLandedOffersItsReaderOnlyWhenItLandsAndOnlyOnce() {
         // A reader offered before the work left the gate starts on nothing and polls; one offered
         // twice reads the same work twice.

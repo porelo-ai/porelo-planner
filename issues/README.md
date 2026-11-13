@@ -47,12 +47,6 @@ left out.
 | <a id="pl110"></a>[PL110](PL110-The-Documents-Profile-Runs-The-Issues-Check.md) | S | - | `-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -98,6 +92,7 @@ left out.
 | <a id="pl112"></a>[PL112](PL112-A-Save-Says-When-It-Is-Pushed.md) | S | - | The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet |
 | <a id="pl115"></a>[PL115](PL115-A-Check-Of-The-Publishing-Rights.md) | XS | - | A workflow started by hand shows, one pass or fail line each, whether every secret and variable the Build's publish and signing steps use is set, what anyone may read and the publishing token may read, upload and delete in Artifactory's porelo-files, where the Build publishes, and whether the Windows signing key opens and is the pinned signer, so a publish that fails on a right or a key is told from one that fails on the code |
 | <a id="pl117"></a>[PL117](PL117-A-Refused-Action-Is-Said-In-The-Error-Colour.md) | XS | - | A board action the window or the planner refuses - a discussion Porelo would not start, among others - is said above the board in the error colour, as a provider's problem is, so the person sees that nothing happened |
+| <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | - | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |

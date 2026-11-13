@@ -1132,7 +1132,10 @@ public final class WorkRun {
                                         round,
                                         choice,
                                         comment,
-                                        previous.findings());
+                                        previous.findings(),
+                                        WorkEnds.Reason.INVALID_FINDINGS
+                                                .name()
+                                                .equals(previous.reason()));
                     } catch (final ReadingCycle.Refused refused) {
                         if ("ReadingRoundChanged".equals(refused.getMessage())) {
                             throw WorkRefusal.readingRoundChanged(
@@ -1140,6 +1143,9 @@ public final class WorkRun {
                         }
                         if ("ReadingNotStopped".equals(refused.getMessage())) {
                             throw WorkRefusal.readingNotStopped(issueId);
+                        }
+                        if ("ReworkNeedsFindings".equals(refused.getMessage())) {
+                            throw WorkRefusal.reworkNeedsFindings(issueId);
                         }
                         throw WorkRefusal.invalidSettings();
                     }

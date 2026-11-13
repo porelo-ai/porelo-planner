@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL118",
   "title": "A Reading Takes A Line Range And An Unreadable One Is Read Again",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 54,
@@ -31,10 +31,12 @@ anyway; Rework, which needs findings to work from, stays for a reading with bloc
   refuses every choice as `ReadingNotStopped`, and the screen offers none.
 - **A range.** The line column takes `<a>-<b>` with `1 <= a <= b`, both within an int: the finding's line is `a`, and
   its text starts with `lines a-b: `, so the range still shows. Anything else in the column is refused as today.
-- **Read again.** A reader that ended with findings that could not be read stops its reading: the issue's rounds are
-  marked stopped without counting a round, its reason stays `INVALID_FINDINGS`, and it keeps no findings.
+- **Read again.** A reader that ended with findings that could not be read stops its reading: `NextStep.after`, where
+  `WorkRun.report` judges a reader's end, marks the issue's rounds stopped without counting a round, its reason stays
+  `INVALID_FINDINGS`, and it keeps no findings.
   `ReadingCycle.choose` then takes `ONE_MORE_ROUND` (a new reading of the same build, shown as Read again) and
-  `REVIEW_ANYWAY`; it refuses `REWORK` for such a stop as `ReworkNeedsFindings`, since there is nothing to rework from.
+  `REVIEW_ANYWAY`; it refuses `REWORK` for such a stop as `ReworkNeedsFindings`, since there is nothing to rework from,
+  a conflict (409) like the other reading refusals.
   `planner.yaml` says so under `chooseReading` and the attention reason; the screen shows Read again and Review
   anyway on that entry, and no Rework.
 - **Tests, red first.**

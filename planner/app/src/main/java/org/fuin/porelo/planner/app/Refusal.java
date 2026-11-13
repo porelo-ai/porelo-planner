@@ -70,6 +70,7 @@ public final class Refusal extends RuntimeException {
                             "WorkRunning",
                             "ReadingNotStopped",
                             "ReadingRoundChanged",
+                            "ReworkNeedsFindings",
                             "TaskEventConflict",
                             "RunChanged",
                             "PreviewChanged" ->

@@ -218,7 +218,12 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                   spacing: Space.small,
                   runSpacing: Space.small,
                   children: [
-                    for (final choice in ['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'])
+                    for (final choice in [
+                      'REVIEW_ANYWAY',
+                      'ONE_MORE_ROUND',
+                      // A reading whose findings could not be read leaves a rework nothing to work from.
+                      if (row.reason != 'INVALID_FINDINGS') 'REWORK',
+                    ])
                       _decision(context, reading, choice),
                   ],
                 ),
@@ -414,7 +419,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   Widget _decision(BuildContext context, ReadingDecision reading, String choice) {
     final command = PlanningAction(
       id: 'reading.$choice',
-      label: _label(choice),
+      label: _label(choice, unreadable: widget.row.reason == 'INVALID_FINDINGS'),
       unavailable: reading.unavailable,
       run: () async {
         if (choice == 'REWORK') {
@@ -443,8 +448,9 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     );
   }
 
-  String _label(String choice) => switch (choice) {
+  String _label(String choice, {required bool unreadable}) => switch (choice) {
     'REVIEW_ANYWAY' => 'Review anyway',
+    'ONE_MORE_ROUND' when unreadable => 'Read again',
     'ONE_MORE_ROUND' => 'One more round',
     _ => 'Rework…',
   };
