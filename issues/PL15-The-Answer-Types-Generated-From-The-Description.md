@@ -76,6 +76,30 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
     `EventsStreamTest`) hold the JSON on the wire unchanged.
 - **Native:** `NativeStartIT` with `-Pnative verify` once, since the generated records reach the image through the
   same AOT binding hints as today's.
+- **Measured with 7.27.0 and the templates, offline, on `planner.yaml` as it stands** (57 files): records with
+  `com.fasterxml.jackson.annotation.JsonProperty`, `@Nullable` where the schema allows null, a constructor refusing
+  null in a required, not nullable field, inline enums with `@JsonValue` and a throwing `fromValue`, and the package
+  `@NullMarked`. Four shapes change the wire unless the plan forbids them:
+  - No record carries `@JsonInclude`: an optional field that is null is written as `null` instead of left out
+    (`Issue.rounds`, `roundsMost`, `findings`, `IssueDetail.whatMustBeTrue`, `Finding.file`, `line`,
+    `PlanningStartTask.repository`, `result`, `TaskEnded.landed`). Each such property gets
+    `x-field-extra-annotation` with a fully qualified `@JsonInclude(NON_NULL)` in `planner.yaml`, which the record
+    template prints; it adds no field and changes no schema the window reads.
+  - An optional array defaults to `new ArrayList<>()`, so a null `findings` would be written `[]`, losing "no record"
+    against "recorded, none": `containerDefaultToNull=true` stops it (measured; only schema `default:` values stay).
+  - `TaskEnded.at` (`format: date-time`) becomes `OffsetDateTime`, which may change the reported spelling or refuse
+    more than nine fractional digits the core accepts: `typeMappings OffsetDateTime=String` keeps it the reported
+    string (measured).
+  - `Board` writes its fields in the schema's order, `repositories` second instead of sixth; JSON objects are
+    unordered and the window parses them, so this is taken as is.
+- **Stays hand-written besides the controllers:** `BoardController.ProjectSource` is a request body whose missing
+  `repository` has a refusal of its own, and `StoryWorkRequest.repositories` keeps its hand record, so an unknown
+  `role` or `choice` is still refused by the core after the revision check, not by a generated `fromValue` while
+  parsing.
+- **Added test (unit, app):** each answer with its optional fields null, empty and set, through the app's own
+  mapper: an optional null is left out, a required nullable one written as null, an empty list written `[]`, and each
+  enum written as its schema value. Harm prevented: the window reading `null` or `[]` where the field meant "not
+  known" or "none recorded".
 
 ## Acceptance
 
@@ -88,7 +112,7 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
 
 ## To be checked
 
-- How 7.27.0 generates the description's null forms, `type: [string, 'null']` and `oneOf` of a `$ref` and `null`
-  (`Story.work`, `PlanWorkTask`), and whether optional fields such as `Issue.rounds` stay left out when null.
+- That the native image's binding hints reach the generated inline enums' `@JsonValue` and `fromValue`, through a
+  native answer that carries a work run with findings and landings.
 - That the generated records compile against Spring Boot 4's Jackson 3 with `com.fasterxml.jackson.annotation`, as
   today's records do.
