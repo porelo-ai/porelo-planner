@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL114",
   "title": "A Failed Or Blocked Task Offers A Way On",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 50,
