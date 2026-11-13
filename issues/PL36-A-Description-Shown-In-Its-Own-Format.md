@@ -56,7 +56,8 @@ Steps:
    Unit test in `store/git`: `GitStore` answers `MARKDOWN` - harm: the screen shows a Git store's text as raw signs.
 2. **Contract and app (S).** `StoryDetail` gains `descriptionFormat`, `IssueDetail` `textFormat`: a required string
    matching `^[A-Z][A-Z0-9_]{0,31}$`, not an enum, so a new adapter's format breaks no window. `Answers` and
-   `BoardController` fill them from `textFormat()`; the agreement with the window comes first (below). Red first:
+   `BoardController` fill them from `textFormat()`. The window agreed to the two members, their names and the open
+   set; it reads them only through the screen package and moves its pin when the head is posted. Red first:
    `ApiMatchesDescriptionTest` fails once the schema has the member and the record not. `BoardReadsTest` asserts the
    member on both answers - harm: a contract the window reads that the planner does not serve.
 3. **Screen (M).** `PlanStory` and `PlanIssueDetail` read the format, absent or unknown read as plain. One widget,
@@ -86,8 +87,9 @@ No test needs a VM; every level is unit or widget level, plus the app's existing
 
 ## To be checked
 
-- The contract change with the window: the two members, their names and the open set of values, agreed in the
-  channel before step 2; and that the window accepts the Markdown package the screen brings into its build.
+- Whether the window takes in a Markdown package through the screen waits on the operator's choice of dependency;
+  step 3 starts only after it. The window keeps caret constraints in `pubspec.yaml`, commits `pubspec.lock` and pins
+  the screen by commit.
 - Which Flutter Markdown package to use: a maintained one (publisher, last release, open issues) whose link taps can
   be routed to `openLink` and whose images can be turned off; otherwise the `markdown` parser of the Dart team with a
   small rendering of its own in `PlanningText`, which adds about an hour to step 3.
