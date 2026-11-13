@@ -96,6 +96,7 @@ Map<String, dynamic> servedContinuationWork({bool anotherAtWork = false}) => ser
 
 /// A durable run whose task activity is independent of its permission to continue.
 Map<String, dynamic> servedWork({bool atWork = true}) => {
+  'run': '00000000-0000-4000-9000-000000000001',
   'tasks': <Map<String, dynamic>>[],
   'coordinator': null,
   'since': '',

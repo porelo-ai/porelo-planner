@@ -1455,6 +1455,37 @@ void main() {
     expect(planner.calls.skip(1).map((call) => call.body), everyElement(isEmpty));
   });
 
+  // Harm: the window and the planner read a row's Start or Stop differently, so work starts over another run.
+  test('a row\'s Start sends its pass-over and the run it replaces, and Stop names its run', () async {
+    final (planner, source) = await _started();
+    const run = '00000000-0000-4000-9000-000000000001';
+    planner.routes['POST /projects/demo/stories/ST1/proposal'] = () => _Reply(200, servedProposal());
+    planner.routes['POST /projects/demo/stories/ST1/work'] = () => _Reply(200, servedOrder());
+    planner.routes['POST /projects/demo/stories/ST1/work/stop'] = () => _Reply(200, {'work': servedWork()});
+    await source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: 'ST1',
+        to: 'Building',
+        mode: 'AGENT',
+        revision: 'r1',
+        subAgents: const [],
+        replaces: run,
+        passOver: const PlanningPassOver(issue: 'PR1', reason: 'STOPPED', revision: 'r1', run: run),
+      ),
+    );
+    final order = jsonDecode(planner.calls.last.body) as Map;
+    expect(order['replaces'], run, reason: 'the order names the run it replaces');
+    expect(order['passOver'], {
+      'issue': 'PR1',
+      'reason': 'STOPPED',
+      'revision': 'r1',
+      'run': run,
+    }, reason: 'the order names the reason it passes over as the row showed it');
+    await source.stopStoryWork('demo', 'ST1', run: run);
+    expect(jsonDecode(planner.calls.last.body), {'run': run}, reason: 'the stop names the run it ends');
+  });
+
   // Harm: a malformed work envelope is accepted as no run or as a successful cancellation.
   test('work reads and stops refuse malformed success answers', () async {
     final (planner, source) = await _started();

@@ -47,6 +47,17 @@ public final class WorkRefusal extends RuntimeException {
                 Map.of("story", story, "tasks", List.copyOf(tasks)));
     }
 
+    /**
+     * Refuses a Start or a Stop naming a run, or a reason of it, that is not the one standing.
+     *
+     * @param story the checked story
+     * @param reason fixed words saying what changed
+     * @return the refusal
+     */
+    public static WorkRefusal runChanged(final String story, final String reason) {
+        return new WorkRefusal("RunChanged", reason, Map.of("story", story, "reason", reason));
+    }
+
     /** Refuses a discussion of an idea the project's rules offer no agent for. */
     public static WorkRefusal noDiscussion(final String reason) {
         return new WorkRefusal("NoDiscussion", reason, Map.of("reason", reason));

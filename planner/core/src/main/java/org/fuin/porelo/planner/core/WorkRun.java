@@ -317,14 +317,42 @@ public final class WorkRun {
         }
     }
 
-    /** Returns a proposal using recorded activity and refusing lost or halted runs. */
+    /**
+     * What a Start names of the run standing: the run whose unstarted offers it replaces, and the
+     * reason of one issue it answers with a new run.
+     *
+     * @param replaces the run whose offers the Start replaces, or null for none
+     * @param passOver the reason passed over, or null for none
+     */
+    public record Start(@Nullable String replaces, @Nullable PassOver passOver) {
+        /** A Start naming no run. */
+        public static final Start NONE = new Start(null, null);
+    }
+
+    /**
+     * One issue's reason a Start answers with a new run in place of the run named, as the person
+     * saw it.
+     *
+     * @param issue the issue
+     * @param reason its reason
+     * @param revision the board's revision the person saw
+     * @param run the run the person saw
+     */
+    public record PassOver(String issue, String reason, String revision, String run) {}
+
+    /** The reasons a Start from a raised row may pass over. */
+    public static final Set<String> PASSABLE =
+            Set.of("NEXT_STEP_UNAVAILABLE", "SAVE_REFUSED", "STOPPED");
+
+    /** Returns a proposal using recorded activity and refusing lost runs. */
     public WorkProposal propose(final String story, final String to) {
         return propose(story, to, null);
     }
 
     /**
      * Returns a proposal for the story's issues {@code issues}, or its own when null, using
-     * recorded activity and refusing lost or halted runs.
+     * recorded activity and refusing lost runs; a halted run is proposed for, since only its own
+     * pass-over may start it again, which the order checks.
      */
     public WorkProposal propose(
             final String story, final String to, final @Nullable List<String> issues) {
@@ -333,23 +361,58 @@ public final class WorkRun {
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    allowed(board, snapshot, story, to);
+                    allowed(board, snapshot, story, to, true);
                     return WorkProposal.propose(board, story, to, running(snapshot), issues);
                 });
     }
 
-    /** Replaces an unstarted order, retaining completed readings and their allowances. */
+    /** Orders work naming no run, retaining completed readings and their allowances. */
     public Order order(final String storyId, final String to, final WorkOrder.Decision decision) {
+        return order(storyId, to, decision, Start.NONE);
+    }
+
+    /**
+     * Replaces the story's run with a new one, retaining completed readings and their allowances.
+     *
+     * @param storyId the story
+     * @param to the working state
+     * @param decision the person's choices
+     * @param start the run it replaces and the reason it passes over, as the person saw them
+     * @return the offers the window starts
+     * @throws WorkRefusal {@code RunChanged} when the run or reason named is not the one standing,
+     *     or when unstarted offers stand and the Start does not name their run
+     */
+    public Order order(
+            final String storyId,
+            final String to,
+            final WorkOrder.Decision decision,
+            final Start start) {
         Ids.story(storyId);
+        final PassOver passOver = start.passOver();
+        if (passOver != null) {
+            Ids.issue(passOver.issue());
+            if (!PASSABLE.contains(passOver.reason())) {
+                throw WorkRefusal.invalidSettings("A Start passes over no such reason.");
+            }
+        }
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    if (!board.revision().value().equals(decision.revision())) {
+                    if (!board.revision().value().equals(decision.revision())
+                            || passOver != null
+                                    && !board.revision().value().equals(passOver.revision())) {
                         throw WorkRefusal.staleRevision(board.revision().value());
                     }
-                    allowed(board, snapshot, storyId, to);
                     final Run earlier = snapshot.runs().get(storyId);
+                    standing(storyId, earlier, start);
+                    passedOver(storyId, earlier, passOver);
+                    allowed(
+                            board,
+                            snapshot,
+                            storyId,
+                            to,
+                            passOver != null && passOver.reason().equals("SAVE_REFUSED"));
                     if (earlier != null
                             && !earlier.stopped()
                             && !earlier.halted()
@@ -359,6 +422,7 @@ public final class WorkRun {
                                 to,
                                 "Work an earlier end offered waits to start.");
                     }
+                    replaced(storyId, earlier, start.replaces());
                     final WorkOrder order =
                             WorkOrder.accept(board, storyId, to, decision, running(snapshot));
                     final WorkProposal proposal =
@@ -961,11 +1025,28 @@ public final class WorkRun {
 
     /** Records cancellation without clearing activity until the window reports a terminal event. */
     public @Nullable Run stop(final String story) {
+        return stop(story, null);
+    }
+
+    /**
+     * Records cancellation of the run named without clearing activity until the window reports a
+     * terminal event.
+     *
+     * @param story the story
+     * @param named the run the person saw, or null to stop whichever stands
+     * @return the run, or null when none is recorded
+     * @throws WorkRefusal {@code RunChanged} when the run named is not the one standing
+     */
+    public @Nullable Run stop(final String story, final @Nullable String named) {
         Ids.story(story);
         return record.locked(
                         session -> {
                             final Snapshot snapshot = read(session);
                             final Run run = snapshot.runs().get(story);
+                            if (named != null && (run == null || !run.id().equals(named))) {
+                                throw WorkRefusal.runChanged(
+                                        story, "The run named is not the one standing.");
+                            }
                             // A running story left off the board must still be stoppable.
                             if (run == null) {
                                 WorkProposal.story(store.board(), story);
@@ -1308,17 +1389,22 @@ public final class WorkRun {
 
     /**
      * Clears the attention of issues a person moved by hand, since the move is their answer to it
-     * and nothing else would ever clear it; a halted run keeps its refused save in view.
+     * and nothing else would ever clear it; a halted run whose issue a person moved is no longer
+     * halted, since the refused save it held is moot once the person's own save stands.
      */
     private static void settled(
             final Session session, final Snapshot snapshot, final Set<String> moved) {
         Snapshot next = snapshot;
         for (final Run run : snapshot.runs().values()) {
-            if (run.halted() || run.pending()) {
+            if (run.pending()) {
                 continue;
             }
             final Draft draft = new Draft(run);
             boolean changed = false;
+            if (run.halted() && moved.stream().anyMatch(run.issues()::containsKey)) {
+                draft.halted = false;
+                changed = true;
+            }
             for (final String id : moved) {
                 final NextStep.Progress p = draft.progress.get(id);
                 if (p != null && (p.needsYou() || p.rounds().stopped())) {
@@ -1874,12 +1960,16 @@ public final class WorkRun {
     }
 
     private static void allowed(
-            final Board board, final Snapshot snapshot, final String id, final String to) {
+            final Board board,
+            final Snapshot snapshot,
+            final String id,
+            final String to,
+            final boolean passHalted) {
         final Story story = WorkProposal.story(board, id);
         final Run run = snapshot.runs().get(id);
         if (run != null
                 && !run.stopped()
-                && (run.halted()
+                && (run.halted() && !passHalted
                         || run.issues().entrySet().stream()
                                 .anyMatch(
                                         p ->
@@ -1929,6 +2019,68 @@ public final class WorkRun {
                                                         || i.parent() != null
                                                                 && story.issues()
                                                                         .contains(i.parent())));
+    }
+
+    /** Refuses a Start replacing the run's unstarted offers without naming that run. */
+    private static void replaced(
+            final String story, final @Nullable Run run, final @Nullable String replaces) {
+        if (replaces == null
+                && run != null
+                && !run.stopped()
+                && !run.halted()
+                && run.offers().stream().anyMatch(o -> o.status().equals("OFFERED"))) {
+            throw WorkRefusal.runChanged(
+                    story, "The run holds offers not started yet, which a Start must name.");
+        }
+    }
+
+    /**
+     * Refuses a Start naming a run that is not the one standing, before anything else about the run
+     * is judged, so another run's id always reads as a changed run.
+     */
+    private static void standing(final String story, final @Nullable Run run, final Start start) {
+        final String replaces = start.replaces();
+        if (replaces != null && (run == null || !run.id().equals(replaces))) {
+            throw WorkRefusal.runChanged(
+                    story, "The run a Start replaces is not the one standing.");
+        }
+        final PassOver passOver = start.passOver();
+        if (passOver != null && (run == null || !run.id().equals(passOver.run()))) {
+            throw WorkRefusal.runChanged(story, "The run passed over is not the one standing.");
+        }
+    }
+
+    /**
+     * Refuses a Start that does not pass over the reason the run raised, or a pass-over that does
+     * not name that issue's reason or would pass over another reason of the run.
+     */
+    private static void passedOver(
+            final String story, final @Nullable Run run, final @Nullable PassOver passOver) {
+        if (run == null) {
+            return;
+        }
+        if (passOver == null) {
+            // A stopped run's STOPPED reasons count: only a pass-over answers them.
+            if (run.issues().values().stream().anyMatch(NextStep.Progress::needsYou)) {
+                throw WorkRefusal.runChanged(story, "The run needs attention a Start must name.");
+            }
+            return;
+        }
+        final NextStep.Progress progress = run.issues().get(passOver.issue());
+        if (progress == null
+                || !progress.needsYou()
+                || !progress.reason().equals(passOver.reason())) {
+            throw WorkRefusal.runChanged(story, "The reason passed over changed.");
+        }
+        // A stop or a refused save raises every issue of the run with the same reason at once.
+        if (run.issues().entrySet().stream()
+                .anyMatch(
+                        e ->
+                                !e.getKey().equals(passOver.issue())
+                                        && e.getValue().needsYou()
+                                        && !e.getValue().reason().equals(passOver.reason()))) {
+            throw WorkRefusal.runChanged(story, "Another issue of the run needs attention.");
+        }
     }
 
     private static Offer offer(final NextStep.Planned planned, final String story) {

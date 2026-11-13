@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import java.net.URI;
@@ -186,7 +187,7 @@ class StoryWorkHttpTest {
                 .as("no store revision changes")
                 .isEqualTo("board@1");
         assertThat(board.stories().getFirst().state()).as("no story moves").isEqualTo("Backlog");
-        assertThat(json(call(BASE + "/work", MINIMAL), 200).get("tasks").size())
+        assertThat(json(call(BASE + "/work", replacing(MINIMAL)), 200).get("tasks").size())
                 .as("omitted repositories and limits use the recomputed proposal")
                 .isEqualTo(2);
     }
@@ -348,7 +349,7 @@ class StoryWorkHttpTest {
                 json(
                         call(
                                 BASE + "/work",
-                                withMain(",\"effort\":\"low\",\"chosenBy\":\"Forged\"")),
+                                replacing(withMain(",\"effort\":\"low\",\"chosenBy\":\"Forged\""))),
                         200);
         assertThat(changed.at("/tasks/0/effort").asString())
                 .as("an effort the person changed reaches Start")
@@ -356,7 +357,10 @@ class StoryWorkHttpTest {
         assertThat(changed.at("/tasks/0/chosenBy").asString())
                 .as("a chosenBy sent back is not taken")
                 .isEqualTo("Building, risk harm");
-        assertThat(json(call(BASE + "/work", withMain("")), 200).at("/tasks/0").has("effort"))
+        assertThat(
+                        json(call(BASE + "/work", replacing(withMain(""))), 200)
+                                .at("/tasks/0")
+                                .has("effort"))
                 .as("a main sent back without an effort starts with none")
                 .isFalse();
     }
@@ -384,6 +388,23 @@ class StoryWorkHttpTest {
     }
 
     /** {@link #SELECTED} with these members added to its main. */
+    /** Names the run whose unstarted offers a repeated Start replaces, as the board reports it. */
+    private String replacing(final String body) throws Exception {
+        final String run =
+                JSON.readTree(
+                                mvc.perform(
+                                                get(BASE + "/work")
+                                                        .header(
+                                                                "Authorization",
+                                                                "Bearer " + token.text()))
+                                        .andReturn()
+                                        .getResponse()
+                                        .getContentAsString())
+                        .at("/work/run")
+                        .asString();
+        return body.substring(0, body.lastIndexOf('}')) + ",\"replaces\":\"" + run + "\"}";
+    }
+
     private static String withMain(final String members) {
         return SELECTED.replace(
                 "\"brief\":\"Build {story}: {issues}; {tasks}\"}",

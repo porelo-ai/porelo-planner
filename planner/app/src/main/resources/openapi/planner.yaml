@@ -483,8 +483,19 @@ paths:
         task. CHANGE and DROP need a nonblank comment. OTHER may only be dropped. No prompt comes from the body.
         Expands order placeholders once per task, with repository text delimited by longer backtick fences.
         Refuses any brief over 4000 characters or task prompt over 65536 UTF-8 bytes. The JSON body is at most 65536
-        bytes. Persists scoped opaque offers before answering, without starting or moving anything. Repeating this
-        call replaces unstarted offers. Halted runs, readings waiting for a choice, and lost working records refuse work.
+        bytes. Persists scoped opaque offers before answering, without starting or moving anything. While the story's
+        run holds offers not started yet, a Start must name that run in `replaces` and then replaces those offers;
+        without `replaces` it is refused with the conflict RunChanged, so a replayed Start never gets a second set of
+        offers to launch. `replaces` naming any other run than the one standing, or a run where none stands, is
+        refused the same way. A `passOver` answers one issue's reason with a new run in place of the old one: it
+        names the run, the issue, its reason (NEXT_STEP_UNAVAILABLE, SAVE_REFUSED or STOPPED) and the revision the
+        person saw, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or when
+        another issue of the run needs attention for another reason; the revision is checked as `revision` is. A
+        halted run takes a Start only with a `passOver` of its SAVE_REFUSED, recorded stopped and replaced in one
+        step. A Start without `passOver` over a run any of whose issues holds a reason, a stopped run's STOPPED
+        included, is refused with RunChanged whatever `replaces` names. The run named in `replaces` or `passOver` is
+        checked against the one standing before anything else about it. Work at work, readings waiting for a choice, and lost working records refuse work; every added field is
+        optional.
       tags: [work]
       requestBody:
         required: true
@@ -783,9 +794,18 @@ paths:
       operationId: stopStoryWork
       summary: Cancel the run
       description: >-
-        Takes an empty body. Records cancellation and voids unstarted offers, retaining states, counts and findings.
-        Active tasks stay at work until the window stops them and reports STOPPED or a late ENDED. Repeatable.
+        Takes an empty body, or one naming the run the person saw in `run`; a run named that is not the one standing,
+        or a run named where none stands, is refused with the conflict RunChanged. Records cancellation of a run at
+        work, ended with reasons or halted, and voids unstarted offers, retaining states, counts and findings; every
+        reason then reads STOPPED. Active tasks stay at work until the window stops them and reports STOPPED or a
+        late ENDED. Repeatable.
       tags: [work]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopRequest'
       responses:
         '200':
           description: The current work and any still-valid offers.
@@ -889,7 +909,8 @@ components:
     RunConflict:
       description: >-
         StaleRevision(revision), WorkRunning(story,tasks[]), ReadingNotStopped(issue),
-        ReadingRoundChanged(issue,rounds) or TaskEventConflict(task,event,reason). Subjects are checked before echoing.
+        ReadingRoundChanged(issue,rounds), TaskEventConflict(task,event,reason) or RunChanged(story,reason). Subjects
+        are checked before echoing.
       content:
         application/problem+json:
           schema:
@@ -919,7 +940,10 @@ components:
     WorkConflict:
       description: >-
         StaleRevision names the current revision. WorkRunning names the checked story and an array of recorded active
-        task names. Revision is checked first; a story's state alone never means work is running.
+        task names. RunChanged(story,reason) says in fixed words that the run a Start names in `replaces` or
+        `passOver`, or the reason it passes over, is not the one standing, or that the run holds a reason a Start
+        must pass over. Revision is checked first; a story's state
+        alone never means work is running.
       content:
         application/problem+json:
           schema:
@@ -1360,6 +1384,12 @@ components:
       description: An issue's identifier, a prefix and a number, with a sub-issue's number after a dot.
       type: string
       pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$'
+    RunId:
+      description: >-
+        A story's run, drawn by the planner when the run starts and kept while it stands; opaque to the window, which
+        compares it only for equality.
+      type: string
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     Revision:
       description: >-
         The store's revision the answer was read at; opaque to the window, which compares it only for equality. At
@@ -2146,6 +2176,34 @@ components:
             $ref: '#/components/schemas/IssueReadingRounds'
         issues:
           $ref: '#/components/schemas/ChosenIssues'
+        replaces:
+          $ref: '#/components/schemas/RunId'
+        passOver:
+          $ref: '#/components/schemas/PassOver'
+    PassOver:
+      description: >-
+        The reason of one issue a Start answers with a new run in place of the run named, as the person saw it at the
+        revision named.
+      type: object
+      additionalProperties: false
+      required: [issue, reason, revision, run]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        reason:
+          type: string
+          enum: [NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED]
+        revision:
+          $ref: '#/components/schemas/Revision'
+        run:
+          $ref: '#/components/schemas/RunId'
+    StopRequest:
+      description: The run the person saw, which the stop ends only while it stands.
+      type: object
+      additionalProperties: false
+      properties:
+        run:
+          $ref: '#/components/schemas/RunId'
     StoryWorkOrder:
       type: object
       required: [revision, tasks]
@@ -2393,8 +2451,10 @@ components:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanWork:
       type: object
-      required: [tasks, coordinator, since, atWork, repositories, comment, readingRounds, issueReadingRounds, issues]
+      required: [run, tasks, coordinator, since, atWork, repositories, comment, readingRounds, issueReadingRounds, issues]
       properties:
+        run:
+          $ref: '#/components/schemas/RunId'
         tasks:
           type: array
           items:

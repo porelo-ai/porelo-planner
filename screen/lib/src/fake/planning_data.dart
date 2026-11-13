@@ -121,6 +121,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "link": "https://example.org/stories/ST294",
       "issues": [],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000001",
         "tasks": [],
         "atWork": true,
         "since": "11:02",
@@ -262,6 +263,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000002",
         "tasks": [],
         "atWork": true,
         "coordinator": null,
@@ -1147,6 +1149,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000003",
         "tasks": [
           {
             "task": "build-one",
@@ -1341,6 +1344,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000004",
         "tasks": [
           {
             "task": "build-one",
@@ -1515,6 +1519,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000005",
         "tasks": [
           {
             "task": "build-one",
@@ -1589,6 +1594,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000006",
         "tasks": [
           {
             "task": "build-one",
@@ -1642,6 +1648,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "link": "https://example.org/stories/ST127",
       "issues": [],
       "work": {
+        "run": "00000000-0000-4000-a000-000000000007",
         "tasks": [
           {
             "task": "build-one",

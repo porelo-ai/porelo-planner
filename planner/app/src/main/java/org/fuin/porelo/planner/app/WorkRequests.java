@@ -64,7 +64,21 @@ public final class WorkRequests {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Number readingRounds,
             @JsonInclude(JsonInclude.Include.NON_NULL)
                     @Nullable List<IssueLimit> issueReadingRounds,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> issues) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> issues,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String replaces,
+            @JsonInclude(JsonInclude.Include.NON_NULL) WorkRun.@Nullable PassOver passOver) {}
+
+    /**
+     * A stop's body, which may name the run the person saw.
+     *
+     * @param run the run, or null for whichever stands
+     */
+    public record StopRequest(@JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String run) {}
+
+    /** The pattern of a run's id, as the planner draws it. */
+    private static final java.util.regex.Pattern RUN =
+            java.util.regex.Pattern.compile(
+                    "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     /** An explicitly supplied reading bound, kept numeric until core validation. */
     public record IssueLimit(String issue, Number rounds) {}
@@ -415,16 +429,6 @@ public final class WorkRequests {
         }
     }
 
-    static void empty(final HttpServletRequest request) {
-        try {
-            if (request.getInputStream().readNBytes(1).length != 0) {
-                throw WorkRefusal.invalidSettings();
-            }
-        } catch (final IOException invalid) {
-            throw WorkRefusal.invalidSettings();
-        }
-    }
-
     static WorkRun.Report event(final JsonNode body) {
         fields(body, Set.of("offer", "event", "container", "machine", "ended", "landed"));
         final String machine = text(body, "machine");
@@ -572,7 +576,9 @@ public final class WorkRequests {
                         "comment",
                         "readingRounds",
                         "issueReadingRounds",
-                        "issues"));
+                        "issues",
+                        "replaces",
+                        "passOver"));
         final List<WorkAnswers.Repository> repositories;
         if (body.has("repositories")) {
             repositories = new ArrayList<>();
@@ -604,7 +610,80 @@ public final class WorkRequests {
                 body.has("comment") ? text(body, "comment") : null,
                 body.has("readingRounds") ? rounds(body.path("readingRounds"), from, to) : null,
                 overrides,
-                chosen(body));
+                chosen(body),
+                body.has("replaces") ? run(body, "replaces") : null,
+                body.has("passOver") ? passOver(body.path("passOver")) : null);
+    }
+
+    /** Reads a run's id, refused unless it has the form the planner draws. */
+    private static String run(final JsonNode node, final String name) {
+        final String run = text(node, name);
+        if (!RUN.matcher(run).matches()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return run;
+    }
+
+    /** Reads the reason a Start passes over, each field checked before it is used. */
+    private static WorkRun.PassOver passOver(final JsonNode node) {
+        if (!node.isObject()
+                || !Set.of("issue", "reason", "revision", "run")
+                        .equals(Set.copyOf(node.propertyNames()))) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final String issue = text(node, "issue");
+        try {
+            Ids.issue(issue);
+        } catch (final IllegalArgumentException malformed) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final String reason = text(node, "reason");
+        if (!WorkRun.PASSABLE.contains(reason)) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return new WorkRun.PassOver(issue, reason, text(node, "revision"), run(node, "run"));
+    }
+
+    /**
+     * What a Start names of the run standing.
+     *
+     * @param request the checked request
+     * @return the run it replaces and the reason it passes over
+     */
+    static WorkRun.Start start(final Request request) {
+        return new WorkRun.Start(request.replaces(), request.passOver());
+    }
+
+    /**
+     * Reads a stop's body: empty, or an object naming at most the run the person saw.
+     *
+     * @param request the request
+     * @return the run named, or null when none is
+     */
+    static @Nullable String stop(final HttpServletRequest request) {
+        final byte[] bytes;
+        try {
+            bytes = request.getInputStream().readNBytes(65537);
+        } catch (final IOException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+        if (bytes.length == 0) {
+            return null;
+        }
+        if (bytes.length > 65536) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final JsonNode body;
+        try {
+            body = JSON.readTree(bytes);
+        } catch (final JacksonException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+        if (body == null || !body.isObject()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        fields(body, Set.of("run"));
+        return body.has("run") ? run(body, "run") : null;
     }
 
     /**

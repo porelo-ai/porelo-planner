@@ -123,6 +123,7 @@ public final class WorkAnswers {
 
     /** One story's run, including its known reading state. */
     public record PlanWork(
+            String run,
             List<PlanWorkTask> tasks,
             @Nullable String coordinator,
             String since,
@@ -244,6 +245,7 @@ public final class WorkAnswers {
                                                 ended(o.ended())))
                         .toList();
         return new PlanWork(
+                run.id(),
                 tasks,
                 tasks.stream()
                         .filter(t -> t.role().equals("MAIN") && t.atWork())

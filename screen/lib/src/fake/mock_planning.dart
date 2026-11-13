@@ -354,8 +354,8 @@ class MockPlanningSource implements PlanningSource {
       StoryWorkStatus.from(work.call('GetStoryWork', {'project': project, 'story': story}));
 
   @override
-  Future<StoryWorkStatus> stopStoryWork(String project, String story) async =>
-      StoryWorkStatus.from(work.call('StopStoryWork', {'project': project, 'story': story}));
+  Future<StoryWorkStatus> stopStoryWork(String project, String story, {String? run}) async =>
+      StoryWorkStatus.from(work.call('StopStoryWork', {'project': project, 'story': story, 'run': ?run}));
 
   @override
   Future<TaskEventResolution> taskEvent(

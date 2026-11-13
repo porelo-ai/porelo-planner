@@ -17,6 +17,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -713,8 +714,114 @@ class WorkRunHttpTest {
         assertThat(unknown.path("type").asString())
                 .as("an unknown checked offer has its named refusal")
                 .endsWith(":TaskNotAnswered");
-        call("/stories/ST1/work/stop", "{}", 400);
+        call("/stories/ST1/work/stop", "{\"run\":\"bad-secret\"}", 400);
+        call("/stories/ST1/work/stop", "{\"other\":1}", 400);
         call("/stories/ST1/work/stop", "", 200);
+    }
+
+    @Test
+    void aStartPassingOverAStopNamesTheRunTheBoardReportsAndIsAConflictOnceAnotherStands()
+            throws Exception {
+        // The window and the planner reading the pass-over differently would start work over a
+        // reason nobody looked at, or refuse the one the person answered.
+        offerWork("ST1");
+        final JsonNode stopped = call("/stories/ST1/work/stop", "", 200);
+        final String run = stopped.at("/work/run").asString();
+        assertThat(stopped.at("/work/issues/0/reason").asString())
+                .as("the stop raised the issue")
+                .isEqualTo("STOPPED");
+
+        final Map<String, Object> passOver =
+                Map.of(
+                        "issue",
+                        "AA1",
+                        "reason",
+                        "STOPPED",
+                        "revision",
+                        store.board().revision().value(),
+                        "run",
+                        run);
+        final JsonNode again = call("/stories/ST1/work", startPassingOver(passOver), 200);
+        assertThat(again.path("tasks").size()).as("the new run offers its tasks").isPositive();
+        final String next =
+                call(
+                                "/stories/ST1/work/stop",
+                                "{\"run\":\""
+                                        + "0".repeat(8)
+                                        + "-0000-4000-8000-"
+                                        + "0".repeat(12)
+                                        + "\"}",
+                                409)
+                        .path("type")
+                        .asString();
+        assertThat(next).as("a stop of another run is the run conflict").endsWith(":RunChanged");
+        final String current =
+                JSON.readTree(
+                                mvc.perform(get("/projects/project/stories/ST1/work"))
+                                        .andReturn()
+                                        .getResponse()
+                                        .getContentAsString())
+                        .at("/work/run")
+                        .asString();
+        assertThat(current).as("the board reports the new run").isNotEqualTo(run);
+        call("/stories/ST1/work/stop", "{\"run\":\"" + current + "\"}", 200);
+
+        final JsonNode refused = call("/stories/ST1/work", startPassingOver(passOver), 409);
+        assertThat(refused.path("type").asString())
+                .as("a pass-over of a run that no longer stands is the run conflict")
+                .endsWith(":RunChanged");
+        assertThat(refused.at("/parameters/story").asString())
+                .as("the conflict names the checked story")
+                .isEqualTo("ST1");
+    }
+
+    @Test
+    void aStartReplacingAnotherRunOverAHaltedRunIsTheRunConflict() throws Exception {
+        // The window reads a changed run as a conflict and reloads; a refused move it would not.
+        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
+        store.busy = true;
+        final int refusedStart =
+                mvc.perform(
+                                post("/projects/project/tasks/build/events")
+                                        .contentType("application/json")
+                                        .content(event(offer, "STARTED", "")))
+                        .andReturn()
+                        .getResponse()
+                        .getStatus();
+        assertThat(refusedStart).as("the start's save is refused").isNotEqualTo(200);
+        store.busy = false;
+        call("/tasks/build/events", event(offer, "ENDED", "Built"), 200);
+        assertThat(java.util.Objects.requireNonNull(projects.work("project").work("ST1")).halted())
+                .as("the refused save halted the run")
+                .isTrue();
+
+        final JsonNode refused =
+                call(
+                        "/stories/ST1/work",
+                        JSON.writeValueAsString(
+                                Map.of(
+                                        "project", "project",
+                                        "story", "ST1",
+                                        "to", "Building",
+                                        "mode", "AGENT",
+                                        "revision", store.board().revision().value(),
+                                        "replaces", java.util.UUID.randomUUID().toString())),
+                        409);
+        assertThat(refused.path("type").asString())
+                .as("another run's id is the run conflict, before the halt is judged")
+                .endsWith(":RunChanged");
+    }
+
+    /** A Start of the story's work as the screen sends it from a raised row. */
+    private String startPassingOver(final Map<String, Object> passOver) throws Exception {
+        final Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("project", "project");
+        body.put("story", "ST1");
+        body.put("to", "Building");
+        body.put("mode", "AGENT");
+        body.put("revision", store.board().revision().value());
+        body.put("passOver", passOver);
+        return JSON.writeValueAsString(body);
     }
 
     @Test
@@ -990,6 +1097,7 @@ class WorkRunHttpTest {
     private static final class Store implements PlanningStore {
         private Board current;
         private int saves = 1;
+        private boolean busy;
 
         private Store() {
             final WorkRule build =
@@ -1070,6 +1178,9 @@ class WorkRunHttpTest {
         /** Makes the actual planning effect observable through HTTP. */
         @Override
         public Board save(final Revision revision, final Writes writes) {
+            if (busy) {
+                throw new StoreException.Busy("project");
+            }
             final Issue old = current.issues().getFirst();
             final String state = writes.issues().getOrDefault(old.id(), old.state());
             current =

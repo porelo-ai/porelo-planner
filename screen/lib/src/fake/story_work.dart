@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models.dart' show planReasonNeedsAttention;
 import '../story_work_order.dart';
 import 'planning_moves.dart';
 import 'refusal.dart';
@@ -35,6 +36,10 @@ class MockStoryWork {
   int _revision = 0;
   int _offer = 0;
   String nextOffer() => '00000000-0000-4000-8000-${(++_offer).toRadixString(16).padLeft(12, "0")}';
+  int _run = 0;
+
+  /// A run's id as the planner draws one when a run starts.
+  String nextRun() => '00000000-0000-4000-9000-${(++_run).toRadixString(16).padLeft(12, "0")}';
   final _orders = <(String, String), Map<String, dynamic>>{};
 
   /// Applies one action to a copy and publishes only after validation.
@@ -266,6 +271,9 @@ class MockStoryWork {
     }
     if (method == 'StopStoryWork') {
       final work = story['work'];
+      if (parameters['run'] case final String run? when work is! Map || work['run'] != run) {
+        refuse('RunChanged', {'story': story['id'], 'reason': 'The run named is not the one standing.'});
+      }
       if (work is Map<String, dynamic>) {
         for (final item in (work['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
           item['reason'] = 'STOPPED';
@@ -276,6 +284,26 @@ class MockStoryWork {
     }
     if (method != 'StartStoryWork') refuse('NotYetBuilt', {'method': method});
     checkRevision();
+    final standing = story['work'] is Map ? (story['work'] as Map)['run'] : null;
+    if (parameters['replaces'] case final String replaces? when replaces != standing) {
+      refuse('RunChanged', {'story': story['id'], 'reason': 'The run a Start replaces is not the one standing.'});
+    }
+    if (parameters['passOver'] case final Map<String, dynamic> passOver?) {
+      final reasons = {
+        for (final item in ((story['work'] as Map?)?['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>())
+          item['issue']: item['reason'],
+      };
+      if (passOver['run'] != standing ||
+          reasons[passOver['issue']] != passOver['reason'] ||
+          reasons.entries.any(
+            (each) =>
+                each.key != passOver['issue'] &&
+                planReasonNeedsAttention('${each.value}') &&
+                each.value != passOver['reason'],
+          )) {
+        refuse('RunChanged', {'story': story['id'], 'reason': 'The reason passed over changed.'});
+      }
+    }
     if (story['work'] is Map && (story['work'] as Map)['atWork'] == true) {
       refuse('WorkRunning', {
         'story': story['id'],
@@ -335,6 +363,7 @@ class MockStoryWork {
     }
     _orders[(project, story['id'] as String)] = {
       ...parameters,
+      'run': nextRun(),
       'repositories': repos,
       'readingRounds': rounds,
       'issueReadingRounds': overrides,
@@ -383,6 +412,7 @@ class MockStoryWork {
         '${id.toLowerCase()}-${task.repository}-${task.role.toLowerCase()}-${task.issues.join('-').toLowerCase()}';
     final container = 'mock-$name';
     final work = <String, dynamic>{
+      'run': parameters['run'],
       'repositories': parameters['repositories'],
       'comment': parameters['comment'] ?? '',
       'readingRounds': rounds,
@@ -395,6 +425,8 @@ class MockStoryWork {
       if (story['work'] is Map<String, dynamic>) ...story['work'] as Map<String, dynamic>,
     };
     work['atWork'] = true;
+    // A Start of a new order stands in place of the run before it, as the planner's does.
+    work['run'] = parameters['run'];
     work['tasks'] = [
       ...work['tasks'] as List? ?? <dynamic>[],
       {

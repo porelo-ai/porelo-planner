@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL77",
   "title": "Each Raised Row Offers Its Action",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Highest",
   "rank": 5,
@@ -51,7 +51,7 @@ Today's code stands in the way, read in it:
 3. **Stop work ends any run that is not stopped yet**: at work, ended with reasons, or halted, as the planner's stop
    already does. The screen offers Stop on a raised row and on the story card whenever the run is not stopped
    (`PlanningBoard.stopWork` no longer asks for `atWork`); afterwards each reason reads `STOPPED`.
-4. **The row takes its start hooks from its board.** The window hands `startTask`, `agents` and `machines` to
+4. **The row takes its start hooks from its board.** The window hands `startTask` and `agents` to
    `PlanningBoards` when it makes them, not only to `PlanningScreen`, so a board holds them before the screen was ever
    shown; `StoryWorkAttentionView` opens the Start dialog through its board's hooks and, without them, offers no Start
    and says why. "Move on" (after `STOPPED`) and "Go to Review" (after `INVALID_FINDINGS`) stage the move on the
@@ -73,7 +73,7 @@ Today's code stands in the way, read in it:
     agent goes on running is worse than offering none.
 - **Contract agreed with the window:** `passOver` (`issue`, `reason`, `revision`, `run`) on Start, `run` on a story's
   work, `replaces` on Start and an optional `run` on Stop, all carried by the screen alone; and `PlanningBoards` taking
-  `startTask`, `agents` and `machines` when it is made. The window never sends or repeats a story's Start itself, and
+  `startTask` and `agents` when it is made. The window never sends or repeats a story's Start itself, and
   already hands the board `taskChanges`.
 
 - **Core (`planner/core`, `WorkRun`).** The start of a story's work takes an optional pass-over: issue, reason and the
@@ -86,10 +86,22 @@ Today's code stands in the way, read in it:
   (`issue`, `reason`, `revision`); without it nothing changes. Written in the description first, then served.
 - **Screen (`screen/`).** `PlanningBoard._startUnavailable` lets a row's own Start through for its reason;
   `PlanningBoard.stopWork` no longer asks for `atWork`, and the card and the row offer Stop while the run is not
-  stopped; `PlanningBoards` takes `startTask`, `agents` and `machines` when it is made and gives them to each board;
+  stopped; `PlanningBoards` takes `startTask` and `agents` when it is made and gives them to each board;
   `StoryWorkAttentionView` opens the Start dialog through them with the pass-over, or offers no Start and says why.
-- **Window.** It hands the three hooks to `PlanningBoards` where it makes them: a change in the window's repository,
+- **Window.** It hands the two hooks to `PlanningBoards` where it makes them: a change in the window's repository,
   asked of its agent in the channel; until it stands the row says why it offers no Start.
+- **What building found.** The run's id was already drawn when a run starts and kept, checked, in every work
+  record, so no record lacks one and none is given one on reading. A proposal no longer refuses a halted run, since
+  the row's Start opens the Start dialog with a proposal first; the order alone checks the pass-over. A stop or a
+  refused save raises every issue of the run with the same reason at once, so a pass-over is refused for another
+  issue raised for another reason, not for another issue raised for the same one. The machines a start may choose
+  are every board of the same project, which `PlanningBoards` knows itself, so the window hands no machines. "Move
+  on" and "Go to Review" stage the issue's move to the done state of the work rule it stands under, and the row's `onStory` opens
+  its story where the person saves it.
+- **What the code reading found.** A Start passing over no reason is refused with `RunChanged` over any run that
+  holds one, a stop's `STOPPED` too, whatever `replaces` says; `replaces` and the pass-over's run are checked against
+  the standing run before anything else, so another run's id is always `RunChanged`; and Stop names the run shown
+  when its confirmation opened, not the one standing when it is confirmed.
 - **Tests, by level, red first.**
   - Unit, core (`WorkRunTest`): a Start passing over `SAVE_REFUSED` replaces the halted run; one naming a reason that
     changed meanwhile, another issue's, or another run's id, is refused with a conflict; a task still at work refuses

@@ -67,7 +67,7 @@ class _Source extends FakePlanningSource {
   }
 
   @override
-  Future<StoryWorkStatus> stopStoryWork(String project, String story) async {
+  Future<StoryWorkStatus> stopStoryWork(String project, String story, {String? run}) async {
     stops++;
     if (stopError case final error?) throw error;
     return StoryWorkStatus.from({
@@ -381,7 +381,13 @@ void main() {
     final pending = report();
     await pumpEventQueue();
     source.reloadFails = true;
-    await board.stopWork('ST1', revision: 'older-revision', source: source, sourceProject: 'demo');
+    await board.stopWork(
+      'ST1',
+      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST1'))?.run,
+      revision: 'older-revision',
+      source: source,
+      sourceProject: 'demo',
+    );
     expect(source.stops, 1);
     expect(changes.stopped.single.$4.single.task, 'main-task');
     expect(board.workOf(board.stories.single)!.tasks.single.atWork, isTrue);
@@ -425,7 +431,13 @@ void main() {
     await pumpEventQueue();
     source.showWork(servedWork()..['tasks'] = [servedRunTask()]);
     await pumpEventQueue();
-    await board.stopWork('ST1', revision: 'r1', source: source, sourceProject: 'demo');
+    await board.stopWork(
+      'ST1',
+      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST1'))?.run,
+      revision: 'r1',
+      source: source,
+      sourceProject: 'demo',
+    );
     gate.complete(const PlanningTaskStarted(task: 'late', container: 'late-container'));
     expect(await pending, isFalse);
     expect(changes.tracked, isEmpty);
@@ -678,7 +690,13 @@ void main() {
     await pumpEventQueue();
     source.showWork(servedWork()..['tasks'] = [servedRunTask()], stopped: true);
     await pumpEventQueue();
-    await board.stopWork('ST1', revision: 'r1', source: source, sourceProject: 'demo');
+    await board.stopWork(
+      'ST1',
+      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST1'))?.run,
+      revision: 'r1',
+      source: source,
+      sourceProject: 'demo',
+    );
     source.decisionGate!.complete(
       ReadingResolution.from({
         'revision': 'r1',

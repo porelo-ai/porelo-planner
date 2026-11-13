@@ -68,6 +68,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("PrioritySaved", Answers.PrioritySaved.class),
                     Map.entry("StoryWorkProposalRequest", WorkRequests.Proposal.class),
                     Map.entry("StoryWorkRequest", WorkRequests.Request.class),
+                    Map.entry("PassOver", WorkRun.PassOver.class),
+                    Map.entry("StopRequest", WorkRequests.StopRequest.class),
                     Map.entry("StoryWorkProposal", WorkAnswers.Proposal.class),
                     Map.entry("StoryWorkOrder", WorkAnswers.Order.class),
                     Map.entry("PlanRepositoryWork", WorkAnswers.Repository.class),
@@ -273,6 +275,8 @@ class ApiMatchesDescriptionTest {
                 Set.of(
                         WorkRequests.Proposal.class,
                         WorkRequests.Request.class,
+                        WorkRun.PassOver.class,
+                        WorkRequests.StopRequest.class,
                         WorkAnswers.Proposal.class,
                         WorkAnswers.Order.class,
                         WorkAnswers.Repository.class,
@@ -293,7 +297,7 @@ class ApiMatchesDescriptionTest {
                         WorkAnswers.Finding.class);
         assertThat(workTypes)
                 .as("every work request, response and nested wire record participates")
-                .hasSize(20)
+                .hasSize(22)
                 .isSubsetOf(SCHEMAS.values());
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
@@ -489,7 +493,12 @@ class ApiMatchesDescriptionTest {
                         .path("paths")
                         .path("/projects/{project}/stories/{story}/work/stop")
                         .path("post");
-        assertThat(stop.has("requestBody")).as("stop takes no JSON object").isFalse();
+        assertThat(stop.at("/requestBody/required").asBoolean())
+                .as("stop takes an empty body still")
+                .isFalse();
+        assertThat(stop.at("/requestBody/content/application~1json/schema/$ref").asText())
+                .as("stop's body names at most the run")
+                .isEqualTo("#/components/schemas/StopRequest");
         final JsonNode event = description.path("components").path("schemas").path("TaskEnded");
         assertThat(event.path("required").toString())
                 .as("all of Porelo's facts are required")

@@ -8,12 +8,16 @@ import '../models.dart';
 import '../run_attention.dart';
 import '../story_work.dart';
 import 'actions.dart';
+import 'story_work_dialog.dart';
 import 'style.dart';
 
 /// Story outcomes and reading stops retain the daemon's words until the board clears them.
 ///
 /// A row of a task's end opens that task's result in the window; a row of a stopped reading opens the Reworking
-/// dialog. Where the task cannot be told or opened, the row says why in words.
+/// dialog. Where the task cannot be told or opened, the row says why in words. A row whose next step was not
+/// available or whose save was refused starts again or stops; one stopped starts again or moves on; one whose
+/// findings could not be read goes on to the reading's done state. Where one of these cannot be offered, the row
+/// says why.
 class StoryWorkAttentionView extends StatefulWidget {
   /// Keeps the source facts and choices for this view or decision.
   const StoryWorkAttentionView({
@@ -23,8 +27,12 @@ class StoryWorkAttentionView extends StatefulWidget {
     this.openStory = true,
     this.taskChanges,
     this.onPutAway,
+    this.onStory,
     super.key,
   });
+
+  /// Opens the row's story, where a move the row staged is saved; without it the move waits on the board's Save.
+  final ValueChanged<PlanningAttention>? onStory;
 
   /// Where the window keeps an issue's row a person puts away; without it the row offers no Put away.
   final ValueChanged<PlanningPutAway>? onPutAway;
@@ -156,7 +164,10 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                 ),
             ],
             if (planReasonNeedsAttention(row.reason)) Text(planningShown(row.reason)),
-            if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) _taskEnd(issue),
+            if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) ...[
+              _taskEnd(issue),
+              _answers(context, issue),
+            ],
             if (row.issue case final issue?) ...[
               Text(
                 planningShown(
@@ -247,6 +258,151 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         ),
         if (unavailable != null) Text('$words; $unavailable', key: Key('story-work-reason ${issue.id}')),
       ],
+    );
+  }
+
+  /// What answers the row's reason: start again, stop, move on or go to the reading's done state, each with why
+  /// it cannot be done where it cannot.
+  Widget _answers(BuildContext context, PlanIssue issue) {
+    final row = widget.row;
+    final reason = row.reason;
+    final actions = <(String, PlanningAction)>[
+      if (PlanningPassOver.reasons.contains(reason)) ('story-work-start ${issue.id}', _start(context, issue)),
+      if (reason == 'STOPPED') ('story-work-move-on ${issue.id}', _onward(issue, 'Move on')),
+      if (reason == 'INVALID_FINDINGS') ('story-work-review ${issue.id}', _onward(issue, 'Go to')),
+      if (reason != 'STOPPED' && planReasonNeedsAttention(reason))
+        ('story-work-stop ${issue.id}', _stop(context, issue)),
+    ];
+    if (actions.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: Space.small,
+          runSpacing: Space.small,
+          children: [
+            for (final (key, action) in actions)
+              Tooltip(
+                message: action.unavailable ?? action.label,
+                child: OutlinedButton(
+                  key: Key(key),
+                  onPressed: action.available ? action.run : null,
+                  child: Text(action.label),
+                ),
+              ),
+          ],
+        ),
+        for (final (key, action) in actions)
+          if (action.unavailable case final why?) Text('${action.label}: $why', key: Key('$key why')),
+      ],
+    );
+  }
+
+  /// The row's own Start, passing over its reason as the row shows it.
+  PlanningAction _start(BuildContext context, PlanIssue issue) {
+    final row = widget.row;
+    final board = row.board;
+    final hooks = board.startHooks;
+    final run = board.workOf(row.story)?.run;
+    final story = board.stories.where((each) => each.id == row.story.id).firstOrNull;
+    final target = board.state(issue.state)?.kind == 'WORKING'
+        ? board.state(issue.state)
+        : board.states.where((state) => state.kind == 'WORKING').firstOrNull;
+    final passOver = run == null
+        ? null
+        : PlanningPassOver(issue: issue.id, reason: row.reason, revision: row.revision, run: run);
+    return PlanningAction(
+      id: 'story-work.start/${issue.id}',
+      label: 'Start again…',
+      unavailable: board.isDisposed
+          ? 'this source is no longer watched'
+          : hooks == null
+          ? 'the window has not handed this board the hooks that start work'
+          : story == null
+          ? 'the story is no longer reported'
+          : passOver == null
+          ? 'the planner did not report the run'
+          : target == null
+          ? 'no working state was reported'
+          : board.startUnavailable(story, passOver: passOver),
+      run: () async {
+        final work = StoryWork(
+          board,
+          story!,
+          target!.name,
+          startTask: hooks!.startTask,
+          agentChoices: hooks.agents,
+          machines: hooks.machines(board),
+          unavailableMachines: hooks.unavailableMachines(board),
+          onStarted: (widget.taskChanges ?? board.taskChanges)?.started,
+          issues: [issue.parent ?? issue.id],
+          passOver: passOver,
+        );
+        try {
+          await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
+        } finally {
+          work.dispose();
+        }
+      },
+    );
+  }
+
+  /// Stops the row's run, once the person confirms it.
+  PlanningAction _stop(BuildContext context, PlanIssue issue) {
+    final row = widget.row;
+    final board = row.board;
+    return PlanningAction(
+      id: 'story-work.stop/${issue.id}',
+      label: 'Stop work',
+      unavailable: board.isDisposed ? 'this source is no longer watched' : board.stopUnavailable(row.story),
+      run: () async {
+        final revision = board.snapshot?.revision;
+        final run = board.workOf(row.story)?.run;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(planningShown('Stop work on ${row.story.id}?', multiline: false)),
+            content: const Text('The story stays in its working state with nobody at work until it is moved.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              FilledButton(
+                key: const Key('story-work-stop-confirm'),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Stop work'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || confirmed != true || revision == null) return;
+        await board.stopWork(
+          row.story.id,
+          run: run,
+          revision: revision,
+          source: row.source,
+          sourceProject: row.project,
+        );
+      },
+    );
+  }
+
+  /// Stages the issue's move to the done state of the rule it stands under and opens its story, where the person
+  /// saves it.
+  PlanningAction _onward(PlanIssue issue, String verb) {
+    final row = widget.row;
+    final board = row.board;
+    final done = (board.snapshot?.work ?? const <PlanWorkRule>[])
+        .where((rule) => rule.state == issue.state)
+        .firstOrNull
+        ?.done;
+    final move = done == null || done.isEmpty ? null : movePlanningIssueAction(board, issue, done);
+    return PlanningAction(
+      id: 'story-work.onward/${issue.id}',
+      label: done == null || done.isEmpty ? verb : '$verb $done',
+      unavailable: move == null ? 'no work rule names where ${issue.state} leads' : move.unavailable,
+      run: () {
+        move!.run();
+        widget.onStory?.call(row);
+      },
     );
   }
 

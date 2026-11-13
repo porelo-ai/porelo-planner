@@ -1,6 +1,8 @@
 /// The planning records as the planning service reports them; an absent field stays absent.
 library;
 
+import 'package:flutter/foundation.dart' show immutable;
+
 import 'story_work_order.dart';
 import 'work_reply.dart';
 
@@ -51,7 +53,8 @@ class PlanPhase {
 class PlanWork {
   /// Reads the complete durable work record.
   PlanWork.from(Map<String, dynamic> map)
-    : _tasksReported = _planMapsReported(map['tasks']),
+    : run = map['run'] is String ? map['run'] as String : null,
+      _tasksReported = _planMapsReported(map['tasks']),
       tasks = _planList(map['tasks'], PlanWorkTask.from),
       coordinator = map['coordinator'] is String ? map['coordinator'] as String : null,
       since = _planText(map, 'since'),
@@ -61,6 +64,9 @@ class PlanWork {
       readingRounds = map['readingRounds'] is int ? map['readingRounds'] as int : null,
       issueReadingRounds = _planList(map['issueReadingRounds'], PlanIssueReadingRounds.from),
       issues = _planList(map['issues'], PlanWorkIssue.from);
+
+  /// The run the planner drew when the work started, compared only for equality; null from a planner without it.
+  final String? run;
 
   /// The tasks reported by the daemon.
   final List<PlanWorkTask> tasks;
@@ -1021,10 +1027,18 @@ class StoryWorkRequest {
     this.readingRounds,
     this.issueReadingRounds = const {},
     this.issues,
+    this.replaces,
+    this.passOver,
   });
 
   /// The story's issues the work is for, or null for the story's own work.
   final List<String>? issues;
+
+  /// The run this Start replaces, as the board showed it, or null where the board showed none.
+  final String? replaces;
+
+  /// The reason of one issue this Start answers with a new run, or null for a Start from the story.
+  final PlanningPassOver? passOver;
 
   /// The project name sent to the machine.
   final String project;
@@ -1109,7 +1123,45 @@ class StoryWorkRequest {
         for (final each in issueReadingRounds.entries) {'issue': each.key, 'rounds': each.value},
       ],
     'issues': ?issues,
+    'replaces': ?replaces,
+    if (passOver case final passOver?) 'passOver': passOver.toMap(),
   };
+}
+
+/// The reason of one issue a Start from its row answers, as the row showed it.
+@immutable
+class PlanningPassOver {
+  /// Takes the issue, its reason, the board's revision and the run the row showed.
+  const PlanningPassOver({required this.issue, required this.reason, required this.revision, required this.run});
+
+  /// The reasons a row's Start may pass over.
+  static const reasons = {'NEXT_STEP_UNAVAILABLE', 'SAVE_REFUSED', 'STOPPED'};
+
+  /// The issue whose row it is.
+  final String issue;
+
+  /// The reason the row showed.
+  final String reason;
+
+  /// The board's revision the row showed.
+  final String revision;
+
+  /// The run the row showed.
+  final String run;
+
+  /// The fields sent to the planner.
+  Map<String, dynamic> toMap() => {'issue': issue, 'reason': reason, 'revision': revision, 'run': run};
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningPassOver &&
+      other.issue == issue &&
+      other.reason == reason &&
+      other.revision == revision &&
+      other.run == run;
+
+  @override
+  int get hashCode => Object.hash(issue, reason, revision, run);
 }
 
 /// The work and any ended outcome returned by GetStoryWork.

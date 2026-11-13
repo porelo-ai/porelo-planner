@@ -805,11 +805,19 @@ class WorkRunTest {
         assertThatThrownBy(() -> f.run.order("ST1", "Reworking", decision))
                 .as("a halted run still needs an explicit stop before another order")
                 .isInstanceOf(WorkRefusal.class);
-        assertThat(java.util.Objects.requireNonNull(f.run.stop("ST1")).stopped())
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        assertThat(stopped.stopped())
                 .as("stopping a halted run records the person's cancellation")
                 .isTrue();
-        assertThat(f.run.order("ST1", "Reworking", decision).tasks())
-                .as("a stopped halted run accepts work again")
+        assertThat(
+                        f.run.order(
+                                        "ST1",
+                                        "Reworking",
+                                        decision,
+                                        new WorkRun.Start(
+                                                null, f.passOver(stopped, "AA1", "STOPPED")))
+                                .tasks())
+                .as("a stopped halted run accepts work again from the stop's row")
                 .isNotEmpty();
         final var progress =
                 java.util.Objects.requireNonNull(
@@ -2252,7 +2260,8 @@ class WorkRunTest {
         // Prevents a superseded offer or a lost record from silently starting a second run.
         final Fixture f = new Fixture();
         final WorkRun.Offered old = f.order().tasks().getFirst();
-        final WorkRun.Offered current = f.order().tasks().getFirst();
+        final WorkRun.Offered current =
+                f.order(new WorkRun.Start(f.run.work("ST1").id(), null)).tasks().getFirst();
         assertThat(old.offer())
                 .as("a replacement has a fresh identity")
                 .isNotEqualTo(current.offer());
@@ -2927,6 +2936,224 @@ class WorkRunTest {
                 + ", after `git fetch origin`";
     }
 
+    @Test
+    void aStartPassingOverASaveRefusalReplacesTheHaltedRunInOneWrite() {
+        // A halted run nothing but a stop could start again leaves the row without its answer.
+        final Fixture f = new Fixture();
+        final WorkRun.Run halted = f.halted();
+        final int writes = f.record.writes;
+
+        final WorkRun.Order order =
+                f.order(new WorkRun.Start(null, f.passOver(halted, "AA1", "SAVE_REFUSED")));
+
+        final WorkRun.Run now = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(order.tasks()).as("the new run offers its tasks").isNotEmpty();
+        assertThat(now.id())
+                .as("a new run stands in place of the halted one")
+                .isNotEqualTo(halted.id());
+        assertThat(now.halted()).as("the new run is not halted").isFalse();
+        assertThat(f.record.writes - writes)
+                .as("the halted run is replaced in one write under the lock")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aHaltedRunTakesNoStartPassingOverAnotherReason() {
+        // A Start over a refused save nobody looked at would launch an agent past it.
+        final Fixture f = new Fixture();
+        final WorkRun.Run halted = f.halted();
+
+        assertThatThrownBy(
+                        () ->
+                                f.order(
+                                        new WorkRun.Start(
+                                                null, f.passOver(halted, "AA1", "STOPPED"))))
+                .as("a reason that is not the issue's is a conflict")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the halted run stands").isEqualTo(halted.id());
+    }
+
+    @Test
+    void aStartPassingOverAStopStartsTheStoryAgain() {
+        // Without it a stopped run's row could only be moved on, never started again.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+
+        final WorkRun.Order order =
+                f.order(new WorkRun.Start(null, f.passOver(stopped, "AA1", "STOPPED")));
+
+        assertThat(order.tasks()).as("the new run offers its tasks").isNotEmpty();
+        assertThat(f.run.work("ST1").id()).as("a new run stands").isNotEqualTo(stopped.id());
+    }
+
+    @Test
+    void aStartPassingOverAnotherRunsIdIsAConflict() {
+        // Another window may have started and stopped again, back at the same reason.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        final WorkRun.PassOver other =
+                new WorkRun.PassOver(
+                        "AA1",
+                        "STOPPED",
+                        f.store.board().revision().value(),
+                        java.util.UUID.randomUUID().toString());
+
+        assertThatThrownBy(() -> f.order(new WorkRun.Start(null, other)))
+                .as("a pass-over of a run that no longer stands is a conflict")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the stopped run stands").isEqualTo(stopped.id());
+    }
+
+    @Test
+    void aStartPassingOverAnOlderRevisionIsAConflict() {
+        // The row the person answered no longer shows what stands.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        final WorkRun.PassOver older =
+                new WorkRun.PassOver("AA1", "STOPPED", "board@0", stopped.id());
+
+        assertThatThrownBy(() -> f.order(new WorkRun.Start(null, older)))
+                .as("the revision the row showed is checked")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("StaleRevision"));
+    }
+
+    @Test
+    void aStartPassingOverOneIssuesReasonIsAConflictWhileAnotherIssueNeedsAttentionForAnother() {
+        // One row's Start would otherwise pass over another row's findings nobody answered.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        final Map<String, NextStep.Progress> issues =
+                new java.util.LinkedHashMap<>(stopped.issues());
+        issues.put("AA2", NextStep.Progress.start(1).attention("BLOCKING_FINDINGS"));
+        final WorkRun.Run both =
+                new WorkRun.Run(
+                        stopped.id(),
+                        stopped.story(),
+                        stopped.to(),
+                        stopped.mode(),
+                        stopped.comment(),
+                        stopped.coordinator(),
+                        stopped.readingRounds(),
+                        stopped.issueReadingRounds(),
+                        stopped.repositories(),
+                        stopped.since(),
+                        stopped.offers(),
+                        issues,
+                        stopped.stopped(),
+                        stopped.halted(),
+                        stopped.pending());
+        f.record.value = new WorkRun.Snapshot(f.record.value.generation(), Map.of("ST1", both));
+
+        assertThatThrownBy(
+                        () -> f.order(new WorkRun.Start(null, f.passOver(both, "AA1", "STOPPED"))))
+                .as("another issue's other reason is not passed over")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+    }
+
+    @Test
+    void aStartPassingOverAStopIsRefusedWhileATaskIsStillAtWork() {
+        // A second agent would work beside the first, which nobody has stopped yet.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+
+        assertThatThrownBy(
+                        () ->
+                                f.order(
+                                        new WorkRun.Start(
+                                                null, f.passOver(stopped, "AA1", "STOPPED"))))
+                .as("work still at work refuses the Start")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkRunning"));
+    }
+
+    @Test
+    void aRepeatedStartIsRefusedWhileOffersAreUnstartedUnlessItNamesTheirRun() {
+        // A replayed Start would get a second set of offers to launch beside the first.
+        final Fixture f = new Fixture();
+        f.order();
+        final String first = f.run.work("ST1").id();
+
+        assertThatThrownBy(f::order)
+                .as("a Start naming no run is refused while offers wait")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThatThrownBy(
+                        () ->
+                                f.order(
+                                        new WorkRun.Start(
+                                                java.util.UUID.randomUUID().toString(), null)))
+                .as("a Start naming another run is refused")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the first run stands").isEqualTo(first);
+        assertThat(f.order(new WorkRun.Start(first, null)).tasks())
+                .as("a Start naming the run standing replaces its offers")
+                .isNotEmpty();
+    }
+
+    @Test
+    void aStopNamingAnotherRunIsAConflictAndStopsNothing() {
+        // A stop meant for an older run would end work the person never saw.
+        final Fixture f = new Fixture();
+        f.order();
+
+        assertThatThrownBy(() -> f.run.stop("ST1", java.util.UUID.randomUUID().toString()))
+                .as("a stop of a run that does not stand is a conflict")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").stopped()).as("the run standing goes on").isFalse();
+        assertThat(f.run.stop("ST1", f.run.work("ST1").id()).stopped())
+                .as("a stop naming the run standing stops it")
+                .isTrue();
+    }
+
+    @Test
+    void aStartPassingOverNothingIsAConflictOverAStopNobodyAnswered() {
+        // A replayed Start would start an agent again over a stop nobody looked at.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+
+        assertThatThrownBy(f::order)
+                .as("a Start naming no reason is refused over the stop")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThatThrownBy(() -> f.order(new WorkRun.Start(stopped.id(), null)))
+                .as("naming the stopped run it replaces passes over no reason either")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the stopped run stands").isEqualTo(stopped.id());
+    }
+
+    @Test
+    void aStartReplacingAnotherRunIsAConflictOverAHaltedRun() {
+        // The window reads a run that changed as a conflict and reloads, never as a refused move.
+        final Fixture f = new Fixture();
+        final WorkRun.Run halted = f.halted();
+
+        assertThatThrownBy(
+                        () ->
+                                f.order(
+                                        new WorkRun.Start(
+                                                java.util.UUID.randomUUID().toString(), null)))
+                .as("another run's id is a conflict before the halt is judged")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the halted run stands").isEqualTo(halted.id());
+    }
+
+    @Test
+    void aHandMoveWhoseSaveStandsClearsAHaltedRun() {
+        // The refused save is moot once the person's own stands; a halt kept would hold the story.
+        final Fixture f = new Fixture();
+        f.halted();
+
+        f.run.moves(
+                List.of(new Moves.Move(false, "AA1", "Building")),
+                () -> f.store.save(f.store.board().revision(), writes("AA1", "Building")));
+
+        assertThat(f.run.work("ST1").halted()).as("the run is no longer halted").isFalse();
+    }
+
     static String conflictOf(final Throwable refused) {
         return ((WorkRefusal) refused).name();
     }
@@ -2935,6 +3162,7 @@ class WorkRunTest {
         WorkRun.Snapshot value = new WorkRun.Snapshot(0, Map.of());
         boolean refuseReaders;
         boolean held;
+        int writes;
         @Nullable Board checkedBoard;
 
         /** Serializes actions as a disk record must. */
@@ -2960,6 +3188,7 @@ class WorkRunTest {
                         /** Replaces one complete generation. */
                         @Override
                         public void write(final WorkRun.Snapshot snapshot) {
+                            writes++;
                             value = snapshot;
                         }
 
@@ -3000,11 +3229,46 @@ class WorkRunTest {
         final WorkRun run = new WorkRun(store, record, clock);
 
         WorkRun.Order order() {
+            return order(WorkRun.Start.NONE);
+        }
+
+        WorkRun.Order order(final WorkRun.Start start) {
             return run.order(
                     "ST1",
                     "Building",
                     new WorkOrder.Decision(
-                            "AGENT", store.board().revision().value(), null, "", 1, null));
+                            "AGENT", store.board().revision().value(), null, "", 1, null),
+                    start);
+        }
+
+        /** The story's run halted by a refused save of its task's start, the task since ended. */
+        WorkRun.Run halted() {
+            final WorkRun.Offered offer = order().tasks().getFirst();
+            store.failure = new StoreException.Busy("alpha");
+            assertThatThrownBy(() -> start(offer))
+                    .as("the start's save is refused")
+                    .isInstanceOf(StoreException.Busy.class);
+            store.failure = null;
+            run.report(
+                    "task",
+                    new WorkRun.Report(
+                            offer.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Built")));
+            final WorkRun.Run halted = java.util.Objects.requireNonNull(run.work("ST1"));
+            assertThat(halted.halted()).as("the refused save halts the run").isTrue();
+            assertThat(active("ST1")).as("no task of the halted run is at work").isEmpty();
+            return halted;
+        }
+
+        List<String> active(final String story) {
+            return run.active(story);
+        }
+
+        WorkRun.PassOver passOver(final WorkRun.Run of, final String issue, final String reason) {
+            return new WorkRun.PassOver(issue, reason, store.board().revision().value(), of.id());
         }
 
         WorkRun.Order handReading() {

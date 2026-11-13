@@ -31,7 +31,7 @@ class _PlanningTestAppState extends State<PlanningTestApp> {
     currentProvider: () => window.currentProvider,
     chosenProject: () => window.chosenProject,
   );
-  late final PlanningBoards boards = PlanningBoards(client);
+  late final PlanningBoards boards = PlanningBoards(client, startTask: window.startTask, agents: agents);
   late final RecordingHost host = RecordingHost(window.log);
   late final RecordingTasks tasks = RecordingTasks(window);
   late final RecordingAgents agents = RecordingAgents(window);

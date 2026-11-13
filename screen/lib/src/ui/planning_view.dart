@@ -109,6 +109,13 @@ class PlanningScreen extends StatelessWidget {
       for (final board in boards.sources) {
         board.startTask = startTask;
         board.taskChanges = taskChanges;
+        // A window that handed the boards no start hooks still starts from a row once the screen was shown.
+        board.startHooks ??= PlanningStartHooks(
+          startTask: startTask,
+          agents: agents,
+          machines: boards.machinesOf,
+          unavailableMachines: boards.unavailableMachinesOf,
+        );
       }
       final place = host.place;
       final detailBoard = boards.at(place.source, place.project);
@@ -151,17 +158,8 @@ class PlanningScreen extends StatelessWidget {
               onStarted: taskChanges.started,
               startTask: startTask,
               agents: agents,
-              unavailableMachines: [
-                for (final machine in boards.providerNames)
-                  if (!boards.sources.any(
-                    (source) => source.project == board.project && boards.machineOf(source) == machine,
-                  ))
-                    machine,
-              ],
-              machines: {
-                for (final source in boards.sources.where((source) => source.project == board.project))
-                  source: boards.machineOf(source),
-              },
+              unavailableMachines: boards.unavailableMachinesOf(board),
+              machines: boards.machinesOf(board),
               onStory: (story) => open(board, story),
               onIssue: (story, issue) => open(board, story, issue),
             ),
@@ -171,17 +169,8 @@ class PlanningScreen extends StatelessWidget {
               key: ValueKey((detailBoard, place.story, place.issue)),
               startTask: startTask,
               agents: agents,
-              machines: {
-                for (final source in boards.sources.where((source) => source.project == detailBoard.project))
-                  source: boards.machineOf(source),
-              },
-              unavailableMachines: [
-                for (final machine in boards.providerNames)
-                  if (!boards.sources.any(
-                    (source) => source.project == detailBoard.project && boards.machineOf(source) == machine,
-                  ))
-                    machine,
-              ],
+              machines: boards.machinesOf(detailBoard),
+              unavailableMachines: boards.unavailableMachinesOf(detailBoard),
               onStarted: taskChanges.started,
               board: detailBoard,
               story: place.story!,
@@ -925,6 +914,7 @@ class _BoardViewState extends State<_BoardView> {
     final backend = source.backend;
     final project = source.project;
     final revision = source.snapshot?.revision;
+    final run = source.workOf(story)?.run;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -941,7 +931,7 @@ class _BoardViewState extends State<_BoardView> {
       ),
     );
     if (!mounted || confirmed != true || revision == null) return;
-    await source.stopWork(story.id, revision: revision, source: backend, sourceProject: project);
+    await source.stopWork(story.id, run: run, revision: revision, source: backend, sourceProject: project);
   }
 
   Widget _menu(PlanStory story, {bool dense = false}) => PlanningActionMenu(
@@ -975,15 +965,7 @@ class _BoardViewState extends State<_BoardView> {
       board.startUnavailable(story) ??
       (!board.states.any((state) => state.kind == 'WORKING') ? 'no working state was reported' : null);
 
-  String? _stopUnavailable(PlanStory story) =>
-      board.unavailableActions['StopStoryWork'] ??
-      (!board.live
-          ? 'the planning board is not live'
-          : board.actionBusy
-          ? 'waiting for the planner'
-          : board.workOf(story)?.atWork != true
-          ? 'no running work was reported'
-          : null);
+  String? _stopUnavailable(PlanStory story) => board.stopUnavailable(story);
 
   /// Each card as last built, with what it was built from; a board of hundreds of cards is not built anew on
   /// every change, only the cards whose inputs changed.

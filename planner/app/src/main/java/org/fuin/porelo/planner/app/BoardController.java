@@ -690,7 +690,12 @@ public class BoardController {
         }
         try {
             final WorkRun.Order order =
-                    projects.work(name(project)).order(checked, to, WorkRequests.decision(body));
+                    projects.work(name(project))
+                            .order(
+                                    checked,
+                                    to,
+                                    WorkRequests.decision(body),
+                                    WorkRequests.start(body));
             LOG.info(
                     "Offered {} tasks for story {} of project {} toward {}",
                     order.tasks().size(),
@@ -755,9 +760,9 @@ public class BoardController {
             @PathVariable("story") final String story,
             final HttpServletRequest request) {
         final String checked = storyId(project, story);
-        WorkRequests.empty(request);
+        final String run = WorkRequests.stop(request);
         try {
-            final WorkRun.Run stopped = projects.work(name(project)).stop(checked);
+            final WorkRun.Run stopped = projects.work(name(project)).stop(checked, run);
             LOG.info(
                     "Stopped the work on story {} of project {}",
                     LogText.of(checked),

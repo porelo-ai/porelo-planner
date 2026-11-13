@@ -178,8 +178,8 @@ class PlanningBoard extends ChangeNotifier {
   Map<(String, String), _StoryStart> _startsOn(PlanningSource source) => _storyStarts[source] ??= {};
 
   /// Prevents separate forms from requesting concurrent orders for the same story.
-  Object? beginStoryStart(PlanStory story) {
-    if (startUnavailable(story) != null) return null;
+  Object? beginStoryStart(PlanStory story, {PlanningPassOver? passOver}) {
+    if (startUnavailable(story, passOver: passOver) != null) return null;
     final token = _StoryStart();
     _startsOn(backend)[(project, story.id)] = token;
     _changed();
@@ -200,6 +200,9 @@ class PlanningBoard extends ChangeNotifier {
   /// Window hooks retained for follow-up tasks and stopping this board's runs.
   PlanningStartTask? startTask;
   PlanningTaskChanges? taskChanges;
+
+  /// What a start from a Needs you row of this board asks of the window; null until the window handed it.
+  PlanningStartHooks? startHooks;
 
   /// All forms and task reports share the same origin and stop epoch.
   PlanningRun runOf(String story) {
@@ -384,13 +387,22 @@ class PlanningBoard extends ChangeNotifier {
           !workProblems.containsKey(story.id) &&
           !workUnsupported.contains(story.id);
 
-  /// Why a story cannot start, preserving unknown work as unknown.
-  String? startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) =>
-      startHold(story, ownStart: ownStart, ownTasks: ownTasks)?.words;
+  /// Why a story cannot start, preserving unknown work as unknown; a row's [passOver] lets its own reason through.
+  String? startUnavailable(
+    PlanStory story, {
+    Object? ownStart,
+    List<PlanningTaskStarted> ownTasks = const [],
+    PlanningPassOver? passOver,
+  }) => startHold(story, ownStart: ownStart, ownTasks: ownTasks, passOver: passOver)?.words;
 
   /// Why a story cannot start, with the run's attention when that is what holds it.
-  PlanningStartHold? startHold(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
-    return switch (_startUnavailable(story, ownStart: ownStart, ownTasks: ownTasks)) {
+  PlanningStartHold? startHold(
+    PlanStory story, {
+    Object? ownStart,
+    List<PlanningTaskStarted> ownTasks = const [],
+    PlanningPassOver? passOver,
+  }) {
+    return switch (_startUnavailable(story, ownStart: ownStart, ownTasks: ownTasks, passOver: passOver)) {
       final PlanningRunAttention attention => PlanningStartHold(attention.words, attention: attention),
       final String words => PlanningStartHold(words),
       _ => null,
@@ -423,8 +435,45 @@ class PlanningBoard extends ChangeNotifier {
         needsYou: work?.needsYou == true || issue?.needsYou == true,
       );
 
+  /// Whether [passOver] names the run and revision shown and exactly the reason that holds the start: its issue's,
+  /// with no other issue raised for another reason and no task at work.
+  bool _passes(PlanStory story, PlanningRunAttention attention, PlanningPassOver? passOver) {
+    final work = workOf(story);
+    if (passOver == null ||
+        work == null ||
+        work.atWork == true ||
+        work.run != passOver.run ||
+        snapshot?.revision != passOver.revision ||
+        !PlanningPassOver.reasons.contains(passOver.reason)) {
+      return false;
+    }
+    return attention.issues.any((issue) => issue.issue == passOver.issue && issue.reason == passOver.reason) &&
+        attention.issues.every((issue) => issue.reason == passOver.reason && !issue.readingStopped);
+  }
+
+  /// Why a run cannot be stopped now, or null when it can: one at work, ended with reasons or halted can.
+  String? stopUnavailable(PlanStory story) {
+    if (unavailableActions['StopStoryWork'] case final reason?) return reason;
+    if (_disposed || !live) return 'the planning board is not live';
+    if (actionBusy) return 'waiting for the planner';
+    final work = workOf(story);
+    if (work == null) return 'no run was reported';
+    final open =
+        work.atWork == true ||
+        work.issues.any((issue) => planReasonNeedsAttention(issue.reason) && issue.reason != 'STOPPED');
+    if (!open) return 'no running or raised work was reported';
+    // Recording a stop while the agent goes on running is worse than offering none.
+    if (taskChanges == null) return 'the window has not handed the planning screen the hook that stops tasks';
+    return null;
+  }
+
   /// A reason in words, or the run's attention when that is what holds the start.
-  Object? _startUnavailable(PlanStory story, {Object? ownStart, List<PlanningTaskStarted> ownTasks = const []}) {
+  Object? _startUnavailable(
+    PlanStory story, {
+    Object? ownStart,
+    List<PlanningTaskStarted> ownTasks = const [],
+    PlanningPassOver? passOver,
+  }) {
     final reported = stories.where((each) => each.id == story.id).firstOrNull;
     if (reported == null) return 'the story is no longer reported';
     story = reported;
@@ -450,7 +499,7 @@ class PlanningBoard extends ChangeNotifier {
       if (workUnsupported.contains(story.id)) return 'the planner does not offer story work status';
     }
     final work = workOf(story);
-    if (runAttention(story) case final attention?) return attention;
+    if (runAttention(story) case final attention? when !_passes(story, attention, passOver)) return attention;
     if (work == null && (kind == 'WAITING' || kind == 'CLOSED' || workedByHand(story))) return null;
     return switch (work?.atWork) {
       false => null,
@@ -557,9 +606,10 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
-  /// Stops work without moving the story locally.
+  /// Stops work without moving the story locally, naming [run], the run shown when the person asked to stop.
   Future<void> stopWork(
     String story, {
+    required String? run,
     required String revision,
     required PlanningSource source,
     required String sourceProject,
@@ -569,22 +619,22 @@ class PlanningBoard extends ChangeNotifier {
         !identical(backend, source) ||
         project != sourceProject ||
         snapshot?.complete != true ||
-        !stories.any((each) => each.id == story && workOf(each)?.atWork == true)) {
+        !stories.any((each) => each.id == story && stopUnavailable(each) == null)) {
       actionProblem = 'The board changed while Stop work was open. Open it again for the current run.';
       _changed();
       return;
     }
-    final run = runOf(story)..cancel();
+    final tasks = runOf(story)..cancel();
     actionBusy = true;
     actionProblem = null;
     final generation = _generation;
     final name = sourceProject;
     _changed();
     try {
-      final answer = await source.stopStoryWork(name, story);
-      run.observe(answer.work);
+      final answer = await source.stopStoryWork(name, story, run: run);
+      tasks.observe(answer.work);
       if (!_disposed && generation == _generation) applyWork(story, answer);
-      await run.changes?.stop(source, name, story, [
+      await tasks.changes?.stop(source, name, story, [
         for (final task in answer.work?.tasks ?? <PlanWorkTask>[])
           if (task.atWork == true) PlanningTaskStarted(task: task.task, container: task.containerId),
       ]);
@@ -1461,14 +1511,37 @@ class PlanningBoard extends ChangeNotifier {
 
 /// Keeps boards for watched projects and selects an available planning provider.
 class PlanningBoards extends ChangeNotifier {
-  /// Observes the client's providers without opening anything of its own.
-  PlanningBoards(this.client) {
+  /// Observes the client's providers without opening anything of its own; with [startTask] and [agents] each board
+  /// it makes can start work from its Needs you rows, on every board of the same project.
+  PlanningBoards(this.client, {PlanningStartTask? startTask, PlanningAgents? agents}) {
+    if (startTask != null && agents != null) {
+      startHooks = PlanningStartHooks(
+        startTask: startTask,
+        agents: agents,
+        machines: machinesOf,
+        unavailableMachines: unavailableMachinesOf,
+      );
+    }
     client.addListener(_sync);
     _sync();
   }
 
   /// The providers of planning and what the window tells them.
   final PlanningClient client;
+
+  /// What a start from a Needs you row asks of the window, handed to each board this makes; null without it.
+  PlanningStartHooks? startHooks;
+
+  /// Every board of [board]'s project, by its machine.
+  Map<PlanningBoard, String> machinesOf(PlanningBoard board) => {
+    for (final source in sources.where((source) => source.project == board.project)) source: machineOf(source),
+  };
+
+  /// The machines known now that have not supplied [board]'s project.
+  List<String> unavailableMachinesOf(PlanningBoard board) => [
+    for (final machine in providerNames)
+      if (!sources.any((source) => source.project == board.project && machineOf(source) == machine)) machine,
+  ];
   final Map<(String, String), PlanningBoard> _boards = {};
   final Map<String, PlanningPreferences> _preferences = {};
   String? _selected;
@@ -1506,6 +1579,7 @@ class PlanningBoards extends ChangeNotifier {
         entry.key.$2,
         preferences: _preferences.putIfAbsent(entry.key.$2, PlanningPreferences.new),
       );
+      board.startHooks = startHooks;
       board.addListener(_changed);
       _boards[entry.key] = board;
     }

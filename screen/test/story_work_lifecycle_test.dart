@@ -114,7 +114,7 @@ void main() {
   // Harm: ordinary task commits prevent stopping a run because the confirmation captured an older revision.
   test('stop remains available when only the revision changes during confirmation', () async {
     final backend = MockPlanningSource();
-    final board = PlanningBoard(backend, 'checkout');
+    final board = PlanningBoard(backend, 'checkout')..taskChanges = const NoTasks();
     await Future<void>.delayed(Duration.zero);
     final revision = board.snapshot!.revision;
     final replacement = mockPlanningBoard()..['revision'] = 'replacement-run';
@@ -129,7 +129,13 @@ void main() {
     };
     backend.push('checkout', replacement);
     await Future<void>.delayed(Duration.zero);
-    await board.stopWork('ST291', revision: revision, source: backend, sourceProject: 'checkout');
+    await board.stopWork(
+      'ST291',
+      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST291'))?.run,
+      revision: revision,
+      source: backend,
+      sourceProject: 'checkout',
+    );
     expect(backend.work.calls.where((call) => call.$1 == 'StopStoryWork'), hasLength(1));
     expect(board.stories.firstWhere((story) => story.id == 'ST291').work!.tasks.map((task) => task.task), ['new-run']);
     board.dispose();

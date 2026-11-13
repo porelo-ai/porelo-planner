@@ -33,6 +33,7 @@ class StoryWork extends ChangeNotifier {
     this.unavailableMachines = const [],
     this.onStarted,
     this.issues,
+    this.passOver,
   }) : backend = board.backend,
        project = board.project,
        revision = board.snapshot?.revision ?? '',
@@ -51,6 +52,9 @@ class StoryWork extends ChangeNotifier {
 
   /// The story's issues the work is for, as a move of those issues chose them; null for the story's own work.
   final List<String>? issues;
+
+  /// The reason of one issue this start answers from its Needs you row, or null for a start from the story.
+  final PlanningPassOver? passOver;
 
   /// Watched providers of this project, labeled by their machine identities.
   final Map<PlanningBoard, String> machines;
@@ -189,7 +193,7 @@ class StoryWork extends ChangeNotifier {
       tasks.isEmpty &&
       proposal != null &&
       proposal!.repositories.isNotEmpty &&
-      board.startUnavailable(story) == null &&
+      board.startUnavailable(story, passOver: passOver) == null &&
       proposal!.modes.contains(mode) &&
       ['UNATTENDED', 'AGENT'].contains(mode) &&
       repositories.length == proposal!.repositories.length &&
@@ -420,6 +424,8 @@ class StoryWork extends ChangeNotifier {
           if (each.value.isNotEmpty) each.key: _rounds(each.value)!,
       },
       issues: issues,
+      replaces: origin.workOf(story)?.run,
+      passOver: passOver,
     );
     Object? token;
     final run = origin.runOf(id)..startTask = startTask;
@@ -438,8 +444,14 @@ class StoryWork extends ChangeNotifier {
         owned() &&
         revision == request.revision &&
         current &&
-        origin.startUnavailable(story, ownStart: token, ownTasks: [for (final task in startedTasks) task.$2]) == null;
-    token = origin.beginStoryStart(story);
+        origin.startUnavailable(
+              story,
+              ownStart: token,
+              ownTasks: [for (final task in startedTasks) task.$2],
+              passOver: passOver,
+            ) ==
+            null;
+    token = origin.beginStoryStart(story, passOver: passOver);
     if (token == null) return false;
     busy = true;
     starting = true;

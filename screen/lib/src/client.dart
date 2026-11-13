@@ -209,8 +209,8 @@ abstract interface class PlanningSource {
   /// Reads current work and any ended outcome for a story.
   Future<StoryWorkStatus> getStoryWork(String project, String story);
 
-  /// Stops the story's work without changing its planning state.
-  Future<StoryWorkStatus> stopStoryWork(String project, String story);
+  /// Stops the story's work without changing its planning state; with [run], only while that run stands.
+  Future<StoryWorkStatus> stopStoryWork(String project, String story, {String? run});
 
   /// Reports a bound task and returns checked follow-up offers without starting them.
   Future<TaskEventResolution> taskEvent(

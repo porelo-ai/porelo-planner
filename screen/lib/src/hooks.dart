@@ -73,6 +73,29 @@ abstract interface class PlanningAgents {
   Future<PlanningAgentList> on(PlanningSource source);
 }
 
+/// What a start from a Needs you row asks of the window, held by the row's board before the screen was ever shown.
+class PlanningStartHooks {
+  /// Takes how a start reaches the window, the agents it may choose and the machines it may run on.
+  const PlanningStartHooks({
+    required this.startTask,
+    required this.agents,
+    required this.machines,
+    required this.unavailableMachines,
+  });
+
+  /// How a start of story work reaches the window.
+  final PlanningStartTask startTask;
+
+  /// The agents a start may choose.
+  final PlanningAgents agents;
+
+  /// The machines a start from a board may choose, each with the name the person knows it by, the board among them.
+  final Map<PlanningBoard, String> Function(PlanningBoard board) machines;
+
+  /// The machines that have not supplied a board's project, by name.
+  final List<String> Function(PlanningBoard board) unavailableMachines;
+}
+
 /// Where the screen stands: the board, a story, or one of its issues, on the provider that supplied it.
 @immutable
 class PlanningPlace {

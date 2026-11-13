@@ -671,12 +671,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<StoryWorkStatus> stopStoryWork(String project, String story) async {
+  Future<StoryWorkStatus> stopStoryWork(String project, String story, {String? run}) async {
     _checked('story', story, _storyId);
-    final run = PlanningRun.on(this, project, story)..cancel();
-    final answer = await _write(project, ['stories', story, 'work', 'stop'], null, revision: false);
+    final local = PlanningRun.on(this, project, story)..cancel();
+    final answer = await _write(
+      project,
+      ['stories', story, 'work', 'stop'],
+      run == null ? null : {'run': run},
+      revision: false,
+    );
     final status = _status(answer, nullable: true);
-    run.observe(status.work);
+    local.observe(status.work);
     return status;
   }
 
