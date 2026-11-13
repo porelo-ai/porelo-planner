@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL85",
   "title": "The Planner In A Real Run From Idea To Finished",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -108,9 +108,5 @@ Test levels: no unit test (a test script, no code of the planner changes); the p
   `blockedBy` carries ids of the issue's own repository only - that is [PL88](README.md#pl88); and `issues convert`
   still takes only `porelo*` names in waits, which stays, since the command is to be removed and converts only
   repositories written before issue heads.
-
-## To be checked
-
-- Which work rules the test project's `stories/work.yml` gives Implementing and Reading (`then`, `done`, the first
-  agent and model), so the cheapest model is the default or chosen in the start dialog.
-- Whether `jq` and `git` are installed in the VM account the run uses.
+- Measured on the VM: the builder and the reader ran with pi and the low-cost model the test project's rules offer,
+  and every probe call ran there with the account's own `git` and `jq`, each step's last check exiting 0.
