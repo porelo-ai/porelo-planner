@@ -24,6 +24,8 @@
 #                                        the story's file lists the issue in this state
 #   forge-head <clone-url>               prints the branch's tip as the forge has it
 #   forge-moved <clone-url> <commit>     the branch's tip is no longer this commit; prints the commits since
+#   forge-commit <clone-url> <commit>    the forge holds this commit, on whichever ref; prints its author and subject,
+#                                        and each ref whose tip it is
 #   records <since>                      Porelo's task records of the project since this UTC time
 #
 # Environment:
@@ -316,6 +318,21 @@ forge-moved)
     git --git-dir "$CLONE/repo.git" log --format='  %h %an: %s' "$old..$BRANCH" 2>/dev/null ||
         fail "forge-moved" "$old an ancestor of the tip" "not found in the branch's history"
     pass "$BRANCH moved from $old to $new"
+    ;;
+forge-commit)
+    url_arg "${1:-}"
+    want=${2:?forge-commit needs a commit}
+    [[ $want =~ ^[0-9a-f]{40,64}$ ]] || die "$want is not a full commit id"
+    need git
+    refs=$(GIT_TERMINAL_PROMPT=0 git ls-remote -- "$1") || die "cannot read the refs of $1"
+    CLONE=$(mktemp -d)
+    git init -q --bare "$CLONE/repo.git"
+    # A forge serves a commit by its id only when a ref reaches it, so a fetched commit is one the forge holds.
+    GIT_TERMINAL_PROMPT=0 git --git-dir "$CLONE/repo.git" fetch -q --depth 1 --filter=blob:none -- "$1" "$want" 2>/dev/null ||
+        fail "forge-commit" "$want on the forge of $1" "no ref of the forge reaches it"
+    git --git-dir "$CLONE/repo.git" log -1 --format='  %h %an: %s' "$want"
+    awk -v c="$want" '$1 == c { print "  tip of " $2 }' <<<"$refs"
+    pass "the forge of $1 holds $want"
     ;;
 records)
     since=${1:?records needs a UTC time}

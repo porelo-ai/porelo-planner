@@ -99,6 +99,8 @@ Test levels: no unit test (a test script, no code of the planner changes); the p
   task's branch by the project's branch scheme, and a reader sent to a guessed branch waited for work never there.
 - Start work for a story of two repositories never closed: the first builder's start moved the board, and the form
   took that for a lost binding; once the planner took the order, only a lost owner stops its later tasks.
+- The probe's `forge-moved` held on the planner's own state commits alone, so the builder's work was never read on
+  the forge; `forge-commit` now reads the commit the builder's landing names, on whichever ref the forge keeps it.
 - A save on an account whose Git has no name and email answered with Git's own words; the refusal now says what is
   missing and where to set it.
 - The reading of these changes by another model found two points, both declined here: an issue waiting on an issue
