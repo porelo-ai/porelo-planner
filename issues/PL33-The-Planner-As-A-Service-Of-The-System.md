@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL33",
   "title": "The Planner As A Service Of The System",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 20,
