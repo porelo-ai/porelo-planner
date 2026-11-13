@@ -1,0 +1,135 @@
+# Shows whether what the Build's publish and signing steps need is there: each secret and variable, what the publishing
+# token may do in Artifactory's two file repositories and what anyone may read there, and whether the Windows signing
+# key opens. A publish that fails on a right or a key is so told from one that fails on the code. Started by hand only.
+name: Publishing preconditions
+
+on:
+    workflow_dispatch:
+
+permissions: {}
+
+jobs:
+    access:
+        name: Secrets, variables and Artifactory
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - name: Each secret and variable, then a probe file read, uploaded and deleted in each repository
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+                  WINDOWS_SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX }}
+                  WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+              run: |
+                  set -uo pipefail
+                  failed=0
+
+                  # Each line names what was asked, what was wanted and what came; the run fails only after all.
+                  report() { # <what> <wanted pattern> <status>
+                      if [[ "$3" =~ ^($2)$ ]]; then
+                          echo "PASS  $1: $3"
+                      else
+                          echo "FAIL  $1: wanted $2, got $3"
+                          echo "::error::$1: wanted $2, got $3"
+                          failed=1
+                      fi
+                  }
+                  # Anonymous, so a redirect to the stored file may be followed, as the absence check and the pins do.
+                  anonymous() { # <path>
+                      curl -sSL -o /dev/null -w '%{http_code}' --proto =https --proto-redir =https --max-time 60 \
+                          "$base/$1" || echo "curl-exit-$?"
+                  }
+                  # The token reaches curl as config on standard input; a redirect is not followed, so it stays here.
+                  withtoken() { # <method> <path> [<file to upload>]
+                      local upload=()
+                      [ $# -lt 3 ] || upload=(-T "$3")
+                      printf 'header = "Authorization: Bearer %s"\n' "$JF_ACCESS_TOKEN" |
+                          curl -sS -K - -o /dev/null -w '%{http_code}' --proto =https --max-time 60 -X "$1" \
+                              "${upload[@]}" "$base/$2" || echo "curl-exit-$?"
+                  }
+
+                  # Names only: a value never reaches the log.
+                  present() { # <what> <value>
+                      if [ -n "$2" ]; then report "$1 is set" set set; else report "$1 is set" set empty; fi
+                  }
+                  present "variable JF_URL" "$JF_URL"
+                  present "secret JF_ACCESS_TOKEN" "$JF_ACCESS_TOKEN"
+                  present "secret WINDOWS_SIGNING_PFX" "$WINDOWS_SIGNING_PFX"
+                  present "secret WINDOWS_SIGNING_PFX_PASSWORD" "$WINDOWS_SIGNING_PFX_PASSWORD"
+                  case "$JF_URL" in
+                      https://?*) report "variable JF_URL is an https:// address" https https ;;
+                      *) report "variable JF_URL is an https:// address" https "'$JF_URL'"; exit 1 ;;
+                  esac
+                  [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::no token, so Artifactory is not asked"; exit 1; }
+                  base="${JF_URL%/}/artifactory"
+                  probe="$RUNNER_TEMP/probe.txt"
+                  printf 'porelo-planner access check, run %s attempt %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$probe"
+
+                  for repo in porelo-files files; do
+                      path="$repo/porelo-planner/access-check/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+                      echo "== $repo, probe $path"
+                      report "$repo: anonymous read of a missing file" 404 "$(anonymous "$path")"
+                      report "$repo: token read of a missing file" 404 "$(withtoken GET "$path")"
+                      report "$repo: token upload of the probe" '2[0-9][0-9]' "$(withtoken PUT "$path" "$probe")"
+                      report "$repo: anonymous read of the probe" 200 "$(anonymous "$path")"
+                      report "$repo: token read of the probe" '200|30[127]' "$(withtoken GET "$path")"
+                      deleted="$(withtoken DELETE "$path")"
+                      report "$repo: token delete of the probe" '2[0-9][0-9]' "$deleted"
+                      [[ "$deleted" =~ ^2[0-9][0-9]$ ]] || echo "::error::left behind, if the upload passed: $base/$path"
+                      report "$repo: anonymous read after the delete" 404 "$(anonymous "$path")"
+                  done
+                  exit "$failed"
+
+    signing:
+        name: The Windows signing key
+        # The pack step signs on this runner, so the key is opened where it is used.
+        runs-on: windows-2025
+        timeout-minutes: 10
+        steps:
+            # Opened from memory with an ephemeral key set: the key is written to no file and no certificate store, so
+            # nothing is left to delete. Only the certificate's public facts are printed.
+            - name: The key decodes, opens with its password and is the one the package names
+              shell: pwsh
+              env:
+                  WINDOWS_SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX }}
+                  WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+                  # The packing script's pinned signer and the manifest's Publisher, which must be the subject.
+                  EXPECTED_THUMBPRINT: 8BD1F34465EDC9B11A162B39C6644231851DEE24
+                  EXPECTED_SUBJECT: CN=porelo.ai
+              run: |
+                  $failed = $false
+                  function Report([string] $What, [bool] $Pass, [string] $Got) {
+                      if ($Pass) { "PASS  ${What}: $Got" } else { "FAIL  ${What}: $Got"; "::error::${What}: $Got"; $script:failed = $true }
+                  }
+                  $bytes = $null
+                  try {
+                      $bytes = [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX)
+                      Report 'WINDOWS_SIGNING_PFX decodes from base64' ($bytes.Length -gt 0) "$($bytes.Length) bytes"
+                  } catch {
+                      Report 'WINDOWS_SIGNING_PFX decodes from base64' $false $_.Exception.GetType().Name
+                  }
+                  # Compared with $null, never by truth: a one-byte array of zero reads as false in PowerShell.
+                  if ($null -ne $bytes -and $bytes.Length -gt 0) {
+                      $cert = $null
+                      try {
+                          $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+                          $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                              $bytes, $env:WINDOWS_SIGNING_PFX_PASSWORD, $flags)
+                          Report 'the key opens with WINDOWS_SIGNING_PFX_PASSWORD' $true 'opened'
+                      } catch {
+                          Report 'the key opens with WINDOWS_SIGNING_PFX_PASSWORD' $false $_.Exception.GetType().Name
+                      }
+                      if ($null -ne $cert) {
+                          try {
+                              Report 'it holds a private key' $cert.HasPrivateKey "$($cert.HasPrivateKey)"
+                              Report 'its subject is the manifest Publisher' ($cert.Subject -ceq $env:EXPECTED_SUBJECT) $cert.Subject
+                              Report 'its thumbprint is the pinned signer' ($cert.Thumbprint -eq $env:EXPECTED_THUMBPRINT) $cert.Thumbprint
+                              $now = [DateTime]::UtcNow
+                              $valid = $cert.NotBefore.ToUniversalTime() -le $now -and $now -lt $cert.NotAfter.ToUniversalTime()
+                              Report 'it is valid now' $valid ("until " + $cert.NotAfter.ToUniversalTime().ToString('yyyy-MM-ddTHH:mmZ'))
+                          } finally {
+                              $cert.Dispose()
+                          }
+                      }
+                  }
+                  if ($failed) { exit 1 }
