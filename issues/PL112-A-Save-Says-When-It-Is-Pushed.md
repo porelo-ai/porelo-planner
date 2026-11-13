@@ -14,8 +14,7 @@
 }
 ```
 
-**Size:** S - the contract's wording in `planner.yaml`; with a pending-push mark, one more member in the board's answer
-and its tests. The size is for the wording alone; a mark makes it M.
+**Size:** S - the contract's wording in `planner.yaml` alone; nothing the planner does changes.
 
 **Estimate:** 33 min, the measured median of S.
 
@@ -32,19 +31,12 @@ a person can close the window, or read the forge, before the save has reached it
   the background"); `LocalSaves` keeps a pending save under `refs/planner/local` until its push lands; a refresh skips
   such a repository. `planner.yaml` describes the moves, the issue edits and the new issue as pushed, and `/refresh` as
   fetching every repository.
-- **The choice, for the operator** (see *Open questions*):
-  - (a) **Wording only.** The contract says the answer means committed in the planner's clones, the push follows,
-    a failed push becomes a fault on the board, and a refresh leaves a repository with a pending save as it stands.
-  - (b) **Wording and a pending-push mark.** As (a), and the board's answer names the repositories whose save is not
-    pushed yet, so the window can show it and warn before it closes.
-- **Tests.** For (a): none; the change is a text. For (b): the board names a repository while its push is pending and
-  stops naming it once the push lands, red first. Harm: a person leaves while a save has not reached the forge.
+- **The change, as decided: the wording only.** `planner.yaml` says that a save's answer means its commits stand in
+  the planner's own clones and the pushes follow in the background, the other repositories before the project's own;
+  that a failed push becomes a fault on the board; and that `POST /refresh` leaves a repository with a pending save as
+  it stands until the save is pushed. The moves, the issue edits, the new issue and `/refresh` are described so.
+- **Tests.** None: the change is a text, and no answer changes. `ApiMatchesDescriptionTest` still holds the shapes.
 
 ## Acceptance
 
-- The contract's description of a save and of a refresh matches what the planner does; with (b), the window can see a
-  pending push.
-
-## Open questions
-
-- (a) the wording alone, or (b) the wording and a pending-push mark on the board?
+- The contract's description of a save and of a refresh matches what the planner does.
