@@ -1,5 +1,5 @@
 # Shows whether what the Build's publish and signing steps need is there: each secret and variable, what the publishing
-# token may do in Artifactory's two file repositories and what anyone may read there, and whether the Windows signing
+# token may do in Artifactory's porelo-files and what anyone may read there, and whether the Windows signing
 # key opens. A publish that fails on a right or a key is so told from one that fails on the code. Started by hand only.
 name: Publishing preconditions
 
@@ -65,7 +65,7 @@ jobs:
                   probe="$RUNNER_TEMP/probe.txt"
                   printf 'porelo-planner access check, run %s attempt %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$probe"
 
-                  for repo in porelo-files files; do
+                  for repo in porelo-files; do
                       path="$repo/porelo-planner/access-check/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
                       echo "== $repo, probe $path"
                       report "$repo: anonymous read of a missing file" 404 "$(anonymous "$path")"

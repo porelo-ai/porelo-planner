@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 51,
   "blockedBy": [],
-  "covers": "A workflow started by hand shows, one pass or fail line each, whether every secret and variable the Build's publish and signing steps use is set, what anyone may read and the publishing token may read, upload and delete in Artifactory's porelo-files and files, and whether the Windows signing key opens and is the pinned signer, so a publish that fails on a right or a key is told from one that fails on the code"
+  "covers": "A workflow started by hand shows, one pass or fail line each, whether every secret and variable the Build's publish and signing steps use is set, what anyone may read and the publishing token may read, upload and delete in Artifactory's porelo-files, where the Build publishes, and whether the Windows signing key opens and is the pinned signer, so a publish that fails on a right or a key is told from one that fails on the code"
 }
 ```
 
@@ -20,7 +20,7 @@
 
 **What must be true.** Whoever sets the publishing rights and keys can start one workflow and read whether each
 precondition of the Build's publish and signing steps holds: every secret and variable set, a file in `porelo-files`
-and `files` readable without a login and readable, uploadable and deletable with `JF_ACCESS_TOKEN`, and the Windows
+readable without a login and readable, uploadable and deletable with `JF_ACCESS_TOKEN`, and the Windows
 signing key opening with its password as the pinned signer. Today the Build stops at its first refusal, and which
 precondition is missing is not visible from it.
 
@@ -28,8 +28,8 @@ precondition is missing is not visible from it.
 
 - `.github/workflows/publishing-preconditions.yml`, `workflow_dispatch` only, no permissions for the run's own token.
 - Job one, on Linux: a line per secret and variable the Build reads (`JF_URL`, `JF_ACCESS_TOKEN`,
-  `WINDOWS_SIGNING_PFX`, `WINDOWS_SIGNING_PFX_PASSWORD`), by name and set or empty, never the value. Then, for each
-  repository it asks for a probe path under `porelo-planner/access-check/` named by the run and its attempt: absent
+  `WINDOWS_SIGNING_PFX`, `WINDOWS_SIGNING_PFX_PASSWORD`), by name and set or empty, never the value. Then, in
+  `porelo-files` it asks for a probe path under `porelo-planner/access-check/` named by the run and its attempt: absent
   anonymously and with the token, uploaded with the token, read anonymously (a redirect followed, as the absence
   check and the pins read) and with the token (no redirect followed, so the token stays with the host), deleted with
   the token, and absent again anonymously. Each line says PASS or FAIL with what was wanted and the status; the run
@@ -45,5 +45,5 @@ precondition is missing is not visible from it.
 
 ## Acceptance
 
-- A run by hand prints a line per secret and variable, seven per repository and six for the signing key, each with
+- A run by hand prints a line per secret and variable, seven for `porelo-files` and six for the signing key, each with
   what it got, and a job ends red only when one of its lines failed.
