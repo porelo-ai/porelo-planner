@@ -266,54 +266,64 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     final small = Theme.of(context).textTheme.bodySmall;
     return [
       Text('${issues.issues.length}', style: small),
-      const Spacer(),
       if (_list.searchOpen)
-        Flexible(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
-            child: CallbackShortcuts(
-              bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clearSearch},
-              child: TextField(
-                key: const Key('planning-issue-search'),
-                controller: _search,
-                autofocus: true,
-                onChanged: _searchFor,
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Filter Issues',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    key: const Key('planning-issue-search-close'),
-                    tooltip: 'Close the filter',
-                    icon: const Icon(Icons.close),
-                    onPressed: _closeSearch,
+        // The larger share of the room left: beside a Spacer or the sort's label it got less than its icons need.
+        Expanded(
+          flex: 3,
+          child: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
+              child: CallbackShortcuts(
+                bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clearSearch},
+                child: TextField(
+                  key: const Key('planning-issue-search'),
+                  controller: _search,
+                  autofocus: true,
+                  onChanged: _searchFor,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Filter Issues',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: IconButton(
+                      key: const Key('planning-issue-search-close'),
+                      tooltip: 'Close the filter',
+                      icon: const Icon(Icons.close),
+                      onPressed: _closeSearch,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         )
-      else
+      else ...[
+        const Spacer(),
         IconButton(
           key: const Key('planning-issue-search-open'),
           tooltip: 'Filter issues',
           icon: const Icon(Icons.search),
           onPressed: () => setState(() => _list.searchOpen = true),
         ),
-      PopupMenuButton<PlanningIssueSort>(
-        key: const Key('planning-issue-sort'),
-        tooltip: 'Sort issues',
-        onSelected: (sort) => setState(() => _list.choose(sort)),
-        itemBuilder: (_) => [
-          for (final sort in PlanningIssueSort.values)
-            PopupMenuItem(value: sort, key: Key('planning-issue-sort-to ${sort.name}'), child: Text(sort.label)),
-        ],
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_list.ascending ? Icons.arrow_upward : Icons.arrow_downward, size: PlanningStyle.rowIcon),
-            Text(_list.sort.label, style: small),
+      ],
+      Flexible(
+        child: PopupMenuButton<PlanningIssueSort>(
+          key: const Key('planning-issue-sort'),
+          tooltip: 'Sort issues',
+          onSelected: (sort) => setState(() => _list.choose(sort)),
+          itemBuilder: (_) => [
+            for (final sort in PlanningIssueSort.values)
+              PopupMenuItem(value: sort, key: Key('planning-issue-sort-to ${sort.name}'), child: Text(sort.label)),
           ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_list.ascending ? Icons.arrow_upward : Icons.arrow_downward, size: PlanningStyle.rowIcon),
+              Flexible(
+                child: Text(_list.sort.label, style: small, overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
         ),
       ),
     ];
