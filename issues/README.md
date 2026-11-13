@@ -69,7 +69,6 @@ left out.
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl29"></a>[PL29](PL29-The-Windows-Executable-Built-Tested-And-Shipped.md) | L | - | A GraalVM native porelo-planner.exe for Windows x86-64, built and tested on GitHub's Windows runner in the Build, packed as a ZIP and a signed MSIX that puts it on the PATH, with SHA256SUMS and a build provenance attestation, and published beside the Linux packages |
-| <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
 
 ## Review
 
@@ -119,6 +118,7 @@ left out.
 | <a id="pl84"></a>[PL84](PL84-The-Board-Says-A-Storys-Given-State.md) | M | - | The planner's answers say whether a story's state was given to it rather than derived from its issues, and which of its issues do not fit that state, so the board can show both |
 | <a id="pl58"></a>[PL58](PL58-The-Store-Writes-An-Idea-As-A-Story-And-Its-Issues.md) | L | - | The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number; nothing stands on a fault before the answer, and a push that fails or is dropped after it is named in the board's faults |
 | <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
+| <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
 
 ## Finished
 

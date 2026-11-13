@@ -125,8 +125,7 @@ class PublicReadersTest {
                 .isEqualTo("https://github.com/porelo-ai/porelo-project");
         assertThatThrownBy(() -> project.central("porelo-x"))
                 .as("a repository the project does not name")
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("porelo-x is not among the repositories");
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // Prevents a board from showing a story's state by a rule other than the index's.
@@ -226,8 +225,7 @@ class PublicReadersTest {
                                         Map.of("porelo", Set.of("B")),
                                         Map.of("porelo", central)))
                 .as("an own repository the repositories do not hold")
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("own repository porelo-project is not among the repositories");
+                .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new Project(

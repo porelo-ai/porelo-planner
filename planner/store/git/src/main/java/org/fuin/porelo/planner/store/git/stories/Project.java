@@ -58,7 +58,7 @@ public record Project(
         Objects.requireNonNull(centrals, "centrals");
         if (!repositories.containsKey(own))
             throw new IllegalArgumentException(
-                    "own repository " + own + " is not among the repositories");
+                    "own repository '" + Central.shown(own) + "' is not among the repositories");
         if (!centrals.keySet().equals(repositories.keySet()))
             throw new IllegalArgumentException(
                     "centrals "
@@ -88,7 +88,7 @@ public record Project(
         final String central = centrals.get(name);
         if (central == null)
             throw new IllegalArgumentException(
-                    Central.shown(name) + " is not among the repositories");
+                    "'" + Central.shown(name) + "' is not among the repositories");
         return central;
     }
 

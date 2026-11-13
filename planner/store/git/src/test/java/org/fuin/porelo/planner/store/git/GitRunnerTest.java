@@ -205,6 +205,34 @@ class GitRunnerTest {
                 .hasMessageContaining("stories/README.md");
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "C:\\Users\\person\\AppData\\Local\\Temp\\p\\r.git",
+                "c:/Users/person/AppData/Local/Temp/p/r.git",
+                "/c/Users/person/AppData/Local/Temp/p/r.git",
+                "\\\\host\\share\\person\\r.git",
+                "//host/share/person/r.git",
+                "C:\\Users\\Jane person\\AppData\\r.git"
+            })
+    void aWindowsPathInAnyFormNeverReachesTheFailure(final String path) {
+        // Git for Windows and Java name a directory by its drive or share, account name included.
+        final String scrubbed =
+                GitRunner.scrubbed(
+                        "fatal: '"
+                                + path
+                                + "' does not appear to be a git repository; see"
+                                + " https://git.example.org/a/b and stories/README.md");
+
+        assertThat(scrubbed)
+                .as("a failure quoting %s", path)
+                .doesNotContain("person")
+                .doesNotContain("host\\share")
+                .contains("'<path>'")
+                .contains("https://git.example.org/a/b")
+                .contains("stories/README.md");
+    }
+
     @Test
     void aPasswordWithASlashAndPathsAfterAColonOrATildeNeverReachTheFailure() {
         // Git echoes what an insteadOf or a helper gave it, password and home directory included.
@@ -226,5 +254,65 @@ class GitRunnerTest {
                 .hasMessageNotContaining("/home/person")
                 .hasMessageNotContaining("id_ed25519")
                 .hasMessageContaining("git@github.com:porelo-ai/porelo.git");
+    }
+
+    // Prevents a password holding a quote from reaching the window or the log.
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            quoteCharacter = '"',
+            value = {
+                "fatal: unable to access 'https://alice:pa'ss@git.example.org/a.git/': refused | pa'ss",
+                "fatal: could not read from 'alice:pa'ss@git.example.org:a/b.git': refused | pa'ss"
+            })
+    void aPasswordHoldingAQuoteNeverReachesTheFailure(final String text, final String secret) {
+        assertThat(GitRunner.scrubbed(text))
+                .as("a failure quoting %s", text)
+                .doesNotContain(secret)
+                .doesNotContain("alice")
+                .contains("git.example.org")
+                .endsWith(": refused");
+    }
+
+    @Test
+    void anAuthorizationHeaderGitEchoesLosesAllItsCredentialsToTheLineEnd() {
+        // A Digest header carries its credential in its last field, not its first.
+        final String scrubbed =
+                GitRunner.scrubbed(
+                        "> Authorization: Digest username=\"alice\", realm=\"forge\", nonce=\"n1\","
+                                + " uri=\"/r\", response=\"0123abcd\"\n"
+                                + "> Proxy-Authorization: Basic YWxpY2U6cHc=\n"
+                                + "> authorization: tok123\n"
+                                + "fatal: the next line");
+
+        assertThat(scrubbed)
+                .as("a trace with a Digest, a proxy's Basic and a header without a scheme")
+                .doesNotContain("alice")
+                .doesNotContain("n1")
+                .doesNotContain("0123abcd")
+                .doesNotContain("YWxpY2U6cHc=")
+                .doesNotContain("tok123")
+                .contains("Authorization: Digest ***")
+                .contains("Proxy-Authorization: Basic ***")
+                .endsWith("fatal: the next line");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "C:\\Users\\Jane person\\AppData\\r.git",
+                "\\\\host\\share\\Jane person\\r.git",
+                "//host/share/Jane person/r.git"
+            })
+    void anUnquotedWindowsPathWithASpaceIsTakenToTheLineEnd(final String path) {
+        // Java names a file unquoted, so a space in the account's name does not end the path.
+        final String scrubbed =
+                GitRunner.scrubbed(
+                        "could not open " + path + " (Access is denied)\nfatal: the next line");
+
+        assertThat(scrubbed)
+                .as("a failure naming %s unquoted", path)
+                .doesNotContain("person")
+                .isEqualTo("could not open <path>\nfatal: the next line");
     }
 }

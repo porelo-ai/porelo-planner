@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL62",
   "title": "Findings In The Git Store's Refusal Texts",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Low",
   "rank": 1,
@@ -51,32 +51,48 @@ All in `planner/store/git`; every test a unit test, run with `./mvnw -B -s setti
 
 1. `GitRunner.LOCAL_PATH` gains a drive path (`[A-Za-z]:` then `\` or `/`, not after a word character) and a UNC
    path (`\\` then a host); `GitStore.local` takes the scratch out followed by either separator. Red first, in
-   `GitRunnerTest`: a failure quoting `C:\Users\person\AppData\Local\Temp\p\r.git` and `\\host\share\r.git`
-   contains neither `person` nor `host\share` and holds `<path>`; it still holds `https://git.example.org/a/b` and
-   `stories/README.md`. Harm prevented: the account name and home directory reach the window and its log.
-2. `GitStore.refuseFaults` takes the scratch, removes it as `local` does and takes secrets out, but no longer runs
-   the path pattern; `GitRunner` splits its secret part into a method of its own for that. Red first, in
-   `GitStoreSaveTest`: a save refused for an issue in Review with a dash size names no scratch directory (the
-   guard that stays after the path pattern is dropped there); that `/size:` now stands in it is seen once by hand,
-   not asserted.
-3. `stories.Project.repository` says `<where>: central is not git@github.com:porelo-ai/<name> or
-   https://github.com/porelo-ai/<name>` (with `upstream` where that key is read), naming the forms it takes instead
-   of the value. No test: the text only reads wrong.
-4. `stories.Project.central` and the compact constructor quote the name: `'<name>' is not among the repositories`.
-   [PL42](README.md#pl42), built now, passes `Project`'s names through its safe form; whatever of this it leaves is
-   done here.
-   `PublicReadersTest` holds the old text verbatim; that `hasMessage` is dropped, its `isInstanceOf` stays.
+   `GitRunnerTest`: a failure quoting `C:\Users\person\AppData\Local\Temp\p\r.git`, `c:/Users/...`, `/c/Users/...`
+   or `\\host\share\person\r.git` contains neither `person` nor `host\share` and holds `'<path>'`; it still holds
+   `https://git.example.org/a/b` and `stories/README.md`. Harm prevented: the account name and home directory reach
+   the window and its log.
+2. `GitStore.refuseFaults` takes the scratch and words the fault by `GitStore.faultWords`: the scratch removed as
+   `local` does and secrets taken out by `GitRunner.withoutSecrets`, split out of `GitRunner.scrubbed`, but no path
+   pattern. Red first, in `GitStoreSaveTest`: a save refused for a finished issue with a dash size holds
+   `AB03-Own.md: /size: a dash, but Finished needs a size`, no `<path>` and not the test's directory. Harm
+   prevented: the field to fix is dropped from the refusal. `FaultWordsTest` guards what stays of the scrub there:
+   the scratch removed after either separator, and a password taken out while a pointer stays. Harm prevented: the
+   person's home or a credential reaches the window.
+3. A central `project.yml` names in a form the library does not take is already refused by `stories.Central.read`
+   naming the forms it takes (`https://host/path, ssh://host/path or user@host:path`); the value itself, when it is
+   a local path such as `file:///x`, stays scrubbed to `<path>`, since a local path in a refusal is the harm step 1
+   guards. Nothing is changed here.
+4. `stories.Project.central` and the compact constructor quote the name in its shown form:
+   `'<name>' is not among the repositories`, `own repository '<own>' is not among the repositories`.
+   `PublicReadersTest` held the old text verbatim; that `hasMessage` is dropped, its `isInstanceOf` stays.
+
+Git for Windows echoes a path as `C:/...`, Java as `C:\...`, and the MSYS shell as `/c/...`; the pattern covers all
+three and a share's path, so which one reaches a refusal does not matter. The callers of `GitRunner.scrubbed` pass
+Git's, the file system's and `project.yml`'s refusals; in none of them does a drive-like `X:\` or `X:/` stand for
+anything but a path.
+
+- Built: the drive and share paths in `GitRunner.LOCAL_PATH`, the scratch taken out after either separator,
+  `GitRunner.withoutSecrets` and `GitStore.faultWords` for the planning index's faults, and the quoted repository
+  names in `stories.Project`; with `GitRunnerTest`'s Windows cases, `FaultWordsTest` and the save test, each seen
+  red by a deliberate break.
+- The code reading's findings, fixed, each with a unit test seen red before the fix and again under a deliberate
+  break: a URL's or an scp-like address's user info is taken up to the last `@` before the host whatever it holds
+  short of a blank, so a password with a quote goes; an `Authorization:` or `Proxy-Authorization:` header keeps
+  only its scheme and loses everything after it to the line's end, a Digest's response included; a quoted local
+  path is taken whole, blanks and all; an unquoted Windows drive or share path, `\\host` or `//host`, runs to the
+  line's end or to the `': ` that closes a path in Git's messages, since a blank in an account's name does not end
+  it; a planning index's fault loses a quoted path, a Windows path, a file URL and a path from the home directory,
+  so an unknown property named like a path goes, while an unquoted `/...` stays as the pointer to a field it is
+  there.
 
 ## Acceptance
 
-- `GitRunnerTest`'s new Windows case was seen red before step 1 and is green after; the scratch guard of step 2 was
-  seen red by a deliberate break of the scratch removal.
-- A save refused for a dash size in Review shows `/size:` in its refusal; a `project.yml` with `central: file:///x`
-  is refused naming the forms taken, with no `<path>`.
+- `GitRunnerTest`'s new Windows case is seen red without the drive and share patterns and is green with them; the
+  scratch guard of step 2 is seen red by a deliberate break of the scratch removal.
+- A save refused for a dash size in Finished shows `/size:` in its refusal; a `project.yml` with `central: file:///x`
+  is refused naming the forms taken.
 - The module's whole unit suite is green.
-
-## To be checked
-
-- Which forms Git for Windows uses when it echoes a path (`C:/...`, `C:\...`, `/c/...`), read on the Windows
-  runner's Git or its documentation, so the pattern covers what reaches a refusal there.
-- That no other caller of `GitRunner.scrubbed` passes a text in which a drive-like `X:\` or `X:/` is not a path.

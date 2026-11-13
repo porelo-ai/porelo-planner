@@ -399,8 +399,28 @@ public final class GitStore implements PlanningStore {
 
     /** A failure's words with the save's scratch directory taken out, so no local path is shown. */
     private static String local(final Throwable thrown, final Path scratch) {
-        return GitRunner.scrubbed(
-                causes(thrown).replace(scratch + "/", "").replace(scratch.toString(), ""));
+        return GitRunner.scrubbed(withoutScratch(causes(thrown), scratch));
+    }
+
+    /**
+     * A planning index's fault as a refusal says it: the scratch, secrets and local paths taken
+     * out, but an unquoted absolute path left, since a fault names a field by a pointer such as
+     * {@code /size}; a property's name it repeats stands in quotes, so a path there goes too.
+     *
+     * @param fault the index's fault
+     * @param scratch the save's scratch directory
+     * @return the fault's words
+     */
+    static String faultWords(final String fault, final Path scratch) {
+        return GitRunner.withoutLocalPaths(
+                GitRunner.withoutSecrets(withoutScratch(fault, scratch)));
+    }
+
+    /** The text with the scratch directory taken out, followed by either separator or alone. */
+    private static String withoutScratch(final String text, final Path scratch) {
+        return text.replace(scratch + "/", "")
+                .replace(scratch + "\\", "")
+                .replace(scratch.toString(), "");
     }
 
     @Override
@@ -654,7 +674,7 @@ public final class GitStore implements PlanningStore {
             if (story != null) {
                 edited.add(story.path());
             }
-            refuseFaults(snapshot, own, edited, index.faults());
+            refuseFaults(snapshot, own, edited, index.faults(), scratch);
             rewritten
                     .computeIfAbsent(own, key -> new ArrayList<>())
                     .addAll(relative(ownRoot, index.written()));
@@ -995,7 +1015,7 @@ public final class GitStore implements PlanningStore {
         } catch (final IllegalArgumentException e) {
             throw new StoreException.NotSavable("", local(e, scratch));
         }
-        refuseFaults(snapshot, name, heads, index.faults());
+        refuseFaults(snapshot, name, heads, index.faults(), scratch);
         return relative(root, index.written());
     }
 
@@ -1060,7 +1080,8 @@ public final class GitStore implements PlanningStore {
             final Snapshot snapshot,
             final String name,
             final java.util.Collection<String> edited,
-            final List<String> faults) {
+            final List<String> faults,
+            final Path scratch) {
         if (faults.isEmpty()) {
             return;
         }
@@ -1079,7 +1100,7 @@ public final class GitStore implements PlanningStore {
             }
         }
         throw new StoreException.NotSavable(
-                item, "the planning index refuses it: " + GitRunner.scrubbed(faults.get(0)));
+                item, "the planning index refuses it: " + faultWords(faults.get(0), scratch));
     }
 
     /** The id of the issue or story whose file a path is, or empty. */

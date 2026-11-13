@@ -890,6 +890,30 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aRefusalOfTheIssueIndexKeepsTheFieldItNamesAndNamesNoLocalDirectory() throws Exception {
+        // A refusal that drops the field leaves the person guessing what to fix; one naming the
+        // scratch directory hands the window the person's home.
+        final GitStore store = store();
+        store.createIssue(store.board().revision(), new NewIssue(OWN, "Own", "Own.", null));
+        final Board board = store.board();
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        writes(Map.of("AB03", "Finished"), Map.of(), List.of())));
+
+        assertThat(refused).as("refused, a finished issue needs a size").isNotNull();
+        assertThat(refused.getMessage())
+                .as("the field the index names stands as it is")
+                .contains("AB03-Own.md: /size: a dash, but Finished needs a size")
+                .doesNotContain(dir.toString())
+                .doesNotContain("<path>");
+    }
+
+    @Test
     void anIdeaForARepositoryOutsideTheProjectWritesNothingAnywhere() throws Exception {
         // Written to a repository the project does not name, the idea would land where nobody
         // plans.
