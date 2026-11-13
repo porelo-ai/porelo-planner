@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL93",
   "title": "Start Instructions Per Working State From The Store",
-  "state": "Implementing",
+  "state": "Backlog",
   "size": "L",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
   "covers": "Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds"
@@ -18,6 +18,10 @@
 the order building in `core` and the offer's record in `app`.
 
 **Estimate:** 113 min, the measured median of L.
+
+**To be rethought.** Readings will not be files in a repository: findings will go through the forge's review by
+the forge adapters, and a rework will take them from there. Until then a reader's `Findings:` block in its answer
+stays the way findings reach the planner. This issue is rethought on that ground before it is built.
 
 **What must be true.** A task started for a working state is told by its order where its results go and what to do with
 findings it finds, as the project's settings say, so readers and reworks across repositories follow one place without a

@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL94",
   "title": "Findings Read From The Reader's Committed File",
-  "state": "Analyzed",
+  "state": "Backlog",
   "size": "L",
-  "priority": "High",
+  "priority": "Medium",
   "rank": 2,
   "blockedBy": ["PL90", "PL93"],
   "covers": "A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file"
@@ -17,6 +17,10 @@
 **Size:** L - fetching and comparing landed commits in the Git store, the shared check, judging and its races in
 `core`, the offer's record in `app`, and `planner.yaml`'s `LANDED` for a reader; it reads the path that
 [PL93](README.md#pl93) saves with the offer and the landings that [PL90](README.md#pl90) brings.
+
+**To be rethought.** Readings will not be files in a repository: findings will go through the forge's review by
+the forge adapters, and a rework will take them from there. Until then a reader's `Findings:` block in its answer
+stays the way findings reach the planner. This issue is rethought on that ground before it is built.
 
 **What must be true.** After a reader ends and its work has landed, the planner reads
 `<directory>/<ISSUE>-reading-<round>.md` at the reader's landed commit, checks its `Findings:` block by the rules the
