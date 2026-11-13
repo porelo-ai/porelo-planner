@@ -10,7 +10,7 @@
   "priority": "Medium",
   "rank": 28,
   "blockedBy": [],
-  "covers": "A story's state follows its issues where the hands are the planner's: it stands Implementing once its first issue is, Review once every issue is in Review, Finished or Rejected, and a story set Finished sets its issues still in Review to Finished with it"
+  "covers": "A story's state follows its issues where the hands are the planner's: it stands Implementing once its first issue is, Review once every issue is in Review, Finished or Rejected, and a story set Finished only once every issue stands there, moving none along"
 }
 ```
 
@@ -21,8 +21,9 @@ this repository only: the shared stories rule stays as it is.
 **Estimate:** 67 min, the measured median of M.
 
 **What must be true.** A person who moves an issue sees its story follow - Implementing with its first issue, Review
-once all are in Review or done - and a story the person sets Finished after its test takes its issues still in
-Review with it.
+once all are in Review or done. A story goes to Finished only when every one of its issues already stands in Review,
+Finished or Rejected; otherwise the move is refused with an error that says so, the story stays where it is, and no
+issue is moved along.
 
 ## Plan
 
@@ -45,25 +46,31 @@ Review with it.
   first working state in workflow order (Implementing) when any issue stands from there on and one is still open;
   else the index's rule. It answers what to state in the head: nothing when the index's rule agrees.
 - **Moves.** `Moves.check` applies the rule to each story whose issues the batch moves, writing `stories` or
-  `unstated`; a story move to the completed state (closed, not Rejected) also moves every issue of it in the done
-  state; `StoryStateMismatch` compares against the rule, not the index's rule alone.
+  `unstated`; `StoryStateMismatch` compares against the rule, not the index's rule alone.
+  - **A story set Finished** (the completed state, closed, not Rejected) is refused unless every issue of it stands
+    in the done state or closed, with an error naming the issues that do not; it moves no issue along, so today's
+    `leastAdvanced` path for a story set Finished goes.
+  - **An issue move in a story whose run has started** is refused as `WorkRunning`. How the window shows that
+    refusal for an issue move is agreed with the window's agent before it is built.
 - **Work.** `NextStep.writes` applies the same rule to the bound story, so a run's start states Implementing and its
   end states Review or unstates. `WorkRun.allowed` refuses work on a story stated in a working state without a run;
   it judges a story with issues by its issues' states only, or a stated Implementing would block the story's next
   repository for good.
 - **Contract and screen.** `planner.yaml` (`saveMoves`, `Story.stateGiven`) says which issues a story move takes and
-  that a story's state follows the rule; `PlanStory.leastAdvancedIssues` in `screen/lib/src/models.dart` adds the
-  Review issues on a move to Finished, and `settleStoryStates` in `screen/lib/src/fake/planning_moves.dart` follows
+  that a story's state follows the rule; `PlanStory.leastAdvancedIssues` in `screen/lib/src/models.dart` takes no
+  issue along on a move to Finished, and `settleStoryStates` in `screen/lib/src/fake/planning_moves.dart` follows
   the rule. Changelog entry; `doc/` where it describes a story's state.
 - **Tests and the harm each prevents.** Unit, `core`, over the fake board:
   `StoryFollowsTest` (a story shown in the wrong state hides open work or stalls it), red first: the last of a
   story's issues in Implementing set to Review leaves the story Review, the first set Implementing states it
-  Implementing; `MovesTest`: a story set Finished takes every issue in Review and no other, a later issue move
-  unstates the story when the rule agrees (an issue left in Review after its story's test is lost work);
+  Implementing; `MovesTest`: a story set Finished while one issue stands earlier than Review is refused and moves
+  nothing, one whose issues all stand in Review or closed is moved alone, an issue move in a story whose run has
+  started is refused as `WorkRunning`, a later issue move unstates the story when the rule agrees (a story closed
+  over open work, or work moved under a running agent);
   `NextStepTest` and `WorkRunTest`: a run's start and end write the story's head, and a story stated Implementing
   with issues waiting in Backlog and no run is still offered work (a stalled story). Integration, `store/git`:
   one `GitStore` save of an issue move and of a story set Finished, read back from a fresh clone (heads written
-  twice or not at all). Dart unit test of `leastAdvancedIssues` for the move to Finished. No VM.
+  twice or not at all). Dart unit test of `leastAdvancedIssues` for the move to Finished, which takes none. No VM.
 
 ## Acceptance
 

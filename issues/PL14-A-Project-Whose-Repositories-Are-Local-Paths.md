@@ -46,6 +46,10 @@ Today, read in the code:
 - The `stories` reader of `project.yml` is already part of `store/git` (`stories.Project`), so the original question
   about another library taking a local path is moot: the change stays in this repository.
 
+Where a local project lives: the planner reads and pushes into Porelo's bare mirror of the Default project, under
+`$XDG_DATA_HOME/porelo/mirrors/default/`, never into a working checkout, which Git itself refuses to push into on its
+checked-out branch.
+
 The shape:
 
 - A sealed `Address` in `store/git` with two forms, `CloneUrl` unchanged and a new `LocalPath`: absolute and normal
