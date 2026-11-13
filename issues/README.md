@@ -53,7 +53,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
-| <a id="pl112"></a>[PL112](PL112-A-Save-Says-When-It-Is-Pushed.md) | S | - | The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet |
 
 ## Review
 
@@ -96,6 +95,7 @@ left out.
 | <a id="pl97"></a>[PL97](PL97-A-Blocked-End-Keeps-Its-Issue-Under-Needs-You.md) | M | - | A task that ends declaring its work BLOCKED, with why, keeps its issues where they stand, under Needs you with that why, instead of being taken as done and moved on |
 | <a id="pl104"></a>[PL104](PL104-ST309-Played-Through-On-The-Test-VM.md) | M | - | A script plays the test of story ST309 once on the local test VM as a person would, at the command line and through the planner's API, against a store fixture on a forge of its own, and lays the shared ground every story test of this repository runs on |
 | <a id="pl106"></a>[PL106](PL106-ST315-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104) | A script plays the test of story ST315 once on the local test VM as a person would, through the planner's API and at the command line, in a repository with no story or issue tooling in its build |
+| <a id="pl112"></a>[PL112](PL112-A-Save-Says-When-It-Is-Pushed.md) | S | - | The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet |
 | <a id="pl115"></a>[PL115](PL115-A-Check-Of-The-Publishing-Rights.md) | XS | - | A workflow started by hand shows, one pass or fail line each, whether every secret and variable the Build's publish and signing steps use is set, what anyone may read and the publishing token may read, upload and delete in Artifactory's porelo-files, where the Build publishes, and whether the Windows signing key opens and is the pinned signer, so a publish that fails on a right or a key is told from one that fails on the code |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |

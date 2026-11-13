@@ -1,0 +1,2 @@
+title: The contract says that a save's answer means its commits stand in the planner's own clones and are pushed after it, and that a refresh leaves a repository whose save is still pending as it stands.
+type: changed

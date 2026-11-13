@@ -195,7 +195,8 @@ paths:
       summary: Read the repositories now
       description: >-
         Fetches the project's repositories at once instead of waiting for the next poll; a new revision reaches every
-        stream of the project before this call answers.
+        stream of the project before this call answers. A repository whose save is still pending is not fetched: it
+        stands as the planner's own clone holds it until the save is pushed.
       tags: [board]
       responses:
         '200':
@@ -563,7 +564,8 @@ paths:
       summary: Set who works an issue
       description: >-
         Writes the issue's worker into its head against the board at the given revision, saved as a move is saved: one
-        commit pushed under the person's own Git login, or nothing at all. A worker equal to the issue's is saved as
+        commit in the planner's own clone, pushed after the answer under the person's own Git login, or nothing at
+        all. A worker equal to the issue's is saved as
         nothing. A sub-issue takes its parent's worker and is refused one of its own; an issue a task of a running work
         owns, itself or through one of its sub-issues, is refused, as a move of it is. An issue a person works is
         refused an agent while it or one of its sub-issues stands in a working state, which no task entered.
@@ -609,8 +611,8 @@ paths:
       summary: Set a story's priority
       description: >-
         Writes the story's priority into its head against the board at the given revision, saved as a move is saved:
-        the head and the stories index in one commit that starts no build, pushed under the person's own Git login, or
-        nothing at all. A priority equal to the story's is saved as nothing and answers the current revision. The
+        the head and the stories index in one commit that starts no build, in the planner's own clone, pushed after the
+        answer under the person's own Git login, or nothing at all. A priority equal to the story's is saved as nothing and answers the current revision. The
         priority touches no issue, so it may change while the story's work runs.
       tags: [board]
       requestBody:
@@ -653,7 +655,9 @@ paths:
       summary: Save moves, all or none
       description: >-
         Checks a batch of moves against the board at the given revision and saves it all or not at all: each
-        repository it changes gets one commit, pushed under the person's own Git login. A story moves its least
+        repository it changes gets one commit in the planner's own clone of it. The answer means every commit stands
+        in those clones; the pushes, under the person's own Git login, follow in the background, the other
+        repositories before the project's own, and a push that fails becomes a fault on the board. A story moves its least
         advanced issues; a working state is entered only by work, except by an issue a person works (worker
         MANUAL), which a person moves into and through the working states by hand. The body carries the digest of
         the batch's preview: under the writer lock, before anything is written, the preview is computed again, and a
@@ -752,7 +756,8 @@ paths:
       description: >-
         Writes a new issue in state Idea into the named repository of the project, saved as a move is saved: its file
         with the next free number of the repository's first issue prefix, the repository's issue index rewritten, one
-        commit pushed under the person's own Git login, or nothing at all. A number an index row still holds is never
+        commit in the planner's own clone, pushed after the answer under the person's own Git login, or nothing at
+        all. A number an index row still holds is never
         given again. The changes stream announces the new board as it does after any save.
       tags: [board]
       requestBody:
@@ -763,7 +768,7 @@ paths:
               $ref: '#/components/schemas/NewIssueRequest'
       responses:
         '201':
-          description: The issue is written and pushed.
+          description: The issue is written and committed in the planner's own clone; its push follows.
           content:
             application/json:
               schema:
@@ -1287,10 +1292,11 @@ components:
                   reason: Its sub-issue PL4.1 stands in Backlog, which is not closed.
     SaveRefused:
       description: >-
-        The store could not save: a repository refused after others took the save (PartlySaved, naming those pushed and
-        the one that failed), or the store could not be read or written (WorkflowMissing, CredentialRefused,
+        The store could not save: the store could not be read or written (WorkflowMissing, CredentialRefused,
         Unreadable; an account whose Git has no name and email to commit with is refused as Unreadable, with words
-        that say so).
+        that say so). The Git store answers once its commits stand in its own clones and pushes afterwards, so a push
+        a repository refuses becomes a fault on the board, never this answer; the mock mode answers PartlySaved, naming
+        the repositories pushed and the one that failed, for a move of its fixed story over two repositories.
       content:
         application/problem+json:
           schema:
