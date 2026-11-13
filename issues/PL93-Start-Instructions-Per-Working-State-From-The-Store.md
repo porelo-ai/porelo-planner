@@ -115,11 +115,13 @@ Tests, red first, by level:
 - A reader's and a rework's order name the reading round's file in the project's directory; a clean reading's move
   deletes that file in its own commit.
 
-## Agreement needed
+## Agreement
 
-- Porelo or the window reports the readings directory a task was given (`PORELO_READINGS_DIRECTORY`) with `STARTED`, a
-  new field of `TaskEventRequest` in `planner.yaml`; the planner then saves that value with the offer and stops
-  refusing a repository whose `porelo.yml` names another directory.
+- Agreed with Porelo and the window: Porelo's task row carries `readingsDirectory`, the merged
+  `PORELO_READINGS_DIRECTORY` the task was given at its start, empty for a task started before it existed; the window
+  forwards it with `STARTED` as an optional field of `TaskEventRequest` in `planner.yaml`, and sends nothing where the
+  row has none. The planner then saves that value with the offer and stops refusing a repository whose `porelo.yml`
+  names another directory. Until Porelo reports it, the planner's part works as above without it.
 
 ## To be checked
 

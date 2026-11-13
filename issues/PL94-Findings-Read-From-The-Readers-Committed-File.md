@@ -114,12 +114,14 @@ Tests, red first, by level:
   landed commit - so a rework deleting another file changes no judgment; the planner's own deletion is held to the
   saved path in `GitStore.commitLocally` by [PL93](README.md#pl93).
 
+- **Where a landing is fetched from, agreed with Porelo.** A landing is Porelo's gate forwarding the task's work to a
+  branch on the repository's central; the row's landed list names the branch and the commit. The planner fetches that
+  commit from the central with the person's login. If the branch has moved on, the named commit is still the one
+  read; if the central dropped it after a force-push, the fetch fails and the reading stops for the person, never
+  read as clean.
+
 ## Acceptance
 
 - The tests above, each seen red first; the full build, the screen's checks and the documents' checks green.
 - A reader whose file and answer disagree stops for the person; a reader with no landing is judged by its answer.
 
-## To be checked
-
-- Whether a landed ref is served by the repository's central, which the planner's clone fetches from; if only
-  Porelo's gate serves it, fetching from the gate needs its address agreed with Porelo.
