@@ -39,7 +39,8 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
 - **Build** (`planner/app/pom.xml`): `openapi-generator-maven-plugin` 7.27.0, execution `answers` in
   `generate-sources`, reading `src/main/resources/openapi/planner.yaml`, models only, into the package
   `org.fuin.porelo.planner.app.answers`. Its plugin dependency is
-  `org.fuin.porelo:porelo-forge-client-openapi-templates` with `templateResourcePath`
+  `org.fuin.porelo:porelo-forge-client-openapi-templates`, pinned at `0.1.0-SNAPSHOT` from Sonatype's snapshots and
+  moved to the templates' first release when there is one, with `templateResourcePath`
   `org/fuin/porelo/forge/openapi/templates` (no leading or trailing slash). The options are
   copied whole from that artifact's documentation: `generatorName=spring`, `library=spring-boot`,
   `generateApis=false`, `generateModelTests=false`, `generateModelDocumentation=false`,
@@ -83,6 +84,7 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
 - The JSON every operation answers is unchanged, shown by the existing HTTP tests, and the native executable starts
   and answers.
 - The Build workflow's steps pass locally, the native build included.
+- A release of the planner waits for a released templates artifact, since a release depends only on releases.
 
 ## To be checked
 
@@ -90,5 +92,3 @@ Enum fields (`State.kind`, `WorkRule.per`, `PlanWorkTask.role`, ...) are plain `
   (`Story.work`, `PlanWorkTask`), and whether optional fields such as `Issue.rounds` stay left out when null.
 - That the generated records compile against Spring Boot 4's Jackson 3 with `com.fasterxml.jackson.annotation`, as
   today's records do.
-- The templates artifact is published as `0.1.0-SNAPSHOT` in Sonatype's snapshots; a release of the planner needs a
-  released version of it first, since a release depends only on releases.
