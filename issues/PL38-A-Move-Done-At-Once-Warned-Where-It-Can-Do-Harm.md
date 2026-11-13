@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL38",
   "title": "A Move Done At Once, Warned Where It Can Do Harm",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Highest",
   "rank": 3,
@@ -63,13 +63,40 @@ naming the story and its tasks); the answer names the issues moved only after th
    each issue that moves with its repository, old and new state; each story; and the warnings - `RUNNING_WORK` (the
    story and tasks `WorkRun.moves` would refuse for), `ISSUES_ALONG` (an issue moved only because its story moved),
    `SKIPS_STATES` (a move forward past an open state), `STORY_MISMATCH` (today's `confirm` case) and any further kind
-   the check of every move below finds. `POST .../moves` takes `preview: true` and answers it instead of saving; the
-   mock mode answers it from its board. Red first, unit, in `MovesTest`: a story in Implementing moved to Review with
+   the check of every move below finds. `RUNNING_WORK` names everything the stop would end: each running task, and
+   each offer not yet started that the run's stop voids (`WorkRun.stop` voids them all, not only the moved item's).
+   The preview is an operation of its own, `POST /projects/{project}/moves/preview`, never a field on `.../moves`:
+   a planner that does not know it answers 404 and the screen then moves nothing, where an unknown field would be
+   ignored and the batch saved. It answers a `digest` over the revision, the project's repository and branch, the
+   batch, the warnings and the runs and offers they name; `POST .../moves` takes that `digest` and refuses a batch
+   whose preview, computed again under the writer lock before anything is stopped or written, answers another one
+   (`PreviewChanged`). Preview and save read the store and the work of one project entry. The mock mode answers the
+   preview from its board. Red first, unit, in `MovesTest`: a story in Implementing moved to Review with
    an issue of another repository in Implementing previews that issue with its repository, `Implementing` and
    `Review`, and `ISSUES_ALONG`; integration in `app`: a preview leaves every repository's commits unchanged.
 2. **One save per move** (`screen`). A drop or a move action previews first; with no warning it saves at once, with
    no wait before the save, with warnings the screen shows them and saves only on confirmation, `confirm` set where
-   the story does not fit. For `RUNNING_WORK` the choice is stop and move - the story's stop as *Stop* sends it
+   the story does not fit. The save goes against the revision the preview was answered for, so a board that changed
+   between the preview and the confirmation answers `StaleRevision`, and the screen previews again and asks anew
+   rather than saving what the person did not see; the save sends the preview's `digest`, so a confirmation counts
+   only for the batch, the repository and the work it was shown. A drag or move action carries the revision and the
+   state the person saw when it began, and the preview goes against that revision, so a board that changed during the
+   gesture answers `StaleRevision` instead of being read against the new board.
+   - **The card keeps its new place until the answer.** Read in today's code: a card stands where
+     `PlanningBoard.displayedState` puts it, its entry in `_pending` while that has no problem; during a save
+     `_pending` keeps the batch and a board the watch streams is held back (`_deferredSnapshot`) until the save
+     ends; a saved answer is applied at once (`PlanningSnapshot.saved`) and the stories read again; a save that went
+     unanswered in time keeps its moves `unanswered` until a streamed board shows them or `unansweredWait` passes,
+     then says they were not saved. So nothing waits on the watch: the move stays an entry of `_pending` from the drop
+     until its answer - shown at its target while it is previewed, confirmed and saved, back at its reported state
+     when cancelled or refused - and `_pending` holds only that one move in flight, no longer a list of staged ones.
+   - **One move at a time.** While a move is previewed, asked about or saved, or its save is unanswered, the board
+     takes no other move or move action and says why (`Saving…`), as `move` already returns while `saving`; nothing
+     is queued.
+   - **Stop, then move.** The stop goes out as the story's stop does, then the save; while the planner still counts
+     the tasks as running, the save is refused with `WorkRunning` and the screen says the tasks are still stopping,
+     stops nothing more and saves nothing until the person moves again. How the stop is sent follows the screen's
+     stop as it stands when this is built. For `RUNNING_WORK` the choice is stop and move - the story's stop as *Stop* sends it
    today, then the move - or cancel. The list of unsaved moves, *Undo*, *Undo all* and *Save* go, and with them the
    reconciling of staged moves. That also settles a move staged before the window rebinds the project to another
    repository: nothing is staged, and `HttpPlanningSource._bound` refuses a save racing a rebind with
@@ -81,7 +108,31 @@ naming the story and its tasks); the answer names the issues moved only after th
    sub-issues (refused today), a move out of a state an issue's stage record measures, a move back past Review - and
    each that can do harm gets its warning in step 1.
 
-Order: 1, 3, 2.
+4. **What the window reads changes, agreed with it before the build.** `PlanningSource` gains the preview and
+   `saveMoves` the `digest` and `confirm`, which every source the window keeps, its mock board included, implements;
+   the planner's mock mode answers the preview; the keys of the unsaved-move list, *Save* and *Undo* go, and the
+   warning dialog's keys come; the window's guard against leaving with unsaved moves asks only about a save still
+   out.
+
+Order: 1, 3, 2, 4 agreed before 2.
+
+**What the plan reading asked, and why not.**
+
+- A confirmation used once only, kept by the planner: a save changes the revision, so a replayed confirmation is
+  refused as stale, and the `digest` binds it to the batch, the repository and the work it was shown.
+- A durable identity for each save with its recorded outcome, so a retry replays it: a save is sent against one
+  revision, so a second one after a lost answer is refused as stale and never writes twice; an unanswered save keeps
+  the board's existing unanswered state and its deadline, and the board takes no other move meanwhile.
+- A stop answering only once every task has ended: the planner refuses the move while any task still runs
+  (`WorkRunning`), which no screen can pass around, so a stop not yet ended moves nothing.
+
+- **Agreed with the window, with two changes.** `RUNNING_WORK`'s list stays open to starts the window handed to Porelo
+  but has not reported to the planner yet: the window adds those under the same kind, and the `digest` does not cover
+  them. `PlanningSource.saveMoves` takes `digest` and `confirm` as named parameters, `digest` required, so a source not
+  updated fails to compile instead of saving without a preview.
+- **Delivery with the window.** The window's own change for the removed Save and Undo keys and the new warning keys
+  goes out in the same push batch as this one, with the window's pin moved to it; no batch carries one side alone.
+  This change reaches the test VM only after the window's walk that still uses the Save keys has ended.
 
 ## Acceptance
 
@@ -91,8 +142,3 @@ Order: 1, 3, 2.
   racing a rebind of the project reaches no other repository.
 - A move against a story's issues: Cancel leaves the card where it stood and sends nothing; a move that fits its issues
   asks nothing.
-
-## To be checked
-
-- Whether the screen's watch already shows a saved move's new revision fast enough that the card does not jump back
-  while the save is out, or whether the card keeps its new place until the answer.
