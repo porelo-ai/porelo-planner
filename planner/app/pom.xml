@@ -666,5 +666,12 @@
                 </plugins>
             </build>
         </profile>
+        <!-- Only the app holds tests tagged documents, so -Pdocuments fails here when it runs none. -->
+        <profile>
+            <id>documents</id>
+            <properties>
+                <failIfNoTests>true</failIfNoTests>
+            </properties>
+        </profile>
     </profiles>
 </project>

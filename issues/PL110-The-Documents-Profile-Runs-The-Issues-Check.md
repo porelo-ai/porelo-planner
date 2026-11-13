@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL110",
   "title": "The Documents Profile Runs The Issues Check",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Low",
   "rank": 46,
@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** S - one test in `app` and the profile in the root pom, no contract.
+**Size:** S - one test and one profile in `app`, no contract.
 
 **Estimate:** 33 min, the measured median of S.
 
@@ -30,18 +30,24 @@ someone remembers to run `issues check issues` by hand.
   such directories build their own fixtures in a temporary directory. A run of the profile reports `Tests run: 0` in
   every module.
 - **The change.**
-  - A test in `planner/app`, tagged `documents`, runs the planner's own issue check over the repository's `issues/`
-    through the same entry point as `PlannerApplication issues check issues`, and fails with the check's own lines when
-    it refuses.
-  - The profile sets Surefire's `failIfNoSpecifiedTests` so that a run of the profile with no tagged test fails.
-- **Test, unit level, red first.** The new test is seen red over a copy of `issues/` with one index row removed. Harm:
-  an index that disagrees with its issues pushed as checked.
+  - `RepositoryIssuesTest` in `planner/app`, tagged `documents`, finds the repository root two levels above
+    `planner/app`, runs `WorkFixture.planner("issues", "check", issues.toString())` (`WorkCommands.run`, the same entry
+    point as `PlannerApplication issues check issues`) over the repository's `issues/` directory, and fails with the
+    check's own output lines when it refuses.
+  - A second test in `RepositoryIssuesTest`, also tagged `documents`, copies `issues/` into a `@TempDir`, removes one
+    index row starting with `| <a id="pl` from the copy's `README.md`, runs the same entry point over the copy, and
+    asserts that it refuses.
+  - A `documents` profile in `planner/app/pom.xml` sets `<failIfNoTests>true</failIfNoTests>`, so a `-Pdocuments test`
+    run that executes no tagged test in `planner/app` fails while modules without tagged tests still pass.
+  - `.github/workflows/shared-rules.yml`'s step *The documents* runs `./mvnw -B -U -s settings.xml -Pdocuments test`
+    directly, so its exit code fails the workflow run.
+- **Test, unit level, red first.** `RepositoryIssuesTest` runs the check over a copy of `issues/` with one index row
+  removed and asserts the refusal. Harm: an index that disagrees with its issues pushed as checked.
+- **Reading by another model.** The check's confirmation text is no longer held verbatim; the exit code and an empty
+  standard error carry the harm. The repository root is found two levels above the module, Surefire's working
+  directory, which no pom of this repository changes.
 
 ## Acceptance
 
 - `-Pdocuments test` runs the new test and passes on the current issues; it fails on an index that disagrees with its
   issues, and fails when no test carries the tag.
-
-## To be checked
-
-- Whether the Shared rules check's step reads the profile's exit code alone, so the new failure reaches it.

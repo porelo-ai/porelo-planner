@@ -44,13 +44,6 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl98"></a>[PL98](PL98-The-Issue-Heads-Are-Checked-Every-Day.md) | XS | - | The daily Shared rules check runs `issues check issues`, so an issue head broken by a push that started no Build is found within a day |
-| <a id="pl110"></a>[PL110](PL110-The-Documents-Profile-Runs-The-Issues-Check.md) | S | - | `-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -120,6 +113,8 @@ left out.
 | <a id="pl116"></a>[PL116](PL116-The-Board-Opens-With-Its-Cards-Shown.md) | XS | - | A planning screen opened for the first time shows the cards of every state that holds stories, none folded to its count; a fold the person makes is kept afterwards |
 | <a id="pl123"></a>[PL123](PL123-A-Refused-Start-Reads-As-An-Error.md) | XS | - | A Start or another board action the window or the planner refuses is shown above the board in the theme's error colour with an error icon, as the screen's other failures are, so the person sees that nothing was created |
 | <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
+| <a id="pl98"></a>[PL98](PL98-The-Issue-Heads-Are-Checked-Every-Day.md) | XS | - | The daily Shared rules check runs `issues check issues`, so an issue head broken by a push that started no Build is found within a day |
+| <a id="pl110"></a>[PL110](PL110-The-Documents-Profile-Runs-The-Issues-Check.md) | S | - | `-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it |
 
 ## Finished
 

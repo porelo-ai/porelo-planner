@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL98",
   "title": "The Issue Heads Are Checked Every Day",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "Low",
   "rank": 4,
@@ -14,7 +14,7 @@
 }
 ```
 
-**Size:** XS - one step in one workflow, no contract.
+**Size:** XS - covered by the `documents` profile's issue check test, no contract.
 
 **Estimate:** 9 min, the planned median of XS.
 
@@ -24,12 +24,15 @@ that no longer matches its issues is found the next day, not at the next code pu
 
 ## Plan
 
-- `.github/workflows/shared-rules.yml` gains a step `issues check issues`, run by the released planner executable,
-  pinned by version and sha256 as a download from Artifactory. It exits non-zero on a fault, so the run goes red.
-- A level of test is not needed: the step is the check. It is seen red once, on a branch with a broken head, before
-  the hand-over.
+- `.github/workflows/shared-rules.yml`'s step *The documents* runs `./mvnw -B -U -s settings.xml -Pdocuments test` on
+  the daily schedule, on a pull request and by hand.
+- `RepositoryIssuesTest` in `planner/app`, tagged `documents`, is the check: it runs the planner's `issues check` over
+  this repository's `issues/` directory during that step, with no download and no workflow step of its own, and fails
+  with the check's fault lines when the check refuses.
+- **Test, unit level, red first.** `RepositoryIssuesTest` copies `issues/` into a temporary directory, removes an index
+  row from the copy's `README.md`, and asserts that the check refuses it.
 
 ## Acceptance
 
-- The scheduled run and a run started by hand both run the step. A head broken on purpose turns the run red, and its
-  log names the file and the fault.
+- The scheduled run and a run started by hand both run the check through `-Pdocuments test`. A head or index broken on
+  purpose turns the run red, and its log names the file and the fault.

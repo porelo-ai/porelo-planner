@@ -1,0 +1,2 @@
+title: The `documents` Maven profile checks this repository's own issues and index with the planner's issue check, and fails when it runs no test.
+type: changed
