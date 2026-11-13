@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL33",
   "title": "The Planner As A Service Of The System",
-  "state": "Implementing",
+  "state": "Backlog",
   "size": "L",
-  "priority": "High",
+  "priority": "Low",
   "rank": 20,
   "blockedBy": [],
   "covers": "On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen"

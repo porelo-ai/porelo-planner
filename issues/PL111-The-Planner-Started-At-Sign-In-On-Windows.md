@@ -7,7 +7,7 @@
   "title": "The Planner Started At Sign-In On Windows",
   "state": "Backlog",
   "size": "M",
-  "priority": "High",
+  "priority": "Low",
   "rank": 47,
   "blockedBy": [
     "PL29"

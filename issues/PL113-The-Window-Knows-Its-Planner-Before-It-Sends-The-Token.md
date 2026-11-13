@@ -7,7 +7,7 @@
   "title": "The Window Knows Its Planner Before It Sends The Token",
   "state": "Backlog",
   "size": "M",
-  "priority": "Medium",
+  "priority": "High",
   "rank": 49,
   "blockedBy": [],
   "covers": "Before the window sends the planner's token or names a project, the listener at the address file's port proves it holds the token without receiving it, so a process that took the port after the planner ended learns neither"

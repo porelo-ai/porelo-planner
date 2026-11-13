@@ -7,7 +7,7 @@
   "title": "The Documents Profile Runs The Issues Check",
   "state": "Backlog",
   "size": "S",
-  "priority": "Medium",
+  "priority": "Low",
   "rank": 46,
   "blockedBy": [],
   "covers": "`-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it"
