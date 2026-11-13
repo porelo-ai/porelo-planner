@@ -182,6 +182,15 @@ class GitCallTest {
     }
 
     @Test
+    void aPlannerPoreloStartsReadsWithThePersonsOwnLoginWhilePoreloLendsNone() {
+        // Harm: every repository read refused, while Porelo has no command that answers Git for a
+        // login.
+        assertThat(LentLogin.of(lending(PORELO)))
+                .as("the variable alone lends nothing, so the person's own helpers stay")
+                .isSameAs(LentLogin.NONE);
+    }
+
+    @Test
     void withoutTheVariableTheCallIsAsBefore() {
         // Harm: a person's own helper stops working for a planner started without Porelo.
         assertThat(LentLogin.of(PERSON, value -> PORELO))

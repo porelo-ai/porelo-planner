@@ -104,6 +104,18 @@ into its failures and logs.
 - **Not before** Porelo's `vault credential --for` and the window's passing of the path are published; until then the
   planner's side changes nothing without the variable.
 
+## Found on the VM
+
+- A planner the window started on a VM refused every repository: Porelo's command that answers Git for a login is not
+  built yet, so the lent helper failed every read; and the account's own bin folder in its home, made under umask 002, is a folder its group may write.
+  The planner lends no login yet, whatever `PORELO_EXECUTABLE` names, so the person's own Git configuration applies as
+  before; lending is switched on in `LentLogin.of` once Porelo's command is published, and the VM's acceptance step
+  runs then.
+- The check of the program and every folder above it takes the rule the window keeps too: the owner is root or the
+  account; others may not write, sticky bit or not; a group may write only when it is the account's own private
+  group - its primary group, no other account's primary group in `/etc/passwd`, an empty member list in
+  `/etc/group`. A POSIX ACL on a folder of that group is the account's own choice and is not read.
+
 ## Acceptance
 
 - The tests above, each seen red first; on a local VM, a planner the window starts reads a private project without a

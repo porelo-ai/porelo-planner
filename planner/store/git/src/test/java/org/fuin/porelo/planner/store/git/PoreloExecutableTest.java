@@ -17,7 +17,6 @@ import org.fuin.porelo.planner.store.git.PoreloExecutable.OnPosix.Node;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The check of Porelo's executable before Git may run it with a login. Harm guarded throughout: a
@@ -40,6 +39,8 @@ class PoreloExecutableTest {
 
         boolean unreadable;
 
+        final java.util.Set<Path> privateGroups = new java.util.HashSet<>();
+
         Fake() {
             nodes.put(Path.of("/"), new Node(Kind.DIRECTORY, 0, 0755, true));
             nodes.put(Path.of("/opt"), new Node(Kind.DIRECTORY, 0, 0755, true));
@@ -51,6 +52,11 @@ class PoreloExecutableTest {
         @Override
         public int self() {
             return ME;
+        }
+
+        @Override
+        public boolean privateGroup(final Path path) {
+            return privateGroups.contains(path);
         }
 
         @Override
@@ -131,12 +137,10 @@ class PoreloExecutableTest {
         group.nodes.put(Path.of(PORELO), new Node(Kind.FILE, 0, 0775, true));
         assertThat(refusal(group, PORELO))
                 .as("the refusal says why")
-                .contains("its group or others can write");
+                .contains("a group other than this account's own private one can write");
         final Fake others = new Fake();
         others.nodes.put(Path.of(PORELO), new Node(Kind.FILE, ME, 0702, true));
-        assertThat(refusal(others, PORELO))
-                .as("the refusal says why")
-                .contains("its group or others can write");
+        assertThat(refusal(others, PORELO)).as("the refusal says why").contains("others can write");
     }
 
     @Test
@@ -151,12 +155,63 @@ class PoreloExecutableTest {
         acl.nodes.put(Path.of("/opt"), new Node(Kind.DIRECTORY, 0, 0775, true));
         assertThat(refusal(acl, PORELO))
                 .as("the refusal says why")
-                .contains("/opt is a directory its group or others");
+                .contains("/opt is a directory a group other than this account's own private one");
         final Fake root = new Fake();
         root.nodes.put(Path.of("/"), new Node(Kind.DIRECTORY, 0, 0757, true));
         assertThat(refusal(root, PORELO))
                 .as("the refusal says why")
-                .contains("/ is a directory its group or others");
+                .contains("/ is a directory others can write");
+    }
+
+    @Test
+    void aFolderOnlyTheAccountsOwnPrivateGroupMayWriteIsTaken() {
+        // Harm: a person's own ~/.local/bin under umask 002 lends no login, so no repository reads.
+        final Fake own = new Fake();
+        own.nodes.put(Path.of("/opt/porelo/bin"), new Node(Kind.DIRECTORY, ME, 0775, true));
+        own.nodes.put(Path.of(PORELO), new Node(Kind.FILE, ME, 0775, true));
+        own.privateGroups.add(Path.of("/opt/porelo/bin"));
+        own.privateGroups.add(Path.of(PORELO));
+        assertThat(new OnPosix(own).checked(PORELO))
+                .as("the folder and the program belong to the account's own private group")
+                .isEqualTo(PORELO);
+    }
+
+    @Test
+    void aStickyFolderOthersMayWriteIsRefused() {
+        final Fake sticky = new Fake();
+        sticky.nodes.put(Path.of("/opt/porelo"), new Node(Kind.DIRECTORY, 0, 01777, true));
+        assertThat(refusal(sticky, PORELO))
+                .as("whoever may add a name there may add the program's own")
+                .contains("/opt/porelo is a directory others can write");
+    }
+
+    @Test
+    void aGroupIsPrivateOnlyWithNoOtherAccountInIt() {
+        final List<String> passwd =
+                List.of("root:x:0:0::/root:/bin/sh", "person:x:1000:1000::/nonexistent:/bin/sh");
+        final List<String> group = List.of("root:x:0:", "person:x:1000:");
+        assertThat(PoreloExecutable.privateGroup(1000, 1000, passwd, group))
+                .as("the person's own group, nobody else in it")
+                .isTrue();
+        assertThat(
+                        PoreloExecutable.privateGroup(
+                                1000,
+                                1000,
+                                List.of(
+                                        passwd.get(0),
+                                        passwd.get(1),
+                                        "other:x:1001:1000::/:/bin/sh"),
+                                group))
+                .as("another account has it as its primary group")
+                .isFalse();
+        assertThat(
+                        PoreloExecutable.privateGroup(
+                                1000, 1000, passwd, List.of("root:x:0:", "person:x:1000:other")))
+                .as("another account is a member")
+                .isFalse();
+        assertThat(PoreloExecutable.privateGroup(1000, 1000, passwd, List.of("root:x:0:")))
+                .as("a group the account files do not name")
+                .isFalse();
     }
 
     @Test
@@ -182,8 +237,9 @@ class PoreloExecutableTest {
 
     @Test
     @EnabledOnOs(OS.LINUX)
-    void onTheRealFileSystemALinkInThePathIsRefusedAndTheRealPathTaken(@TempDir final Path dir)
-            throws IOException {
+    void onTheRealFileSystemALinkInThePathIsRefusedAndTheRealPathTaken() throws IOException {
+        // Not in the shared temporary directory, which others may write.
+        final Path dir = Files.createTempDirectory(Path.of("target").toAbsolutePath(), "porelo-");
         final Path bin = Files.createDirectory(dir.resolve("bin"));
         // The umask may leave the group a write; the directory is made the account's alone.
         Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwx------"));
@@ -197,11 +253,11 @@ class PoreloExecutableTest {
                 .as("the same program through a link")
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("reached through a link");
-        Files.setPosixFilePermissions(program, PosixFilePermissions.fromString("rwxrwx---"));
+        Files.setPosixFilePermissions(program, PosixFilePermissions.fromString("rwx---rw-"));
         assertThatThrownBy(() -> check.checked(real))
-                .as("the program once its group may write it")
+                .as("the program once others may write it")
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("its group or others can write");
+                .hasMessageContaining("others can write");
     }
 
     /** Windows, as the shell's answer and Java's real path tell it. */

@@ -40,14 +40,17 @@ final class LentLogin {
     }
 
     /**
-     * Reads the variable and checks the executable it names, on this platform.
+     * The login the planner lends: none yet, so the person's own Git configuration applies as it
+     * did.
+     *
+     * <p>Porelo has no command yet that answers Git for a login, so a helper naming it would fail
+     * every read; lending starts with that command, through {@link #of(Map, PoreloExecutable)}.
      *
      * @param environment the planner's environment
-     * @return the login lent, none without the variable
+     * @return no login
      */
     static LentLogin of(final Map<String, String> environment) {
-        final String value = variable(environment);
-        return value == null ? NONE : of(environment, PoreloExecutable.of(environment, WINDOWS));
+        return NONE;
     }
 
     /**

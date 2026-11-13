@@ -60,6 +60,38 @@ interface PoreloExecutable {
                 : new OnPosix(new OnPosix.RealNodes());
     }
 
+    /**
+     * Whether a group is one account's own private group, as the account files give it: no other
+     * account has it as its primary group, and its member list is empty. A missing or malformed
+     * entry counts as shared.
+     *
+     * @param gid the group
+     * @param uid the account
+     * @param passwd the lines of {@code /etc/passwd}
+     * @param group the lines of {@code /etc/group}
+     * @return whether only that account is in the group
+     */
+    static boolean privateGroup(
+            final int gid, final int uid, final List<String> passwd, final List<String> group) {
+        final String id = Integer.toString(gid);
+        for (final String line : passwd) {
+            final String[] fields = line.split(":", -1);
+            if (fields.length < 4) {
+                continue;
+            }
+            if (fields[3].equals(id) && !fields[2].equals(Integer.toString(uid))) {
+                return false;
+            }
+        }
+        for (final String line : group) {
+            final String[] fields = line.split(":", -1);
+            if (fields.length == 4 && fields[2].equals(id)) {
+                return fields[3].isEmpty();
+            }
+        }
+        return false;
+    }
+
     /** The check on Linux, by owner and mode, over what {@link Nodes} reads. */
     final class OnPosix implements PoreloExecutable {
 
@@ -91,6 +123,17 @@ interface PoreloExecutable {
              * @throws IOException when it cannot be read
              */
             Node node(Path path) throws IOException;
+
+            /**
+             * Whether a path's group is this account's own private group: its primary group, which
+             * no other account in {@code /etc/passwd} has as its own and whose member list in
+             * {@code /etc/group} is empty.
+             *
+             * @param path the path, a link not followed
+             * @return whether only this account is in the path's group
+             * @throws IOException when it cannot be read
+             */
+            boolean privateGroup(Path path) throws IOException;
         }
 
         /**
@@ -112,6 +155,8 @@ interface PoreloExecutable {
             /** A link or anything else. */
             OTHER
         }
+
+        private static final int GROUP_WRITE = 0020;
 
         private final Nodes nodes;
 
@@ -143,25 +188,40 @@ interface PoreloExecutable {
                                     + file.owner()
                                     + ", neither root nor this one");
                 }
-                if ((file.mode() & PosixPrivateFiles.GROUP_OR_OTHERS_WRITE) != 0) {
-                    throw new IllegalStateException(
-                            value + " is a file its group or others can write");
-                }
+                requireWrittenByTheAccountAlone(path, file, "a file");
                 for (Path dir = path.getParent(); dir != null; dir = dir.getParent()) {
                     final Node node = nodes.node(dir);
                     if (node.kind() != Kind.DIRECTORY) {
                         throw new IllegalStateException(dir + " is not a directory, or is a link");
                     }
-                    PosixPrivateFiles.requireSafeAncestor(
-                            dir,
-                            node.owner(),
-                            node.mode(),
-                            uid,
-                            PosixPrivateFiles.GROUP_OR_OTHERS_WRITE);
+                    if (node.owner() != 0 && node.owner() != uid) {
+                        throw new IllegalStateException(
+                                dir
+                                        + " belongs to account "
+                                        + node.owner()
+                                        + ", neither root nor this one");
+                    }
+                    requireWrittenByTheAccountAlone(dir, node, "a directory");
                 }
                 return value;
             } catch (final IOException e) {
                 throw new UncheckedIOException(value + " cannot be checked: " + e.getMessage(), e);
+            }
+        }
+
+        // A sticky bit excuses nothing here: whoever may add a name may add the program's own.
+        private void requireWrittenByTheAccountAlone(
+                final Path path, final Node node, final String what) throws IOException {
+            final boolean others = (node.mode() & PosixPrivateFiles.OTHERS_WRITE) != 0;
+            final boolean group = (node.mode() & GROUP_WRITE) != 0;
+            if (others || (group && !nodes.privateGroup(path))) {
+                throw new IllegalStateException(
+                        path
+                                + " is "
+                                + what
+                                + (others
+                                        ? " others can write"
+                                        : " a group other than this account's own private one can write"));
             }
         }
 
@@ -176,6 +236,20 @@ interface PoreloExecutable {
             @Override
             public Path real(final Path path) throws IOException {
                 return path.toRealPath();
+            }
+
+            @Override
+            public boolean privateGroup(final Path path) throws IOException {
+                final int gid =
+                        (Integer) Files.getAttribute(path, "unix:gid", LinkOption.NOFOLLOW_LINKS);
+                final int self = PosixPrivateFiles.ownUid();
+                final int primary = (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:gid");
+                return gid == primary
+                        && PoreloExecutable.privateGroup(
+                                gid,
+                                self,
+                                Files.readAllLines(Path.of("/etc/passwd")),
+                                Files.readAllLines(Path.of("/etc/group")));
             }
 
             @Override

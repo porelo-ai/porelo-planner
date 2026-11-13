@@ -101,8 +101,10 @@ class LentLoginTest {
                 "--bare",
                 work.toString(),
                 served.resolve("store.git").toString());
-        // The stand-in lies in a directory only this account may change, as the check demands.
-        final Path bin = Files.createDirectory(dir.resolve("bin"));
+        // The stand-in lies in a directory only this account may change, as the check demands; a
+        // shared temporary directory is one others may write.
+        final Path bin =
+                Files.createTempDirectory(Path.of("target").toAbsolutePath(), "lent-login-");
         Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwx------"));
         helper = Files.writeString(bin.resolve("porelo"), STAND_IN);
         Files.setPosixFilePermissions(helper, PosixFilePermissions.fromString("rwx------"));
@@ -172,7 +174,9 @@ class LentLoginTest {
                 person,
                 Duration.ofSeconds(5),
                 new GitRunner(Duration.ofSeconds(20), 1 << 20),
-                1 << 16);
+                1 << 16,
+                // The lending Porelo's command will switch on, held here ahead of that command.
+                LentLogin.of(person, PoreloExecutable.of(person, false)));
     }
 
     private String requests() throws IOException {
