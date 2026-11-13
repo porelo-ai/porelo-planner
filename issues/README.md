@@ -25,6 +25,7 @@ left out.
 |---|---|---|---|
 | <a id="pl44"></a>[PL44](PL44-An-Estimate-Learns-From-The-Tokens-Spent.md) | L | [PL61](README.md#pl61) | A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one |
 | <a id="pl56"></a>[PL56](PL56-The-Board-Builds-Only-What-Is-Seen.md) | L | [PL48](README.md#pl48) | The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand |
+| <a id="pl116"></a>[PL116](PL116-The-Board-Opens-With-Its-Cards-Shown.md) | XS | - | A planning screen opened for the first time shows the cards of every state that holds stories, none folded to its count; a fold the person makes is kept afterwards |
 
 ## Backlog
 
