@@ -32,7 +32,6 @@ left out.
 |---|---|---|---|
 | <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | M | - | Before the window sends the planner's token or names a project, the listener at the address file's port proves it holds the token without receiving it, so a process that took the port after the planner ended learns neither |
 | <a id="pl114"></a>[PL114](PL114-A-Failed-Or-Blocked-Task-Offers-A-Way-On.md) | M | [PL77](README.md#pl77) | The Needs-you row of an issue whose task ended FAILED offers Start again and Move on, and one that ended BLOCKED offers Move on, so the person is not left with a move by hand alone |
-| <a id="pl117"></a>[PL117](PL117-A-Refused-Action-Is-Said-In-The-Error-Colour.md) | XS | - | A board action the window or the planner refuses - a discussion Porelo would not start, among others - is said above the board in the error colour, as a provider's problem is, so the person sees that nothing happened |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL90](README.md#pl90), [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
@@ -53,6 +52,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
+| <a id="pl117"></a>[PL117](PL117-A-Refused-Action-Is-Said-In-The-Error-Colour.md) | XS | - | A board action the window or the planner refuses - a discussion Porelo would not start, among others - is said above the board in the error colour, as a provider's problem is, so the person sees that nothing happened |
 
 ## Review
 
