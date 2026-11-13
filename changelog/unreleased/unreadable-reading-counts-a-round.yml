@@ -1,0 +1,2 @@
+title: An unreadable reading counts a round and raises the round limit by one without using it up, so a late copy of Read again is refused instead of starting another reader.
+type: changed

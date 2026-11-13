@@ -18,7 +18,8 @@ public final class ReadingCycle {
     /**
      * An issue's readings.
      *
-     * @param rounds the readings counted, each a successfully read reading
+     * @param rounds the readings counted; an unreadable reading counts a round and raises {@code
+     *     roundsMost} by one, without using up the limit
      * @param roundsMost the readings allowed
      * @param stopped whether the issue waits in Reading for the operator's choice
      */

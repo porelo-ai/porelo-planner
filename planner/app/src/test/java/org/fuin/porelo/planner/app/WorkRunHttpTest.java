@@ -941,7 +941,7 @@ class WorkRunHttpTest {
         final JsonNode refused =
                 call(
                         "/issues/AA1/reading",
-                        "{\"story\":\"ST1\",\"round\":0,\"choice\":\"REWORK\",\"comment\":\"Fix it.\",\"revision\":\""
+                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"Fix it.\",\"revision\":\""
                                 + store.board().revision().value()
                                 + "\"}",
                         409);

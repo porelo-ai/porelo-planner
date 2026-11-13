@@ -938,7 +938,10 @@ class WorkRunTest {
         final var unreadable = unreadableReading(f);
         final var progress = unreadable.work().issues().get("AA1");
         assertThat(progress.rounds().stopped()).as("the reading stops").isTrue();
-        assertThat(progress.rounds().rounds()).as("no round counts").isZero();
+        assertThat(progress.rounds().rounds()).as("the round counts").isEqualTo(1);
+        assertThat(progress.rounds().roundsMost())
+                .as("the limit grows by one with it")
+                .isEqualTo(3);
         assertThat(progress.reason()).as("the reason stays").isEqualTo("INVALID_FINDINGS");
         assertThat(progress.needsYou()).as("the person is asked").isTrue();
         assertThat(progress.findings()).as("no findings are kept").isEmpty();
@@ -947,7 +950,7 @@ class WorkRunTest {
                 f.run.choose(
                         "ST1",
                         "AA1",
-                        0,
+                        1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
                         f.store.board().revision().value(),
@@ -962,6 +965,57 @@ class WorkRunTest {
     }
 
     @Test
+    void aLateCopyOfReadAgainAfterTheNewReaderEndedUnreadableAgainIsRefused() {
+        // Harm: a reader run the person never chose.
+        final Fixture f = new Fixture();
+        final int round = unreadableReading(f).work().issues().get("AA1").rounds().rounds();
+        final String revision = f.store.board().revision().value();
+        final var again =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                round,
+                                ReadingCycle.Choice.ONE_MORE_ROUND,
+                                "",
+                                revision,
+                                null)
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        again.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "again",
+                new WorkRun.Report(
+                        again.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | a.txt | x | not a line")));
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        round,
+                                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                                        "",
+                                        revision,
+                                        null))
+                .as("the late copy of Read again carries an old round")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("refused for the changed round")
+                                        .isEqualTo("ReadingRoundChanged"));
+        assertThat(f.run.work("ST1").issues().get("AA1").rounds())
+                .as("two unreadable readings count two rounds and raise the limit by two")
+                .isEqualTo(new ReadingCycle.Rounds(2, 4, true));
+    }
+
+    @Test
     void anUnreadableReadingTakenToReviewAnywaySavesTheDoneState() {
         // Harm: a person left with no way on after a reading nobody could read.
         final Fixture f = new Fixture();
@@ -969,7 +1023,7 @@ class WorkRunTest {
         f.run.choose(
                 "ST1",
                 "AA1",
-                0,
+                1,
                 ReadingCycle.Choice.REVIEW_ANYWAY,
                 "",
                 f.store.board().revision().value(),
@@ -990,7 +1044,7 @@ class WorkRunTest {
                                 f.run.choose(
                                         "ST1",
                                         "AA1",
-                                        0,
+                                        1,
                                         ReadingCycle.Choice.REWORK,
                                         "Fix it anyway.",
                                         revision,
@@ -1056,7 +1110,7 @@ class WorkRunTest {
                                 ended("Findings:\n1. blocking | a.txt | x | not a line")));
         final var progress = unreadable.work().issues().get("AA1");
         assertThat(progress.findings()).as("the answered finding is gone").isEmpty();
-        assertThat(progress.rounds().rounds()).as("only the first reading counts").isEqualTo(1);
+        assertThat(progress.rounds().rounds()).as("both readings count").isEqualTo(2);
         assertThat(progress.rounds().stopped()).as("the reading stops").isTrue();
     }
 
@@ -1070,7 +1124,7 @@ class WorkRunTest {
                 f.run.choose(
                         "ST1",
                         "AA1",
-                        0,
+                        1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
                         f.store.board().revision().value(),
@@ -1088,7 +1142,7 @@ class WorkRunTest {
                                 f.run.choose(
                                         "ST1",
                                         "AA1",
-                                        0,
+                                        1,
                                         ReadingCycle.Choice.REWORK,
                                         "Fix it anyway.",
                                         revision,
@@ -2958,9 +3012,10 @@ class WorkRunTest {
                                     "workstation",
                                     end));
             final var progress = answer.work().issues().get("AA1");
-            assertThat(progress.rounds().rounds())
-                    .as("only successful parsed readings count")
-                    .isZero();
+            assertThat(progress.rounds().roundsMost() - progress.rounds().rounds())
+                    .as(
+                            "a failed or unpushed reading uses up none of the readings granted, one by the order")
+                    .isEqualTo(1);
             assertThat(progress.needsYou()).as("failed delivery needs attention").isTrue();
             assertThat(answer.tasks()).as("no continuation follows a failed end").isEmpty();
         }
@@ -3085,7 +3140,9 @@ class WorkRunTest {
                                         List.of(),
                                         WorkEnds.Declared.BLOCKED)));
         final NextStep.Progress progress = answer.work().issues().get("AA1");
-        assertThat(progress.rounds().rounds()).as("a blocked reading counts none").isZero();
+        assertThat(progress.rounds().roundsMost() - progress.rounds().rounds())
+                .as("a blocked reading uses up none of the readings granted, one by the order")
+                .isEqualTo(1);
         assertThat(progress.reason()).as("the issue is raised as blocked").isEqualTo("BLOCKED");
         assertThat(answer.tasks()).as("nothing follows a blocked reading").isEmpty();
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
@@ -3895,7 +3952,7 @@ class WorkRunTest {
                                             declared)));
             final NextStep.Progress progress = ended.work().issues().get("AA1");
             assertThat(progress.rounds().stopped()).as("%s stops the reading", declared).isTrue();
-            assertThat(progress.rounds().rounds()).as("%s counts no round", declared).isZero();
+            assertThat(progress.rounds().rounds()).as("%s counts a round", declared).isEqualTo(1);
             assertThat(progress.findings()).as("%s keeps no findings", declared).isEmpty();
             assertThat(progress.reason())
                     .as("%s stays the reason", declared)
@@ -3918,7 +3975,7 @@ class WorkRunTest {
                                     f.run.choose(
                                             "ST1",
                                             "AA1",
-                                            0,
+                                            1,
                                             ReadingCycle.Choice.REWORK,
                                             "Fix it anyway.",
                                             revision,
@@ -3933,7 +3990,7 @@ class WorkRunTest {
                     f.run.choose(
                             "ST1",
                             "AA1",
-                            0,
+                            1,
                             ReadingCycle.Choice.ONE_MORE_ROUND,
                             "",
                             revision,

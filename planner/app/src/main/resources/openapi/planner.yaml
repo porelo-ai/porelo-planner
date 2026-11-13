@@ -2841,12 +2841,13 @@ components:
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
             reading with blocking findings, readingStopped true: below the readings granted and at them.
-            INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with no round
-            counted and no findings kept: the person has the same build read again or takes it to Review; an issue
-            moved meanwhile gets NEXT_STEP_UNAVAILABLE without a stop, as at any end. FAILED says the task did not
-            finish or declared its work failed, BLOCKED that it declared its work blocked; the issue stays in its state
-            and the task's why says what went wrong. A reader's FAILED or BLOCKED stops its reading as INVALID_FINDINGS
-            does, readingStopped true, with no round counted and no findings kept.
+            INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with a round
+            counted, roundsMost raised by one without using up the limit, and no findings kept: the person has the same
+            build read again or takes it to Review; an issue moved meanwhile gets NEXT_STEP_UNAVAILABLE without a stop,
+            as at any end. FAILED says the task did not finish or declared its work failed, BLOCKED that it declared its
+            work blocked; the issue stays in its state and the task's why says what went wrong. A reader's FAILED or
+            BLOCKED stops its reading as INVALID_FINDINGS does, readingStopped true, with a round counted, roundsMost
+            raised by one without using up the limit, and no findings kept.
             A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer

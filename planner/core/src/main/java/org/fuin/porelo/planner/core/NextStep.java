@@ -838,9 +838,10 @@ public final class NextStep {
     }
 
     /**
-     * Stops a reading whose findings could not be read, counting no round and keeping no findings,
-     * so the person can have the same build read again or take it to Review; an issue moved on
-     * meanwhile only asks the person, as at any end, since no choice could act on its stop.
+     * Stops a reading whose findings could not be read, counting a round without using up the limit
+     * and keeping no findings, so the person can have the same build read again or take it to
+     * Review; an issue moved on meanwhile only asks the person, as at any end, since no choice
+     * could act on its stop.
      */
     private static Result unreadable(
             final Board board,
@@ -867,8 +868,8 @@ public final class NextStep {
                                     id,
                                     new Progress(
                                             new ReadingCycle.Rounds(
-                                                    before.rounds().rounds(),
-                                                    before.rounds().roundsMost(),
+                                                    before.rounds().rounds() + 1,
+                                                    before.rounds().roundsMost() + 1,
                                                     true),
                                             List.of(),
                                             true,
