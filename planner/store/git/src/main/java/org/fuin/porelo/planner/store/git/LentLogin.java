@@ -11,9 +11,9 @@ import org.slf4j.LoggerFactory;
 /**
  * The login Porelo's vault lends to Git for a project's https centrals, through Porelo's own
  * credential helper, {@code <porelo> vault credential --for <address>}, named by {@code
- * PORELO_EXECUTABLE}. Without the variable nothing is lent and the person's own Git configuration
- * is the only helper; with it, Porelo's helper is the only one Git asks or tells about the address,
- * and the token passes only through Git's pipe to the helper.
+ * PORELO_EXECUTABLE}. Until Porelo has that command, the planner lends none and the person's own
+ * Git configuration is the only helper; a login lent makes Porelo's helper the only one Git asks or
+ * tells about the address, and the token passes only through Git's pipe to the helper.
  */
 final class LentLogin {
 
@@ -46,7 +46,7 @@ final class LentLogin {
      * <p>Porelo has no command yet that answers Git for a login, so a helper naming it would fail
      * every read; lending starts with that command, through {@link #of(Map, PoreloExecutable)}.
      *
-     * @param environment the planner's environment
+     * @param environment the planner's environment, not read until lending starts
      * @return no login
      */
     static LentLogin of(final Map<String, String> environment) {

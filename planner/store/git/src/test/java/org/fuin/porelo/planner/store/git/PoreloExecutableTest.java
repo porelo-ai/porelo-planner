@@ -9,8 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.fuin.porelo.planner.store.git.PoreloExecutable.OnPosix;
 import org.fuin.porelo.planner.store.git.PoreloExecutable.OnPosix.Kind;
 import org.fuin.porelo.planner.store.git.PoreloExecutable.OnPosix.Node;
@@ -39,7 +41,7 @@ class PoreloExecutableTest {
 
         boolean unreadable;
 
-        final java.util.Set<Path> privateGroups = new java.util.HashSet<>();
+        final Set<Path> privateGroups = new HashSet<>();
 
         Fake() {
             nodes.put(Path.of("/"), new Node(Kind.DIRECTORY, 0, 0755, true));
@@ -54,8 +56,13 @@ class PoreloExecutableTest {
             return ME;
         }
 
+        boolean groupsUnreadable;
+
         @Override
-        public boolean privateGroup(final Path path) {
+        public boolean privateGroup(final Path path) throws IOException {
+            if (groupsUnreadable) {
+                throw new IOException("/etc/group: Permission denied");
+            }
             return privateGroups.contains(path);
         }
 
@@ -177,7 +184,17 @@ class PoreloExecutableTest {
     }
 
     @Test
+    void aGroupThatCannotBeReadIsNotTakenForPrivate() {
+        // Harm: a folder a shared group may write taken for the account's own when the files fail.
+        final Fake fake = new Fake();
+        fake.nodes.put(Path.of("/opt/porelo/bin"), new Node(Kind.DIRECTORY, ME, 0775, true));
+        fake.groupsUnreadable = true;
+        assertThat(refusal(fake, PORELO)).as("the refusal says why").contains("cannot be checked");
+    }
+
+    @Test
     void aStickyFolderOthersMayWriteIsRefused() {
+        // Harm: a program swapped in a shared folder such as /tmp, where anyone may add a name.
         final Fake sticky = new Fake();
         sticky.nodes.put(Path.of("/opt/porelo"), new Node(Kind.DIRECTORY, 0, 01777, true));
         assertThat(refusal(sticky, PORELO))
@@ -187,6 +204,7 @@ class PoreloExecutableTest {
 
     @Test
     void aGroupIsPrivateOnlyWithNoOtherAccountInIt() {
+        // Harm: a folder another account may write through a group taken for the account's own.
         final List<String> passwd =
                 List.of("root:x:0:0::/root:/bin/sh", "person:x:1000:1000::/nonexistent:/bin/sh");
         final List<String> group = List.of("root:x:0:", "person:x:1000:");
@@ -211,6 +229,19 @@ class PoreloExecutableTest {
                 .isFalse();
         assertThat(PoreloExecutable.privateGroup(1000, 1000, passwd, List.of("root:x:0:")))
                 .as("a group the account files do not name")
+                .isFalse();
+        assertThat(
+                        PoreloExecutable.privateGroup(
+                                1000,
+                                1000,
+                                passwd,
+                                List.of("person:x:1000:", "shared:x:1000:other")))
+                .as("a second line of the same group names a member")
+                .isFalse();
+        assertThat(
+                        PoreloExecutable.privateGroup(
+                                1001, 1000, passwd, List.of("person:x:1000:", "spare:x:1001:")))
+                .as("an empty group that is not the account's primary one, as after newgrp")
                 .isFalse();
     }
 

@@ -114,7 +114,9 @@ into its failures and logs.
 - The check of the program and every folder above it takes the rule the window keeps too: the owner is root or the
   account; others may not write, sticky bit or not; a group may write only when it is the account's own private
   group - its primary group, no other account's primary group in `/etc/passwd`, an empty member list in
-  `/etc/group`. A POSIX ACL on a folder of that group is the account's own choice and is not read.
+  `/etc/group`, every line naming that group counted. A POSIX ACL on a folder of that group is the account's own
+  choice and is not read. Accounts and groups only a name service such as LDAP knows are not seen: on such a host a
+  group the files show as private may hold others; the window's check reads the same files.
 
 ## Acceptance
 

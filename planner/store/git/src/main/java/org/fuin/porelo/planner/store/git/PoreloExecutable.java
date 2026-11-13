@@ -61,9 +61,10 @@ interface PoreloExecutable {
     }
 
     /**
-     * Whether a group is one account's own private group, as the account files give it: no other
-     * account has it as its primary group, and its member list is empty. A missing or malformed
-     * entry counts as shared.
+     * Whether a group is one account's own private group, as the account files give it: the
+     * account's primary group in its own passwd line, no other account's primary group, and every
+     * line naming it in the group file without a member. A missing or malformed entry counts as
+     * shared. Accounts and groups only a name service knows are not seen.
      *
      * @param gid the group
      * @param uid the account
@@ -74,22 +75,30 @@ interface PoreloExecutable {
     static boolean privateGroup(
             final int gid, final int uid, final List<String> passwd, final List<String> group) {
         final String id = Integer.toString(gid);
+        final String account = Integer.toString(uid);
+        boolean primary = false;
         for (final String line : passwd) {
             final String[] fields = line.split(":", -1);
             if (fields.length < 4) {
                 continue;
             }
-            if (fields[3].equals(id) && !fields[2].equals(Integer.toString(uid))) {
+            if (fields[2].equals(account)) {
+                primary = fields[3].equals(id);
+            } else if (fields[3].equals(id)) {
                 return false;
             }
         }
+        boolean named = false;
         for (final String line : group) {
             final String[] fields = line.split(":", -1);
             if (fields.length == 4 && fields[2].equals(id)) {
-                return fields[3].isEmpty();
+                if (!fields[3].isEmpty()) {
+                    return false;
+                }
+                named = true;
             }
         }
-        return false;
+        return primary && named;
     }
 
     /** The check on Linux, by owner and mode, over what {@link Nodes} reads. */
@@ -242,14 +251,11 @@ interface PoreloExecutable {
             public boolean privateGroup(final Path path) throws IOException {
                 final int gid =
                         (Integer) Files.getAttribute(path, "unix:gid", LinkOption.NOFOLLOW_LINKS);
-                final int self = PosixPrivateFiles.ownUid();
-                final int primary = (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:gid");
-                return gid == primary
-                        && PoreloExecutable.privateGroup(
-                                gid,
-                                self,
-                                Files.readAllLines(Path.of("/etc/passwd")),
-                                Files.readAllLines(Path.of("/etc/group")));
+                return PoreloExecutable.privateGroup(
+                        gid,
+                        PosixPrivateFiles.ownUid(),
+                        Files.readAllLines(Path.of("/etc/passwd")),
+                        Files.readAllLines(Path.of("/etc/group")));
             }
 
             @Override

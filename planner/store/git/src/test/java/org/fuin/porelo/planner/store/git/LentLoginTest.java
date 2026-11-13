@@ -175,7 +175,7 @@ class LentLoginTest {
                 Duration.ofSeconds(5),
                 new GitRunner(Duration.ofSeconds(20), 1 << 20),
                 1 << 16,
-                // The lending Porelo's command will switch on, held here ahead of that command.
+                // The production entry lends nothing yet; the lending itself is proven here.
                 LentLogin.of(person, PoreloExecutable.of(person, false)));
     }
 
