@@ -41,6 +41,18 @@ public record WindowsAccess(String self, List<WindowsAccess.Entry> paths) {
     /** Removes or renames any entry of a directory. */
     static final long DELETE_CHILD = 0x40L;
 
+    /** Writes a file's data. */
+    static final long WRITE_DATA = 0x2L;
+
+    /** Appends to a file's data. */
+    static final long APPEND_DATA = 0x4L;
+
+    /** Writes a file's extended attributes. */
+    static final long WRITE_EA = 0x10L;
+
+    /** Writes a file's attributes. */
+    static final long WRITE_ATTRIBUTES = 0x100L;
+
     /** Every right, in the generic form an entry may carry. */
     static final long GENERIC_ALL = 0x10000000L;
 
@@ -65,6 +77,10 @@ public record WindowsAccess(String self, List<WindowsAccess.Entry> paths) {
     /** Any right that lets another account move a directory away or change who may reach it. */
     private static final long REPLACES =
             DELETE | WRITE_DAC | WRITE_OWNER | DELETE_CHILD | GENERIC_ALL | GENERIC_WRITE;
+
+    /** Any right that lets another account change a file's content, attributes or rights. */
+    private static final long CHANGES_FILE =
+            REPLACES | WRITE_DATA | APPEND_DATA | WRITE_EA | WRITE_ATTRIBUTES;
 
     private static final Pattern SID = Pattern.compile("S-1-[0-9]+(-[0-9]+){1,14}");
 
@@ -270,6 +286,39 @@ public record WindowsAccess(String self, List<WindowsAccess.Entry> paths) {
                                 + " lets "
                                 + ace.sid()
                                 + " rename, delete or re-permission what lies below it");
+            }
+        }
+    }
+
+    /**
+     * Refuses a program the planner lets Git run that another account could change: a reparse point
+     * or a directory, an owner other than the account, SYSTEM, Administrators or TrustedInstaller,
+     * or an entry, inherited or not, that lets anyone else write, delete, re-permission or take it.
+     *
+     * @param path the path, for the refusal's words
+     * @param index its place in the answer
+     * @throws IllegalStateException when another account could change it
+     */
+    public void requireSafeProgram(final Object path, final int index) {
+        final Entry entry = paths.get(index);
+        if (entry.reparse() || entry.directory()) {
+            throw new IllegalStateException(path + " is not a file, or is a link or junction");
+        }
+        if (!trusted(entry.owner()) && !entry.owner().equals(TRUSTED_INSTALLER)) {
+            throw new IllegalStateException(
+                    path
+                            + " belongs to "
+                            + entry.owner()
+                            + ", neither this account nor the system");
+        }
+        for (final Ace ace : entry.aces()) {
+            if (ace.allow()
+                    && !ace.inheritOnly()
+                    && !trusted(ace.sid())
+                    && !ace.sid().equals(TRUSTED_INSTALLER)
+                    && (ace.rights() & CHANGES_FILE) != 0) {
+                throw new IllegalStateException(
+                        path + " lets " + ace.sid() + " write, delete or re-permission it");
             }
         }
     }

@@ -85,6 +85,39 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
     }
 
     /**
+     * Makes a call that reaches a central, carrying the login Porelo lends for it, if any.
+     *
+     * @param inherited the planner's own environment
+     * @param connectTimeout how long ssh waits for a host
+     * @param login the login lent, {@link LentLogin#NONE} for none
+     * @param url the central the call reaches
+     * @param arguments the call's arguments after {@code git} and the safe configuration
+     * @return the call
+     * @throws GitFailure when Porelo's executable was refused and the central is https
+     */
+    static GitCall reaching(
+            final Map<String, String> inherited,
+            final Duration connectTimeout,
+            final LentLogin login,
+            final CloneUrl url,
+            final List<String> arguments) {
+        final List<String> lent = login.config(url);
+        final GitCall call = of(inherited, connectTimeout, arguments, WINDOWS);
+        if (lent.isEmpty()) {
+            return call;
+        }
+        final List<String> line = new ArrayList<>(call.arguments());
+        line.addAll(line.size() - arguments.size(), lent);
+        final Map<String, String> variables = new TreeMap<>(call.environment());
+        // Trace2 reads its targets before any -c, so only these switch off a target the person's
+        // configuration names.
+        variables.put("GIT_TRACE2", "0");
+        variables.put("GIT_TRACE2_EVENT", "0");
+        variables.put("GIT_TRACE2_PERF", "0");
+        return new GitCall(line, variables);
+    }
+
+    /**
      * A name in the planner's own directory that is never made: Git finds no hook there and cannot
      * run it as a program, and only this account could put anything there. Git for Windows takes
      * {@code /dev/null} and {@code /bin/false} as paths on the current drive, where any account may

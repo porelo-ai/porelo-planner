@@ -15,6 +15,8 @@ import java.security.KeyStore;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import org.jspecify.annotations.Nullable;
@@ -30,6 +32,9 @@ public final class GitHttpsServer implements AutoCloseable {
     private final HttpsServer server;
 
     private final Path caFile;
+
+    /** The Authorization header of each request, empty for none, in their order. */
+    private final Queue<String> authorizations = new ConcurrentLinkedQueue<>();
 
     private GitHttpsServer(final HttpsServer server, final Path caFile) {
         this.server = server;
@@ -47,6 +52,57 @@ public final class GitHttpsServer implements AutoCloseable {
      */
     public static GitHttpsServer start(
             final Path root, final Path work, final @Nullable String login) throws Exception {
+        final GitHttpsServer started = listening(work);
+        started.server.createContext("/", exchange -> started.serve(exchange, root, login));
+        started.server.start();
+        return started;
+    }
+
+    /**
+     * Starts a server that answers every request with a redirect to the same path elsewhere, as a
+     * renamed or moved repository's forge does.
+     *
+     * @param work a directory of the test's own for the key
+     * @param to the address the requests are sent on to, without a closing slash
+     * @return the server
+     * @throws Exception when it cannot start
+     */
+    public static GitHttpsServer redirecting(final Path work, final String to) throws Exception {
+        final GitHttpsServer started = listening(work);
+        started.server.createContext(
+                "/",
+                exchange -> {
+                    try (exchange) {
+                        started.recorded(exchange);
+                        final String query = exchange.getRequestURI().getRawQuery();
+                        exchange.getResponseHeaders()
+                                .add(
+                                        "Location",
+                                        to
+                                                + exchange.getRequestURI().getRawPath()
+                                                + (query == null ? "" : "?" + query));
+                        exchange.sendResponseHeaders(302, -1);
+                    }
+                });
+        started.server.start();
+        return started;
+    }
+
+    /**
+     * Answers what each request carried as its Authorization header, empty for none.
+     *
+     * @return the headers, in the order the requests came
+     */
+    public List<String> authorizations() {
+        return List.copyOf(authorizations);
+    }
+
+    private void recorded(final HttpExchange exchange) {
+        final String header = exchange.getRequestHeaders().getFirst("Authorization");
+        authorizations.add(header == null ? "" : header);
+    }
+
+    private static GitHttpsServer listening(final Path work) throws Exception {
         final Path keystore = work.resolve("server.p12");
         final Path ca = work.resolve("ca.pem");
         final String keytool =
@@ -99,8 +155,6 @@ public final class GitHttpsServer implements AutoCloseable {
         tls.init(keys.getKeyManagers(), null, null);
         final HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.setHttpsConfigurator(new HttpsConfigurator(tls));
-        server.createContext("/", exchange -> serve(exchange, root, login));
-        server.start();
         return new GitHttpsServer(server, ca);
     }
 
@@ -128,10 +182,10 @@ public final class GitHttpsServer implements AutoCloseable {
         server.stop(0);
     }
 
-    private static void serve(
-            final HttpExchange exchange, final Path root, final @Nullable String login)
+    private void serve(final HttpExchange exchange, final Path root, final @Nullable String login)
             throws IOException {
         try (exchange) {
+            recorded(exchange);
             if (login != null) {
                 final String expected =
                         "Basic "

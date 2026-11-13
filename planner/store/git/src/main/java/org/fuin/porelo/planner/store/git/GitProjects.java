@@ -100,13 +100,15 @@ public final class GitProjects {
         final Path directory = CacheDirectory.of(environment, project);
         final FileProjectLock lock = new FileProjectLock(directory);
         final GitRunner runner = new GitRunner(settings.callLimit(), settings.outputBytes());
+        final LentLogin login = LentLogin.of(environment);
         final GitRemote remote =
                 new GitRemote(
                         directory,
                         environment,
                         settings.connectTimeout(),
                         runner,
-                        settings.fileBytes());
+                        settings.fileBytes(),
+                        login);
         final List<Repository> repositories;
         try (ProjectLock.Held held = lock.acquire()) {
             keepOnlyFor(directory, source(own, branch));
@@ -125,7 +127,8 @@ public final class GitProjects {
                 new LocalSaves(
                         repositories,
                         remote,
-                        new GitLocalRefs(directory, environment, settings.connectTimeout(), runner),
+                        new GitLocalRefs(
+                                directory, environment, settings.connectTimeout(), runner, login),
                         background));
     }
 

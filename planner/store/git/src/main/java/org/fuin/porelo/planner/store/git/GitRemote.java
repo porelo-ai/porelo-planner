@@ -42,6 +42,8 @@ public final class GitRemote implements Remote {
 
     private final int fileBytes;
 
+    private final LentLogin login;
+
     private final Map<String, Kept> kept = new ConcurrentHashMap<>();
 
     /**
@@ -59,18 +61,39 @@ public final class GitRemote implements Remote {
             final Duration connectTimeout,
             final GitRunner runner,
             final int fileBytes) {
+        this(project, environment, connectTimeout, runner, fileBytes, LentLogin.of(environment));
+    }
+
+    /**
+     * Makes a remote with the login Porelo lends, already checked.
+     *
+     * @param project the project's cache directory, already checked to be the person's alone
+     * @param environment the planner's own environment
+     * @param connectTimeout how long ssh waits for a host
+     * @param runner runs each call
+     * @param fileBytes the largest file read
+     * @param login the login lent to the calls that reach an https central
+     */
+    GitRemote(
+            final Path project,
+            final Map<String, String> environment,
+            final Duration connectTimeout,
+            final GitRunner runner,
+            final int fileBytes,
+            final LentLogin login) {
         this.project = project;
         this.environment = Map.copyOf(environment);
         this.connectTimeout = connectTimeout;
         this.runner = runner;
         this.fileBytes = fileBytes;
+        this.login = login;
     }
 
     @Override
     public String head(final String repository, final CloneUrl url, final @Nullable String branch) {
         Ids.name(repository);
         final String ref = branch == null ? "HEAD" : "refs/heads/" + branch(branch);
-        final String out = text(run(null, List.of("ls-remote", "--", url.value(), ref)));
+        final String out = text(reach(null, url, List.of("ls-remote", "--", url.value(), ref)));
         for (final String line : out.split("\n")) {
             final String[] parts = line.split("\t", 2);
             if (parts.length == 2 && parts[1].equals(ref)) {
@@ -89,8 +112,9 @@ public final class GitRemote implements Remote {
             run(null, List.of("init", "--bare", "--quiet", "--", clone.toString()));
         }
         final String ref = branch == null ? "HEAD" : "refs/heads/" + branch(branch);
-        run(
+        reach(
                 clone,
+                url,
                 List.of(
                         "fetch",
                         "--quiet",
@@ -351,8 +375,9 @@ public final class GitRemote implements Remote {
             final String expected) {
         final String ref =
                 "refs/heads/" + (branch == null ? defaultBranch(repository, url) : branch(branch));
-        run(
+        reach(
                 clone(repository),
+                url,
                 List.of(
                         "push",
                         "--quiet",
@@ -380,7 +405,7 @@ public final class GitRemote implements Remote {
     /** The branch a remote's HEAD names, which a push needs by name. */
     private String defaultBranch(final String repository, final CloneUrl url) {
         final String out =
-                text(run(null, List.of("ls-remote", "--symref", "--", url.value(), "HEAD")));
+                text(reach(null, url, List.of("ls-remote", "--symref", "--", url.value(), "HEAD")));
         for (final String line : out.split("\n")) {
             if (line.startsWith("ref: refs/heads/") && line.endsWith("\tHEAD")) {
                 return branch(line.substring(16, line.length() - 5));
@@ -528,6 +553,19 @@ public final class GitRemote implements Remote {
         line.addAll(arguments);
         return runner.run(
                 GitCall.of(environment, connectTimeout, line), clone == null ? project : clone);
+    }
+
+    /** Runs a call that reaches a central, with the login lent for it. */
+    private byte[] reach(
+            final @Nullable Path clone, final CloneUrl url, final List<String> arguments) {
+        final List<String> line = new ArrayList<>();
+        if (clone != null) {
+            line.add("--git-dir=" + clone);
+        }
+        line.addAll(arguments);
+        return runner.run(
+                GitCall.reaching(environment, connectTimeout, login, url, line),
+                clone == null ? project : clone);
     }
 
     private static String commit(final String id) {

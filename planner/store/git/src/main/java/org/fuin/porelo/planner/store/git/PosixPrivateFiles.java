@@ -28,10 +28,10 @@ final class PosixPrivateFiles implements PrivateFiles {
             PosixFilePermissions.fromString("rw-------");
 
     /** Group or others may write: refused above a runtime or state directory. */
-    private static final int GROUP_OR_OTHERS_WRITE = 0022;
+    static final int GROUP_OR_OTHERS_WRITE = 0022;
 
     /** Others may write: refused above the clones, whose directories a group may share. */
-    private static final int OTHERS_WRITE = 0002;
+    static final int OTHERS_WRITE = 0002;
 
     private static final int STICKY = 01000;
 
@@ -223,21 +223,39 @@ final class PosixPrivateFiles implements PrivateFiles {
             throw new IllegalStateException(base + " is reached through a link, as " + real);
         }
         for (Path dir = base; dir != null; dir = dir.getParent()) {
-            final int owner =
-                    (Integer) Files.getAttribute(dir, "unix:uid", LinkOption.NOFOLLOW_LINKS);
-            final int mode =
-                    (Integer) Files.getAttribute(dir, "unix:mode", LinkOption.NOFOLLOW_LINKS);
-            if (owner != 0 && owner != uid) {
-                throw new IllegalStateException(
-                        dir + " belongs to account " + owner + ", neither root nor this one");
-            }
-            if ((mode & writable) != 0 && (mode & STICKY) == 0) {
-                throw new IllegalStateException(
-                        dir
-                                + " is a directory "
-                                + (writable == OTHERS_WRITE ? "others" : "its group or others")
-                                + " can write, without the sticky bit");
-            }
+            requireSafeAncestor(
+                    dir,
+                    (Integer) Files.getAttribute(dir, "unix:uid", LinkOption.NOFOLLOW_LINKS),
+                    (Integer) Files.getAttribute(dir, "unix:mode", LinkOption.NOFOLLOW_LINKS),
+                    uid,
+                    writable);
+        }
+    }
+
+    /**
+     * Refuses a directory on the way that another account could rename what lies below it out of:
+     * one owned by neither root nor the account, or one others may write without the sticky bit.
+     *
+     * @param dir the directory, for the refusal's words
+     * @param owner its owner's uid
+     * @param mode its mode, the group bits holding a POSIX ACL's mask
+     * @param uid this account's uid
+     * @param writable the write bits refused: {@link #OTHERS_WRITE} or {@link
+     *     #GROUP_OR_OTHERS_WRITE}
+     * @throws IllegalStateException when another account could swap what lies below it
+     */
+    static void requireSafeAncestor(
+            final Object dir, final int owner, final int mode, final int uid, final int writable) {
+        if (owner != 0 && owner != uid) {
+            throw new IllegalStateException(
+                    dir + " belongs to account " + owner + ", neither root nor this one");
+        }
+        if ((mode & writable) != 0 && (mode & STICKY) == 0) {
+            throw new IllegalStateException(
+                    dir
+                            + " is a directory "
+                            + (writable == OTHERS_WRITE ? "others" : "its group or others")
+                            + " can write, without the sticky bit");
         }
     }
 }

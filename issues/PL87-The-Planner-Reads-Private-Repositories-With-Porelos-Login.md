@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL87",
   "title": "The Planner Reads Private Repositories With Porelo's Login",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -48,7 +48,8 @@ into its failures and logs.
     `PORELO_EXECUTABLE` for the planner it starts, overwriting any inherited value. Trusted callers are the window
     and a person starting the planner from their own shell, whose environment is their own; the planner trusts the
     variable no further than the checks below.
-  - For every https address of the project's centrals, each Git call of the planner carries
+  - For every https address of the project's centrals, each Git call of the planner that reaches that central (a
+    fetch, a push, an `ls-remote`) carries
     `-c credential.<address>.helper=` (empty, which clears every helper collected before it for that address),
     `-c credential.<address>.helper=!'<porelo path>' vault credential --for '<address>'` and
     `-c credential.<address>.useHttpPath=true`. Porelo's helper is the only one Git asks or tells about that
@@ -80,8 +81,10 @@ into its failures and logs.
   Git asks a helper, so a rewritten https request reaches Porelo's helper only under the rewritten address, which
   Porelo's own check of host, port and path refuses; a rewrite to ssh asks no helper at all.
 - **SSH.** An `ssh://` or `user@host:path` central gets no helper line; Git asks no credential helper over ssh.
-- **Errors and tracing.** A call carrying the helper also clears `trace2.normalTarget`, `trace2.eventTarget` and
-  `trace2.perfTarget`; `GIT_TRACE*` and `GIT_CURL_VERBOSE` are already dropped with every other `GIT_*` variable
+- **Errors and tracing.** A call carrying the helper also switches off every trace2 target, by `GIT_TRACE2=0`,
+  `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0` in its environment: Git reads `trace2.normalTarget`,
+  `trace2.eventTarget` and `trace2.perfTarget` before any `-c`, so an empty `-c` leaves a target of the person's
+  configuration writing (measured with Git 2.53), while the variables override it; `GIT_TRACE*` and `GIT_CURL_VERBOSE` are already dropped with every other `GIT_*` variable
   (`GitCall.java:128`). The token passes only through Git's pipe to the helper: no temporary file, no command line,
   no stored helper. Since `GitRunner`'s patterns cannot know an arbitrary token, a failed call that carried the helper
   reports only its kind and Git's scrubbed words, and Porelo's agreement above keeps the token out of the helper's
@@ -105,3 +108,13 @@ into its failures and logs.
 
 - The tests above, each seen red first; on a local VM, a planner the window starts reads a private project without a
   Git configuration of the person's.
+
+## Not taken
+
+- **A test with a second repository on the same host.** `useHttpPath` is what keeps the login to the one repository
+  the call names, and the integration test that reads the private repository already goes red without it, since the
+  helper then gets no path. A second repository adds no harm that test does not already show.
+- **A rule for a Porelo installed under `C:\Program Files`.** The check of every directory above the program refuses
+  one where TrustedInstaller may rename or re-permission, as Windows grants it there. The window sets no
+  `PORELO_EXECUTABLE` on Windows, since Porelo has no Windows build, so no such path reaches the check; a Windows build
+  of Porelo brings its own change.

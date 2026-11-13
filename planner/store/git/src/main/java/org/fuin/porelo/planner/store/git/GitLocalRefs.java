@@ -36,8 +36,10 @@ final class GitLocalRefs implements LocalRefs {
 
     private final GitRunner runner;
 
+    private final LentLogin login;
+
     /**
-     * Makes the refs.
+     * Makes the refs, with the login Porelo lends as the environment names it.
      *
      * @param project the project's cache directory, already checked to be the person's alone
      * @param environment the planner's own environment
@@ -49,10 +51,29 @@ final class GitLocalRefs implements LocalRefs {
             final Map<String, String> environment,
             final Duration connectTimeout,
             final GitRunner runner) {
+        this(project, environment, connectTimeout, runner, LentLogin.of(environment));
+    }
+
+    /**
+     * Makes the refs.
+     *
+     * @param project the project's cache directory, already checked to be the person's alone
+     * @param environment the planner's own environment
+     * @param connectTimeout how long ssh waits for a host
+     * @param runner runs each call
+     * @param login the login lent to the calls that reach an https central
+     */
+    GitLocalRefs(
+            final Path project,
+            final Map<String, String> environment,
+            final Duration connectTimeout,
+            final GitRunner runner,
+            final LentLogin login) {
         this.project = project;
         this.environment = Map.copyOf(environment);
         this.connectTimeout = connectTimeout;
         this.runner = runner;
+        this.login = login;
     }
 
     @Override
@@ -107,19 +128,19 @@ final class GitLocalRefs implements LocalRefs {
             throw new IllegalArgumentException("Not a branch name the planner takes");
         }
         final String ref = branch == null ? "HEAD" : "refs/heads/" + branch;
-        runner.run(
-                call(
-                        clone,
-                        List.of(
-                                "fetch",
-                                "--quiet",
-                                "--no-tags",
-                                "--no-write-fetch-head",
-                                "--depth=1",
-                                "--",
-                                url.value(),
-                                "+" + ref + ":" + REMOTE)),
-                clone);
+        final List<String> line = new ArrayList<>();
+        line.add("--git-dir=" + clone);
+        line.addAll(
+                List.of(
+                        "fetch",
+                        "--quiet",
+                        "--no-tags",
+                        "--no-write-fetch-head",
+                        "--depth=1",
+                        "--",
+                        url.value(),
+                        "+" + ref + ":" + REMOTE));
+        runner.run(GitCall.reaching(environment, connectTimeout, login, url, line), clone);
         return commit(
                 text(runner.run(
                                 call(
