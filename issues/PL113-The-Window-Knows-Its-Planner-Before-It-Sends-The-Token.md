@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL113",
   "title": "The Window Knows Its Planner Before It Sends The Token",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Medium",
   "rank": 49,

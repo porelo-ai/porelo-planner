@@ -38,7 +38,6 @@ left out.
 | <a id="pl107"></a>[PL107](PL107-ST316-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104), [PL105](README.md#pl105) | A script plays the test of story ST316 once on the local test VM through the planning screen against the real planner, as a person reads sizes and folds a state's box and a story card |
 | <a id="pl108"></a>[PL108](PL108-ST336-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104), [PL105](README.md#pl105) | A script plays the test of story ST336 once on the local test VM through the planning screen against the real planner, as a person opens a story with a long Markdown description and many issues |
 | <a id="pl109"></a>[PL109](PL109-ST339-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104) | A script plays the test of story ST339 once on the local test VM as a person would, running the screen's test app from the source under a virtual display and driving it against its mock, with no window, planner or forge |
-| <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | L | - | The window never sends the planner's token: each request carries a keyed hash under it, and before its first request and after any connection error the screen has the listener at the address file's port prove it holds the token, so a process that took a freed port learns no token and is found at once |
 | <a id="pl123"></a>[PL123](PL123-A-Refused-Start-Reads-As-An-Error.md) | XS | - | A Start or another board action the window or the planner refuses is shown above the board in the theme's error colour with an error icon, as the screen's other failures are, so the person sees that nothing was created |
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | M | - | The planner's answer records generated from openapi/planner.yaml instead of written by hand; the controllers stay hand-written |
@@ -47,6 +46,12 @@ left out.
 | <a id="pl110"></a>[PL110](PL110-The-Documents-Profile-Runs-The-Issues-Check.md) | S | - | `-Pdocuments test` runs a test that checks this repository's own issues and index with the planner's issue check, and fails when it runs no test, so a change to issues alone is checked by the step that claims to check it |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | L | - | The window never sends the planner's token: each request carries a keyed hash under it, and before its first request and after any connection error the screen has the listener at the address file's port prove it holds the token, so a process that took a freed port learns no token and is found at once |
 
 ## Review
 
