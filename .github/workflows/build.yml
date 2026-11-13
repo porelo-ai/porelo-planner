@@ -412,11 +412,11 @@ jobs:
 
             # The window's packing script and install check, which serve any package of Porelo's signer: taken from the
             # window's repository by commit, never kept here as a copy. Pinned to porelo-frontend's main at
-            # "Clean up each leftover of the install check as a path of its own".
+            # "Show what a started alias said when the install check fails".
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   repository: porelo-ai/porelo-frontend
-                  ref: da0adf3da4ce4e8d4b830feca48c9c7a8bb8a2c8
+                  ref: 661fa7e5b5265efd3d609d5ee09342df79bd2d92
                   path: window-tool
                   sparse-checkout: tool
                   persist-credentials: false
