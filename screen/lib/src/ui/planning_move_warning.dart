@@ -10,18 +10,20 @@ import 'style.dart';
 /// The warnings of the move [PlanningBoard.question] holds, with Confirm and Cancel; nothing when no move is asked
 /// about. Nothing is saved before Confirm, and Cancel sends nothing.
 class PlanningMoveWarningPanel extends StatelessWidget {
-  /// Shows [board]'s question.
-  const PlanningMoveWarningPanel({required this.board, super.key});
+  /// Shows [board]'s question, with Confirm and Cancel unless [buttons] is false and they stand apart.
+  const PlanningMoveWarningPanel({required this.board, this.buttons = true, super.key});
 
   /// The board whose move is asked about.
   final PlanningBoard board;
+
+  /// Whether Confirm and Cancel stand in the panel; the board keeps them apart, in view, below what scrolls.
+  final bool buttons;
 
   @override
   Widget build(BuildContext context) {
     final asked = board.question;
     if (asked == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final stops = asked.warnings.any((warning) => warning.kind == PlanningMoveWarning.runningWork);
     return Card(
       key: const Key('planning-move-warning'),
       color: theme.colorScheme.errorContainer,
@@ -40,22 +42,7 @@ class PlanningMoveWarningPanel extends StatelessWidget {
                 key: Key('planning-move-warning-again'),
               ),
             for (final warning in asked.warnings) ..._warning(warning),
-            const SizedBox(height: Space.small),
-            Wrap(
-              spacing: Space.small,
-              children: [
-                FilledButton(
-                  key: const Key('planning-move-confirm'),
-                  onPressed: () => unawaited(board.confirmMove()),
-                  child: Text(stops ? 'Stop the tasks and move' : 'Move'),
-                ),
-                TextButton(
-                  key: const Key('planning-move-cancel'),
-                  onPressed: board.cancelMove,
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
+            if (buttons) ...[const SizedBox(height: Space.small), PlanningMoveButtons(board: board)],
           ],
         ),
       ),
@@ -92,4 +79,31 @@ class PlanningMoveWarningPanel extends StatelessWidget {
       '${warning.item} will stand in ${warning.to} while these issues do not fit it:',
     _ => '${warning.item}: ${warning.kind}',
   };
+}
+
+/// Confirm and Cancel of the move [PlanningBoard.question] holds; nothing when no move is asked about.
+class PlanningMoveButtons extends StatelessWidget {
+  /// Answers [board]'s question.
+  const PlanningMoveButtons({required this.board, super.key});
+
+  /// The board whose move is asked about.
+  final PlanningBoard board;
+
+  @override
+  Widget build(BuildContext context) {
+    final asked = board.question;
+    if (asked == null) return const SizedBox.shrink();
+    final stops = asked.warnings.any((warning) => warning.kind == PlanningMoveWarning.runningWork);
+    return Wrap(
+      spacing: Space.small,
+      children: [
+        FilledButton(
+          key: const Key('planning-move-confirm'),
+          onPressed: () => unawaited(board.confirmMove()),
+          child: Text(stops ? 'Stop the tasks and move' : 'Move'),
+        ),
+        TextButton(key: const Key('planning-move-cancel'), onPressed: board.cancelMove, child: const Text('Cancel')),
+      ],
+    );
+  }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -236,6 +237,9 @@ class _BoardViewState extends State<_BoardView> {
     initialScrollOffset: board.preferences.horizontalOffset,
     keepScrollOffset: false,
   )..addListener(_rememberScroll);
+  final _top = ScrollController();
+  final _panel = GlobalKey();
+  PlanningMoveQuestion? _asked;
 
   void _rememberScroll() {
     if (_vertical.hasClients) board.preferences.verticalOffset = _vertical.offset;
@@ -294,12 +298,36 @@ class _BoardViewState extends State<_BoardView> {
   void dispose() {
     _vertical.dispose();
     _horizontal.dispose();
+    _top.dispose();
     _search.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, room) => _board(context, room.maxHeight));
+
+  /// The most height above the board: the view's, less the board's least and the move's buttons.
+  double _topRoom(double height) => math.max(
+    0,
+    height -
+        2 * Space.wide -
+        Space.normal -
+        PlanningStyle.boardMinimum -
+        (board.question == null ? 0 : PlanningStyle.moveButtons),
+  );
+
+  /// Brings a newly asked move's warnings into view once, since they stand below everything else that scrolls.
+  void _showAsked() {
+    if (identical(board.question, _asked)) return;
+    _asked = board.question;
+    if (_asked == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final panel = _panel.currentContext;
+      if (panel != null && panel.mounted) unawaited(Scrollable.ensureVisible(panel));
+    });
+  }
+
+  Widget _board(BuildContext context, double height) => ListenableBuilder(
     listenable: board,
     builder: (context, _) {
       if (board.unsupported) {
@@ -308,149 +336,171 @@ class _BoardViewState extends State<_BoardView> {
         );
       }
       final theme = Theme.of(context);
+      _showAsked();
       return Padding(
         key: const Key('planning-board'),
         padding: const EdgeInsets.all(Space.wide),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Planning', style: theme.textTheme.headlineSmall),
-            Text('The stories of project ${board.project} by state, the most important first.'),
-            Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
-            const SizedBox(height: Space.normal),
-            Wrap(
-              spacing: Space.normal,
-              runSpacing: Space.small,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (widget.projects.length > 1)
-                  SizedBox(
-                    key: const Key('planning-project'),
-                    width: PlanningStyle.filter,
-                    child: DropdownButtonFormField<String>(
-                      key: _project,
-                      initialValue: board.project,
-                      decoration: const InputDecoration(labelText: 'Project'),
-                      isExpanded: true,
-                      items: [for (final name in widget.projects) DropdownMenuItem(value: name, child: Text(name))],
-                      onChanged: board.saving
-                          ? null
-                          : (name) async {
-                              if (name != null &&
-                                  name != board.project &&
-                                  await confirmPlanningLeave(context, [board]) &&
-                                  mounted) {
-                                widget.select(name);
-                              } else if (mounted) {
-                                setState(() => _project = UniqueKey());
-                              }
-                            },
-                    ),
-                  ),
-                SizedBox(
-                  width: PlanningStyle.filter,
-                  child: DropdownButtonFormField<PlanningPriority>(
-                    key: const Key('planning-priority'),
-                    initialValue: board.preferences.priority,
-                    decoration: const InputDecoration(labelText: 'Priority'),
-                    isExpanded: true,
-                    items: [
-                      for (final priority in PlanningPriority.values)
-                        DropdownMenuItem(value: priority, child: Text(priority.label)),
+            // Everything above the board scrolls within what the board and the move's buttons leave, so neither
+            // problem lines nor warnings push Confirm and Cancel out of the view.
+            ConstrainedBox(
+              constraints: BoxConstraints(minWidth: double.infinity, maxHeight: _topRoom(height)),
+              child: Scrollbar(
+                controller: _top,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  key: const Key('planning-board-top'),
+                  controller: _top,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Planning', style: theme.textTheme.headlineSmall),
+                      Text('The stories of project ${board.project} by state, the most important first.'),
+                      Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
+                      const SizedBox(height: Space.normal),
+                      Wrap(
+                        spacing: Space.normal,
+                        runSpacing: Space.small,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (widget.projects.length > 1)
+                            SizedBox(
+                              key: const Key('planning-project'),
+                              width: PlanningStyle.filter,
+                              child: DropdownButtonFormField<String>(
+                                key: _project,
+                                initialValue: board.project,
+                                decoration: const InputDecoration(labelText: 'Project'),
+                                isExpanded: true,
+                                items: [
+                                  for (final name in widget.projects) DropdownMenuItem(value: name, child: Text(name)),
+                                ],
+                                onChanged: board.saving
+                                    ? null
+                                    : (name) async {
+                                        if (name != null &&
+                                            name != board.project &&
+                                            await confirmPlanningLeave(context, [board]) &&
+                                            mounted) {
+                                          widget.select(name);
+                                        } else if (mounted) {
+                                          setState(() => _project = UniqueKey());
+                                        }
+                                      },
+                              ),
+                            ),
+                          SizedBox(
+                            width: PlanningStyle.filter,
+                            child: DropdownButtonFormField<PlanningPriority>(
+                              key: const Key('planning-priority'),
+                              initialValue: board.preferences.priority,
+                              decoration: const InputDecoration(labelText: 'Priority'),
+                              isExpanded: true,
+                              items: [
+                                for (final priority in PlanningPriority.values)
+                                  DropdownMenuItem(value: priority, child: Text(priority.label)),
+                              ],
+                              onChanged: (priority) {
+                                if (priority != null) board.filter(priority);
+                              },
+                            ),
+                          ),
+                          SizedBox(
+                            width: PlanningStyle.filter,
+                            child: TextField(
+                              key: const Key('planning-search'),
+                              controller: _search,
+                              onChanged: _searchFor,
+                              decoration: const InputDecoration(
+                                labelText: 'Search',
+                                hintText: 'Story ID or a word',
+                                prefixIcon: Icon(Icons.search),
+                              ),
+                            ),
+                          ),
+                          FilterChip(
+                            key: const Key('planning-show-closed'),
+                            label: Text('Show Finished and Rejected (${board.closedCount ?? '?'})'),
+                            selected: board.preferences.showClosed,
+                            onSelected: (_) => board.toggleClosed(),
+                          ),
+                          PlanningActionMenu(
+                            key: const Key('planning-board-menu'),
+                            tooltip: 'Planning of ${board.project}',
+                            actions: [
+                              PlanningAction(
+                                id: 'planning-discuss-idea',
+                                label: 'Discuss an idea…',
+                                unavailable:
+                                    board.unavailableActions['DiscussIdea'] ??
+                                    (board.discussing ? 'waiting for the planner' : null),
+                                run: () => unawaited(_discuss()),
+                              ),
+                              PlanningAction(
+                                id: 'planning-new-issue',
+                                label: 'New issue…',
+                                unavailable: board.newIssueUnavailable,
+                                run: () => unawaited(_newIssue()),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
+                      for (final problem in widget.providerProblems)
+                        Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+                      if (board.catchingUp)
+                        const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
+                      if (!board.live && (board.snapshot != null || board.problem != null))
+                        const Text(
+                          'Planning is not live. Reload planning shows the current state.',
+                          key: Key('planning-not-live'),
+                        ),
+                      if (board.actionProblem case final problem?)
+                        Text(problem, key: const Key('planning-action-error')),
+                      for (final entry in board.workProblems.entries) Text(_line('${entry.key}: ${entry.value}')),
+                      for (final story in board.workUnsupported)
+                        Text(_line('$story: the planner does not offer story work status.')),
+                      if (board.problem case final problem?)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: Space.small),
+                          child: _problem(problem, theme),
+                        ),
+                      if (board.snapshot != null && !board.snapshot!.complete)
+                        const Text('The planner did not report the complete planning workflow and story list.'),
+                      if (board.problem != null)
+                        TextButton.icon(
+                          key: const Key('planning-retry'),
+                          onPressed: () => unawaited(board.retry()),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry planning'),
+                        ),
+                      if (board.moveProblem case final problem?)
+                        Text(
+                          problem,
+                          key: const Key('planning-move-error'),
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
+                      if (board.snapshot != null || board.problem != null)
+                        TextButton.icon(
+                          key: const Key('planning-reload'),
+                          onPressed: board.saving ? null : () => unawaited(board.reload(fetch: true)),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Reload planning'),
+                        ),
+                      PlanningMoveWarningPanel(key: _panel, board: board, buttons: false),
+                      if (board.snapshot == null && board.problem == null)
+                        const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
                     ],
-                    onChanged: (priority) {
-                      if (priority != null) board.filter(priority);
-                    },
                   ),
                 ),
-                SizedBox(
-                  width: PlanningStyle.filter,
-                  child: TextField(
-                    key: const Key('planning-search'),
-                    controller: _search,
-                    onChanged: _searchFor,
-                    decoration: const InputDecoration(
-                      labelText: 'Search',
-                      hintText: 'Story ID or a word',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                  ),
-                ),
-                FilterChip(
-                  key: const Key('planning-show-closed'),
-                  label: Text('Show Finished and Rejected (${board.closedCount ?? '?'})'),
-                  selected: board.preferences.showClosed,
-                  onSelected: (_) => board.toggleClosed(),
-                ),
-                PlanningActionMenu(
-                  key: const Key('planning-board-menu'),
-                  tooltip: 'Planning of ${board.project}',
-                  actions: [
-                    PlanningAction(
-                      id: 'planning-discuss-idea',
-                      label: 'Discuss an idea…',
-                      unavailable:
-                          board.unavailableActions['DiscussIdea'] ??
-                          (board.discussing ? 'waiting for the planner' : null),
-                      run: () => unawaited(_discuss()),
-                    ),
-                    PlanningAction(
-                      id: 'planning-new-issue',
-                      label: 'New issue…',
-                      unavailable: board.newIssueUnavailable,
-                      run: () => unawaited(_newIssue()),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-            if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
-            for (final problem in widget.providerProblems)
-              Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-            if (board.catchingUp)
-              const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
-            if (!board.live && (board.snapshot != null || board.problem != null))
-              const Text(
-                'Planning is not live. Reload planning shows the current state.',
-                key: Key('planning-not-live'),
-              ),
-            if (board.actionProblem case final problem?) Text(problem, key: const Key('planning-action-error')),
-            for (final entry in board.workProblems.entries) Text(_line('${entry.key}: ${entry.value}')),
-            for (final story in board.workUnsupported)
-              Text(_line('$story: the planner does not offer story work status.')),
-            if (board.problem case final problem?)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: Space.small),
-                child: _problem(problem, theme),
-              ),
-            if (board.snapshot != null && !board.snapshot!.complete)
-              const Text('The planner did not report the complete planning workflow and story list.'),
-            if (board.problem != null)
-              TextButton.icon(
-                key: const Key('planning-retry'),
-                onPressed: () => unawaited(board.retry()),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry planning'),
-              ),
-            if (board.moveProblem case final problem?)
-              Text(
-                problem,
-                key: const Key('planning-move-error'),
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-            if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
-            if (board.snapshot != null || board.problem != null)
-              TextButton.icon(
-                key: const Key('planning-reload'),
-                onPressed: board.saving ? null : () => unawaited(board.reload(fetch: true)),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Reload planning'),
-              ),
-            // Not flexible: a loose share of the height would stay empty below the board.
-            PlanningMoveWarningPanel(board: board),
+            PlanningMoveButtons(board: board),
             const SizedBox(height: Space.normal),
-            if (board.snapshot == null && board.problem == null)
-              const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
             Expanded(
               child: board.snapshot == null
                   ? const SizedBox.shrink()

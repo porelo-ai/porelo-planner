@@ -13,12 +13,15 @@ Future<(MockPlanningSource, PlanningBoards)> _showBoard(
   WidgetTester tester, {
   bool twoProjects = false,
   MockPlanningSource? otherProvider,
+  MockPlanningSource? source,
+  double above = 0,
+  ScrollController? primary,
 }) async {
   tester.view
     ..physicalSize = const Size(1280, 800)
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final backend = MockPlanningSource();
+  final backend = source ?? MockPlanningSource();
   backend.boards['checkout'] = {
     'states': [
       {'name': 'Ready', 'kind': 'WAITING'},
@@ -56,7 +59,22 @@ Future<(MockPlanningSource, PlanningBoards)> _showBoard(
   });
   await tester.pumpWidget(
     MaterialApp(
-      home: Scaffold(body: planningView(boards: boards)),
+      home: Scaffold(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: above),
+            Expanded(
+              child: primary == null
+                  ? planningView(boards: boards)
+                  : PrimaryScrollController(
+                      controller: primary,
+                      child: planningView(boards: boards),
+                    ),
+            ),
+          ],
+        ),
+      ),
     ),
   );
   await settle(tester);
@@ -105,7 +123,139 @@ void _withIssueOf(MockPlanningSource backend, String repository) {
   backend.push('checkout', data);
 }
 
+/// A source whose preview of any move warns of running work, issues carried along and a story that will not fit
+/// them, two issues each, under the digest the save checks.
+class _ThreeWarnings extends MockPlanningSource {
+  @override
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
+    final preview = previewPlanningMove(board(project), {
+      'moves': moves.map((move) => move.toMap()).toList(),
+      'revision': revision,
+    });
+    Map<String, dynamic> issue(String id) => {'id': id, 'repository': 'other', 'from': 'Ready', 'to': 'Review'};
+    Map<String, dynamic> warning(String kind, {List<String> tasks = const []}) => {
+      'kind': kind,
+      'item': 'StoryOne',
+      'from': 'Ready',
+      'to': 'Review',
+      'tasks': tasks,
+      'issues': [issue('OT1'), issue('OT2')],
+    };
+    return PlanningMovePreview.from({
+      ...preview,
+      'warnings': [
+        warning(PlanningMoveWarning.runningWork, tasks: ['reader-1', 'worker-2']),
+        warning(PlanningMoveWarning.issuesAlong),
+        warning(PlanningMoveWarning.storyMismatch),
+      ],
+    });
+  }
+}
+
+/// The height the window's own panes take above the screen, which leaves the board less than the view.
+const double _windowPanes = 300;
+
+/// The last row of the warnings, below every other.
+final _lastWarning = find.byKey(const Key('planning-move-warning-issue STORY_MISMATCH OT2'));
+
+/// Moves StoryOne to Review as a drop on the board does, since a short board shows Review only after a scroll.
+Future<void> _move(WidgetTester tester, PlanningBoards boards) async {
+  unawaited(boards.selected!.move('StoryOne', 'Review'));
+  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+  await settle(tester);
+}
+
+/// Fails unless [key]'s widget lies wholly inside the test view.
+void _expectInView(WidgetTester tester, String key) {
+  final view = Offset.zero & tester.view.physicalSize / tester.view.devicePixelRatio;
+  final rect = tester.getRect(find.byKey(Key(key)));
+  expect(view.intersect(rect), rect, reason: '$key lies inside the view');
+}
+
+/// Shows the three warnings below [above] of the window's panes and [problems] lines above the board, and fails
+/// unless Cancel and then Confirm lie in the view and do what they say.
+Future<void> _confirmAndCancelInView(WidgetTester tester, {required double above, int problems = 0}) async {
+  final (backend, boards) = await _showBoard(tester, source: _ThreeWarnings(), above: above);
+  for (var line = 1; line <= problems; line++) {
+    boards.selected!.workProblems['Story$line'] = 'the planner could not report its work';
+  }
+
+  await _move(tester, boards);
+
+  expect(tester.takeException(), isNull, reason: 'nothing overflows');
+  expect(find.textContaining('Story$problems: the planner'), problems == 0 ? findsNothing : findsOneWidget);
+  expect(_lastWarning, findsOneWidget);
+  final scrollable = find.ancestor(of: _lastWarning, matching: find.byType(Scrollable)).first;
+  final viewport = tester.getRect(scrollable);
+  final first = tester.getRect(find.byKey(const Key('planning-move-warning-item RUNNING_WORK StoryOne')));
+  expect(viewport.intersect(first), first, reason: 'the first warning is in view once the move is asked about');
+  expect(
+    tester.getSize(find.byKey(const Key('planning-board-sideways'))).height,
+    greaterThan(0),
+    reason: 'the board keeps room',
+  );
+  _expectInView(tester, 'planning-move-cancel');
+  _expectInView(tester, 'planning-move-confirm');
+  await tester.tap(find.byKey(const Key('planning-move-cancel')));
+  await settle(tester);
+  expect(find.byKey(const Key('planning-move-warning')), findsNothing, reason: 'Cancel closes the question');
+  expect(backend.moveCalls, isEmpty, reason: 'Cancel sends nothing');
+
+  await _move(tester, boards);
+  expect(tester.takeException(), isNull, reason: 'nothing overflows');
+  _expectInView(tester, 'planning-move-confirm');
+  await tester.tap(find.byKey(const Key('planning-move-confirm')));
+  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+  await settle(tester);
+  expect(backend.moveCalls, hasLength(1), reason: 'Confirm saves the move once');
+  expect(find.byKey(const Key('planning-move-warning')), findsNothing);
+}
+
 void main() {
+  // Harm: a person cannot confirm or cancel a move over running work, since the warning pushes its buttons out of
+  // the window.
+  testWidgets('a move warning with every list shown keeps Confirm and Cancel in a 1280x800 window', (tester) async {
+    await _confirmAndCancelInView(tester, above: _windowPanes);
+  });
+
+  // Harm: on a short board with problem lines above it, a person cannot confirm or cancel a move over running work.
+  testWidgets('a move warning under five problem lines keeps Confirm and Cancel in a short window', (tester) async {
+    await _confirmAndCancelInView(tester, above: 400, problems: 5);
+  });
+
+  // Harm: a person confirms a move over running work without being able to read the warnings the cap holds back.
+  testWidgets('warnings taller than their room scroll, with a scrollbar, to the last one', (tester) async {
+    final (_, boards) = await _showBoard(tester, source: _ThreeWarnings(), above: _windowPanes);
+    await _move(tester, boards);
+
+    final scrollable = find.ancestor(of: _lastWarning, matching: find.byType(Scrollable)).first;
+    final position = tester.state<ScrollableState>(scrollable).position;
+    expect(position.maxScrollExtent, greaterThan(0), reason: 'the warnings are capped below their height');
+    expect(
+      find.ancestor(
+        of: scrollable,
+        matching: find.byWidgetPredicate((w) => w is Scrollbar && w.thumbVisibility == true),
+      ),
+      findsOneWidget,
+      reason: 'a scrollbar shows that more lies below',
+    );
+    await tester.scrollUntilVisible(_lastWarning, 40, scrollable: scrollable);
+    final viewport = tester.getRect(scrollable);
+    final last = tester.getRect(_lastWarning);
+    expect(viewport.intersect(last), last, reason: 'scrolling brings the last warning into view');
+  });
+
+  // Harm: the warnings take the window's primary scroll controller, so the window's own scrolling moves them or fails.
+  testWidgets('the warnings do not take the window\'s primary scroll controller', (tester) async {
+    final primary = ScrollController();
+    addTearDown(primary.dispose);
+    final (_, boards) = await _showBoard(tester, source: _ThreeWarnings(), above: _windowPanes, primary: primary);
+    await _move(tester, boards);
+
+    expect(_lastWarning, findsOneWidget);
+    expect(primary.hasClients, isFalse, reason: "the window's controller drives none of the screen's scrolling");
+  });
+
   // Harm: a drop that carries an issue of another repository along is saved unasked, or Cancel still saves it.
   testWidgets('a drop that carries another repository\'s issue along asks first and Cancel saves nothing', (
     tester,

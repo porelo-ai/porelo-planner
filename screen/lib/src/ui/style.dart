@@ -44,6 +44,12 @@ abstract final class PlanningStyle {
   /// The width of the Start work dialog.
   static const double dialog = 620;
 
+  /// The room a move's Confirm and Cancel take below the warnings.
+  static const double moveButtons = 56;
+
+  /// The least height the board keeps below what stands above it.
+  static const double boardMinimum = 120;
+
   /// The corner of a state.
   static const double radiusSmall = 8;
 
