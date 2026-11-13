@@ -145,9 +145,8 @@ class WorkEndsTest {
 
     @Test
     void blankLinesBetweenTheHeaderAndTheFirstRowAreSkipped() {
-        // Harm: a reader's blocking findings thrown away whole because it wrote the block as
-        // Markdown
-        // does, with a blank line under its header.
+        // Harm: a reader's blocking findings thrown away whole for the blank line Markdown writes
+        // under a heading.
         final Read read =
                 (Read)
                         WorkEnds.judge(
@@ -208,6 +207,7 @@ class WorkEndsTest {
                         "Findings:\n1. note | - | - | a\nFindings:\n",
                         "Findings:\n2. note | - | - | skips one",
                         "Findings:\n1. note | - | - | a\n\n2. note | - | - | gap",
+                        "Findings: (none)\n\n1. blocking | - | - | none above a gap",
                         "Findings:\n1. minor | - | - | unknown severity",
                         "Findings:\n1. note | - | 3 | a line without a file",
                         "Findings:\n1. note | a.txt | 0 | line zero",
