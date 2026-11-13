@@ -15,8 +15,7 @@
 ```
 
 **Size:** L - the store interface, the Git store's reading and its save (a clean reading's file deleted with the move),
-the order building in `core` and the offer's record in `app`; and a value Porelo or the window must report with
-`STARTED`, agreed across repositories.
+the order building in `core` and the offer's record in `app`.
 
 **Estimate:** 113 min, the measured median of L.
 
@@ -26,7 +25,7 @@ text fixed in the planner. The Git store gives a reader: "write your reading to
 `<directory>/<ISSUE>-reading-<round>.md`, with a `Findings:` block in today's rows, and a `Findings:` line with no
 row when the reading is clean", and a rework:
 "delete the reading's file in the same commit as your fix". `<directory>` is the project's `readings.directory` in
-`project.yml`, overridden by a repository's own `readings.directory` in its `porelo.yml`, by default `readings`: a path
+`project.yml`, by default `readings`: a path
 relative to the repository's root, without `..` and without a leading `/`; a malformed one is refused as a fault of the
 project, never used.
 
@@ -35,9 +34,8 @@ project, never used.
 - A clean reading's file is not kept: the planner deletes it when the issue moves on from the reading, in the commit
   that saves that move.
 - The directory is Porelo's project-file key `readings: {directory}`, default `readings`; the planner reads that same
-  key and adds none of its own. A repository's `porelo.yml` may override it, but Porelo takes the override only after
-  its own signature check (or, in the project `default`, the machine's approval), so the files alone do not say which
-  directory a task got. The task gets the merged value as `PORELO_READINGS_DIRECTORY`, and that value decides.
+  key and adds none of its own. There is no override per repository: the planner reads `readings.directory` from
+  `project.yml` only and tells each task its path in the order. A repository's `porelo.yml` is not read for it.
 
 ## Plan
 
@@ -59,9 +57,6 @@ What stands today, read in the code:
   `stories/Project.read` ignores keys it does not know. Nothing reads `porelo.yml`. `StoreReader.read`
   (`StoreReader.java:64`) reads each repository's part at its commit; `GitStore.board` (`GitStore.java:1410`) joins the
   parts into the `Board`, whose `faults` show what could not be read.
-- Nothing tells the planner the directory a task was given: a task's `STARTED` and `ENDED` carry offer, container,
-  machine and Porelo's end record (`planner.yaml`, `TaskEventRequest` and `TaskEnded`), and Porelo's task records
-  (`PoreloTaskRecords`) carry no environment.
 - A move is saved by `GitStore.commitLocally` (`GitStore.java:563`): `SaveFiles.write` copies the commit's planning
   files into the save's scratch directory, the edits change them there, `SaveFiles.changed` lists what differs from the
   commit, a file in `before` that is gone counting as deleted (`SaveFiles.java:91`), and `GitRemote.commit` builds the
@@ -74,12 +69,10 @@ The steps:
    the store's template `<directory>/{issue}-reading-{round}.md`, the two texts the instructions above with `{path}`.
    `Writes` gains `cleared`, issue to path: the reading files a save deletes.
 2. **store/git, the directory.** `StoreReader.read` reads the project file's `readings.directory` in the own
-   repository's part and each repository's `porelo.yml`. The value passes `RepoPath.checked` (`RepoPath.java:22`:
+   repository's part. The value passes `RepoPath.checked` (`RepoPath.java:22`:
    `[A-Za-z0-9._-]` segments, no `..`, no leading `/`), and each segment is refused when it is a Windows device name
    (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`, `LPT0`-`LPT9`, in any case, with or without an extension) or ends in a
-   `.`, so the path names one file on every system. Until a task's own directory is reported (see the agreement below),
-   a repository whose `porelo.yml` names a directory other than the project's gets no `Readings` and a board fault:
-   its task would write where the planner does not read.
+   `.`, so the path names one file on every system. Every repository of the project gets the same directory.
 3. **core, the order.** `NextStep.task` takes the round, fills the path, and adds the reading text to a `READER`'s
    order after `FINDINGS` and the rework text to a rework's. A repository with no `Readings` refuses the task, so its
    issue needs the person (`NEXT_STEP_UNAVAILABLE`, `NextStep.java:372`, `WorkRun.java:1269`).
@@ -105,8 +98,7 @@ Tests, red first, by level:
   saved; a clean reading's move carries exactly that path in `cleared`. Harm: a reading judged or deleted at a place
   the task never wrote.
 - Unit, `StoreReaderTest` over its fake remote: the default, the project's value, and `../x`, `/x`, `a b`, `CON`,
-  `nul.md`, `x.` and a number refused as faults; a `porelo.yml` naming another directory gives no `Readings`. Harm: a
-  reader told to write outside its repository, or where the planner does not read.
+  `nul.md`, `x.` and a number refused as faults. Harm: a reader told to write outside its repository.
 - Unit, `GitStoreSaveTest`: a move with a cleared path removes that file and nothing else, in the move's commit, with
   `[skip ci]`; a cleared path of another issue, another repository or another shape is refused; a path the commit does
   not hold changes nothing. Harm: the planner deleting a file it does not own.
@@ -116,14 +108,6 @@ Tests, red first, by level:
 - The tests above, each seen red first; the full build and the documents' checks green.
 - A reader's and a rework's order name the reading round's file in the project's directory; a clean reading's move
   deletes that file in its own commit.
-
-## Agreement
-
-- Agreed with Porelo and the window: Porelo's task row carries `readingsDirectory`, the merged
-  `PORELO_READINGS_DIRECTORY` the task was given at its start, empty for a task started before it existed; the window
-  forwards it with `STARTED` as an optional field of `TaskEventRequest` in `planner.yaml`, and sends nothing where the
-  row has none. The planner then saves that value with the offer and stops refusing a repository whose `porelo.yml`
-  names another directory. Until Porelo reports it, the planner's part works as above without it.
 
 ## To be checked
 
