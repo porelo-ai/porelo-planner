@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL123",
   "title": "A Refused Start Reads As An Error",
-  "state": "Backlog",
+  "state": "Review",
   "size": "XS",
   "priority": "Medium",
   "rank": 59,

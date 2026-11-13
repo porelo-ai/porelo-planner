@@ -449,8 +449,7 @@ class _BoardViewState extends State<_BoardView> {
                         ],
                       ),
                       if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
-                      for (final problem in widget.providerProblems)
-                        Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+                      for (final problem in widget.providerProblems) _failure(problem, theme),
                       if (board.catchingUp)
                         const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
                       if (!board.live && (board.snapshot != null || board.problem != null))
@@ -459,12 +458,9 @@ class _BoardViewState extends State<_BoardView> {
                           key: Key('planning-not-live'),
                         ),
                       if (board.actionProblem case final problem?)
-                        Text(
-                          problem,
-                          key: const Key('planning-action-error'),
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
-                      for (final entry in board.workProblems.entries) Text(_line('${entry.key}: ${entry.value}')),
+                        _failure(problem, theme, key: const Key('planning-action-error')),
+                      for (final entry in board.workProblems.entries)
+                        _failure(_line('${entry.key}: ${entry.value}'), theme),
                       for (final story in board.workUnsupported)
                         Text(_line('$story: the planner does not offer story work status.')),
                       if (board.problem case final problem?)
@@ -482,11 +478,7 @@ class _BoardViewState extends State<_BoardView> {
                           label: const Text('Retry planning'),
                         ),
                       if (board.moveProblem case final problem?)
-                        Text(
-                          problem,
-                          key: const Key('planning-move-error'),
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
+                        _failure(problem, theme, key: const Key('planning-move-error')),
                       if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
                       if (board.snapshot != null || board.problem != null)
                         TextButton.icon(
@@ -553,12 +545,31 @@ class _BoardViewState extends State<_BoardView> {
     },
   );
 
+  /// A failure above the board reads as one, in the theme's error colour behind an error icon.
+  Widget _failure(String words, ThemeData theme, {Key? key}) {
+    final colour = theme.colorScheme.error;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.error_outline, size: PlanningStyle.mark, color: colour),
+        const SizedBox(width: Space.small),
+        Flexible(
+          child: Text(
+            words,
+            key: key,
+            style: TextStyle(color: colour),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Several faults of the stories and issues take one line until the person opens them, so they never push the board
   /// out of sight; any other problem is shown whole.
   Widget _problem(String problem, ThemeData theme) {
     final faults = board.snapshot?.faults ?? const <String>[];
     final style = TextStyle(color: theme.colorScheme.error);
-    final full = Text(problem, key: const Key('planning-error'), style: style);
+    final full = _failure(problem, theme, key: const Key('planning-error'));
     if (faults.length < 2 || problem != planningShown(faults.join('\n'))) return full;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
