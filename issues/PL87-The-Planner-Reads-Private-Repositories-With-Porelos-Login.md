@@ -59,6 +59,9 @@ into its failures and logs.
     standard error or anywhere else, and fails with a message when its vault is shut, never prompting. The planner
     reports such a failure as `CredentialRefused`, as today. The Git configuration key alone authorizes nothing.
   - Without `PORELO_EXECUTABLE`, nothing changes: the person's own Git configuration is the only helper.
+- **Decided.** With `PORELO_EXECUTABLE`, only Porelo's login applies to the project's https centrals; the person's
+  own helpers no longer do for those addresses. A central that redirects is refused until `project.yml` names its new
+  address.
 - **The executable, checked before any helper is built.** `PORELO_EXECUTABLE` must be absolute, equal to its real
   path (no linked part, links and junctions refused rather than followed), a regular file the account may execute,
   owned by the account, root, SYSTEM, Administrators or TrustedInstaller, and writable by nobody else. Every directory
