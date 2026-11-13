@@ -575,7 +575,10 @@ class _BoardViewState extends State<_BoardView> {
 
   Widget _state(BuildContext context, PlanState state, {required bool phaseFolded}) {
     final cards = board.cards(state.name);
-    final folded = phaseFolded || board.preferences.foldedStates.contains(state.name);
+    // Only the column's chevron narrows its boxes to tiles; a box's own chevron folds it to its heading.
+    final folded = !phaseFolded && board.preferences.foldedStates.contains(state.name);
+    final raised = folded ? cards.where(_needsYou).length : 0;
+    final moved = folded ? cards.where((story) => board.pending.containsKey(story.id)).toList() : const <PlanStory>[];
     final theme = Theme.of(context);
     return DragTarget<String>(
       key: Key('planning-drop ${state.name}'),
@@ -613,6 +616,19 @@ class _BoardViewState extends State<_BoardView> {
                     child: Icon(Icons.schedule, size: PlanningStyle.mark),
                   ),
                 Expanded(child: Text(_line(state.name), style: theme.textTheme.labelMedium)),
+                if (raised > 0)
+                  Tooltip(
+                    message: '$raised need you',
+                    child: Row(
+                      key: Key('planning-state-raised ${state.name}'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber, size: PlanningStyle.mark),
+                        Text('$raised'),
+                        const SizedBox(width: Space.tight),
+                      ],
+                    ),
+                  ),
                 Text('${cards.length}'),
                 if (!phaseFolded)
                   IconButton(
@@ -627,7 +643,14 @@ class _BoardViewState extends State<_BoardView> {
               const Text('State kind not reported')
             else if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind))
               Text(_line(state.kind)),
-            if (folded)
+            if (folded) ...[
+              // A folded box hides its cards, never a move a person staged or the planner refused.
+              if (moved.isNotEmpty)
+                Text('${moved.length} moved, not saved yet', key: Key('planning-state-pending ${state.name}')),
+              for (final story in moved)
+                if (board.pending[story.id]?.problem case final problem?)
+                  Text(_line('${story.id}: $problem'), key: Key('planning-state-refused ${story.id}')),
+            ] else if (phaseFolded)
               Wrap(
                 spacing: Space.tight,
                 runSpacing: Space.tight,
@@ -659,6 +682,14 @@ class _BoardViewState extends State<_BoardView> {
                                     Expanded(
                                       child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade),
                                     ),
+                                    ?_size(context, story.size, key: 'planning-size ${story.id}'),
+                                    if (_needsYou(story))
+                                      Icon(
+                                        Icons.warning_amber,
+                                        key: Key('planning-needs-you ${story.id}'),
+                                        size: PlanningStyle.mark,
+                                        semanticLabel: 'needs you',
+                                      ),
                                     _menu(story, dense: true),
                                   ],
                                 ),
@@ -739,6 +770,29 @@ class _BoardViewState extends State<_BoardView> {
     child: child,
   );
 
+  /// A size badge as the contract gives sizes, `XS` to `XL`; anything else a server sends is shown as not understood,
+  /// never as its own text, and no size shows no badge.
+  Widget? _size(BuildContext context, String size, {required String key}) {
+    if (size.isEmpty || size == '-') return null;
+    final known = const {'XS', 'S', 'M', 'L', 'XL'}.contains(size);
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label: known ? 'Size $size' : 'Size not understood',
+      child: Container(
+        key: Key(key),
+        padding: const EdgeInsets.symmetric(horizontal: Space.tight),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(PlanningStyle.radiusSmall),
+        ),
+        child: Text(
+          known ? size : '?',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ),
+    );
+  }
+
   Widget _priority(BuildContext context, String priority, {bool mark = false}) {
     final colors = PlanningStyle.priority(priority, Theme.of(context).colorScheme);
     final label = mark
@@ -802,6 +856,9 @@ class _BoardViewState extends State<_BoardView> {
         ? TextButton(key: key, onPressed: widget.onNeedsYou, child: lines)
         : KeyedSubtree(key: key, child: lines);
   }
+
+  /// Whether the story waits on the person for any reason, a stopped reading included; what a fold leaves showing.
+  bool _needsYou(PlanStory story) => _raised(story) || story.issues.any((issue) => issue.readingStopped == true);
 
   /// Whether an issue of the story was raised outside a stopped reading, such as by a task that failed.
   bool _raised(PlanStory story) {
@@ -938,6 +995,7 @@ class _BoardViewState extends State<_BoardView> {
       story,
       Theme.of(context),
       board.preferences.expandedStories.contains(story.id),
+      board.preferences.foldedStories.contains(story.id),
       _foundIn(story).join(' '),
       _work(story),
       board.pending[story.id],
@@ -974,6 +1032,7 @@ class _BoardViewState extends State<_BoardView> {
     // A found issue opens its list while the search stands, without changing the person's own choice.
     final open = board.preferences.expandedStories.contains(story.id) || found.isNotEmpty;
     final work = _work(story);
+    final cardFolded = board.preferences.foldedStories.contains(story.id);
     return _drag(
       story,
       Card(
@@ -993,94 +1052,105 @@ class _BoardViewState extends State<_BoardView> {
                     Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
                     ?planningGivenMark(story),
+                    ?_size(context, story.size, key: 'planning-size ${story.id}'),
                     _menu(story),
+                    IconButton(
+                      key: Key('planning-fold-story ${story.id}'),
+                      tooltip: '${cardFolded ? 'Unfold' : 'Fold'} ${_line(story.id)}',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: story.id.isEmpty ? null : () => board.foldStory(story.id),
+                      icon: Icon(cardFolded ? Icons.unfold_more : Icons.unfold_less, size: PlanningStyle.rowIcon),
+                    ),
                   ],
                 ),
-                const SizedBox(height: Space.small),
-                Text(_line(story.title)),
+                if (!cardFolded) ...[const SizedBox(height: Space.small), Text(_line(story.title))],
                 if (board.pending[story.id] case final move? when move.problem == null) const Text('moved'),
                 if (board.pending[story.id]?.problem case final problem?) Text(problem),
                 if (board.pendingPriorities[story.id] case final priority?)
                   Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),
-                if (work != null && work.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: Space.small),
-                    child: Text(work, style: theme.textTheme.bodySmall),
-                  ),
-                if (story.issues.any(
-                  (issue) => issue.state == 'Reading' || issue.state == 'Reworking' || issue.readingStopped == true,
-                ))
-                  _reading(story),
-                if (_raised(story)) _warning(story),
-                if (!story.issuesReported)
-                  const Text('Issues not reported')
-                else
-                  TextButton(
-                    key: Key('planning-expand ${story.id}'),
-                    onPressed: story.issues.isEmpty ? null : () => board.expand(story.id),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                    child: Row(
-                      key: Key('planning-issues ${story.id}'),
-                      children: [
-                        Icon(open ? Icons.expand_more : Icons.chevron_right, size: PlanningStyle.mark),
-                        Expanded(
-                          child: Text(
-                            story.issues.isEmpty
-                                ? 'no issues yet'
-                                : '${story.issues.length} ${story.issues.length == 1 ? 'issue' : 'issues'}',
-                          ),
-                        ),
-                        if (story.issues.isNotEmpty && story.completedIssues != null) ...[
-                          SizedBox(
-                            width: PlanningStyle.progress,
-                            child: LinearProgressIndicator(
-                              value: story.completedIssues! / story.issues.length,
-                              semanticsLabel: 'Issues in Review or Finished',
-                            ),
-                          ),
-                          const SizedBox(width: Space.tight),
-                          Text('${story.completedIssues}/${story.issues.length}'),
-                        ],
-                      ],
-                    ),
-                  ),
-                if (story.issuesReported && story.completedIssues == null) const Text('Issue progress not reported'),
-                if (open)
-                  for (final issue in story.issues)
+                if (cardFolded) ...[
+                  if (_needsYou(story)) _warning(story),
+                ] else ...[
+                  if (work != null && work.isNotEmpty)
                     Padding(
-                      key: Key('planning-issue ${story.id} ${issue.id}'),
                       padding: const EdgeInsets.only(top: Space.small),
-                      child: _markFound(
-                        context,
-                        found.contains(issue.id) ? issue.id : null,
-                        Column(
-                          key: Key('planning-issue-row ${issue.id}'),
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextButton(
-                              key: Key('planning-issue ${issue.id}'),
-                              onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
-                              child: Text(_line('${issue.id} · ${issue.repository}')),
+                      child: Text(work, style: theme.textTheme.bodySmall),
+                    ),
+                  if (story.issues.any(
+                    (issue) => issue.state == 'Reading' || issue.state == 'Reworking' || issue.readingStopped == true,
+                  ))
+                    _reading(story),
+                  if (_raised(story)) _warning(story),
+                  if (!story.issuesReported)
+                    const Text('Issues not reported')
+                  else
+                    TextButton(
+                      key: Key('planning-expand ${story.id}'),
+                      onPressed: story.issues.isEmpty ? null : () => board.expand(story.id),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      child: Row(
+                        key: Key('planning-issues ${story.id}'),
+                        children: [
+                          Icon(open ? Icons.expand_more : Icons.chevron_right, size: PlanningStyle.mark),
+                          Expanded(
+                            child: Text(
+                              story.issues.isEmpty
+                                  ? 'no issues yet'
+                                  : '${story.issues.length} ${story.issues.length == 1 ? 'issue' : 'issues'}',
                             ),
-                            if (issue.title.isNotEmpty) Text(_line(issue.title)),
-                            Wrap(
-                              spacing: Space.small,
-                              children: [
-                                if (issue.state.isNotEmpty) Text(_line(issue.state)),
-                                if (issue.size.isNotEmpty) Text(_line(issue.size)),
-                                if (issue.worker case final worker?) Text(planningWorker(worker)),
-                                if (issue.noRunHere)
-                                  Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
-                              ],
+                          ),
+                          if (story.issues.isNotEmpty && story.completedIssues != null) ...[
+                            SizedBox(
+                              width: PlanningStyle.progress,
+                              child: LinearProgressIndicator(
+                                value: story.completedIssues! / story.issues.length,
+                                semanticsLabel: 'Issues in Review or Finished',
+                              ),
                             ),
-                            if (!issue.blockedByReported)
-                              const Text('Blockers not reported')
-                            else if (issue.blockedBy.isNotEmpty)
-                              Text(_line('Blocked by ${issue.blockedBy.join(', ')}')),
+                            const SizedBox(width: Space.tight),
+                            Text('${story.completedIssues}/${story.issues.length}'),
                           ],
-                        ),
+                        ],
                       ),
                     ),
+                  if (story.issuesReported && story.completedIssues == null) const Text('Issue progress not reported'),
+                  if (open)
+                    for (final issue in story.issues)
+                      Padding(
+                        key: Key('planning-issue ${story.id} ${issue.id}'),
+                        padding: const EdgeInsets.only(top: Space.small),
+                        child: _markFound(
+                          context,
+                          found.contains(issue.id) ? issue.id : null,
+                          Column(
+                            key: Key('planning-issue-row ${issue.id}'),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextButton(
+                                key: Key('planning-issue ${issue.id}'),
+                                onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
+                                child: Text(_line('${issue.id} · ${issue.repository}')),
+                              ),
+                              if (issue.title.isNotEmpty) Text(_line(issue.title)),
+                              Wrap(
+                                spacing: Space.small,
+                                children: [
+                                  if (issue.state.isNotEmpty) Text(_line(issue.state)),
+                                  ?_size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                                  if (issue.worker case final worker?) Text(planningWorker(worker)),
+                                  if (issue.noRunHere)
+                                    Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
+                                ],
+                              ),
+                              if (!issue.blockedByReported)
+                                const Text('Blockers not reported')
+                              else if (issue.blockedBy.isNotEmpty)
+                                Text(_line('Blocked by ${issue.blockedBy.join(', ')}')),
+                            ],
+                          ),
+                        ),
+                      ),
+                ],
               ],
             ),
           ),

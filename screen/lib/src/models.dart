@@ -331,6 +331,7 @@ class PlanStory {
           ? null
           : source.misfits,
       priority = source.priority,
+      size = source.size,
       description = source.description,
       issues = [for (final issue in source.issues) PlanIssue.withState(issue, moves[issue.id] ?? issue.state)],
       issuesReported = source.issuesReported,
@@ -346,6 +347,7 @@ class PlanStory {
       stateGiven = map['stateGiven'] == true,
       misfits = map['misfits'] is List ? _planStrings(map['misfits']) : null,
       priority = map['priority'] is String ? map['priority'] as String : null,
+      size = _planText(map, 'size'),
       description = _planText(map, 'description'),
       issues = _planList(map['issues'], PlanIssue.from),
       issuesReported = _planMapsReported(map['issues']),
@@ -370,6 +372,9 @@ class PlanStory {
 
   /// Its reported priority, empty when unsaid.
   final String? priority;
+
+  /// Its reported size, empty when unsaid or when it has none.
+  final String size;
 
   /// Full story text from GetStory.
   final String description;

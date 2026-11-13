@@ -52,11 +52,14 @@ class PlanningPreferences {
   /// Phase names folded to marks and counts, as in the design.
   final Set<String> foldedPhases = {'Ideas', 'Done'};
 
-  /// State names folded to marks and counts.
-  final Set<String> foldedStates = {'In analysis'};
+  /// State names folded to their heading; every box starts open.
+  final Set<String> foldedStates = {};
 
   /// Stories whose issue lists are unfolded.
   final Set<String> expandedStories = {};
+
+  /// Stories folded to their number, priority and size.
+  final Set<String> foldedStories = {};
 }
 
 /// An unsaved destination, kept separately from the daemon's story state.
@@ -797,6 +800,8 @@ class PlanningBoard extends ChangeNotifier {
       return;
     }
     final sameProject = identical(backend, next) && project == name;
+    // Story ids repeat across projects, so a fold made in one must not fold a card of another.
+    if (project != name) preferences.foldedStories.clear();
     final generation = ++_generation;
     _stopFollowingReconnect();
     catchingUp = false;
@@ -974,6 +979,11 @@ class PlanningBoard extends ChangeNotifier {
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
     if (order <= _snapshotOrder) return;
     snapshot = reply;
+    // A story gone from the board loses its fold, so one saved anew under its id starts open.
+    if (reply.storiesReported) {
+      final shown = {for (final story in reply.stories) story.id};
+      preferences.foldedStories.removeWhere((id) => !shown.contains(id));
+    }
     if (reply.repositoriesReported) _repositories = List.unmodifiable(reply.repositories);
     for (final story in reply.stories) {
       runOf(story.id).observe(story.work);
@@ -1336,6 +1346,12 @@ class PlanningBoard extends ChangeNotifier {
   /// Toggles one state.
   void foldState(String name) {
     _toggle(preferences.foldedStates, name);
+  }
+
+  /// Folds or unfolds one story's card; an id the board does not show is ignored.
+  void foldStory(String id) {
+    if (!stories.any((story) => story.id == id)) return;
+    _toggle(preferences.foldedStories, id);
   }
 
   /// Toggles one story's issue list.

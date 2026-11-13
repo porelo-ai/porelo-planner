@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL48",
   "title": "Sizes, Folded Boxes And Folded Cards On The Board",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 31,
@@ -50,6 +50,24 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
   `expandedStories` and `expand`. The card's top row gets a fold button (`planning-fold-story <id>`); folded, the card
   shows number, priority, size, menu and a pending move or its refusal, and hides title, work line, reading line,
   issue list and progress bar. The fold flag joins the inputs of `_card`'s cache, or a folded card is served stale.
+- **What a person or a server could do that the above does not forbid, and what forbids it.**
+  - A fold must not hide that a story needs the person: a folded card keeps its "needs you" mark, and a folded box's
+    heading shows a "needs you" mark with the number of its cards that raise one (`planning-state-raised <state>`).
+    What a task is doing stays on the open card; a folded one shows only that it needs the person.
+  - A size is shown only as the contract gives it, `XS` to `XL`: any other text from a server shows a `?` badge read
+    as "Size not understood", never the text itself, and empty or `-` shows none.
+  - A fold names only a story the board shows: `foldStory` ignores an id the board does not hold, and an accepted
+    board drops the folds of stories it no longer holds, so a story saved anew under an old id starts open and the
+    set stays bounded by the board.
+  - Declined: folds and the other choices stay per project, kept while the project's board is gone, as
+    `expandedStories` and `foldedStates` already are, so a person's choices survive a reconnect; their number is
+    bounded by the projects a person opened. A board moved to another project by `changeProject` drops its story
+    folds, since story ids repeat across projects.
+- **The code reading's findings.** A stopped reading was left out of what a fold shows: the folded card, the folded
+  box's count and the narrowed tile now mark every need of the person, a stopped reading included. A folded box hid a
+  staged move and its refusal: its heading now says how many of its stories were moved and not saved, and each
+  refusal's words. Declined: a size in another case or with spaces (`m`, `M `) shows as not understood, since the
+  contract gives `XS` to `XL` exactly.
 - **Not here.** The story's own page (`planning_story_view.dart`) keeps its priority chip without a size; the story's
   test names the board's cards and tiles only.
 - Tests, all widget tests in `screen/test` over `FakePlanningSource` (`screen/test/support/fake_planning.dart`),
@@ -70,9 +88,6 @@ board's `Story` its `size` in `planner.yaml`; until then a story has no size to 
 - Every story card, issue row and compact tile with a size shows it as a badge; each new test has been seen red.
 - The screen module's Maven build passes locally: `dart format`, `dart analyze --fatal-infos` and `flutter test`.
 
-## To be checked
-
-- Whether a size badge fits the narrowed column's tile (`PlanningStyle.foldedColumn`, 136) beside the mark of
-  `PlanningStyle.foldedMark` width, the number and the dense menu, measured with the longest number of the mock board.
-- Which existing tests in `screen/test` and which of the window's planning tests over the mock board expect
-  `In analysis` folded by default; the window's ones are asked of the window's agent before the change.
+A size badge fits the narrowed column's tile beside the mark, a number as long as the mock board's longest and the dense
+menu: an `XL` badge there lays out without overflow. No test in `screen/test` and none of the window's planning tests expects `In analysis` folded by default; the
+window's tests use the keys `planning-fold-state <state>` and `planning-fold-phase <phase>`, which stay.

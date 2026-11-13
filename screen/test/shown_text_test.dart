@@ -121,8 +121,8 @@ void main() {
     });
     final board = boards.selected!;
     board.preferences.expandedStories.add('S1$_bad');
-    // A folded state shows its stories as marks with a tooltip.
-    board.preferences.foldedStates.add('Review$_bad');
+    // A narrowed column shows its stories as marks with a tooltip.
+    board.preferences.foldedPhases.add('Build$_bad');
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(body: planningView(boards: boards)),
