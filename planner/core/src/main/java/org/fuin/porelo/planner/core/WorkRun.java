@@ -365,7 +365,12 @@ public final class WorkRun {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
                     allowed(board, snapshot, story, to, true);
-                    return WorkProposal.propose(board, story, to, running(snapshot), issues);
+                    return WorkProposal.propose(
+                            board,
+                            story,
+                            to,
+                            running(snapshot, raised(snapshot, story, null)),
+                            issues);
                 });
     }
 
@@ -411,6 +416,12 @@ public final class WorkRun {
                     standing(storyId, earlier, start);
                     passedOver(storyId, earlier, passOver);
                     unpushedLeft(board, storyId, to, earlier, passOver);
+                    final WorkProposal.RunningWork again =
+                            running(
+                                    snapshot,
+                                    passOver == null
+                                            ? Set.of()
+                                            : raised(snapshot, storyId, passOver));
                     allowed(
                             board,
                             snapshot,
@@ -427,11 +438,9 @@ public final class WorkRun {
                                 "Work an earlier end offered waits to start.");
                     }
                     replaced(storyId, earlier, start.replaces());
-                    final WorkOrder order =
-                            WorkOrder.accept(board, storyId, to, decision, running(snapshot));
+                    final WorkOrder order = WorkOrder.accept(board, storyId, to, decision, again);
                     final WorkProposal proposal =
-                            WorkProposal.propose(
-                                    board, storyId, to, running(snapshot), decision.issues());
+                            WorkProposal.propose(board, storyId, to, again, decision.issues());
                     final WorkRule rule =
                             WorkProposal.rule(
                                     board,
@@ -1024,7 +1033,7 @@ public final class WorkRun {
 
     /** Returns recorded active task names, never names inferred from board states. */
     public List<String> active(final String story) {
-        return record.locked(session -> running(read(session)).tasks(story));
+        return record.locked(session -> running(read(session), Set.of()).tasks(story));
     }
 
     /** Records cancellation without clearing activity until the window reports a terminal event. */
@@ -2097,8 +2106,41 @@ public final class WorkRun {
         return new Snapshot(snapshot.generation() + 1, runs, snapshot.ideas());
     }
 
-    private static WorkProposal.RunningWork running(final Snapshot snapshot) {
+    /**
+     * The issues the story's run raised with the reason a row's Start passes over: {@code
+     * passOver}'s reason, or for a proposal, which writes nothing, any reason a Start may pass
+     * over.
+     */
+    private static Set<String> raised(
+            final Snapshot snapshot, final String story, final @Nullable PassOver passOver) {
+        final Run run = snapshot.runs().get(story);
+        if (run == null) {
+            return Set.of();
+        }
+        final Set<String> raised = new HashSet<>();
+        run.issues()
+                .forEach(
+                        (id, progress) -> {
+                            if (progress.needsYou()
+                                    && !progress.rounds().stopped()
+                                    && (passOver == null
+                                            ? PASSABLE.contains(progress.reason())
+                                            : progress.reason().equals(passOver.reason()))) {
+                                raised.add(id);
+                            }
+                        });
+        return Set.copyOf(raised);
+    }
+
+    private static WorkProposal.RunningWork running(
+            final Snapshot snapshot, final Set<String> again) {
         return new WorkProposal.RunningWork() {
+            /** Supplies the issues a raised row's Start works again where they stand. */
+            @Override
+            public Set<String> again(final String story) {
+                return again;
+            }
+
             /** Supplies actual task activity rather than workflow-state guesses. */
             @Override
             public List<String> tasks(final String story) {
@@ -2249,8 +2291,9 @@ public final class WorkRun {
     }
 
     /**
-     * Refuses a Start passing over a failed task that left commits unpushed, which only that task
-     * can push, so no new builder starts beside work that would be lost.
+     * Refuses a Start passing over any reason while an ended task of the run reports commits
+     * unpushed for an issue the run raised, which only that task can push, so no new builder starts
+     * beside work that would be lost; a stop that renamed a failure does not hide them.
      */
     private static void unpushedLeft(
             final Board board,
@@ -2258,11 +2301,11 @@ public final class WorkRun {
             final String to,
             final @Nullable Run run,
             final @Nullable PassOver passOver) {
-        if (run == null || passOver == null || !passOver.reason().equals("FAILED")) {
+        if (run == null || passOver == null) {
             return;
         }
         for (final Map.Entry<String, NextStep.Progress> raised : run.issues().entrySet()) {
-            if (!raised.getValue().needsYou() || !raised.getValue().reason().equals("FAILED")) {
+            if (!raised.getValue().needsYou()) {
                 continue;
             }
             Ended ended = null;
@@ -2275,7 +2318,7 @@ public final class WorkRun {
                 throw WorkRefusal.notAllowed(
                         WorkProposal.story(board, story).state(),
                         to,
-                        "The failed task left commits unpushed, which only it can push.");
+                        "An ended task left commits unpushed, which only it can push.");
             }
         }
     }

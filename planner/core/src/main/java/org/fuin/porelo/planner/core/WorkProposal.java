@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -111,6 +112,14 @@ public record WorkProposal(
         default boolean coordinatorActive() {
             return false;
         }
+
+        /**
+         * Answers the story's issues a Start may work again in the working state they stand in:
+         * those its run raised with the reason a row's Start passes over.
+         */
+        default Set<String> again(final String story) {
+            return Set.of();
+        }
     }
 
     /** Proposes work without inventing running records. */
@@ -148,7 +157,7 @@ public record WorkProposal(
         final List<Issue> issues =
                 picked == null
                         ? leastAdvanced(board, rule, agents(open))
-                        : named(story, to, rule, open, picked);
+                        : named(story, to, rule, open, picked, running.again(id));
         final List<String> manual =
                 picked == null
                         ? open.stream()
@@ -296,15 +305,16 @@ public record WorkProposal(
 
     /**
      * The issues a person named for the work, each once, each an open issue of the story an agent
-     * works, standing where the rule takes work from or in the working state itself; any other list
-     * is refused whole.
+     * works, standing where the rule takes work from, or in the working state itself where {@code
+     * again} holds it; any other list is refused whole.
      */
     private static List<Issue> named(
             final Story story,
             final String to,
             final WorkRule rule,
             final List<Issue> open,
-            final List<String> chosen) {
+            final List<String> chosen,
+            final Set<String> again) {
         if (chosen.isEmpty()) {
             throw WorkRefusal.notAllowed(story.state(), to, "Name at least one issue.");
         }
@@ -329,8 +339,9 @@ public record WorkProposal(
                         to,
                         "A person works " + id + ", so no agent's task starts on it.");
             }
-            // An issue named where it stands is worked there again, as a raised row's Start does.
-            if (!rule.from().contains(issue.state()) && !issue.state().equals(to)) {
+            // Only a raised row's Start works its issue again where it stands.
+            if (!rule.from().contains(issue.state())
+                    && !(again.contains(id) && issue.state().equals(to))) {
                 throw WorkRefusal.notAllowed(
                         issue.state(), to, "The rule does not allow work from this state.");
             }

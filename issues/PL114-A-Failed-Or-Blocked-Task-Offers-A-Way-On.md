@@ -36,14 +36,19 @@ has no way on but a move by hand.
   reason, refused with `RunChanged` otherwise. A task's end puts its reason on every issue it covered, so a Start over
   one of them starts the run again for all of them; the screen offers it only where every raised row holds the same
   reason, as today. `WorkRun.PASSABLE` and the screen's `PlanningPassOver.reasons` change together and keep `BLOCKED`
-  out. A `FAILED` builder's row offers Start again, Move on and Put away; Start again is unavailable, saying why, while
-  the ended task reports unpushed commits, which only that task can push, so a new builder never starts beside work
-  that would be lost; the planner refuses such a Start too, with `WorkNotAllowed`. A `BLOCKED` builder's row offers
+  out. A `FAILED` builder's row offers Start again, Move on and Put away. Any row's Start again is unavailable, saying
+  why, while the last ended task of an issue the run raised reports unpushed commits, or does not say how many, since
+  only that task can push them and a Stop renames a failure STOPPED; a new builder never starts beside work that would
+  be lost. The planner refuses such a Start over any reason too, with `WorkNotAllowed`. Move on from such a row says
+  that the task's commits stay unpushed. A `BLOCKED` builder's row offers
   Move on and Put away but no Start: a blocked task said it cannot go on unless something changes. Stop stays on both
   rows, as on every row of an ended run with reasons.
 - **Again where it stands.** A failed builder's issue stands in the working state the row's Start leads to, and a
   rule's `from` need not name that state, so a Start naming the issue was refused "The rule does not allow work from
-  this state". An issue a Start names standing in the target state itself is worked there again (`ChosenIssues`).
+  this state". An issue a Start names standing in the target state itself is worked there again only where the run
+  raised it with the reason the Start passes over, or, for a proposal, which writes nothing, with any reason a Start
+  may pass over (`ChosenIssues`); a Start without a pass-over, or naming an issue the run did not raise, is refused by
+  the rule as before.
 - **A reader's row.** A reader that ends `FAILED` or `BLOCKED` stops its reading as one whose findings could not be
   read: no round counted, no findings kept, the reason `FAILED` or `BLOCKED`. Its row then offers Read again and Review
   anyway, and no Rework, through `chooseReading` as today, so Start never starts a builder for an issue standing in a

@@ -213,6 +213,22 @@ void main() {
     expect(button(tester, 'story-work-move-on AA1').onPressed, isNotNull, reason: 'the row still moves on');
   });
 
+  // Harm: a stop renames the failure, and a new builder starts beside commits only the failed task can push.
+  testWidgets('a stopped row whose failed task left commits unpushed offers no Start and says why', (tester) async {
+    await tester.runAsync(
+      () => open(
+        'STOPPED',
+        hooks: _hooks(),
+        changes: const NoTasks(),
+        served: _board('STOPPED', ended: outOfTime(unpushed: 2)),
+      ),
+    );
+    await show(tester);
+
+    expect(button(tester, 'story-work-start AA1').onPressed, isNull, reason: 'the unpushed work holds the Start');
+    expect(find.byKey(const Key('story-work-start AA1 why')), findsOneWidget, reason: 'the row says why');
+  });
+
   // Harm: an agent started again over a block the task named, which nothing has lifted.
   testWidgets('a blocked builder\'s row moves on but offers no Start', (tester) async {
     await tester.runAsync(

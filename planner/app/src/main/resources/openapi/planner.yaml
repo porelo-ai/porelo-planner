@@ -493,8 +493,9 @@ paths:
         the person saw, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or
         when another issue of the run needs attention for another reason; the revision is checked as `revision` is.
         BLOCKED is never passed over, since a blocked task said it cannot go on unless something changes. A
-        `passOver` of FAILED is refused with WorkNotAllowed while the failed task reports commits unpushed, which only
-        that task can push, and while the failure stopped a reading, which only a reading choice answers. A
+        `passOver` of any reason is refused with WorkNotAllowed while the last ended task of an issue the run raised
+        reports commits unpushed, which only that task can push, and one of FAILED while the failure stopped a
+        reading, which only a reading choice answers. A
         halted run takes a Start only with a `passOver` of its SAVE_REFUSED, recorded stopped and replaced in one
         step. A Start without `passOver` over a run any of whose issues holds a reason, a stopped run's STOPPED
         included, is refused with RunChanged whatever `replaces` names. The run named in `replaces` or `passOver` is
@@ -2222,8 +2223,10 @@ components:
       uniqueItems: true
       description: >-
         The story's issues the work is for, each an open issue of the story an agent works, standing in a state the
-        target's rule takes work from or in the target itself, where it is worked again; absent for the story's own
-        work, its least advanced open issues the rule takes from. A list naming any other issue is refused whole.
+        target's rule takes work from, or in the target itself where the story's run raised it with the reason the
+        Start passes over, or for a proposal with any reason a Start may pass over, and it is worked there again;
+        absent for the story's own work, its least advanced open issues the rule takes from. A list naming any other
+        issue is refused whole.
       items:
         $ref: '#/components/schemas/IssueId'
     StoryWorkProposal:

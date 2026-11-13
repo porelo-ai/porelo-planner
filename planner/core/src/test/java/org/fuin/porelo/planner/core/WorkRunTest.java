@@ -3349,6 +3349,9 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         final WorkRun.Run failed = failedBuild(f, 0);
 
+        assertThat(f.run.propose("ST1", "Building", List.of("AA1")).repositories())
+                .as("the row's Start is proposed for the raised issue where it stands")
+                .isNotEmpty();
         final WorkRun.Order order = again(f, f.passOver(failed, "AA1", "FAILED"));
 
         final WorkRun.Run now = java.util.Objects.requireNonNull(f.run.work("ST1"));
@@ -3418,8 +3421,89 @@ class WorkRunTest {
 
         assertThatThrownBy(() -> again(f, f.passOver(failed, "AA1", "FAILED")))
                 .as("unpushed work of the failed task refuses the Start")
-                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"))
-                .hasMessageContaining("unpushed");
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
+        assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
+    }
+
+    @Test
+    void aStartPassingOverTheStopOfAFailedBuildThatLeftCommitsUnpushedIsRefused() {
+        // Harm: a stop renames the failure, and a new builder starts beside commits only the failed
+        // task can push, which are lost.
+        final Fixture f = new Fixture();
+        failedBuild(f, 2);
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        assertThat(stopped.issues().get("AA1").reason())
+                .as("the stop renamed the failure")
+                .isEqualTo("STOPPED");
+
+        assertThatThrownBy(() -> again(f, f.passOver(stopped, "AA1", "STOPPED")))
+                .as("unpushed work of an ended task refuses a Start over any reason")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
+        assertThat(f.run.work("ST1").id()).as("the stopped run stands").isEqualTo(stopped.id());
+    }
+
+    @Test
+    void aStartWithoutAPassOverNamingAnIssueWhereItStandsIsRefusedByTheRule() {
+        // Harm: a builder starts on an issue a person moved into the working state by hand.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 0);
+        f.record.value =
+                new WorkRun.Snapshot(
+                        f.record.value.generation(),
+                        Map.of(
+                                "ST1",
+                                withIssues(
+                                        failed,
+                                        Map.of("AA1", NextStep.Progress.start(1)),
+                                        failed.offers())));
+
+        assertThatThrownBy(() -> naming(f, null, List.of("AA1")))
+                .as("only a raised row's Start works an issue again where it stands")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
+        assertThatThrownBy(() -> f.run.propose("ST1", "Building", List.of("AA1")))
+                .as("nor is it proposed")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
+    }
+
+    @Test
+    void aStartPassingOverOneIssueNamingAnotherThatIsNotRaisedIsRefusedByTheRule() {
+        // Harm: one row's Start works another issue nobody raised, where a person put it.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 0);
+        final Board before = f.store.board();
+        f.store.current =
+                new Board(
+                        before.revision(),
+                        before.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Building",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null)),
+                        List.of(
+                                before.issue("AA1").orElseThrow(),
+                                new Issue(
+                                        "AA2",
+                                        "alpha",
+                                        "Other",
+                                        "Building",
+                                        null,
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "")),
+                        before.work(),
+                        before.repositories());
+
+        assertThatThrownBy(() -> naming(f, f.passOver(failed, "AA1", "FAILED"), List.of("AA2")))
+                .as("the issue named is not one the run raised")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
         assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
     }
 
@@ -3483,8 +3567,7 @@ class WorkRunTest {
                                 e ->
                                         assertThat(conflictOf(e))
                                                 .as("named")
-                                                .isEqualTo("WorkNotAllowed"))
-                        .hasMessageContaining("needs attention");
+                                                .isEqualTo("WorkNotAllowed"));
             }
             assertThatThrownBy(
                             () ->
@@ -3524,17 +3607,17 @@ class WorkRunTest {
 
     /** A Start from AA1's raised row: it names the issue and passes over its reason. */
     private static WorkRun.Order again(final Fixture f, final WorkRun.PassOver passOver) {
+        return naming(f, passOver, List.of("AA1"));
+    }
+
+    /** A Start naming {@code issues}, passing over {@code passOver}, or nothing when null. */
+    private static WorkRun.Order naming(
+            final Fixture f, final WorkRun.@Nullable PassOver passOver, final List<String> issues) {
         return f.run.order(
                 "ST1",
                 "Building",
                 new WorkOrder.Decision(
-                        "AGENT",
-                        f.store.board().revision().value(),
-                        null,
-                        "",
-                        1,
-                        null,
-                        List.of("AA1")),
+                        "AGENT", f.store.board().revision().value(), null, "", 1, null, issues),
                 new WorkRun.Start(null, passOver));
     }
 

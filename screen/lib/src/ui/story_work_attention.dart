@@ -309,6 +309,9 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         ),
         for (final (key, action) in actions)
           if (action.unavailable case final why?) Text('${action.label}: $why', key: Key('$key why')),
+        if (_movesOn.contains(reason))
+          if (_issueUnpushed(issue) case final left? when left > 0)
+            Text('Moving on leaves the task\'s $left commit${left == 1 ? '' : 's'} unpushed.'),
       ],
     );
   }
@@ -326,7 +329,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     final passOver = run == null
         ? null
         : PlanningPassOver(issue: issue.id, reason: row.reason, revision: row.revision, run: run);
-    final left = _unpushed(issue) ?? 0;
+    final left = _unpushedLeft();
     return PlanningAction(
       id: 'story-work.start/${issue.id}',
       label: 'Start again…',
@@ -340,8 +343,10 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
           ? 'the planner did not report the run'
           : target == null
           ? 'no working state was reported'
+          : left == null
+          ? 'the planner did not say whether an ended task left commits unpushed'
           : left > 0
-          ? 'the failed task left $left unpushed commit${left == 1 ? '' : 's'}, which only it can push'
+          ? 'an ended task left $left unpushed commit${left == 1 ? '' : 's'}, which only it can push'
           : board.startUnavailable(story, passOver: passOver),
       run: () async {
         final work = StoryWork(
@@ -365,12 +370,33 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     );
   }
 
-  /// The commits the failed task that raised the row left unpushed, or null where it raised none.
-  int? _unpushed(PlanIssue issue) {
+  /// The commits the last ended task of each raised issue of the run left unpushed, whatever the reason now says,
+  /// since a stop renames a failure; null where one of those tasks did not say.
+  int? _unpushedLeft() {
     final row = widget.row;
-    if (row.reason != 'FAILED') return null;
-    return planningRaisingTask(row.board.workOf(row.story), issue.id, 'FAILED')?.ended?.unpushed;
+    final work = row.board.workOf(row.story);
+    if (work == null) return 0;
+    var left = 0;
+    for (final item in work.issues) {
+      if (!planReasonNeedsAttention(item.reason) && item.needsYou != true) continue;
+      final ended = _lastEnded(work, item.issue);
+      if (ended == null) continue;
+      final count = ended.unpushed;
+      if (count == null) return null;
+      left += count;
+    }
+    return left;
   }
+
+  /// The commits the last ended task of the row's issue left unpushed, or null where it did not say.
+  int? _issueUnpushed(PlanIssue issue) {
+    final work = widget.row.board.workOf(widget.row.story);
+    return work == null ? null : _lastEnded(work, issue.id)?.unpushed;
+  }
+
+  /// The end of the last ended task of [issue] in [work], or null where none ended.
+  static WorkEnded? _lastEnded(PlanWork work, String issue) =>
+      work.tasks.reversed.where((task) => task.issues.contains(issue) && task.ended != null).firstOrNull?.ended;
 
   /// Stops the row's run, once the person confirms it.
   PlanningAction _stop(BuildContext context, PlanIssue issue) {
