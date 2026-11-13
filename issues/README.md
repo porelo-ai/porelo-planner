@@ -16,7 +16,6 @@ left out.
 | <a id="pl83"></a>[PL83](PL83-The-Work-Numbers-Per-Phase-Kept-And-Served.md) | - | - | A task is started with the phase it works in, the Git store keeps a finished issue's numbers from Porelo's records in stats/, and the velocity and an issue's tokens per phase reach the window and the stage command from those records |
 | <a id="pl86"></a>[PL86](PL86-The-Stage-Rules-Remaining-Switch-Offs.md) | - | - | The commit check's stage rule cannot be passed by a workflow edit that unmarks a measured state and marks it again, nor by a merge that brings the seed in beside an issue in a measured state without its stage record |
 | <a id="pl88"></a>[PL88](PL88-The-Board-Shows-An-Issue-That-Waits-On-Another-Repository.md) | - | - | An issue whose head waits on an issue of another repository of the project stands on the board with that wait, and its work is not offered before the issue it waits on is done, instead of the issue being refused as a fault |
-| <a id="pl124"></a>[PL124](PL124-A-Readers-Leftovers-Do-Not-Stop-Its-Reading.md) | - | - | A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
 
@@ -41,6 +40,12 @@ left out.
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl124"></a>[PL124](PL124-A-Readers-Leftovers-Do-Not-Stop-Its-Reading.md) | XS | - | A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer |
 
 ## Review
 

@@ -5,14 +5,16 @@
   "$schema": "issue-1.json",
   "id": "PL124",
   "title": "A Reader's Leftovers Do Not Stop Its Reading",
-  "state": "Idea",
-  "size": "-",
-  "priority": "Medium",
+  "state": "Implementing",
+  "size": "XS",
+  "priority": "High",
   "rank": 1,
   "blockedBy": [],
   "covers": "A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer"
 }
 ```
+
+**Size:** XS - one branch in `WorkEnds.judge` with its unit tests, no contract.
 
 **What must be true.** A reading that finished is judged by its findings block, whatever the reader left in its own
 workspace: a reader that checked the landed work out to read it, or committed nothing it should have, does not raise
