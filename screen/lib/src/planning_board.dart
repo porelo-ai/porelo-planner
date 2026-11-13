@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'client.dart';
+import 'issue_filter.dart';
 import 'models.dart';
 import 'hooks.dart';
 import 'run_attention.dart';
@@ -60,6 +61,14 @@ class PlanningPreferences {
 
   /// Stories folded to their number, priority and size.
   final Set<String> foldedStories = {};
+
+  /// Stories whose page shows its description folded to its heading.
+  final Set<String> foldedDescriptions = {};
+
+  final Map<String, PlanningIssueFilter> _issueLists = {};
+
+  /// The search and sort of [story]'s issue list on its page, kept across leaving the page.
+  PlanningIssueFilter issueList(String story) => _issueLists.putIfAbsent(story, PlanningIssueFilter.new);
 }
 
 /// An unsaved destination, kept separately from the daemon's story state.

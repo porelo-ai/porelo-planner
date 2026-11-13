@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../client.dart';
 
+import '../issue_filter.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
@@ -14,7 +16,7 @@ import 'story_work_attention.dart';
 import 'style.dart';
 
 /// The machine's standalone story and separately read issue list.
-class PlanningStoryView extends StatelessWidget {
+class PlanningStoryView extends StatefulWidget {
   /// Opens issues and tasks on this story's own provider.
   const PlanningStoryView({
     required this.detail,
@@ -45,12 +47,59 @@ class PlanningStoryView extends StatelessWidget {
   final Future<void> Function(Uri) openLink;
 
   @override
+  State<PlanningStoryView> createState() => _PlanningStoryViewState();
+}
+
+class _PlanningStoryViewState extends State<PlanningStoryView> {
+  PlanningDetail get detail => widget.detail;
+  ValueChanged<String> get onIssue => widget.onIssue;
+  ValueChanged<String> get onTask => widget.onTask;
+  String? Function(String) get taskUnavailable => widget.taskUnavailable;
+  Future<void> Function(Uri) get openLink => widget.openLink;
+  void Function(String issue, String to)? get onStartIssue => widget.onStartIssue;
+
+  PlanningPreferences get _preferences => detail.board.preferences;
+
+  /// This story's search and sort, kept by the project's preferences across leaving the page.
+  PlanningIssueFilter get _list => _preferences.issueList(detail.storyId);
+
+  late final _search = TextEditingController(text: _list.search);
+
+  @override
+  void didUpdateWidget(PlanningStoryView old) {
+    super.didUpdateWidget(old);
+    // Another story, board or project's preferences hold another search.
+    if (!identical(old.detail, detail)) _search.text = _list.search;
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _searchFor(String text) => setState(() => _list.search = text);
+
+  void _closeSearch() => setState(() {
+    _list.closeSearch();
+    _search.clear();
+  });
+
+  void _clearSearch() => setState(() {
+    _list.search = '';
+    _search.clear();
+  });
+
+  @override
   Widget build(BuildContext context) {
     final story = detail.story?.story;
     final issues = detail.issues;
     final completed = issues != null && issues.reported && issues.issues.every((issue) => issue.state.isNotEmpty)
         ? issues.issues.where((issue) => {'Review', 'Finished'}.contains(issue.state)).length
         : null;
+    final shown = issues == null
+        ? const <PlanIssue>[]
+        : _list.shown(issues.issues, [for (final state in detail.board.states) state.name]);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -67,9 +116,9 @@ class PlanningStoryView extends StatelessWidget {
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),
           PlanningWebLink(link: story.link, label: 'Open story', openLink: openLink),
-          planningSection(context, 'Description', [SelectableText(planningValue(story.description))]),
+          _description(context, story),
         ],
-        planningSection(context, 'Issues', [
+        planningSection(context, 'Issues', heading: _issuesHeading(context, issues), [
           if (detail.moveUnavailable case final reason? when !detail.loading && !detail.saving) Text(reason),
           if (detail.moveProblem case final problem?) Text(problem, key: const Key('planning-move-error')),
           if (detail.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
@@ -83,6 +132,14 @@ class PlanningStoryView extends StatelessWidget {
                 '${entry.key} ${planningValue(entry.value.from)} → ${entry.value.to}',
                 key: Key('planning-pending-move ${entry.key}'),
               ),
+            // A row the search hides cannot show its refusal, so it stands here.
+            for (final MapEntry(key: id, value: problem) in detail.moveProblems.entries)
+              if (!shown.any((issue) => issue.id == id))
+                Text(
+                  '$id: $problem',
+                  key: Key('planning-move-problem $id'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
             Wrap(
               children: [
                 FilledButton(
@@ -104,12 +161,26 @@ class PlanningStoryView extends StatelessWidget {
             if (!issues.reported)
               Text(issues.supplied ? 'Issues not reported completely' : 'Issues not reported')
             else if (issues.issues.isEmpty)
-              const Text('No issues yet.')
+              Text('No issues yet.', style: Theme.of(context).textTheme.bodySmall)
             else if (completed != null)
               Text('$completed of ${issues.issues.length} in Review or Finished')
             else
               const Text('Issue progress not reported'),
-            if (issues.issues.isNotEmpty)
+            if (issues.issues.isNotEmpty && shown.isEmpty) ...[
+              Text(
+                'Nothing matches.',
+                key: const Key('planning-issues-none-match'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  key: const Key('planning-issue-search-clear'),
+                  onPressed: _clearSearch,
+                  child: const Text('Clear the filter'),
+                ),
+              ),
+            ] else if (issues.issues.isNotEmpty)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -119,7 +190,7 @@ class PlanningStoryView extends StatelessWidget {
                       DataColumn(label: Text(label)),
                   ],
                   rows: [
-                    for (final issue in issues.issues)
+                    for (final issue in shown)
                       DataRow(
                         cells: [
                           DataCell(
@@ -167,6 +238,85 @@ class PlanningStoryView extends StatelessWidget {
         ListenableBuilder(listenable: detail.board, builder: (context, _) => _attention(context)),
       ],
     );
+  }
+
+  /// The description, folded to its heading when the person folded it.
+  Widget _description(BuildContext context, PlanStory story) {
+    final folded = _preferences.foldedDescriptions.contains(story.id);
+    return planningSection(
+      context,
+      'Description',
+      heading: [
+        IconButton(
+          key: const Key('planning-description-fold'),
+          tooltip: folded ? 'Unfold the description' : 'Fold the description',
+          icon: Icon(folded ? Icons.expand_more : Icons.expand_less),
+          onPressed: () => setState(() {
+            if (!_preferences.foldedDescriptions.remove(story.id)) _preferences.foldedDescriptions.add(story.id);
+          }),
+        ),
+      ],
+      [if (!folded) SelectableText(planningValue(story.description))],
+    );
+  }
+
+  /// The issue list's head after its title: the count, the search and the sort.
+  List<Widget> _issuesHeading(BuildContext context, PlanIssueList? issues) {
+    if (issues == null || issues.issues.isEmpty) return const [];
+    final small = Theme.of(context).textTheme.bodySmall;
+    return [
+      Text('${issues.issues.length}', style: small),
+      const Spacer(),
+      if (_list.searchOpen)
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
+            child: CallbackShortcuts(
+              bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clearSearch},
+              child: TextField(
+                key: const Key('planning-issue-search'),
+                controller: _search,
+                autofocus: true,
+                onChanged: _searchFor,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Filter Issues',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    key: const Key('planning-issue-search-close'),
+                    tooltip: 'Close the filter',
+                    icon: const Icon(Icons.close),
+                    onPressed: _closeSearch,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        )
+      else
+        IconButton(
+          key: const Key('planning-issue-search-open'),
+          tooltip: 'Filter issues',
+          icon: const Icon(Icons.search),
+          onPressed: () => setState(() => _list.searchOpen = true),
+        ),
+      PopupMenuButton<PlanningIssueSort>(
+        key: const Key('planning-issue-sort'),
+        tooltip: 'Sort issues',
+        onSelected: (sort) => setState(() => _list.choose(sort)),
+        itemBuilder: (_) => [
+          for (final sort in PlanningIssueSort.values)
+            PopupMenuItem(value: sort, key: Key('planning-issue-sort-to ${sort.name}'), child: Text(sort.label)),
+        ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_list.ascending ? Icons.arrow_upward : Icons.arrow_downward, size: PlanningStyle.rowIcon),
+            Text(_list.sort.label, style: small),
+          ],
+        ),
+      ),
+    ];
   }
 
   /// The run's attention for this story, from its own board, each row read only once it is opened.

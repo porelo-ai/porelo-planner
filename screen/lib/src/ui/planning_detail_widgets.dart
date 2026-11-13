@@ -9,20 +9,30 @@ import 'style.dart';
 /// An absent value is not an empty successful report.
 String planningValue(String value) => value.isEmpty ? 'Not reported' : planningShown(value);
 
-/// The common section surface used by planning details.
-Widget planningSection(BuildContext context, String title, List<Widget> children) => Card(
-  child: Padding(
-    padding: const EdgeInsets.all(Space.normal),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: Space.small),
-        ...children,
-      ],
-    ),
-  ),
-);
+/// The common section surface used by planning details; [heading] stands in the title's row after it.
+Widget planningSection(BuildContext context, String title, List<Widget> children, {List<Widget> heading = const []}) =>
+    Card(
+      child: Padding(
+        padding: const EdgeInsets.all(Space.normal),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (heading.isEmpty)
+              Text(title, style: Theme.of(context).textTheme.titleMedium)
+            else
+              Row(
+                spacing: Space.small,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  ...heading,
+                ],
+              ),
+            const SizedBox(height: Space.small),
+            ...children,
+          ],
+        ),
+      ),
+    );
 
 /// Offers only a web address actually supplied by the machine.
 class PlanningWebLink extends StatefulWidget {
