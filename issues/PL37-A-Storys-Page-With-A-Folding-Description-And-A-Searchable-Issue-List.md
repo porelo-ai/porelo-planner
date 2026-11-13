@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL37",
   "title": "A Story's Page With A Folding Description And A Searchable Issue List",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 24,
