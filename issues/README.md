@@ -33,7 +33,6 @@ left out.
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL90](README.md#pl90), [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
-| <a id="pl45"></a>[PL45](PL45-A-Story-Moves-With-Its-Issues.md) | S | - | A story set Finished only once every issue of it stands in Review, Finished or Rejected, moving none along, and an issue move in a story whose run has started refused as WorkRunning; a story shows the state the stories index gives |
 | <a id="pl105"></a>[PL105](PL105-ST311-Played-Through-On-The-Test-VM.md) | M | [PL104](README.md#pl104) | A script plays the test of story ST311 once on the local test VM through the planning screen against the real planner, as a person opens Planning, and lays the screen driver the other screen story tests use |
 | <a id="pl107"></a>[PL107](PL107-ST316-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104), [PL105](README.md#pl105) | A script plays the test of story ST316 once on the local test VM through the planning screen against the real planner, as a person reads sizes and folds a state's box and a story card |
 | <a id="pl108"></a>[PL108](PL108-ST336-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104), [PL105](README.md#pl105) | A script plays the test of story ST336 once on the local test VM through the planning screen against the real planner, as a person opens a story with a long Markdown description and many issues |
@@ -42,6 +41,12 @@ left out.
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | M | - | The planner's answer records generated from openapi/planner.yaml instead of written by hand; the controllers stay hand-written |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl45"></a>[PL45](PL45-A-Story-Moves-With-Its-Issues.md) | S | - | A story set Finished only once every issue of it stands in Review, Finished or Rejected, moving none along, and an issue move in a story whose run has started refused as WorkRunning; a story shows the state the stories index gives |
 
 ## Review
 
