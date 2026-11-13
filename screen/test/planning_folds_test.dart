@@ -48,12 +48,16 @@ Map<String, dynamic> _board(List<Map<String, dynamic>> stories) => {
   'revision': 'r${stories.length}',
 };
 
-Future<(MockPlanningSource, PlanningBoards)> _show(WidgetTester tester, List<Map<String, dynamic>> stories) async {
+Future<(MockPlanningSource, PlanningBoards)> _show(
+  WidgetTester tester,
+  List<Map<String, dynamic>> stories, {
+  Map<String, dynamic>? board,
+}) async {
   tester.view
     ..physicalSize = const Size(1920, 2000)
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final backend = MockPlanningSource()..boards['demo'] = _board(stories);
+  final backend = MockPlanningSource()..boards['demo'] = board ?? _board(stories);
   final client = MockPlanningClient(
     () => [
       PlanningProvider(name: 'local', connected: true, projects: ['demo'], source: backend),
@@ -81,6 +85,44 @@ Future<void> _press(WidgetTester tester, String key) async {
 }
 
 void main() {
+  // Harm: a person who opens Planning sees no story and takes the project for having no work.
+  testWidgets('a first open shows the cards of every column that holds open stories at full width', (tester) async {
+    await _show(
+      tester,
+      const [],
+      board: {
+        'states': [
+          {'name': 'Idea', 'kind': 'WAITING'},
+          {'name': 'Ready', 'kind': 'WAITING'},
+          {'name': 'Finished', 'kind': 'CLOSED'},
+        ],
+        'phases': [
+          {
+            'name': 'Ideas',
+            'states': ['Idea'],
+          },
+          {
+            'name': 'Work',
+            'states': ['Ready'],
+          },
+          {
+            'name': 'Done',
+            'states': ['Finished'],
+          },
+        ],
+        'stories': [_story('S1', 'Idea'), _story('S2', 'Ready')],
+        'revision': 'r2',
+      },
+    );
+
+    expect(
+      tester.getSize(find.byKey(const Key('planning-phase Ideas'))).width,
+      tester.getSize(find.byKey(const Key('planning-phase Work'))).width,
+      reason: 'the Ideas column opens as wide as any other, its cards whole',
+    );
+    expect(find.text('Title of S1'), findsOneWidget, reason: 'the idea shows its title on its card');
+  });
+
   // Harm: a fold that hides nothing or narrows the column, or one that hides that a story needs the person.
   testWidgets('a box folded by its own chevron shows its heading alone at the column width, counting who needs you', (
     tester,

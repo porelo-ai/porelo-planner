@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL116",
   "title": "The Board Opens With Its Cards Shown",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "Medium",
   "rank": 52,
@@ -32,15 +32,17 @@ person folds stays folded as today.
 - **The change.** No state and no column holding open stories starts folded: `foldedPhases` starts as `{'Done'}`, so
   the Ideas column shows its cards as the others do, and Done, whose closed states show only when the person asks,
   keeps its narrow column.
-- **Test, red first.** Widget, `planning_view_test.dart`: a first open of a board with stories in Idea, Backlog and
-  Review shows each story's card, and a state the person folds stays folded after the board reloads. Harm: a person
-  who sees an empty board and takes the project for having no work.
+- **Test, red first.** Widget, `planning_folds_test.dart`: on a first open the Ideas column stands as wide as any
+  other and its story shows its title on a whole card. Harm: a person who sees no story and takes the project for having
+  no work. A fold the person makes is kept as today, which the file's other tests hold.
 
 ## Acceptance
 
 - The widget test, seen red against today's starting folds; the screen's whole suite green.
 
-## To be checked
+## Found while building
 
-- Why the operator's board showed states folded to their counts, which today's starting folds do not do: the screen
-  ref the window pins, or a fold the window keeps between runs - asked of the window's agent.
+- The window neither keeps nor sets the folds; they start as the screen sets them, for one run of the window. The
+  screen the window pins starts with the Ideas and Done columns folded and no state folded, so Idea and Accepted
+  opened as narrow tiles; Analyzed, Estimated, Backlog and Review folded to their counts are folds made by their own
+  chevrons in that run, which stay as the person left them.

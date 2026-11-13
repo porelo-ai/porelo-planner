@@ -50,8 +50,9 @@ class PlanningPreferences {
   /// Whether closed states are shown.
   bool showClosed = false;
 
-  /// Phase names folded to marks and counts, as in the design.
-  final Set<String> foldedPhases = {'Ideas', 'Done'};
+  /// Phase names folded to marks and counts: only Done, whose closed stories show when asked, so a first open shows
+  /// every open story's card whole.
+  final Set<String> foldedPhases = {'Done'};
 
   /// State names folded to their heading; every box starts open.
   final Set<String> foldedStates = {};
