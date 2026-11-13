@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL104",
   "title": "ST309 Played Through On The Test VM",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 40,
@@ -52,9 +52,29 @@ earliest open state of its issues.
   4. In a fresh clone the story's head and `stories/README.md` hold the state, and the issues kept theirs.
   5. A story whose head states none stands in the earliest open state of its issues, on the board and in the index.
   6. A state written into a story's head by hand and pushed stands on the board after `POST /refresh`.
-- **This repository's issues of the story not in Review:** [PL84](README.md#pl84) (the board's answer naming the
-  issues that do not fit, step 3) and [PL45](README.md#pl45) (a story moving with its issues, no step of its own):
-  the run is started with `--expect 3=PL84`, and a failing step is read against [PL45](README.md#pl45) before it is taken as a fault.
+- **This repository's issues of the story not in Review:** [PL45](README.md#pl45) (a story moving with its issues,
+  no step of its own; [PL84](README.md#pl84), the board's answer naming the issues that do not fit, is in Review):
+  the run is started with `--expect story=PL45`, and a failing step is read against [PL45](README.md#pl45) before it
+  is taken as a fault.
+- **Built.** `tool/story-tests/story-test.sh`, `st309.sh` and `run-on-vm.sh`, as above, with these findings from the
+  code: the planner's Git calls set their own `GIT_SSH_COMMAND`, so the run's key reaches them through an `ssh-agent`
+  of the run's own, and localhost's host key is added to the account's `known_hosts` as one marked line, removed again; the
+  key's line in the account's `authorized_keys` is `restrict,from="127.0.0.1,::1"` and marked the same way. The planner's
+  clones and log go under the run's directory through `XDG_CACHE_HOME` and `XDG_STATE_HOME`. A run refuses an
+  account with a planner running or a marked line or run directory left, and `story-test.sh leftovers` names them.
+  A story's move moves its least advanced issues (`Moves`), so in step 2 the issue in Backlog goes along to Review and
+  step 4 checks that the issue that does not fit kept its state. A story-2 head may leave out `state`, and
+  `issues check` takes an issue in Implementing without a stage record: the fixture and step 1 were run locally with
+  the executable, without a VM. `stories/work.yml` must be in the fixture, since without it the planner refuses every
+  move.
+- **Found by the first VM run, a fault of the script.** The planner answers a save once its commits stand in its own
+  clones and pushes them in the background, the project's own repository last, and fetches no repository over a save
+  not pushed yet. A fresh clone made right after the answer, or a head pushed by hand meanwhile, met the forge before
+  the planner's push: step 4 found no state in the story's head. Played locally with the stack's executable and an
+  `ssh` on `PATH` that runs Git's pack command in place, both stories failed so and both passed once `st_clones` waits,
+  up to 60 s, until the planner's clones hold no save waiting (`refs/planner/local`); the steps still judge only the
+  fresh clone. `st_finish` now passes the token to `grep` with `-e`, since a token starting with `-` was read as an
+  option.
 
 **Rules for this story test (operator)**
 
@@ -70,9 +90,5 @@ earliest open state of its issues.
 
 ## To be checked
 
-- Whether moving a story moves its least advanced issues first (`Moves` does so today), so step 2 must take a
-  story whose issues stay where they are, or sets the state in the head instead.
-- Whether a story-2 head may leave out `state` (step 5), and whether `issues check` wants a stage record in
-  `stats/` for the fixture's issue in Implementing.
-- Which VM account the runs use, since the planner's agent has none of its own, and whether that account's `sshd`
-  takes a key it adds for itself on localhost, with `git`, `curl` and `jq` installed.
+- On the VM: whether the `planner` account's `sshd` takes a key the run adds for itself on localhost, and whether
+  `git`, `curl`, `jq`, `ssh-agent` and `flock` are installed; the run says so at its start if not.

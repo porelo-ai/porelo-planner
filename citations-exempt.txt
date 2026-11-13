@@ -404,3 +404,6 @@ screen/test/served/mock/issue-B541.json
 screen/test/served/mock/move-B542.json
 screen/test/served/mock/stories.json
 screen/test/served/mock/workflow.json
+# The story tests: each plays one story, whose number it carries, on a fixture whose made-up issues and stories
+# need ids of that shape.
+tool/story-tests/st309.sh

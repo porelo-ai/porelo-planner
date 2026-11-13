@@ -30,6 +30,9 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
 - **Issue prefix: `PL`**, in `issues/`.
 - **`tool/planner-probe.sh` is bash, not Java**: it reads a real run's effects on a VM beside the native
   executable, where there is no Java.
+- **The story tests in `tool/story-tests/` are bash, not Java**: they play a story on the test VM beside the native
+  executable, where there is no Java; `story-test.sh` is their shared ground and `run-on-vm.sh` starts one from the
+  host.
 - **Skills used:** `spring-boot-patterns`, `graal`, `api-contract-review`.
 
 ## Shared across the Porelo repositories
