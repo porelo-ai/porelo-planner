@@ -9,5 +9,5 @@ Porelo Planner serves a project's stories and issues to the Porelo window over a
 Server-Sent Events for changes. It runs as a GraalVM native executable on the computer the window runs on, and reads
 and writes the stories and issues in Git with the person's own Git login. Its [parts](planner/README.md) are compiled
 into that one executable; the window's planning [screen](screen/README.md), a Flutter package the window embeds, is
-built beside it.
+built beside it, with a [test app](screen-app/README.md) that shows the screen alone and is only run from the source.
 See the [documentation](doc/index.md), [contributing guide](CONTRIBUTING.md), and [security policy](SECURITY.md).

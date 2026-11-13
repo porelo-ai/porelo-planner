@@ -339,7 +339,7 @@ jobs:
                   } >> "$GITHUB_STEP_SUMMARY"
 
     # The window's planning screen, a Flutter package: analysed and tested as the window's build does it, with the
-    # Flutter its pubspec pins. Only the screen's module: the Java build is the job above.
+    # Flutter its pubspec pins, and the screen's test app with it. Only those modules: the Java build is the job above.
     screen:
         name: The planning screen
         runs-on: ubuntu-24.04
@@ -359,5 +359,5 @@ jobs:
               uses: ./.github/actions/pinned-jdk
 
             - name: The screen's analysis and tests
-              run: ./mvnw -B -U -s settings.xml -Pall -pl screen verify
+              run: ./mvnw -B -U -s settings.xml -Pall -pl screen,screen-app verify
 

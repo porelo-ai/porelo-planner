@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL35",
   "title": "A Test App For The Planning Screen",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 22,
@@ -55,8 +55,9 @@ A proposed design is drawn on a canvas; the operator reads it before the analysi
 
 Read in today's code: the screen package exports the view (`PlanningView`), the hooks (`hooks.dart`:
 `PlanningHost`, `PlanningStartTask`, `PlanningTaskChanges`, `PlanningAgents`), the client with its report routing
-(`PlanningClient`, `PlanningTaskReports`), the HTTP source (`PlannerSource`) and, in `planning_fake.dart`, the fake
-`MockPlanningSource`, which can already refuse, hold a save, fail a watch and change a board. The window's own wiring
+(`PlanningClient`, `PlanningTaskReports`), the HTTP source (`HttpPlanningSource`, from a `PlannerAddress`) and, in the
+second library `planning_fake.dart`, the fake `MockPlanningSource` with `MockPlanningClient`, which can already refuse,
+hold a save, fail a watch and change a board. The app imports both libraries and changes neither's exports. The window's own wiring
 (`planning_embedding.dart`, `planning_reports.dart` in the window) is the pattern; nothing of it is copied.
 
 - A module `screen-app/` beside `screen/`: a Flutter Linux desktop app with `porelo_planning` as a path dependency,
@@ -67,22 +68,35 @@ Read in today's code: the screen package exports the view (`PlanningView`), the 
   arguments into one log the app shows, copies and clears; the Start hook answers as the form says - a task and a
   container, a refusal with words, or a future that never completes.
 - The forms: providers with their projects and connection, the current provider and project, the place, the agents;
-  the source switched between the fake and a `PlannerSource` on a planner started with `--mock`, whose address is
-  read from its `planner.json` or entered.
+  the source switched between the fake and an `HttpPlanningSource` on a planner started with `--mock`. Its address is
+  read only from the runtime directory the person enters, with `PlannerAddress.read` and its owner and mode checks;
+  the account's own runtime directory and those under `/run/user` are refused, as the mock mode refuses them, since
+  the person's real planner writes its address and token there. The entered path is compared as written and with
+  every link resolved, `/var/run` to `/run` among them, and the address is read from the resolved path; a path that
+  cannot be resolved is refused. No token is entered, shown or logged, and the
+  project is named to the planner with a fixed example repository the mock does not read.
+- Nothing builds, runs or packages the app: its `pom.xml` runs `flutter clean`, `flutter pub get`, `dart format`, `dart analyze` and
+  `flutter test` only, and its widget tests need no Linux toolchain. The Build workflow's Flutter job runs
+  `-pl screen,screen-app`; the app pins the screen's Flutter.
+- The fake learns what the planner does with a run that did not finish: an ENDED report with `finished` false raises
+  the task's issues with the reason `FAILED`, so an end fired by hand on the fake raises the card as on the planner. The fake
+  covers what the app fires; a declared `FAILED` outcome or unpushed commits raise an issue on the planner alone.
 - Events fired by hand go through the same `taskEvent` the window calls, with the offer, container and machine of a
   task the log shows started; the board's own events act on the fake (a new revision, a dropped watch, a refused
   save) and are offered only there, said so beside them.
 - Red first, widget tests of the app over the fake: a Start answered with a refusal logs the Start hook's call with
   its arguments and the board shows the refusal's words; an ended event fired for a started task that did not finish
-  raises the issue, and its Needs-you button logs `openNeedsYou`.
+  raises the issue, and its Needs-you button logs `openNeedsYou`; a unit test refuses the account's own runtime
+  directory however it is written.
+
+The plan's reading by another model found the HTTP source misnamed, the address and token of the person's real
+planner within reach of a directory read by default, and the Flutter job running only the screen; all are taken in
+above. The planner's mock mode cannot be made to refuse a save or move its revision from outside: it has no route but
+its reset, so the board's own events stay on the fake. The drawn design could not be reached from here; the forms
+follow this plan, with the log in a tab of its own beside them.
 
 ## Acceptance
 
 - Run from the source with the fake and with a `--mock` planner: each of the hooks above appears in the log with its
   arguments when the screen calls it, each event fired by hand changes the board as the window's event would, and the
   app's widget tests run in the Build workflow's Flutter job; no build publishes or packages the app.
-
-## To be checked
-
-- The drawn design, once read, against this plan: which forms it has and where the log stands.
-- Whether the planner's mock mode can show a refused save and a new revision over HTTP today, or only the fake can.

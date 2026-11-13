@@ -1,0 +1,21 @@
+# The screen's analyzer rules, so the app reads as the screen it embeds.
+include: package:flutter_lints/flutter.yaml
+
+# The width `dart format` writes, as the shared .editorconfig's [*.dart] says.
+formatter:
+    page_width: 120
+
+analyzer:
+    # Keep a dynamic value from passing as a typed one unseen.
+    language:
+        strict-casts: true
+        strict-inference: true
+        strict-raw-types: true
+    exclude:
+        - build/**
+        - android/**
+        - ios/**
+        - web/**
+        - windows/**
+        - macos/**
+        - linux/**

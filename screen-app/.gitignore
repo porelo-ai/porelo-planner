@@ -1,0 +1,4 @@
+# Flutter's build output, the files `flutter run` generates for Linux and a local override are never committed.
+build/
+linux/flutter/ephemeral/
+pubspec_overrides.yaml

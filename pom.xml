@@ -282,11 +282,12 @@
     </build>
 
     <profiles>
-        <!-- The whole build: the window's planning screen too, which needs Flutter. -->
+        <!-- The whole build: the window's planning screen and its test app too, which need Flutter. -->
         <profile>
             <id>all</id>
             <modules>
                 <module>screen</module>
+                <module>screen-app</module>
             </modules>
         </profile>
         <!-- The planner run from the source on the JVM, restarted by Spring Boot DevTools whenever a module compiles

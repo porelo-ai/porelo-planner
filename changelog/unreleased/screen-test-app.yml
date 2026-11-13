@@ -1,0 +1,2 @@
+title: The planning screen has a test app, run only from the source, that shows the screen alone against the in-package fake or a planner started with `--mock`, logs every call it makes toward the window, and fires the window's task events by hand; the fake raises the issues of a task that ended unfinished, as the planner does.
+type: added

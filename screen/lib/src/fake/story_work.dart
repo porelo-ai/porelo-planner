@@ -78,7 +78,18 @@ class MockStoryWork {
       task['machine'] = parameters['machine'];
       if (parameters['event'] != 'STARTED') {
         task['atWork'] = false;
-        if (parameters['event'] == 'ENDED') task['ended'] = parameters['ended'];
+        if (parameters['event'] == 'ENDED') {
+          task['ended'] = parameters['ended'];
+          // As the planner does: a run that did not finish raises its issues, with FAILED as the reason.
+          if ((parameters['ended'] as Map?)?['finished'] == false) {
+            for (final item in (work['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {
+              if ((task['issues'] as List).contains(item['issue'])) {
+                item['needsYou'] = true;
+                item['reason'] = 'FAILED';
+              }
+            }
+          }
+        }
         if (parameters['event'] == 'LANDED' && task['ended'] is Map) {
           (task['ended'] as Map)['landed'] = parameters['landed'];
         }

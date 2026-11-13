@@ -1,0 +1,23 @@
+name: porelo_planning_app
+description: "A test app for the planning screen, run only from the source: the screen alone, against a mock."
+publish_to: 'none'
+version: 0.1.0-SNAPSHOT
+
+environment:
+    sdk: ^3.13.0
+    # The screen's pin, so the app runs the screen with the Flutter the screen builds with. CI reads the screen's.
+    flutter: 3.47.0
+
+dependencies:
+    flutter:
+        sdk: flutter
+    porelo_planning:
+        path: ../screen
+
+dev_dependencies:
+    flutter_test:
+        sdk: flutter
+    flutter_lints: ^6.0.0
+
+flutter:
+    uses-material-design: true

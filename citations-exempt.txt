@@ -12,6 +12,7 @@ screen/test/planning_priority_test.dart
 screen/test/reading_decision_test.dart
 screen/test/story_work_lifecycle_test.dart
 screen/test/story_work_test.dart
+screen-app/test/app_test.dart
 planner/store/api/src/test/java/org/fuin/porelo/planner/store/BoardTest.java
 planner/store/api/src/test/java/org/fuin/porelo/planner/store/IdsTest.java
 planner/store/api/src/test/java/org/fuin/porelo/planner/store/PlanningStoreTest.java
