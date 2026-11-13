@@ -41,8 +41,8 @@ function Get-Base64Url([byte[]] $Bytes) { [Convert]::ToBase64String($Bytes).Trim
 # The label and a zero byte, then each field as its length in four bytes, big endian, and its bytes.
 function Get-Mac([string] $Label, [byte[][]] $Fields) {
     $form = [IO.MemoryStream]::new()
-    $label = [Text.Encoding]::ASCII.GetBytes($Label)
-    $form.Write($label, 0, $label.Length)
+    $labelBytes = [Text.Encoding]::ASCII.GetBytes($Label)
+    $form.Write($labelBytes, 0, $labelBytes.Length)
     $form.WriteByte(0)
     foreach ($field in $Fields) {
         $length = [BitConverter]::GetBytes([int] $field.Length)
