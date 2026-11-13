@@ -124,10 +124,9 @@ class MockModeTest {
         call(runtime, "PUT", "/projects/moved", SOURCE);
         call(runtime, "PUT", "/projects/worked", SOURCE);
         final HttpResponse<String> move =
-                call(
+                move(
                         runtime,
-                        "POST",
-                        "/projects/moved/moves",
+                        "/projects/moved",
                         "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"PJ74\", \"to\":"
                                 + " \"Estimated\"}]}");
         final HttpResponse<String> worker =
@@ -147,6 +146,27 @@ class MockModeTest {
         assertThat(issue.get("worker").asString())
                 .as("the worker read after the change")
                 .isEqualTo("MANUAL");
+    }
+
+    @Test
+    void theMockAnswersAPreviewFromItsBoardAndMovesNothing() throws Exception {
+        // Harm: the window's tests of the warning would pass against a mock that saved on preview.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> preview =
+                call(
+                        runtime,
+                        "POST",
+                        "/projects/any/moves/preview",
+                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
+                                + " \"Review\"}]}");
+        assertThat(preview.statusCode()).as("the status: %s", preview.body()).isEqualTo(200);
+        final JsonNode answer = JSON.readTree(preview.body());
+        assertThat(answer.at("/issues/0/id").asString())
+                .as("the issue the preview moves")
+                .isEqualTo("B542");
+        assertThat(answer.at("/issues/0/to").asString()).isEqualTo("Review");
+        assertThat(answer.path("digest").asString()).matches("[0-9a-f]{64}");
+        assertThat(revision("any")).as("the board after the preview").isEqualTo("mock@1");
     }
 
     @Test
@@ -170,10 +190,9 @@ class MockModeTest {
                     CompletableFuture.supplyAsync(
                             () -> lines.anyMatch(line -> line.equals("id:mock@2")));
             final HttpResponse<String> move =
-                    call(
+                    move(
                             runtime,
-                            "POST",
-                            "/projects/any/moves",
+                            "/projects/any",
                             "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
                                     + " \"Review\"}]}");
             assertThat(json(move).get("revision").asString())
@@ -195,10 +214,9 @@ class MockModeTest {
         // The window's handling of a half-made save could not be tested against the mock.
         call(runtime, "PUT", "/projects/any", SOURCE);
         final HttpResponse<String> move =
-                call(
+                move(
                         runtime,
-                        "POST",
-                        "/projects/any/moves",
+                        "/projects/any",
                         "{\"revision\": \"mock@1\", \"moves\": [{\"story\": \"ST292\", \"to\":"
                                 + " \"Review\"}]}");
         assertThat(move.statusCode()).as("the status: %s", move.body()).isEqualTo(502);
@@ -225,10 +243,9 @@ class MockModeTest {
         // Without a sub-issue in the mock, the window could not test this refusal at all.
         call(runtime, "PUT", "/projects/any", SOURCE);
         final HttpResponse<String> move =
-                call(
+                move(
                         runtime,
-                        "POST",
-                        "/projects/any/moves",
+                        "/projects/any",
                         "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B540\", \"to\":"
                                 + " \"Finished\"}]}");
         assertThat(JSON.readTree(move.body()).path("type").asString())
@@ -248,10 +265,9 @@ class MockModeTest {
         // A test's moves seen by the next test or another project make the window's tests flaky.
         call(runtime, "PUT", "/projects/moved", SOURCE);
         call(runtime, "PUT", "/projects/other", SOURCE);
-        call(
+        move(
                 runtime,
-                "POST",
-                "/projects/moved/moves",
+                "/projects/moved",
                 "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
                         + " \"Review\"}]}");
         assertThat(revision("moved")).as("the moved project's revision").isEqualTo("mock@2");
@@ -497,6 +513,15 @@ class MockModeTest {
     private static JsonNode json(final HttpResponse<String> answer) {
         assertThat(answer.statusCode()).as("the status of %s", answer.uri()).isEqualTo(200);
         return JSON.readTree(answer.body());
+    }
+
+    /** Moves as the window does: the batch's preview first, then the save with its digest. */
+    private static HttpResponse<String> move(
+            final Path runtime, final String project, final String batch)
+            throws IOException, InterruptedException {
+        final HttpResponse<String> preview =
+                call(runtime, "POST", project + "/moves/preview", batch);
+        return call(runtime, "POST", project + "/moves", Previewed.moves(batch, preview.body()));
     }
 
     private static HttpResponse<String> call(

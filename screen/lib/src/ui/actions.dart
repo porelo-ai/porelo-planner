@@ -69,18 +69,22 @@ PlanningAction openPlanningAction(
   run: () => host.go(PlanningPlace(project: board.project, source: boards.sourceOf(board), story: story, issue: issue)),
 );
 
-/// A staged issue change always belongs to the board's reviewed batch.
-PlanningAction movePlanningIssueAction(PlanningBoard board, PlanIssue issue, String to, {bool undo = false}) =>
+/// Moves an issue at once: previewed, then saved, or asked about first when the preview warns; against the board's
+/// revision when the action was offered.
+PlanningAction movePlanningIssueAction(PlanningBoard board, PlanIssue issue, String to) =>
+    _movePlanningIssueAction(board, issue, to, board.snapshot?.revision);
+
+PlanningAction _movePlanningIssueAction(PlanningBoard board, PlanIssue issue, String to, String? revision) =>
     PlanningAction(
       id: 'planning.moveIssue/${board.project}/${issue.id}/$to',
       label: '${issue.id} → $to',
       unavailable: board.disposed || !board.live
           ? 'The planning board is not live.'
-          : board.saving
-          ? 'Planning is saving.'
+          : board.saving || board.pending.isNotEmpty
+          ? 'Saving…'
           : null,
       // The state shown is the one the list was built with, so a move after a task moved the issue is refused.
-      run: () => board.moveIssue(issue.id, to, shown: issue.state, undo: undo),
+      run: () => unawaited(board.moveIssue(issue.id, to, shown: issue.state, revision: revision)),
     );
 
 /// Sets a story's priority at once, saved as a move is; the story's current priority is listed but cannot be chosen.
@@ -93,39 +97,9 @@ PlanningAction setPriorityAction(PlanningBoard board, PlanStory story, String pr
   run: () => unawaited(board.setPriority(story.id, priority)),
 );
 
-/// The same save action is used by the board, detail screens and finder.
-PlanningAction savePlanningAction(PlanningBoard board) => PlanningAction(
-  id: 'planning.save/${board.project}',
-  label: 'Save planning changes',
-  unavailable:
-      board.unavailableActions['SaveMoves'] ??
-      (board.saving
-          ? 'Planning is saving.'
-          : !board.live
-          ? 'The planning board is not live.'
-          : board.pending.isEmpty
-          ? 'No planning moves are pending.'
-          : null),
-  run: () => unawaited(board.save()),
-);
-
-/// Undo never calls the provider.
-PlanningAction undoPlanningAction(PlanningBoard board) => PlanningAction(
-  id: 'planning.undo/${board.project}',
-  label: 'Undo planning changes',
-  unavailable: board.saving
-      ? 'Planning is saving.'
-      : board.pending.isEmpty
-      ? 'No planning moves are pending.'
-      : null,
-  run: board.undoAll,
-);
-
 /// Every story, issue and move, so each is reachable without a pointer gesture.
 List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) => [
   for (final board in boards.sources) ...[
-    savePlanningAction(board),
-    undoPlanningAction(board),
     for (final story in board.stories) ...[
       openPlanningAction(boards, host, board, story.id),
       planningWebAction(
@@ -142,7 +116,6 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           host.openLink,
           onError: board.reportActionProblem,
         ),
-        if (board.pendingIssues.containsKey(issue.id)) movePlanningIssueAction(board, issue, issue.state, undo: true),
         for (final state in board.states.where((state) => PlanningBoard.issueMayEnter(issue, state)))
           movePlanningIssueAction(board, issue, state.name),
       ],

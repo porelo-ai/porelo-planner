@@ -61,8 +61,53 @@ public final class Answers {
      *
      * @param revision the board's revision after the save
      * @param moved every issue the batch moved, each once
+     * @param stopped every run a confirmed save stopped
      */
-    public record Moved(String revision, List<String> moved) {}
+    public record Moved(String revision, List<String> moved, List<StoppedRun> stopped) {
+
+        /**
+         * Answers the same save with the runs it stopped.
+         *
+         * @param runs the runs stopped
+         * @return the answer
+         */
+        Moved withStopped(final List<StoppedRun> runs) {
+            return new Moved(revision, moved, runs);
+        }
+    }
+
+    /**
+     * A run a confirmed save of moves stopped.
+     *
+     * @param story the run's story
+     * @param run the run's id
+     * @param tasks each task at work the window must end
+     */
+    public record StoppedRun(String story, String run, List<StoppedTask> tasks) {}
+
+    /**
+     * A task at work whose run a confirmed save of moves stopped.
+     *
+     * @param task the task's name
+     * @param containerId the container it runs in
+     */
+    public record StoppedTask(String task, String containerId) {}
+
+    /**
+     * What a batch of moves would do, answered before it is saved.
+     *
+     * @param revision the board's revision the preview was read at
+     * @param digest what the save sends back, so it saves only what was shown
+     * @param issues every issue the batch moves
+     * @param stories every story the batch moves
+     * @param warnings what the batch can do harm by
+     */
+    public record MovePreview(
+            String revision,
+            String digest,
+            List<org.fuin.porelo.planner.core.MovePreview.MovedIssue> issues,
+            List<org.fuin.porelo.planner.core.MovePreview.MovedStory> stories,
+            List<org.fuin.porelo.planner.core.MovePreview.Warning> warnings) {}
 
     /**
      * The answer to a saved worker.

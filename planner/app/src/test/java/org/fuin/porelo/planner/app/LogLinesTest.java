@@ -142,12 +142,21 @@ class LogLinesTest {
         // Without the lines a person cannot tell why a board lacked an issue or when a save went
         // out; a fault's own line break would let a repository write lines of its own.
         mvc.perform(get("/projects/" + PROJECT + "/stories")).andExpect(status().isOk());
+        final String batch =
+                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}";
+        final String preview =
+                mvc.perform(
+                                post("/projects/" + PROJECT + "/moves/preview")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(batch))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
         mvc.perform(
                         post("/projects/" + PROJECT + "/moves")
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\","
-                                                + " \"to\": \"Review\"}]}"))
+                                .content(Previewed.moves(batch, preview)))
                 .andExpect(status().isOk());
         final List<String> messages =
                 lines.list.stream().map(ILoggingEvent::getFormattedMessage).toList();

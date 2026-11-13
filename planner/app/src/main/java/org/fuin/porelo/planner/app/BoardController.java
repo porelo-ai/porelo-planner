@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Misfits;
+import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.Priorities;
@@ -56,6 +57,9 @@ public class BoardController {
             Pattern.compile(
                     "(?m)^\\*\\*What must be true\\.\\*\\*[ \\t]*(.+(?:\\r?\\n(?!\\s*\\n).+)*)");
 
+    /** A preview's digest as the planner answers it. */
+    private static final Pattern DIGEST = Pattern.compile("[0-9a-f]{64}");
+
     /** The most moves one batch may hold. */
     private static final int MOST_MOVES = 200;
 
@@ -84,12 +88,23 @@ public class BoardController {
      *
      * @param revision the revision the window shows
      * @param moves the moves, in order
+     * @param digest the digest of the batch's preview
      * @param confirm whether a story may stand where its issues do not fit
      */
     public record MovesBody(
             @Nullable String revision,
             @Nullable List<@Nullable MoveBody> moves,
+            @Nullable String digest,
             @Nullable Boolean confirm) {}
+
+    /**
+     * A batch of moves to preview, as the window sends it.
+     *
+     * @param revision the revision the window shows
+     * @param moves the moves, in order
+     */
+    public record PreviewBody(
+            @Nullable String revision, @Nullable List<@Nullable MoveBody> moves) {}
 
     /**
      * One move as the window sends it, naming a story or an issue.
@@ -101,7 +116,38 @@ public class BoardController {
     public record MoveBody(@Nullable String story, @Nullable String issue, @Nullable String to) {}
 
     /**
-     * Saves a batch of moves, all or none.
+     * Answers what a batch of moves would do and what it can do harm by, writing nothing.
+     *
+     * @param project the project's name
+     * @param body the batch
+     * @return the preview with its digest
+     */
+    @PostMapping("/projects/{project}/moves/preview")
+    public Answers.MovePreview previewMoves(
+            @PathVariable("project") final String project, @RequestBody final PreviewBody body) {
+        final String name = name(project);
+        final List<Moves.Move> moves = moves(name, body.moves());
+        final String revision = body.revision();
+        if (revision == null) {
+            throw notAllowed("", "", "The body names no revision.");
+        }
+        final Projects.Given given = projects.given(name);
+        final MovePreview preview;
+        try {
+            preview = given.work().preview(moves, revision);
+        } catch (final UnsupportedOperationException e) {
+            throw movesNotOffered(name);
+        }
+        return new Answers.MovePreview(
+                preview.revision(),
+                preview.digest(given.repository(), given.branch()),
+                preview.issues(),
+                preview.stories(),
+                preview.warnings());
+    }
+
+    /**
+     * Saves a batch of moves, all or none, and only the batch whose preview the person saw.
      *
      * @param project the project's name
      * @param body the batch
@@ -111,21 +157,66 @@ public class BoardController {
     public Answers.Moved saveMoves(
             @PathVariable("project") final String project, @RequestBody final MovesBody body) {
         final String name = name(project);
-        final List<Moves.Move> moves = moves(name, body);
+        final List<Moves.Move> moves = moves(name, body.moves());
+        final String revision = body.revision();
+        if (revision == null) {
+            throw notAllowed("", "", "The body names no revision.");
+        }
+        final String digest = body.digest();
+        if (digest == null || !DIGEST.matcher(digest).matches()) {
+            throw notAllowed("", "", "The body names no preview's digest.");
+        }
+        final Projects.Given given = projects.given(name);
         try {
-            return projects.work(name).moves(moves, () -> saveMoves(name, body, moves));
+            final WorkRun.MoveSaved<Answers.Moved> saved =
+                    given.work()
+                            .moves(
+                                    moves,
+                                    revision,
+                                    digest,
+                                    Boolean.TRUE.equals(body.confirm()),
+                                    given.repository(),
+                                    given.branch(),
+                                    () -> saveMoves(name, given.store(), body, moves));
+            return saved.saved().withStopped(stopped(saved.stopped()));
+        } catch (final UnsupportedOperationException e) {
+            throw movesNotOffered(name);
         } finally {
             changes.saved(name);
         }
     }
 
+    /** The runs a confirmed save stopped, as the window ends their tasks. */
+    private static List<Answers.StoppedRun> stopped(final List<WorkRun.StoppedRun> runs) {
+        return runs.stream()
+                .map(
+                        run ->
+                                new Answers.StoppedRun(
+                                        run.story(),
+                                        run.run(),
+                                        run.tasks().stream()
+                                                .map(
+                                                        t ->
+                                                                new Answers.StoppedTask(
+                                                                        t.task(), t.container()))
+                                                .toList()))
+                .toList();
+    }
+
+    private static Refusal movesNotOffered(final String name) {
+        return new Refusal(
+                "NotOffered",
+                HttpStatus.NOT_IMPLEMENTED,
+                "This planner does not save moves.",
+                Map.of("project", name));
+    }
+
     private Answers.Moved saveMoves(
-            final String name, final MovesBody body, final List<Moves.Move> moves) {
-        final String revision = body.revision();
-        if (revision == null) {
-            throw notAllowed("", "", "The body names no revision.");
-        }
-        final PlanningStore store = projects.store(name);
+            final String name,
+            final PlanningStore store,
+            final MovesBody body,
+            final List<Moves.Move> moves) {
+        final String revision = String.valueOf(body.revision());
         final Board board = store.board();
         if (!board.revision().value().equals(revision)) {
             throw new StoreException.StaleRevision(board.revision().value());
@@ -140,7 +231,7 @@ public class BoardController {
                     && planned.stories().isEmpty()
                     && planned.unstated().isEmpty()) {
                 // Nothing changes, so no repository is locked or asked.
-                return new Answers.Moved(board.revision().value(), planned.moved());
+                return new Answers.Moved(board.revision().value(), planned.moved(), List.of());
             }
             saved =
                     store.save(
@@ -164,18 +255,14 @@ public class BoardController {
                             .findFirst()
                             .orElse(""));
         } catch (final UnsupportedOperationException e) {
-            throw new Refusal(
-                    "NotOffered",
-                    HttpStatus.NOT_IMPLEMENTED,
-                    "This planner does not save moves.",
-                    Map.of("project", name));
+            throw movesNotOffered(name);
         }
         LOG.info(
                 "Saved {} moves of project {} as revision {}",
                 moves.size(),
                 LogText.of(name),
                 LogText.of(saved.revision().value()));
-        return new Answers.Moved(saved.revision().value(), planned.moved());
+        return new Answers.Moved(saved.revision().value(), planned.moved(), List.of());
     }
 
     /**
@@ -343,8 +430,8 @@ public class BoardController {
         }
     }
 
-    private static List<Moves.Move> moves(final String project, final MovesBody body) {
-        final List<@Nullable MoveBody> given = body.moves();
+    private static List<Moves.Move> moves(
+            final String project, final @Nullable List<@Nullable MoveBody> given) {
         if (given == null || given.size() > MOST_MOVES) {
             throw notAllowed("", "", "Moves must be a list of at most " + MOST_MOVES + ".");
         }

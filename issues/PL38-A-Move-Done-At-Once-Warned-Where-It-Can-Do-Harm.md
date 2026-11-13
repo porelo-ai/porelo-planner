@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL38",
   "title": "A Move Done At Once, Warned Where It Can Do Harm",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Highest",
   "rank": 3,
@@ -93,11 +93,11 @@ naming the story and its tasks); the answer names the issues moved only after th
    - **One move at a time.** While a move is previewed, asked about or saved, or its save is unanswered, the board
      takes no other move or move action and says why (`Saving…`), as `move` already returns while `saving`; nothing
      is queued.
-   - **Stop, then move.** The stop goes out as the story's stop does, then the save; while the planner still counts
-     the tasks as running, the save is refused with `WorkRunning` and the screen says the tasks are still stopping,
-     stops nothing more and saves nothing until the person moves again. How the stop is sent follows the screen's
-     stop as it stands when this is built. For `RUNNING_WORK` the choice is stop and move - the story's stop as *Stop* sends it
-   today, then the move - or cancel. The list of unsaved moves, *Undo*, *Undo all* and *Save* go, and with them the
+   - **Stop, then move.** A confirmed save stops, under the writer lock and only after its digest matched, each run
+     with tasks at work over what moves, as the story's *Stop* does, and saves in the same step; its answer names
+     those runs and their tasks (`stopped`), and the screen ends exactly those tasks. A set of running tasks that
+     changed since the preview is refused with `PreviewChanged` and stops nothing. For `RUNNING_WORK` the choice is
+     stop and move, or cancel. The list of unsaved moves, *Undo*, *Undo all* and *Save* go, and with them the
    reconciling of staged moves. That also settles a move staged before the window rebinds the project to another
    repository: nothing is staged, and `HttpPlanningSource._bound` refuses a save racing a rebind with
    `ProjectChanged`. Red first, widget tests: a drop with a warning shows the issue that moves along and sends no save
@@ -123,8 +123,8 @@ Order: 1, 3, 2, 4 agreed before 2.
 - A durable identity for each save with its recorded outcome, so a retry replays it: a save is sent against one
   revision, so a second one after a lost answer is refused as stale and never writes twice; an unanswered save keeps
   the board's existing unanswered state and its deadline, and the board takes no other move meanwhile.
-- A stop answering only once every task has ended: the planner refuses the move while any task still runs
-  (`WorkRunning`), which no screen can pass around, so a stop not yet ended moves nothing.
+- A stop answering only once every task has ended: an unconfirmed save is refused while any task still runs
+  (`WorkRunning`), and a confirmed one stops only the runs whose tasks its preview showed, in the save's own step.
 
 - **Agreed with the window, with two changes.** `RUNNING_WORK`'s list stays open to starts the window handed to Porelo
   but has not reported to the planner yet: the window adds those under the same kind, and the `digest` does not cover
@@ -133,6 +133,19 @@ Order: 1, 3, 2, 4 agreed before 2.
 - **Delivery with the window.** The window's own change for the removed Save and Undo keys and the new warning keys
   goes out in the same push batch as this one, with the window's pin moved to it; no batch carries one side alone.
   This change reaches the test VM only after the window's walk that still uses the Save keys has ended.
+- **What building found.** `ISSUES_ALONG` names only an issue in a working state or of another repository than the
+  project's own, so a story that carries only its own waiting issues asks nothing; `SKIPS_STATES` names only the
+  waiting states passed and never fires for a closed target. The check of every other kind of move found no new kind:
+  a parent closed over open sub-issues is still refused, by the preview too, since the preview runs the save's own
+  check; a move out of a measured state and a move back need no warning. `WorkRun.moves` now answers a refusal of the
+  batch, such as `EnteredOnlyByWork`, before `WorkRunning`, as the preview does. The mock's recorded answers gained the preview, which the screen's
+  served-mock test reads for the digest it sends. The integration test that a preview writes nothing runs over a fake
+  store, which records every save, not over Git.
+  The reading of the code found that a separate stop could end tasks the warning never named, that a follow-up start
+  not yet reported escaped `RUNNING_WORK`, that a drag took the revision at its drop, that the screen's mock refused
+  no story moved where its issues do not fit, and that the digest's test held without the running work: the stop now
+  happens inside the confirmed save, a follow-up start counts as running until reported, a drag and a menu carry the
+  revision they were opened on, and each has a test seen red.
 
 ## Acceptance
 

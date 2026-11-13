@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.ConfigurableApplicationContext;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * The answers the planner's mock mode gives to what the planning screen asks at a board's start,
@@ -134,14 +135,11 @@ class MockAnswersTest {
         answers.put("stories.json", body(call("GET", "/projects/demo/stories", null)));
         answers.put("board-event.json", firstBoardEvent());
         answers.put("issue-B541.json", body(call("GET", "/projects/demo/issues/B541", null)));
+        final String preview = body(call("POST", "/projects/demo/moves/preview", MOVE_B542));
+        answers.put("preview-B542.json", preview);
         answers.put(
                 "move-B542.json",
-                body(
-                        call(
-                                "POST",
-                                "/projects/demo/moves",
-                                "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\","
-                                        + " \"to\": \"Review\"}]}")));
+                body(call("POST", "/projects/demo/moves", saveAsTheScreenSends(preview))));
         return answers;
     }
 
@@ -182,6 +180,16 @@ class MockAnswersTest {
     private static String pretty(final String json) {
         return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(JSON.readTree(json)) + "\n";
     }
+
+    /** The save the screen sends after the preview: the batch, the digest and no confirmation. */
+    private static String saveAsTheScreenSends(final String preview) {
+        final ObjectNode save = (ObjectNode) JSON.readTree(Previewed.moves(MOVE_B542, preview));
+        save.put("confirm", false);
+        return JSON.writeValueAsString(save);
+    }
+
+    private static final String MOVE_B542 =
+            "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\": \"Review\"}]}";
 
     private static HttpResponse<String> call(
             final String method, final String path, final String body)

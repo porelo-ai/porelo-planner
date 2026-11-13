@@ -1,0 +1,12 @@
+{
+  "revision" : "mock@1",
+  "digest" : "b9790cc11501fdf4da3ecae6b6547e30e06cfaf0ccfc78cf9de8249e10d0b202",
+  "issues" : [ {
+    "id" : "B542",
+    "repository" : "porelo",
+    "from" : "Backlog",
+    "to" : "Review"
+  } ],
+  "stories" : [ ],
+  "warnings" : [ ]
+}

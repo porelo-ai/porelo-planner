@@ -214,23 +214,23 @@ void main() {
     await backend.end();
   });
 
-  // Harm: a draft edits sibling states or appears saved before the daemon acknowledgement.
-  test('one issue stays pending until its confirmed save is reread', () async {
+  // Harm: a move on a story's page edits sibling issues, or shows as saved before the planner confirmed it.
+  test('one issue moved on its story\'s page is saved at once and shown moved once confirmed', () async {
     final backend = MockPlanningSource();
     final board = PlanningBoard(backend, 'demo');
     await _flush();
     final detail = PlanningDetail(board, 'ST291', null);
     await _flush();
-    detail.queueMove('B541', 'Review');
-    expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Implementing');
-    expect(detail.pendingMoves.keys, ['B541']);
     final held = Completer<void>();
     backend.moveHeld = held;
-    final save = detail.saveMoves();
-    expect(detail.saving, isTrue);
+    detail.queueMove('B541', 'Review');
+    await _flush();
+    expect(backend.moveCalls, hasLength(1), reason: 'the move went out without a Save');
+    expect(detail.pendingMoves.keys, ['B541']);
+    expect(detail.moveUnavailable, 'Saving…', reason: 'no second move while one is out');
     expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Implementing');
     held.complete();
-    await save;
+    await _flush();
     expect(detail.pendingMoves, isEmpty);
     expect(backend.moveCalls, hasLength(1));
     expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Review');
@@ -240,28 +240,22 @@ void main() {
     await backend.end();
   });
 
-  // Harm: stale planning is overwritten or pending work is silently discarded.
-  test('stale issue moves reread and keep only still-applicable drafts without retrying writes', () async {
+  // Harm: a move made on a board that changed elsewhere overwrites what changed, unseen.
+  test('a move on planning that changed elsewhere is not saved and is said so', () async {
     final backend = MockPlanningSource();
     final board = PlanningBoard(backend, 'demo');
     await _flush();
     final detail = PlanningDetail(board, 'ST291', null);
     await _flush();
-    detail.queueMove('B540', 'Review');
+    backend.boards['demo']!['revision'] = 'elsewhere';
     detail.queueMove('B541', 'Review');
-    final raw = backend.boards['demo']!;
-    raw['revision'] = 'elsewhere';
-    final story = mockPlanningStory(raw, 'ST291')!;
-    (story['issues'] as List).cast<Map<String, dynamic>>().singleWhere((issue) => issue['id'] == 'B540')['state'] =
-        'Review';
-    await detail.saveMoves();
-    expect(detail.pendingMoves.keys, ['B541']);
-    expect(backend.moveCalls, hasLength(1));
-    expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Implementing');
-    expect(detail.moveNotice, contains('save again'));
-    await detail.saveMoves();
-    expect(backend.moveCalls, hasLength(2));
+    await _flush();
+    expect(backend.moveCalls, isEmpty, reason: 'nothing was saved over the change');
     expect(detail.pendingMoves, isEmpty);
+    expect(board.moveProblem, contains('nothing was moved'));
+    detail.queueMove('B541', 'Review');
+    await _flush();
+    expect(backend.moveCalls, hasLength(1), reason: 'moved again on the board read again, it is saved');
     expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Review');
     detail.dispose();
     board.dispose();
@@ -275,15 +269,16 @@ void main() {
     await _flush();
     final detail = PlanningDetail(board, 'ST291', null);
     await _flush();
-    detail.queueMove('B541', 'Review');
     final held = Completer<void>();
     backend.moveHeld = held;
-    final save = detail.saveMoves();
+    detail.queueMove('B541', 'Review');
+    await _flush();
     final changes = <String>[];
     detail.addListener(() => changes.add('changed'));
     detail.dispose();
     held.complete();
-    await save;
+    await _flush();
+    expect(backend.moveCalls, hasLength(1));
     expect(changes, isEmpty);
     board.dispose();
     await backend.end();

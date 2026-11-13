@@ -10,8 +10,8 @@ import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
 import '../story_work.dart';
-import 'actions.dart';
 import 'planning_detail_widgets.dart';
+import 'planning_move_warning.dart';
 import 'story_work_attention.dart';
 import 'style.dart';
 
@@ -122,39 +122,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           if (detail.moveUnavailable case final reason? when !detail.loading && !detail.saving) Text(reason),
           if (detail.moveProblem case final problem?) Text(problem, key: const Key('planning-move-error')),
           if (detail.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
-          if (detail.board.pending.isNotEmpty) ...[
-            Text(
-              '${detail.board.pending.length} planning move${detail.board.pending.length == 1 ? '' : 's'} not saved',
-              key: const Key('planning-moves-pending'),
-            ),
-            for (final entry in detail.board.pending.entries)
-              Text(
-                '${entry.key} ${planningValue(entry.value.from)} → ${entry.value.to}',
-                key: Key('planning-pending-move ${entry.key}'),
-              ),
-            // A row the search hides cannot show its refusal, so it stands here.
-            for (final MapEntry(key: id, value: problem) in detail.moveProblems.entries)
-              if (!shown.any((issue) => issue.id == id))
-                Text(
-                  '$id: $problem',
-                  key: Key('planning-move-problem $id'),
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-            Wrap(
-              children: [
-                FilledButton(
-                  key: const Key('planning-save-moves'),
-                  onPressed: detail.canSaveMoves ? savePlanningAction(detail.board).run : null,
-                  child: Text(detail.saving ? 'Saving changes…' : 'Save changes'),
-                ),
-                TextButton(
-                  key: const Key('planning-undo-moves'),
-                  onPressed: detail.saving ? null : detail.undoMoves,
-                  child: const Text('Undo changes'),
-                ),
-              ],
-            ),
-          ],
+          PlanningMoveWarningPanel(board: detail.board),
 
           if (issues == null && !detail.loading && detail.issuesProblem == null) const Text('Issues not reported'),
           if (issues != null) ...[
@@ -392,9 +360,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           ? 'Issue identifier not reported.'
           : issue.state.isEmpty
           ? 'Issue state not reported.'
-          : detail.moveStatesOf(issue).isEmpty &&
-                !detail.pendingMoves.containsKey(issue.id) &&
-                _startStatesOf(issue).isEmpty
+          : detail.moveStatesOf(issue).isEmpty && _startStatesOf(issue).isEmpty
           ? 'No waiting or closed destinations were reported.'
           : null);
 
@@ -407,26 +373,25 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      PopupMenuButton<(String, String, bool, bool)>(
+      PopupMenuButton<(String, String, bool, String)>(
         key: Key('planning-move ${issue.id}'),
         tooltip: _moveUnavailable(issue) ?? 'Change the state of ${issue.id}',
         enabled: _moveUnavailable(issue) == null,
-        // Each item carries the state shown when the menu opened; a rebuild while it stands open changes no item.
-        onSelected: (choice) => choice.$4
+        // Each item carries the state and the board's revision shown when the menu opened; a rebuild while it stands
+        // open changes no item.
+        onSelected: (choice) => choice.$3
             ? onStartIssue?.call(issue.id, choice.$2)
-            : detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, undo: choice.$3),
+            : unawaited(detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, revision: choice.$4)),
         itemBuilder: (_) => [
-          if (detail.pendingMoves.containsKey(issue.id))
-            PopupMenuItem(value: (issue.state, issue.state, true, false), child: const Text('Undo this move')),
           for (final state in detail.moveStatesOf(issue))
             PopupMenuItem(
-              value: (issue.state, state.name, false, false),
+              value: (issue.state, state.name, false, detail.board.snapshot?.revision ?? ''),
               key: Key('planning-move-to ${issue.id} ${state.name}'),
               child: Text(state.name),
             ),
           for (final state in _startStatesOf(issue))
             PopupMenuItem(
-              value: (issue.state, state.name, false, true),
+              value: (issue.state, state.name, true, detail.board.snapshot?.revision ?? ''),
               key: Key('planning-start-issue ${issue.id} ${state.name}'),
               child: Text('Start ${state.name}…'),
             ),
@@ -441,13 +406,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
       ),
       if (_moveUnavailable(issue) case final reason?) Text(reason),
       if (detail.pendingMoves[issue.id] case final move?)
-        Text('Pending: ${move.to}', key: Key('planning-move-pending ${issue.id}')),
-      if (detail.moveProblems[issue.id] case final problem?)
-        Text(
-          problem,
-          key: Key('planning-move-problem ${issue.id}'),
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
+        Text('Saving… ${move.to}', key: Key('planning-move-pending ${issue.id}')),
     ],
   );
 }

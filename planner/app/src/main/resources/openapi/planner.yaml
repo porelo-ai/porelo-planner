@@ -655,7 +655,13 @@ paths:
         Checks a batch of moves against the board at the given revision and saves it all or not at all: each
         repository it changes gets one commit, pushed under the person's own Git login. A story moves its least
         advanced issues; a working state is entered only by work, except by an issue a person works (worker
-        MANUAL), which a person moves into and through the working states by hand.
+        MANUAL), which a person moves into and through the working states by hand. The body carries the digest of
+        the batch's preview: under the writer lock, before anything is written, the preview is computed again, and a
+        batch whose preview answers another digest is refused (PreviewChanged), so a confirmation counts only for the
+        batch, the repository and the work the person was shown. A batch over running work is refused (WorkRunning)
+        unless it is confirmed; a confirmed one stops, after its digest matched and in the same step as its save,
+        each run with tasks at work over what moves, as the story's Stop does, and answers those runs with the tasks
+        the window must end, so nothing is stopped that the preview did not show.
       tags: [board]
       requestBody:
         required: true
@@ -670,6 +676,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Moved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/MoveConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/moves/preview:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: previewMoves
+      summary: Answer what a batch of moves would do, writing nothing
+      description: >-
+        Checks a batch of moves as saving it would, against the board at the given revision, and answers what it
+        would write and the warnings a person confirms before it is saved: every issue it moves with its repository,
+        old and new state, every story it moves, and its warnings. Nothing is stopped, written or pushed. The digest
+        answered covers the revision, the project's repository and branch, the batch, the warnings and the runs and
+        offers they name; the save sends it back. A refusal the save would answer for the batch itself, such as a
+        working state or an unknown item, is answered here too; a story that does not fit its issues is a warning
+        (STORY_MISMATCH), not a refusal. A planner that does not know this operation answers 404, and the window then
+        moves nothing.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovesPreviewRequest'
+      responses:
+        '200':
+          description: What the batch would do.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovePreview'
         '400':
           $ref: '#/components/responses/InvalidName'
         '401':
@@ -1152,9 +1206,10 @@ components:
     MoveConflict:
       description: >-
         WorkRunning(story,tasks[]) when a move touches an item currently owned by active work. The board moved since
-        the given revision (StaleRevision, naming the current one), or a story would stand where
-        its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that does not fit
-        with its state).
+        the given revision (StaleRevision, naming the current one), the batch's preview, computed again, answers
+        another digest than the one sent (PreviewChanged, naming nothing the window could send back), or a story would
+        stand where its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that
+        does not fit with its state). A preview answers only StaleRevision.
       content:
         application/problem+json:
           schema:
@@ -1168,6 +1223,13 @@ components:
                 detail: The board moved since that revision.
                 parameters:
                   revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+            PreviewChanged:
+              value:
+                type: urn:porelo-planner:PreviewChanged
+                title: PreviewChanged
+                status: 409
+                detail: What the moves would do changed since their preview; preview them again.
+                parameters: {}
             StoryStateMismatch:
               value:
                 type: urn:porelo-planner:StoryStateMismatch
@@ -1344,8 +1406,8 @@ components:
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities or adds no ideas;
-        the mock mode saves moves and workers and adds ideas into its in-memory board, but adds no issues and saves no
-        priorities (NotOffered).
+        the mock mode previews and saves moves, saves workers and adds ideas into its in-memory board, but adds no
+        issues and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -1576,7 +1638,27 @@ components:
             $ref: '#/components/schemas/Story'
 
     Moves:
-      description: A batch of moves against the board at a revision.
+      description: A batch of moves against the board at a revision, with the digest of its preview.
+      type: object
+      required: [revision, moves, digest]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        moves:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/Move'
+        digest:
+          $ref: '#/components/schemas/PreviewDigest'
+        confirm:
+          type: boolean
+          default: false
+          description: >-
+            Whether the person confirmed the preview's warnings: a story may stand where its issues do not fit, as
+            its STORY_MISMATCH warning showed, and each run its RUNNING_WORK warning named is stopped with the save.
+    MovesPreviewRequest:
+      description: A batch of moves to preview against the board at a revision.
       type: object
       required: [revision, moves]
       properties:
@@ -1587,10 +1669,109 @@ components:
           maxItems: 200
           items:
             $ref: '#/components/schemas/Move'
-        confirm:
-          type: boolean
-          default: false
-          description: Whether a story may stand where its issues do not fit.
+    PreviewDigest:
+      description: >-
+        A SHA-256 over what a preview showed, as 64 lower-case hexadecimal characters; opaque to the window, which only
+        sends it back with the save.
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    MovePreview:
+      description: What a batch of moves would write, and what a person confirms before it is saved.
+      type: object
+      required: [revision, digest, issues, stories, warnings]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        digest:
+          $ref: '#/components/schemas/PreviewDigest'
+        issues:
+          type: array
+          description: Every issue the batch moves, each once, in the order the save names them.
+          items:
+            $ref: '#/components/schemas/MovedIssue'
+        stories:
+          type: array
+          description: Every story the batch moves.
+          items:
+            $ref: '#/components/schemas/MovedStory'
+        warnings:
+          type: array
+          description: >-
+            What the batch can do harm by; empty when it is saved without asking. A window lists under RUNNING_WORK
+            too the tasks it started that the planner does not know yet; the digest does not cover those.
+          items:
+            $ref: '#/components/schemas/MoveWarning'
+    MovedIssue:
+      description: An issue a batch moves, or one a warning names, with its state now and after the batch.
+      type: object
+      required: [id, repository, from, to]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
+        from:
+          type: string
+        to:
+          type: string
+    MovedStory:
+      description: A story a batch moves, with the state it shows now and the one it is moved to.
+      type: object
+      required: [id, from, to]
+      properties:
+        id:
+          $ref: '#/components/schemas/StoryId'
+        from:
+          type: string
+        to:
+          type: string
+    MoveWarning:
+      description: >-
+        One harm a batch can do. RUNNING_WORK - a story's run has tasks at work over what moves: item is the story,
+        run its run, tasks each task at work and offers each offer not yet started, all of which its stop ends or
+        voids; an unconfirmed save is refused (WorkRunning), a confirmed one stops them. ISSUES_ALONG - a story's
+        move carries issues along that stand in a working state or in another repository than the project's own: item is the story,
+        issues each such issue. SKIPS_STATES - a move forward past waiting states: item is the story or issue, from
+        and to its states, skipped the states passed. STORY_MISMATCH - a story would stand where its issues do not
+        fit: item is the story, to its target, issues each issue that does not fit with its state after the batch;
+        the save then needs confirm.
+      type: object
+      required: [kind, item, from, to, run, tasks, offers, issues, skipped]
+      properties:
+        kind:
+          type: string
+          enum: [RUNNING_WORK, ISSUES_ALONG, SKIPS_STATES, STORY_MISMATCH]
+        item:
+          type: string
+          description: The story or issue the warning is about.
+        from:
+          type: string
+          description: The item's state now.
+        to:
+          type: string
+          description: The state the batch moves the item to.
+        run:
+          description: The run whose tasks RUNNING_WORK names, or null.
+          oneOf:
+            - $ref: '#/components/schemas/RunId'
+            - type: 'null'
+        tasks:
+          type: array
+          items:
+            type: string
+        offers:
+          type: array
+          items:
+            type: string
+            format: uuid
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovedIssue'
+        skipped:
+          type: array
+          items:
+            type: string
     Move:
       description: One move, naming exactly one story or one issue.
       type: object
@@ -1604,9 +1785,11 @@ components:
           type: string
           description: The state it moves to.
     Moved:
-      description: The board's revision after the save, and every issue the batch moved, each once.
+      description: >-
+        The board's revision after the save, every issue the batch moved, each once, and every run a confirmed save
+        stopped.
       type: object
-      required: [revision, moved]
+      required: [revision, moved, stopped]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -1614,6 +1797,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IssueId'
+        stopped:
+          type: array
+          description: Each run the save stopped; empty when it stopped none.
+          items:
+            $ref: '#/components/schemas/StoppedRun'
+    StoppedRun:
+      description: A run a confirmed save of moves stopped, with each task at work the window must end.
+      type: object
+      required: [story, run, tasks]
+      properties:
+        story:
+          $ref: '#/components/schemas/StoryId'
+        run:
+          $ref: '#/components/schemas/RunId'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoppedTask'
+    StoppedTask:
+      description: A task at work whose run a confirmed save of moves stopped, which the window ends.
+      type: object
+      required: [task, containerId]
+      properties:
+        task:
+          type: string
+        containerId:
+          type: string
 
     Worker:
       description: Who works an issue, an agent through the tasks the planner starts or a person by hand.

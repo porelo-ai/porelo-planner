@@ -67,6 +67,12 @@ class PlanningRun {
   /// Invalidates pending batches before a stop goes over HTTP.
   void cancel() => epoch++;
 
+  /// Offers handed to Start whose start the planner has not been told of yet; the planner cannot warn of them.
+  final Set<String> _unreported = {};
+
+  /// Whether a start of this run is in flight that the planner does not report yet.
+  bool get starting => _unreported.isNotEmpty;
+
   /// A recorded stop cannot leave an earlier batch authorized to start.
   void observe(PlanWork? work) {
     if (work?.issues.any((issue) => issue.reason == 'STOPPED') == true) cancel();
@@ -83,12 +89,14 @@ class PlanningRun {
     this.startTask = startTask;
     final binding = _Offer(this);
     offers[offer] = binding;
+    _unreported.add(offer);
     try {
       final started = await startTask(source, project, story, order);
       binding.started = started;
       return started;
     } catch (error) {
       binding.failure = error;
+      _unreported.remove(offer);
       rethrow;
     }
   }
@@ -101,6 +109,7 @@ class PlanningRun {
   }) async {
     if (tasks.isEmpty) return;
     if (epoch != expected) {
+      _unreported.removeAll([for (final task in tasks) ?task.$1.offer]);
       await changes?.stop(source, project, story, [for (final task in tasks) task.$2]);
       return;
     }
@@ -190,6 +199,7 @@ class PlanningRun {
         landed: landed,
       );
       boundHere = false;
+      if (event == PlanningTaskEvent.started) run._unreported.remove(offer);
       run.observe(answer.work);
       await run.follow(answer.tasks, expected);
     } catch (error) {

@@ -136,6 +136,35 @@ public final class Projects {
         retired.add(listener);
     }
 
+    /**
+     * One given project as one entry: its source, its store and its work, read together, so a call
+     * that reads them never mixes a project given anew with the one before.
+     *
+     * @param repository its own repository's clone URL
+     * @param branch its branch, or null for the remote's default
+     * @param store its store
+     * @param work its work service
+     */
+    public record Given(
+            String repository, @Nullable String branch, PlanningStore store, WorkRun work) {}
+
+    /**
+     * Answers a known project's source, store and work from one entry.
+     *
+     * @param project the project's name
+     * @return the project as given
+     * @throws Refusal {@code NoSuchProject} when the planner was not given it
+     */
+    public Given given(final String project) {
+        final Entry entry = projects.get(project);
+        if (entry == null) {
+            store(project);
+            throw new IllegalStateException("The project was retired");
+        }
+        return new Given(
+                entry.source().repository(), entry.source().branch(), entry.store(), entry.work());
+    }
+
     /** Answers a known project's work service with the same lifetime as its store. */
     public WorkRun work(final String project) {
         final Entry entry = projects.get(project);

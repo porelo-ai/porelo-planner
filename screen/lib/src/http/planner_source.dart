@@ -479,13 +479,60 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
+    final answer = await _write(
+      project,
+      ['moves', 'preview'],
+      {
+        'revision': revision,
+        'moves': [for (final move in moves) move.toMap()],
+      },
+    );
+    final preview = PlanningMovePreview.from(answer);
+    // A preview the window cannot read must never let a move go out unasked.
+    if (!_digest.hasMatch(preview.digest) ||
+        preview.revision != revision ||
+        answer['issues'] is! List ||
+        answer['warnings'] is! List ||
+        (answer['warnings'] as List).any((warning) => warning is! Map<String, dynamic>)) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not answer a readable preview of the move.');
+    }
+    return preview;
+  }
+
+  static final _digest = RegExp(r'^[0-9a-f]{64}$');
+
+  static bool _stoppedReadable(Object? stopped) {
+    bool text(Object? value) => value is String && value.trim().isNotEmpty;
+    return stopped is List &&
+        stopped.every(
+          (run) =>
+              run is Map<String, dynamic> &&
+              text(run['story']) &&
+              text(run['run']) &&
+              run['tasks'] is List &&
+              (run['tasks'] as List).every(
+                (task) => task is Map<String, dynamic> && text(task['task']) && text(task['containerId']),
+              ),
+        );
+  }
+
+  @override
+  Future<PlanningMoveResult> saveMoves(
+    String project,
+    List<PlanningMove> moves,
+    String revision, {
+    required String digest,
+    bool confirm = false,
+  }) async {
     final answer = await _write(
       project,
       ['moves'],
       {
         'revision': revision,
         'moves': [for (final move in moves) move.toMap()],
+        'digest': digest,
+        'confirm': confirm,
       },
     );
     final moved = answer['moved'];
@@ -494,6 +541,10 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         moved.any((item) => item is! String || !_issueId.hasMatch(item)) ||
         moved.toSet().length != moved.length) {
       throw const PlanningRefusal('BadAnswer', {}, 'The planner did not confirm the saved revision and moved issues.');
+    }
+    // Every task a confirmed save stopped must be ended, so an answer that names them unreadably is refused whole.
+    if (!_stoppedReadable(answer['stopped'])) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not say which runs the save stopped.');
     }
     return PlanningMoveResult.from(answer);
   }

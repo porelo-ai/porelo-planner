@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/served_story_work.dart';
 import 'support/story_work_support.dart';
 
 Future<(MockPlanningSource, PlanningBoards)> _showBoard(
@@ -79,7 +81,159 @@ class _Choice {
   String name = 'local';
 }
 
+/// Drags [id]'s card onto the column of [state] and lets it go.
+Future<void> _drop(WidgetTester tester, String id, String state) async {
+  final source = find.byKey(Key('planning-card $id'));
+  final target = find.byKey(Key('planning-state $state'));
+  final drag = await tester.startGesture(tester.getTopLeft(source) + const Offset(20, 20));
+  await drag.moveBy(const Offset(0, -20));
+  await tester.pump();
+  await drag.moveTo(tester.getCenter(find.descendant(of: target, matching: find.text(state))));
+  await tester.pump();
+  await drag.up();
+  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+  await settle(tester);
+}
+
+/// Gives StoryOne an issue of [repository], waiting in Ready, on a board whose own repository is `own`.
+void _withIssueOf(MockPlanningSource backend, String repository) {
+  final data = backend.boards['checkout']!;
+  data['repositories'] = ['own'];
+  (data['stories'] as List<dynamic>).first['issues'] = [
+    {'id': 'OT1', 'repository': repository, 'title': 'An issue', 'state': 'Ready'},
+  ];
+  backend.push('checkout', data);
+}
+
 void main() {
+  // Harm: a drop that carries an issue of another repository along is saved unasked, or Cancel still saves it.
+  testWidgets('a drop that carries another repository\'s issue along asks first and Cancel saves nothing', (
+    tester,
+  ) async {
+    final (backend, boards) = await _showBoard(tester);
+    _withIssueOf(backend, 'other');
+    await settle(tester);
+
+    await _drop(tester, 'StoryOne', 'Review');
+
+    expect(find.byKey(const Key('planning-move-warning')), findsOneWidget, reason: 'the move is asked about');
+    expect(
+      find.byKey(const Key('planning-move-warning-issue ISSUES_ALONG OT1')),
+      findsOneWidget,
+      reason: 'the issue carried along is named',
+    );
+    expect(backend.moveCalls, isEmpty, reason: 'nothing is saved before Confirm');
+    await tester.tap(find.byKey(const Key('planning-move-cancel')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+    expect(find.byKey(const Key('planning-move-warning')), findsNothing);
+    expect(backend.moveCalls, isEmpty, reason: 'Cancel sends nothing');
+    expect(boards.selected!.pending, isEmpty);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('planning-state Ready')),
+        matching: find.byKey(const Key('planning-card StoryOne')),
+      ),
+      findsOneWidget,
+      reason: 'the card stands where it stood',
+    );
+  });
+
+  // Harm: a confirmed move is saved twice, or under another preview than the one the person confirmed.
+  testWidgets('a drop confirmed over its warning is saved once with the digest of what was shown', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    _withIssueOf(backend, 'other');
+    await settle(tester);
+    await _drop(tester, 'StoryOne', 'Review');
+    final shown = boards.selected!.question!.preview;
+
+    await tester.tap(find.byKey(const Key('planning-move-confirm')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+
+    expect(backend.moveCalls, hasLength(1), reason: 'saved once');
+    expect(backend.moveCalls.single['moves'], [
+      {'story': 'StoryOne', 'to': 'Review'},
+    ], reason: 'the move the person was shown');
+    expect(backend.moveCalls.single['digest'], shown.digest, reason: 'under the digest of the preview shown');
+    expect(find.byKey(const Key('planning-move-warning')), findsNothing);
+  });
+
+  // Harm: a reader or reworker the window is starting, which the planner cannot report yet, keeps working on a story
+  // moved unasked.
+  testWidgets('a drop while a follow-up task is being started asks first and saves nothing', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    _withIssueOf(backend, 'own');
+    await settle(tester);
+    final board = boards.selected!;
+    final run = board.runOf('StoryOne');
+    final starting = Completer<PlanningTaskStarted>();
+    run.startTask = (source, project, story, order) => starting.future;
+    final following = run.follow([PlanningTaskOrder.from(servedFollowUp(1))], run.epoch);
+    await tester.pump();
+    expect(run.starting, isTrue, reason: 'the start is in flight');
+
+    await _drop(tester, 'StoryOne', 'Review');
+
+    expect(
+      find.byKey(const Key('planning-move-warning-item RUNNING_WORK StoryOne')),
+      findsOneWidget,
+      reason: 'the start the planner does not report yet is named',
+    );
+    expect(backend.moveCalls, isEmpty, reason: 'nothing is saved before Confirm');
+    await tester.tap(find.byKey(const Key('planning-move-cancel')));
+    await settle(tester);
+    starting.completeError(const PlanningRefusal('StartFailed'));
+    await tester.runAsync(() => following.catchError((Object _) {}));
+    expect(run.starting, isFalse, reason: 'a failed start holds nothing');
+  });
+
+  // Harm: a card dragged while another window finished its story reopens the finished work, previewed against the
+  // board that arrived during the drag and saved without a question.
+  testWidgets('a drop after the board changed during the drag moves nothing', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    _withIssueOf(backend, 'own');
+    await settle(tester);
+    final source = find.byKey(const Key('planning-card StoryOne'));
+    final drag = await tester.startGesture(tester.getTopLeft(source) + const Offset(20, 20));
+    await drag.moveBy(const Offset(0, -20));
+    await tester.pump();
+    final data = jsonDecode(jsonEncode(backend.boards['checkout'])) as Map<String, dynamic>;
+    data['revision'] = 'elsewhere';
+    final story = (data['stories'] as List<dynamic>).first as Map<String, dynamic>;
+    story['state'] = 'Done';
+    ((story['issues'] as List<dynamic>).first as Map<String, dynamic>)['state'] = 'Done';
+    backend.push('checkout', data);
+    await tester.pump();
+    expect(boards.selected!.snapshot!.revision, 'elsewhere', reason: 'the board changed during the drag');
+
+    final target = find.byKey(const Key('planning-state Review'));
+    await drag.moveTo(tester.getCenter(find.descendant(of: target, matching: find.text('Review'))));
+    await tester.pump();
+    await drag.up();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+
+    expect(backend.previewCalls.single['revision'], 'initial', reason: 'previewed against the board the drag began on');
+    expect(backend.moveCalls, isEmpty, reason: 'nothing was moved');
+    expect(boards.selected!.moveProblem, contains('nothing was moved'));
+  });
+
+  // Harm: a move that can do no harm still waits for a Save or a question, and is lost when the person leaves.
+  testWidgets('a drop that asks nothing is saved at once, once', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    _withIssueOf(backend, 'own');
+    await settle(tester);
+
+    await _drop(tester, 'StoryOne', 'Review');
+
+    expect(find.byKey(const Key('planning-move-warning')), findsNothing, reason: 'nothing to ask');
+    expect(backend.moveCalls, hasLength(1), reason: 'saved on the drop');
+    expect(backend.moveCalls.single['moves'], [
+      {'story': 'StoryOne', 'to': 'Review'},
+    ]);
+    expect(boards.selected!.pending, isEmpty, reason: 'the save was answered');
+  });
   // Harm: a WORKING drop starts without the shell's request or silently does nothing.
   testWidgets('an unfolded working drop opens the shipped start dialog', (tester) async {
     final (backend, boards) = await _showBoard(tester);
@@ -96,7 +250,6 @@ void main() {
     await tester.tap(find.byKey(const Key('story-work-cancel')));
     await settle(tester);
     expect(find.descendant(of: find.byKey(const Key('planning-state Ready')), matching: source), findsOneWidget);
-    expect(find.byKey(const Key('planning-pending StoryOne')), findsNothing);
     expect(find.byKey(const Key('planning-move-error')), findsNothing);
     expect(backend.moveCalls, isEmpty);
     expect(boards.selected!.pending, isEmpty);
@@ -141,15 +294,20 @@ void main() {
       await settle(tester);
       expect(find.byKey(const Key('story-work-dialog')), findsNothing);
       expect(find.descendant(of: target, matching: source), findsOneWidget);
-      expect(find.byKey(const Key('planning-pending StoryOne')), findsNothing);
+      expect(backend.moveCalls, isEmpty, reason: 'nothing was moved');
     }
   });
 
-  // Harm: a canceled project switch loses pending work or leaves the selector displaying another project.
-  testWidgets('two projects can be switched only after confirming and cancel restores the selector', (tester) async {
-    final (_, boards) = await _showBoard(tester, twoProjects: true);
-    boards.selected!.move('StoryOne', 'Done');
+  // Harm: a project switch while a move's save is unanswered leaves without asking, or Stay leaves the selector
+  // showing another project.
+  testWidgets('a project is switched over an unanswered save only after confirming, and Stay restores the selector', (
+    tester,
+  ) async {
+    final (backend, boards) = await _showBoard(tester, twoProjects: true);
+    backend.moveFailure = mockRefusal('TimedOut', const {});
+    await tester.runAsync(() => boards.selected!.move('StoryOne', 'Done'));
     await settle(tester);
+    expect(boards.selected!.pending['StoryOne']?.unanswered, isTrue, reason: 'the planner did not answer the save');
     final selector = find.byKey(const Key('planning-project'));
     Future<void> select(String name) async {
       await tester.tap(selector);
@@ -164,22 +322,16 @@ void main() {
     await settle(tester);
     expect(find.descendant(of: selector, matching: find.text('checkout')), findsOneWidget);
     expect(find.descendant(of: selector, matching: find.text('other')), findsNothing);
-    expect(find.byKey(const Key('planning-pending StoryOne')), findsOneWidget);
     await select('other');
     await tester.tap(find.byKey(const Key('planning-leave')));
     await settle(tester);
     expect(find.text('Second project story'), findsOneWidget);
     expect(find.descendant(of: selector, matching: find.text('other')), findsOneWidget);
-    await select('checkout');
-    expect(find.byType(AlertDialog), findsNothing);
-    expect(find.byKey(const Key('planning-pending StoryOne')), findsOneWidget);
-    expect(find.descendant(of: selector, matching: find.text('checkout')), findsOneWidget);
+    expect(backend.moveCalls, hasLength(1), reason: 'the move was sent once and not again');
   });
 
-  // Harm: switching machines hides unsaved work or chooses another pending provider over the preferred one.
-  testWidgets('pending providers stay visible and the current provider wins when both have pending moves', (
-    tester,
-  ) async {
+  // Harm: switching machines hides a save still out, or chooses another provider with one over the preferred one.
+  testWidgets('a provider with a save out stays shown, and the current one wins when both have one', (tester) async {
     final other = MockPlanningSource();
     addTearDown(other.end);
     final (backend, boards) = await _showBoard(tester, otherProvider: other);
@@ -196,20 +348,25 @@ void main() {
     await settle(tester);
     final otherBoard = boards.selected!;
     expect(find.text('Other provider story'), findsOneWidget);
-    localBoard.move('StoryOne', 'Review');
+    backend.moveGate = Completer<void>();
+    other.moveGate = Completer<void>();
+    unawaited(localBoard.move('StoryOne', 'Review'));
     await settle(tester);
     expect(find.text('A story'), findsOneWidget);
     expect(find.text('Other provider story'), findsNothing);
-    expect(find.byKey(const Key('planning-pending StoryOne')), findsOneWidget);
-    otherBoard.move('StoryOne', 'Review');
+    expect(localBoard.pending.keys, ['StoryOne']);
+    unawaited(otherBoard.move('StoryOne', 'Review'));
     await settle(tester);
     expect(find.text('Other provider story'), findsOneWidget);
     expect(find.text('A story'), findsNothing);
-    expect(find.byKey(const Key('planning-pending StoryOne')), findsOneWidget);
+    expect(otherBoard.pending.keys, ['StoryOne']);
     client.choose('local');
     await settle(tester);
     expect(find.text('A story'), findsOneWidget);
     expect(find.text('Other provider story'), findsNothing);
+    backend.moveGate!.complete();
+    other.moveGate!.complete();
+    await settle(tester);
   });
 
   // Harm: a leave question opened during a save stays blocked after the machine answers.
@@ -217,8 +374,7 @@ void main() {
     final (backend, boards) = await _showBoard(tester);
     final board = boards.selected!;
     backend.moveGate = Completer<void>();
-    board.move('StoryOne', 'Done');
-    final saved = board.save();
+    final saved = board.move('StoryOne', 'Done');
     await tester.pump();
     final leaving = confirmPlanningLeave(tester.element(find.byType(PlanningScreen)), [board]);
     await settle(tester);
@@ -237,9 +393,11 @@ void main() {
 
   // Harm: simultaneous leave requests stack duplicate questions and resume two actions.
   testWidgets('a second leave request keeps exactly one question open', (tester) async {
-    final (_, boards) = await _showBoard(tester);
+    final (backend, boards) = await _showBoard(tester);
     final board = boards.selected!;
-    board.move('StoryOne', 'Done');
+    backend.moveFailure = mockRefusal('TimedOut', const {});
+    await tester.runAsync(() => board.move('StoryOne', 'Done'));
+    await settle(tester);
     final context = tester.element(find.byType(PlanningScreen));
     final first = confirmPlanningLeave(context, [board]);
     await settle(tester);
@@ -302,18 +460,5 @@ void main() {
       isFalse,
       reason: 'a search that finds the same first card does not scroll again',
     );
-  });
-
-  // Harm: an unplaced story's pending summary conceals its unreported source.
-  testWidgets('an unreported source is visible in the pending summary', (tester) async {
-    final (backend, boards) = await _showBoard(tester);
-    final data = backend.boards['checkout']!;
-    (data['stories'] as List<dynamic>).first['state'] = '';
-    backend.push('checkout', data);
-    await settle(tester);
-    boards.selected!.move('StoryOne', 'Ready');
-    await settle(tester);
-    final pending = find.byKey(const Key('planning-pending StoryOne'));
-    expect(find.descendant(of: pending, matching: find.text('StoryOne not reported → Ready')), findsOneWidget);
   });
 }

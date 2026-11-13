@@ -282,9 +282,99 @@ class MovesEndpointTest {
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:Busy"));
     }
 
+    @Test
+    void aPreviewAnswersEveryIssueThatMovesWithItsDigestAndSavesNothing() throws Exception {
+        // Harm: a preview that writes, so a person who cancels has moved the story already.
+        preview("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Review\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r1"))
+                .andExpect(
+                        jsonPath("$.digest")
+                                .value(org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")))
+                .andExpect(jsonPath("$.issues[0].id").value("AB01"))
+                .andExpect(jsonPath("$.issues[0].repository").value("porelo-store"))
+                .andExpect(jsonPath("$.issues[0].from").value("Backlog"))
+                .andExpect(jsonPath("$.issues[0].to").value("Review"))
+                .andExpect(jsonPath("$.stories[0].id").value("ST1"))
+                .andExpect(jsonPath("$.warnings").isEmpty());
+
+        assertThat(saved).as("nothing saved").isEmpty();
+        assertThat(current.revision().value()).as("the board as it was").isEqualTo("r1");
+    }
+
+    @Test
+    void aSaveSentWithTheDigestOfAnotherBatchIsRefusedAndSavesNothing() throws Exception {
+        // Harm: a confirmation given for one batch saving another.
+        final String shown =
+                preview(
+                                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+
+        mvc.perform(
+                        post("/projects/alpha/moves")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        Previewed.moves(
+                                                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Finished\"}]}",
+                                                shown)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
+        assertThat(saved).as("nothing saved").isEmpty();
+    }
+
+    @Test
+    void aSaveWithoutAPreviewsDigestIsRefusedAndSavesNothing() throws Exception {
+        // Harm: a window not built for the preview saving a move nobody was warned of.
+        mvc.perform(
+                        post("/projects/alpha/moves")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
+        assertThat(saved).as("nothing saved").isEmpty();
+    }
+
+    @Test
+    void aPreviewOfAnUnknownProjectOrItemAnswers404AndMovesNothing() throws Exception {
+        // Harm: a move saved where its preview could not be answered.
+        mvc.perform(
+                        post("/projects/unknown/moves/preview")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchProject"));
+        preview("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB99\", \"to\": \"Review\"}]}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchIssue"));
+        assertThat(saved).as("nothing saved").isEmpty();
+    }
+
+    @Test
+    void aPreviewAgainstAnotherRevisionIsRefusedAsStale() throws Exception {
+        // Harm: a gesture begun on an older board previewed against the new one, so the person
+        // confirms what they never saw.
+        preview("{\"revision\": \"r0\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
+                .andExpect(jsonPath("$.parameters.revision").value("r1"));
+    }
+
+    /** Posts a batch as the window does: its preview first, then the save with its digest. */
     private ResultActions moves(final String body) throws Exception {
+        final String preview = preview(body).andReturn().getResponse().getContentAsString();
         return mvc.perform(
                 post("/projects/alpha/moves")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(Previewed.moves(body, preview)));
+    }
+
+    private ResultActions preview(final String body) throws Exception {
+        return mvc.perform(
+                post("/projects/alpha/moves/preview")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body));
     }

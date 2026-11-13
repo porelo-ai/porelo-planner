@@ -31,7 +31,7 @@ class StoryWorkAttentionView extends StatefulWidget {
     super.key,
   });
 
-  /// Opens the row's story, where a move the row staged is saved; without it the move waits on the board's Save.
+  /// Opens the row's story, where the person sees the move the row made.
   final ValueChanged<PlanningAttention>? onStory;
 
   /// Where the window keeps an issue's row a person puts away; without it the row offers no Put away.

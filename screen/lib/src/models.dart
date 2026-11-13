@@ -581,7 +581,11 @@ class PlanningMoveResult {
   PlanningMoveResult.from(Map<String, dynamic> map)
     : revision = _planText(map, 'revision'),
       moved = _planStrings(map['moved']),
-      complete = _planStringsReported(map['moved']);
+      complete = _planStringsReported(map['moved']),
+      stopped = _planList(map['stopped'], PlanningStoppedRun.from);
+
+  /// Each run a confirmed save stopped, whose tasks the window ends; empty when it stopped none.
+  final List<PlanningStoppedRun> stopped;
 
   /// The revision reported by the daemon.
   final String revision;
@@ -591,6 +595,169 @@ class PlanningMoveResult {
 
   /// The complete reported by the daemon.
   final bool complete;
+}
+
+/// A run a confirmed save of moves stopped, with each task at work the window must end.
+class PlanningStoppedRun {
+  /// Reads one entry of a save's answer.
+  PlanningStoppedRun.from(Map<String, dynamic> map)
+    : story = _planText(map, 'story'),
+      run = _planText(map, 'run'),
+      tasks = [
+        if (map['tasks'] case final List<dynamic> tasks)
+          for (final task in tasks.whereType<Map<String, dynamic>>())
+            (task: _planText(task, 'task'), container: _planText(task, 'containerId')),
+      ];
+
+  /// The run's story.
+  final String story;
+
+  /// The run's id.
+  final String run;
+
+  /// Each task at work, with the container it runs in.
+  final List<({String task, String container})> tasks;
+}
+
+/// An issue a move carries, or one a warning names, with its state now and after the move.
+class PlanningMovedIssue {
+  /// Takes what the planner answered.
+  const PlanningMovedIssue(this.id, this.repository, this.from, this.to);
+
+  /// Reads one entry of a preview.
+  PlanningMovedIssue.from(Map<String, dynamic> map)
+    : id = _planText(map, 'id'),
+      repository = _planText(map, 'repository'),
+      from = _planText(map, 'from'),
+      to = _planText(map, 'to');
+
+  /// The issue's id.
+  final String id;
+
+  /// The repository that holds it.
+  final String repository;
+
+  /// Its state now.
+  final String from;
+
+  /// Its state after the move.
+  final String to;
+}
+
+/// One harm a move can do, which the person confirms or cancels before it is saved.
+class PlanningMoveWarning {
+  /// Takes a warning's parts; [local] marks one the window adds of its own knowledge, which no digest covers.
+  const PlanningMoveWarning(
+    this.kind,
+    this.item, {
+    this.from = '',
+    this.to = '',
+    this.run,
+    this.tasks = const [],
+    this.offers = const [],
+    this.issues = const [],
+    this.skipped = const [],
+    this.local = false,
+  });
+
+  /// Reads one warning of a preview.
+  PlanningMoveWarning.from(Map<String, dynamic> map)
+    : kind = _planText(map, 'kind'),
+      item = _planText(map, 'item'),
+      from = _planText(map, 'from'),
+      to = _planText(map, 'to'),
+      run = map['run'] is String ? map['run'] as String : null,
+      tasks = _planStrings(map['tasks']),
+      offers = _planStrings(map['offers']),
+      issues = [
+        if (map['issues'] case final List<dynamic> issues)
+          for (final issue in issues.whereType<Map<String, dynamic>>()) PlanningMovedIssue.from(issue),
+      ],
+      skipped = _planStrings(map['skipped']),
+      local = false;
+
+  /// Running agent tasks a stop ends before the move.
+  static const runningWork = 'RUNNING_WORK';
+
+  /// Issues a story's move carries along from a working state or another repository.
+  static const issuesAlong = 'ISSUES_ALONG';
+
+  /// A move forward past waiting states.
+  static const skipsStates = 'SKIPS_STATES';
+
+  /// A story that would stand where its issues do not fit.
+  static const storyMismatch = 'STORY_MISMATCH';
+
+  /// The kind, one of the constants above; another is shown as it is named.
+  final String kind;
+
+  /// The story or issue it is about.
+  final String item;
+
+  /// The item's state now.
+  final String from;
+
+  /// The state the move sets.
+  final String to;
+
+  /// The run whose tasks [runningWork] names, or null.
+  final String? run;
+
+  /// The tasks at work a stop ends.
+  final List<String> tasks;
+
+  /// The offers not yet started a stop voids.
+  final List<String> offers;
+
+  /// The issues it names.
+  final List<PlanningMovedIssue> issues;
+
+  /// The waiting states a move forward passes.
+  final List<String> skipped;
+
+  /// Whether the window added it of its own knowledge.
+  final bool local;
+}
+
+/// What a move would do, answered before it is saved, with the digest its save sends back.
+class PlanningMovePreview {
+  /// Takes a preview's parts.
+  const PlanningMovePreview({
+    required this.revision,
+    required this.digest,
+    this.issues = const [],
+    this.warnings = const [],
+  });
+
+  /// Reads a preview as the planner answers it.
+  PlanningMovePreview.from(Map<String, dynamic> map)
+    : revision = _planText(map, 'revision'),
+      digest = _planText(map, 'digest'),
+      issues = [
+        if (map['issues'] case final List<dynamic> issues)
+          for (final issue in issues.whereType<Map<String, dynamic>>()) PlanningMovedIssue.from(issue),
+      ],
+      warnings = [
+        if (map['warnings'] case final List<dynamic> warnings)
+          for (final warning in warnings.whereType<Map<String, dynamic>>()) PlanningMoveWarning.from(warning),
+      ];
+
+  /// The revision the preview was read at.
+  final String revision;
+
+  /// What the save sends back, so it saves only what was shown.
+  final String digest;
+
+  /// Every issue the move carries.
+  final List<PlanningMovedIssue> issues;
+
+  /// What the move can do harm by; empty when it is saved without asking.
+  final List<PlanningMoveWarning> warnings;
+
+  /// A copy with [more] warnings the window adds of its own knowledge.
+  PlanningMovePreview withWarnings(List<PlanningMoveWarning> more) => more.isEmpty
+      ? this
+      : PlanningMovePreview(revision: revision, digest: digest, issues: issues, warnings: [...warnings, ...more]);
 }
 
 /// A new issue the planner wrote: its id and the board's revision after the save.

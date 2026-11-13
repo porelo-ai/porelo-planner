@@ -71,7 +71,8 @@ public final class Refusal extends RuntimeException {
                             "ReadingNotStopped",
                             "ReadingRoundChanged",
                             "TaskEventConflict",
-                            "RunChanged" ->
+                            "RunChanged",
+                            "PreviewChanged" ->
                             HttpStatus.CONFLICT;
                     case "WorkRecordUnavailable" -> HttpStatus.SERVICE_UNAVAILABLE;
                     case "IdeaRefused" -> HttpStatus.UNPROCESSABLE_CONTENT;

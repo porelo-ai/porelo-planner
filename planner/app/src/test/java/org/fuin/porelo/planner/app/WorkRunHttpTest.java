@@ -87,7 +87,7 @@ class WorkRunHttpTest {
         final JsonNode refusedMove =
                 call(
                         "/moves",
-                        "{\"revision\":\"r2\",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Review\"}]}",
+                        Previewed.moves(MOVE_AA1, call("/moves/preview", MOVE_AA1, 200).toString()),
                         409);
         assertThat(refusedMove.path("type").asString())
                 .as("active ownership protects window moves")
@@ -125,6 +125,38 @@ class WorkRunHttpTest {
         assertThat(choice.at("/issue/findings").size())
                 .as("review retains the reading")
                 .isEqualTo(1);
+    }
+
+    @Test
+    void aConfirmedMoveOverRunningWorkAnswersTheRunItStoppedAndTheTaskToEnd() throws Exception {
+        // Harm: a stop the window cannot end because the save does not say which tasks it stopped.
+        final JsonNode order =
+                call(
+                        "/stories/ST1/work",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                        200);
+        final String offer = order.at("/tasks/0/offer").asString();
+        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        final JsonNode preview = call("/moves/preview", MOVE_AA1, 200);
+        assertThat(preview.at("/warnings/0/kind").asString()).isEqualTo("RUNNING_WORK");
+        final var save = (tools.jackson.databind.node.ObjectNode) JSON.readTree(MOVE_AA1);
+        save.put("digest", preview.path("digest").asString());
+        save.put("confirm", true);
+
+        final JsonNode saved = call("/moves", JSON.writeValueAsString(save), 200);
+
+        assertThat(saved.at("/stopped/0/story").asString()).isEqualTo("ST1");
+        assertThat(saved.at("/stopped/0/run").asString())
+                .as("the run the preview named")
+                .isEqualTo(preview.at("/warnings/0/run").asString());
+        assertThat(saved.at("/stopped/0/tasks"))
+                .as("the task the window must end, with its container")
+                .isEqualTo(
+                        JSON.readTree(
+                                "[{\"task\":\"build\",\"containerId\":\"box-" + offer + "\"}]"));
+        assertThat(projects.work("project").work("ST1").stopped())
+                .as("the run is recorded stopped")
+                .isTrue();
     }
 
     @Test
@@ -1020,6 +1052,9 @@ class WorkRunHttpTest {
                                 "revision", store.board().revision().value())),
                 200);
     }
+
+    private static final String MOVE_AA1 =
+            "{\"revision\":\"r2\",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Review\"}]}";
 
     private JsonNode call(final String path, final String body, final int status) throws Exception {
         final var response =

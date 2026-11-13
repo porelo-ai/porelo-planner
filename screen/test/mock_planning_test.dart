@@ -123,13 +123,36 @@ void main() {
       ..refusedStory = 'ST291'
       ..refusalDetail = 'not now';
     final before = source.board('demo')['revision'] as String;
+    const moves = [PlanningStoryMove('ST291', 'Backlog')];
+    final preview = await source.previewMoves('demo', moves, before);
 
     await expectLater(
-      source.saveMoves('demo', const [PlanningStoryMove('ST291', 'Backlog')], before),
+      source.saveMoves('demo', moves, before, digest: preview.digest),
       throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'WorkNotAllowed')),
     );
     expect(source.moveCalls.single['revision'], before);
     expect(source.board('demo')['revision'], before);
+  });
+
+  // Harm: the window's tests confirm a story that would not fit its issues against a mock that neither warns of it nor
+  // saves it as the planner does.
+  test('a story moved where its issues do not fit is warned of, refused unconfirmed and saved confirmed', () async {
+    final source = MockPlanningSource();
+    final before = source.board('demo')['revision'] as String;
+    const moves = [PlanningStoryMove('ST295', 'Rejected')];
+
+    final preview = await source.previewMoves('demo', moves, before);
+
+    final mismatch = preview.warnings.where((warning) => warning.kind == PlanningMoveWarning.storyMismatch).single;
+    expect(mismatch.item, 'ST295');
+    expect([for (final issue in mismatch.issues) '${issue.id} ${issue.to}'], ['SL37 Review']);
+    await expectLater(
+      source.saveMoves('demo', moves, before, digest: preview.digest),
+      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'StoryStateMismatch')),
+    );
+    expect(source.board('demo')['revision'], before, reason: 'the refused save wrote nothing');
+    await source.saveMoves('demo', moves, before, digest: preview.digest, confirm: true);
+    expect(mockPlanningStory(source.board('demo'), 'ST295')!['state'], 'Rejected', reason: 'the planner writes it');
   });
 
   // Harm: a provider without planning answers anyway, and the screen never shows that it has none.

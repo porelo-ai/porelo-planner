@@ -160,17 +160,35 @@ class MockPlanningSource implements PlanningSource {
     return PlanningTaskStarted(task: result['task'] as String, container: result['container'] as String);
   }
 
+  /// Previews asked of it, each with its project, moves and revision.
+  final List<Map<String, dynamic>> previewCalls = [];
+
   @override
-  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
     final listed = moves.map((move) => move.toMap()).toList();
-    moveCalls.add({'project': project, 'moves': listed, 'revision': revision});
+    previewCalls.add({'project': project, 'moves': listed, 'revision': revision});
+    return PlanningMovePreview.from(previewPlanningMove(board(project), {'moves': listed, 'revision': revision}));
+  }
+
+  @override
+  Future<PlanningMoveResult> saveMoves(
+    String project,
+    List<PlanningMove> moves,
+    String revision, {
+    required String digest,
+    bool confirm = false,
+  }) async {
+    final listed = moves.map((move) => move.toMap()).toList();
+    moveCalls.add({'project': project, 'moves': listed, 'revision': revision, 'digest': digest, 'confirm': confirm});
+    final previewed = previewPlanningMove(board(project), {'moves': listed, 'revision': revision});
+    if (previewed['digest'] != digest) throw mockRefusal('PreviewChanged', const {});
     if (moveGate case final gate?) await gate.future;
     if (moveHeld case final held?) await held.future;
     if (refusedStory != null && listed.any((move) => move['story'] == refusedStory)) {
       throw mockRefusal('org.fuin.porelo.Tasks1.WorkNotAllowed', {'story': refusedStory, 'detail': refusalDetail});
     }
     if (moveFailure case final failure?) throw failure;
-    final moved = applyPlanningMove(board(project), {'moves': listed, 'revision': revision});
+    final moved = applyPlanningMove(board(project), {'moves': listed, 'revision': revision, 'confirm': confirm});
     boards[project] = moved;
     // A save answers apart from the watch, so the screen must apply its confirmation itself.
     return PlanningMoveResult.from({'revision': moved['revision'], 'moved': moved['moved']});

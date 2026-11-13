@@ -142,20 +142,24 @@ class NativeStartIT {
                 final String stories = call(address, "GET", "/projects/alpha/stories", null);
                 final String revision =
                         json.readTree(stories.substring(4)).path("revision").asString();
+                final String batch =
+                        json.writeValueAsString(
+                                java.util.Map.of(
+                                        "revision",
+                                        revision,
+                                        "moves",
+                                        List.of(
+                                                java.util.Map.of(
+                                                        "issue", "XY07", "to", "Backlog"))));
+                final String preview =
+                        call(address, "POST", "/projects/alpha/moves/preview", batch);
+                assertThat(preview).as("the move's preview").startsWith("200 ");
                 assertThat(
                                 call(
                                         address,
                                         "POST",
                                         "/projects/alpha/moves",
-                                        json.writeValueAsString(
-                                                java.util.Map.of(
-                                                        "revision",
-                                                        revision,
-                                                        "moves",
-                                                        List.of(
-                                                                java.util.Map.of(
-                                                                        "issue", "XY07", "to",
-                                                                        "Backlog"))))))
+                                        Previewed.moves(batch, preview.substring(4))))
                         .as("preparing work uses the real move contract")
                         .startsWith("200 ");
                 final String prepared = call(address, "GET", "/projects/alpha/stories", null);

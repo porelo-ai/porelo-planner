@@ -1345,39 +1345,199 @@ public final class WorkRun {
         return found;
     }
 
-    /** Serializes a window move with report ownership checks and the store save itself. */
-    public <T> T moves(final List<Moves.Move> moves, final Supplier<T> save) {
+    /**
+     * Answers what a batch of moves would do, read with the work under the writer lock, writing
+     * nothing.
+     *
+     * @param moves the moves, in the order sent
+     * @param revision the revision the window shows
+     * @return the preview
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws Moves.Refused when the save would refuse the batch itself
+     */
+    public MovePreview preview(final List<Moves.Move> moves, final String revision) {
+        return record.locked(
+                session -> {
+                    final Board board = store.board();
+                    if (!board.revision().value().equals(revision)) {
+                        throw new StoreException.StaleRevision(board.revision().value());
+                    }
+                    return Moves.preview(board, moves, store::storyState, owners(read(session)));
+                });
+    }
+
+    /**
+     * What a confirmed save of moves answers: what the store save answered, and every run it
+     * stopped with the tasks at work the window must end.
+     *
+     * @param saved what the store save answered
+     * @param stopped each run the save stopped, with its tasks at work
+     * @param <T> what the store save answers
+     */
+    public record MoveSaved<T>(T saved, List<StoppedRun> stopped) {
+
+        /** Copies the list. */
+        public MoveSaved {
+            stopped = List.copyOf(stopped);
+        }
+    }
+
+    /**
+     * A run a confirmed save of moves stopped.
+     *
+     * @param story the run's story
+     * @param run the run's id
+     * @param tasks each task at work the window must end
+     */
+    public record StoppedRun(String story, String run, List<StoppedTask> tasks) {
+
+        /** Copies the list. */
+        public StoppedRun {
+            tasks = List.copyOf(tasks);
+        }
+    }
+
+    /**
+     * A task at work a confirmed save of moves stopped the run of.
+     *
+     * @param task the task's name
+     * @param container the container it runs in
+     */
+    public record StoppedTask(String task, String container) {}
+
+    /**
+     * Serializes a window move with report ownership checks and the store save itself, and saves
+     * only the batch whose preview the person confirmed: computed again under the writer lock,
+     * before anything is stopped or written, its digest must be the one sent. A confirmed save
+     * stops each run with tasks at work over what moves, which the preview named and the digest
+     * covers, and records the stop with the save; an unconfirmed one is refused while such a run
+     * stands.
+     *
+     * @param moves the moves, in the order sent
+     * @param revision the revision the preview was answered for
+     * @param digest the preview's digest the window sends back
+     * @param confirm whether the person confirmed the preview's warnings
+     * @param repository the project's own repository, which the digest covers
+     * @param branch its branch, or null
+     * @param save the save
+     * @param <T> what the save answers
+     * @return what the save answered and the runs it stopped
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now, or
+     *     {@code WorkRunning} while a running work owns what moves and the save is not confirmed
+     */
+    public <T> MoveSaved<T> moves(
+            final List<Moves.Move> moves,
+            final String revision,
+            final String digest,
+            final boolean confirm,
+            final String repository,
+            final @Nullable String branch,
+            final Supplier<T> save) {
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    final Set<String> affected = new HashSet<>();
-                    for (final Moves.Move move : moves) {
-                        if (!move.story()) {
-                            affected.add(move.id());
-                            continue;
-                        }
-                        final Story story = board.story(move.id()).orElse(null);
-                        if (story == null) {
-                            continue;
-                        }
-                        affected.addAll(story.issues());
-                        for (final Issue issue : board.issues()) {
-                            final String parent = issue.parent();
-                            if (parent != null && story.issues().contains(parent)) {
-                                affected.add(issue.id());
-                            }
-                        }
+                    if (!board.revision().value().equals(revision)) {
+                        throw new StoreException.StaleRevision(board.revision().value());
                     }
+                    final String now =
+                            Moves.preview(board, moves, store::storyState, owners(snapshot))
+                                    .digest(repository, branch);
+                    if (!MessageDigest.isEqual(
+                            now.getBytes(StandardCharsets.UTF_8),
+                            digest.getBytes(StandardCharsets.UTF_8))) {
+                        throw WorkRefusal.previewChanged();
+                    }
+                    final Set<String> affected = new HashSet<>(Moves.touched(board, moves));
                     final Set<String> stories = new HashSet<>();
                     moves.stream().filter(Moves.Move::story).forEach(m -> stories.add(m.id()));
-                    refuseOwned(snapshot, affected, stories);
+                    if (!confirm) {
+                        refuseOwned(snapshot, affected, stories);
+                    }
+                    final List<StoppedRun> stopped = new ArrayList<>();
+                    final Snapshot stopping = stopOwners(snapshot, affected, stories, stopped);
                     final T saved = save.get();
                     final Board after = store.board();
                     affected.removeIf(id -> manual(board, id) || !stateChanged(board, after, id));
-                    settled(session, snapshot, affected);
-                    return saved;
+                    if (stopping != snapshot) {
+                        session.write(stopping);
+                    }
+                    settled(session, stopping, affected);
+                    return new MoveSaved<>(saved, stopped);
                 });
+    }
+
+    /**
+     * Stops, as the story's Stop does, each run with tasks at work over what a confirmed batch
+     * touches, collecting its tasks at work; nothing is written here.
+     */
+    private static Snapshot stopOwners(
+            final Snapshot snapshot,
+            final Set<String> issues,
+            final Set<String> stories,
+            final List<StoppedRun> stopped) {
+        Snapshot next = snapshot;
+        for (final Run run : snapshot.runs().values()) {
+            final List<StoppedTask> tasks =
+                    run.offers().stream()
+                            .filter(o -> o.status().equals("STARTED"))
+                            .map(
+                                    o ->
+                                            new StoppedTask(
+                                                    String.valueOf(o.task()),
+                                                    String.valueOf(o.containerId())))
+                            .toList();
+            if (tasks.isEmpty() || !owns(run, issues, stories)) {
+                continue;
+            }
+            stopped.add(new StoppedRun(run.story(), run.id(), tasks));
+            if (run.stopped()) {
+                continue;
+            }
+            final Draft draft = new Draft(run);
+            draft.stopped = true;
+            draft.voidOffers();
+            draft.progress.replaceAll((id, p) -> p.attention("STOPPED"));
+            next = replace(next, draft.freeze());
+        }
+        return next;
+    }
+
+    /**
+     * The runs whose started tasks own what a batch touches, as {@link #refuseOwned} reads them.
+     */
+    private static MovePreview.Running owners(final Snapshot snapshot) {
+        return (issues, stories) -> {
+            final List<MovePreview.Owned> owned = new ArrayList<>();
+            for (final Run run : snapshot.runs().values()) {
+                final List<String> active =
+                        run.offers().stream()
+                                .filter(o -> o.status().equals("STARTED"))
+                                .map(o -> String.valueOf(o.task()))
+                                .toList();
+                if (!active.isEmpty() && owns(run, issues, stories)) {
+                    owned.add(
+                            new MovePreview.Owned(
+                                    run.story(),
+                                    run.id(),
+                                    active,
+                                    run.offers().stream()
+                                            .filter(o -> o.status().equals("OFFERED"))
+                                            .map(Offer::id)
+                                            .toList()));
+                }
+            }
+            return owned;
+        };
+    }
+
+    private static boolean owns(
+            final Run run, final Set<String> issues, final Set<String> stories) {
+        return stories.contains(run.story())
+                || run.offers().stream()
+                        .flatMap(o -> o.binding().issues().stream())
+                        .anyMatch(issues::contains);
     }
 
     /** Whether a save changed an issue's state; a move to where it stood answers nothing. */
@@ -1441,10 +1601,7 @@ public final class WorkRun {
             if (active.isEmpty()) {
                 continue;
             }
-            if (stories.contains(run.story())
-                    || run.offers().stream()
-                            .flatMap(o -> o.binding().issues().stream())
-                            .anyMatch(issues::contains)) {
+            if (owns(run, issues, stories)) {
                 throw WorkRefusal.workRunning(run.story(), active);
             }
         }

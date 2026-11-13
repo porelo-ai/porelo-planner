@@ -1,4 +1,5 @@
 {
   "revision" : "mock@2",
-  "moved" : [ "B542" ]
+  "moved" : [ "B542" ],
+  "stopped" : [ ]
 }

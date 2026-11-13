@@ -8,6 +8,7 @@ import 'package:porelo_planning/porelo_planning.dart';
 import 'support/served_story_work.dart';
 
 const _token = 'tOkEn-0123456789_abcdefghijklmnopqrstuvwxyz';
+const _digest = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 Map<String, dynamic> _workflow(String revision) => {
   'revision': revision,
@@ -541,7 +542,8 @@ void main() {
     final before = planner.calls.length;
     repository = const PlannerProject('https://example.org/second.git');
     for (final call in <Future<Object?> Function()>[
-      () => source.saveMoves('demo', const [], 'r1'),
+      () => source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'),
+      () => source.saveMoves('demo', const [], 'r1', digest: _digest),
       () => source.proposeStoryWork('demo', 'ST1', 'Building'),
       () => source.startStoryWork(servedRequest()),
     ]) {
@@ -550,7 +552,7 @@ void main() {
     expect(planner.calls, hasLength(before));
     await source.getStory('demo', 'ST1');
     final afterDetail = planner.calls.length;
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'ProjectChanged');
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'ProjectChanged');
     expect(planner.calls, hasLength(afterDetail), reason: 'a detail read does not replace the board binding');
   });
 
@@ -560,8 +562,8 @@ void main() {
     var attempts = 0;
     planner.routes['POST /projects/demo/moves'] = () => ++attempts == 1
         ? _Reply.problem('NoSuchProject', {'project': 'demo'}, 'No project.', 404)
-        : _Reply(200, {'revision': 'r2', 'moved': <String>[]});
-    await source.saveMoves('demo', const [], 'r1');
+        : _Reply(200, {'revision': 'r2', 'moved': <String>[], 'stopped': <Object>[]});
+    await source.saveMoves('demo', const [], 'r1', digest: _digest);
     expect(planner.targets, [
       'PUT /projects/demo',
       'POST /projects/demo/moves',
@@ -570,7 +572,7 @@ void main() {
     ]);
     planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NoSuchProject', {}, 'Still unknown.', 404);
     final count = planner.calls.length;
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'NoSuchProject');
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'NoSuchProject');
     expect(planner.calls, hasLength(count + 3));
   });
 
@@ -579,7 +581,7 @@ void main() {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/moves'] = () =>
         _Reply.raw(200, [123], headers: {'content-type': 'application/json', 'content-length': 100});
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'PlannerUnreachable');
+    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'PlannerUnreachable');
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
   });
   // Harm: a reviewed mixed batch is saved with different destinations or a different revision.
@@ -588,11 +590,23 @@ void main() {
     planner.routes['POST /projects/demo/moves'] = () => _Reply(200, {
       'revision': 'r2',
       'moved': ['PR1', 'PR2'],
+      'stopped': [
+        {
+          'story': 'ST1',
+          'run': 'run-1',
+          'tasks': [
+            {'task': 'build', 'containerId': 'box'},
+          ],
+        },
+      ],
     });
-    final saved = await source.saveMoves('demo', const [
-      PlanningStoryMove('ST1', 'Finished'),
-      PlanningIssueMove('PR2', 'Backlog'),
-    ], 'r1');
+    final saved = await source.saveMoves(
+      'demo',
+      const [PlanningStoryMove('ST1', 'Finished'), PlanningIssueMove('PR2', 'Backlog')],
+      'r1',
+      digest: _digest,
+      confirm: true,
+    );
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
     expect(jsonDecode(planner.calls.last.body), {
       'revision': 'r1',
@@ -600,10 +614,127 @@ void main() {
         {'story': 'ST1', 'to': 'Finished'},
         {'issue': 'PR2', 'to': 'Backlog'},
       ],
+      'digest': _digest,
+      'confirm': true,
     });
     expect(planner.calls.last.authorization, 'Bearer $_token');
     expect(saved.revision, 'r2');
     expect(saved.moved, ['PR1', 'PR2']);
+    expect(
+      [
+        for (final run in saved.stopped)
+          '${run.story} ${run.run} ${[for (final task in run.tasks) '${task.task}@${task.container}']}',
+      ],
+      ['ST1 run-1 [build@box]'],
+      reason: 'the runs the save stopped, with the tasks the window ends',
+    );
+  });
+
+  // Harm: a move confirmed over warnings other than those the planner previewed, or saved under another digest.
+  test('a preview posts the batch and reads its digest, issues and warnings as the planner answers them', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves/preview'] = () => _Reply(200, {
+      'revision': 'r1',
+      'digest': _digest,
+      'issues': [
+        {'id': 'F1', 'repository': 'porelo-frontend', 'from': 'Implementing', 'to': 'Review'},
+      ],
+      'stories': [
+        {'id': 'ST1', 'from': 'Implementing', 'to': 'Review'},
+      ],
+      'warnings': [
+        {
+          'kind': 'RUNNING_WORK',
+          'item': 'ST1',
+          'from': 'Implementing',
+          'to': 'Review',
+          'run': 'run-1',
+          'tasks': ['build'],
+          'offers': ['o-2'],
+          'issues': <Object>[],
+          'skipped': <String>[],
+        },
+        {
+          'kind': 'ISSUES_ALONG',
+          'item': 'ST1',
+          'from': 'Implementing',
+          'to': 'Review',
+          'run': null,
+          'tasks': <String>[],
+          'offers': <String>[],
+          'issues': [
+            {'id': 'F1', 'repository': 'porelo-frontend', 'from': 'Implementing', 'to': 'Review'},
+          ],
+          'skipped': <String>[],
+        },
+      ],
+    });
+
+    final preview = await source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')], 'r1');
+
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves/preview']);
+    expect(jsonDecode(planner.calls.last.body), {
+      'revision': 'r1',
+      'moves': [
+        {'story': 'ST1', 'to': 'Review'},
+      ],
+    });
+    expect(preview.digest, _digest);
+    expect(
+      [for (final issue in preview.issues) '${issue.id} ${issue.repository} ${issue.from} ${issue.to}'],
+      ['F1 porelo-frontend Implementing Review'],
+    );
+    expect(
+      [
+        for (final warning in preview.warnings)
+          '${warning.kind} ${warning.item} ${warning.run} ${warning.tasks} ${warning.offers} '
+              '${warning.issues.map((issue) => issue.id).toList()}',
+      ],
+      ['RUNNING_WORK ST1 run-1 [build] [o-2] []', 'ISSUES_ALONG ST1 null [] [] [F1]'],
+    );
+  });
+
+  // Harm: a preview the window cannot read lets a move go out unasked, or saves under something that is no digest.
+  test('a preview without a digest, its revision or its lists is refused as a bad answer', () async {
+    final (planner, source) = await _started();
+    final good = {
+      'revision': 'r1',
+      'digest': _digest,
+      'issues': <Object>[],
+      'stories': <Object>[],
+      'warnings': <Object>[],
+    };
+    for (final answer in [
+      {...good, 'digest': 'abc'},
+      {...good, 'digest': _digest.toUpperCase()},
+      {...good, 'revision': 'r2'},
+      {...good}..remove('issues'),
+      {...good}..remove('warnings'),
+      {
+        ...good,
+        'warnings': ['RUNNING_WORK'],
+      },
+    ]) {
+      planner.routes['POST /projects/demo/moves/preview'] = () => _Reply(200, answer);
+      expect(
+        (await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')], 'r1'))).name,
+        'BadAnswer',
+        reason: '$answer',
+      );
+    }
+    expect(planner.targets.where((target) => target == 'POST /projects/demo/moves'), isEmpty);
+  });
+
+  // Harm: an item the planner no longer knows is moved anyway, or the refusal is lost and the move shown as made.
+  test('a preview answered 404 is a named refusal and sends no save', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/moves/preview'] = () =>
+        _Reply.problem('NoSuchItem', {'item': 'ST9'}, 'No story ST9.', 404);
+
+    final refusal = await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST9', 'Review')], 'r1'));
+
+    expect(refusal.name, 'NoSuchItem');
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves/preview']);
   });
 
   // Harm: a new issue sent with another body than the planner reads, or a confirmation without an id, is taken as
@@ -700,7 +831,11 @@ void main() {
           ? held.future
           : _Reply.problem(name, {'pushed': 'repo', 'failed': 'other'}, 'Save refused.', 409);
       final before = planner.calls.where((call) => call.method == 'POST').length;
-      expect((await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'))).name, name);
+      expect(
+        (await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest)))
+            .name,
+        name,
+      );
       expect(planner.calls.where((call) => call.method == 'POST'), hasLength(before + 1));
     }
   });
@@ -720,9 +855,24 @@ void main() {
         'moved': ['wrong'],
       },
       {..._problem('Busy', {}, 'No.', 409), 'revision': 'r2', 'moved': <String>[]},
+      // A save that may have stopped work must say which, or the window cannot end its tasks.
+      {'revision': 'r2', 'moved': <String>[]},
+      {
+        'revision': 'r2',
+        'moved': <String>[],
+        'stopped': [
+          {
+            'story': 'ST1',
+            'run': 'run-1',
+            'tasks': [
+              {'task': 'build'},
+            ],
+          },
+        ],
+      },
     ]) {
       planner.routes['POST /projects/demo/moves'] = () => _Reply(200, answer);
-      expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'BadAnswer');
+      expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'BadAnswer');
     }
   });
 
@@ -746,7 +896,7 @@ void main() {
       'Some saves failed.',
       502,
     );
-    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1'));
+    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest));
     expect(refusal.parameters['tasks'], ['one', 'two']);
     expect(refusal.parameters['round'], 0);
     expect(refusal.parameters['rounds'], 2147483647);
@@ -758,7 +908,7 @@ void main() {
     expect(refusal.description, 'Some saves failed.');
     for (final name in ['A', 'A' * 65, 'Bad9']) {
       planner.routes['POST /projects/demo/moves'] = () => _Reply.problem(name, {}, 'No.', 409);
-      expect((await _refusal(source.saveMoves('demo', const [], 'r1'))).name, 'Http409');
+      expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'Http409');
     }
   });
 
@@ -766,7 +916,7 @@ void main() {
   test('a served NotOffered answer remains a named action refusal', () async {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NotOffered', {}, 'Moves are unavailable.', 400);
-    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1'));
+    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest));
     expect(refusal.name, 'NotOffered');
     expect(refusal.notOffered, isTrue);
     expect((await source.stories('demo')).revision, 'r1');
@@ -1399,7 +1549,9 @@ void main() {
     );
     addTearDown(source.close);
 
-    final refusal = await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'));
+    final refusal = await _refusal(
+      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest),
+    );
 
     expect(refusal.name, 'PlannerUnreachable', reason: 'nothing was sent, so nothing can still be saving');
   });

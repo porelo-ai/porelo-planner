@@ -249,22 +249,32 @@ void main() {
     _expectClean(tester, 'the story dialog');
   });
 
-  // Harm: a story or state name that reads as harmless and is not, in the notice of a move made elsewhere.
-  testWidgets('the notices of pending moves settled elsewhere show no control characters', (tester) async {
+  // Harm: a story, issue, repository or state name that reads as harmless and is not, where the person confirms a
+  // move over its warnings.
+  testWidgets('the warnings of a move asked about show no control characters', (tester) async {
     final source = FakePlanningSource(_hostile(smallBoard()) as Map<String, dynamic>);
+    source.warnings = [
+      for (final kind in ['RUNNING_WORK', 'ISSUES_ALONG', 'SKIPS_STATES', 'STORY_MISMATCH'])
+        {
+          'kind': kind,
+          'item': 'S1$_bad',
+          'from': 'Ready$_bad',
+          'to': 'Review$_bad',
+          'run': 'run$_bad',
+          'tasks': ['task$_bad'],
+          'offers': ['offer$_bad'],
+          'issues': [
+            {'id': 'I1$_bad', 'repository': 'repo$_bad', 'from': 'Ready$_bad', 'to': 'Review$_bad'},
+          ],
+          'skipped': ['Waiting$_bad'],
+        },
+    ];
     final board = (await _showBoard(tester, source)).selected!;
-    board
-      ..move('S1$_bad', 'Review$_bad')
-      ..move('S2$_bad', 'Backlog$_bad');
-    final stories = (source.board['stories'] as List).cast<Map<String, dynamic>>();
-    stories.first['state'] = 'Review$_bad';
-    stories.removeLast();
-    await tester.runAsync(board.reload);
+    await tester.runAsync(() => board.move('S1$_bad', 'Review$_bad'));
     await settle(tester);
-    final shown = _shown(tester);
-    expect(shown.where((text) => text.contains('elsewhere')), isNotEmpty, reason: 'the moved story is named');
-    expect(shown.where((text) => text.contains('no longer reported')), isNotEmpty, reason: 'the gone story is named');
-    _expectClean(tester, 'the move notices');
+    expect(find.byKey(const Key('planning-move-warning')), findsOneWidget, reason: 'the move is asked about');
+    expect(_shown(tester).where((text) => text.contains('repo')), isNotEmpty, reason: 'the issue carried is named');
+    _expectClean(tester, 'the move warnings');
   });
 
   // Harm: a machine's agent name or failure that reads as harmless and is not, where the person decides what starts.

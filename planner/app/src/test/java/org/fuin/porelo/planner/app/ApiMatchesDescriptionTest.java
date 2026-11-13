@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import org.fuin.porelo.planner.app.mock.MockController;
+import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -57,6 +58,12 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Board", Answers.Board.class),
                     Map.entry("Refreshed", Answers.Refreshed.class),
                     Map.entry("Moved", Answers.Moved.class),
+                    Map.entry("StoppedRun", Answers.StoppedRun.class),
+                    Map.entry("StoppedTask", Answers.StoppedTask.class),
+                    Map.entry("MovePreview", Answers.MovePreview.class),
+                    Map.entry("MovedIssue", MovePreview.MovedIssue.class),
+                    Map.entry("MovedStory", MovePreview.MovedStory.class),
+                    Map.entry("MoveWarning", MovePreview.Warning.class),
                     Map.entry("IssueAdded", Answers.IssueAdded.class),
                     Map.entry("IdeaRequest", WorkRequests.IdeaRequest.class),
                     Map.entry("Idea", NewIdeas.Idea.class),

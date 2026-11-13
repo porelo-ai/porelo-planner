@@ -81,18 +81,4 @@ void main() {
 
     expect(host.history, [const PlanningPlace(project: 'demo', source: 'local', story: 'S2')]);
   });
-
-  // Harm: a save the window lists in its palette runs although nothing is staged, or is missing once something is.
-  test('the save action the window lists follows the staged moves', () async {
-    final boards = PlanningBoards(FakePlanningClient([provider('local', FakePlanningSource(smallBoard()))]));
-    addTearDown(boards.dispose);
-    await pumpEventQueue();
-    PlanningAction save() =>
-        planningActions(boards, _Host()).singleWhere((action) => action.id == 'planning.save/demo');
-    expect(save().unavailable, 'No planning moves are pending.');
-
-    boards.selected!.move('S1', 'Review');
-
-    expect(save().available, isTrue);
-  });
 }

@@ -71,22 +71,20 @@ class PlanningPreferences {
   PlanningIssueFilter issueList(String story) => _issueLists.putIfAbsent(story, PlanningIssueFilter.new);
 }
 
-/// An unsaved destination, kept separately from the daemon's story state.
+/// The one move in flight - previewed, asked about, saved or unanswered - kept apart from the planner's state, so its
+/// card stands at its target until the answer.
 class PendingPlanningMove {
-  /// Records the original state for the unsaved-move summary.
+  /// Records the state the person saw and the target.
   PendingPlanningMove(this.from, this.to, {this.isIssue = false});
 
   /// Whether this destination belongs to an issue rather than a story.
   final bool isIssue;
 
-  /// The state when staging began.
+  /// The state the person saw when the move began.
   String from;
 
   /// The requested destination.
   final String to;
-
-  /// The daemon's refusal, if this move failed.
-  String? problem;
 
   /// Whether a save of this move went unanswered in time and may still land.
   bool unanswered = false;
@@ -95,6 +93,30 @@ class PendingPlanningMove {
 class _StoryStart {
   bool pending = true;
   bool confirmed = false;
+}
+
+/// A move whose preview warned: it waits for the person's Confirm or Cancel, and nothing is saved before.
+class PlanningMoveQuestion {
+  /// Takes the move, its preview and the revision the preview was answered for.
+  PlanningMoveQuestion(this.key, this.move, this.preview, this.revision, {this.again = false});
+
+  /// The move's key in [PlanningBoard.pending].
+  final String key;
+
+  /// The move as it is saved.
+  final PlanningMove move;
+
+  /// The preview shown, with the warnings the window added.
+  final PlanningMovePreview preview;
+
+  /// The revision the save goes against.
+  final String revision;
+
+  /// Whether planning changed since the person confirmed it, so it is asked anew.
+  final bool again;
+
+  /// What the person confirms.
+  List<PlanningMoveWarning> get warnings => preview.warnings;
 }
 
 /// A project's board, replaced only by whole replies from its machine.
@@ -141,11 +163,14 @@ class PlanningBoard extends ChangeNotifier {
   VoidCallback? _unfollowReconnect;
   final Map<String, PendingPlanningMove> _pending = {};
 
-  /// Unsaved moves in staging order.
+  /// The move in flight, at most one.
   Map<String, PendingPlanningMove> get pending => Map.unmodifiable(_pending);
 
-  /// Whether a save or reload is in progress.
+  /// Whether a move, a save or a reload is in progress.
   bool saving = false;
+
+  /// The move whose warnings wait for the person's choice, or null.
+  PlanningMoveQuestion? question;
 
   /// Save, reload, or drop feedback, using daemon details on failures.
   String? moveProblem;
@@ -811,15 +836,15 @@ class PlanningBoard extends ChangeNotifier {
           ? 'the planning revision was not reported'
           : actionBusy || saving
           ? 'waiting for the planner'
-          : _staged(issue)
-          ? 'it or a sub-issue has a move to save or undo first'
+          : _moving(issue)
+          ? 'it or a sub-issue has a move being saved'
           : null);
 
-  /// Whether [issue] or one of its sub-issues has a staged move, which a worker change would make the save refuse.
-  bool _staged(PlanIssue issue) {
-    final staged = pendingIssues.keys.toSet();
-    return staged.contains(issue.id) ||
-        stories.expand((story) => story.issues).any((each) => each.parent == issue.id && staged.contains(each.id));
+  /// Whether [issue] or one of its sub-issues has a move being saved, which a worker change would make the save refuse.
+  bool _moving(PlanIssue issue) {
+    final moving = pendingIssues.keys.toSet();
+    return moving.contains(issue.id) ||
+        stories.expand((story) => story.issues).any((each) => each.parent == issue.id && moving.contains(each.id));
   }
 
   /// Sets who works [issue] against the revision the board shows; answers the planner's words for a refusal, which
@@ -867,6 +892,8 @@ class PlanningBoard extends ChangeNotifier {
   /// Replaces the source, canceling its silent watch before accepting another project's replies.
   Future<void> changeProject(PlanningSource next, String name) async {
     if (_disposed) return;
+    // A move still asked about was never confirmed, so it goes with the project it was shown for.
+    if (question != null) _dropQuestion();
     if (saving) {
       _queuedProject = (next, name);
       return;
@@ -908,21 +935,22 @@ class PlanningBoard extends ChangeNotifier {
   /// Restarts this project's watch after a failure, retaining its last snapshot and view choices.
   Future<void> retry() => changeProject(backend, project);
 
-  /// The displayed destination, with failed moves kept in their reported state.
+  /// The displayed destination: the move in flight's target until its answer.
   String displayedState(PlanStory story) {
     final move = _pending[story.id];
     final destination = move == null ? null : state(move.to);
-    return move != null &&
-            move.problem == null &&
-            destination != null &&
-            phases.any((phase) => phase.states.contains(move.to))
+    return move != null && destination != null && phases.any((phase) => phase.states.contains(move.to))
         ? move.to
         : story.state;
   }
 
-  /// Stages a waiting or closed destination without sending any command.
-  void move(String id, String to) {
-    if (_disposed || saving || snapshot?.complete != true || !live) return;
+  /// Moves a story to a waiting or closed state at once: previewed, then saved, or first asked about when the preview
+  /// warns.
+  ///
+  /// [revision] is the board's revision when the gesture began; the preview goes against it, so a board that changed
+  /// during the gesture moves nothing.
+  Future<void> move(String id, String to, {String? revision}) async {
+    if (_disposed || snapshot?.complete != true || !live) return;
     final story = stories.where((story) => story.id == id).firstOrNull;
     final target = state(to);
     if (story == null || target == null) return;
@@ -932,16 +960,11 @@ class PlanningBoard extends ChangeNotifier {
       _changed();
       return;
     }
-    if (to == story.state) {
-      undo(id);
-      return;
-    }
-    _pending[id] = PendingPlanningMove(story.state, to);
-    moveNotice = null;
-    _changed();
+    if (to == story.state || _oneAtATime(id)) return;
+    await _moveNow(id, PlanningStoryMove(id, to), PendingPlanningMove(story.state, to), revision: revision);
   }
 
-  /// Issue destinations in the same pending batch as the story moves.
+  /// The issue move in flight, by issue id.
   Map<String, PendingPlanningMove> get pendingIssues => {
     for (final entry in _pending.entries)
       if (entry.value.isIssue) entry.key.substring('issue '.length): entry.value,
@@ -958,14 +981,12 @@ class PlanningBoard extends ChangeNotifier {
     return working.isNotEmpty && working.every((issue) => issue.byHand);
   }
 
-  /// Stages one issue without changing its reported state or any sibling.
+  /// Moves one issue at once, as [move] moves a story.
   ///
-  /// [shown] is the state the person saw when choosing, or [reported]'s; [undo] takes the issue's draft back.
-  void moveIssue(String id, String to, {PlanIssue? reported, String? shown, bool undo = false}) {
-    if (_disposed) return;
-    if (saving) return refuseMove(id, 'planning is saving; choose again once it is saved.');
-    final key = 'issue $id';
-    if (undo) return this.undo(key);
+  /// [shown] is the state the person saw when choosing, or [reported]'s; [revision] is the board's when the choice was
+  /// offered.
+  Future<void> moveIssue(String id, String to, {PlanIssue? reported, String? shown, String? revision}) async {
+    if (_disposed || _oneAtATime(id)) return;
     if (snapshot?.complete != true || !live || snapshot!.revision.isEmpty) {
       return refuseMove(id, 'the board is not live and complete.');
     }
@@ -979,40 +1000,142 @@ class PlanningBoard extends ChangeNotifier {
     final seen = shown ?? (reported?.id == id ? reported!.state : null);
     if (seen != null && seen != issue.state) return refuseMove(id, 'it now stands in ${issue.state}; choose again.');
     final target = state(to);
-    if (to == issue.state) return this.undo(key);
+    if (to == issue.state) return;
     if (!issueMayEnter(issue, target)) return refuseMove(id, 'it may not enter $to from ${issue.state}.');
-    _pending[key] = PendingPlanningMove(issue.state, to, isIssue: true);
-    moveProblem = null;
-    moveNotice = null;
-    _changed();
+    await _moveNow(
+      'issue $id',
+      PlanningIssueMove(id, to),
+      PendingPlanningMove(issue.state, to, isIssue: true),
+      revision: revision,
+    );
   }
 
-  /// Says why a move of issue [id] was not staged, where the board and the story's page show it.
+  /// Says why a move of [id] was not made, where the board and the story's page show it.
   void refuseMove(String id, String why) {
     moveProblem = '$id was not moved: $why';
     moveNotice = null;
     _changed();
   }
 
+  /// Refuses a move while another is previewed, asked about, saved or unanswered; nothing is queued.
+  bool _oneAtATime(String id) {
+    if (!saving && _pending.isEmpty) return false;
+    refuseMove(id, 'Saving… another move is still being saved; move it again once it is saved.');
+    return true;
+  }
+
   String? _reportedState(PlanningSnapshot reply, String key, PendingPlanningMove move) => move.isIssue
       ? reply.stories.expand((story) => story.issues).where((issue) => 'issue ${issue.id}' == key).firstOrNull?.state
       : reply.stories.where((story) => story.id == key).firstOrNull?.state;
 
-  /// Drops one unsaved move without touching the daemon.
-  void undo(String id) {
-    if (_disposed || saving) return;
-    _pending.remove(id);
-    if (_pending.isEmpty) moveProblem = null;
+  Future<void> _moveNow(String key, PlanningMove move, PendingPlanningMove shown, {String? revision}) async {
+    _pending[key] = shown;
+    saving = true;
+    moveProblem = null;
+    moveNotice = null;
+    moveRefusal = null;
+    final generation = _generation;
+    final source = backend;
+    final name = project;
+    _changed();
+    // The gesture's revision: a board that changed during it answers StaleRevision instead of being read anew.
+    await _preview(key, move, revision ?? snapshot!.revision, generation, source, name);
+  }
+
+  bool _current(int generation) => !_disposed && generation == _generation;
+
+  /// Previews [move]; with no warning it is saved at once, else asked about.
+  Future<void> _preview(
+    String key,
+    PlanningMove move,
+    String revision,
+    int generation,
+    PlanningSource source,
+    String name, {
+    bool again = false,
+  }) async {
+    final PlanningMovePreview preview;
+    try {
+      preview = await source.previewMoves(name, [move], revision);
+      if (preview.revision != revision) {
+        throw const PlanningRefusal('BadAnswer', {}, 'The planner previewed another revision than the one moved.');
+      }
+    } catch (error) {
+      if (!_current(generation)) return;
+      _pending.remove(key);
+      final stale = error is PlanningRefusal && error.name == 'StaleRevision';
+      _finishOperation();
+      // The board the gesture began on is gone; the person moves again on the one read now.
+      if (stale) await reload();
+      if (!_current(generation)) return;
+      moveRefusal = error is PlanningRefusal ? error : null;
+      moveProblem = stale
+          ? planningShown('Planning changed while ${move.id} was moved; nothing was moved. Move it again.')
+          : planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
+      _changed();
+      return;
+    }
+    if (!_current(generation)) return;
+    final shown = preview.withWarnings(_localWarnings(move, preview));
+    if (shown.warnings.isEmpty && !again) {
+      await _save(key, move, shown, revision, generation, source, name);
+      return;
+    }
+    question = PlanningMoveQuestion(key, move, shown, revision, again: again);
     _changed();
   }
 
-  /// Drops all unsaved moves without touching the daemon.
-  void undoAll() {
-    if (_disposed || saving) return;
-    _pending.clear();
-    moveProblem = null;
-    moveNotice = null;
+  /// A start this window handed to Porelo that the planner does not report yet, a story's own or a follow-up task's,
+  /// which no digest covers.
+  List<PlanningMoveWarning> _localWarnings(PlanningMove move, PlanningMovePreview preview) {
+    final story = switch (move) {
+      PlanningStoryMove(:final story) => story,
+      PlanningIssueMove(:final issue) =>
+        stories.where((each) => each.issues.any((item) => item.id == issue)).firstOrNull?.id,
+    };
+    if (story == null || !_startsOn(backend).containsKey((project, story)) && !runOf(story).starting) return const [];
+    if (preview.warnings.any((warning) => warning.kind == PlanningMoveWarning.runningWork && warning.item == story)) {
+      return const [];
+    }
+    return [PlanningMoveWarning(PlanningMoveWarning.runningWork, story, local: true)];
+  }
+
+  /// Saves the move asked about, confirmed: the planner stops the running work it named with the save, after the
+  /// preview's digest matched, and the window ends exactly the tasks the save names; a start this window handed on
+  /// that the planner does not report yet is cancelled here.
+  Future<void> confirmMove() async {
+    final asked = question;
+    if (_disposed || asked == null) return;
+    question = null;
     _changed();
+    for (final warning in asked.warnings) {
+      if (warning.kind == PlanningMoveWarning.runningWork && warning.local) runOf(warning.item).cancel();
+    }
+    await _save(asked.key, asked.move, asked.preview, asked.revision, _generation, backend, project, confirmed: true);
+  }
+
+  /// Drops the move asked about; nothing was sent, so its card stands where the planner reports it.
+  void cancelMove() {
+    if (_disposed || question == null) return;
+    _dropQuestion();
+    _finishOperation();
+  }
+
+  void _dropQuestion() {
+    final asked = question;
+    if (asked == null) return;
+    question = null;
+    _pending.remove(asked.key);
+  }
+
+  /// Ends the tasks of each run a confirmed save stopped, as the story's Stop ends them.
+  Future<void> _endStopped(PlanningSource source, String name, List<PlanningStoppedRun> stopped) async {
+    for (final each in stopped) {
+      final run = runOf(each.story)..cancel();
+      await run.changes?.stop(source, name, each.story, [
+        for (final task in each.tasks) PlanningTaskStarted(task: task.task, container: task.container),
+      ]);
+    }
   }
 
   PlanningSnapshot _checked(PlanningSnapshot reply) {
@@ -1067,40 +1190,22 @@ class PlanningBoard extends ChangeNotifier {
     workUnsupported.clear();
     unawaited(_readWork(reply, _generation));
     _reconcilePriorities(reply);
-    if (!reply.complete || reply.revision.isEmpty) return;
-    final reconciled = <String>[];
+    if (!reply.complete || reply.revision.isEmpty || !reconcile) return;
+    // Only a save answered too late waits on the board: it landed once the board shows it.
     final landed = <PendingPlanningMove>[];
     for (final entry in _pending.entries.toList()) {
+      if (!entry.value.unanswered) continue;
       final reported = _reportedState(reply, entry.key, entry.value);
-      if (!reconcile) {
-        if (reported != null) entry.value.from = reported;
-        continue;
-      }
-      if (reported == null && entry.value.isIssue && reply.stories.any((story) => !story.issuesReported)) {
-        continue;
-      }
-      if (reported == null) {
+      if (reported == null && entry.value.isIssue && reply.stories.any((story) => !story.issuesReported)) continue;
+      if (reported == null || reported == entry.value.to) {
         _pending.remove(entry.key);
-        reconciled.add(planningShown('${entry.key} is no longer reported by the planner.', multiline: false));
-      } else if (reported == entry.value.to) {
-        _pending.remove(entry.key);
-        if (entry.value.unanswered) {
-          landed.add(entry.value);
-        } else {
-          reconciled.add(planningShown('${entry.key} was moved to ${entry.value.to} elsewhere.', multiline: false));
-        }
-      } else {
-        entry.value.from = reported;
+        if (reported != null) landed.add(entry.value);
       }
     }
     if (!_pending.values.any((move) => move.unanswered)) {
       _unansweredDeadline?.cancel();
       _unansweredDeadline = null;
       if (landed.isNotEmpty) moveNotice = _savedNotice(landed);
-    }
-    if (reconciled.isNotEmpty) {
-      final detail = reconciled.join('\n');
-      moveProblem = moveProblem == null ? detail : '$moveProblem\n$detail';
     }
   }
 
@@ -1113,22 +1218,13 @@ class PlanningBoard extends ChangeNotifier {
     _unansweredDeadline = null;
     // A save running now arms the deadline again when it ends.
     if (_disposed || saving) return;
-    final late = _pending.values.where((move) => move.unanswered).toList();
+    final late = _pending.entries.where((entry) => entry.value.unanswered).map((entry) => entry.key).toList();
     if (late.isEmpty) return;
-    const words = 'The save was not seen on the planning board. Save again.';
-    for (final move in late) {
-      move.unanswered = false;
-      move.problem = words;
-    }
+    final words = planningShown('The save of ${late.join(', ')} was not seen on the planning board. Move it again.');
+    late.forEach(_pending.remove);
     moveNotice = null;
     moveProblem = moveProblem == null ? words : '$moveProblem\n$words';
     _changed();
-  }
-
-  void _forgetUnanswered(Iterable<String> keys) {
-    for (final key in keys) {
-      _pending[key]?.unanswered = false;
-    }
   }
 
   static String _savedNotice(Iterable<PendingPlanningMove> moves) =>
@@ -1172,61 +1268,56 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
-  /// Saves all pending story and issue destinations atomically and applies only the daemon's complete answer.
-  Future<void> save() async {
-    if (_disposed || saving || _pending.isEmpty || !live || unavailableActions.containsKey('SaveMoves')) return;
-    saving = true;
-    _unansweredDeadline?.cancel();
-    _unansweredDeadline = null;
-    final generation = _generation;
-    final revision = snapshot?.revision ?? '';
-    final batch = Map.of(_pending);
-    final moves = <PlanningMove>[
-      for (final entry in batch.entries)
-        if (!entry.value.isIssue) PlanningStoryMove(entry.key, entry.value.to),
-      for (final entry in batch.entries)
-        if (entry.value.isIssue) PlanningIssueMove(entry.key.substring('issue '.length), entry.value.to),
-    ];
-    moveProblem = null;
-    moveNotice = null;
-    moveRefusal = null;
-    for (final move in _pending.values) {
-      move.problem = null;
-    }
-    _changed();
+  /// Saves the one move against the revision its preview was answered for, sending the preview's digest, and applies
+  /// only the planner's complete answer; a board changed meanwhile is read again and the move asked about anew.
+  Future<void> _save(
+    String key,
+    PlanningMove move,
+    PlanningMovePreview preview,
+    String revision,
+    int generation,
+    PlanningSource source,
+    String name, {
+    bool confirmed = false,
+  }) async {
+    var handedOn = false;
     var refused = false;
+    final shown = _pending[key];
     try {
-      _checked(snapshot!);
-      final reply = await backend.saveMoves(project, moves, revision);
-      if (_disposed || generation != _generation) return;
+      final reply = await source.saveMoves(name, [move], revision, digest: preview.digest, confirm: confirmed);
+      if (reply.stopped.isNotEmpty) {
+        try {
+          await _endStopped(source, name, reply.stopped);
+        } catch (error) {
+          if (_current(generation)) {
+            moveProblem = planningShown(
+              '${move.id} was moved and its work stopped, but its tasks could not be ended: '
+              '${planningFailureWords(error)}',
+            );
+          }
+        }
+      }
+      if (!_current(generation)) return;
       if (!reply.complete || reply.revision.isEmpty) {
         throw const FormatException('The planner did not report the saved revision and moved issues.');
       }
       final previous = snapshot!;
       final destinations = <String, String>{};
       final storyDestinations = <String, String>{};
-      // In the order sent: story moves first, so an explicit issue move made after them wins.
-      final ordered = [
-        ...batch.entries.where((entry) => !entry.value.isIssue),
-        ...batch.entries.where((entry) => entry.value.isIssue),
-      ];
-      for (final entry in ordered) {
-        final move = entry.value;
-        final id = move.isIssue ? entry.key.substring('issue '.length) : entry.key;
-        final story = previous.stories.where((story) => story.id == id).firstOrNull;
-        final expected = move.isIssue
-            ? [id]
-            : story?.leastAdvancedIssues(previous.states)?.map((issue) => issue.id).toList();
-        if (expected != null && expected.every(reply.moved.contains)) {
-          for (final issue in expected) {
-            destinations[issue] = move.to;
-          }
-          // A story with issues stands where the daemon computes it, read again below.
-          if (!move.isIssue && expected.isEmpty) storyDestinations[id] = move.to;
-          _pending.remove(entry.key);
-        } else {
-          _pending[entry.key]?.problem = 'The planner did not confirm this destination.';
+      final story = previous.stories.where((story) => story.id == move.id).firstOrNull;
+      final expected = move is PlanningIssueMove
+          ? [move.id]
+          : story?.leastAdvancedIssues(previous.states)?.map((issue) => issue.id).toList();
+      _pending.remove(key);
+      if (expected != null && expected.every(reply.moved.contains)) {
+        for (final issue in expected) {
+          destinations[issue] = move.to;
         }
+        // A story with issues stands where the daemon computes it, read again below.
+        if (move is PlanningStoryMove && expected.isEmpty) storyDestinations[move.id] = move.to;
+        moveNotice = move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.';
+      } else {
+        moveProblem = planningShown('${move.id}: the planner did not confirm this destination.');
       }
       _accept(
         PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations),
@@ -1234,81 +1325,76 @@ class PlanningBoard extends ChangeNotifier {
         order: _readStarts(),
         reconcile: false,
       );
-      if (_pending.isEmpty) {
-        moveNotice = _savedNotice(batch.values);
-      }
       _changed();
       // SaveMoves does not return computed story states; read them from the store.
       final latestOrder = _readStarts();
       final PlanningSnapshot latest;
       try {
-        latest = _checked(PlanningSnapshot.fromParts(snapshot!, await backend.stories(project)));
+        latest = _checked(PlanningSnapshot.fromParts(snapshot!, await source.stories(name)));
       } catch (error) {
-        if (!_disposed && generation == _generation) {
+        if (_current(generation)) {
           moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
         }
         return;
       }
-      if (_disposed || generation != _generation) return;
+      if (!_current(generation)) return;
       _acceptNewest(latest, latestOrder);
     } on PlanningRefusal catch (error) {
-      if (_disposed || generation != _generation) return;
+      if (!_current(generation)) return;
       if (error.name == 'TimedOut') {
         // Only the screen stopped waiting; the planner finishes the save, and the streamed board shows when it landed.
-        for (final key in batch.keys) {
-          _pending[key]?.unanswered = true;
-        }
-        moveNotice = 'Still saving. The moves show as saved once planning shows them.';
+        _pending[key]?.unanswered = true;
+        moveNotice = 'Still saving. The move shows as saved once planning shows it.';
         return;
       }
       refused = true;
-      // Refused, the move cannot land anymore; a board showing it later shows another person's move.
-      if (error.name != 'StaleRevision') _forgetUnanswered(batch.keys);
-      moveRefusal = error;
       final detail = planningFailureWords(error);
-      moveProblem = detail;
-      for (final key in batch.keys) {
-        _pending[key]?.problem = detail;
-      }
-      if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
-      if (error.name == 'StaleRevision' || error.name == 'PartlySaved') {
-        if (error.name == 'StaleRevision') moveNotice = 'Planning changed. Review the pending moves and save again.';
+      if (error.name == 'StaleRevision' || error.name == 'PreviewChanged') {
+        // Never saved unseen: the board is read again and the move previewed and asked about anew.
         try {
           final reply = await _read();
-          if (!_disposed && generation == _generation) {
-            if (error.name == 'StaleRevision') {
-              for (final move in _pending.values) {
-                move.problem = null;
-              }
-              moveProblem = null;
-              moveRefusal = null;
-              refused = false;
-              moveNotice = null;
-              _acceptNewest(reply.$1, reply.$2);
-              // A save that landed late has already told itself saved.
-              moveNotice = _pending.isEmpty
-                  ? moveNotice ?? 'The pending moves were made elsewhere.'
-                  : 'Planning changed. Review the pending moves and save again.';
-            } else {
-              _acceptNewest(reply.$1, reply.$2, reconcile: false);
-            }
+          if (!_current(generation)) return;
+          _acceptNewest(reply.$1, reply.$2);
+          final now = shown == null ? null : _reportedState(snapshot!, key, shown);
+          if (shown == null || now != shown.from) {
+            _pending.remove(key);
+            moveProblem = planningShown(
+              'Planning changed: ${move.id} now stands in ${now ?? 'no state'}; it was not moved.',
+            );
+            return;
           }
+          handedOn = true;
+          await _preview(key, move, snapshot!.revision, generation, source, name, again: true);
         } catch (readError) {
-          if (!_disposed && generation == _generation) moveProblem = '$detail\n${planningFailureWords(readError)}';
+          if (!_current(generation)) return;
+          _pending.remove(key);
+          moveProblem = planningShown('${move.id} was not moved: $detail\n${planningFailureWords(readError)}');
+        }
+        return;
+      }
+      _pending.remove(key);
+      moveRefusal = error;
+      moveProblem = planningShown('${move.id} was not moved: $detail');
+      if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
+      if (error.name == 'PartlySaved') {
+        try {
+          final reply = await _read();
+          if (_current(generation)) _acceptNewest(reply.$1, reply.$2, reconcile: false);
+        } catch (readError) {
+          if (_current(generation)) moveProblem = '$moveProblem\n${planningFailureWords(readError)}';
         }
       }
     } catch (error) {
-      if (!_disposed && generation == _generation) {
+      if (_current(generation)) {
         refused = true;
-        _forgetUnanswered(batch.keys);
-        moveProblem = planningFailureWords(error);
-        for (final key in batch.keys) {
-          _pending[key]?.problem = moveProblem;
-        }
+        _pending.remove(key);
+        moveProblem = planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
       }
     } finally {
-      _finishOperation(reconcile: !refused);
-      _awaitUnanswered();
+      if (!handedOn) {
+        _finishOperation(reconcile: !refused);
+        _awaitUnanswered();
+      }
     }
   }
 
@@ -1413,7 +1499,7 @@ class PlanningBoard extends ChangeNotifier {
       snapshot,
       preferences.search,
       preferences.priority,
-      for (final move in _pending.entries) ...[move.key, move.value.to, move.value.problem],
+      for (final move in _pending.entries) ...[move.key, move.value.to],
     ];
     final columns = _columns;
     if (columns != null && listEquals(columns.$1, inputs)) return columns.$2[name] ?? const [];

@@ -155,8 +155,18 @@ abstract interface class PlanningSource {
   /// Has the provider fetch [project]'s repositories now instead of at its next poll; answers the revision after it.
   Future<String> refreshProject(String project);
 
-  /// Saves the entire reviewed batch in one atomic call.
-  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision);
+  /// Answers what [moves] would do against the board at [revision] and what they can do harm by, writing nothing.
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision);
+
+  /// Saves [moves] in one atomic call, only as the preview answered by [digest] showed them; [confirm] lets a story
+  /// stand where its issues do not fit, as that preview warned.
+  Future<PlanningMoveResult> saveMoves(
+    String project,
+    List<PlanningMove> moves,
+    String revision, {
+    required String digest,
+    bool confirm = false,
+  });
 
   /// Adds an idea as a new issue in state Idea of [repository], against the board at [revision]; [size] is one of
   /// `XS` to `XL`, or null when it is not known yet; [task] names the Porelo task that proposed it, null when a person

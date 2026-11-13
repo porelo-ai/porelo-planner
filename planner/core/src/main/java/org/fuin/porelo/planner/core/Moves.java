@@ -127,6 +127,73 @@ public final class Moves {
             final List<Move> moves,
             final boolean confirm,
             final StoryState derive) {
+        return plan(board, moves, confirm, derive).planned();
+    }
+
+    /**
+     * Answers what a batch of moves would do and what it can do harm by, writing nothing.
+     *
+     * @param board the board the window shows
+     * @param moves the moves, in the order sent
+     * @param derive derives a story's state from its issues
+     * @param running answers the work running over the items the batch touches
+     * @return the preview
+     * @throws Refused when the save would refuse the batch for anything but a story that does not
+     *     fit its issues, which is a warning here
+     */
+    public static MovePreview preview(
+            final Board board,
+            final List<Move> moves,
+            final StoryState derive,
+            final MovePreview.Running running) {
+        return MovePreview.of(board, moves, plan(board, moves, true, derive), running);
+    }
+
+    /**
+     * The issues a batch touches: each issue moved by itself, and each issue of a story moved with
+     * every sub-issue of it, as a run's ownership reads them.
+     *
+     * @param board the board
+     * @param moves the moves
+     * @return the issues' ids
+     */
+    public static Set<String> touched(final Board board, final List<Move> moves) {
+        final Set<String> affected = new LinkedHashSet<>();
+        for (final Move move : moves) {
+            if (!move.story()) {
+                affected.add(move.id());
+                continue;
+            }
+            final Story story = board.story(move.id()).orElse(null);
+            if (story == null) {
+                continue;
+            }
+            affected.addAll(story.issues());
+            for (final Issue issue : board.issues()) {
+                final String parent = issue.parent();
+                if (parent != null && story.issues().contains(parent)) {
+                    affected.add(issue.id());
+                }
+            }
+        }
+        return affected;
+    }
+
+    /**
+     * A checked batch with what its preview reads: the planned writes, each issue's state after the
+     * batch, the issues each story's move carried and the stories that do not fit.
+     */
+    record Plan(
+            Planned planned,
+            Map<String, String> states,
+            Map<String, List<String>> along,
+            Map<String, List<String>> misfits) {}
+
+    private static Plan plan(
+            final Board board,
+            final List<Move> moves,
+            final boolean confirm,
+            final StoryState derive) {
         final Workflow workflow = board.workflow();
         if (!board.work().faults().isEmpty()) {
             // A working state whose rule could not be read would be entered without its work.
@@ -143,10 +210,14 @@ public final class Moves {
         board.issues().forEach(issue -> states.put(issue.id(), issue.state()));
         final Map<String, String> issues = new LinkedHashMap<>();
         final Set<String> moved = new LinkedHashSet<>();
+        final Map<String, List<String>> along = new LinkedHashMap<>();
         // Story moves first, so an issue's own move in the same batch wins, as the window shows it.
         for (final Move move : moves) {
             if (move.story()) {
-                for (final String id : leastAdvanced(workflow, story(board, move.id()), states)) {
+                final List<String> carried =
+                        leastAdvanced(workflow, story(board, move.id()), states);
+                along.put(move.id(), carried);
+                for (final String id : carried) {
                     states.put(id, move.to());
                     issues.put(id, move.to());
                     moved.add(id);
@@ -163,6 +234,7 @@ public final class Moves {
         checkParents(board, workflow, states);
         final Map<String, String> stories = new LinkedHashMap<>();
         final List<String> unstated = new ArrayList<>();
+        final Map<String, List<String>> misfits = new LinkedHashMap<>();
         for (final Move move : moves) {
             if (move.story()) {
                 final Story story = story(board, move.id());
@@ -173,6 +245,7 @@ public final class Moves {
                     if (!confirm) {
                         throw mismatch(story, move.to(), states, derive);
                     }
+                    misfits.put(story.id(), Misfits.of(story.issues(), move.to(), states, derive));
                     stories.put(story.id(), move.to());
                 } else if (story.stateGiven()) {
                     unstated.add(story.id());
@@ -195,7 +268,8 @@ public final class Moves {
                                 stories.remove(story.id());
                             }
                         });
-        return new Planned(issues, stories, unstated, List.copyOf(moved));
+        return new Plan(
+                new Planned(issues, stories, unstated, List.copyOf(moved)), states, along, misfits);
     }
 
     private static void checkOne(

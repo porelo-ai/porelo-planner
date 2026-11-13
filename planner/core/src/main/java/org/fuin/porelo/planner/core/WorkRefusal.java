@@ -48,6 +48,19 @@ public final class WorkRefusal extends RuntimeException {
     }
 
     /**
+     * Refuses a batch of moves whose preview, computed again before the save, answers another
+     * digest than the one the person confirmed; it names nothing the window could send back.
+     *
+     * @return the refusal
+     */
+    public static WorkRefusal previewChanged() {
+        return new WorkRefusal(
+                "PreviewChanged",
+                "What the moves would do changed since their preview; preview them again.",
+                Map.of());
+    }
+
+    /**
      * Refuses a Start or a Stop naming a run, or a reason of it, that is not the one standing.
      *
      * @param story the checked story

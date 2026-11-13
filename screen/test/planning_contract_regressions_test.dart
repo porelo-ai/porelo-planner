@@ -10,6 +10,11 @@ import 'support/story_work_support.dart';
 
 Future<void> _turn() => Future<void>.delayed(Duration.zero);
 
+/// The state the board shows an issue in, its move in flight included.
+String? _shownState(PlanningBoard board, String id) =>
+    board.pendingIssues[id]?.to ??
+    board.stories.expand((story) => story.issues).firstWhere((issue) => issue.id == id).state;
+
 class _HeldListing extends MockPlanningSource {
   _HeldListing();
   Completer<PlanningSnapshot>? listing;
@@ -18,28 +23,8 @@ class _HeldListing extends MockPlanningSource {
 }
 
 void main() {
-  // Harm: a stale refusal keeps an applicable card in the old column and hides unsaved intent.
-  test('stale reread clears a retained move refusal and preserves its destination', () async {
-    final backend = MockPlanningSource();
-    final board = PlanningBoard(backend, 'demo');
-    addTearDown(() async {
-      board.dispose();
-      await backend.end();
-    });
-    await _turn();
-    board.move('ST291', 'Review');
-    backend.moveFailure = mockRefusal('StateNotAllowed', {'item': 'ST291', 'reason': 'Old refusal'});
-    await board.save();
-    backend.moveFailure = null;
-    backend.boards['demo']!['revision'] = 'new';
-    await board.save();
-    expect(board.pending['ST291']!.problem, isNull);
-    expect(board.displayedState(board.stories.firstWhere((story) => story.id == 'ST291')), 'Review');
-    expect(board.cards('Review').any((story) => story.id == 'ST291'), isTrue);
-  });
-
-  // Harm: a transport or unsupported-action failure leaves a refused card looking moved.
-  test('all save failures return unconfirmed cards to their reported state', () async {
+  // Harm: a refused, unsupported or lost save leaves the card looking moved, and the person believes it was.
+  test('every failed save returns the card to its reported state and says why', () async {
     final backend = MockPlanningSource();
     final board = PlanningBoard(backend, 'demo');
     addTearDown(() async {
@@ -48,20 +33,22 @@ void main() {
     });
     await _turn();
     for (final error in <Object>[
+      mockRefusal('StateNotAllowed', {'item': 'B542', 'reason': 'Not now'}),
       const PlanningUnsupported('this backend has no SaveMoves'),
       const SocketException('Connection lost'),
     ]) {
-      board.move('ST291', 'Review');
       backend.moveFailure = error;
-      await board.save();
-      final story = board.stories.firstWhere((story) => story.id == 'ST291');
-      expect(board.displayedState(story), story.state);
-      expect(board.pending['ST291']!.problem, isNotNull);
+      await board.moveIssue('B542', 'Review');
+      expect(board.question, isNull, reason: 'the move asks nothing, so it was sent at once');
+      expect(_shownState(board, 'B542'), 'Backlog', reason: '$error');
+      expect(board.pending, isEmpty, reason: '$error');
+      expect(board.moveProblem, contains('B542 was not moved'), reason: '$error');
     }
+    expect(backend.moveCalls, hasLength(3), reason: 'each move was sent once, and none again');
   });
 
   // Harm: a watch masks missing application of the save acknowledgement.
-  test('save applies confirmed issue identities before a later listing or watch', () async {
+  test('a save applies confirmed issue identities before a later listing or watch', () async {
     final backend = _HeldListing();
     final board = PlanningBoard(backend, 'demo');
     addTearDown(() async {
@@ -70,38 +57,14 @@ void main() {
     });
     await _turn();
     backend.listing = Completer<PlanningSnapshot>();
-    board.moveIssue('B540', 'Review');
-    final saving = board.save();
+    final saving = board.moveIssue('B540', 'Review');
     await _turn();
+    await _turn();
+    expect(backend.moveCalls, hasLength(1));
     expect(board.stories.expand((story) => story.issues).firstWhere((issue) => issue.id == 'B540').state, 'Review');
     expect(board.pending, isEmpty);
     backend.listing!.complete(PlanningSnapshot.from(backend.boards['demo']!));
     await saving;
-  });
-
-  // Harm: detail navigation loses a staged move, or a working issue cannot be unstaged individually.
-  test('issue drafts outlive detail screens and undo a working source individually', () async {
-    final backend = MockPlanningSource();
-    final board = PlanningBoard(backend, 'demo');
-    addTearDown(() async {
-      board.dispose();
-      await backend.end();
-    });
-    await _turn();
-    final detail = PlanningDetail(board, 'ST291', null);
-    await _turn();
-    detail.queueMove('B540', 'Review');
-    detail.queueMove('B541', 'Review');
-    detail.dispose();
-    final issue = PlanningDetail(board, 'ST291', 'B540');
-    await _turn();
-    expect(board.pendingIssues.keys, ['B540', 'B541']);
-    issue.dispose();
-    final reopened = PlanningDetail(board, 'ST291', null);
-    await _turn();
-    reopened.queueMove('B540', 'Implementing');
-    expect(board.pendingIssues.keys, ['B541']);
-    reopened.dispose();
   });
 
   // Harm: a failed parent read prevents a successful issue refresh from reaching the screen.

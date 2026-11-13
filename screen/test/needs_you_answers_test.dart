@@ -103,6 +103,8 @@ void main() {
 
   OutlinedButton button(WidgetTester tester, String key) => tester.widget<OutlinedButton>(find.byKey(Key(key)));
 
+  List<Object?> movesSent() => [for (final call in backend.moveCalls) ...call['moves'] as List];
+
   setUp(opened.clear);
 
   // Harm: a refused save nobody can answer from its row holds the story, or a Start passes over another reason.
@@ -136,21 +138,27 @@ void main() {
 
     expect(find.byKey(const Key('story-work-start AA1')), findsNothing, reason: 'its reason takes no Start');
     await tester.tap(find.byKey(const Key('story-work-review AA1')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);
-    expect(board.pendingIssues['AA1']?.to, 'Review', reason: 'the move to the reading\'s done state is staged');
-    expect(opened, hasLength(1), reason: 'the story opens where the person saves the move');
+    expect(movesSent(), [
+      {'issue': 'AA1', 'to': 'Review'},
+    ], reason: 'the move to the reading\'s done state is saved at once');
+    expect(opened, hasLength(1), reason: 'the story opens where the person sees the move');
   });
 
   // Harm: a stopped row the person cannot move on stays raised with nothing that clears it.
-  testWidgets('a stopped row moves its issue on and opens its story for the save', (tester) async {
+  testWidgets('a stopped row moves its issue on and opens its story', (tester) async {
     await tester.runAsync(() => open('STOPPED', hooks: _hooks(), changes: const NoTasks()));
     await show(tester);
 
     expect(button(tester, 'story-work-start AA1').onPressed, isNotNull, reason: 'a stopped run starts again');
     await tester.tap(find.byKey(const Key('story-work-move-on AA1')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);
-    expect(board.pendingIssues['AA1']?.to, 'Review', reason: 'the move on is staged, not saved');
-    expect(opened, hasLength(1), reason: 'the story opens where the person saves the move');
+    expect(movesSent(), [
+      {'issue': 'AA1', 'to': 'Review'},
+    ], reason: 'the move on is saved at once');
+    expect(opened, hasLength(1), reason: 'the story opens where the person sees the move');
   });
 
   // Harm: an ended run with reasons nobody can stop keeps its unstarted work offered.

@@ -1,0 +1,2 @@
+title: A move on the planning board is saved at once, with no Save or Undo, and a move that can stop running work, carry another repository's issues along, skip waiting states or leave a story unfit for its issues first shows what it would do and waits for Confirm or Cancel, and a confirmed move stops exactly the work it showed.
+type: changed

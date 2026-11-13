@@ -127,31 +127,30 @@ void main() {
     expect(find.byKey(const Key('planning-needs-you S2')), findsNothing, reason: 'and no other');
   });
 
-  // Harm: a person's move refused without a word behind a folded box.
-  testWidgets('a folded box tells the moves staged into it and the refusal of one', (tester) async {
+  // Harm: a person's move refused without a word because the box it came from is folded.
+  testWidgets('a move refused out of a folded box is said above the board', (tester) async {
     final (backend, boards) = await _show(tester, [_story('S1', 'Ready'), _story('S2', 'Ready')]);
     final board = boards.selected!;
-    board.move('S1', 'Review');
-    await settle(tester);
-    await _press(tester, 'planning-fold-state Review');
-    expect(find.byKey(const Key('planning-state-pending Review')), findsOneWidget, reason: 'the staged move is told');
-
+    await _press(tester, 'planning-fold-state Ready');
+    // The story's issue is the project's own and waits, so its move asks nothing.
+    backend.boards['demo']!['repositories'] = ['repo'];
     backend
       ..refusedStory = 'S1'
       ..refusalDetail = 'Policy refuses';
-    await tester.runAsync(board.save);
-    await settle(tester);
-    expect(board.pending['S1']?.problem, isNotNull, reason: 'the save was refused');
-    await _press(tester, 'planning-fold-state Ready');
 
+    await tester.runAsync(() => board.move('S1', 'Review'));
+    await settle(tester);
+
+    expect(backend.moveCalls, hasLength(1), reason: 'the move was sent at once');
+    expect(board.pending, isEmpty, reason: 'nothing waits on a refused move');
     expect(
       find.descendant(
-        of: find.byKey(const Key('planning-state-refused S1')),
-        matching: find.textContaining(board.pending['S1']!.problem!),
+        of: find.byKey(const Key('planning-move-error')),
+        matching: find.textContaining('Policy refuses'),
         matchRoot: true,
       ),
       findsOneWidget,
-      reason: 'and why it was refused',
+      reason: 'the refusal and why',
     );
   });
 

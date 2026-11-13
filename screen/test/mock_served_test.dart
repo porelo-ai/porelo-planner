@@ -13,13 +13,21 @@ final _served = Directory('test/served/mock');
 String _file(String name) => File('${_served.path}/$name').readAsStringSync();
 
 /// The bodies the planner's own test sent for the answers recorded, as the planner reads them.
-const _sent = <String, Object>{
+final _sent = <String, Object>{
   'PUT /projects/demo': {'repository': 'https://example.org/porelo/porelo.git', 'branch': 'main'},
+  'POST /projects/demo/moves/preview': {
+    'revision': 'mock@1',
+    'moves': [
+      {'issue': 'B542', 'to': 'Review'},
+    ],
+  },
   'POST /projects/demo/moves': {
     'revision': 'mock@1',
     'moves': [
       {'issue': 'B542', 'to': 'Review'},
     ],
+    'digest': (jsonDecode(_file('preview-B542.json')) as Map<String, dynamic>)['digest'],
+    'confirm': false,
   },
 };
 
@@ -53,6 +61,7 @@ class _RecordedMock {
       'GET /projects/demo/workflow' => 'workflow.json',
       'GET /projects/demo/stories' => 'stories.json',
       'GET /projects/demo/issues/B541' => 'issue-B541.json',
+      'POST /projects/demo/moves/preview' => 'preview-B542.json',
       'POST /projects/demo/moves' => 'move-B542.json',
       'GET /projects/demo/events' => 'board-event.json',
       _ => '',
@@ -152,7 +161,9 @@ void main() {
     final (mock, source) = await _started();
 
     final detail = await source.getIssue('demo', 'B541');
-    final moved = await source.saveMoves('demo', [const PlanningIssueMove('B542', 'Review')], 'mock@1');
+    const moves = [PlanningIssueMove('B542', 'Review')];
+    final preview = await source.previewMoves('demo', moves, 'mock@1');
+    final moved = await source.saveMoves('demo', moves, 'mock@1', digest: preview.digest);
 
     expect(
       '${(detail.issue?.id, detail.issue?.state, detail.whatMustBeTrue)}',

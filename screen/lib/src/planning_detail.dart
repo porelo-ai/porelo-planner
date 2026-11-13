@@ -50,28 +50,25 @@ class PlanningDetail extends ChangeNotifier {
   /// Whether a replacement read group is pending; the last completed group stays readable.
   bool loading = true;
 
-  /// Issue drafts retained by the board across detail navigation.
+  /// The issue move in flight on the board.
   Map<String, PendingPlanningMove> get pendingMoves => board.pendingIssues;
 
-  /// Daemon refusals attached to their exact issue.
-  Map<String, String> get moveProblems => {for (final entry in pendingMoves.entries) entry.key: ?entry.value.problem};
-
-  /// Save-level failure from the shared batch.
+  /// Why the last move was not made, from the board.
   String? get moveProblem => board.moveProblem;
 
   /// Confirmation or revision-change feedback.
   String? get moveNotice => board.moveNotice;
 
-  /// Whether the board's shared save is pending.
+  /// Whether the board's move is in flight.
   bool get saving => board.saving;
 
   /// States that a person may request for [issue], in the configured workflow order.
   List<PlanState> moveStatesOf(PlanIssue issue) =>
       board.states.where((state) => state.name.isNotEmpty && PlanningBoard.issueMayEnter(issue, state)).toList();
 
-  /// Why a new issue move cannot be staged now.
-  String? get moveUnavailable => saving
-      ? 'Saving issue changes.'
+  /// Why an issue cannot be moved now.
+  String? get moveUnavailable => saving || board.pending.isNotEmpty
+      ? 'Saving…'
       : loading
       ? 'Waiting for the latest issue details.'
       : !board.live
@@ -84,11 +81,7 @@ class PlanningDetail extends ChangeNotifier {
       ? 'The planning revision was not reported.'
       : null;
 
-  /// Whether the shared Save has reviewed work and a current connection.
-  bool get canSaveMoves =>
-      board.pending.isNotEmpty && moveUnavailable == null && !board.unavailableActions.containsKey('SaveMoves');
-
-  /// Stages one issue in the board's pending batch.
+  /// Moves one issue at once through the board.
   void queueMove(String id, String to) {
     if (_disposed || board.disposed) return;
     if (moveUnavailable case final why?) return board.refuseMove(id, why);
@@ -96,7 +89,7 @@ class PlanningDetail extends ChangeNotifier {
     if (shown == null) {
       return board.refuseMove(id, "it is not listed on this story's page.");
     }
-    board.moveIssue(id, to, reported: shown);
+    unawaited(board.moveIssue(id, to, reported: shown));
   }
 
   /// The planner's words for the last refused worker change, until the next one is asked.
@@ -117,20 +110,6 @@ class PlanningDetail extends ChangeNotifier {
     workerSaving = false;
     workerProblem = problem;
     notifyListeners();
-  }
-
-  /// Drops all drafts through the same Undo used on the board.
-  void undoMoves() {
-    if (_disposed || board.disposed) return;
-    board.undoAll();
-  }
-
-  /// Saves stories and issues together through the board's only write path.
-  Future<void> saveMoves() async {
-    if (_disposed || board.disposed || !canSaveMoves) return;
-    await board.save();
-    if (_disposed || board.disposed) return;
-    await reload();
   }
 
   PlanningSnapshot? _snapshot;

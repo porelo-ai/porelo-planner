@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
@@ -118,7 +120,7 @@ void main() {
     tester,
   ) async {
     final (source, board) = await _open(tester, _board());
-    final detail = await _show(tester, board);
+    await _show(tester, board);
 
     await tester.tap(find.byKey(const Key('planning-move PL1')));
     await settle(tester);
@@ -126,16 +128,13 @@ void main() {
     expect(find.byKey(const Key('planning-move-to PL1 Backlog')), findsOneWidget, reason: 'its waiting states stay');
     await tester.tapAt(Offset.zero);
     await settle(tester);
-    board.moveIssue('PL1', 'Implementing');
-    expect(board.pendingIssues, isEmpty, reason: 'nor is it staged when asked directly');
+    await tester.runAsync(() => board.moveIssue('PL1', 'Implementing'));
+    expect(source.moveCalls, isEmpty, reason: 'nor is it moved when asked directly');
 
     await tester.tap(find.byKey(const Key('planning-move PL2')));
     await settle(tester);
     await tester.tap(find.byKey(const Key('planning-move-to PL2 Implementing')));
-    await settle(tester);
-    expect(board.pendingIssues.keys, ['PL2'], reason: 'the person\'s issue is staged');
-
-    await tester.runAsync(detail.saveMoves);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
     await settle(tester);
     expect(_stateOf(source, 'PL2'), 'Implementing', reason: 'saved by hand, with no task');
     expect(source.work.calls, isEmpty, reason: 'no work was started for it');
@@ -219,27 +218,38 @@ void main() {
     );
   });
 
-  // Harm: a switch to an agent beside a staged move into a working state makes the planner refuse the whole save.
-  testWidgets('no worker change is offered while the issue or a sub-issue has a staged move or the board is partial', (
+  // Harm: a worker changed while a move of the issue is saved makes the planner refuse one of them unseen.
+  testWidgets('no worker change is offered while a move of the issue or a sub-issue is saved or the board is partial', (
     tester,
   ) async {
     final data = _board();
     ((data['stories'] as List).first['issues'] as List).add(_issue('PL2.1', 'MANUAL', parent: 'PL2'));
-    final (_, board) = await _open(tester, data);
+    final (source, board) = await _open(tester, data);
     PlanIssue issue(String id) => board.stories.single.issues.firstWhere((each) => each.id == id);
-    expect(board.workerUnavailable(issue('PL2')), isNull, reason: 'nothing staged, so the switch is offered');
+    expect(board.workerUnavailable(issue('PL2')), isNull, reason: 'nothing is saved, so the switch is offered');
 
-    board.moveIssue('PL2', 'Implementing');
-    expect(board.pendingIssues.keys, ['PL2'], reason: 'the fixture stages the person\'s issue');
-    expect(board.workerUnavailable(issue('PL2')), isNotNull, reason: 'the issue has a staged move');
-
-    board.undo('issue PL2');
-    board.moveIssue('PL2.1', 'Implementing');
-    expect(board.pendingIssues.keys, ['PL2.1'], reason: 'the fixture stages the sub-issue');
-    expect(board.workerUnavailable(issue('PL2')), isNotNull, reason: 'its sub-issue has a staged move');
-
-    board.undo('issue PL2.1');
-    expect(board.workerUnavailable(issue('PL2')), isNull, reason: 'the undone move frees the switch again');
+    for (final moved in ['PL2', 'PL2.1']) {
+      final gate = source.moveGate = Completer<void>();
+      late Future<void> moving;
+      await tester.runAsync(() async {
+        moving = board.moveIssue(moved, 'Implementing');
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      });
+      expect(board.pendingIssues.keys, [moved], reason: 'the fixture holds the save of $moved');
+      expect(board.workerUnavailable(issue('PL2')), isNotNull, reason: '$moved has a move being saved');
+      await tester.runAsync(() async {
+        gate.complete();
+        await moving;
+      });
+      source.moveGate = null;
+    }
+    expect(board.workerUnavailable(issue('PL2')), isNull, reason: 'the saved moves free the switch again');
+    source.moveFailure = mockRefusal('TimedOut', const {});
+    await tester.runAsync(() => board.moveIssue('PL2.1', 'Backlog'));
+    source.moveFailure = null;
+    expect(board.pendingIssues['PL2.1']?.unanswered, isTrue, reason: 'the fixture leaves the save unanswered');
+    expect(board.saving, isFalse, reason: 'nothing is being saved any more');
+    expect(board.workerUnavailable(issue('PL2')), isNotNull, reason: 'its sub-issue\'s save is unanswered');
     final shown = board.snapshot!;
     final head = issue('PL2');
     board.snapshot = PlanningSnapshot.from({'revision': shown.revision, 'stories': <dynamic>[]});

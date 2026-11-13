@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -437,7 +438,8 @@ class WorkRunTest {
             final var saved = new java.util.concurrent.atomic.AtomicBoolean();
             assertThatThrownBy(
                             () ->
-                                    f.run.moves(
+                                    moved(
+                                            f.run,
                                             List.of(new Moves.Move(true, "ST2", "Review")),
                                             () -> {
                                                 saved.set(true);
@@ -1629,11 +1631,36 @@ class WorkRunTest {
                         "box",
                         "workstation",
                         new WorkRun.Ended("2026-01-01T00:00:00Z", false, "Died", "", 0)));
-        final String state = f.store.board().issue("AA1").orElseThrow().state();
+        // A second issue of the story behind it, so the story's move carries that one and leaves
+        // the failed one where it stands, as a move the planner takes can.
+        final Board before = f.store.board();
+        f.store.current =
+                new Board(
+                        before.revision(),
+                        before.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Building",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null)),
+                        List.of(
+                                before.issue("AA1").orElseThrow(),
+                                new Issue(
+                                        "AA2", "alpha", "Other", "Backlog", null, List.of(), null,
+                                        null, "")),
+                        before.work(),
+                        before.repositories());
 
-        f.run.moves(
-                List.of(new Moves.Move(false, "AA1", state)),
-                () -> f.store.save(f.store.board().revision(), writes("AA1", state)));
+        moved(
+                f.run,
+                List.of(new Moves.Move(true, "ST1", "Review")),
+                () -> f.store.save(f.store.board().revision(), writes("AA2", "Review")));
 
         final NextStep.Progress progress =
                 java.util.Objects.requireNonNull(f.run.work("ST1")).issues().get("AA1");
@@ -1660,7 +1687,8 @@ class WorkRunTest {
                 .as("the failed task raised the issue")
                 .isEqualTo("FAILED");
 
-        f.run.moves(
+        moved(
+                f.run,
                 List.of(new Moves.Move(false, "AA1", "Backlog")),
                 () -> f.store.save(f.store.board().revision(), writes("AA1", "Backlog")));
 
@@ -1686,7 +1714,8 @@ class WorkRunTest {
                             ended("Findings:\n1. blocking | - | - | Preserve data")));
         }
 
-        f.run.moves(
+        moved(
+                f.run,
                 List.of(new Moves.Move(false, "AA1.1", "Review")),
                 () -> f.store.save(f.store.board().revision(), writes("AA1.1", "Review")));
 
@@ -3147,11 +3176,221 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         f.halted();
 
-        f.run.moves(
-                List.of(new Moves.Move(false, "AA1", "Building")),
-                () -> f.store.save(f.store.board().revision(), writes("AA1", "Building")));
+        moved(
+                f.run,
+                List.of(new Moves.Move(false, "AA1", "Review")),
+                () -> f.store.save(f.store.board().revision(), writes("AA1", "Review")));
 
         assertThat(f.run.work("ST1").halted()).as("the run is no longer halted").isFalse();
+    }
+
+    @Test
+    void aSaveConfirmedForAnotherRepositoryIsRefusedAndWritesNothing() {
+        // Harm: a move written to a repository it was never shown for, after a rebind.
+        final Fixture f = new Fixture();
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
+        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        preview.revision(),
+                                        preview.digest("https://example.org/old.git", null),
+                                        false,
+                                        "https://example.org/new.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+
+        assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
+        assertThat(saved).as("nothing reaches the store").isFalse();
+    }
+
+    @Test
+    void aSaveWhoseRunningTasksChangedSinceItsPreviewIsRefusedAndWritesNothing() {
+        // Harm: a move confirmed over the work it showed, saved over a task started since.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<WorkRun.Offered> tasks = f.order().tasks();
+        final WorkRun.Offered main = role(tasks, "MAIN");
+        final WorkRun.Offered child = role(tasks, "BUILDER");
+        f.start(main);
+        startChild(f, child);
+        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final String revision = f.store.board().revision().value();
+        final MovePreview preview = f.run.preview(moves, revision);
+        assertThat(preview.warnings().getFirst().tasks()).as("the tasks at work shown").hasSize(2);
+        endMain(f, main);
+        assertThat(f.store.board().revision().value())
+                .as("only the running work changed, not the board")
+                .isEqualTo(revision);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        revision,
+                                        preview.digest("https://example.org/own.git", null),
+                                        false,
+                                        "https://example.org/own.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+
+        assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
+        assertThat(saved).as("nothing reaches the store").isFalse();
+    }
+
+    @Test
+    void aConfirmedSaveWhoseRunningTasksChangedSinceItsPreviewStopsNothing() {
+        // Harm: the move's stop ends a task the person was never shown, started while the
+        // confirmation stood open.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<WorkRun.Offered> tasks = f.order().tasks();
+        final WorkRun.Offered main = role(tasks, "MAIN");
+        final WorkRun.Offered child = role(tasks, "BUILDER");
+        f.start(main);
+        startChild(f, child);
+        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final String revision = f.store.board().revision().value();
+        final MovePreview preview = f.run.preview(moves, revision);
+        endMain(f, main);
+        assertThat(f.store.board().revision().value()).as("the board as shown").isEqualTo(revision);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        revision,
+                                        preview.digest("https://example.org/own.git", null),
+                                        true,
+                                        "https://example.org/own.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+
+        assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
+        assertThat(saved).as("nothing reaches the store").isFalse();
+        assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
+                .as("the run goes on")
+                .isFalse();
+        assertThat(f.active("ST1")).as("the task still at work goes on").hasSize(1);
+    }
+
+    @Test
+    void aConfirmedSaveOverRunningWorkStopsItsRunAndNamesTheTasksToEnd() {
+        // Harm: agents left working on a story that moved on, or a stop the window cannot end
+        // because it does not know which tasks it stopped.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered main = role(f.order().tasks(), "MAIN");
+        f.start(main);
+        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable unconfirmed =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        preview.revision(),
+                                        preview.digest("https://example.org/own.git", null),
+                                        false,
+                                        "https://example.org/own.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+        assertThat(conflictOf(unconfirmed)).as("unconfirmed").isEqualTo("WorkRunning");
+        assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
+                .as("an unconfirmed save stops nothing")
+                .isFalse();
+
+        final WorkRun.MoveSaved<Boolean> answer =
+                f.run.moves(
+                        moves,
+                        preview.revision(),
+                        preview.digest("https://example.org/own.git", null),
+                        true,
+                        "https://example.org/own.git",
+                        null,
+                        () -> saved.getAndSet(true));
+
+        assertThat(saved).as("the move is saved").isTrue();
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.stopped()).as("the run is recorded stopped with the save").isTrue();
+        assertThat(answer.stopped())
+                .as("the run stopped and the task the window must end, with its container")
+                .containsExactly(
+                        new WorkRun.StoppedRun(
+                                "ST1", run.id(), List.of(new WorkRun.StoppedTask("task", "box"))));
+    }
+
+    private static WorkRun.Offered role(final List<WorkRun.Offered> tasks, final String role) {
+        return tasks.stream().filter(o -> o.task().role().equals(role)).findFirst().orElseThrow();
+    }
+
+    private static void endMain(final Fixture f, final WorkRun.Offered main) {
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        main.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+    }
+
+    private static void startChild(final Fixture f, final WorkRun.Offered child) {
+        f.run.report(
+                "child",
+                new WorkRun.Report(
+                        child.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+    }
+
+    @Test
+    void aSaveOnABoardThatMovedSinceItsPreviewAnswersStaleRevision() {
+        // Harm: a board changed under a confirmation read as a changed preview, so the window
+        // would not read the board again before asking anew.
+        final Fixture f = new Fixture();
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
+        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        "another",
+                                        preview.digest("https://example.org/own.git", null),
+                                        false,
+                                        "https://example.org/own.git",
+                                        null,
+                                        () -> saved.getAndSet(true)));
+
+        assertThat(refused).isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(saved).as("nothing reaches the store").isFalse();
+    }
+
+    /** Moves as the window does: the preview first, then the save with its digest. */
+    static <T> T moved(
+            final WorkRun run,
+            final List<Moves.Move> moves,
+            final java.util.function.Supplier<T> save) {
+        final MovePreview preview =
+                run.preview(moves, run.view((board, work) -> board.revision().value()));
+        return run.moves(
+                        moves,
+                        preview.revision(),
+                        preview.digest("https://example.org/own.git", null),
+                        false,
+                        "https://example.org/own.git",
+                        null,
+                        save)
+                .saved();
     }
 
     static String conflictOf(final Throwable refused) {

@@ -13,6 +13,7 @@ import '../story_work_order.dart';
 import 'actions.dart';
 import 'new_issue_dialog.dart';
 import 'planning_detail_widgets.dart';
+import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
 import 'story_work_dialog.dart';
@@ -20,7 +21,7 @@ import 'style.dart';
 
 final _planningLeaveDialogs = Expando<bool>();
 
-/// Asks before leaving unsaved work; a save in flight must finish first.
+/// Asks before leaving while a move's save is still out; it must be answered or seen on the board first.
 Future<bool> confirmPlanningLeave(BuildContext context, Iterable<PlanningBoard> boards, {bool quitting = false}) async {
   final watched = boards.toList();
   final navigator = Navigator.of(context);
@@ -40,7 +41,7 @@ Future<bool> confirmPlanningLeave(BuildContext context, Iterable<PlanningBoard> 
                   saving
                       ? 'Planning is saving'
                       : pending
-                      ? 'Unsaved planning moves'
+                      ? 'A move is still being saved'
                       : 'Planning saved',
                 ),
                 content: Text(
@@ -49,8 +50,8 @@ Future<bool> confirmPlanningLeave(BuildContext context, Iterable<PlanningBoard> 
                       : !pending
                       ? 'The planning changes are saved. You can continue.'
                       : quitting
-                      ? 'Closing the window loses unsaved planning moves. Close anyway?'
-                      : 'These planning moves have not been saved. Leave them pending and continue?',
+                      ? 'The planner has not shown the move on the board yet. Close anyway?'
+                      : 'The planner has not shown the move on the board yet. Leave anyway?',
                 ),
                 actions: [
                   TextButton(
@@ -62,7 +63,7 @@ Future<bool> confirmPlanningLeave(BuildContext context, Iterable<PlanningBoard> 
                     TextButton(
                       key: const Key('planning-leave'),
                       onPressed: () => Navigator.pop(context, true),
-                      child: Text(quitting ? 'Close anyway' : 'Leave with moves pending'),
+                      child: Text(quitting ? 'Close anyway' : 'Leave anyway'),
                     ),
                 ],
               );
@@ -446,7 +447,7 @@ class _BoardViewState extends State<_BoardView> {
                 label: const Text('Reload planning'),
               ),
             // Not flexible: a loose share of the height would stay empty below the board.
-            if (board.pending.isNotEmpty) _pending(context),
+            PlanningMoveWarningPanel(board: board),
             const SizedBox(height: Space.normal),
             if (board.snapshot == null && board.problem == null)
               const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
@@ -567,22 +568,22 @@ class _BoardViewState extends State<_BoardView> {
     // Only the column's chevron narrows its boxes to tiles; a box's own chevron folds it to its heading.
     final folded = !phaseFolded && board.preferences.foldedStates.contains(state.name);
     final raised = folded ? cards.where(_needsYou).length : 0;
-    final moved = folded ? cards.where((story) => board.pending.containsKey(story.id)).toList() : const <PlanStory>[];
     final theme = Theme.of(context);
-    return DragTarget<String>(
+    return DragTarget<_CardDrag>(
       key: Key('planning-drop ${state.name}'),
       onWillAcceptWithDetails: (details) =>
           !board.saving &&
+          board.pending.isEmpty &&
           {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
           board.live &&
-          board.stories.any((story) => story.id == details.data && board.displayedState(story) != state.name),
+          board.stories.any((story) => story.id == details.data.story && board.displayedState(story) != state.name),
       onAcceptWithDetails: (details) {
-        final story = board.stories.where((story) => story.id == details.data).firstOrNull;
+        final story = board.stories.where((story) => story.id == details.data.story).firstOrNull;
         if (story == null || board.displayedState(story) == state.name) return;
         if (state.kind == 'WORKING') {
           unawaited(_start(story, target: state));
         } else {
-          board.move(details.data, state.name);
+          unawaited(board.move(details.data.story, state.name, revision: details.data.revision));
         }
       },
       builder: (context, candidates, rejected) => Container(
@@ -632,14 +633,9 @@ class _BoardViewState extends State<_BoardView> {
               const Text('State kind not reported')
             else if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind))
               Text(_line(state.kind)),
-            if (folded) ...[
-              // A folded box hides its cards, never a move a person staged or the planner refused.
-              if (moved.isNotEmpty)
-                Text('${moved.length} moved, not saved yet', key: Key('planning-state-pending ${state.name}')),
-              for (final story in moved)
-                if (board.pending[story.id]?.problem case final problem?)
-                  Text(_line('${story.id}: $problem'), key: Key('planning-state-refused ${story.id}')),
-            ] else if (phaseFolded)
+            if (folded)
+              const SizedBox.shrink()
+            else if (phaseFolded)
               Wrap(
                 spacing: Space.tight,
                 runSpacing: Space.tight,
@@ -682,9 +678,7 @@ class _BoardViewState extends State<_BoardView> {
                                     _menu(story, dense: true),
                                   ],
                                 ),
-                                if (board.pending[story.id] case final move? when move.problem == null)
-                                  const Text('moved'),
-                                if (board.pending[story.id]?.problem case final problem?) Text(problem),
+                                if (board.pending.containsKey(story.id)) const Text('Saving…'),
                               ],
                             ),
                           ),
@@ -701,56 +695,10 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  Widget _pending(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
-    child: SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('${board.pending.length} state change(s) not saved yet:'),
-          if (savePlanningAction(board).unavailable case final reason?) Text(reason),
-          for (final entry in board.pending.entries)
-            Wrap(
-              key: Key('planning-pending ${entry.key}'),
-              spacing: Space.small,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  _line(
-                    '${entry.key} ${entry.value.from.isEmpty ? 'not reported' : entry.value.from} → ${entry.value.to}',
-                  ),
-                ),
-                if (entry.value.problem != null) Text(entry.value.problem!),
-                TextButton(
-                  key: Key('planning-undo ${entry.key}'),
-                  onPressed: board.saving ? null : () => board.undo(entry.key),
-                  child: const Text('Undo'),
-                ),
-              ],
-            ),
-          Wrap(
-            spacing: Space.small,
-            children: [
-              TextButton(
-                key: const Key('planning-undo-all'),
-                onPressed: board.saving ? null : board.undoAll,
-                child: const Text('Undo all'),
-              ),
-              FilledButton(
-                key: const Key('planning-save'),
-                onPressed: savePlanningAction(board).available ? savePlanningAction(board).run : null,
-                child: Text(board.saving ? 'Saving…' : 'Save'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _drag(PlanStory story, Widget child) => Draggable<String>(
-    data: story.id,
-    maxSimultaneousDrags: board.saving || !board.live ? 0 : 1,
+  // The data is taken when the drag starts, so the drop carries the board the person saw then.
+  Widget _drag(PlanStory story, Widget child) => Draggable<_CardDrag>(
+    data: (story: story.id, revision: board.snapshot?.revision ?? ''),
+    maxSimultaneousDrags: board.saving || board.pending.isNotEmpty || !board.live ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
       child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
@@ -981,7 +929,6 @@ class _BoardViewState extends State<_BoardView> {
       _foundIn(story).join(' '),
       _work(story),
       board.pending[story.id],
-      board.pending[story.id]?.problem,
       board.pendingPriorities[story.id],
       board.priorityUnavailable(story.id),
       board.saving,
@@ -1046,8 +993,7 @@ class _BoardViewState extends State<_BoardView> {
                   ],
                 ),
                 if (!cardFolded) ...[const SizedBox(height: Space.small), Text(_line(story.title))],
-                if (board.pending[story.id] case final move? when move.problem == null) const Text('moved'),
-                if (board.pending[story.id]?.problem case final problem?) Text(problem),
+                if (board.pending.containsKey(story.id)) const Text('Saving…'),
                 if (board.pendingPriorities[story.id] case final priority?)
                   Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),
                 if (cardFolded) ...[
@@ -1378,3 +1324,6 @@ class _IdeaDialogState extends State<_IdeaDialog> {
 
 /// [text] on one line, as the screen shows what an agent or a repository wrote.
 String _line(String text) => planningShown(text, multiline: false);
+
+/// A card being dragged: its story and the board's revision when the drag began.
+typedef _CardDrag = ({String story, String revision});

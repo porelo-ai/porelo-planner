@@ -82,9 +82,7 @@ Future<void> _show(WidgetTester tester, PlanningBoard board) async {
 void main() {
   // Harm: a story whose issues a search hides is read as empty, so its issues are filed twice; and a move of a hidden
   // issue is saved unseen.
-  testWidgets('a search that matches no issue says so, and the progress and the moves not saved still count all', (
-    tester,
-  ) async {
+  testWidgets('a search that matches no issue says so, and the progress still counts all', (tester) async {
     final source = MockPlanningSource()..boards['demo'] = _board();
     final board = PlanningBoard(source, 'demo');
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -93,13 +91,6 @@ void main() {
       await tester.runAsync(source.end);
     });
     await _show(tester, board);
-    board.moveIssue('PL2', 'Review');
-    await settle(tester);
-    expect(
-      find.byKey(const Key('planning-pending-move issue PL2')),
-      findsOneWidget,
-      reason: 'the move waits to be saved',
-    );
 
     await tester.tap(find.byKey(const Key('planning-issue-search-open')));
     await settle(tester);
@@ -110,12 +101,6 @@ void main() {
     expect(find.text('Nothing matches.'), findsOneWidget, reason: 'the list says the search hides them');
     expect(find.text('No issues yet.'), findsNothing, reason: 'the story is never read as empty');
     expect(find.textContaining(' of 3 in Review or Finished'), findsOneWidget, reason: 'progress counts every issue');
-    expect(find.byKey(const Key('planning-moves-pending')), findsOneWidget, reason: 'the moves not saved are named');
-    expect(
-      find.byKey(const Key('planning-pending-move issue PL2')),
-      findsOneWidget,
-      reason: 'the hidden issue\'s move too',
-    );
 
     await tester.tap(find.byKey(const Key('planning-issue-search-clear')));
     await settle(tester);
@@ -132,8 +117,7 @@ void main() {
   // Harm: the planner refuses a move of an issue the search hides, and the refusal is shown nowhere.
   testWidgets('a refused move of an issue the search hides is still shown', (tester) async {
     final (source, board) = await _open(tester);
-    final detail = await _showDetail(tester, board);
-    board.moveIssue('PL2', 'Review');
+    await _showDetail(tester, board);
     await _search(tester, 'no such issue');
     source.moveFailure = mockRefusal('org.fuin.porelo.Tasks1.MoveNotAllowed', {
       'item': 'PL2',
@@ -142,13 +126,17 @@ void main() {
       'reason': 'The story is frozen.',
     });
 
-    await tester.runAsync(detail.saveMoves);
+    await tester.runAsync(() => board.moveIssue('PL2', 'Review'));
     await settle(tester);
 
-    expect(detail.moveProblems.keys, ['PL2'], reason: 'the planner refused the hidden issue\'s move');
+    expect(source.moveCalls, hasLength(1), reason: 'the move was sent at once');
     expect(find.byKey(const Key('planning-issue PL2')), findsNothing, reason: 'its row stays hidden');
     expect(
-      find.byKey(const Key('planning-move-problem PL2')),
+      find.descendant(
+        of: find.byKey(const Key('planning-move-error')),
+        matching: find.textContaining('PL2'),
+        matchRoot: true,
+      ),
       findsOneWidget,
       reason: 'the refusal is shown outside the table',
     );
@@ -156,19 +144,30 @@ void main() {
 
   // Harm: a move chosen on a row the search left is staged for another issue.
   testWidgets('a move chosen on the one row a search leaves moves that issue alone', (tester) async {
-    final (_, board) = await _open(tester);
+    final (source, board) = await _open(tester);
     await _showDetail(tester, board);
     await _search(tester, 'PL2');
 
     await tester.tap(
-      find.descendant(of: find.byType(DataTable), matching: find.byType(PopupMenuButton<(String, String, bool, bool)>)),
+      find.descendant(
+        of: find.byType(DataTable),
+        matching: find.byType(PopupMenuButton<(String, String, bool, String)>),
+      ),
     );
     await settle(tester);
     await tester.tap(find.text('Finished').last);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await settle(tester);
 
-    expect(board.pendingIssues.keys, ['PL2'], reason: 'the row shown is PL2, so PL2 alone is moved');
-    expect(board.pendingIssues['PL2']?.to, 'Finished', reason: 'to the state chosen');
+    expect(
+      [for (final call in source.moveCalls) call['moves']],
+      [
+        [
+          {'issue': 'PL2', 'to': 'Finished'},
+        ],
+      ],
+      reason: 'the row shown is PL2, so PL2 alone is moved, to the state chosen',
+    );
   });
 }
 

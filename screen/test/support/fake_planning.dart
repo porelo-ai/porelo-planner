@@ -118,10 +118,44 @@ class FakePlanningSource implements PlanningSource {
   @override
   Future<PlanningSnapshot> stories(String project) async => _stories();
 
+  /// Every preview asked of it: the project, the moves and the revision.
+  final List<(String, List<PlanningMove>, String)> previews = [];
+
+  /// The warnings its next previews answer, as the planner words them; none by default.
+  List<Map<String, dynamic>> warnings = const [];
+
+  /// The digest and confirm of every save, in the order of [saves].
+  final List<(String, bool)> confirmations = [];
+
+  /// The digest its previews answer at [revision]: changed with the board, as the planner's is.
+  static String digestAt(Object? revision) =>
+      '$revision'.codeUnits.fold(0, (a, b) => a * 31 + b).toRadixString(16).padLeft(64, '0').substring(0, 64);
+
   @override
-  Future<PlanningMoveResult> saveMoves(String project, List<PlanningMove> moves, String revision) async {
-    saves.add((project, moves, revision));
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
+    previews.add((project, moves, revision));
     if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    return PlanningMovePreview.from({
+      'revision': revision,
+      'digest': digestAt(revision),
+      'issues': <Object?>[],
+      'stories': <Object?>[],
+      'warnings': warnings,
+    });
+  }
+
+  @override
+  Future<PlanningMoveResult> saveMoves(
+    String project,
+    List<PlanningMove> moves,
+    String revision, {
+    required String digest,
+    bool confirm = false,
+  }) async {
+    saves.add((project, moves, revision));
+    confirmations.add((digest, confirm));
+    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    if (digest != digestAt(revision)) throw const PlanningRefusal('PreviewChanged');
     final moved = <String>[];
     final stories = [
       for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
