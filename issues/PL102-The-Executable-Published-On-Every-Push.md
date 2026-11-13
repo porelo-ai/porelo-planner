@@ -25,7 +25,7 @@ and sha256, the same way it pins a release. A published build is never replaced.
 ## Plan
 
 - **Before, read in the code.** `.github/workflows/build.yml` published the bare executable to
-  `porelo-files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64` on a release only, and the workflow's
+  `files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64` on a release only, and the workflow's
   `VERSION` was the bare `project.version`, so a snapshot would have landed at `x.y.z-SNAPSHOT` on every run.
 - **The change, as built.**
   - The publish and read-back steps run on every push to main that builds, as on a release.
@@ -63,5 +63,6 @@ and sha256, the same way it pins a release. A published build is never replaced.
 
 ## To be checked
 
-- That the publishing token cannot overwrite in `files`: a second PUT of the same path is refused by the storage too.
+- That the publishing token cannot overwrite in `porelo-files`: a second PUT of the same path is
+  refused by the storage too.
 - That an Artifactory path holding `~` is fetched as written; the first push after this change shows it.
