@@ -56,6 +56,8 @@
         <archunit.version>1.4.2</archunit.version>
         <!-- porelo's version of its native-image checks; the build tools publish older copies at higher versions. -->
         <porelo.checks.version>0.5.1-SNAPSHOT</porelo.checks.version>
+        <!-- Every surefire and failsafe fork is capped, so several agents' test runs fit the host's memory together. -->
+        <argLine>-Xmx1g</argLine>
     </properties>
 
     <modules>
