@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL104",
   "title": "ST309 Played Through On The Test VM",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 40,
