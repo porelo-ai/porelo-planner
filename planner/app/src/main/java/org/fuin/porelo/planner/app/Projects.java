@@ -9,11 +9,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.git.LogText;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 
 /** The projects the window has given the planner, each with its store, while the planner runs. */
 public final class Projects {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Projects.class);
 
     /** Opens a project's store from its own repository. */
     @FunctionalInterface
@@ -111,7 +116,15 @@ public final class Projects {
                         new Entry(
                                 source,
                                 store,
-                                new WorkRun(store, record, java.time.Clock.systemUTC())));
+                                new WorkRun(
+                                        store,
+                                        record,
+                                        java.time.Clock.systemUTC(),
+                                        why ->
+                                                LOG.info(
+                                                        "No next step in project {}: {}",
+                                                        LogText.of(project),
+                                                        LogText.of(why)))));
             } finally {
                 opening.remove(project);
             }

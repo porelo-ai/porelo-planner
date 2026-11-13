@@ -39,12 +39,31 @@ public final class WorkRun {
     private final PlanningStore store;
     private final Record record;
     private final Clock clock;
+    private final java.util.function.Consumer<String> told;
 
     /** Supplies the store, durable record and time source without depending on Spring. */
     public WorkRun(final PlanningStore store, final Record record, final Clock clock) {
+        this(store, record, clock, why -> {});
+    }
+
+    /**
+     * Supplies the store, durable record and time source, and where the run says in one line why an
+     * issue's next step could not be taken, once the run that says so is saved.
+     *
+     * @param store the planning store
+     * @param record the durable work record
+     * @param clock the time source
+     * @param told takes one line per issue whose next step is unavailable
+     */
+    public WorkRun(
+            final PlanningStore store,
+            final Record record,
+            final Clock clock,
+            final java.util.function.Consumer<String> told) {
         this.store = store;
         this.record = record;
         this.clock = clock;
+        this.told = told;
     }
 
     /** A project writer holds its lock across every record and store operation in the action. */
@@ -843,6 +862,7 @@ public final class WorkRun {
                                             draft.comment,
                                             new NextStep.Build(task, ended.landed()));
                             draft.progress.putAll(next.progress());
+                            draft.unavailable.putAll(next.unavailable());
                             writes = next.writes();
                             for (final NextStep.Planned planned : next.tasks()) {
                                 final Offer offer = offer(planned, run.story());
@@ -943,6 +963,7 @@ public final class WorkRun {
                                     draft.comment,
                                     new NextStep.Build(task, landed));
                     draft.progress.putAll(next.progress());
+                    draft.unavailable.putAll(next.unavailable());
                     final List<String> readers = new ArrayList<>();
                     for (final NextStep.Planned planned : next.tasks()) {
                         final Offer offer = offer(planned, run.story());
@@ -1197,9 +1218,13 @@ public final class WorkRun {
                                 default -> null;
                             };
                     if (target == null) {
-                        draft.progress.put(
+                        draft.unavailable(
                                 issueId,
-                                draft.progress(issueId).attention("NEXT_STEP_UNAVAILABLE"));
+                                draft.progress(issueId),
+                                "the rule "
+                                        + reading.binding().state()
+                                        + " names no state for the choice "
+                                        + choice);
                     } else {
                         try {
                             if (counted.next() == ReadingCycle.Next.REVIEW) {
@@ -1285,8 +1310,15 @@ public final class WorkRun {
                             }
                         } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
                             // Nothing was offered, so the reading still waits for a choice.
-                            draft.progress.put(
-                                    issueId, previous.attention("NEXT_STEP_UNAVAILABLE"));
+                            draft.unavailable(
+                                    issueId,
+                                    previous,
+                                    "the choice "
+                                            + choice
+                                            + " toward "
+                                            + target
+                                            + " cannot be offered: "
+                                            + NextStep.said(cannotBuild));
                         }
                     }
                     writes = reconcile(board, draft, writes, following);
@@ -1643,12 +1675,16 @@ public final class WorkRun {
             }
             draft.voidOffers();
             draft.compact(eventOffer);
-            draft.progress.replaceAll((id, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+            for (final String id : List.copyOf(draft.progress.keySet())) {
+                draft.unavailable(
+                        id, draft.progress(id), "the work record is full, so no next step is kept");
+            }
             preflight(session, replace(snapshot, draft.freeze()), planned, issue);
         }
         if (writes.none()) {
             final Run saved = draft.freeze();
             session.write(replace(snapshot, saved));
+            tell(draft);
             return saved;
         }
         draft.pending = true;
@@ -1701,7 +1737,15 @@ public final class WorkRun {
         draft.pending = false;
         final Run saved = draft.freeze();
         session.write(replace(pending, saved));
+        tell(draft);
         return saved;
+    }
+
+    /** Says why each issue of a saved run could not take its next step, one line each. */
+    private void tell(final Draft draft) {
+        draft.unavailable.forEach(
+                (issue, why) ->
+                        told.accept("Issue " + issue + " of story " + draft.story + ": " + why));
     }
 
     private static void preflight(
@@ -1843,6 +1887,7 @@ public final class WorkRun {
                             old.rework(),
                             build(old));
             draft.progress.putAll(next.progress());
+            draft.unavailable.putAll(next.unavailable());
             targets.putAll(next.writes().issues());
             final List<String> ids = new ArrayList<>(old.following());
             for (final NextStep.Planned planned : next.tasks()) {
@@ -1915,13 +1960,7 @@ public final class WorkRun {
         } catch (final WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotBuild) {
-            final Map<String, NextStep.Progress> attention = new LinkedHashMap<>(progress);
-            binding.issues()
-                    .forEach(
-                            id ->
-                                    attention.computeIfPresent(
-                                            id, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE")));
-            return new NextStep.Result(NOTHING, List.of(), attention, List.of());
+            return unavailable(binding, progress, cannotBuild);
         }
     }
 
@@ -1936,14 +1975,25 @@ public final class WorkRun {
         } catch (final WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotBuild) {
-            final Map<String, NextStep.Progress> attention = new LinkedHashMap<>(progress);
-            binding.issues()
-                    .forEach(
-                            id ->
-                                    attention.computeIfPresent(
-                                            id, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE")));
-            return new NextStep.Result(NOTHING, List.of(), attention, List.of());
+            return unavailable(binding, progress, cannotBuild);
         }
+    }
+
+    /** Every issue of the binding asks the person, saying the refusal that stopped its step. */
+    private static NextStep.Result unavailable(
+            final NextStep.Binding binding,
+            final Map<String, NextStep.Progress> progress,
+            final RuntimeException refused) {
+        final Map<String, NextStep.Progress> attention = new LinkedHashMap<>(progress);
+        final Map<String, String> unavailable = new LinkedHashMap<>();
+        for (final String id : binding.issues()) {
+            final NextStep.Progress p = attention.get(id);
+            if (p != null) {
+                attention.put(id, p.attention("NEXT_STEP_UNAVAILABLE"));
+                unavailable.put(id, "its next step cannot be planned: " + NextStep.said(refused));
+            }
+        }
+        return new NextStep.Result(NOTHING, List.of(), attention, List.of(), unavailable);
     }
 
     private Snapshot read(final Session session) {
@@ -1960,10 +2010,12 @@ public final class WorkRun {
             }
         }
         for (final Run run : List.copyOf(snapshot.runs().values())) {
-            final Run named = readersNamingTheirBuilds(run);
+            final Draft draft = new Draft(run);
+            final Run named = readersNamingTheirBuilds(run, draft);
             if (named != run) {
                 snapshot = replace(snapshot, named);
                 session.write(snapshot);
+                tell(draft);
             }
         }
         return snapshot;
@@ -1974,8 +2026,7 @@ public final class WorkRun {
      * keep; a reader whose build is unknown is voided and its issue asks the person, since it would
      * read nothing.
      */
-    private static Run readersNamingTheirBuilds(final Run run) {
-        final Draft draft = new Draft(run);
+    private static Run readersNamingTheirBuilds(final Run run, final Draft draft) {
         boolean changed = false;
         for (int index = 0; index < run.offers().size(); index++) {
             final Offer reader = run.offers().get(index);
@@ -1999,8 +2050,11 @@ public final class WorkRun {
             changed = true;
             if (built == null) {
                 draft.set(withStatus(reader, "VOID"));
-                draft.progress.computeIfPresent(
-                        issue, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+                final NextStep.Progress p = draft.progress.get(issue);
+                if (p != null) {
+                    draft.unavailable(
+                            issue, p, "its reader was offered without the build it reads");
+                }
                 continue;
             }
             draft.set(
@@ -2591,6 +2645,7 @@ public final class WorkRun {
         private final String comment;
         private final List<Offer> offers;
         private final Map<String, NextStep.Progress> progress;
+        private final Map<String, String> unavailable = new LinkedHashMap<>();
         private boolean stopped;
         private boolean halted;
         private boolean pending;
@@ -2613,6 +2668,12 @@ public final class WorkRun {
         private NextStep.Progress progress(final String id) {
             return java.util.Objects.requireNonNull(
                     progress.get(id), "Owned issues have recorded progress");
+        }
+
+        /** Asks the person about the issue, keeping the one line that says why. */
+        private void unavailable(final String id, final NextStep.Progress from, final String why) {
+            progress.put(id, from.attention("NEXT_STEP_UNAVAILABLE"));
+            unavailable.put(id, why);
         }
 
         private void setFollowing(final String offer, final List<String> following) {

@@ -453,6 +453,14 @@ public record WorkOrder(
         return String.join("\n\n", pieces);
     }
 
+    /**
+     * The planner moves an issue and writes its state, the issues' index and stats/ itself, so a
+     * task that commits them too lands moves the planner did not make.
+     */
+    static final String PLANNER_MOVES =
+            "\n\nThe planner alone moves these issues from state to state and writes their state,"
+                    + " issues/README.md and stats/: change none of them.";
+
     static String prompt(
             final WorkRule rule,
             final Story story,
@@ -478,7 +486,9 @@ public record WorkOrder(
                 + issues
                 + "\n\nSuccessful work reaches "
                 + rule.done()
-                + ".\n\nOperator comment:\n"
+                + "."
+                + PLANNER_MOVES
+                + "\n\nOperator comment:\n"
                 + comment;
     }
 

@@ -146,17 +146,22 @@ public final class NextStep {
      */
     public record Planned(WorkOrder.Task task, String state, WorkRule rule, String basis) {}
 
-    /** A complete next step; deferred parents wait for their participating children. */
+    /**
+     * A complete next step; deferred parents wait for their participating children, and {@code
+     * unavailable} says in one line per issue why its next step could not be taken.
+     */
     public record Result(
             Writes writes,
             List<Planned> tasks,
             Map<String, Progress> progress,
-            List<String> deferred) {
+            List<String> deferred,
+            Map<String, String> unavailable) {
         /** Copies collections so planning cannot mutate a saved run. */
         public Result {
             tasks = List.copyOf(tasks);
             progress = Map.copyOf(progress);
             deferred = List.copyOf(deferred);
+            unavailable = Map.copyOf(unavailable);
         }
     }
 
@@ -284,7 +289,13 @@ public final class NextStep {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         binding.issues().forEach(id -> progress.putIfAbsent(id, Progress.start(2)));
         if (!owns(board, binding)) {
-            return attention(binding, progress, "NEXT_STEP_UNAVAILABLE");
+            return unavailable(
+                    binding,
+                    progress,
+                    "it no longer belongs to story "
+                            + binding.story()
+                            + " in repository "
+                            + binding.repository());
         }
         if (judgment instanceof WorkEnds.NeedsOperator needs) {
             return stopsReading(binding, needs.reason())
@@ -294,10 +305,11 @@ public final class NextStep {
         final Map<String, String> targets = new LinkedHashMap<>();
         final List<Planned> tasks = new ArrayList<>();
         final List<String> deferred = new ArrayList<>();
+        final Map<String, String> unavailable = new LinkedHashMap<>();
         for (final String id : binding.issues()) {
             final Issue issue = board.issue(id).orElseThrow();
             if (!issue.state().equals(binding.state())) {
-                progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+                unavailable(progress, unavailable, id, movedMeanwhile(issue, binding));
                 continue;
             }
             String target = successState(binding.rule());
@@ -307,7 +319,13 @@ public final class NextStep {
                 final Progress before = progress(progress, id);
                 if (countReading && before.rounds().rounds() == Integer.MAX_VALUE
                         || before.rounds().stopped()) {
-                    progress.put(id, before.attention("NEXT_STEP_UNAVAILABLE"));
+                    unavailable(
+                            progress,
+                            unavailable,
+                            id,
+                            before.rounds().stopped()
+                                    ? "its reading already stopped and waits for a choice"
+                                    : "its readings cannot be counted any further");
                     continue;
                 }
                 final ReadingCycle.Counted counted =
@@ -337,7 +355,13 @@ public final class NextStep {
                                     + (operatorWords.isEmpty() ? "" : "\n" + operatorWords);
                     settings = rework;
                     if (target == null) {
-                        progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+                        unavailable(
+                                progress,
+                                unavailable,
+                                id,
+                                "the rule "
+                                        + binding.state()
+                                        + " names no blocked state for blocking findings");
                         continue;
                     }
                 } else {
@@ -345,7 +369,14 @@ public final class NextStep {
                 }
             }
             if (!board.workflow().states().contains(target)) {
-                progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+                unavailable(
+                        progress,
+                        unavailable,
+                        id,
+                        target
+                                + ", where the rule "
+                                + binding.state()
+                                + " leads, is no state of the workflow");
                 continue;
             }
             final WorkRule next =
@@ -354,8 +385,28 @@ public final class NextStep {
                     board.work().rules().containsKey(target)
                             || target.equals(binding.rule().then())
                             || target.equals(binding.rule().blocked());
-            if (working && (next == null || !next.from().contains(issue.state()))) {
-                progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+            if (working && next == null) {
+                unavailable(
+                        progress,
+                        unavailable,
+                        id,
+                        target
+                                + ", where the rule "
+                                + binding.state()
+                                + " leads, has no sound rule work can start by");
+                continue;
+            }
+            // The rule's then is its own word for where its work goes on; the next rule's from
+            // names where a start takes work from, which a blocked state enters as one.
+            if (next != null
+                    && working
+                    && !target.equals(binding.rule().then())
+                    && !next.from().contains(issue.state())) {
+                unavailable(
+                        progress,
+                        unavailable,
+                        id,
+                        "the rule " + target + " takes no work from " + issue.state());
                 continue;
             }
             if (waitsForChildren(board, issue, target)) {
@@ -384,15 +435,30 @@ public final class NextStep {
                                     role,
                                     ended));
                 } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
-                    progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+                    unavailable(
+                            progress,
+                            unavailable,
+                            id,
+                            "the "
+                                    + role
+                                    + " task for "
+                                    + target
+                                    + " cannot be built: "
+                                    + said(cannotBuild));
                 }
             }
         }
-        if (binding.issues().isEmpty()) {
-            final String target = successState(binding.rule());
-            return finish(board, binding, targets, target, derive, tasks, progress, deferred);
-        }
-        return finish(board, binding, targets, null, derive, tasks, progress, deferred);
+        final String storyState = binding.issues().isEmpty() ? successState(binding.rule()) : null;
+        return finish(
+                board,
+                binding,
+                targets,
+                storyState,
+                derive,
+                tasks,
+                progress,
+                deferred,
+                unavailable);
     }
 
     /**
@@ -415,6 +481,7 @@ public final class NextStep {
             final Build build) {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         final List<Planned> tasks = new ArrayList<>();
+        final Map<String, String> unavailable = new LinkedHashMap<>();
         final String target = successState(binding.rule());
         final WorkRule next = WorkRules.check(board.workflow(), board.work()).rules().get(target);
         final boolean owned = owns(board, binding);
@@ -447,10 +514,17 @@ public final class NextStep {
                                 "READER",
                                 build));
             } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
-                progress.computeIfPresent(id, (key, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+                if (progress.containsKey(id)) {
+                    unavailable(
+                            progress,
+                            unavailable,
+                            id,
+                            "no reader of the landed build can be offered: " + said(cannotBuild));
+                }
             }
         }
-        return new Result(new Writes(Map.of(), Map.of(), List.of()), tasks, progress, List.of());
+        return new Result(
+                new Writes(Map.of(), Map.of(), List.of()), tasks, progress, List.of(), unavailable);
     }
 
     /** A reader of a known build whose work still waits at the gate is offered on its landing. */
@@ -466,18 +540,21 @@ public final class NextStep {
             final Moves.StoryState derive,
             final List<Planned> tasks,
             final Map<String, Progress> progress,
-            final List<String> deferred) {
+            final List<String> deferred,
+            final Map<String, String> unavailable) {
         try {
             return new Result(
                     writes(board, binding.story(), targets, storyState, derive),
                     tasks,
                     progress,
-                    deferred);
+                    deferred,
+                    unavailable);
         } catch (final Moves.Refused
                 | WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotWrite) {
-            return attention(binding, progress, "NEXT_STEP_UNAVAILABLE");
+            return unavailable(
+                    binding, progress, "its moves cannot be written: " + said(cannotWrite));
         }
     }
 
@@ -770,15 +847,20 @@ public final class NextStep {
             final Binding binding,
             final Map<String, Progress> progress,
             final WorkEnds.Reason reason) {
+        final Map<String, String> unavailable = new LinkedHashMap<>();
         binding.issues()
                 .forEach(
                         id -> {
                             final Progress before = progress(progress, id);
-                            if (!board.issue(id)
-                                    .map(Issue::state)
-                                    .orElse("")
-                                    .equals(binding.state())) {
-                                progress.put(id, before.attention("NEXT_STEP_UNAVAILABLE"));
+                            final Issue issue = board.issue(id).orElse(null);
+                            if (issue == null || !issue.state().equals(binding.state())) {
+                                unavailable(
+                                        progress,
+                                        unavailable,
+                                        id,
+                                        issue == null
+                                                ? "it is no longer on the board"
+                                                : movedMeanwhile(issue, binding));
                                 return;
                             }
                             progress.put(
@@ -794,14 +876,68 @@ public final class NextStep {
                                             before.answer()));
                         });
         return new Result(
-                new Writes(Map.of(), Map.of(), List.of()), List.of(), progress, List.of());
+                new Writes(Map.of(), Map.of(), List.of()),
+                List.of(),
+                progress,
+                List.of(),
+                unavailable);
     }
 
     private static Result attention(
             final Binding binding, final Map<String, Progress> progress, final String reason) {
         binding.issues().forEach(id -> progress.put(id, progress(progress, id).attention(reason)));
         return new Result(
-                new Writes(Map.of(), Map.of(), List.of()), List.of(), progress, List.of());
+                new Writes(Map.of(), Map.of(), List.of()),
+                List.of(),
+                progress,
+                List.of(),
+                Map.of());
+    }
+
+    /** Every issue of the binding asks the person, each with the one line saying why. */
+    private static Result unavailable(
+            final Binding binding, final Map<String, Progress> progress, final String why) {
+        final Map<String, String> unavailable = new LinkedHashMap<>();
+        binding.issues().forEach(id -> unavailable(progress, unavailable, id, why));
+        return new Result(
+                new Writes(Map.of(), Map.of(), List.of()),
+                List.of(),
+                progress,
+                List.of(),
+                unavailable);
+    }
+
+    private static void unavailable(
+            final Map<String, Progress> progress,
+            final Map<String, String> unavailable,
+            final String id,
+            final String why) {
+        progress.put(id, progress(progress, id).attention("NEXT_STEP_UNAVAILABLE"));
+        unavailable.put(id, why);
+    }
+
+    private static String movedMeanwhile(final Issue issue, final Binding binding) {
+        return "it stands in "
+                + issue.state()
+                + ", not in "
+                + binding.state()
+                + " where the ended task worked";
+    }
+
+    /**
+     * The fixed words of a refusal, which name no value from outside beyond checked subjects.
+     *
+     * @param refused the refusal
+     * @return its name and words
+     */
+    static String said(final RuntimeException refused) {
+        final String name =
+                refused instanceof WorkRefusal work
+                        ? work.name()
+                        : refused instanceof Moves.Refused moves
+                                ? moves.name()
+                                : refused.getClass().getSimpleName();
+        return name + " (" + refused.getMessage() + ")";
     }
 
     private static Moves.Refused stateRefused(

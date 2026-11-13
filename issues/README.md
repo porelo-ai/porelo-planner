@@ -47,12 +47,6 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl122"></a>[PL122](PL122-A-Rework-That-Ends-Offers-Its-Reading.md) | S | - | A rework task that ended finished and landed moves its issue on to its reading as the rule's then says, and a next step the planner cannot take is said in words, in the log and on the row, instead of a bare NEXT_STEP_UNAVAILABLE |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -102,6 +96,7 @@ left out.
 | <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |
 | <a id="pl120"></a>[PL120](PL120-A-Blank-Line-Under-The-Findings-Header-Is-Read.md) | XS | - | A reader's Findings block with blank lines between its header and its first row, as Markdown writes a list under a heading, is read with its rows instead of stopping the reading as unreadable |
 | <a id="pl121"></a>[PL121](PL121-A-Finding-On-The-Findings-Header-Line-Is-Read.md) | XS | - | A reader that writes its first finding on the Findings header line has its findings read, and the reader's order shows the header on a line of its own with each row below it |
+| <a id="pl122"></a>[PL122](PL122-A-Rework-That-Ends-Offers-Its-Reading.md) | S | - | A rework task that ended finished and landed moves its issue on to its reading as the rule's then says, a next step the planner cannot take is logged with one line of why instead of a bare NEXT_STEP_UNAVAILABLE, and every agent's order leaves the issues' states, their index and stats/ to the planner |
 | <a id="pl12"></a>[PL12](PL12-The-Planning-Screen-As-A-Module-Of-Its-Own.md) | M | - | The window's planning screen as a Flutter package in the module `screen/`, built by Maven only in a full build, tested alone and against the mock mode; embedded by the window through a Git ref |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | - | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |

@@ -2200,6 +2200,248 @@ class WorkRunTest {
         return f;
     }
 
+    @Test
+    void aReworkThatEndsLandedMovesItsIssueOnToTheReadingItsRuleNames() {
+        // A rework whose then the next rule's from does not name stranded its issue in Reworking,
+        // with nobody to read the reworked build.
+        for (final boolean landedAtEnd : List.of(false, true)) {
+            final Fixture f = reworkingThenReading();
+            final var rework =
+                    f.run.choose(
+                                    "ST1",
+                                    "AA1",
+                                    1,
+                                    ReadingCycle.Choice.REWORK,
+                                    "",
+                                    f.store.board().revision().value(),
+                                    null)
+                            .tasks()
+                            .getFirst();
+            f.run.report(
+                    "rework",
+                    new WorkRun.Report(
+                            rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+            final var ended =
+                    f.run.report(
+                            "rework",
+                            new WorkRun.Report(
+                                    rework.offer(),
+                                    WorkRun.Event.ENDED,
+                                    "box",
+                                    "workstation",
+                                    landedAtEnd ? ended("Reworked") : unlanded("Reworked")));
+            final var readers =
+                    landedAtEnd
+                            ? ended.tasks()
+                            : f.run.report(
+                                            "rework",
+                                            new WorkRun.Report(
+                                                    rework.offer(),
+                                                    WorkRun.Event.LANDED,
+                                                    "box",
+                                                    "workstation",
+                                                    null,
+                                                    List.of(landing("rework"))))
+                                    .tasks();
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as(
+                            "the rework's end moves the issue to its rule's then (landed at end %s)",
+                            landedAtEnd)
+                    .isEqualTo("Reading");
+            assertThat(readers)
+                    .as(
+                            "a reader of the rework's landed build is offered (landed at end %s)",
+                            landedAtEnd)
+                    .extracting(o -> o.task().role(), o -> o.task().reads())
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple("READER", List.of("rework")));
+            final NextStep.Progress progress =
+                    java.util.Objects.requireNonNull(f.run.work("ST1").issues().get("AA1"));
+            assertThat(List.of(progress.needsYou(), progress.reason()))
+                    .as("the issue needs nobody (landed at end %s)", landedAtEnd)
+                    .containsExactly(false, "NONE");
+        }
+    }
+
+    @Test
+    void aReworkWhoseIssueTheStoreMovedMeanwhileSaysWhyItsNextStepIsUnavailable() {
+        // A rework whose own commits moved its issue, once they reach the store, left the issue
+        // asking the person with no word of why, in the log or anywhere else.
+        final Fixture f = reworkingThenReading();
+        final List<String> told = new java.util.ArrayList<>();
+        final WorkRun run = new WorkRun(f.store, f.record, f.clock, told::add);
+        final var rework =
+                run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst();
+        run.report(
+                "rework",
+                new WorkRun.Report(
+                        rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.store.current = inState(f.store.board(), "AA1", "Review");
+        final int saves = f.store.saves;
+        final var ended =
+                run.report(
+                        "rework",
+                        new WorkRun.Report(
+                                rework.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Reworked")));
+        assertThat(ended.tasks()).as("no task follows an issue moved meanwhile").isEmpty();
+        assertThat(f.store.saves).as("the planner writes no move over it").isEqualTo(saves);
+        assertThat(java.util.Objects.requireNonNull(ended.work().issues().get("AA1")).reason())
+                .as("the issue asks the person")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(told)
+                .as(
+                        "one line names the issue, its story, where it stands and where the task worked")
+                .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                .contains("AA1", "ST1", "Review", "Reworking");
+    }
+
+    @Test
+    void everyAgentsOrderSaysThePlannerAloneMovesItsIssues() {
+        // An agent that moves its own issue lands moves the planner did not make, beside its own.
+        final Fixture f = reworkingThenReading();
+        final List<WorkOrder.Task> orders = new java.util.ArrayList<>(f.offered);
+        orders.add(
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst()
+                        .task());
+        assertThat(orders)
+                .as("the build's, the reader's and the rework's order")
+                .extracting(WorkOrder.Task::role)
+                .containsExactly("MAIN", "READER", "BUILDER");
+        assertThat(orders)
+                .as("each order leaves the issues' states, their index and stats/ to the planner")
+                .allSatisfy(
+                        o ->
+                                assertThat(o.prompt())
+                                        .as("the order of the %s", o.role())
+                                        .contains(WorkOrder.PLANNER_MOVES));
+    }
+
+    /** The board with one issue standing in another state, as a store read gives it. */
+    private static Board inState(final Board board, final String id, final String state) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        !i.id().equals(id)
+                                                ? i
+                                                : new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        i.title(),
+                                                        state,
+                                                        i.size(),
+                                                        i.blockedBy(),
+                                                        i.parent(),
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        i.risk()))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    /**
+     * One issue whose first of two readings stopped on a blocking finding, under rules where the
+     * reading takes work only from the build and the rework's then leads back to the reading.
+     */
+    private static Fixture reworkingThenReading() {
+        final Fixture f = new Fixture();
+        Board board = f.store.board();
+        board =
+                NextStepTest.withRule(
+                        board,
+                        "Reading",
+                        rule(List.of("Building"), null, "Reworking", WorkRule.Per.STORY));
+        board =
+                NextStepTest.withRule(
+                        board,
+                        "Reworking",
+                        rule(List.of("Reading"), "Reading", null, WorkRule.Per.REPOSITORY));
+        f.store.current = board;
+        final var build =
+                f.run.order(
+                                "ST1",
+                                "Building",
+                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                        .tasks()
+                        .getFirst();
+        f.offered.add(build.task());
+        f.start(build);
+        final var reader =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        ended("Built")))
+                        .tasks()
+                        .getFirst();
+        f.offered.add(reader.task());
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        final NextStep.Progress stopped =
+                java.util.Objects.requireNonNull(f.run.work("ST1").issues().get("AA1"));
+        assertThat(List.of(stopped.reason(), stopped.rounds().rounds()))
+                .as("the reading stopped on its blocking finding, one round of two counted")
+                .containsExactly("BLOCKING_FINDINGS", 1);
+        return f;
+    }
+
+    /** A rule in the fixture's mode and model, with the given from, then, blocked and per. */
+    private static WorkRule rule(
+            final List<String> from,
+            final @Nullable String then,
+            final @Nullable String blocked,
+            final WorkRule.Per per) {
+        return new WorkRule(
+                from,
+                "Review",
+                then,
+                blocked,
+                per,
+                List.of("AGENT"),
+                "Work {story}: {issues}; {tasks}",
+                Map.of("codex", "model"));
+    }
+
     private static Writes writes(final String issue, final String state) {
         return new Writes(Map.of(issue, state), Map.of(), List.of());
     }
@@ -4035,6 +4277,9 @@ class WorkRunTest {
         final Memory record = new Memory();
         final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
         final WorkRun run = new WorkRun(store, record, clock);
+
+        /** The orders a fixture offered on its way, as the window was given them. */
+        final List<WorkOrder.Task> offered = new java.util.ArrayList<>();
 
         WorkRun.Order order() {
             return order(WorkRun.Start.NONE);
