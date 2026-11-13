@@ -5,9 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.Set;
@@ -120,16 +117,14 @@ class HealthAnswerTest {
 
     private static JsonNode health(final int port, final Path runtime) throws Exception {
         final HttpResponse<String> answer =
-                HttpClient.newHttpClient()
-                        .send(
-                                HttpRequest.newBuilder(
-                                                URI.create("http://127.0.0.1:" + port + "/health"))
-                                        .header(
-                                                "Authorization",
-                                                "Bearer "
-                                                        + RuntimeDirectories.read(runtime).token())
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofString());
+                Signing.sign(
+                                port,
+                                RuntimeDirectories.read(runtime).token(),
+                                "GET",
+                                "/health",
+                                null,
+                                null)
+                        .send();
         assertThat(answer.statusCode()).as("the health call's status").isEqualTo(200);
         return new ObjectMapper().readTree(answer.body());
     }

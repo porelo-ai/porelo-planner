@@ -10,7 +10,10 @@ import '../models.dart';
 import '../story_work_order.dart';
 import '../task_runs.dart';
 import '../work_reply.dart';
+import 'planner_link.dart';
 import 'windows_access.dart';
+
+export 'planner_link.dart' show PlannerNotProven, PlannerProofFailure;
 
 /// Where a project's planning is kept, as the planner is told it before its first read.
 class PlannerProject {
@@ -36,7 +39,7 @@ class PlannerProject {
 typedef PlannerProjects = FutureOr<PlannerProject> Function(String project);
 
 /// The planner's address as the planner writes it in `porelo-planner/planner.json` under the runtime directory: a
-/// port on the loopback address and the token every call carries.
+/// port on the loopback address and the token every call is signed under; the token itself is never sent.
 class PlannerAddress {
   /// Takes a port and a token, refusing what the planner would never have written.
   PlannerAddress(this.port, this.token) {
@@ -307,13 +310,13 @@ class PlannerAddress {
 
   static const _addressBytes = 4096;
 
-  // The token68 characters, so it cannot break out of the Authorization header.
+  // The token68 characters, as the planner writes them.
   static final _token = RegExp(r'^[A-Za-z0-9._~+/=-]+$');
 
   /// The planner's port on the loopback address.
   final int port;
 
-  /// The token every call carries, for the planner's caller alone.
+  /// The token every call is signed under, for the planner's caller alone; never sent.
   final String token;
 
   /// The planner's base URI.
@@ -324,6 +327,111 @@ class PlannerAddress {
   String toString() => 'PlannerAddress($base)';
 }
 
+/// One answer of the planner to [callPlanner], its proof checked.
+class PlannerAnswer {
+  /// Takes the status, the content type's MIME type and the body.
+  const PlannerAnswer(this.status, this.type, this.body);
+
+  /// The HTTP status.
+  final int status;
+
+  /// The MIME type of the content type, such as `application/json`; null when none or malformed.
+  final String? type;
+
+  /// The body as received.
+  final Uint8List body;
+
+  /// The body as a JSON object, or null when it is none.
+  Map<String, dynamic>? get json => HttpPlanningSource._json(body);
+}
+
+/// Calls this account's planner once, as the window's own calls do: reads the address file under [runtimeDirectory]
+/// (or takes [address]), has the listener on its port prove the token, then builds, signs and sends [method] on the
+/// path [segments] with [json] as its body, in this one function, so what is signed and what is sent cannot differ.
+///
+/// A 401 proves the planner again from the address file read anew and sends the request once more only when another
+/// planner, by port or token, is found. Throws [PlannerNotProven] when the listener is not this account's planner,
+/// a [PlanningRefusal] named `NoAddress` or `BadAddress` when the address file cannot be trusted, `PlannerUnreachable`
+/// when nothing listens, `TimedOut` past [timeout], and `AnswerTooLarge` past [maxBody]; any other status is
+/// answered as it is.
+Future<PlannerAnswer> callPlanner(
+  String method,
+  List<String> segments, {
+  Map<String, Object?>? json,
+  String? runtimeDirectory,
+  Future<PlannerAddress> Function()? address,
+  Duration timeout = const Duration(seconds: 30),
+  Duration proofTimeout = const Duration(seconds: 60),
+  int maxBody = 1024 * 1024,
+}) async {
+  final link = PlannerLink(
+    address ?? () => PlannerAddress.read(runtimeDirectory: runtimeDirectory),
+    timeout: timeout,
+    proofTimeout: proofTimeout,
+  );
+  final body = json == null ? null : utf8.encode(jsonEncode(json));
+  try {
+    for (var sent = 0; ; sent++) {
+      final proven = await link.proven();
+      PlannerSigned? signed;
+      try {
+        final (response, bytes) = await () async {
+          signed = await link.open(
+            proven,
+            method,
+            Uri(pathSegments: segments),
+            body: body,
+            type: body == null ? null : 'application/json',
+            headers: const {HttpHeaders.acceptHeader: 'application/json, application/problem+json'},
+          );
+          final response = await signed!.request.close();
+          final bytes = BytesBuilder(copy: false);
+          if (response.contentLength > maxBody) {
+            await response.listen(null).cancel();
+            throw PlanningRefusal('AnswerTooLarge', const {}, 'the planner answered more than $maxBody bytes');
+          }
+          await for (final chunk in response) {
+            bytes.add(chunk);
+            if (bytes.length > maxBody) {
+              throw PlanningRefusal('AnswerTooLarge', const {}, 'the planner answered more than $maxBody bytes');
+            }
+          }
+          return (response, bytes.takeBytes());
+        }().timeout(timeout);
+        if (response.statusCode == HttpStatus.unauthorized) {
+          if (sent == 0 && await link.refused(proven)) continue;
+          throw PlannerNotProven(PlannerProofFailure.signatureRefused, proven.address.port);
+        }
+        if (!PlannerLink.proves(signed!, response, bytes)) throw link.unproven(proven);
+        String? type;
+        try {
+          type = response.headers.contentType?.mimeType;
+        } on HttpException {
+          type = null;
+        }
+        return PlannerAnswer(response.statusCode, type, bytes);
+      } on TimeoutException {
+        signed?.request.abort();
+        throw PlanningRefusal(
+          signed == null ? 'PlannerUnreachable' : 'TimedOut',
+          const {},
+          'the planner did not answer within ${timeout.inSeconds} s',
+        );
+      } on SocketException catch (error) {
+        throw PlanningRefusal(
+          'PlannerUnreachable',
+          const {},
+          'the planner cannot be reached: ${error.osError?.message ?? error.message}',
+        );
+      } on HttpException catch (error) {
+        throw PlanningRefusal('PlannerUnreachable', const {}, 'the planner cannot be reached: ${error.message}');
+      }
+    }
+  } finally {
+    link.close();
+  }
+}
+
 /// The planner's board reads over HTTP, as its REST description gives them.
 ///
 /// Before its first read of a project it tells the planner the project's repository (`PUT /projects/{project}`),
@@ -331,9 +439,14 @@ class PlannerAddress {
 /// `application/problem+json` answer arrives as a [PlanningRefusal] named after `urn:porelo-planner:`; what the
 /// planner does not offer yet - run reads, stops and reading decisions - as [PlanningUnsupported].
 class HttpPlanningSource extends ChangeNotifier implements PlanningSource, PlanningReconnect {
-  /// Calls the planner at [base], a loopback `http` address, with [token]; [projects] names each project's repository.
+  /// Calls the planner at [base], a loopback `http` address, signing under [token]; [projects] names each project's
+  /// repository.
+  ///
+  /// Before its first request, and again after a connection error, a timeout, a stream it opens again or a 401, it
+  /// has the listener prove the token, waiting at most [proofTimeout]; [address], when given, reads the address
+  /// anew for each proof, as [fromAddressFile] reads the address file, and [base] and [token] are only the first.
   HttpPlanningSource(
-    this.base,
+    Uri base,
     String token,
     this.projects, {
     this.label = 'planner',
@@ -342,7 +455,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     this.silence = const Duration(seconds: 45),
     this.backoff = const Duration(seconds: 1),
     this.backoffMost = const Duration(seconds: 30),
-  }) : _authorization = 'Bearer $token' {
+    Duration proofTimeout = const Duration(seconds: 60),
+    Future<PlannerAddress> Function()? address,
+  }) : _first = base {
     final host = InternetAddress.tryParse(base.host);
     final bare = base.userInfo.isEmpty && !base.hasQuery && !base.hasFragment && (base.path == '' || base.path == '/');
     if (base.scheme != 'http' || host == null || !host.isLoopback || !base.hasPort || !bare) {
@@ -351,28 +466,42 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     if (!PlannerAddress._token.hasMatch(token)) {
       throw ArgumentError('the planner token is empty or malformed', 'token');
     }
-    _client
-      ..connectionTimeout = timeout
-      // Inflating a compressed answer would pass the bound on the bytes received.
-      ..autoUncompress = false
-      // Straight to the loopback address, never through a proxy that would see the token.
-      ..findProxy = ((_) => 'DIRECT');
+    final fixed = PlannerAddress(base.port, token);
+    _link = PlannerLink(
+      address ?? () async => fixed,
+      host: base.host,
+      timeout: timeout,
+      proofTimeout: proofTimeout,
+      backoff: backoff,
+      backoffMost: backoffMost,
+    );
   }
 
   /// Calls the planner whose address [address] gives.
   factory HttpPlanningSource.at(PlannerAddress address, PlannerProjects projects, {String label = 'planner'}) =>
       HttpPlanningSource(address.base, address.token, projects, label: label);
 
-  /// Calls the planner this account runs, read from its address file under [runtimeDirectory].
+  /// Calls the planner this account runs, read from its address file under [runtimeDirectory], and read again before
+  /// each proof, so a planner started anew on another port or with another token is found.
   static Future<HttpPlanningSource> fromAddressFile(
     PlannerProjects projects, {
     String? runtimeDirectory,
     String label = 'planner',
-  }) async =>
-      HttpPlanningSource.at(await PlannerAddress.read(runtimeDirectory: runtimeDirectory), projects, label: label);
+  }) async {
+    final first = await PlannerAddress.read(runtimeDirectory: runtimeDirectory);
+    return HttpPlanningSource(
+      first.base,
+      first.token,
+      projects,
+      label: label,
+      address: () => PlannerAddress.read(runtimeDirectory: runtimeDirectory),
+    );
+  }
 
-  /// The planner's base URI.
-  final Uri base;
+  final Uri _first;
+
+  /// The planner's base URI: the one proven last, or the first one given.
+  Uri get base => _link.port == null ? _first : _first.replace(port: _link.port);
 
   /// Where each project's planning is kept.
   final PlannerProjects projects;
@@ -397,8 +526,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   /// The longest wait before the stream is opened again.
   final Duration backoffMost;
 
-  final String _authorization;
-  final HttpClient _client = HttpClient();
+  late final PlannerLink _link;
   final Set<_Watch> _reconnecting = {};
 
   @override
@@ -424,7 +552,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   static final _issueId = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
 
   /// Closes the connections it holds; calls after it fail.
-  void close() => _client.close(force: true);
+  void close() => _link.close();
 
   /// Never the token, so a log line or an error cannot show it.
   @override
@@ -973,42 +1101,54 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     int? most,
     bool answers = false,
   }) async {
-    HttpClientRequest? request;
-    try {
-      return await () async {
-        request = await _client.openUrl(method, uri);
-        final sent = request!
-          ..followRedirects = false
-          ..headers.set(HttpHeaders.authorizationHeader, _authorization)
-          ..headers.set(HttpHeaders.acceptHeader, 'application/json, application/problem+json');
-        if (body != null) {
-          sent.headers.contentType = ContentType.json;
-          sent.write(jsonEncode(body));
+    final bytes = body == null ? null : utf8.encode(jsonEncode(body));
+    for (var sent = 0; ; sent++) {
+      final proven = await _link.proven();
+      PlannerSigned? signed;
+      try {
+        final (response, answer) = await () async {
+          signed = await _link.open(
+            proven,
+            method,
+            uri,
+            body: bytes,
+            type: bytes == null ? null : 'application/json',
+            headers: const {HttpHeaders.acceptHeader: 'application/json, application/problem+json'},
+          );
+          final response = await signed!.request.close();
+          return (response, await _bytes(response, most: most));
+        }().timeout(timeout);
+        if (response.statusCode == HttpStatus.unauthorized) {
+          // Refused before anything ran, so it is sent again once to a planner that started anew.
+          if (sent == 0 && await _link.refused(proven)) continue;
+          throw PlannerNotProven(PlannerProofFailure.signatureRefused, proven.address.port);
         }
-        final response = await sent.close();
-        final bytes = await _bytes(response, most: most);
-        return _answer(method, response, bytes, revision: revision, answers: answers);
-      }().timeout(timeout);
-    } on TimeoutException {
-      final opened = request;
-      // Without a connection nothing was sent, so nothing can still be under way at the planner.
-      if (opened == null) {
+        if (!PlannerLink.proves(signed!, response, answer)) throw _link.unproven(proven);
+        return _answer(method, response, answer, revision: revision, answers: answers);
+      } on TimeoutException {
+        _link.forget(proven);
+        final opened = signed;
+        // Without a connection nothing was sent, so nothing can still be under way at the planner.
+        if (opened == null) {
+          throw PlanningRefusal(
+            'PlannerUnreachable',
+            const {},
+            'the planner cannot be reached: no connection within ${timeout.inSeconds} s',
+          );
+        }
+        opened.request.abort();
+        throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${timeout.inSeconds} s');
+      } on SocketException catch (error) {
+        _link.forget(proven);
         throw PlanningRefusal(
           'PlannerUnreachable',
           const {},
-          'the planner cannot be reached: no connection within ${timeout.inSeconds} s',
+          'the planner cannot be reached: ${error.osError?.message ?? error.message}',
         );
+      } on HttpException catch (error) {
+        _link.forget(proven);
+        throw PlanningRefusal('PlannerUnreachable', const {}, 'the planner cannot be reached: ${error.message}');
       }
-      opened.abort();
-      throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${timeout.inSeconds} s');
-    } on SocketException catch (error) {
-      throw PlanningRefusal(
-        'PlannerUnreachable',
-        const {},
-        'the planner cannot be reached: ${error.osError?.message ?? error.message}',
-      );
-    } on HttpException catch (error) {
-      throw PlanningRefusal('PlannerUnreachable', const {}, 'the planner cannot be reached: ${error.message}');
     }
   }
 
@@ -1195,6 +1335,8 @@ class _Watch {
       if (_ended) return;
       // Before any board, a failure is said at once, as a read's would be.
       if (_last == null) return _end(connection.lost);
+      // A stream opened again proves the planner again first: the listener on the port may be another one now.
+      source._link.forget();
       if (connection.renewed) wait = source.backoff;
       final now = DateTime.now();
       // A connection that brought a board was restored; the time allowed to restore the next starts at its end.
@@ -1260,57 +1402,78 @@ class _Watch {
 
   /// Opens the stream; a refusal is thrown as the reads throw it, a lost connection as [_Lost].
   Future<HttpClientResponse> _open() async {
-    final HttpClientResponse response;
-    try {
-      response = await () async {
-        final request = _request = await source._client.openUrl('GET', source._uri(project, const ['events']));
-        if (_ended) {
-          request.abort();
-          throw const _Lost(_cancelled);
-        }
-        request
-          ..followRedirects = false
-          ..headers.set(HttpHeaders.authorizationHeader, source._authorization)
-          ..headers.set(HttpHeaders.acceptHeader, 'text/event-stream, application/problem+json');
-        if (_last case final last?) request.headers.set('last-event-id', last);
-        return request.close();
-      }().timeout(source.timeout);
-    } on TimeoutException {
-      _request?.abort();
-      throw _Lost(
-        PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${source.timeout.inSeconds} s'),
-      );
-    } on SocketException catch (error) {
-      throw _Lost(
-        PlanningRefusal(
-          'PlannerUnreachable',
-          const {},
-          'the planner cannot be reached: ${error.osError?.message ?? error.message}',
-        ),
-      );
-    } on HttpException catch (error) {
-      throw _Lost(PlanningRefusal('PlannerUnreachable', const {}, 'the planner cannot be reached: ${error.message}'));
+    for (var sent = 0; ; sent++) {
+      final PlannerProven proven;
+      try {
+        proven = await source._link.proven();
+      } on PlanningRefusal catch (refusal) {
+        throw _transient(refusal) ? _Lost(refusal) : refusal;
+      }
+      if (_ended) throw const _Lost(_cancelled);
+      final PlannerSigned signed;
+      final HttpClientResponse response;
+      try {
+        (signed, response) = await () async {
+          final signed = await source._link.open(proven, 'GET', source._uri(project, const ['events']));
+          final request = _request = signed.request;
+          if (_ended) {
+            request.abort();
+            throw const _Lost(_cancelled);
+          }
+          request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream, application/problem+json');
+          if (_last case final last?) request.headers.set('last-event-id', last);
+          return (signed, await request.close());
+        }().timeout(source.timeout);
+      } on TimeoutException {
+        _request?.abort();
+        source._link.forget(proven);
+        throw _Lost(
+          PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${source.timeout.inSeconds} s'),
+        );
+      } on SocketException catch (error) {
+        source._link.forget(proven);
+        throw _Lost(
+          PlanningRefusal(
+            'PlannerUnreachable',
+            const {},
+            'the planner cannot be reached: ${error.osError?.message ?? error.message}',
+          ),
+        );
+      } on HttpException catch (error) {
+        source._link.forget(proven);
+        throw _Lost(PlanningRefusal('PlannerUnreachable', const {}, 'the planner cannot be reached: ${error.message}'));
+      }
+      final status = response.statusCode;
+      String? type;
+      try {
+        type = response.headers.contentType?.mimeType;
+      } on HttpException {
+        type = null;
+      }
+      if (status == HttpStatus.ok && type == 'text/event-stream') {
+        if (PlannerLink.proves(signed, response, null)) return response;
+        await response.listen(null).cancel();
+        throw source._link.unproven(proven);
+      }
+      final bytes = await _body(response);
+      if (status == HttpStatus.unauthorized) {
+        // Refused before anything ran, so it is opened again once at a planner that started anew.
+        if (sent == 0 && await source._link.refused(proven)) continue;
+        throw PlannerNotProven(PlannerProofFailure.signatureRefused, proven.address.port);
+      }
+      if (!PlannerLink.proves(signed, response, bytes)) throw source._link.unproven(proven);
+      if (status >= 200 && status < 300) {
+        throw PlanningRefusal('BadAnswer', const {}, 'the planner\'s stream is not text/event-stream (HTTP $status)');
+      }
+      try {
+        source._answer('GET', response, bytes);
+      } on PlanningRefusal catch (refusal) {
+        // A planner stopping or a store not answering may mend; one too large to read was thrown before.
+        if (status == HttpStatus.serviceUnavailable || status == HttpStatus.gatewayTimeout) throw _Lost(refusal);
+        rethrow;
+      }
+      throw PlanningRefusal('Http$status', const {}, 'the planner refused the stream');
     }
-    final status = response.statusCode;
-    String? type;
-    try {
-      type = response.headers.contentType?.mimeType;
-    } on HttpException {
-      type = null;
-    }
-    if (status == HttpStatus.ok && type == 'text/event-stream') return response;
-    final bytes = await _body(response);
-    if (status >= 200 && status < 300) {
-      throw PlanningRefusal('BadAnswer', const {}, 'the planner\'s stream is not text/event-stream (HTTP $status)');
-    }
-    try {
-      source._answer('GET', response, bytes);
-    } on PlanningRefusal catch (refusal) {
-      // A planner stopping or a store not answering may mend; one too large to read was thrown before.
-      if (status == HttpStatus.serviceUnavailable || status == HttpStatus.gatewayTimeout) throw _Lost(refusal);
-      rethrow;
-    }
-    throw PlanningRefusal('Http$status', const {}, 'the planner refused the stream');
   }
 
   /// A refusal's body, within the bound and the time an answer may take; cancelling the watch ends it.

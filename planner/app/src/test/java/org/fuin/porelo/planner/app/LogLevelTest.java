@@ -3,9 +3,6 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -101,17 +98,6 @@ class LogLevelTest {
     private static HttpResponse<String> call(
             final RuntimeDirectories.Address address, final String method, final String body)
             throws Exception {
-        final HttpRequest.Builder request =
-                HttpRequest.newBuilder(
-                                URI.create("http://127.0.0.1:" + address.port() + "/log/level"))
-                        .header("Authorization", "Bearer " + address.token())
-                        .header("Content-Type", "application/json");
-        request.method(
-                method,
-                body == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofString(body));
-        return HttpClient.newHttpClient()
-                .send(request.build(), HttpResponse.BodyHandlers.ofString());
+        return Signing.sign(address, method, "/log/level", "application/json", body).send();
     }
 }

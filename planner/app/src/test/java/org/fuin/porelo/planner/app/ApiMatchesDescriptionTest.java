@@ -42,6 +42,7 @@ class ApiMatchesDescriptionTest {
     private static final Map<String, Class<?>> SCHEMAS =
             Map.ofEntries(
                     Map.entry("Health", HealthController.Health.class),
+                    Map.entry("Proof", ProofController.Proof.class),
                     Map.entry("ProjectSource", BoardController.ProjectSource.class),
                     Map.entry("Workflow", Answers.Workflow.class),
                     Map.entry("State", Answers.State.class),

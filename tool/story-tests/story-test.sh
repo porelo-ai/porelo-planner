@@ -23,6 +23,9 @@
 
 set -euo pipefail
 
+# shellcheck source=../planner-sign.sh
+source "${BASH_SOURCE[0]%/*}/../planner-sign.sh"
+
 readonly ST_MARK_PREFIX=porelo-story-test
 ST_NAME=${0##*/}
 ST_STORY=${ST_STORY:-}
@@ -42,6 +45,7 @@ ST_MADE_PLANNER_DIR=0
 ST_FAILED=0
 ST_READY=0
 ST_URL=
+ST_PORT=
 ST_TOKEN=
 ST_STATUS=
 ST_BODY=
@@ -111,7 +115,7 @@ st_setup() {
         esac
     done
     [[ $ST_STORY =~ ^ST[0-9]+$ ]] || st_die "the story script set no ST_STORY"
-    st_need git curl jq ssh ssh-keygen ssh-agent ssh-add setsid find awk
+    st_need git curl jq od sha256sum base64 ssh ssh-keygen ssh-agent ssh-add setsid find awk
     # A clone URL takes the directory as its path, so it holds only what Git and the planner take there.
     [[ $ST_DIR =~ ^/[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$ ]] ||
         st_die "--dir must be a plain absolute path, got '$ST_DIR'"
@@ -281,24 +285,36 @@ $(grep -v -F "$file" "$ST_DIR/planner.out" | tail -n 20)"
     ST_TOKEN=$(jq -r '.token' "$file")
     [[ $ST_TOKEN =~ ^[[:graph:]]+$ && $ST_TOKEN != *'"'* && $ST_TOKEN != *\\* ]] ||
         st_die "the address file's token holds a character a header cannot carry"
+    ST_PORT=$port
+    ps_proves "$ST_URL" "$ST_TOKEN" "$ST_PORT" || st_die "the planner at $ST_URL did not prove its token"
     st_api GET /health
     [[ $ST_STATUS == 200 ]] || st_die "the planner's health answers $ST_STATUS: $ST_BODY"
     st_api PUT "/projects/$project" "$(jq -nc --arg r "$(st_url "$repository")" '{repository: $r, branch: "main"}')"
     [[ $ST_STATUS == 204 ]] || st_die "PUT /projects/$project answered $ST_STATUS: $ST_BODY"
 }
 
-# One call to the planner, as the window makes it; sets ST_STATUS and ST_BODY.
+# One call to the planner, signed as the window signs it; sets ST_STATUS and ST_BODY, ST_STATUS 000 when it did not
+# answer or answered without the planner's proof.
 st_api() {
-    local method=$1 path=$2 body=${3:-} out=$ST_DIR/answer.json
-    local args=(-sS --max-time 120 -K - -o "$out" -w '%{http_code}' -X "$method" -H 'Accept: application/json')
+    local method=$1 path=$2 body=${3:-} out=$ST_DIR/answer.json sent=$ST_DIR/request.json heads=$ST_DIR/answer.head
+    local args=(-sS --max-time 120 -o "$out" -D "$heads" -w '%{http_code}' -X "$method" -H 'Accept: application/json')
+    local type=''
+    printf '%s' "$body" >"$sent"
     if [[ -n $body ]]; then
-        args+=(-H 'Content-Type: application/json' --data-binary "$body")
+        type=application/json
+        args+=(-H "Content-Type: $type" --data-binary "@$sent")
     fi
-    rm -f "$out"
-    # The token reaches curl on its standard input, never on a command line.
-    ST_STATUS=$(printf 'header = "Authorization: Bearer %s"\n' "$ST_TOKEN" | curl "${args[@]}" "$ST_URL$path") ||
+    rm -f "$out" "$heads"
+    ps_sign "$method" "$path" "127.0.0.1:$ST_PORT" "$type" "$sent" "$ST_TOKEN"
+    ST_STATUS=$(curl "${args[@]}" -H "Porelo-Signature: $PS_HEADER" "$ST_URL$path") || ST_STATUS=000
+    touch "$out"
+    # A 401 is the filter's own refusal, which carries no proof.
+    if [[ $ST_STATUS != 000 && $ST_STATUS != 401 ]] &&
+        ! ps_answer_holds "$ST_TOKEN" "$PS_NONCE" "$ST_STATUS" "$out" "$(ps_header "$heads" porelo-answer)"; then
         ST_STATUS=000
+    fi
     ST_BODY=$(cat "$out" 2>/dev/null || true)
+    rm -f "$sent" "$heads"
 }
 
 # Fails the step under way with what was asked and what was got.

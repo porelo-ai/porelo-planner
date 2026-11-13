@@ -3,9 +3,6 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -147,17 +144,7 @@ class MockAnswersTest {
     private static String firstBoardEvent() throws Exception {
         final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
         final HttpResponse<Stream<String>> stream =
-                HttpClient.newHttpClient()
-                        .send(
-                                HttpRequest.newBuilder(
-                                                URI.create(
-                                                        "http://127.0.0.1:"
-                                                                + address.port()
-                                                                + "/projects/demo/events"))
-                                        .timeout(WAIT)
-                                        .header("Authorization", "Bearer " + address.token())
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofLines());
+                Signing.stream(address, "/projects/demo/events");
         try (Stream<String> lines = stream.body()) {
             final CompletableFuture<String> data =
                     CompletableFuture.supplyAsync(
@@ -195,18 +182,9 @@ class MockAnswersTest {
             final String method, final String path, final String body)
             throws IOException, InterruptedException {
         final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
-        final HttpRequest request =
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + address.port() + path))
-                        .timeout(WAIT)
-                        .header("Authorization", "Bearer " + address.token())
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .method(
-                                method,
-                                body == null
-                                        ? HttpRequest.BodyPublishers.noBody()
-                                        : HttpRequest.BodyPublishers.ofString(body))
-                        .build();
-        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        final Signing.Signed request =
+                Signing.sign(address, method, path, "application/json", body);
+        request.builder().timeout(WAIT).header("Accept", "application/json");
+        return request.send();
     }
 }

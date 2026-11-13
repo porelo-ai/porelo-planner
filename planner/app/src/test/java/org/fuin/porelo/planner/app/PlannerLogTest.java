@@ -3,10 +3,6 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,12 +73,6 @@ class PlannerLogTest {
     }
 
     private static int health(final int port, final String token) throws Exception {
-        return HttpClient.newHttpClient()
-                .send(
-                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/health"))
-                                .header("Authorization", "Bearer " + token)
-                                .build(),
-                        HttpResponse.BodyHandlers.discarding())
-                .statusCode();
+        return Signing.sign(port, token, "GET", "/health", null, null).send().statusCode();
     }
 }

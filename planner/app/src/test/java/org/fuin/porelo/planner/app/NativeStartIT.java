@@ -375,17 +375,8 @@ class NativeStartIT {
                 assertThat(call(address, "PUT", "/projects/alpha", project.source()))
                         .as("the project given" + log)
                         .startsWith("204 ");
-                final HttpRequest request =
-                        HttpRequest.newBuilder(
-                                        URI.create(
-                                                "http://127.0.0.1:"
-                                                        + address.port()
-                                                        + "/projects/alpha/events"))
-                                .header("Authorization", "Bearer " + address.token())
-                                .build();
                 final HttpResponse<java.util.stream.Stream<String>> stream =
-                        HttpClient.newHttpClient()
-                                .send(request, HttpResponse.BodyHandlers.ofLines());
+                        Signing.stream(address, "/projects/alpha/events");
                 assertThat(stream.statusCode()).as("the stream's status" + log).isEqualTo(200);
                 final java.util.Iterator<String> lines = stream.body().iterator();
                 final String first = nextBoard(lines);
@@ -425,26 +416,17 @@ class NativeStartIT {
         return read.get(30, TimeUnit.SECONDS);
     }
 
-    /** The status and body of a call with the token. */
+    /** The status and body of a signed call, its answer held to its proof. */
     private static String call(
             final RuntimeDirectories.Address address,
             final String method,
             final String path,
             final @Nullable String body)
             throws IOException, InterruptedException {
-        final HttpRequest request =
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + address.port() + path))
-                        .timeout(Duration.ofSeconds(30))
-                        .header("Authorization", "Bearer " + address.token())
-                        .header("Content-Type", "application/json")
-                        .method(
-                                method,
-                                body == null
-                                        ? HttpRequest.BodyPublishers.noBody()
-                                        : HttpRequest.BodyPublishers.ofString(body))
-                        .build();
-        final HttpResponse<String> answer =
-                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        final Signing.Signed request =
+                Signing.sign(address, method, path, "application/json", body);
+        request.builder().timeout(Duration.ofSeconds(30));
+        final HttpResponse<String> answer = request.send();
         return answer.statusCode() + " " + answer.body();
     }
 
@@ -546,6 +528,10 @@ class NativeStartIT {
                     assertThat(health(address.port(), null))
                             .as("the health answer without the token")
                             .isEqualTo("401 ");
+                    // A proof the image cannot answer leaves the window refusing its own planner.
+                    assertThat(Signing.askProof(address.port(), address.token()))
+                            .as("the native executable's proof")
+                            .isEqualTo("200 proven");
                 }
             } finally {
                 stop(planner);
@@ -603,18 +589,23 @@ class NativeStartIT {
                 + "}";
     }
 
-    /** The status and body of a health call. */
+    /** The status and body of a health call, signed under the token when there is one. */
     private static String health(final int port, final @Nullable String token)
             throws IOException, InterruptedException {
-        final HttpRequest.Builder request =
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/health"))
-                        .timeout(Duration.ofSeconds(1));
         if (token != null) {
-            request.header("Authorization", "Bearer " + token);
+            final Signing.Signed signed = Signing.sign(port, token, "GET", "/health", null, null);
+            signed.builder().timeout(Duration.ofSeconds(1));
+            final HttpResponse<String> answer = signed.send();
+            return answer.statusCode() + " " + answer.body();
         }
         final HttpResponse<String> answer =
                 HttpClient.newHttpClient()
-                        .send(request.build(), HttpResponse.BodyHandlers.ofString());
+                        .send(
+                                HttpRequest.newBuilder(
+                                                URI.create("http://127.0.0.1:" + port + "/health"))
+                                        .timeout(Duration.ofSeconds(1))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString());
         return answer.statusCode() + " " + answer.body();
     }
 }

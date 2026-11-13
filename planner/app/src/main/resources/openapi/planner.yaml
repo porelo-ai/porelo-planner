@@ -4,13 +4,56 @@ info:
   version: 1.0.0
   description: >-
     Serves a project's planning board - its workflow, stories and issues kept in Git - to the Porelo window on the
-    same computer. Every call needs a bearer token; a missing or wrong token answers 401 with an empty body.
+    same computer. No call carries the planner's token. Every call but the proof is signed in its Porelo-Signature
+    header with an HMAC-SHA256 under the token's UTF-8 bytes; a request without one valid signature, with two, or with
+    an Authorization header answers 401 with an empty body, and so does one whose body is larger than 131072 bytes.
+    The signature is `porelo-planner-request-1;t=<time>;n=<nonce>;s=<hmac>`: the UTC time in seconds in decimal, no
+    leading zero, at most 60 s off the planner's clock; 16 random bytes as nonce, each taken once; the HMAC over the
+    ASCII label porelo-planner-request-1 and one zero byte, then each of these fields as its length in four bytes,
+    big endian, and its bytes - the method, the raw request target as sent (the path and, when there is one, `?` and
+    the raw query), the Host header, the Content-Type header (empty when absent), the SHA-256 of the body as sent
+    (of no bytes when absent), the time as in the header and the nonce. Nonce and HMAC are base64url without
+    padding, in their one canonical form. Every answer to a signed request but its 401 carries
+    `Porelo-Answer: porelo-planner-answer-1;s=<hmac>`, the HMAC under the token over the label
+    porelo-planner-answer-1 and one zero byte, then as length-prefixed fields the request's nonce, the status in
+    decimal and the SHA-256 of the answer's body; the opening of the changes stream carries it with an empty field in
+    place of the body's digest, and its events are not part of it. Before its first call, and again after a
+    connection error, a timeout, a stream it opens again, a 401 or a change of the address file, a caller asks POST
+    /proof that the planner on the port holds the token, and calls nothing when the answer is not the proof.
 servers:
   - url: http://127.0.0.1
 security:
-  - bearer: []
+  - signature: []
 
 paths:
+  /proof:
+    post:
+      operationId: proveToken
+      summary: Proof of the token
+      description: >-
+        Proves that the planner listening on this port holds the token, without a signature and before anything of
+        the person's is sent: the proof is the HMAC-SHA256 under the token's UTF-8 bytes over the ASCII label
+        porelo-planner-proof-1, one zero byte, the port the planner listens on as two bytes, big endian, and the 32
+        challenge bytes, in base64url without padding. Only POST on the raw path /proof, without a query, is exempt
+        from the signature. The body is application/json of at most 128 bytes, an object with exactly the one member
+        challenge; anything else answers 400 with an empty body, and no refused proof is logged.
+      tags: [health]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProofRequest'
+      responses:
+        '200':
+          description: The proof.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proof'
+        '400':
+          description: The body is not one canonical challenge; the body is empty.
   /health:
     get:
       operationId: getHealth
@@ -945,10 +988,14 @@ paths:
 
 components:
   securitySchemes:
-    bearer:
-      type: http
-      scheme: bearer
-      description: The token the planner was started with; a missing or wrong one answers 401.
+    signature:
+      type: apiKey
+      in: header
+      name: Porelo-Signature
+      description: >-
+        The HMAC-SHA256 of the request under the token the planner was started with, as the description of the API
+        gives its form; the token itself is never sent. A missing, malformed, repeated, late or replayed signature,
+        or one over anything but the request as sent, answers 401.
 
   parameters:
     Project:
@@ -1017,13 +1064,15 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: The bearer token is missing or wrong; the body is empty.
+      description: >-
+        The request carries no one valid signature, carries an Authorization header, or has a body larger than 131072
+        bytes; the body is empty, and the answer carries no Porelo-Answer header.
       headers:
         WWW-Authenticate:
-          description: Names the scheme the planner expects.
+          description: Names the form of signature the planner expects.
           schema:
             type: string
-            const: Bearer
+            const: porelo-planner-request-1
     InvalidLevel:
       description: The level is none of ERROR, WARN, INFO and DEBUG (InvalidLevel); the level in force stays.
       content:
@@ -1501,6 +1550,25 @@ components:
           description: The commit the planner was built from; null for a build without a Git checkout.
           type: [string, 'null']
           pattern: '^[0-9a-f]{40}$'
+
+    ProofRequest:
+      description: A caller's challenge, 32 random bytes in canonical base64url without padding.
+      type: object
+      required: [challenge]
+      additionalProperties: false
+      properties:
+        challenge:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$'
+
+    Proof:
+      description: The planner's proof that it holds the token, for the port it listens on and the challenge.
+      type: object
+      required: [proof]
+      properties:
+        proof:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$'
 
     ProjectSource:
       description: Where a project's planning is kept.

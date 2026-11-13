@@ -85,9 +85,22 @@ exits. Each command is run from the repository's root:
   With `XDG_RUNTIME_DIR` unset, the runtime directory is `/run/user/<uid>`, as the window reads it. The file is
   readable by the account alone, in a directory of mode `0700`; the planner refuses to start when the runtime
   directory is missing, is a link, or can be read by another account.
-- **Every call carries the token** as `Authorization: Bearer <token>`, on every path. A call without it, or with
-  another, gets `401` with `WWW-Authenticate: Bearer` and an empty body, and no CORS header is ever sent. The token
-  is new on every start.
+- **No call carries the token; every call is signed under it.** A process that binds the port of a planner that
+  ended learns no token, and nothing of the person's: before its first call, after a connection error, a timeout, a
+  stream it opens again, a `401`, a change of the address file's port or token, and before each new connection, the
+  window asks `POST /proof` with 32 random bytes, and the planner answers an HMAC-SHA256 under the token over its port
+  and those bytes. A listener whose answer is not that proof is sent nothing more and is shown as not this account's
+  planner, or an older one; the window asks again only after a back-off of up to 30 s, or at once when the address
+  file changes.
+- **Each request is signed in its `Porelo-Signature` header**: an HMAC-SHA256 under the token over the method, the
+  raw target, `Host`, `Content-Type`, the body's SHA-256, a time and a nonce, as `openapi/planner.yaml` gives the form.
+  A request without one valid signature, with two, with an `Authorization` header, more than 60 s off the planner's
+  clock, with a nonce already taken, or with a body larger than 131072 bytes gets `401` with
+  `WWW-Authenticate: porelo-planner-request-1`, an empty body and one line in the log; no CORS header is ever sent.
+  Every other answer carries `Porelo-Answer`, an HMAC under the token over the request's nonce, the status and the
+  body, so the window takes no board or result from a stranger; the changes stream proves its opening this way. Only
+  `POST /proof` needs no signature; a proof asked with anything but one challenge gets `400`, empty and unlogged. The
+  token is new on every start, the mock mode's too.
 
 ## Where it keeps its files
 
@@ -108,8 +121,8 @@ exits. Each command is run from the repository's root:
   junction or mount; every directory above it only when no other principal may delete, rename or re-permission it.
   Owners and entries are read by security identifier, never by name, and a file system without access lists, such as
   FAT32, makes the planner refuse to start.
-- **The window's planning screen reads the address file by the same rules** on both systems before it sends the
-  token: on Windows it asks Windows PowerShell of the system's own directory for the owners and entries from the
+- **The window's planning screen reads the address file by the same rules** on both systems before it signs a call
+  under the token: on Windows it asks Windows PowerShell of the system's own directory for the owners and entries from the
   drive's root down to `planner.json`, and refuses a `%LOCALAPPDATA%` reached through a link, a substituted drive or a
   mapped share.
 

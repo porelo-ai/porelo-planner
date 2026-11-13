@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL113",
   "title": "The Window Knows Its Planner Before It Sends The Token",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Medium",
   "rank": 49,
@@ -72,6 +72,17 @@ token, the project's name and the request with the next call.
   and the address file's port, never the token or a signature. The window's `handIdea` and
   `tellPlannerLevel` use it for every request, the `PUT` after NoSuchProject included. The planner refuses a bearer,
   so the window and the planner change together, agreed in the channel.
+- **As built, beyond the plan above.** Every new connection the screen's client opens is preceded by a proof of its
+  own (a connection factory), besides the triggers above: a planner that ends closes its idle connection, and the next
+  request opens a new one to whoever bound the port with no error to see. A proof that does not answer within its
+  timeout counts as failed. The header forms are `Porelo-Signature: porelo-planner-request-1;t=<s>;n=<nonce>;s=<hmac>`
+  and `Porelo-Answer: porelo-planner-answer-1;s=<hmac>`, nonce and HMAC in canonical base64url; a 401 carries no
+  answer proof. The filter's body bound is 131072 bytes, a task's event report, the largest the description takes;
+  an error dispatch's answer is proven over the error's body. `ProofController` answers the proof for a challenge the
+  filter read and checked. The screen takes the `crypto` package for SHA-256 and HMAC. The repository's own callers
+  sign too: `tool/planner-sign.sh`, sourced by `tool/planner-probe.sh` (copied beside it) and the story tests, signs in
+  bash with the token passed only through `printf`, and `tool/windows-planner-ready.ps1` asks the proof and a signed
+  `/health`.
 - **Contract.** The global security requirement, the scheme, the `Unauthorized` response and its `WWW-Authenticate`
   value, the description's header text and the filter's own header change with the scheme.
 - **Tests, red first.**
@@ -85,6 +96,16 @@ token, the project's name and the request with the next call.
     is then replaced by one that cannot receives nothing after the change; an answer without its proof is refused.
     Harm: the planner's token, a project's name or an idea given to another account's process, or a forged board
     shown to the person.
+- **Reading by another model.** A request on a pooled connection spends the proof as a new connection does, so a
+  proof asked after a forget is not left standing for a later new connection to a stranger on the freed port; a
+  screen test reproduces it. Declined notes: the filter reads a body of up to 128 KiB before its cheap checks, so
+  another local account can hold a thread per slow connection until the connection timeout, which costs only
+  availability on the loopback address; the nonce set grows only after a signature holds, so only the token's holder
+  fills it; an unknown charset on a signed request is a 500 to the token's holder alone; the tools compare proofs in
+  bash and PowerShell not in constant time, which gives no oracle since each attempt needs a fresh nonce or challenge;
+  curl's dot-segment normalization makes such a target fail closed with a 401. The proof and the request travel on
+  different connections, so a listener swapped in between them still gets one request; the design keeps that window
+  to one connection's opening.
 
 ## Acceptance
 

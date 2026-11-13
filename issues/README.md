@@ -47,12 +47,6 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | L | - | The window never sends the planner's token: each request carries a keyed hash under it, and before its first request and after any connection error the screen has the listener at the address file's port prove it holds the token, so a process that took a freed port learns no token and is found at once |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -118,6 +112,7 @@ left out.
 | <a id="pl58"></a>[PL58](PL58-The-Store-Writes-An-Idea-As-A-Story-And-Its-Issues.md) | L | - | The store writes a checked idea in one save as a story in Idea in the project's repository and an issue in Idea in each repository it names, each with the next free number; nothing stands on a fault before the answer, and a push that fails or is dropped after it is named in the board's faults |
 | <a id="pl67"></a>[PL67](PL67-A-Discussed-Idea-Is-Handed-To-The-Planner.md) | L | [PL58](README.md#pl58) | The idea a discussion wrote comes back to the planner when its task ends, with the offer it belongs to, is checked against the idea format and saved once per offer as a story with its issues; a malformed idea makes nothing and says why |
 | <a id="pl103"></a>[PL103](PL103-Old-Snapshot-Executables-Cleaned-Up.md) | M | - | A clean-up removes the planner's old snapshot executables from Artifactory by a rule, and never one a repository pins, a release or anything outside its prefix |
+| <a id="pl113"></a>[PL113](PL113-The-Window-Knows-Its-Planner-Before-It-Sends-The-Token.md) | L | - | The window never sends the planner's token: each request carries a keyed hash under it, and before its first request and after any connection error the screen has the listener at the address file's port prove it holds the token, so a process that took a freed port learns no token and is found at once |
 | <a id="pl116"></a>[PL116](PL116-The-Board-Opens-With-Its-Cards-Shown.md) | XS | - | A planning screen opened for the first time shows the cards of every state that holds stories, none folded to its count; a fold the person makes is kept afterwards |
 | <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
 

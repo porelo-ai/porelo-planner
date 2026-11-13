@@ -1,0 +1,2 @@
+title: "The window never sends the planner's token: every call is signed under it, every answer proves itself, and the listener on the planner's port must prove it holds the token before it is sent anything, so a process that takes a freed port learns nothing of the person's."
+type: security

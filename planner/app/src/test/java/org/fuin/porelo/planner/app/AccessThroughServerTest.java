@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,28 +32,48 @@ class AccessThroughServerTest {
     }
 
     @Test
-    void theRightTokenReachesThePlanner() throws Exception {
-        // The owner's window must get through, or the planner is of no use.
+    void aSignedCallReachesThePlannerAndItsAnswersProveThemselves() throws Exception {
+        // Harm: the owner's window could not reach its planner, or could not tell an answer or an
+        // error from a stranger's.
         final RuntimeDirectories.Address address = RuntimeDirectories.read(RUNTIME);
-        final HttpResponse<String> answer =
-                call("/health", "Bearer " + address.token(), "application/json");
-        assertThat(answer.statusCode()).as("the status with the right token").isEqualTo(200);
+        final HttpResponse<String> health =
+                Signing.sign(address, "GET", "/health", null, null).send();
+        assertThat(health.statusCode()).as("the status of a signed call").isEqualTo(200);
+        final HttpResponse<String> unknown =
+                Signing.sign(address, "GET", "/nothing-here", null, null).send();
+        assertThat(unknown.statusCode())
+                .as("the status of a signed call on an unknown path, its proof held by send")
+                .isEqualTo(404);
     }
 
     @Test
-    void aCallWithoutTheTokenIsRefusedOnAnyPathBeforeAnythingAnswers() throws Exception {
-        // The check must sit ahead of everything, unknown paths included; its cases are in
-        // AccessFilterTest.
-        assertRefused(call("/health", null, "application/json"), "no token on a known path");
+    void theProofOverTheServerNamesThePortItListensOn() throws Exception {
+        // Harm: a proof bound to no port could be relayed by a process on another port.
+        final RuntimeDirectories.Address address = RuntimeDirectories.read(RUNTIME);
+        assertThat(Signing.askProof(address.port(), address.token()))
+                .as("the proof's answer for the port and token of the address file")
+                .isEqualTo("200 proven");
+    }
+
+    @Test
+    void aCallWithoutASignatureIsRefusedOnAnyPathBeforeAnythingAnswers() throws Exception {
+        // Harm: a stranger reaching an operation; the check must sit ahead of everything,
+        // unknown paths included, and a bearer with the right token counts for nothing.
+        final RuntimeDirectories.Address address = RuntimeDirectories.read(RUNTIME);
+        assertRefused(call("/health", null, "application/json"), "no signature on a known path");
         assertRefused(
-                call("/nothing-here", null, "text/event-stream"), "no token on an unknown path");
+                call("/nothing-here", null, "text/event-stream"),
+                "no signature on an unknown path");
+        assertRefused(
+                call("/health", "Bearer " + address.token(), "application/json"),
+                "the right token as a bearer");
     }
 
     private static void assertRefused(final HttpResponse<String> answer, final String what) {
         assertThat(answer.statusCode()).as("the status with %s", what).isEqualTo(401);
         assertThat(answer.headers().firstValue("WWW-Authenticate"))
                 .as("the challenge with %s", what)
-                .hasValue("Bearer");
+                .hasValue("porelo-planner-request-1");
         assertThat(answer.body()).as("the body with %s, which must say nothing", what).isEmpty();
         assertThat(answer.headers().firstValue("Access-Control-Allow-Origin"))
                 .as("a CORS header with %s", what)
@@ -60,7 +81,7 @@ class AccessThroughServerTest {
     }
 
     private static HttpResponse<String> call(
-            final String path, final String authorization, final String accept)
+            final String path, final @Nullable String authorization, final String accept)
             throws IOException, InterruptedException {
         final int port = RuntimeDirectories.read(RUNTIME).port();
         final HttpRequest.Builder request =

@@ -1,13 +1,15 @@
 package org.fuin.porelo.planner.app;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
- * The secret a caller shows to be the planner's owner: 32 random bytes, made when the planner
- * starts.
+ * The secret a caller proves it holds, never sends, to be the planner's owner: 32 random bytes,
+ * made when the planner starts.
  *
  * <p>Made at run time on purpose: a value made while the native image is built would be the same in
  * every copy of the executable.
@@ -15,6 +17,8 @@ import java.util.Base64;
 public final class AccessToken {
 
     private static final int BYTES = 32;
+
+    private static final String ALGORITHM = "HmacSHA256";
 
     private final byte[] value;
 
@@ -38,14 +42,21 @@ public final class AccessToken {
     }
 
     /**
-     * Says whether a caller showed this token, in a time that does not depend on how much of it
-     * matched.
+     * The HMAC-SHA256 of a message under this token's UTF-8 bytes, so a caller shows it holds the
+     * token without sending it.
      *
-     * @param given What the caller sent.
-     * @return {@code true} when it is this token.
+     * @param message The bytes to sign.
+     * @return The 32 bytes of the HMAC.
      */
-    public boolean matches(final String given) {
-        return MessageDigest.isEqual(value, given.getBytes(StandardCharsets.UTF_8));
+    byte[] mac(final byte[] message) {
+        try {
+            final Mac mac = Mac.getInstance(ALGORITHM);
+            mac.init(new SecretKeySpec(value, ALGORITHM));
+            return mac.doFinal(message);
+        } catch (final GeneralSecurityException e) {
+            // Every Java runtime has HmacSHA256; without it no call can be checked.
+            throw new IllegalStateException("HmacSHA256 is not available", e);
+        }
     }
 
     /**

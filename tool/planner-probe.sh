@@ -32,7 +32,7 @@
 #   PLANNER_PROJECT       the project's name (required)
 #   PLANNER_URL           the planner's address; read from the address file when unset
 #   PLANNER_ADDRESS_FILE  the address file; $XDG_RUNTIME_DIR/porelo-planner/planner.json when unset
-#   PLANNER_TOKEN         the bearer token; read from the address file when unset
+#   PLANNER_TOKEN         the token calls are signed under, never sent; read from the address file when unset
 #   PLANNER_BRANCH        the store's branch; main when unset
 #   PORELO                Porelo's executable for 'records'; porelo on the PATH when unset
 #   PORELO_PROJECT        Porelo's project for 'records'; PLANNER_PROJECT when unset
@@ -64,6 +64,15 @@ need() {
 
 need curl
 need jq
+need od
+need sha256sum
+need base64
+
+# The signing beside this script, which a copy of it takes along.
+readonly SIGN=${BASH_SOURCE[0]%/*}/planner-sign.sh
+[[ -r $SIGN ]] || die "$SIGN is missing; copy it beside $PROBE"
+# shellcheck source=planner-sign.sh
+source "$SIGN"
 
 PROJECT=${PLANNER_PROJECT:-}
 [[ $PROJECT =~ ^[a-z0-9][a-z0-9._-]{0,99}$ ]] || die "PLANNER_PROJECT is unset or not a project name"
@@ -107,20 +116,34 @@ readonly URL
 TOKEN=$(read_token)
 readonly TOKEN
 
-# The token reaches curl on its standard input as a config line, never on a command line.
-auth_config() {
-    printf 'header = "Authorization: Bearer %s"\n' "$TOKEN"
+PORT=${URL##*:}
+readonly PORT
+
+# The listener on the port proves it holds the token before it is sent anything.
+prove() {
+    ps_proves "$URL" "$TOKEN" "$PORT" || die "the listener at $URL did not prove the planner's token"
 }
 
-# GET one path of the project's API; prints the body, exits 2 with the status on anything but 200.
+# GET one path of the project's API, signed; prints the body, exits 2 with the status on anything but 200 and on an
+# answer without its proof.
 get() {
-    local path=$1 body status
+    local path=$1 body status heads empty
+    prove
     body=$(mktemp)
-    status=$(auth_config | curl -sS -K - -o "$body" -w '%{http_code}' --max-time 30 \
-        -H 'Accept: application/json' "$URL$path") || {
-        rm -f "$body"
+    heads=$(mktemp)
+    empty=$(mktemp)
+    ps_sign GET "$path" "127.0.0.1:$PORT" '' "$empty" "$TOKEN"
+    rm -f "$empty"
+    status=$(curl -sS -o "$body" -D "$heads" -w '%{http_code}' --max-time 30 \
+        -H 'Accept: application/json' -H "Porelo-Signature: $PS_HEADER" "$URL$path") || {
+        rm -f "$body" "$heads"
         die "GET $path did not answer"
     }
+    if ! ps_answer_holds "$TOKEN" "$PS_NONCE" "$status" "$body" "$(ps_header "$heads" porelo-answer)"; then
+        rm -f "$body" "$heads"
+        die "GET $path answered $status without the planner's proof"
+    fi
+    rm -f "$heads"
     if [[ $status != 200 ]]; then
         local detail
         detail=$(jq -r '.type + ": " + .detail' "$body" 2>/dev/null || true)
@@ -250,15 +273,25 @@ attention)
 events)
     seconds=${1:?events needs a number of seconds}
     [[ $seconds =~ ^[0-9]{1,3}$ ]] || die "events needs a number of seconds"
+    prove
     stream=$(mktemp)
+    heads=$(mktemp)
+    empty=$(mktemp)
+    ps_sign GET "/projects/$PROJECT/events" "127.0.0.1:$PORT" '' "$empty" "$TOKEN"
+    rm -f "$empty"
     code=0
-    auth_config | curl -sS -f -N -K - --max-time "$seconds" -H 'Accept: text/event-stream' \
-        -o "$stream" "$URL/projects/$PROJECT/events" 2>/dev/null || code=$?
+    curl -sS -f -N --max-time "$seconds" -H 'Accept: text/event-stream' -H "Porelo-Signature: $PS_HEADER" \
+        -D "$heads" -o "$stream" "$URL/projects/$PROJECT/events" 2>/dev/null || code=$?
     # 28 is curl's own time limit, which ends every stream that is still open.
     if [[ $code != 0 && $code != 28 ]]; then
-        rm -f "$stream"
+        rm -f "$stream" "$heads"
         die "the changes stream of $PROJECT did not open (curl exit $code)"
     fi
+    if ! ps_answer_holds "$TOKEN" "$PS_NONCE" 200 - "$(ps_header "$heads" porelo-answer)"; then
+        rm -f "$stream" "$heads"
+        die "the changes stream of $PROJECT opened without the planner's proof"
+    fi
+    rm -f "$heads"
     got=$(grep -c -E '^event: ?board$' "$stream" || true)
     rm -f "$stream"
     [[ $got -ge 1 ]] || fail "events" "one board event within ${seconds}s" "none"

@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/signed_planner.dart';
+
 const _token = 'tOkEn-0123456789_abcdefghijklmnopqrstuvwxyz';
 
 /// The planner's mock mode as recorded by the planner's own test, which fails when the mock answers otherwise.
@@ -31,7 +33,7 @@ final _sent = <String, Object>{
   },
 };
 
-/// Serves the recorded answers at the paths the screen calls, behind the token, refusing anything else.
+/// Serves the recorded answers at the paths the screen calls, signed under the token, refusing anything else.
 class _RecordedMock {
   late final HttpServer _server;
   final unexpected = <String>[];
@@ -46,11 +48,16 @@ class _RecordedMock {
 
   Future<void> stop() => _server.close(force: true);
 
+  final signing = SignedPlanner(_token);
+
   Future<void> _answer(HttpRequest request) async {
     final call = '${request.method} ${request.uri.path}';
-    final body = await utf8.decodeStream(request);
+    final bytes = [for (final chunk in await request.toList()) ...chunk];
+    if (await signing.proof(request, bytes)) return;
+    final body = utf8.decode(bytes);
     final response = request.response;
-    if (request.headers.value(HttpHeaders.authorizationHeader) != 'Bearer $_token') {
+    final nonce = signing.verified(request, bytes);
+    if (nonce == null) {
       refused.add(call);
       response.statusCode = HttpStatus.unauthorized;
       await response.close();
@@ -69,6 +76,7 @@ class _RecordedMock {
     if (file == '') {
       unexpected.add(call);
       response.statusCode = HttpStatus.notFound;
+      signing.prove(response, nonce, const []);
       await response.close();
       return;
     }
@@ -76,11 +84,13 @@ class _RecordedMock {
     if (_sent.containsKey(call) && jsonEncode(jsonDecode(body)) != jsonEncode(_sent[call])) {
       unexpected.add('$call $body');
       response.statusCode = HttpStatus.badRequest;
+      signing.prove(response, nonce, const []);
       await response.close();
       return;
     }
     if (file == null) {
       response.statusCode = HttpStatus.noContent;
+      signing.prove(response, nonce, const []);
       await response.close();
       return;
     }
@@ -88,14 +98,17 @@ class _RecordedMock {
       final data = jsonEncode(jsonDecode(_file(file)));
       final revision = (jsonDecode(data) as Map<String, dynamic>)['revision'];
       response.headers.contentType = ContentType('text', 'event-stream');
+      signing.prove(response, nonce, null);
       response.bufferOutput = false;
       response.add(utf8.encode('event:board\nid:$revision\ndata:$data\n\n'));
       await response.flush();
       // The stream stays open, as the planner's does, until the test ends.
       return;
     }
+    final answer = utf8.encode(_file(file));
     response.headers.contentType = ContentType.json;
-    response.add(utf8.encode(_file(file)));
+    signing.prove(response, nonce, answer);
+    response.add(answer);
     await response.close();
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/served_story_work.dart';
+import 'support/signed_planner.dart';
 
 const _token = 'tOkEn-0123456789_abcdefghijklmnopqrstuvwxyz';
 const _digest = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -104,11 +105,14 @@ class _Reply {
 }
 
 /// One call the fake planner received.
-typedef _Call = ({String method, String target, String? authorization, String body, String? lastEventId});
+typedef _Call = ({String method, String target, bool signed, String? authorization, String body, String? lastEventId});
 
 /// A planner on 127.0.0.1 that answers the board as the REST description gives it and records every call.
 class _Planner {
+  _Planner([String token = _token]) : signing = SignedPlanner(token);
+
   late final HttpServer _server;
+  final SignedPlanner signing;
   final calls = <_Call>[];
   final Map<String, FutureOr<_Reply> Function()> routes = {};
   String workflowRevision = 'r1';
@@ -119,15 +123,24 @@ class _Planner {
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server.listen((request) async {
-      final body = await utf8.decodeStream(request);
+      final bytes = [for (final chunk in await request.toList()) ...chunk];
+      if (await signing.proof(request, bytes)) return;
+      final body = utf8.decode(bytes, allowMalformed: true);
       final target = request.uri.toString();
+      final nonce = signing.verified(request, bytes);
       calls.add((
         method: request.method,
         target: target,
+        signed: nonce != null,
         authorization: request.headers.value(HttpHeaders.authorizationHeader),
         body: body,
         lastEventId: request.headers.value('last-event-id'),
       ));
+      if (nonce == null) {
+        request.response.statusCode = HttpStatus.unauthorized;
+        await request.response.close();
+        return;
+      }
       final route = '${request.method} ${request.uri.path}';
       final reply = await (routes[route] ?? () => answer(route))();
       request.response.statusCode = reply.status;
@@ -135,6 +148,8 @@ class _Planner {
         // Each chunk sent at once, as the planner flushes each event.
         request.response.bufferOutput = false;
         reply.headers.forEach(request.response.headers.set);
+        final stream = '${reply.headers['content-type']}'.startsWith('text/event-stream');
+        signing.prove(request.response, nonce, stream ? null : raw);
         try {
           request.response.add(raw);
           if (reply.more case final more?) await request.response.addStream(more);
@@ -144,9 +159,13 @@ class _Planner {
         }
         return;
       }
+      final sent = reply.body == null
+          ? const <int>[]
+          : utf8.encode(reply.body is String ? reply.body as String : jsonEncode(reply.body));
+      signing.prove(request.response, nonce, sent);
       if (reply.body != null) {
         request.response.headers.contentType = ContentType.parse(reply.type);
-        request.response.add(utf8.encode(reply.body is String ? reply.body as String : jsonEncode(reply.body)));
+        request.response.add(sent);
       }
       await request.response.close();
     });
@@ -617,7 +636,7 @@ void main() {
       'digest': _digest,
       'confirm': true,
     });
-    expect(planner.calls.last.authorization, 'Bearer $_token');
+    expect(planner.calls.last.signed, isTrue);
     expect(saved.revision, 'r2');
     expect(saved.moved, ['PR1', 'PR2']);
     expect(
@@ -1565,8 +1584,8 @@ void main() {
     expect(refusal.name, 'AnswerTooLarge');
   });
 
-  // Harm: the token leaks into a URL, a log or an error text, where other programs or people read it.
-  test('the token goes in the Authorization header alone', () async {
+  // Harm: the token leaks into a header, a URL, a body, a log or an error text, where other programs or people read it.
+  test('the token is never sent, only signed under', () async {
     final (planner, source) = await _started();
     planner.routes['GET /projects/demo/stories/ST9'] = () =>
         _Reply.problem('NoSuchStory', {'story': 'ST9'}, 'The project has no such story.', 404);
@@ -1576,10 +1595,13 @@ void main() {
 
     expect(planner.calls, isNotEmpty);
     for (final call in planner.calls) {
-      expect(call.authorization, 'Bearer $_token', reason: 'every call carries the token');
+      expect(call.signed, isTrue, reason: 'every call is signed under the token');
+      expect(call.authorization, isNull, reason: 'no call carries an Authorization header');
       expect(call.target, isNot(contains(_token)), reason: 'no URL carries the token');
       expect(call.body, isNot(contains(_token)), reason: 'no body carries the token');
     }
+    expect(planner.signing.proofBodies, isNotEmpty, reason: 'the planner was proven');
+    expect(planner.signing.proofBodies.join(), isNot(contains(_token)), reason: 'no proof carries the token');
     expect(source.toString(), isNot(contains(_token)));
     expect(PlannerAddress(8080, _token).toString(), isNot(contains(_token)));
     expect(refusal.toString(), isNot(contains(_token)));
@@ -2014,7 +2036,6 @@ void main() {
     for (final (route, call) in cases) {
       for (final (status, name) in [
         (400, 'InvalidSettings'),
-        (401, 'Unauthorized'),
         (404, 'NoSuchStory'),
         (409, 'ReadingRoundChanged'),
         (422, 'WorkNotAllowed'),
@@ -2358,9 +2379,14 @@ void main() {
   test('reads refused together for an unknown project share one new PUT', () async {
     final (planner, source) = await _started();
     var refusals = 2;
-    planner.routes['GET /projects/demo/stories/ST1'] = () => refusals-- > 0
-        ? _Reply.problem('NoSuchProject', {'project': 'demo'}, 'The project is not known.', 404)
-        : planner.answer('GET /projects/demo/stories/ST1');
+    final both = Completer<void>();
+    planner.routes['GET /projects/demo/stories/ST1'] = () async {
+      if (refusals-- <= 0) return planner.answer('GET /projects/demo/stories/ST1');
+      // Both reads are refused only once both arrived, however long each connection took to open.
+      if (refusals == 0) both.complete();
+      await both.future;
+      return _Reply.problem('NoSuchProject', {'project': 'demo'}, 'The project is not known.', 404);
+    };
 
     await Future.wait([source.getStory('demo', 'ST1'), source.getStory('demo', 'ST1')]);
 

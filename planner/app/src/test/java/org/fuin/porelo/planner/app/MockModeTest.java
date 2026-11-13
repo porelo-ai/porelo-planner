@@ -3,9 +3,6 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -175,16 +172,7 @@ class MockModeTest {
         call(runtime, "PUT", "/projects/any", SOURCE);
         final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
         final HttpResponse<java.util.stream.Stream<String>> stream =
-                HttpClient.newHttpClient()
-                        .send(
-                                HttpRequest.newBuilder(
-                                                URI.create(
-                                                        "http://127.0.0.1:"
-                                                                + address.port()
-                                                                + "/projects/any/events"))
-                                        .header("Authorization", "Bearer " + address.token())
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofLines());
+                Signing.stream(address, "/projects/any/events");
         try (java.util.stream.Stream<String> lines = stream.body()) {
             final CompletableFuture<Boolean> told =
                     CompletableFuture.supplyAsync(
@@ -432,16 +420,8 @@ class MockModeTest {
             final ConfigurableApplicationContext planner = start(own, "--mock");
             call(own, "PUT", "/projects/any", SOURCE);
             final RuntimeDirectories.Address address = RuntimeDirectories.read(own);
-            final HttpRequest request =
-                    HttpRequest.newBuilder(
-                                    URI.create(
-                                            "http://127.0.0.1:"
-                                                    + address.port()
-                                                    + "/projects/any/events"))
-                            .header("Authorization", "Bearer " + address.token())
-                            .build();
             final HttpResponse<java.util.stream.Stream<String>> stream =
-                    HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofLines());
+                    Signing.stream(address, "/projects/any/events");
             assertThat(stream.statusCode()).as("the stream's status").isEqualTo(200);
             final long start = System.nanoTime();
             planner.close();
@@ -528,17 +508,9 @@ class MockModeTest {
             final Path runtime, final String method, final String path, final String body)
             throws IOException, InterruptedException {
         final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
-        final HttpRequest request =
-                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + address.port() + path))
-                        .header("Authorization", "Bearer " + address.token())
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .method(
-                                method,
-                                body == null
-                                        ? HttpRequest.BodyPublishers.noBody()
-                                        : HttpRequest.BodyPublishers.ofString(body))
-                        .build();
-        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        final Signing.Signed request =
+                Signing.sign(address, method, path, "application/json", body);
+        request.builder().header("Accept", "application/json");
+        return request.send();
     }
 }

@@ -10,9 +10,6 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.SocketException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -45,16 +42,14 @@ class PlannerStartsTest {
     void thePlannerStartsAndSaysItIsUpOnTheLoopbackAddress() throws Exception {
         // A planner that does not start leaves the window without a board.
         final HttpResponse<String> answer =
-                HttpClient.newHttpClient()
-                        .send(
-                                HttpRequest.newBuilder(
-                                                URI.create("http://127.0.0.1:" + port + "/health"))
-                                        .header(
-                                                "Authorization",
-                                                "Bearer "
-                                                        + RuntimeDirectories.read(RUNTIME).token())
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofString());
+                Signing.sign(
+                                port,
+                                RuntimeDirectories.read(RUNTIME).token(),
+                                "GET",
+                                "/health",
+                                null,
+                                null)
+                        .send();
         assertThat(answer.statusCode()).as("the health call's status").isEqualTo(200);
         assertThat(answer.body()).as("the health call's answer").contains("\"status\":\"UP\"");
     }

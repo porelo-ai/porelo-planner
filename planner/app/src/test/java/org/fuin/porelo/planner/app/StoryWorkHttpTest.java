@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.List;
@@ -392,11 +389,7 @@ class StoryWorkHttpTest {
     private String replacing(final String body) throws Exception {
         final String run =
                 JSON.readTree(
-                                mvc.perform(
-                                                get(BASE + "/work")
-                                                        .header(
-                                                                "Authorization",
-                                                                "Bearer " + token.text()))
+                                mvc.perform(get(BASE + "/work").with(Signing.mvc(token.text())))
                                         .andReturn()
                                         .getResponse()
                                         .getContentAsString())
@@ -553,9 +546,9 @@ class StoryWorkHttpTest {
                 mvc.perform(
                                 org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                                         .put("/projects/BAD")
-                                        .header("Authorization", "Bearer " + token.text())
                                         .contentType("application/json")
-                                        .content("{private-password"))
+                                        .content("{private-password")
+                                        .with(Signing.mvc(token.text())))
                         .andReturn()
                         .getResponse();
         assertThat(json(unreadableSource, 400).get("title").asString())
@@ -607,10 +600,11 @@ class StoryWorkHttpTest {
     }
 
     @Test
-    void missingOrWrongBearerTokensRefuseBothOperationsBeforeReadingTheBody() throws Exception {
+    void missingSignaturesOrBearerTokensRefuseBothOperationsBeforeTheRulesReadTheBody()
+            throws Exception {
         // Unauthenticated work bodies must never reach the planning rules.
         for (final String operation : List.of("proposal", "work")) {
-            for (final String bearer : List.of("", "Bearer wrong")) {
+            for (final String bearer : List.of("", "Bearer " + token.text())) {
                 final MockHttpServletRequestBuilder request =
                         post(BASE + "/" + operation)
                                 .contentType("application/json")
@@ -670,9 +664,9 @@ class StoryWorkHttpTest {
     private MockHttpServletResponse call(final String path, final String body) throws Exception {
         return mvc.perform(
                         post(path)
-                                .header("Authorization", "Bearer " + token.text())
                                 .contentType("application/json")
-                                .content(body))
+                                .content(body)
+                                .with(Signing.mvc(token.text())))
                 .andReturn()
                 .getResponse();
     }
@@ -694,14 +688,6 @@ class StoryWorkHttpTest {
             final String path,
             final String body)
             throws Exception {
-        return HttpClient.newHttpClient()
-                .send(
-                        HttpRequest.newBuilder(
-                                        URI.create("http://127.0.0.1:" + address.port() + path))
-                                .header("Authorization", "Bearer " + address.token())
-                                .header("Content-Type", "application/json")
-                                .method(method, HttpRequest.BodyPublishers.ofString(body))
-                                .build(),
-                        HttpResponse.BodyHandlers.ofString());
+        return Signing.sign(address, method, path, "application/json", body).send();
     }
 }
