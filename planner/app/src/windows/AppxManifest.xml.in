@@ -7,8 +7,10 @@
   the certificate is the window's.
 
   A console command and nothing else: the one app execution alias puts porelo-planner.exe on the PATH, and no tile or
-  Start entry is shown. Its writes to the user's AppData are not redirected into a package-private folder
-  (unvirtualizedResources), so %LOCALAPPDATA%\porelo-planner\planner.json is the file the window reads.
+  Start entry is shown. Several run at once - the planner and its issues and stories commands - so each start is an
+  instance of its own, which a console app must declare. Its writes to the user's AppData are not redirected into a
+  package-private folder (unvirtualizedResources), so %LOCALAPPDATA%\porelo-planner\planner.json is the file the
+  window reads.
 -->
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -34,7 +36,7 @@
   </Resources>
   <Applications>
     <Application Id="PoreloPlanner" Executable="porelo-planner.exe" EntryPoint="Windows.FullTrustApplication"
-        desktop4:Subsystem="console">
+        desktop4:Subsystem="console" desktop4:SupportsMultipleInstances="true">
       <uap:VisualElements DisplayName="Porelo Planner" Description="Serves a project's stories and issues to the Porelo window"
           BackgroundColor="transparent" Square150x150Logo="assets\Square150x150Logo.png"
           Square44x44Logo="assets\Square44x44Logo.png" AppListEntry="none"/>
