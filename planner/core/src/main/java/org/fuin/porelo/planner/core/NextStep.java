@@ -19,8 +19,10 @@ public final class NextStep {
 
     private static final String FINDINGS =
             "\n\nEnd with exactly one final Findings: block, through the end of the answer."
-                    + "\nUse an empty block for no findings, otherwise consecutive numbered lines:"
-                    + "\n<n>. <blocking|note> | <relative file or -> | <line or -> | <text>";
+                    + "\nWrite Findings: alone on its line. For no findings write nothing after it;"
+                    + " otherwise write one numbered line per finding below it, with no blank line"
+                    + " between them:"
+                    + "\n<n>. <blocking|note> | <relative file or -> | <line, first-last or -> | <text>";
 
     private NextStep() {}
 

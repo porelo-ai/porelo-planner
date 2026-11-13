@@ -227,9 +227,17 @@ public final class WorkEnds {
         while (!rows.isEmpty() && rows.get(rows.size() - 1).isBlank()) {
             rows.remove(rows.size() - 1);
         }
-        // A reader may say "none" for its empty block, but never beside a finding.
         if (!after.isEmpty()) {
-            return none(after) && rows.isEmpty() ? List.of() : null;
+            // A reader may say "none" for its empty block, but never beside a finding.
+            if (none(after)) {
+                return rows.isEmpty() ? List.of() : null;
+            }
+            // A row begun on the header line is the first row; a gap under it stays refused.
+            final List<String> below = lines.subList(block + 1, lines.size());
+            if (!below.isEmpty() && below.get(0).isBlank() && !rows.isEmpty()) {
+                return null;
+            }
+            rows.add(0, after);
         }
         if (rows.size() == 1 && none(rows.get(0).strip())) {
             return List.of();

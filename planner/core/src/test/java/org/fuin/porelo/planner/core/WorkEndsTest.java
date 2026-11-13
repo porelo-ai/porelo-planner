@@ -169,6 +169,33 @@ class WorkEndsTest {
     }
 
     @Test
+    void aFirstRowOnTheHeaderLineIsReadWithTheRowsBelowIt() {
+        // Harm: a reader's blocking findings thrown away whole because it began them on the header
+        // line.
+        final Read read =
+                (Read)
+                        WorkEnds.judge(
+                                "READER",
+                                Outcome.DONE,
+                                "It is a blocking finding.\n\nFindings: 1. blocking | src/A.java | 26 | a"
+                                        + " fault\n2. note | - | - | a verdict\n");
+        assertThat(read.findings())
+                .as("the header line's row and the one below it")
+                .containsExactly(
+                        new Finding(1, Severity.BLOCKING, "src/A.java", 26, "a fault"),
+                        new Finding(2, Severity.NOTE, null, null, "a verdict"));
+        for (final String answer :
+                List.of(
+                        "Findings: 1. blocking | - | - | a\n\n2. note | - | - | gap",
+                        "Findings: 2. note | - | - | starts at two",
+                        "Findings: see below\n1. note | - | - | a")) {
+            assertThat(WorkEnds.judge("READER", Outcome.DONE, answer))
+                    .as("refused: %s", answer)
+                    .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
+        }
+    }
+
+    @Test
     void anEmptyBlockIsACleanReading() {
         // A clean reading taken as malformed would hold every issue under Needs you.
         final Read read = (Read) WorkEnds.judge("READER", Outcome.DONE, "All good.\nFindings:\n");

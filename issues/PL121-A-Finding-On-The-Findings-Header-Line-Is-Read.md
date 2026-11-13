@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL121",
   "title": "A Finding On The Findings Header Line Is Read",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 57,
