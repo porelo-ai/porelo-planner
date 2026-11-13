@@ -9,24 +9,21 @@
   "size": "L",
   "priority": "High",
   "rank": 20,
-  "blockedBy": [
-    "PL29"
-  ],
-  "covers": "The planner runs as something the system knows - a systemd user service on Linux, a task started at sign-in on Windows - started at sign-in by the package, stopped and seen with the system's own commands, instead of a process the window leaves running unseen"
+  "blockedBy": [],
+  "covers": "On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen"
 }
 ```
 
-**Size:** L - two platforms and one contract with the window, the unit's and the task's name; with Windows a task
-started at sign-in in the MSIX manifest instead of a service, the Windows part shrinks to a manifest entry and its
-check, so the whole is one issue of L, no longer two.
+**Size:** L - the user unit with its start limits, the deb and rpm install scripts, an exit code of its own for a
+refused start, the package checks, a VM measurement on the target desktops, and one contract with the window. The
+Windows startup task is split off into [PL111](README.md#pl111).
 
 **Estimate:** 113 min, the measured median of L. Uncertain: whether the person's Git login reaches a user service on
-the desktops the packages target, and how an MSIX startup task behaves before the app was first launched.
+the desktops the packages target.
 
 **What must be true.** The person always knows whether the planner runs and can start and stop it with the system's
 own commands: on Linux as a systemd user service of the account (`systemctl --user start|stop|status
-porelo-planner`), on Windows as a task started at sign-in, seen and ended in the Task Manager's startup apps; no
-Windows service. The package starts it at sign-in. The window keeps its own start of the planner only where no such
+porelo-planner`). The package starts it at sign-in. The window keeps its own start of the planner only where no such
 service or task is installed, as for the ZIP, and nothing of the planner keeps running that the person cannot see or
 end.
 
@@ -42,10 +39,9 @@ listed, logged, started and stopped where every other service is.
 Read in today's code: the `.deb` and the `.rpm` (`planner/app/pom.xml`, jdeb and the rpm plugin) install the native
 executable as `/usr/libexec/porelo/planner` and nothing else to start it. The planner takes one lock per account and
 writes `porelo-planner/planner.json` under `XDG_RUNTIME_DIR` (`AddressFile`); the window finds the executable on the
-PATH as `porelo-planner` and starts it detached when no address answers. There is no Windows package yet; the Windows
-executable is built and shipped by [PL29](README.md#pl29).
+PATH as `porelo-planner` and starts it detached when no address answers.
 
-Steps, Linux first, since it waits for nothing:
+Steps:
 
 1. **Linux, a systemd user service of the account** (`planner/app/pom.xml`, a new unit file beside the packages'
    other inputs). The packages ship `/usr/lib/systemd/user/porelo-planner.service`:
@@ -56,13 +52,8 @@ Steps, Linux first, since it waits for nothing:
    answers. Red first, integration in the package build: the built `.deb` and `.rpm` hold the unit at that path,
    naming the installed executable, enabled for `default.target`, and `systemd-analyze verify` accepts it; unit in
    `app`: a stop by SIGTERM removes the address file.
-2. **Windows, a task started at sign-in** (the MSIX manifest of the Windows package, once it is built). The MSIX
-   declares the planner executable as a startup task (`windows.startupTask`), enabled, which needs no restricted
-   capability and runs in the person's session with the address file and the owner-only checks the Windows planner
-   already has; no Windows service. The ZIP registers nothing. Red first, integration in the package build: the
-   built MSIX's manifest names the startup task with the installed executable.
-3. **The contract with the window.** The unit's name `porelo-planner.service` and the startup task's id are what the
-   window looks for: where one is installed, the window starts or asks it and never a detached process of its own;
+2. **The contract with the window.** The unit's name `porelo-planner.service` is what the window looks for: where
+   it is installed, the window starts or asks it and never a detached process of its own;
    where none is, as for the ZIP, it keeps its own start. Agreed in the channel and changed in the window's
    repository.
 
@@ -84,35 +75,43 @@ The plan's reading by another model, each point checked in the code where it res
   `RuntimeDirectory=`, whose cleanup would; `AddressFile.close` releases the lock and leaves the file, as now.
 - **The Git login.** The window imports no environment into the user manager wholesale; only `SSH_AUTH_SOCK` and the
   display variables a credential helper needs, and never a credential's value.
-- **Windows.** A startup task's switch in the Task Manager turns the start at sign-in on or off; it neither stops nor
-  shows a running planner. Stopping and seeing it need their own way, and "start at sign-in off" is never shown as
-  "stopped".
 
-**Proposed contract with the window, Linux** (a proposal until agreed in the channel):
+**The contract with the window, Linux**, agreed in the channel:
 
 - The unit is `porelo-planner.service`, a user unit at `/usr/lib/systemd/user/porelo-planner.service`.
-- The window takes the unit as installed when that file exists. Then it never starts a planner of its own: it starts
-  the unit with `systemctl --user start porelo-planner.service`, sees it with
-  `systemctl --user is-active porelo-planner.service` beside the address file, and stops it with
-  `systemctl --user stop porelo-planner.service`. When `/health` names a version other than the installed one, it
-  restarts the unit.
-- Without the file, as from a ZIP or a build of one's own, the window starts the planner itself as today, with
-  `--end-with-input`.
+- Where that file exists and `systemctl --user` answers, the window never starts a planner of its own: it starts the
+  unit with `systemctl --user start porelo-planner.service` when no address answers, sees it by the address file
+  beside `systemctl --user is-active porelo-planner.service`, and never stops it; at its own end it leaves the unit
+  running, as it leaves any planner it found. Stopping the unit belongs to the person.
+- Where the file is missing, or `systemctl --user` fails (no user bus, as in an ssh or container session), the window
+  starts the planner itself as today, with `--end-with-input`, and logs why.
+- The window imports into the user manager only `SSH_AUTH_SOCK` and the display variables a credential helper needs,
+  each only when set; the unit needs nothing else from the window's environment. The planner's output goes to the
+  journal, and the window's log names `journalctl --user -u porelo-planner`.
+- The window restarts the unit only when `/health` names a version, the installed package's version is known and
+  differs, and no save of the person's is outstanding.
+- A refused start, another planner already holding the lock, ends with an exit code of its own, named in the unit's
+  `RestartPreventExitStatus=`.
 
 ## Acceptance
 
 - On Linux, after installing the package and signing in again: `systemctl --user status porelo-planner` shows the
   planner running, `systemctl --user stop porelo-planner` ends it, and the window then says the planner is not
   running instead of starting a hidden one.
-- On Windows, after installing the MSIX and signing in again: the planner runs and is listed among the Task Manager's
-  startup apps; from the ZIP, the window starts the planner itself as today.
 
+## Open questions
+
+- Does the package enable the start at sign-in globally for every account, with `systemctl --user mask` as the
+  opt-out, or does it stay off until the person or the window enables it per account?
+
+## To be checked
+
+- How the window reads the installed package's version to compare with `/health`: a file the package writes beside
+  the executable, or the executable's own answer; agreed with the window before it is built.
 - Whether the person's Git login reaches a user service: `SSH_AUTH_SOCK` and a credential helper's display are set in
   a graphical session's environment but not always in the user manager's; measured on the desktops the packages
   target.
 - Whether `AddressFile` removes `planner.json` on a SIGTERM today: read, it does, through the context's close, and
   `NativeStartIT` already sees the file gone after a stop; the lock file stays by design.
-- Whether an MSIX startup task of a desktop app runs at the next sign-in before the app was launched once, and how a
-  person ends it and turns it off, measured on a Windows machine.
 - Whether a user preset or `systemctl --global enable` is the one the `.deb` and `.rpm` both honor, measured on the
   distributions the packages target.
