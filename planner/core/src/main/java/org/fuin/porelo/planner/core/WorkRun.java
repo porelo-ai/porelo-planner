@@ -340,9 +340,12 @@ public final class WorkRun {
      */
     public record PassOver(String issue, String reason, String revision, String run) {}
 
-    /** The reasons a Start from a raised row may pass over. */
+    /**
+     * The reasons a Start from a raised row may pass over; a blocked task said it cannot go on
+     * unless something changes, so BLOCKED is none of them.
+     */
     public static final Set<String> PASSABLE =
-            Set.of("NEXT_STEP_UNAVAILABLE", "SAVE_REFUSED", "STOPPED");
+            Set.of("NEXT_STEP_UNAVAILABLE", "SAVE_REFUSED", "STOPPED", "FAILED");
 
     /** Returns a proposal using recorded activity and refusing lost runs. */
     public WorkProposal propose(final String story, final String to) {
@@ -407,6 +410,7 @@ public final class WorkRun {
                     final Run earlier = snapshot.runs().get(storyId);
                     standing(storyId, earlier, start);
                     passedOver(storyId, earlier, passOver);
+                    unpushedLeft(board, storyId, to, earlier, passOver);
                     allowed(
                             board,
                             snapshot,
@@ -2241,6 +2245,38 @@ public final class WorkRun {
                                         && e.getValue().needsYou()
                                         && !e.getValue().reason().equals(passOver.reason()))) {
             throw WorkRefusal.runChanged(story, "Another issue of the run needs attention.");
+        }
+    }
+
+    /**
+     * Refuses a Start passing over a failed task that left commits unpushed, which only that task
+     * can push, so no new builder starts beside work that would be lost.
+     */
+    private static void unpushedLeft(
+            final Board board,
+            final String story,
+            final String to,
+            final @Nullable Run run,
+            final @Nullable PassOver passOver) {
+        if (run == null || passOver == null || !passOver.reason().equals("FAILED")) {
+            return;
+        }
+        for (final Map.Entry<String, NextStep.Progress> raised : run.issues().entrySet()) {
+            if (!raised.getValue().needsYou() || !raised.getValue().reason().equals("FAILED")) {
+                continue;
+            }
+            Ended ended = null;
+            for (final Offer offer : run.offers()) {
+                if (offer.ended() != null && offer.binding().issues().contains(raised.getKey())) {
+                    ended = offer.ended();
+                }
+            }
+            if (ended != null && ended.unpushed() > 0) {
+                throw WorkRefusal.notAllowed(
+                        WorkProposal.story(board, story).state(),
+                        to,
+                        "The failed task left commits unpushed, which only it can push.");
+            }
         }
     }
 

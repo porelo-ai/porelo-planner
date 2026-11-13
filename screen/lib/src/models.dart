@@ -1301,8 +1301,8 @@ class PlanningPassOver {
   /// Takes the issue, its reason, the board's revision and the run the row showed.
   const PlanningPassOver({required this.issue, required this.reason, required this.revision, required this.run});
 
-  /// The reasons a row's Start may pass over.
-  static const reasons = {'NEXT_STEP_UNAVAILABLE', 'SAVE_REFUSED', 'STOPPED'};
+  /// The reasons a row's Start may pass over; a blocked task said it cannot go on unless something changes.
+  static const reasons = {'NEXT_STEP_UNAVAILABLE', 'SAVE_REFUSED', 'STOPPED', 'FAILED'};
 
   /// The issue whose row it is.
   final String issue;

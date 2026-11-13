@@ -47,12 +47,6 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl119"></a>[PL119](PL119-A-Late-Copy-Of-A-Reading-Choice-Starts-No-Reader.md) | S | - | A choice on a stopped reading that arrives late, after the reading it chose has stopped again as unreadable at the same round, is refused instead of starting a reader the person never chose |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl114"></a>[PL114](PL114-A-Failed-Or-Blocked-Task-Offers-A-Way-On.md) | M | [PL77](README.md#pl77) | The Needs-you row of an issue whose task ended FAILED offers Start again and Move on, and one that ended BLOCKED offers Move on, so the person is not left with a move by hand alone |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -96,6 +90,7 @@ left out.
 | <a id="pl104"></a>[PL104](PL104-ST309-Played-Through-On-The-Test-VM.md) | M | - | A script plays the test of story ST309 once on the local test VM as a person would, at the command line and through the planner's API, against a store fixture on a forge of its own, and lays the shared ground every story test of this repository runs on |
 | <a id="pl106"></a>[PL106](PL106-ST315-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104) | A script plays the test of story ST315 once on the local test VM as a person would, through the planner's API and at the command line, in a repository with no story or issue tooling in its build |
 | <a id="pl112"></a>[PL112](PL112-A-Save-Says-When-It-Is-Pushed.md) | S | - | The contract says what a save's answer means - committed in the planner's own clones, pushed after it - and how a refresh treats a repository whose save is still pending, and the window can see a save that is not pushed yet |
+| <a id="pl114"></a>[PL114](PL114-A-Failed-Or-Blocked-Task-Offers-A-Way-On.md) | L | [PL77](README.md#pl77) | The Needs-you row of an issue whose task ended FAILED offers Start again and Move on, and one that ended BLOCKED offers Move on, so the person is not left with a move by hand alone |
 | <a id="pl115"></a>[PL115](PL115-A-Check-Of-The-Publishing-Rights.md) | XS | - | A workflow started by hand shows, one pass or fail line each, whether every secret and variable the Build's publish and signing steps use is set, what anyone may read and the publishing token may read, upload and delete in Artifactory's porelo-files, where the Build publishes, and whether the Windows signing key opens and is the pinned signer, so a publish that fails on a right or a key is told from one that fails on the code |
 | <a id="pl117"></a>[PL117](PL117-A-Refused-Action-Is-Said-In-The-Error-Colour.md) | XS | - | A board action the window or the planner refuses - a discussion Porelo would not start, among others - is said above the board in the error colour, as a provider's problem is, so the person sees that nothing happened |
 | <a id="pl118"></a>[PL118](PL118-A-Reading-Takes-A-Line-Range-And-An-Unreadable-One-Is-Read-Again.md) | M | - | A Findings row naming a line range is read with its first line as the line and the range kept in its text, and a reading whose findings could not be read stops under Needs you with Read again and Review anyway, Rework staying for blocking findings |

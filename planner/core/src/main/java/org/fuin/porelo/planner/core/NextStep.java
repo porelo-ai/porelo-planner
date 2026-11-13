@@ -285,8 +285,8 @@ public final class NextStep {
             return attention(binding, progress, "NEXT_STEP_UNAVAILABLE");
         }
         if (judgment instanceof WorkEnds.NeedsOperator needs) {
-            return needs.reason() == WorkEnds.Reason.INVALID_FINDINGS
-                    ? unreadable(board, binding, progress)
+            return stopsReading(binding, needs.reason())
+                    ? unreadable(board, binding, progress, needs.reason())
                     : attention(binding, progress, needs.reason().name());
         }
         final Map<String, String> targets = new LinkedHashMap<>();
@@ -748,12 +748,26 @@ public final class NextStep {
     }
 
     /**
+     * Whether an end stops its reading as one whose findings could not be read: findings that could
+     * not be read, or a reader that failed or said its work is blocked, which leaves no reading to
+     * count, so a Start never takes the issue on as if it had none.
+     */
+    private static boolean stopsReading(final Binding binding, final WorkEnds.Reason reason) {
+        return reason == WorkEnds.Reason.INVALID_FINDINGS
+                || binding.role().equals("READER")
+                        && (reason == WorkEnds.Reason.FAILED || reason == WorkEnds.Reason.BLOCKED);
+    }
+
+    /**
      * Stops a reading whose findings could not be read, counting no round and keeping no findings,
      * so the person can have the same build read again or take it to Review; an issue moved on
      * meanwhile only asks the person, as at any end, since no choice could act on its stop.
      */
     private static Result unreadable(
-            final Board board, final Binding binding, final Map<String, Progress> progress) {
+            final Board board,
+            final Binding binding,
+            final Map<String, Progress> progress,
+            final WorkEnds.Reason reason) {
         binding.issues()
                 .forEach(
                         id -> {
@@ -774,7 +788,7 @@ public final class NextStep {
                                                     true),
                                             List.of(),
                                             true,
-                                            WorkEnds.Reason.INVALID_FINDINGS.name(),
+                                            reason.name(),
                                             before.answer()));
                         });
         return new Result(

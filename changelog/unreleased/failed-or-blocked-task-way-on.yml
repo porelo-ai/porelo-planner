@@ -1,0 +1,2 @@
+title: A Needs-you row whose builder failed starts the work again or moves the issue on, one whose builder was blocked moves it on, and a reader that failed or was blocked stops its reading for Read again or Review anyway.
+type: changed

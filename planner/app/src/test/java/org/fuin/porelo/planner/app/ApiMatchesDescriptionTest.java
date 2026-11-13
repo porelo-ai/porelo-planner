@@ -537,6 +537,23 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
+    void theDescribedReasonsAStartPassesOverAreExactlyThoseThePlannerTakes() {
+        // A window built against the description would offer a Start the planner refuses, or the
+        // planner would start work over a reason the description keeps out, such as a block.
+        final Set<String> described = new TreeSet<>();
+        description
+                .path("components")
+                .path("schemas")
+                .at("/PassOver/properties/reason/enum")
+                .forEach(reason -> described.add(reason.asText()));
+        assertThat(described)
+                .as("the reasons a Start may pass over")
+                .isEqualTo(new TreeSet<>(WorkRun.PASSABLE))
+                .contains("FAILED")
+                .doesNotContain("BLOCKED");
+    }
+
+    @Test
     void theDescribedEventsAndLandingNamesAreExactlyThoseThePlannerTakes() {
         // A window built against the description would send a landing the planner refuses, or
         // the planner would take one the description forbids, and no reader would ever start.

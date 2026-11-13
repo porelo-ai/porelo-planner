@@ -296,7 +296,8 @@ public record WorkProposal(
 
     /**
      * The issues a person named for the work, each once, each an open issue of the story an agent
-     * works, standing where the rule takes work from; any other list is refused whole.
+     * works, standing where the rule takes work from or in the working state itself; any other list
+     * is refused whole.
      */
     private static List<Issue> named(
             final Story story,
@@ -328,7 +329,8 @@ public record WorkProposal(
                         to,
                         "A person works " + id + ", so no agent's task starts on it.");
             }
-            if (!rule.from().contains(issue.state())) {
+            // An issue named where it stands is worked there again, as a raised row's Start does.
+            if (!rule.from().contains(issue.state()) && !issue.state().equals(to)) {
                 throw WorkRefusal.notAllowed(
                         issue.state(), to, "The rule does not allow work from this state.");
             }

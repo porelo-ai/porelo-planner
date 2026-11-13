@@ -489,9 +489,12 @@ paths:
         without `replaces` it is refused with the conflict RunChanged, so a replayed Start never gets a second set of
         offers to launch. `replaces` naming any other run than the one standing, or a run where none stands, is
         refused the same way. A `passOver` answers one issue's reason with a new run in place of the old one: it
-        names the run, the issue, its reason (NEXT_STEP_UNAVAILABLE, SAVE_REFUSED or STOPPED) and the revision the
-        person saw, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or when
-        another issue of the run needs attention for another reason; the revision is checked as `revision` is. A
+        names the run, the issue, its reason (NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED or FAILED) and the revision
+        the person saw, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or
+        when another issue of the run needs attention for another reason; the revision is checked as `revision` is.
+        BLOCKED is never passed over, since a blocked task said it cannot go on unless something changes. A
+        `passOver` of FAILED is refused with WorkNotAllowed while the failed task reports commits unpushed, which only
+        that task can push, and while the failure stopped a reading, which only a reading choice answers. A
         halted run takes a Start only with a `passOver` of its SAVE_REFUSED, recorded stopped and replaced in one
         step. A Start without `passOver` over a run any of whose issues holds a reason, a stopped run's STOPPED
         included, is refused with RunChanged whatever `replaces` names. The run named in `replaces` or `passOver` is
@@ -900,8 +903,9 @@ paths:
         offers a reader in the Reading rule's first mode and model, granting one more reading only at the limit;
         REWORK offers rework with the saved blocking findings and the operator's words, which it requires only
         when no saved finding blocks, in the given mode, agent and model or else the Reworking rule's first ones.
-        A reading stopped as INVALID_FINDINGS, whose findings could not be read, takes ONE_MORE_ROUND, a new reader
-        of the same build, and REVIEW_ANYWAY; it refuses REWORK as ReworkNeedsFindings, since nothing guides it. It
+        A reading stopped as INVALID_FINDINGS, whose findings could not be read, or by a reader that ended FAILED or
+        BLOCKED, takes ONE_MORE_ROUND, a new reader of the same build, and REVIEW_ANYWAY; it refuses REWORK as
+        ReworkNeedsFindings, since nothing guides it. It
         keeps no findings, as no other stopped reading does, so it is known by that once a failed choice has renamed
         its reason NEXT_STEP_UNAVAILABLE. Neither counts a reading. Stopped or halted runs refuse choices. The body
         is at most 65536 bytes.
@@ -2177,6 +2181,7 @@ components:
           description: >-
             Why the person must act, the reason the run reported; NONE when needsYou is false. INVALID_FINDINGS says a
             reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
+            FAILED and BLOCKED of a reader stop its reading the same way.
         findings:
           type: array
           maxItems: 100
@@ -2217,8 +2222,8 @@ components:
       uniqueItems: true
       description: >-
         The story's issues the work is for, each an open issue of the story an agent works, standing in a state the
-        target's rule takes work from; absent for the story's own work, its least advanced open issues the rule takes
-        from. A list naming any other issue is refused whole.
+        target's rule takes work from or in the target itself, where it is worked again; absent for the story's own
+        work, its least advanced open issues the rule takes from. A list naming any other issue is refused whole.
       items:
         $ref: '#/components/schemas/IssueId'
     StoryWorkProposal:
@@ -2414,7 +2419,7 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED]
+          enum: [NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED, FAILED]
         revision:
           $ref: '#/components/schemas/Revision'
         run:
@@ -2767,8 +2772,10 @@ components:
             reading with blocking findings, readingStopped true: below the readings granted and at them.
             INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with no round
             counted and no findings kept: the person has the same build read again or takes it to Review; an issue
-            moved meanwhile gets NEXT_STEP_UNAVAILABLE without a stop, as at any end. BLOCKED says
-            the task declared its work blocked; the issue stays in its state and the task's why says what blocks it.
+            moved meanwhile gets NEXT_STEP_UNAVAILABLE without a stop, as at any end. FAILED says the task did not
+            finish or declared its work failed, BLOCKED that it declared its work blocked; the issue stays in its state
+            and the task's why says what went wrong. A reader's FAILED or BLOCKED stops its reading as INVALID_FINDINGS
+            does, readingStopped true, with no round counted and no findings kept.
             A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer

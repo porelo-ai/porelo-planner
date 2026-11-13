@@ -15,8 +15,9 @@ import 'style.dart';
 ///
 /// A row of a task's end opens that task's result in the window; a row of a stopped reading opens the Reworking
 /// dialog. Where the task cannot be told or opened, the row says why in words. A row whose next step was not
-/// available or whose save was refused starts again or stops; one stopped starts again or moves on; one whose
-/// findings could not be read goes on to the reading's done state. Where one of these cannot be offered, the row
+/// available or whose save was refused starts again or stops; one stopped or failed starts again or moves on; one
+/// blocked moves on; one whose findings could not be read goes on to the reading's done state. A reader that failed or
+/// was blocked stops its reading, which reads again or goes to Review. Where one of these cannot be offered, the row
 /// says why.
 class StoryWorkAttentionView extends StatefulWidget {
   /// Keeps the source facts and choices for this view or decision.
@@ -55,6 +56,9 @@ class StoryWorkAttentionView extends StatefulWidget {
   @override
   State<StoryWorkAttentionView> createState() => _StoryWorkAttentionViewState();
 }
+
+/// The lines of a task's words a row shows; the story's dialog shows them all.
+const _endedLines = 6;
 
 String _endedReason(WorkEnded ended) => planningShown(
   [ended.why, String.fromCharCodes(ended.answer.runes.take(65536))].where((text) => text.isNotEmpty).join('\n'),
@@ -130,8 +134,10 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
             Text(planningShown('${row.story.id} — ${row.story.title}', multiline: false)),
             if (row.ended case final ended?) ...[
               Text(
-                ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended),
+                ended.reason.isEmpty ? 'The task gave no words on why it ended' : _endedReason(ended),
                 key: Key('story-work-ended ${row.story.id}'),
+                maxLines: _endedLines,
+                overflow: TextOverflow.ellipsis,
               ),
               if (ended.at.isNotEmpty) Text(planningShown(ended.at, multiline: false)),
               if (widget.openStory)
@@ -153,7 +159,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                           child: Text(
                             planningShown(
                               '${row.story.state}\n${row.story.description}\n'
-                              '${ended.reason.isEmpty ? 'Reason not reported' : _endedReason(ended)}',
+                              '${ended.reason.isEmpty ? 'The task gave no words on why it ended' : _endedReason(ended)}',
                             ),
                           ),
                         ),
@@ -168,6 +174,10 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
               _taskEnd(issue),
               _answers(context, issue),
             ],
+            // A reader that failed or was blocked stopped its reading; the row still says why and opens the task.
+            if (row.issue case final issue?
+                when issue.readingStopped == true && !widget.resolved && _readerEnds.contains(row.reason))
+              _taskEnd(issue),
             if (row.issue case final issue?) ...[
               Text(
                 planningShown(
@@ -273,7 +283,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     final reason = row.reason;
     final actions = <(String, PlanningAction)>[
       if (PlanningPassOver.reasons.contains(reason)) ('story-work-start ${issue.id}', _start(context, issue)),
-      if (reason == 'STOPPED') ('story-work-move-on ${issue.id}', _onward(issue, 'Move on')),
+      if (_movesOn.contains(reason)) ('story-work-move-on ${issue.id}', _onward(issue, 'Move on')),
       if (reason == 'INVALID_FINDINGS') ('story-work-review ${issue.id}', _onward(issue, 'Go to')),
       if (reason != 'STOPPED' && planReasonNeedsAttention(reason))
         ('story-work-stop ${issue.id}', _stop(context, issue)),
@@ -316,6 +326,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     final passOver = run == null
         ? null
         : PlanningPassOver(issue: issue.id, reason: row.reason, revision: row.revision, run: run);
+    final left = _unpushed(issue) ?? 0;
     return PlanningAction(
       id: 'story-work.start/${issue.id}',
       label: 'Start again…',
@@ -329,6 +340,8 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
           ? 'the planner did not report the run'
           : target == null
           ? 'no working state was reported'
+          : left > 0
+          ? 'the failed task left $left unpushed commit${left == 1 ? '' : 's'}, which only it can push'
           : board.startUnavailable(story, passOver: passOver),
       run: () async {
         final work = StoryWork(
@@ -350,6 +363,13 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         }
       },
     );
+  }
+
+  /// The commits the failed task that raised the row left unpushed, or null where it raised none.
+  int? _unpushed(PlanIssue issue) {
+    final row = widget.row;
+    if (row.reason != 'FAILED') return null;
+    return planningRaisingTask(row.board.workOf(row.story), issue.id, 'FAILED')?.ended?.unpushed;
   }
 
   /// Stops the row's run, once the person confirms it.
@@ -402,8 +422,10 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     final move = done == null || done.isEmpty ? null : movePlanningIssueAction(board, issue, done);
     return PlanningAction(
       id: 'story-work.onward/${issue.id}',
-      label: done == null || done.isEmpty ? verb : '$verb $done',
-      unavailable: move == null ? 'no work rule names where ${issue.state} leads' : move.unavailable,
+      label: done == null || done.isEmpty ? verb : planningShown('$verb $done', multiline: false),
+      unavailable: move == null
+          ? planningShown('no work rule names where ${issue.state} leads', multiline: false)
+          : move.unavailable,
       run: () {
         move!.run();
         widget.onStory?.call(row);
@@ -453,7 +475,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   bool get _unreadable {
     final row = widget.row;
     return switch (row.reason) {
-      'INVALID_FINDINGS' => true,
+      'INVALID_FINDINGS' || 'FAILED' || 'BLOCKED' => true,
       'NEXT_STEP_UNAVAILABLE' =>
         row.board
                 .workOf(row.story)
@@ -474,6 +496,12 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     _ => 'Rework…',
   };
 }
+
+/// The reasons whose row moves its issue on by the person's own move.
+const _movesOn = {'STOPPED', 'FAILED', 'BLOCKED'};
+
+/// The ends of a reader that stop its reading as one whose findings could not be read.
+const _readerEnds = {'FAILED', 'BLOCKED'};
 
 /// What the Reworking dialog was closed with.
 class _Decision {

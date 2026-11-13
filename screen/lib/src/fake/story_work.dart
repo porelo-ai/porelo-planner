@@ -141,12 +141,15 @@ class MockStoryWork {
       final blocking = (issue['findings'] as List? ?? const []).any(
         (finding) => finding is Map && finding['severity'] == 'BLOCKING',
       );
-      // The planner stops a reading whose findings could not be read as INVALID_FINDINGS and keeps that reason.
+      // The planner stops a reading whose findings could not be read, or whose reader failed or was blocked, and keeps
+      // that reason.
       final unreadable = {
         for (final item in ((story['work'] as Map?)?['issues'] as List? ?? const []).cast<Map<dynamic, dynamic>>())
-          if (item['readingStopped'] == true && item['reason'] == 'INVALID_FINDINGS') item['issue'],
+          if (item['readingStopped'] == true &&
+              const {'INVALID_FINDINGS', 'FAILED', 'BLOCKED'}.contains(item['reason']))
+            item['issue']: item['reason'],
       };
-      if (choice == 'REWORK' && unreadable.contains(issue['id'])) {
+      if (choice == 'REWORK' && unreadable.containsKey(issue['id'])) {
         refuse('ReworkNeedsFindings', {'issue': issue['id']});
       }
       if (!['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK'].contains(choice) ||
@@ -186,8 +189,8 @@ class MockStoryWork {
             'findings': item['findings'],
             'reason': item['readingStopped'] != true
                 ? 'NONE'
-                : unreadable.contains(item['id'])
-                ? 'INVALID_FINDINGS'
+                : unreadable.containsKey(item['id'])
+                ? unreadable[item['id']]
                 : (item['rounds'] as int? ?? 0) < (item['roundsMost'] as int? ?? 0)
                 ? 'BLOCKING_FINDINGS'
                 : 'ROUND_LIMIT',

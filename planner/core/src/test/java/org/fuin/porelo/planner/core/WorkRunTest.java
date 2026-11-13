@@ -3344,6 +3344,249 @@ class WorkRunTest {
     }
 
     @Test
+    void aStartPassingOverAFailedBuildStartsTheRunAgain() {
+        // Harm: a builder that ran out of time leaves its row with no way on but a move by hand.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 0);
+
+        final WorkRun.Order order = again(f, f.passOver(failed, "AA1", "FAILED"));
+
+        final WorkRun.Run now = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(now.id()).as("a new run stands").isNotEqualTo(failed.id());
+        assertThat(order.tasks())
+                .as("the new run offers a builder for the issue the failed task covered")
+                .extracting(o -> o.task().issues())
+                .containsExactly(List.of("AA1"));
+        assertThat(now.issues().get("AA1").needsYou())
+                .as("the new run no longer raises the issue")
+                .isFalse();
+    }
+
+    @Test
+    void aStartPassingOverAFailedBuildIsAConflictWhileAnotherIssueHoldsAnotherReason() {
+        // Harm: one row's Start passes over another row's findings nobody looked at.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 0);
+        final Map<String, NextStep.Progress> issues =
+                new java.util.LinkedHashMap<>(failed.issues());
+        issues.put("AA2", NextStep.Progress.start(1).attention("BLOCKING_FINDINGS"));
+        final WorkRun.Run both = withIssues(failed, issues, failed.offers());
+        f.record.value = new WorkRun.Snapshot(f.record.value.generation(), Map.of("ST1", both));
+
+        assertThatThrownBy(() -> again(f, f.passOver(both, "AA1", "FAILED")))
+                .as("another issue's other reason is not passed over")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("RunChanged"));
+        assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
+    }
+
+    @Test
+    void aStartPassingOverAFailedBuildIsRefusedWhileATaskIsStillAtWork() {
+        // Harm: a second agent works beside one nobody has stopped.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 0);
+        final WorkRun.Offer ended = failed.offers().getFirst();
+        final WorkRun.Offer atWork =
+                new WorkRun.Offer(
+                        java.util.UUID.randomUUID().toString(),
+                        ended.arguments(),
+                        ended.binding(),
+                        "STARTED",
+                        "other",
+                        "box",
+                        "workstation",
+                        ended.since(),
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final WorkRun.Run working = withIssues(failed, failed.issues(), List.of(ended, atWork));
+        f.record.value = new WorkRun.Snapshot(f.record.value.generation(), Map.of("ST1", working));
+
+        assertThatThrownBy(() -> again(f, f.passOver(working, "AA1", "FAILED")))
+                .as("work still at work refuses the Start")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkRunning"));
+        assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
+    }
+
+    @Test
+    void aStartPassingOverAFailedBuildThatLeftCommitsUnpushedIsRefused() {
+        // Harm: a new builder starts beside commits only the failed task can push, and they are
+        // lost.
+        final Fixture f = new Fixture();
+        final WorkRun.Run failed = failedBuild(f, 2);
+
+        assertThatThrownBy(() -> again(f, f.passOver(failed, "AA1", "FAILED")))
+                .as("unpushed work of the failed task refuses the Start")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"))
+                .hasMessageContaining("unpushed");
+        assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
+    }
+
+    @Test
+    void aStartPassingOverABlockedBuildIsRefused() {
+        // Harm: an agent started again over a block the task named, which nothing has lifted.
+        final Fixture f = new Fixture();
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final WorkRun.Run blocked =
+                f.run.report("task", blocked(build, WorkEnds.Declared.BLOCKED)).work();
+        assertThat(blocked.issues().get("AA1").reason())
+                .as("the blocked task raised the issue")
+                .isEqualTo("BLOCKED");
+
+        assertThatThrownBy(() -> again(f, f.passOver(blocked, "AA1", "BLOCKED")))
+                .as("a block is never passed over")
+                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("InvalidSettings"));
+        assertThat(f.run.work("ST1").id()).as("the blocked run stands").isEqualTo(blocked.id());
+    }
+
+    @Test
+    void aReaderEndingFailedOrBlockedStopsItsReadingForReadAgainAndNeverForAStart() {
+        // Harm: a builder started for an issue standing in a reading, or a reading nobody can
+        // read again.
+        for (final WorkEnds.Declared declared :
+                List.of(WorkEnds.Declared.FAILED, WorkEnds.Declared.BLOCKED)) {
+            final Fixture f = new Fixture();
+            final var reader = readerStarted(f);
+            final var ended =
+                    f.run.report(
+                            "reader",
+                            new WorkRun.Report(
+                                    reader.offer(),
+                                    WorkRun.Event.ENDED,
+                                    "box",
+                                    "workstation",
+                                    new WorkRun.Ended(
+                                            "2026-01-01T00:00:00Z",
+                                            true,
+                                            "Could not read",
+                                            "Findings:\n1. blocking | - | - | Broken",
+                                            0,
+                                            List.of(),
+                                            declared)));
+            final NextStep.Progress progress = ended.work().issues().get("AA1");
+            assertThat(progress.rounds().stopped()).as("%s stops the reading", declared).isTrue();
+            assertThat(progress.rounds().rounds()).as("%s counts no round", declared).isZero();
+            assertThat(progress.findings()).as("%s keeps no findings", declared).isEmpty();
+            assertThat(progress.reason())
+                    .as("%s stays the reason", declared)
+                    .isEqualTo(declared.name());
+            assertThat(ended.tasks()).as("nothing starts by itself after %s", declared).isEmpty();
+
+            final WorkRun.Run stopped = ended.work();
+            final String revision = f.store.board().revision().value();
+            if (declared == WorkEnds.Declared.FAILED) {
+                assertThatThrownBy(() -> again(f, f.passOver(stopped, "AA1", "FAILED")))
+                        .as("a Start over a reader's failure starts no builder")
+                        .satisfies(
+                                e ->
+                                        assertThat(conflictOf(e))
+                                                .as("named")
+                                                .isEqualTo("WorkNotAllowed"))
+                        .hasMessageContaining("needs attention");
+            }
+            assertThatThrownBy(
+                            () ->
+                                    f.run.choose(
+                                            "ST1",
+                                            "AA1",
+                                            0,
+                                            ReadingCycle.Choice.REWORK,
+                                            "Fix it anyway.",
+                                            revision,
+                                            null))
+                    .as("a rework after %s has nothing to work from", declared)
+                    .satisfies(
+                            e ->
+                                    assertThat(conflictOf(e))
+                                            .as("named")
+                                            .isEqualTo("ReworkNeedsFindings"));
+            final var again =
+                    f.run.choose(
+                            "ST1",
+                            "AA1",
+                            0,
+                            ReadingCycle.Choice.ONE_MORE_ROUND,
+                            "",
+                            revision,
+                            null);
+            assertThat(again.tasks())
+                    .as("Read again after %s offers one reader", declared)
+                    .singleElement()
+                    .satisfies(
+                            o ->
+                                    assertThat(o.task().reads())
+                                            .as("it reads the same build")
+                                            .containsExactly("task"));
+        }
+    }
+
+    /** A Start from AA1's raised row: it names the issue and passes over its reason. */
+    private static WorkRun.Order again(final Fixture f, final WorkRun.PassOver passOver) {
+        return f.run.order(
+                "ST1",
+                "Building",
+                new WorkOrder.Decision(
+                        "AGENT",
+                        f.store.board().revision().value(),
+                        null,
+                        "",
+                        1,
+                        null,
+                        List.of("AA1")),
+                new WorkRun.Start(null, passOver));
+    }
+
+    /** Builds AA1 and lets its builder run out of time, leaving {@code unpushed} commits. */
+    private static WorkRun.Run failedBuild(final Fixture f, final int unpushed) {
+        final var build = f.order().tasks().getFirst();
+        f.start(build);
+        final WorkRun.Run failed =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        build.offer(),
+                                        WorkRun.Event.ENDED,
+                                        "box",
+                                        "workstation",
+                                        new WorkRun.Ended(
+                                                "2026-01-01T00:00:00Z",
+                                                false,
+                                                "Out of time",
+                                                "",
+                                                unpushed)))
+                        .work();
+        assertThat(failed.issues().get("AA1").reason())
+                .as("the failed task raised the issue")
+                .isEqualTo("FAILED");
+        return failed;
+    }
+
+    /** The run with other issues' progress and offers. */
+    private static WorkRun.Run withIssues(
+            final WorkRun.Run run,
+            final Map<String, NextStep.Progress> issues,
+            final List<WorkRun.Offer> offers) {
+        return new WorkRun.Run(
+                run.id(),
+                run.story(),
+                run.to(),
+                run.mode(),
+                run.comment(),
+                run.coordinator(),
+                run.readingRounds(),
+                run.issueReadingRounds(),
+                run.repositories(),
+                run.since(),
+                offers,
+                issues,
+                run.stopped(),
+                run.halted(),
+                run.pending());
+    }
+
+    @Test
     void aRepeatedStartIsRefusedWhileOffersAreUnstartedUnlessItNamesTheirRun() {
         // A replayed Start would get a second set of offers to launch beside the first.
         final Fixture f = new Fixture();
