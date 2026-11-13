@@ -44,7 +44,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl38"></a>[PL38](PL38-A-Move-Done-At-Once-Warned-Where-It-Can-Do-Harm.md) | L | - | A move on the board is saved at once, without Save and Undo, and each kind of move first warns where it can do harm - running agent tasks to stop or cancel, issues of other repositories moving along, a closed state - and asks the person to confirm or cancel |
-| <a id="pl77"></a>[PL77](PL77-Each-Raised-Row-Offers-Its-Action.md) | L | - | Every row in Needs you offers what answers its reason: start again or stop after a failed next step or a refused save, move on or start again after a stop, open the task to push its commits, read again or go to Review after invalid findings |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl105"></a>[PL105](PL105-ST311-Played-Through-On-The-Test-VM.md) | M | [PL104](README.md#pl104) | A script plays the test of story ST311 once on the local test VM through the planning screen against the real planner, as a person opens Planning, and lays the screen driver the other screen story tests use |
 | <a id="pl107"></a>[PL107](PL107-ST316-Played-Through-On-The-Test-VM.md) | S | [PL104](README.md#pl104), [PL105](README.md#pl105) | A script plays the test of story ST316 once on the local test VM through the planning screen against the real planner, as a person reads sizes and folds a state's box and a story card |
@@ -64,6 +63,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl77"></a>[PL77](PL77-Each-Raised-Row-Offers-Its-Action.md) | L | - | Every row in Needs you offers what answers its reason: start again or stop after a failed next step or a refused save, move on or start again after a stop, open the task to push its commits, read again or go to Review after invalid findings |
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 

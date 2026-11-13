@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL77",
   "title": "Each Raised Row Offers Its Action",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Highest",
   "rank": 5,
@@ -59,6 +59,23 @@ Today's code stands in the way, read in it:
 
 ## Plan
 
+- **What the plan's reading asked, and the answers.** A revision alone does not name a run: another window can start
+  and stop again and come back to `STOPPED` at the same revision. So every call that acts on a run names the run.
+  - **The run's id.** Each story's work on the board carries `run`, an opaque id the planner draws when a run starts
+    and keeps in the work record. A row's Start passes over only the run whose id it names.
+  - **Start's offers.** A Start that would replace a run's unstarted offers names that run in `replaces`. Without
+    it, the planner refuses the Start with a conflict while unstarted offers stand, so a replayed Start never gets a
+    second set of offers to launch.
+  - **Stop.** Stop takes an optional `run`, and is refused with a conflict when another run stands. The screen
+    always sends it.
+  - **No Stop without the hook that ends the task.** The screen offers Stop only when its board holds the window's
+    hook that ends a task (`taskChanges`); without it the row says why it offers no Stop. Recording a stop while the
+    agent goes on running is worse than offering none.
+- **Contract agreed with the window:** `passOver` (`issue`, `reason`, `revision`, `run`) on Start, `run` on a story's
+  work, `replaces` on Start and an optional `run` on Stop, all carried by the screen alone; and `PlanningBoards` taking
+  `startTask`, `agents` and `machines` when it is made. The window never sends or repeats a story's Start itself, and
+  already hands the board `taskChanges`.
+
 - **Core (`planner/core`, `WorkRun`).** The start of a story's work takes an optional pass-over: issue, reason and the
   board revision the row showed. `WorkRun.allowed` accepts a run with reasons, or a halted one, only for a Start whose
   pass-over names exactly that issue's reason (`NEXT_STEP_UNAVAILABLE`, `SAVE_REFUSED`, `STOPPED`), no other issue's
@@ -75,8 +92,9 @@ Today's code stands in the way, read in it:
   asked of its agent in the channel; until it stands the row says why it offers no Start.
 - **Tests, by level, red first.**
   - Unit, core (`WorkRunTest`): a Start passing over `SAVE_REFUSED` replaces the halted run; one naming a reason that
-    changed meanwhile, or another issue's, is refused with a conflict; a task still at work refuses it; a move by hand
-    clears a halted run. Harm: an agent started over a failure nobody looked at, or over work still running.
+    changed meanwhile, another issue's, or another run's id, is refused with a conflict; a task still at work refuses
+    it; a repeated Start without `replaces`, or naming another run, is refused while offers are unstarted; a Stop
+    naming another run is refused; a move by hand clears a halted run. Harm: an agent started over a failure nobody looked at, or over work still running.
   - Integration, app: the work call with `passOver` against the description (`ApiMatchesDescriptionTest`) and its
     conflict. Harm: the window and the planner reading the contract differently.
   - Widget, screen (over `FakePlanningSource`): a `SAVE_REFUSED` row offers Start and sends the pass-over; an
