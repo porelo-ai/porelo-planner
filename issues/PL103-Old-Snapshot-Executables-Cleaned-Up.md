@@ -24,8 +24,8 @@ goes with them.
 ## Plan
 
 - **The clean-up**, a workflow of its own, runs on a schedule and by hand, and only from `main`, with a token of its
-  own that may delete only under `files/porelo-planner/`; the publishing token cannot delete. It keeps curl's rules
-  from the Build: the token on standard input, no redirect followed with it.
+  own that may delete only under `porelo-files/porelo-planner/`; the publishing token cannot delete. It keeps curl's
+  rules from the Build: the token on standard input, no redirect followed with it.
   - It deletes a snapshot build only when it is older than 30 days, not among the newest 10, and named by no pin.
     Never a release, never a path outside the prefix, and never one whose version is not `x.y.z~snapshot.N`.
   - A repository that sets or moves its planner pin takes a build younger than 7 days; an existing pin may stay. A
@@ -46,6 +46,6 @@ goes with them.
 
 ## To be checked
 
-- That a delete token limited to `files/porelo-planner/` can be had.
+- That a delete token limited to `porelo-files/porelo-planner/` can be had.
 - Where the project file lists the repositories, and that each one's pin is readable from its default branch
   without a credential.

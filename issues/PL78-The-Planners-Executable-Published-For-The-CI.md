@@ -24,8 +24,8 @@ is published as a library.
 
 The command line stands in the executable: `issues index|check` and `stories index|check|cut`, with the build tools'
 output and exit codes. Its place is the generic Artifactory repository `files`, readable without credentials:
-`files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`, releases only, uploaded with its SHA-1 and
-SHA-256, which a CI step pins together with the version; no snapshot clean-up reads that repository.
+`porelo-files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`, releases only, uploaded with its SHA-1
+and SHA-256, which a CI step pins together with the version; no snapshot clean-up reads that repository.
 
 - The Build of a release publishes the executable there; the publishing token may write to `files`.
 - This repository's own hand-over checks `issues index` and `issues check` run with the downloaded executable.
@@ -41,8 +41,8 @@ SHA-256, which a CI step pins together with the version; no snapshot clean-up re
   - The native executable stands at `planner/app/target/porelo-planner`, already checked for x86-64 v1.
 - **The change.**
   - On the `releases` channel only, *Publish the packages* also refuses an existing
-    `files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`. It then puts the executable under that
-    name, with the same `put`.
+    `porelo-files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`. It then puts the executable under
+    that name, with the same `put`.
   - A new step, *The executable is published*, downloads it anonymously with `curl -L`. It retries until the file
     answers or a time limit passes, then compares its SHA-256 with the built file's. A mismatch or a missing file
     fails the run, naming what it asked and what it got.

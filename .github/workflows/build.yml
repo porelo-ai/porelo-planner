@@ -197,12 +197,12 @@ jobs:
                       absent "porelo-dist-rpm/releases/$(basename "$rpm")"
                   fi
                   # A pinned executable is never replaced, a snapshot's neither: its version names one run.
-                  absent "files/porelo-planner/${FILES}/$(basename "$exe")"
+                  absent "porelo-files/porelo-planner/${FILES}/$(basename "$exe")"
                   [ -n "$JF_ACCESS_TOKEN" ] || { echo "::error::secret JF_ACCESS_TOKEN is not set"; exit 1; }
                   put "$deb" "porelo-dist-deb/pool/main/p/porelo-planner/" \
                       "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
                   put "$rpm" "porelo-dist-rpm/${CHANNEL}/"
-                  put "$exe" "files/porelo-planner/${FILES}/"
+                  put "$exe" "porelo-files/porelo-planner/${FILES}/"
 
             # Uploaded is not installable. Read anonymously, as an installer sees it, into a variable before grep: grep
             # leaving a pipe early would fail curl under pipefail on a large index.
@@ -282,7 +282,7 @@ jobs:
               run: |
                   set -euo pipefail
                   name="porelo-planner-${VERSION}-linux-x86_64"
-                  url="${JF_URL%/}/artifactory/files/porelo-planner/${VERSION}/$name"
+                  url="${JF_URL%/}/artifactory/porelo-files/porelo-planner/${VERSION}/$name"
                   built="$(sha256sum planner/app/target/porelo-planner | cut -d' ' -f1)"
                   tries=0
                   read=false
@@ -309,7 +309,7 @@ jobs:
                       echo "### The planner's executable for the CI"
                       echo
                       echo "- version: \`$VERSION\`"
-                      echo "- path: \`files/porelo-planner/${VERSION}/$name\`"
+                      echo "- path: \`porelo-files/porelo-planner/${VERSION}/$name\`"
                       echo "- sha256: \`$built\`"
                   } >> "$GITHUB_STEP_SUMMARY"
 

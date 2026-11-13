@@ -61,10 +61,10 @@ exits. Each command is run from the repository's root:
 - **A character from a repository that could steer a terminal** - a control, format or line separator character - is
   written as its `\uXXXX` escape in every line the tools say.
 - From the packages it is `/usr/libexec/porelo/planner issues check issues`.
-- **A repository's CI downloads the bare executable** from Artifactory's `files` repository, pinned by version and
-  SHA-256: `files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`. Every push to `main` publishes one
-  under its package version, `x.y.z~snapshot.<run>`, and every release under `x.y.z`; the Build's summary names the
-  version, the path and the SHA-256. A published executable is never replaced, so a pin holds what it named. A
+- **A repository's CI downloads the bare executable** from Artifactory's `porelo-files` repository, pinned by version
+  and SHA-256: `porelo-files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`. Every push to `main`
+  publishes one under its package version, `x.y.z~snapshot.<run>`, and every release under `x.y.z`; the Build's summary
+  names the version, the path and the SHA-256. A published executable is never replaced, so a pin holds what it named. A
   change is taken by moving the pin to a newer version and its SHA-256.
 
 ## How the window reaches it

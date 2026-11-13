@@ -25,7 +25,9 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class NativeStartIT {
 
-    private static final Duration START = Duration.ofSeconds(10);
+    // A start on Windows checks its directories through PowerShell: four took 28 s together on the
+    // runner, and one of them passed 10 s.
+    private static final Duration START = Duration.ofSeconds(RuntimeDirectories.WINDOWS ? 60 : 10);
 
     private static final Duration STOP = Duration.ofSeconds(5);
 
