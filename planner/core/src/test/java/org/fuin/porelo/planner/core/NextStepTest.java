@@ -116,6 +116,40 @@ class NextStepTest {
     }
 
     @Test
+    void aBlockedStateWhoseRuleTakesNoWorkFromTheReadingIsNotEntered() {
+        // Work entering a state other than its rule's own then without that state's from would
+        // start a rework from where the rules say no work starts.
+        final Board board =
+                withRule(board("Reading", "Finished"), "Reworking", choices("Building"));
+        final NextStep.Result next =
+                NextStep.resume(
+                        board,
+                        binding(List.of("AA1"), "READER", "Reading"),
+                        Map.of(
+                                "AA1",
+                                new NextStep.Progress(
+                                        new ReadingCycle.Rounds(1, 2, false),
+                                        List.of(BLOCKING),
+                                        false,
+                                        "NONE",
+                                        "")),
+                        "",
+                        states -> states.getFirst(),
+                        false,
+                        "",
+                        null,
+                        BUILT);
+        assertThat(next.writes().issues()).as("no move into the blocked state").isEmpty();
+        assertThat(next.tasks()).as("no rework offered").isEmpty();
+        assertThat(next.progress().get("AA1").reason())
+                .as("the issue asks the person")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(next.unavailable().get("AA1"))
+                .as("the line names the state and where the work stands")
+                .contains("Reworking", "Reading");
+    }
+
+    @Test
     void aTaskThePlannerStartsByItselfTakesTheRulesFirstModeAndModel() {
         // A reader refused for the build's mode would leave finished work with no reading at all.
         final Board board = withRule(board("Building", "Finished"), "Reading", choices("Building"));

@@ -2330,12 +2330,114 @@ class WorkRunTest {
                 .extracting(WorkOrder.Task::role)
                 .containsExactly("MAIN", "READER", "BUILDER");
         assertThat(orders)
-                .as("each order leaves the issues' states, their index and stats/ to the planner")
+                .as("each order leaves the issues' moves and stats/ to the planner")
                 .allSatisfy(
                         o ->
                                 assertThat(o.prompt())
                                         .as("the order of the %s", o.role())
                                         .contains(WorkOrder.PLANNER_MOVES));
+    }
+
+    @Test
+    void aLineThatCannotBeToldFailsNoEndWhoseRunIsSaved() {
+        // An end answered as failed after its run was saved would have the window send it again
+        // against a run that has already moved on.
+        final Fixture f = reworkingThenReading();
+        final WorkRun run =
+                new WorkRun(
+                        f.store,
+                        f.record,
+                        f.clock,
+                        why -> {
+                            throw new IllegalStateException("the log is gone");
+                        });
+        final var rework =
+                run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                f.store.board().revision().value(),
+                                null)
+                        .tasks()
+                        .getFirst();
+        run.report(
+                "rework",
+                new WorkRun.Report(
+                        rework.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.store.current = inState(f.store.board(), "AA1", "Review");
+        final var ended =
+                run.report(
+                        "rework",
+                        new WorkRun.Report(
+                                rework.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Reworked")));
+        assertThat(java.util.Objects.requireNonNull(ended.work().issues().get("AA1")).reason())
+                .as("the end is answered with the saved run")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+    }
+
+    @Test
+    void aThenThatLeadsBackIntoBuildingOffersOneReaderAndNoFurtherTask() {
+        // A then that led from building back into building, offering a builder at every end,
+        // would start agent tasks that cost money without end.
+        for (final Map<String, String> then :
+                List.of(
+                        Map.of("Building", "Building"),
+                        Map.of("Building", "Reworking", "Reworking", "Building"))) {
+            final Fixture f = new Fixture();
+            Board board = f.store.board();
+            for (final Map.Entry<String, String> rule : then.entrySet()) {
+                board =
+                        NextStepTest.withRule(
+                                board,
+                                rule.getKey(),
+                                rule(
+                                        List.of("Backlog", "Building", "Reworking"),
+                                        rule.getValue(),
+                                        null,
+                                        WorkRule.Per.REPOSITORY));
+            }
+            f.store.current = board;
+            final var build = f.order().tasks().getFirst();
+            f.start(build);
+            final var after =
+                    f.run.report(
+                                    "task",
+                                    new WorkRun.Report(
+                                            build.offer(),
+                                            WorkRun.Event.ENDED,
+                                            "box",
+                                            "workstation",
+                                            ended("Built")))
+                            .tasks();
+            assertThat(after)
+                    .as("the build's end offers only its reader (%s)", then)
+                    .extracting(o -> o.task().role())
+                    .containsExactly("READER");
+            final var reader = after.getFirst();
+            f.run.report(
+                    "reader",
+                    new WorkRun.Report(
+                            reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+            final var read =
+                    f.run.report(
+                            "reader",
+                            new WorkRun.Report(
+                                    reader.offer(),
+                                    WorkRun.Event.ENDED,
+                                    "box",
+                                    "workstation",
+                                    ended("Findings:")));
+            assertThat(read.tasks()).as("the reading's end offers no task (%s)", then).isEmpty();
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("the reading's end leaves the work in done (%s)", then)
+                    .isEqualTo("Review");
+        }
     }
 
     /** The board with one issue standing in another state, as a store read gives it. */

@@ -454,12 +454,13 @@ public record WorkOrder(
     }
 
     /**
-     * The planner moves an issue and writes its state, the issues' index and stats/ itself, so a
-     * task that commits them too lands moves the planner did not make.
+     * The planner moves an issue, writes stats/ and rewrites the issues' index itself, so a task
+     * that commits a move too lands moves the planner did not make.
      */
     static final String PLANNER_MOVES =
-            "\n\nThe planner alone moves these issues from state to state and writes their state,"
-                    + " issues/README.md and stats/: change none of them.";
+            "\n\nThe planner alone moves these issues from state to state and writes stats/:"
+                    + " change no issue's state and nothing under stats/. The planner rewrites"
+                    + " issues/README.md itself after each move.";
 
     static String prompt(
             final WorkRule rule,

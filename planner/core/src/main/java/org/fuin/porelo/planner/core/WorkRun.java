@@ -1741,11 +1741,19 @@ public final class WorkRun {
         return saved;
     }
 
-    /** Says why each issue of a saved run could not take its next step, one line each. */
+    /**
+     * Says why each issue of a saved run could not take its next step, one line each; a line that
+     * cannot be told is dropped, since the run it speaks of is already saved.
+     */
     private void tell(final Draft draft) {
         draft.unavailable.forEach(
-                (issue, why) ->
-                        told.accept("Issue " + issue + " of story " + draft.story + ": " + why));
+                (issue, why) -> {
+                    try {
+                        told.accept("Issue " + issue + " of story " + draft.story + ": " + why);
+                    } catch (final RuntimeException untold) {
+                        // The saved run stands; only its line is lost.
+                    }
+                });
     }
 
     private static void preflight(
