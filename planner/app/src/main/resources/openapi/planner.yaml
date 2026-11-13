@@ -901,8 +901,10 @@ paths:
         REWORK offers rework with the saved blocking findings and the operator's words, which it requires only
         when no saved finding blocks, in the given mode, agent and model or else the Reworking rule's first ones.
         A reading stopped as INVALID_FINDINGS, whose findings could not be read, takes ONE_MORE_ROUND, a new reader
-        of the same build, and REVIEW_ANYWAY; it refuses REWORK as ReworkNeedsFindings, since nothing guides it.
-        Neither counts a reading. Stopped or halted runs refuse choices. The body is at most 65536 bytes.
+        of the same build, and REVIEW_ANYWAY; it refuses REWORK as ReworkNeedsFindings, since nothing guides it. It
+        keeps no findings, as no other stopped reading does, so it is known by that once a failed choice has renamed
+        its reason NEXT_STEP_UNAVAILABLE. Neither counts a reading. Stopped or halted runs refuse choices. The body
+        is at most 65536 bytes.
       tags: [work]
       requestBody:
         required: true
@@ -2764,7 +2766,8 @@ components:
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
             reading with blocking findings, readingStopped true: below the readings granted and at them.
             INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with no round
-            counted and no findings kept: the person has the same build read again or takes it to Review. BLOCKED says
+            counted and no findings kept: the person has the same build read again or takes it to Review; an issue
+            moved meanwhile gets NEXT_STEP_UNAVAILABLE without a stop, as at any end. BLOCKED says
             the task declared its work blocked; the issue stays in its state and the task's why says what blocks it.
             A move of the issue by hand clears its reason and its stop.
         rounds:

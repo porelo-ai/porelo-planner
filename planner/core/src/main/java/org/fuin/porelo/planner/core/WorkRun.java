@@ -1133,9 +1133,7 @@ public final class WorkRun {
                                         choice,
                                         comment,
                                         previous.findings(),
-                                        WorkEnds.Reason.INVALID_FINDINGS
-                                                .name()
-                                                .equals(previous.reason()));
+                                        previous.unreadable());
                     } catch (final ReadingCycle.Refused refused) {
                         if ("ReadingRoundChanged".equals(refused.getMessage())) {
                             throw WorkRefusal.readingRoundChanged(

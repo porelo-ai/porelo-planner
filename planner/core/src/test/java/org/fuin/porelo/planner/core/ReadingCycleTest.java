@@ -162,4 +162,24 @@ class ReadingCycleTest {
                 .as("no grant past the largest count")
                 .hasMessage("ReadingRoundChanged");
     }
+
+    @Test
+    void aReadingWhoseFindingsCouldNotBeReadRefusesAReworkEvenWithWords() {
+        // Harm: a rework started with nothing to work from.
+        final Rounds stopped = new Rounds(0, 2, true);
+        assertThatThrownBy(
+                        () ->
+                                ReadingCycle.choose(
+                                        stopped,
+                                        0,
+                                        Choice.REWORK,
+                                        "Fix it anyway.",
+                                        List.of(),
+                                        true))
+                .as("no findings to rework")
+                .hasMessage("ReworkNeedsFindings");
+        assertThat(ReadingCycle.choose(stopped, 0, Choice.ONE_MORE_ROUND, "", List.of(), true))
+                .as("it is read again, with no round counted")
+                .isEqualTo(new Counted(new Rounds(0, 2, false), Next.READ));
+    }
 }

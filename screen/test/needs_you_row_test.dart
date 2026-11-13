@@ -331,6 +331,59 @@ void main() {
     expect(sent.map((call) => call['choice']), ['ONE_MORE_ROUND'], reason: 'Read again asks for one more reading');
   });
 
+  // Harm: a rework sent with nothing to work from once a failed choice renamed an unreadable stop, or a real stop's
+  // findings left without a Rework.
+  testWidgets('a stopped reading renamed by a failed choice offers Rework only when it keeps findings', (tester) async {
+    for (final (findings, rework) in [
+      (<Map<String, dynamic>>[], false),
+      (
+        [
+          {'number': 1, 'severity': 'BLOCKING', 'text': 'Keep the key inside.'},
+        ],
+        true,
+      ),
+    ]) {
+      final snapshot = _unreadableBoard();
+      final held = (snapshot['stories'] as List).cast<Map<String, dynamic>>().first;
+      // The planner reports the kept findings on the issue and on the run's entry for it.
+      (held['issues'] as List).cast<Map<String, dynamic>>().firstWhere(
+        (each) => each['id'] == 'Unreadable',
+      )['findings'] = findings;
+      ((held['work'] as Map<String, dynamic>)['issues'] as List).cast<Map<String, dynamic>>().firstWhere(
+          (each) => each['issue'] == 'Unreadable',
+        )
+        ..['reason'] = 'NEXT_STEP_UNAVAILABLE'
+        ..['findings'] = findings;
+      final source = MockPlanningSource()..boards['checkout'] = snapshot;
+      final board = PlanningBoard(source, 'checkout');
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await show(
+        tester,
+        PlanningBoards.storyAttention(
+          board,
+          board.stories.firstWhere((each) => each.id == 'Held'),
+        ).firstWhere((row) => row.issue?.id == 'Unreadable'),
+      );
+
+      expect(
+        find.byKey(const Key('reading-resolve Unreadable REWORK')),
+        rework ? findsOneWidget : findsNothing,
+        reason: rework ? 'kept findings can be reworked' : 'no findings to rework',
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('reading-resolve Unreadable ONE_MORE_ROUND')),
+          matching: find.text('Read again'),
+        ),
+        rework ? findsNothing : findsOneWidget,
+        reason: 'only a reading kept without findings is read again',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      board.dispose();
+      await tester.runAsync(source.end);
+    }
+  });
+
   // Harm: the window's planning tests pass a rework of an unreadable reading that the planner refuses.
   test('the fake refuses a rework of a reading whose findings could not be read', () async {
     final source = MockPlanningSource()..boards['checkout'] = _unreadableBoard();

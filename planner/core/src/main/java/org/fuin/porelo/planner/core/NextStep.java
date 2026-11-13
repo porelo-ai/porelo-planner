@@ -68,6 +68,16 @@ public final class NextStep {
         public Progress attention(final String why) {
             return new Progress(rounds, findings, true, why, answer);
         }
+
+        /**
+         * Whether the reading stopped because its findings could not be read; only that stop keeps
+         * no findings, so it stays known when a failed choice has replaced its reason.
+         *
+         * @return true for a stopped reading without findings
+         */
+        public boolean unreadable() {
+            return rounds.stopped() && findings.isEmpty();
+        }
     }
 
     /**
@@ -276,7 +286,7 @@ public final class NextStep {
         }
         if (judgment instanceof WorkEnds.NeedsOperator needs) {
             return needs.reason() == WorkEnds.Reason.INVALID_FINDINGS
-                    ? unreadable(binding, progress)
+                    ? unreadable(board, binding, progress)
                     : attention(binding, progress, needs.reason().name());
         }
         final Map<String, String> targets = new LinkedHashMap<>();
@@ -739,13 +749,22 @@ public final class NextStep {
 
     /**
      * Stops a reading whose findings could not be read, counting no round and keeping no findings,
-     * so the person can have the same build read again or take it to Review.
+     * so the person can have the same build read again or take it to Review; an issue moved on
+     * meanwhile only asks the person, as at any end, since no choice could act on its stop.
      */
-    private static Result unreadable(final Binding binding, final Map<String, Progress> progress) {
+    private static Result unreadable(
+            final Board board, final Binding binding, final Map<String, Progress> progress) {
         binding.issues()
                 .forEach(
                         id -> {
                             final Progress before = progress(progress, id);
+                            if (!board.issue(id)
+                                    .map(Issue::state)
+                                    .orElse("")
+                                    .equals(binding.state())) {
+                                progress.put(id, before.attention("NEXT_STEP_UNAVAILABLE"));
+                                return;
+                            }
                             progress.put(
                                     id,
                                     new Progress(

@@ -1060,6 +1060,78 @@ class WorkRunTest {
         assertThat(progress.rounds().stopped()).as("the reading stops").isTrue();
     }
 
+    @Test
+    void anUnreadableReadingStillRefusesAReworkAfterAChoiceThatCouldNotBeOffered() {
+        // Harm: a rework started with nothing to work from, once a failed choice renamed the stop.
+        final Fixture f = new Fixture();
+        unreadableReading(f);
+        f.record.value = withoutLandings(f.record.value);
+        final var failed =
+                f.run.choose(
+                        "ST1",
+                        "AA1",
+                        0,
+                        ReadingCycle.Choice.ONE_MORE_ROUND,
+                        "",
+                        f.store.board().revision().value(),
+                        null);
+        assertThat(failed.tasks()).as("no reader can be offered").isEmpty();
+        assertThat(failed.work().issues().get("AA1").reason())
+                .as("the failed choice names its own reason")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(failed.work().issues().get("AA1").rounds().stopped())
+                .as("the reading still waits for a choice")
+                .isTrue();
+        final String revision = f.store.board().revision().value();
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        0,
+                                        ReadingCycle.Choice.REWORK,
+                                        "Fix it anyway.",
+                                        revision,
+                                        null))
+                .as("a rework without findings is still refused")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).name())
+                                        .as("named for the missing findings")
+                                        .isEqualTo("ReworkNeedsFindings"));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stays in Reading")
+                .isEqualTo("Reading");
+    }
+
+    @Test
+    void anUnreadableReadingOfAnIssueMovedByHandMeanwhileAsksThePersonWithoutAStop() {
+        // Harm: a stop offered for choices that are all refused, leaving the person no way on.
+        final Fixture f = new Fixture();
+        final var reader = readerStarted(f);
+        f.store.save(
+                f.store.board().revision(),
+                new Writes(Map.of("AA1", "Review"), Map.of(), List.of()));
+        final var ended =
+                f.run.report(
+                        "reader",
+                        new WorkRun.Report(
+                                reader.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Findings:\n1. blocking | a.txt | x | not a line")));
+        final var progress = ended.work().issues().get("AA1");
+        assertThat(progress.rounds().stopped())
+                .as("no stop waits for a choice that its state refuses")
+                .isFalse();
+        assertThat(progress.needsYou()).as("the person is asked").isTrue();
+        assertThat(progress.reason())
+                .as("as at any end of an issue moved on")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+    }
+
     /** Builds AA1 and lets its reader end with a block that cannot be read. */
     private static WorkRun.Answer unreadableReading(final Fixture f) {
         return readingEnded(f, "Findings:\n1. blocking | a.txt | x | not a line");
@@ -1067,6 +1139,15 @@ class WorkRunTest {
 
     /** Builds AA1 and lets its reader end with the given answer. */
     private static WorkRun.Answer readingEnded(final Fixture f, final String answer) {
+        final var reader = readerStarted(f);
+        return f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.ENDED, "box", "workstation", ended(answer)));
+    }
+
+    /** Builds AA1 and starts its reader. */
+    private static WorkRun.Offered readerStarted(final Fixture f) {
         final var build =
                 f.run.order(
                                 "ST1",
@@ -1090,10 +1171,7 @@ class WorkRunTest {
                 "reader",
                 new WorkRun.Report(
                         reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
-        return f.run.report(
-                "reader",
-                new WorkRun.Report(
-                        reader.offer(), WorkRun.Event.ENDED, "box", "workstation", ended(answer)));
+        return reader;
     }
 
     @Test

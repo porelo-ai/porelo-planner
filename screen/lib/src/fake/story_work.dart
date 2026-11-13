@@ -143,7 +143,7 @@ class MockStoryWork {
       );
       // The planner stops a reading whose findings could not be read as INVALID_FINDINGS and keeps that reason.
       final unreadable = {
-        for (final item in ((story['work'] as Map?)?['issues'] as List? ?? const []).cast<Map>())
+        for (final item in ((story['work'] as Map?)?['issues'] as List? ?? const []).cast<Map<dynamic, dynamic>>())
           if (item['readingStopped'] == true && item['reason'] == 'INVALID_FINDINGS') item['issue'],
       };
       if (choice == 'REWORK' && unreadable.contains(issue['id'])) {

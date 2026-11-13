@@ -222,7 +222,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                       'REVIEW_ANYWAY',
                       'ONE_MORE_ROUND',
                       // A reading whose findings could not be read leaves a rework nothing to work from.
-                      if (row.reason != 'INVALID_FINDINGS') 'REWORK',
+                      if (!_unreadable) 'REWORK',
                     ])
                       _decision(context, reading, choice),
                   ],
@@ -419,7 +419,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   Widget _decision(BuildContext context, ReadingDecision reading, String choice) {
     final command = PlanningAction(
       id: 'reading.$choice',
-      label: _label(choice, unreadable: widget.row.reason == 'INVALID_FINDINGS'),
+      label: _label(choice, unreadable: _unreadable),
       unavailable: reading.unavailable,
       run: () async {
         if (choice == 'REWORK') {
@@ -446,6 +446,25 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
         child: Text(command.label),
       ),
     );
+  }
+
+  /// Whether the stopped reading's findings could not be read: its reason says so, or, once a failed choice renamed
+  /// it, the run keeps no findings for it, as only such a stop does.
+  bool get _unreadable {
+    final row = widget.row;
+    return switch (row.reason) {
+      'INVALID_FINDINGS' => true,
+      'NEXT_STEP_UNAVAILABLE' =>
+        row.board
+                .workOf(row.story)
+                ?.issues
+                .where((item) => item.issue == row.issue?.id)
+                .firstOrNull
+                ?.findings
+                .isEmpty ==
+            true,
+      _ => false,
+    };
   }
 
   String _label(String choice, {required bool unreadable}) => switch (choice) {

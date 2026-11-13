@@ -771,6 +771,7 @@ class ReadingDecision extends ChangeNotifier {
           'StaleRevision',
           'ReadingNotStopped',
           'ReadingRoundChanged',
+          'ReworkNeedsFindings',
           'SaveRefused',
         ].any((name) => planningRefused(error, name))) {
           unawaited(row.board.reload());
@@ -849,6 +850,7 @@ class ReadingDecision extends ChangeNotifier {
           'StaleRevision',
           'ReadingNotStopped',
           'ReadingRoundChanged',
+          'ReworkNeedsFindings',
           'SaveRefused',
         ].any((name) => planningRefused(error, name))) {
           unawaited(row.board.reload());
