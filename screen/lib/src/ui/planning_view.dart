@@ -459,7 +459,11 @@ class _BoardViewState extends State<_BoardView> {
                           key: Key('planning-not-live'),
                         ),
                       if (board.actionProblem case final problem?)
-                        Text(problem, key: const Key('planning-action-error')),
+                        Text(
+                          problem,
+                          key: const Key('planning-action-error'),
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       for (final entry in board.workProblems.entries) Text(_line('${entry.key}: ${entry.value}')),
                       for (final story in board.workUnsupported)
                         Text(_line('$story: the planner does not offer story work status.')),
