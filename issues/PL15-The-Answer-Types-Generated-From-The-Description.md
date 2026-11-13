@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL15",
   "title": "The Answer Types Generated From The Description",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Low",
   "rank": 3,
