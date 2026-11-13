@@ -108,6 +108,10 @@ exits. Each command is run from the repository's root:
   junction or mount; every directory above it only when no other principal may delete, rename or re-permission it.
   Owners and entries are read by security identifier, never by name, and a file system without access lists, such as
   FAT32, makes the planner refuse to start.
+- **The window's planning screen reads the address file by the same rules** on both systems before it sends the
+  token: on Windows it asks Windows PowerShell of the system's own directory for the owners and entries from the
+  drive's root down to `planner.json`, and refuses a `%LOCALAPPDATA%` reached through a link, a substituted drive or a
+  mapped share.
 
 - **The log** holds one line per entry - time, level, class and words, never a stack trace: the start, each board
   read with the faults it left out, each save, the tasks offered and each task's report, refused calls by their kind,

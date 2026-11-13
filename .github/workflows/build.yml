@@ -620,3 +620,27 @@ jobs:
             - name: The screen's analysis and tests
               run: ./mvnw -B -U -s settings.xml -Pall -pl screen,screen-app verify
 
+    # What only Windows shows of the screen: the planner's address file read through the real access control lists.
+    # Flutter alone, without Maven: the rest of the screen is the job above's, and this job needs no JDK.
+    screen-windows:
+        name: The planning screen on Windows
+        runs-on: windows-2025
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+              with:
+                  flutter-version-file: screen/pubspec.yaml
+                  cache: true
+
+            - name: The screen's tests tagged windows
+              timeout-minutes: 15
+              shell: bash
+              working-directory: screen
+              run: |
+                  flutter pub get
+                  flutter test --tags windows
+

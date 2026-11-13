@@ -10,6 +10,7 @@ import '../models.dart';
 import '../story_work_order.dart';
 import '../task_runs.dart';
 import '../work_reply.dart';
+import 'windows_access.dart';
 
 /// Where a project's planning is kept, as the planner is told it before its first read.
 class PlannerProject {
@@ -68,12 +69,24 @@ class PlannerAddress {
   /// runtime directory belongs to root or this account, one others may write being sticky as `/tmp` is; the runtime
   /// directory, its `porelo-planner` directory and `planner.json` are this account's, no symbolic link, and closed to
   /// group and others. [stat] answers each path's owner and mode, the link itself for a link.
+  ///
+  /// On Windows, [windows] by default, the base is [runtimeDirectory], `LOCALAPPDATA` of [environment] when null, and
+  /// the file is held to the planner's own rules there, as [WindowsAccess] states them: every directory from the
+  /// drive's root down to the base safe from other accounts, the base, `porelo-planner` and `planner.json` the
+  /// account's alone. [access] answers the paths in [WindowsAccess]'s form, or null when it cannot.
   static Future<PlannerAddress> read({
     String? runtimeDirectory,
     String runUser = '/run/user',
     Future<int?> Function() uid = _ownUid,
     Future<List<({int owner, int mode})>?> Function(List<String> paths) stat = _stat,
+    bool? windows,
+    Map<String, String>? environment,
+    Future<String?> Function(List<String> paths, String systemRoot) access = _windowsAccess,
+    Future<String?> Function(String path) realPath = _realPath,
   }) async {
+    if (windows ?? Platform.isWindows) {
+      return _readOnWindows(runtimeDirectory, environment ?? Platform.environment, access, realPath);
+    }
     var runtime = runtimeDirectory ?? Platform.environment['XDG_RUNTIME_DIR'] ?? '';
     if (runtime.trim().isEmpty) {
       final own = await uid();
@@ -108,6 +121,98 @@ class PlannerAddress {
     _ownOnly(base, entries[above.length], own, _directoryType);
     _ownOnly('$base/$directory', entries[above.length + 1], own, _directoryType);
     _ownOnly(path, entries[above.length + 2], own, _fileType);
+    return _readBounded(path);
+  }
+
+  static Future<PlannerAddress> _readOnWindows(
+    String? runtimeDirectory,
+    Map<String, String> environment,
+    Future<String?> Function(List<String> paths, String systemRoot) access,
+    Future<String?> Function(String path) realPath,
+  ) async {
+    final base = runtimeDirectory ?? _variable(environment, 'LOCALAPPDATA');
+    if (base.trim().isEmpty) {
+      throw const PlanningRefusal('NoAddress', {}, 'LOCALAPPDATA is not set');
+    }
+    _drivePath(base, 'LOCALAPPDATA');
+    final systemRoot = _variable(environment, 'SystemRoot');
+    _drivePath(systemRoot, 'SystemRoot');
+    // As the planner holds it: a base reached through a link, a substituted drive or a mapped share is not where the
+    // checks below look.
+    final real = await realPath(base);
+    if (real == null) {
+      throw PlanningRefusal('NoAddress', const {}, 'no planner runs: $base cannot be resolved');
+    }
+    if (real != base) {
+      throw PlanningRefusal('BadAddress', const {}, '$base is reached through a link or another drive, as $real');
+    }
+    final steps = base.split('\\').where((step) => step.isNotEmpty).toList();
+    // The drive's root down to the base, each held to the rules of a way there, as the planner holds them.
+    final above = [
+      '${steps.first}\\',
+      for (var count = 2; count <= steps.length; count++) steps.take(count).join('\\'),
+    ];
+    final own = '${above.last}\\$directory';
+    final path = '$own\\$file';
+    final paths = [...above, own, path];
+    final answer = await access(paths, systemRoot);
+    if (answer == null) {
+      throw PlanningRefusal('NoAddress', const {}, 'no planner runs: Windows could not say who may change $path');
+    }
+    final WindowsAccess read;
+    try {
+      read = WindowsAccess.parse(answer, paths.length);
+    } on FormatException catch (error) {
+      throw PlanningRefusal('BadAddress', const {}, error.message);
+    }
+    final faults = [
+      for (var index = 0; index < above.length; index++) read.notSafeAncestor(above[index], index),
+      read.notOwnersAlone(above.last, above.length - 1, directory: true, inheriting: false),
+      read.notOwnersAlone(own, above.length, directory: true, inheriting: true),
+      read.notOwnersAlone(path, above.length + 1, directory: false, inheriting: false),
+    ].nonNulls;
+    if (faults.isNotEmpty) throw PlanningRefusal('BadAddress', const {}, faults.first);
+    return _readBounded(path).timeout(
+      _windowsRead,
+      onTimeout: () => throw PlanningRefusal('NoAddress', const {}, 'no planner runs: $path was not read in time'),
+    );
+  }
+
+  static const _windowsRead = Duration(seconds: 10);
+
+  /// [path] with every link and substituted drive resolved, or null when it cannot be.
+  static Future<String?> _realPath(String path) async {
+    try {
+      return await Directory(path).resolveSymbolicLinks();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// A variable of [environment], its name in any case, as Windows reads it; empty when unset.
+  static String _variable(Map<String, String> environment, String name) =>
+      environment[name] ??
+      environment.entries
+          .firstWhere((entry) => entry.key.toLowerCase() == name.toLowerCase(), orElse: () => const MapEntry('', ''))
+          .value;
+
+  /// Refuses all but a drive's absolute path in its plain form below the drive's root: no UNC, device or `\\?\`
+  /// path, no `/`, no empty, `.` or `..` step, no `:` past the drive, which would name a file's stream, and no control
+  /// character.
+  static void _drivePath(String value, String name) {
+    final steps = value.split('\\');
+    if (!_drive.hasMatch(value) || steps.contains('.') || steps.contains('..')) {
+      throw PlanningRefusal('BadAddress', const {}, '$name is \'$value\', not an absolute path on a drive');
+    }
+  }
+
+  static final _drive = RegExp(r'^[A-Za-z]:(\\[^\\\x00-\x1f/:]+)+$');
+
+  static Future<String?> _windowsAccess(List<String> paths, String systemRoot) =>
+      WindowsAccess.ask(paths, systemRoot: systemRoot);
+
+  /// Reads [path], refusing more than the planner ever writes.
+  static Future<PlannerAddress> _readBounded(String path) async {
     RandomAccessFile? opened;
     try {
       opened = await File(path).open();
