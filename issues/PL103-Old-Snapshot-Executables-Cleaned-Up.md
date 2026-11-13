@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL103",
   "title": "Old Snapshot Executables Cleaned Up",
-  "state": "Analyzed",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 31,
