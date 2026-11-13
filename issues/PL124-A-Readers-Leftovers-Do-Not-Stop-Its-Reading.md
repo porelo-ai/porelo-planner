@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL124",
   "title": "A Reader's Leftovers Do Not Stop Its Reading",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 1,
@@ -27,8 +27,16 @@ its issue as UNPUSHED and does not hold it in Reading. A builder that leaves wor
   `NeedsOperator(UNPUSHED)` before it reads a reader's findings. A story test's reader that checked the builder's landed
   commit out into its workspace ended with unpushed 4 and no landing, and its issue stayed in Reading with UNPUSHED.
 - **The change.** `WorkEnds.judge` reads a READER's findings when it finished, whatever its unpushed count; FAILED and
-  BLOCKED stay as they are. The reader's order may also ask it to read the work with `git show` and `git diff` rather
-  than check it out.
-- **Test, unit, red first.** `WorkEndsTest` and `WorkRunTest`: a reader that finished with unpushed 4 and a clean
-  findings block moves its issue on, one with blocking findings stops its reading with them; a builder with unpushed 4
-  still needs the person. Harm: a clean reading held in Reading, or a builder's unpushed work passed over.
+  BLOCKED stay as they are. The screen's `planningEndRaised` raises UNPUSHED for no reader and INVALID_FINDINGS for a
+  reader whatever it left unpushed, and `planner.yaml` says how a reader's end is judged. `WorkRun.unpushedLeft`
+  refuses a Start's pass-over for a builder's unpushed commits only, not for what a reader left.
+- **Test, unit, red first.** `WorkEndsTest`: a reader that finished with unpushed 4 gives its clean or blocking
+  findings, and a builder with unpushed 4 still needs the person. The two older tests that held a finished reader's
+  unpushed end as needing the person now hold only an unfinished reader and an unpushed builder. Harm: a clean
+  reading held in Reading, or a builder's unpushed work passed over.
+- **Test, unit, red first.** `WorkRunTest`: a Start passing over the stop of a reader that left files unpushed is not
+  refused for them. Harm: a reader's leftovers blocking the person's Start.
+- **Reading by another model.** It found the pass-over refusal above, now fixed. Declined notes: a reader's own
+  commits are dropped unseen, which is the rule, since every rework and build runs as BUILDER and a reader delivers
+  only its answer; a declared BLOCKED or FAILED reader still needs the person whatever it left unpushed, as
+  `Outcome.of` decides before UNPUSHED.

@@ -30,8 +30,9 @@ bool planningEndRaised(String reason, PlanWorkTask task) {
   return switch (reason) {
     'BLOCKED' => ended.outcome == 'BLOCKED',
     'FAILED' => ended.outcome != 'BLOCKED' && (ended.finished == false || ended.outcome == 'FAILED'),
-    'UNPUSHED' => !ended.declaredStop && ended.finished == true && (ended.unpushed ?? 0) > 0,
-    'INVALID_FINDINGS' => task.role == 'READER' && !ended.declaredStop && ended.finished == true && ended.unpushed == 0,
+    // A reader delivers only its answer, so what it left unpushed raises nothing.
+    'UNPUSHED' => task.role != 'READER' && !ended.declaredStop && ended.finished == true && (ended.unpushed ?? 0) > 0,
+    'INVALID_FINDINGS' => task.role == 'READER' && !ended.declaredStop && ended.finished == true,
     _ => false,
   };
 }

@@ -41,12 +41,6 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | [PL29](README.md#pl29) | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl124"></a>[PL124](PL124-A-Readers-Leftovers-Do-Not-Stop-Its-Reading.md) | XS | - | A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -71,6 +65,7 @@ left out.
 | <a id="pl82"></a>[PL82](PL82-The-Commit-Check-Trusts-What-A-Commit-Says.md) | S | - | The commit check gives no exemption, no trailer and no switch-off of the stage rule to whoever writes a commit, in the planner and in the build tools alike |
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl87"></a>[PL87](PL87-The-Planner-Reads-Private-Repositories-With-Porelos-Login.md) | L | - | A planner Porelo starts reads and writes a project's private repositories with the login Porelo's vault holds, without a credential helper the person sets up by hand, the token never on disk or a command line |
+| <a id="pl124"></a>[PL124](PL124-A-Readers-Leftovers-Do-Not-Stop-Its-Reading.md) | XS | - | A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer |
 | <a id="pl100"></a>[PL100](PL100-A-Story-File-Without-A-Title-Is-Read.md) | S | - | A story file named `ST<n>.md`, which the work format allows beside `ST<n>-<Title>.md`, is read onto the board and seen as added, as the stories index already takes it |
 | <a id="pl35"></a>[PL35](PL35-A-Test-App-For-The-Planning-Screen.md) | M | - | A small Flutter app, run only from the source, that embeds only the planning screen against a mock: what the window hands the screen is entered by hand, every call the screen makes toward the window is shown, and the window's events back - a task started, ended or stopped, its answer - are sent by hand to see the board react |
 | <a id="pl37"></a>[PL37](PL37-A-Storys-Page-With-A-Folding-Description-And-A-Searchable-Issue-List.md) | S | - | A story's description can be folded and unfolded, and its issue list has the window's list design: a search that opens from a magnifier and a sort menu that flips |

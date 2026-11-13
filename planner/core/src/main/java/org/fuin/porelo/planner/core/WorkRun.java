@@ -2369,13 +2369,18 @@ public final class WorkRun {
             if (!raised.getValue().needsYou()) {
                 continue;
             }
-            Ended ended = null;
+            Offer last = null;
             for (final Offer offer : run.offers()) {
                 if (offer.ended() != null && offer.binding().issues().contains(raised.getKey())) {
-                    ended = offer.ended();
+                    last = offer;
                 }
             }
-            if (ended != null && ended.unpushed() > 0) {
+            final Ended ended = last == null ? null : last.ended();
+            // A reader delivers only its answer; what it checked out to read is no work to lose.
+            if (last != null
+                    && ended != null
+                    && ended.unpushed() > 0
+                    && !"READER".equals(last.binding().role())) {
                 throw WorkRefusal.notAllowed(
                         WorkProposal.story(board, story).state(),
                         to,

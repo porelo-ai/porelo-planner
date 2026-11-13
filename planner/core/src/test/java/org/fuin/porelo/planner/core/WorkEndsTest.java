@@ -16,16 +16,33 @@ import org.junit.jupiter.api.Test;
 /** A task's end judged once: a reader's findings read strictly, every other end told as it is. */
 class WorkEndsTest {
 
+    // Harm: a clean reading held in Reading for files the reader only checked out to read.
     @Test
-    void anUnfinishedOrUnpushedTaskNeedsTheOperatorAndItsWordsNeverBecomeFindings() {
+    void aFinishedReaderWithUnpushedFilesIsJudgedByItsFindings() {
+        assertThat(WorkEnds.judge("READER", Outcome.of(true, 4), "Read it.\nFindings:"))
+                .as("a clean reading, whatever the reader left in its workspace")
+                .isEqualTo(new Read(List.of()));
+        assertThat(
+                        WorkEnds.judge(
+                                "READER",
+                                Outcome.of(true, 4),
+                                "Findings:\n1. blocking | a.txt | 3 | Broken."))
+                .as("blocking findings, whatever the reader left in its workspace")
+                .isEqualTo(
+                        new Read(
+                                List.of(new Finding(1, Severity.BLOCKING, "a.txt", 3, "Broken."))));
+        assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 4), ""))
+                .as("a builder's unpushed work still needs the person")
+                .isEqualTo(new NeedsOperator(Reason.UNPUSHED));
+    }
+
+    @Test
+    void anUnfinishedTaskOrAnUnpushedBuilderNeedsTheOperatorAndItsWordsNeverBecomeFindings() {
         // Text of a failed reader taken as findings would pass or rework an issue nobody read.
         final String answer = "I stopped.\nFindings:\n1. note | - | - | Looks fine.";
         assertThat(WorkEnds.judge("READER", Outcome.of(false, 0), answer))
                 .as("not finished")
                 .isEqualTo(new NeedsOperator(Reason.FAILED));
-        assertThat(WorkEnds.judge("READER", Outcome.of(true, 2), answer))
-                .as("finished with commits left unpushed")
-                .isEqualTo(new NeedsOperator(Reason.UNPUSHED));
         assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 1), ""))
                 .as("a builder whose work did not arrive")
                 .isEqualTo(new NeedsOperator(Reason.UNPUSHED));

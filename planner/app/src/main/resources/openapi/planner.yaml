@@ -2693,7 +2693,8 @@ components:
           description: >-
             The outcome the task declared, copied unchanged from Porelo's end record; absent when it declared none.
             BLOCKED and FAILED leave the task's issues in their state under Needs you, whatever finished says, and why
-            carries the task's reason; DONE and an absent outcome are judged by finished and unpushed.
+            carries the task's reason; DONE and an absent outcome are judged by finished and unpushed, and a READER's
+            by finished and its findings alone, since a reader delivers only its answer.
     ReadingRequest:
       type: object
       additionalProperties: false

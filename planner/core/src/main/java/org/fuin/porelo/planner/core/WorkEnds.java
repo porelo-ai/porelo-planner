@@ -176,6 +176,10 @@ public final class WorkEnds {
      */
     public static Judgment judge(final String role, final Outcome outcome, final String answer) {
         Objects.requireNonNull(answer, "answer");
+        if (outcome == Outcome.UNPUSHED && "READER".equals(role)) {
+            // A reader delivers only its answer; what it checked out to read is no lost work.
+            return judge(role, Outcome.DONE, answer);
+        }
         return switch (outcome) {
             case UNPUSHED -> new NeedsOperator(Reason.UNPUSHED);
             case FAILED -> new NeedsOperator(Reason.FAILED);

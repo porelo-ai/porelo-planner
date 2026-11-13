@@ -2976,14 +2976,12 @@ class WorkRunTest {
     }
 
     @Test
-    void anUnfinishedOrUnpushedReadingNeverCountsOrBecomesFindings() {
-        // Prevents failed or unpushed work from being accepted as a completed review.
+    void anUnfinishedReadingNeverCountsOrBecomesFindings() {
+        // Prevents failed work from being accepted as a completed review.
         for (final WorkRun.Ended end :
                 List.of(
                         new WorkRun.Ended(
-                                "2026-01-01T00:00:00Z", false, "Failed", "Findings:\n", 0),
-                        new WorkRun.Ended(
-                                "2026-01-01T00:00:00Z", true, "Push failed", "Findings:\n", 1))) {
+                                "2026-01-01T00:00:00Z", false, "Failed", "Findings:\n", 0))) {
             final Fixture f = new Fixture();
             final var build = f.order().tasks().getFirst();
             f.start(build);
@@ -3824,6 +3822,30 @@ class WorkRunTest {
                 .as("unpushed work of the failed task refuses the Start")
                 .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("WorkNotAllowed"));
         assertThat(f.run.work("ST1").id()).as("the failed run stands").isEqualTo(failed.id());
+    }
+
+    @Test
+    void aStartPassingOverTheStopOfAReaderThatLeftFilesUnpushedIsNotRefusedForThem() {
+        // Harm: a reader's checked-out leftovers, no work of its own, block the person's Start.
+        final Fixture f = new Fixture();
+        final var reader = readerStarted(f);
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z", true, "Read", "No block here.", 4)));
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+
+        final Throwable refused =
+                org.assertj.core.api.Assertions.catchThrowable(
+                        () -> again(f, f.passOver(stopped, "AA1", "STOPPED")));
+        assertThat(refused == null ? "" : String.valueOf(refused.getMessage()))
+                .as("the Start is not refused for the reader's leftovers")
+                .doesNotContain("unpushed");
     }
 
     @Test
