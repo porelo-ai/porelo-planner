@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL30",
   "title": "The Screen Finds The Planner On Windows",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Medium",
   "rank": 19,
