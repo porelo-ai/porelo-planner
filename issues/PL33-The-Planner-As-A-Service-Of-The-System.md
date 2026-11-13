@@ -10,7 +10,7 @@
   "priority": "Low",
   "rank": 20,
   "blockedBy": [],
-  "covers": "On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen"
+  "covers": "On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen"
 }
 ```
 
@@ -23,7 +23,8 @@ the desktops the packages target.
 
 **What must be true.** The person always knows whether the planner runs and can start and stop it with the system's
 own commands: on Linux as a systemd user service of the account (`systemctl --user start|stop|status
-porelo-planner`). The package starts it at sign-in. The window keeps its own start of the planner only where no such
+porelo-planner`). It starts at sign-in once the account opts in, by the person or by the window; the package enables it
+for no account. The window keeps its own start of the planner only where no such
 service or task is installed, as for the ZIP, and nothing of the planner keeps running that the person cannot see or
 end.
 
@@ -46,11 +47,12 @@ Steps:
 1. **Linux, a systemd user service of the account** (`planner/app/pom.xml`, a new unit file beside the packages'
    other inputs). The packages ship `/usr/lib/systemd/user/porelo-planner.service`:
    `ExecStart=/usr/libexec/porelo/planner`, `Restart=on-failure`, no root, the account's own environment, Git login
-   and runtime directory, `WantedBy=default.target`. The package enables it for every account at sign-in (a user
-   preset, or `systemctl --global enable` in the package's install script), never starting it for an account from
-   the install itself. The planner stops on SIGTERM within the unit's stop timeout and leaves no address file that
+   and runtime directory, `WantedBy=default.target`. The package enables and starts it for no account: no user
+   preset, no `systemctl --global enable`; an account opts in with `systemctl --user enable porelo-planner`, by the
+   person or by the window, and `systemctl --user disable` undoes it. The planner stops on SIGTERM within the unit's stop timeout and leaves no address file that
    answers. Red first, integration in the package build: the built `.deb` and `.rpm` hold the unit at that path,
-   naming the installed executable, enabled for `default.target`, and `systemd-analyze verify` accepts it; unit in
+   naming the installed executable, installed for `default.target`, no preset or global enable shipped, and
+   `systemd-analyze verify` accepts it; unit in
    `app`: a stop by SIGTERM removes the address file.
 2. **The contract with the window.** The unit's name `porelo-planner.service` is what the window looks for: where
    it is installed, the window starts or asks it and never a detached process of its own;
@@ -59,15 +61,14 @@ Steps:
 
 The plan's reading by another model, each point checked in the code where it rests on it, asks the plan to state:
 
-- **Consent and opt-out.** A global enable runs the planner at every account's sign-in, and a user's
-  `systemctl --user disable` does not undo a global enable; only `systemctl --user mask porelo-planner` does. The
-  person's opt-out is that mask, documented, and an upgrade keeps it.
+- **Consent.** The package enables the unit for no account; each account opts in with `systemctl --user enable`
+  and out with `disable`, documented, and an upgrade keeps each account's choice.
 - **What the package scripts may do.** Only fixed package-owned paths and named service-manager calls:
-  `deb-systemd-helper --user enable|purge` and `deb-systemd-invoke --user restart|stop` on Debian, which act on running
+  `deb-systemd-helper --user purge` and `deb-systemd-invoke --user restart|stop` on Debian, which act on running
   user managers through `systemctl --user --machine <uid>@`, and the systemd user macros on the `.rpm`. No script
   sources a profile, runs a user's Git or credential helper, reads a token, or touches a runtime directory.
 - **Upgrade and removal.** An upgrade restarts the unit in every running user manager, so no planner of the older
-  install serves a newer window; a removal stops it there and removes the global enable while the unit still exists.
+  install serves a newer window; a removal stops it there and removes each account's enable links while the unit still exists.
 - **No restart loop.** `AddressFile.open` refuses a second planner (`alreadyRuns`); under `Restart=on-failure` that
   refusal would restart forever. The planner ends a refused start with an exit code of its own, which the unit names
   in `RestartPreventExitStatus=`, and the unit bounds restarts with `StartLimitIntervalSec=`/`StartLimitBurst=`.
@@ -81,7 +82,8 @@ The plan's reading by another model, each point checked in the code where it res
 - The unit is `porelo-planner.service`, a user unit at `/usr/lib/systemd/user/porelo-planner.service`.
 - Where that file exists and `systemctl --user` answers, the window never starts a planner of its own: it starts the
   unit with `systemctl --user start porelo-planner.service` when no address answers, sees it by the address file
-  beside `systemctl --user is-active porelo-planner.service`, and never stops it; at its own end it leaves the unit
+  beside `systemctl --user is-active porelo-planner.service`, and never stops it. It enables the start at sign-in
+  (`systemctl --user enable porelo-planner.service`) only on the person's choice; at its own end it leaves the unit
   running, as it leaves any planner it found. Stopping the unit belongs to the person.
 - Where the file is missing, or `systemctl --user` fails (no user bus, as in an ssh or container session), the window
   starts the planner itself as today, with `--end-with-input`, and logs why.
@@ -95,14 +97,11 @@ The plan's reading by another model, each point checked in the code where it res
 
 ## Acceptance
 
-- On Linux, after installing the package and signing in again: `systemctl --user status porelo-planner` shows the
-  planner running, `systemctl --user stop porelo-planner` ends it, and the window then says the planner is not
+- On Linux, after installing the package and signing in again, no planner runs until the person or the window
+  starts it.
+- On Linux, after `systemctl --user enable porelo-planner` and signing in again: `systemctl --user status
+  porelo-planner` shows the planner running, `systemctl --user stop porelo-planner` ends it, and the window then says the planner is not
   running instead of starting a hidden one.
-
-## Open questions
-
-- Does the package enable the start at sign-in globally for every account, with `systemctl --user mask` as the
-  opt-out, or does it stay off until the person or the window enables it per account?
 
 ## To be checked
 
@@ -113,5 +112,3 @@ The plan's reading by another model, each point checked in the code where it res
   target.
 - Whether `AddressFile` removes `planner.json` on a SIGTERM today: read, it does, through the context's close, and
   `NativeStartIT` already sees the file gone after a stop; the lock file stays by design.
-- Whether a user preset or `systemctl --global enable` is the one the `.deb` and `.rpm` both honor, measured on the
-  distributions the packages target.
