@@ -62,6 +62,31 @@ Steps:
 
 Order: 1, 2. Built after [PL66](README.md#pl66), whose choice it serves.
 
+What the plan's reading asks, and the build takes:
+
+- **The effort used is the window's word, never the offer's.** `PlanWorkTask.effort` is the effort the window's
+  `PlanWorker` sent back as used, null while it sends none; the offered effort is never copied into it
+  (`WorkAnswers.knownWork`, `WorkRun.report`).
+- **A person's effort reaches every task of a start by hand.** A Reading started from the dialog builds each reader
+  through `WorkRun.order` and `handReader` with `NextStep.Settings`, which carry no effort today, so `NextStep.task`
+  would take the rule's effort again: `Settings` gains the effort, used for a start by hand only; a reader or rework
+  that starts by itself keeps its own rule's effort.
+- **A helper's effort follows its choice.** `WorkOrder.validate` refuses a KEEP whose effort differs from the offer's,
+  as it refuses one whose agent or model differs; a CHANGE may change the effort, and `accept` builds each kept or
+  changed helper with the effort accepted, not `original.effort()`.
+- **An effort is a string or absent at every boundary.** `WorkRequests` and `WorkOrder` refuse a non-string, a blank
+  value, a control or line-separator character or one over the length bound, as `WorkRule.sound` bounds a rule's
+  names; absent and null mean "none". The screen's `PlanningTaskOrder` refuses the same when it reads an order.
+- **The screen starts only what the person confirmed.** `PlanningTaskOrder._matches` and `StoryWorkOrder.from`
+  compare the effort, absence included, so an answer whose effort differs from the one sent refuses the whole order
+  before any Start.
+- **`chosenBy` is the planner's.** It is derived in the core and answered; a `chosenBy` sent back in a `PlanWorker`
+  or `PlanAssignment` is ignored, never stored or answered. After a person changes the effort, `chosenBy` still names
+  the rule's choice, and the dialog shows the effort as changed.
+
+These grow step 1 by the core's start by hand (`NextStep.Settings`, `WorkRun`) and the helper rules, and step 2 by the
+order's comparison: about 180 min in all instead of 113, still L.
+
 Needs from other repositories, in words:
 
 - The window agreed to the members: `PlanningStartTask`, `PlanWorker` and `PlanAssignment` gain `effort` and
