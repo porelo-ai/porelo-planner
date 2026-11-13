@@ -6,17 +6,17 @@
   "id": "PL93",
   "title": "Start Instructions Per Working State From The Store",
   "state": "Analyzed",
-  "size": "M",
+  "size": "L",
   "priority": "High",
   "rank": 1,
   "blockedBy": [],
-  "covers": "Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds",
-  "openQuestions": 1
+  "covers": "Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds"
 }
 ```
 
-**Size:** M - the store interface, the Git store and the order building in `core`, with no change to `planner.yaml`;
-two file formats other repositories own or read, `project.yml` and Porelo's `porelo.yml`, gain a key.
+**Size:** L - the store interface, the Git store's reading and its save (a clean reading's file deleted with the move),
+the order building in `core` and the offer's record in `app`; and a value Porelo or the window must report with
+`STARTED`, agreed across repositories.
 
 **What must be true.** A task started for a working state is told by its order where its results go and what to do with
 findings it finds, as the project's settings say, so readers and reworks across repositories follow one place without a
@@ -28,6 +28,15 @@ row when the reading is clean", and a rework:
 relative to the repository's root, without `..` and without a leading `/`; a malformed one is refused as a fault of the
 project, never used.
 
+## Decided
+
+- A clean reading's file is not kept: the planner deletes it when the issue moves on from the reading, in the commit
+  that saves that move.
+- The directory is Porelo's project-file key `readings: {directory}`, default `readings`; the planner reads that same
+  key and adds none of its own. A repository's `porelo.yml` may override it, but Porelo takes the override only after
+  its own signature check (or, in the project `default`, the machine's approval), so the files alone do not say which
+  directory a task got. The task gets the merged value as `PORELO_READINGS_DIRECTORY`, and that value decides.
+
 ## Plan
 
 What stands today, read in the code:
@@ -36,68 +45,85 @@ What stands today, read in the code:
   expands the rule's order through `WorkOrder.prompt` (`WorkOrder.java:456`, placeholders `{story}`, `{issues}` and
   `{tasks}` at `:28`), adds a rework's findings as "Reading and operator words" (`NextStep.java:531`), and appends the
   fixed text `FINDINGS` (`:20`) to a reader's order (`:534`). Its callers are `NextStep.after` (a reader after a build,
-  a rework after blocking findings), `NextStep.landed`, and in `WorkRun` the reading choice (`WorkRun.java:1249`,
-  `READER` or `BUILDER`) and `handReader` (`:1759`). A MAIN or BUILDER started by hand gets its order in `WorkRun`
-  (`:574`).
-- Whether a task reads or reworks is not a property of a working state: `stories/work.yml` names no role
+  a rework after blocking findings), `NextStep.landed`, and in `WorkRun` the reading choice (`WorkRun.java:1249`) and
+  `handReader` (`:1759`).
+- Whether a task reads or reworks is no property of a working state: `stories/work.yml` names no role
   (`WorkReader.java:38`). `core` decides it by the flow: the task after a build is a `READER` (`NextStep.java:357`); a
   `BUILDER` started from blocking findings into the rule's `blocked` state is a rework. The plan keys the instructions
   by that role, which is what "per working state" comes to in today's code.
-- No reading round reaches `NextStep.task`. The round is `Progress.rounds().rounds()` (`ReadingCycle.Rounds`), counted
-  by `ReadingCycle.count` when a reading is judged: a reader started now writes round `rounds() + 1`, a rework follows
-  round `rounds()`.
-- The store reads `project.yml` only at open, for the repositories (`ProjectFile.repositories`, `ProjectFile.java:30`,
-  parsed by `stories/Project.read`, which ignores keys it does not know). Nothing in the planner reads `porelo.yml`.
-  `StoreReader.read` (`StoreReader.java:64`) reads each repository's part at its commit through `Remote.read`;
-  `GitStore.board` (`GitStore.java:1410`) joins the parts into the `Board`, whose `faults` show what could not be read.
-  `RepoPath.checked` (`RepoPath.java:22`) already refuses `..`, a leading `/` and any character beyond
-  `[A-Za-z0-9._-]`.
+- No reading round reaches `NextStep.task`. The round is `Progress.rounds().rounds()` (`ReadingCycle.Rounds`): a reader
+  started now writes round `rounds() + 1`, a rework follows round `rounds()`.
+- The store reads `project.yml` only at open, for the repositories (`ProjectFile.repositories`, `ProjectFile.java:30`);
+  `stories/Project.read` ignores keys it does not know. Nothing reads `porelo.yml`. `StoreReader.read`
+  (`StoreReader.java:64`) reads each repository's part at its commit; `GitStore.board` (`GitStore.java:1410`) joins the
+  parts into the `Board`, whose `faults` show what could not be read.
+- Nothing tells the planner the directory a task was given: a task's `STARTED` and `ENDED` carry offer, container,
+  machine and Porelo's end record (`planner.yaml`, `TaskEventRequest` and `TaskEnded`), and Porelo's task records
+  (`PoreloTaskRecords`) carry no environment.
+- A move is saved by `GitStore.commitLocally` (`GitStore.java:563`): `SaveFiles.write` copies the commit's planning
+  files into the save's scratch directory, the edits change them there, `SaveFiles.changed` lists what differs from the
+  commit, a file in `before` that is gone counting as deleted (`SaveFiles.java:91`), and `GitRemote.commit` builds the
+  commit from blobs in the bare clone, removing a missing path from the index. No checkout is ever written.
+  `SaveFiles.subject` adds `[skip ci]` only when every path is under `issues`, `stories` or `stats` (`:177`).
 
 The steps:
 
-1. **store/api.** A record `StartInstructions(String reading, String rework)`: the store's own text, with `{issue}` and
-   `{round}` for `core` to fill. `Board` gains `Map<String, StartInstructions> instructions`, by repository; the
-   existing constructors give none, so the mock store and other callers stay as they are.
-2. **store/git.** `StoreReader.read` reads the own repository's `project.yml` and each repository's `porelo.yml` at the
-   part's commit; `Part` keeps the repository's `readings.directory`, or the fault that refused it. The directory is
-   the repository's own value, else the project's, else `readings`, checked by `RepoPath.checked` and refused when it
-   is no string. `GitStore.board` fills `Board.instructions` with the two texts above for every repository whose
-   directory stands, and adds a fault naming the file and the key for one that does not.
-3. **core.** `NextStep.task` takes the reading round. A `READER` order gets the reading text after `FINDINGS`, a rework
-   (a `BUILDER` built from findings: `NextStep.after`'s blocking branch and `WorkRun`'s `REWORK` choice) the rework
-   text, each filled with the issue and the round. A repository with no instructions refuses the task, so its issue
-   needs the person (`NEXT_STEP_UNAVAILABLE`), as for any task that cannot be built (`NextStep.java:372`,
-   `WorkRun.java:1269`): no reader starts without the place the planner reads. Other orders are unchanged.
+1. **store/api.** A record `Readings(String path, String reading, String rework)` per repository in `Board`: `path` is
+   the store's template `<directory>/{issue}-reading-{round}.md`, the two texts the instructions above with `{path}`.
+   `Writes` gains `cleared`, issue to path: the reading files a save deletes.
+2. **store/git, the directory.** `StoreReader.read` reads the project file's `readings.directory` in the own
+   repository's part and each repository's `porelo.yml`. The value passes `RepoPath.checked` (`RepoPath.java:22`:
+   `[A-Za-z0-9._-]` segments, no `..`, no leading `/`), and each segment is refused when it is a Windows device name
+   (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`, `LPT0`-`LPT9`, in any case, with or without an extension) or ends in a
+   `.`, so the path names one file on every system. Until a task's own directory is reported (see the agreement below),
+   a repository whose `porelo.yml` names a directory other than the project's gets no `Readings` and a board fault:
+   its task would write where the planner does not read.
+3. **core, the order.** `NextStep.task` takes the round, fills the path, and adds the reading text to a `READER`'s
+   order after `FINDINGS` and the rework text to a rework's. A repository with no `Readings` refuses the task, so its
+   issue needs the person (`NEXT_STEP_UNAVAILABLE`, `NextStep.java:372`, `WorkRun.java:1269`).
+4. **core and app, the path kept.** The filled path and the round are saved with the offer (`WorkRun.Offer`, kept in
+   the local record by `WorkRecord`), never computed again: a refreshed board, a resent report or a later round never
+   moves an existing task's reading or deletion. A rework's order and offer take the path saved with the reader it
+   follows.
+5. **The clean reading's file deleted with the move.** When a clean reading moves its issue on (`NextStep.after`, the
+   non-blocking branch, target `rule.done()`), the move's `Writes.cleared` carries the reader's saved path.
+   `GitStore.commitLocally` takes a cleared path only when it is that issue's saved shape in that issue's repository,
+   reads it into `before` and leaves it out of the scratch directory, so `SaveFiles.changed` lists it and
+   `GitRemote.commit` removes it in the same commit as the move. A path the commit does not hold as a plain file, at
+   exactly that spelling, deletes nothing. `SaveFiles.subject` counts the readings directory as planning, so the
+   commit still carries `[skip ci]`. This is the only deletion the planner makes.
 
 Tests, red first, by level:
 
-- Unit, `NextStepTest` (the first red one): a reader of round 1 of `AA1` is told `readings/AA1-reading-1.md`, and
-  after one more round, round 2; a rework after the blocking reading of round 1 is told to delete that file; a
-  repository without instructions gets no task and its issue needs the person. Harm: a reader writing where the planner
-  never reads, a stale file taken for a later round's, or a reader started with no place at all.
-- Unit, `StoreReaderTest` over its fake remote: the default, the project's value, a repository's override, and `../x`,
-  `/x`, `a b` and a number each refused as a board fault with no instructions for that repository. Harm: a reader told
-  to write outside its repository, or where another repository's setting points.
-- Unit, `GitStoreReadTest`: `Board.instructions` follows a changed `porelo.yml` on the next refresh. Harm: an order
-  naming a directory the project no longer uses.
+- Unit, `NextStepTest` (the first red one): a reader of round 1 of `AA1` is told `readings/AA1-reading-1.md`, after one
+  more round round 2; a rework is told to delete the file its reader was told; a repository without `Readings` gets no
+  task and needs the person. Harm: a reader writing where the planner never reads, or a stale file taken for a later
+  round's.
+- Unit, `WorkRunTest`: a board refreshed with another directory leaves a started reader's and its rework's path as
+  saved; a clean reading's move carries exactly that path in `cleared`. Harm: a reading judged or deleted at a place
+  the task never wrote.
+- Unit, `StoreReaderTest` over its fake remote: the default, the project's value, and `../x`, `/x`, `a b`, `CON`,
+  `nul.md`, `x.` and a number refused as faults; a `porelo.yml` naming another directory gives no `Readings`. Harm: a
+  reader told to write outside its repository, or where the planner does not read.
+- Unit, `GitStoreSaveTest`: a move with a cleared path removes that file and nothing else, in the move's commit, with
+  `[skip ci]`; a cleared path of another issue, another repository or another shape is refused; a path the commit does
+  not hold changes nothing. Harm: the planner deleting a file it does not own.
 
 ## Acceptance
 
 - The tests above, each seen red first; the full build and the documents' checks green.
-- A reader's and a rework's order, as the planner offers them, name the reading round's file in the project's
-  directory; a project with a malformed directory shows the fault on the board and starts no reader there.
+- A reader's and a rework's order name the reading round's file in the project's directory; a clean reading's move
+  deletes that file in its own commit.
 
-## Open questions
+## Agreement needed
 
-- A clean reading's file is deleted by no rework, so `readings/` keeps one file per clean reading: does it stay for
-  good as the record of the reading, or is it deleted when the issue moves on, and by whom?
+- Porelo or the window reports the readings directory a task was given (`PORELO_READINGS_DIRECTORY`) with `STARTED`, a
+  new field of `TaskEventRequest` in `planner.yaml`; the planner then saves that value with the offer and stops
+  refusing a repository whose `porelo.yml` names another directory.
 
 ## To be checked
 
-- Whether Porelo accepts an unknown key `readings` in `porelo.yml` or refuses it; `porelo.yml` is Porelo's format, so
-  the key needs agreement with its agent in the channel before this is built.
-- Whether another repository's tools (the shared tools, Porelo's project setup) read `project.yml` strictly, so a new
-  top-level `readings` needs agreement there too.
 - Whether a repository's own checks (`check-readmes`, `check-doc-site`, `check-citations`) trip on a Markdown file
   under `readings/`.
-- Whether a reader's task may push a commit at all, since Porelo's gate gives it the work it reads read only.
+- Whether a reader's landed commit has reached the tracked branch when its issue moves on; if not, the move deletes
+  nothing and the file arrives later.
