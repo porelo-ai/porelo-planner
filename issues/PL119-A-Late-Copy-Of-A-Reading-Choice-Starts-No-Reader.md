@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL119",
   "title": "A Late Copy Of A Reading Choice Starts No Reader",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Low",
   "rank": 55,
