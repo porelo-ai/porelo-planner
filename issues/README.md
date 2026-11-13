@@ -66,6 +66,7 @@ left out.
 |---|---|---|---|
 | <a id="pl85"></a>[PL85](PL85-The-Planner-In-A-Real-Run-From-Idea-To-Finished.md) | M | - | On a local VM the real planner beside a real installed Porelo carries one story from a discussed idea to Finished with one real, low-cost agent task in the test organization, and a read-only probe reads each of the planner's own moves from its API, the store's files and the forge |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
+| <a id="pl115"></a>[PL115](PL115-A-Check-Of-The-Publishing-Rights.md) | XS | - | A workflow started by hand shows, line by line with the HTTP status, what anyone may read and what the Build's publishing token may read, upload and delete in Artifactory's porelo-files and files, so a publish that fails on a right is told from one that fails on the code |
 
 ## Review
 
