@@ -73,6 +73,21 @@ Steps:
    `![a](https://example.org/p.png)` starts no network fetch - harm: a description that tells a server who reads it; an
    unknown format shows the text unchanged - harm: a text of another adapter lost or garbled.
 
+Rules from the plan's reading, which the build keeps:
+
+- `TextFormat` refuses a name outside `^[A-Z][A-Z0-9_]{0,31}$`, without echoing control characters, so no adapter
+  breaks the contract or writes into a log; `ApiMatchesDescriptionTest` holds both members to that pattern.
+- `LoggedStore`, which wraps every opened store, hands `textFormat()` on; `BoardController` reads the work and the
+  store's format from one `Projects.given(name)`, so a store replaced meanwhile lends no format to another's board.
+- `mock/board.json` stays as it is, since `MockStore.textFormat()` gives `MARKDOWN`; `MockAnswersTest`'s served answers
+  under `screen/test/served/mock/` take the members in step 2.
+- The screen: `PlanStory.withMoves` keeps the format; `planningShown` cleans every text piece after parsing - headings,
+  paragraphs, code spans and blocks, link labels, alternative texts - so a character reference such as `&#x202e;`
+  reaches the screen no more than a raw one; a link is followed only for `https`
+  with a host and no user part, through the guarded call `planningWebAction` makes, its address shown in a tooltip; a
+  text over a size or nesting bound is shown plain; an empty description still reads *Not reported*, and an issue
+  whose text is unreported or settled shows no empty section.
+
 No test needs a VM; every level is unit or widget level, plus the app's existing HTTP tests.
 
 ## Acceptance
