@@ -32,7 +32,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl131"></a>[PL131](PL131-One-Pin-For-A-Given-State.md) | XS | - | A story whose state was given shows one mark, the filled pin, whether its issues fit that state or not; its tooltip still names the issues that do not fit, and no warning colour is added |
 | <a id="pl132"></a>[PL132](PL132-Follow-The-Issues-Again-From-The-Pin.md) | M | - | A click or right-click on a story's pin opens a menu with one entry, Follow the issues again, which removes the story's given state so it moves at once to the state its issues give; a story without issues is not offered it, since its head must hold a state |
 | <a id="pl133"></a>[PL133](PL133-The-Issue-Page-Laid-Out-Anew.md) | S | - | The issue page has one header - its id, repository, project and title, its state, size and worker as chips in one row with Switch to Manual in the worker's chip, and its revision shortened to seven characters with a copy button - and two columns: what must be true as flowing text and the description as Markdown on the left, one details panel with each named item a link on the right, below the text in a narrow window |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
@@ -44,6 +43,12 @@ left out.
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl131"></a>[PL131](PL131-One-Pin-For-A-Given-State.md) | XS | - | A story whose state was given shows one mark, the filled pin, whether its issues fit that state or not; its tooltip still names the issues that do not fit, and no warning colour is added |
 
 ## Review
 
