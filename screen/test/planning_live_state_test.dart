@@ -135,8 +135,8 @@ void main() {
     expect(board.pending.keys, ['S1']);
   });
 
-  // Harm: a closed watch looks current and hides how to retrieve the planner's current state.
-  testWidgets('an ended watch retains its board and offers a reload with an explanation', (tester) async {
+  // Harm: a closed watch looks current and hides how to bring planning back to the planner's current state.
+  testWidgets('an ended watch retains its board and its reload opens the watch anew', (tester) async {
     final source = _Source();
     final (boards, _) = await _show(tester, source);
     source.reconnect('demo', true);
@@ -156,10 +156,15 @@ void main() {
     expect(stale, contains('current'));
     expect(find.byKey(const Key('planning-reload')), findsOneWidget);
     source.board = smallBoard(revision: 'r2');
+    final ended = source.watches['demo'];
     await tester.tap(find.byKey(const Key('planning-reload')));
     await settle(tester);
-    expect(boards.selected!.snapshot!.revision, 'r2');
-    expect(boards.selected!.live, isFalse);
+    expect(source.watches['demo'], isNot(same(ended)), reason: 'the reload opened a watch anew');
+    source.reconnect('demo', false);
+    source.send('demo');
+    await settle(tester);
+    expect(boards.selected!.snapshot!.revision, 'r2', reason: 'the new watch answers the current board');
+    expect(boards.selected!.live, isTrue, reason: 'planning is live again');
   });
 
   for (final answered in [false, true]) {

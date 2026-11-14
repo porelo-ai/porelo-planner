@@ -424,6 +424,21 @@ void main() {
     );
   });
 
+  // Harm: with the planner's stream down, the one button the person sees leaves planning down and the board stale.
+  testWidgets('Reload planning re-opens a stream that is down and fetches the repositories', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    backend.fail(mockRefusal('org.fuin.porelo.Planner.Unreachable', {'detail': 'The planner stopped answering.'}));
+    await settle(tester);
+    expect(boards.selected!.live, isFalse, reason: 'the stream is down');
+    expect(find.byKey(const Key('planning-reload')), findsOneWidget, reason: 'one button offered');
+    await tester.tap(find.byKey(const Key('planning-reload')));
+    await settle(tester);
+    expect(backend.refreshes, ['checkout'], reason: 'the repositories were fetched');
+    expect(boards.selected!.live, isTrue, reason: 'the same press re-opened the stream');
+    expect(boards.selected!.problem, isNull, reason: 'the board read anew has no problem');
+    expect(find.byKey(const Key('planning-retry')), findsNothing, reason: 'no second button beside it');
+  });
+
   // Harm: dropping a card back on its own state requests another start or offers a misleading drop.
   testWidgets('a card over its current waiting or working state has no hint or start request', (tester) async {
     final (backend, _) = await _showBoard(tester);

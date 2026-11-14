@@ -470,20 +470,13 @@ class _BoardViewState extends State<_BoardView> {
                         ),
                       if (board.snapshot != null && !board.snapshot!.complete)
                         const Text('The planner did not report the complete planning workflow and story list.'),
-                      if (board.problem != null)
-                        TextButton.icon(
-                          key: const Key('planning-retry'),
-                          onPressed: () => unawaited(board.retry()),
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Retry planning'),
-                        ),
                       if (board.moveProblem case final problem?)
                         _failure(problem, theme, key: const Key('planning-move-error')),
                       if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
                       if (board.snapshot != null || board.problem != null)
                         TextButton.icon(
                           key: const Key('planning-reload'),
-                          onPressed: board.saving ? null : () => unawaited(board.reload(fetch: true)),
+                          onPressed: board.saving ? null : () => unawaited(board.reloadPlanning()),
                           icon: const Icon(Icons.refresh),
                           label: const Text('Reload planning'),
                         ),
@@ -1292,16 +1285,21 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           ),
           Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
           if (detail.loading) const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
-          if (widget.board.problem case final problem?) ...[
-            Text(problem, key: const Key('planning-watch-error')),
-            TextButton.icon(
-              key: const Key('planning-retry'),
-              onPressed: () => unawaited(widget.board.retry()),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry planning'),
-            ),
-          ],
+          if (widget.board.problem case final problem?) Text(problem, key: const Key('planning-watch-error')),
           if (!widget.board.live) const Text('Planning is no longer live. The last answer may be out of date.'),
+          if (widget.board.problem != null || !widget.board.live)
+            TextButton.icon(
+              key: const Key('planning-reload'),
+              onPressed: widget.board.saving ? null : () => unawaited(widget.board.reloadPlanning()),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reload planning'),
+            ),
+          if (widget.board.moveProblem case final problem?)
+            Text(
+              problem,
+              key: const Key('planning-reload-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           if (detail.problem case final problem?) ...[
             if (detail.story != null || detail.issues != null || detail.issue != null)
               const Text('Showing the last read details; the latest read failed.'),

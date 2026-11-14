@@ -1,0 +1,2 @@
+title: The planning screen has one Reload planning button, which fetches the repositories and reads the board anew and, when planning is down or has a problem, opens the planner's stream again in the same press; Retry planning is gone.
+type: changed

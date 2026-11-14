@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL128",
   "title": "One Reload Planning Button Whatever The State",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 2,

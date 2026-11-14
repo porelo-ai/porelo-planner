@@ -936,6 +936,32 @@ class PlanningBoard extends ChangeNotifier {
   /// Restarts this project's watch after a failure, retaining its last snapshot and view choices.
   Future<void> retry() => changeProject(backend, project);
 
+  /// Brings the board to what the repositories hold now, whatever its state: the planner fetches them, and a stream
+  /// that is down or a board with a problem has its watch re-opened, whose first answer is the board read anew.
+  Future<void> reloadPlanning() async {
+    if (_disposed || saving) return;
+    if (live && problem == null) return reload(fetch: true);
+    // Held like a save, so no second press and no move runs on the board the new watch replaces.
+    saving = true;
+    final source = backend;
+    final name = project;
+    _changed();
+    String? refused;
+    try {
+      await source.refreshProject(name);
+    } catch (error) {
+      // The watch is opened anew all the same; a fetch the planner refused is said, not taken for a fresh board.
+      refused = planningFailureWords(error);
+    }
+    if (_disposed) return;
+    // A project chosen meanwhile is opened by the save's end instead, which runs the queued change.
+    final switched = _queuedProject != null;
+    _finishOperation();
+    if (switched || !identical(backend, source) || project != name) return;
+    moveProblem = refused;
+    await retry();
+  }
+
   /// The displayed destination: the move in flight's target until its answer.
   String displayedState(PlanStory story) {
     final move = _pending[story.id];
