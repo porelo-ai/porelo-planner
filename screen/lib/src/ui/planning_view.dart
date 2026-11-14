@@ -87,8 +87,13 @@ class PlanningScreen extends StatelessWidget {
     required this.taskChanges,
     required this.agents,
     this.pageButton,
+    this.pageNote,
     super.key,
   });
+
+  /// The window's own words for the page, such as a first visit's explanation, shown under the board's head row and
+  /// under a story's or an issue's breadcrumb; none when null.
+  final Widget? pageNote;
 
   /// The window's own button for the page, such as its help, shown beside the screen's title: after the board's head
   /// and at the end of a story's or an issue's breadcrumb; none when null.
@@ -131,11 +136,17 @@ class PlanningScreen extends StatelessWidget {
       if (board == null) {
         return Column(
           children: [
-            TextButton(
-              key: const Key('planning-crumb 0'),
-              onPressed: () => host.go(const PlanningPlace()),
-              child: const Text('Planning'),
+            Row(
+              children: [
+                TextButton(
+                  key: const Key('planning-crumb 0'),
+                  onPressed: () => host.go(const PlanningPlace()),
+                  child: const Text('Planning'),
+                ),
+                ?pageButton,
+              ],
             ),
+            ?pageNote,
             Text(
               pinned
                   ? 'The planner supplying this planning item is no longer available.'
@@ -153,7 +164,9 @@ class PlanningScreen extends StatelessWidget {
             offstage: place.story != null,
             child: _BoardView(
               key: ObjectKey(board),
-              pageButton: pageButton,
+              // Kept mounted under a detail page, the board leaves the window's widgets to that page, built once.
+              pageButton: place.story == null ? pageButton : null,
+              pageNote: place.story == null ? pageNote : null,
               board: board,
               projects: boards.projects,
               select: (project) {
@@ -176,6 +189,7 @@ class PlanningScreen extends StatelessWidget {
             _PlanningDetailView(
               key: ValueKey((detailBoard, place.story, place.issue)),
               pageButton: pageButton,
+              pageNote: pageNote,
               startTask: startTask,
               agents: agents,
               machines: boards.machinesOf(detailBoard),
@@ -202,6 +216,7 @@ class PlanningScreen extends StatelessWidget {
 class _BoardView extends StatefulWidget {
   const _BoardView({
     required this.pageButton,
+    required this.pageNote,
     required this.board,
     required this.projects,
     required this.select,
@@ -217,6 +232,7 @@ class _BoardView extends StatefulWidget {
     super.key,
   });
   final Widget? pageButton;
+  final Widget? pageNote;
   final PlanningBoard board;
   final List<String> projects;
   final ValueChanged<String> select;
@@ -373,6 +389,7 @@ class _BoardViewState extends State<_BoardView> {
                           ?widget.pageButton,
                         ],
                       ),
+                      ?widget.pageNote,
                       Text('The stories of project ${board.project} by state, the most important first.'),
                       Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
                       const SizedBox(height: Space.normal),
@@ -1205,6 +1222,7 @@ Future<void> _openStart(
 class _PlanningDetailView extends StatefulWidget {
   const _PlanningDetailView({
     required this.pageButton,
+    required this.pageNote,
     required this.startTask,
     required this.agents,
     required this.machines,
@@ -1233,6 +1251,7 @@ class _PlanningDetailView extends StatefulWidget {
   final String story;
   final String? issue;
   final Widget? pageButton;
+  final Widget? pageNote;
   final VoidCallback onBoard, onParent;
   final ValueChanged<String> onStory, onIssue, onTask;
   final void Function(String story, String issue) onIssueOf;
@@ -1302,6 +1321,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
               ?widget.pageButton,
             ],
           ),
+          ?widget.pageNote,
           // The issue page names the project in its own header.
           if (widget.issue == null) Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
           if (detail.loading) const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),

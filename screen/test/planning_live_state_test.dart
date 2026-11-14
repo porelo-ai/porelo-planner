@@ -81,6 +81,7 @@ Future<(PlanningBoards, TestHost)> _show(
   _Source source, {
   bool answer = true,
   Widget? pageButton,
+  Widget? pageNote,
 }) async {
   tester.view
     ..physicalSize = const Size(1280, 1000)
@@ -98,7 +99,7 @@ Future<(PlanningBoards, TestHost)> _show(
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: planningView(boards: boards, host: host, pageButton: pageButton),
+        body: planningView(boards: boards, host: host, pageButton: pageButton, pageNote: pageNote),
       ),
     ),
   );
@@ -368,6 +369,48 @@ void main() {
         reason: 'beside the breadcrumb of $place',
       );
     }
+  });
+
+  // Harm: the window's help and its first-time words are missing on a planning page, so the person meets it unexplained.
+  testWidgets('the window\'s button and note stand on every planning page', (tester) async {
+    final (_, host) = await _show(
+      tester,
+      _Source(),
+      pageButton: const Icon(Icons.info_outline, key: Key('help')),
+      pageNote: const Text('First time here', key: Key('note')),
+    );
+    expect(find.byKey(const Key('note')), findsOneWidget, reason: 'on the board');
+    for (final place in const [
+      PlanningPlace(project: 'demo', source: 'local', story: 'S1'),
+      PlanningPlace(project: 'demo', source: 'local', story: 'S1', issue: 'I1'),
+    ]) {
+      host.go(place);
+      await settle(tester);
+      expect(
+        find.descendant(of: find.byKey(const Key('planning-detail')), matching: find.byKey(const Key('note'))),
+        findsOneWidget,
+        reason: 'under the breadcrumb of $place',
+      );
+    }
+    host.go(const PlanningPlace(project: 'gone', source: 'nowhere', story: 'S1'));
+    await settle(tester);
+    expect(find.text('The planner supplying this planning item is no longer available.'), findsOneWidget);
+    expect(find.byKey(const Key('help')), findsOneWidget, reason: 'beside the crumb of the page without planning');
+    expect(find.byKey(const Key('note')), findsOneWidget, reason: 'under the crumb of the page without planning');
+  });
+
+  // Harm: a window's button or note that carries a global key crashes the screen once a detail page opens.
+  testWidgets('a button and note with a global key are built once on a detail page', (tester) async {
+    final (_, host) = await _show(
+      tester,
+      _Source(),
+      pageButton: Icon(Icons.info_outline, key: GlobalKey()),
+      pageNote: Text('First time here', key: GlobalKey()),
+    );
+    host.go(const PlanningPlace(project: 'demo', source: 'local', story: 'S1'));
+    await settle(tester);
+    expect(tester.takeException(), isNull, reason: 'no key built twice');
+    expect(find.text('First time here'), findsOneWidget, reason: 'the note stands once');
   });
 
   testWidgets('shown issue details and workflow faults are cleaned while navigation keeps raw ids', (tester) async {

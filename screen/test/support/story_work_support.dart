@@ -107,6 +107,7 @@ PlanningScreen planningView({
   PlanningHost? host,
   PlanningAgents? agents,
   Widget? pageButton,
+  Widget? pageNote,
 }) => PlanningScreen(
   boards: boards,
   host: host ?? TestHost(),
@@ -114,4 +115,5 @@ PlanningScreen planningView({
   taskChanges: const NoTasks(),
   agents: agents ?? FakeAgents(),
   pageButton: pageButton,
+  pageNote: pageNote,
 );

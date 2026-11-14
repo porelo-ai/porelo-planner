@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL135",
   "title": "The Window's Button And Note On Every Page",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "Highest",
   "rank": 9,
@@ -27,6 +27,11 @@ first-time words stand under that title, without a head of the window's own abov
     under a story's or an issue's breadcrumb.
 - Red first: a screen test in `screen/test/planning_live_state_test.dart` that the button stands beside the crumb of
   the page without planning, and that the note stands on the board and on a story's and an issue's page.
+
+- Read in the code's reading, each fixed with a test seen red:
+  - The page without planning, the first a person meets, shows the note under its crumb too.
+  - The board kept mounted under a detail page leaves the button and the note to that page, so a widget with a global
+    key is built once.
 
 ## Acceptance
 
