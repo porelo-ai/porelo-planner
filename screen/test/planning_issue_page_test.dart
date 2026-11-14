@@ -170,6 +170,24 @@ void main() {
     expect(opened, [('ST2', 'PL2')], reason: 'opened under ST2, which holds it');
   });
 
+  // Harm: a sub-issue's page hides the way to its parent and offers a Sub-issues row that can never hold one.
+  testWidgets('a sub-issue names its parent as a link and has no sub-issues row', (tester) async {
+    final data = _board(
+      first: [
+        _issue('PL1'),
+        _issue('PL1.1', more: {'parent': 'PL1'}),
+      ],
+    );
+    final opened = await _page(tester, data, issue: 'PL1.1');
+    expect(find.text('Sub-issues'), findsNothing, reason: 'a sub-issue has none');
+    await tester.ensureVisible(find.byKey(const Key('planning-parent PL1')));
+    await tester.tap(find.byKey(const Key('planning-parent PL1')));
+    expect(opened, [('ST1', 'PL1')], reason: 'the parent opens under its story');
+    await _page(tester, data);
+    expect(find.text('Sub-issues'), findsOneWidget, reason: 'a top-level issue keeps its row');
+    expect(find.text('Parent'), findsNothing, reason: 'and names no parent');
+  });
+
   // Harm: a description loses its first line when that line is not the heading the page's header repeats.
   test('only a first Markdown heading opening with the issue is left out of its description', () {
     expect(planningWithoutHeading('# AB1 — A title\n\nThe text.', 'AB1', 'MARKDOWN'), '\nThe text.');

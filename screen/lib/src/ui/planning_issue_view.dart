@@ -322,16 +322,20 @@ class PlanningIssueView extends StatelessWidget {
               ),
         ],
       ),
-      (
-        'Sub-issues',
-        [
-          if (!reply.subIssuesReported)
-            const Text('Not reported completely')
-          else if (reply.subIssues.isEmpty)
-            const Text('None'),
-          for (final id in reply.subIssues) link(id, () => onIssue(id), key: Key('planning-sub-issue $id')),
-        ],
-      ),
+      // An id has one dot at most, so a sub-issue has no sub-issues of its own; its parent stands in their place.
+      if (issue.parent case final parent?)
+        ('Parent', [link(parent, openIssue(parent), key: Key('planning-parent $parent'))])
+      else
+        (
+          'Sub-issues',
+          [
+            if (!reply.subIssuesReported)
+              const Text('Not reported completely')
+            else if (reply.subIssues.isEmpty)
+              const Text('None'),
+            for (final id in reply.subIssues) link(id, () => onIssue(id), key: Key('planning-sub-issue $id')),
+          ],
+        ),
       ('Repository', [Text(planningValue(issue.repository))]),
       (
         'Work',
