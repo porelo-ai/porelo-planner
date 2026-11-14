@@ -7,8 +7,8 @@
   "title": "A Description Shown In Its Own Format",
   "state": "Backlog",
   "size": "L",
-  "priority": "Medium",
-  "rank": 23,
+  "priority": "High",
+  "rank": 1,
   "blockedBy": [],
   "covers": "Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text"
 }
