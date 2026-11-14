@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL129",
   "title": "No Show Finished And Rejected Filter",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 3,
