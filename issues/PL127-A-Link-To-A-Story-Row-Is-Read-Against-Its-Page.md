@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL127",
   "title": "A Link To A Story Row Is Read Against Its Page",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 1,
