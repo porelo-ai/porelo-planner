@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL131",
   "title": "One Pin For A Given State",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "Highest",
   "rank": 5,

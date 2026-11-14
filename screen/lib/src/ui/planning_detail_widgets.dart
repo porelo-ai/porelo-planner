@@ -145,6 +145,6 @@ Widget? planningGivenMark(PlanStory story) {
   return Tooltip(
     key: Key('planning-given ${story.id}'),
     message: message,
-    child: Icon(misfits.isEmpty ? Icons.push_pin_outlined : Icons.push_pin, size: PlanningStyle.rowIcon),
+    child: const Icon(Icons.push_pin, size: PlanningStyle.rowIcon),
   );
 }
