@@ -32,6 +32,8 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl128"></a>[PL128](PL128-One-Reload-Planning-Button-Whatever-The-State.md) | S | - | The planning screen has one button, Reload planning, which in one press fetches the repositories and reads the board anew, re-opening the planner's stream first when it is down or the board has a problem, instead of a Retry planning and a Reload planning the person cannot tell apart |
+| <a id="pl129"></a>[PL129](PL129-No-Show-Finished-And-Rejected-Filter.md) | S | - | The planning screen has no Show Finished and Rejected filter: the closed states always stand in their phase, which folds like any other, and the filter's preference and count go |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
