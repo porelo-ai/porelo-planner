@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL130",
   "title": "The Docs Say What The Code Does",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 4,
@@ -28,6 +28,10 @@ paths, defaults and behavior the planner and the screen actually have.
 - Each finding is checked in the code before anything changes. Where the code is right, the document is corrected;
   where the document is right and the code is wrong, the defect is filed as an issue of its own and the document stays.
 - No red test: the change is to documents only, and the tests tagged `documents` hold their form.
+
+- Read: 212 claims checked, 1 confirmed and fixed - the screen's README named Porelo's end record with five fields,
+  where it carries seven, `landed` and `outcome` too; none filed as a defect. The passages the reader could not settle
+  alone (the work tools reading no configuration, the shared directory's write bits) were read in the code and hold.
 
 ## Acceptance
 

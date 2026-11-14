@@ -8,7 +8,7 @@ the root's profile `all`.
 A window client can mix in `PlanningTaskReports` to route `taskEvent` through the offer's original source, project
 and story. Start returns only `PlanningTaskStarted(task, container)`; the first STARTED report binds the visible
 machine name verbatim. Later reports must agree with that binding. The report keeps Porelo's
-`PlanningTaskEnded(at, finished, why, answer, unpushed)` unchanged.
+`PlanningTaskEnded(at, finished, why, answer, unpushed, landed, outcome)` unchanged.
 
 `PlanningScreen` retains its `startTask` and `taskChanges` hooks on its boards for follow-up reading work. A window
 using `ReadingDecision` without a screen sets those hooks on the board itself. `PlanningTaskChanges.stop` stops
