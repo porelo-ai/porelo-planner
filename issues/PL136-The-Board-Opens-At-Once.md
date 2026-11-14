@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL136",
   "title": "The Board Opens At Once",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "Highest",
   "rank": 10,
