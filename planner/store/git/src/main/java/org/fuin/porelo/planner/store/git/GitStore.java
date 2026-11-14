@@ -39,6 +39,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -421,6 +422,12 @@ public final class GitStore implements PlanningStore {
         return text.replace(scratch + "/", "")
                 .replace(scratch + "\\", "")
                 .replace(scratch.toString(), "");
+    }
+
+    /** Answers Markdown: the Git store's stories and issues are Markdown files. */
+    @Override
+    public TextFormat textFormat() {
+        return TextFormat.MARKDOWN;
     }
 
     @Override

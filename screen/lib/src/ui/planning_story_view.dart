@@ -11,6 +11,7 @@ import '../planning_board.dart';
 import '../planning_detail.dart';
 import '../story_work.dart';
 import 'planning_detail_widgets.dart';
+import 'planning_text.dart';
 import 'planning_move_warning.dart';
 import 'story_work_attention.dart';
 import 'style.dart';
@@ -224,7 +225,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           }),
         ),
       ],
-      [if (!folded) SelectableText(planningValue(story.description))],
+      [if (!folded) PlanningText(text: story.description, format: story.descriptionFormat, openLink: openLink)],
     );
   }
 

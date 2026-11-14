@@ -104,6 +104,16 @@ public interface PlanningStore {
     }
 
     /**
+     * Names the format of every text the store gives - a story's description, an issue's text -
+     * since one store writes one format.
+     *
+     * @return the format, plain text unless the store names its own
+     */
+    default TextFormat textFormat() {
+        return TextFormat.PLAIN;
+    }
+
+    /**
      * Retires the store when its project was given anew: it touches its data no more, and a read
      * that waited for it is refused.
      */

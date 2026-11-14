@@ -339,6 +339,7 @@ class PlanStory {
       priority = source.priority,
       size = source.size,
       description = source.description,
+      descriptionFormat = source.descriptionFormat,
       issues = [for (final issue in source.issues) PlanIssue.withState(issue, moves[issue.id] ?? issue.state)],
       issuesReported = source.issuesReported,
       link = source.link,
@@ -355,6 +356,7 @@ class PlanStory {
       priority = map['priority'] is String ? map['priority'] as String : null,
       size = _planText(map, 'size'),
       description = _planText(map, 'description'),
+      descriptionFormat = _planText(map, 'descriptionFormat'),
       issues = _planList(map['issues'], PlanIssue.from),
       issuesReported = _planMapsReported(map['issues']),
       link = _planText(map, 'link'),
@@ -384,6 +386,9 @@ class PlanStory {
 
   /// Full story text from GetStory.
   final String description;
+
+  /// The format the store wrote [description] in, such as MARKDOWN; empty when unsaid, which reads as plain text.
+  final String descriptionFormat;
 
   /// Its issues, empty when unsaid.
   final List<PlanIssue> issues;
@@ -903,6 +908,7 @@ class PlanIssueDetail {
       subIssues = _planStrings(map['subIssues']),
       subIssuesReported = _planStringsReported(map['subIssues']),
       text = _planText(map, 'text'),
+      textFormat = _planText(map, 'textFormat'),
       textReported = map['text'] is String;
 
   /// The revision reported by the daemon.
@@ -913,6 +919,9 @@ class PlanIssueDetail {
 
   /// Whether the planner sent the text, an empty one included.
   final bool textReported;
+
+  /// The format the store wrote [text] in, such as MARKDOWN; empty when unsaid, which reads as plain text.
+  final String textFormat;
 
   /// The issue when supplied.
   /// The issue record returned by the daemon.

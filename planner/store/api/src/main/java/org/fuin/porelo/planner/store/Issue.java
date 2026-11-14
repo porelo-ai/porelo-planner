@@ -16,7 +16,8 @@ import org.jspecify.annotations.Nullable;
  * @param blockedBy the ids of the issues of its repository it waits on
  * @param parent its parent's id, for a sub-issue
  * @param link where a person reads it on the forge, if known
- * @param text its body, the text below the head
+ * @param text its whole text in the store's format, its title and head included; empty when its
+ *     file is gone
  * @param worker who works it; a head that names none is worked by an agent
  * @param risk how much harm its change can do; a head that names none is ordinary, and a sub-issue
  *     is worked with the higher of its own and its parent's
@@ -60,7 +61,7 @@ public record Issue(
      * @param blockedBy the ids of the issues it waits on
      * @param parent its parent's id, for a sub-issue
      * @param link where a person reads it on the forge, if known
-     * @param text its body
+     * @param text its whole text, title and head included
      */
     public Issue(
             final String id,

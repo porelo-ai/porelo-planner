@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL36",
   "title": "A Description Shown In Its Own Format",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -87,6 +87,11 @@ Rules from the plan's reading, which the build keeps:
   with a host and no user part, through the guarded call `planningWebAction` makes, its address shown in a tooltip; a
   text over a size or nesting bound is shown plain; an empty description still reads *Not reported*, and an issue
   whose text is unreported or settled shows no empty section.
+
+- Read in the code's reading: a text with more than 2000 lines, a line nested 16 deep, or a run of 64 emphasis or
+  bracket signs is shown plain before it is parsed, since the parser and the rendering follow nesting by recursion; a
+  link's address is checked in its percent-decoded form too. Declined: the text is parsed again on each rebuild of its
+  page; within those bounds that costs milliseconds, and a cache would hold a second copy of every description.
 
 No test needs a VM; every level is unit or widget level, plus the app's existing HTTP tests.
 

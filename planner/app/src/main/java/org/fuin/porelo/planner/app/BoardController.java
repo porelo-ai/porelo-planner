@@ -645,15 +645,19 @@ public class BoardController {
     public StoryReply story(
             @PathVariable("project") final String project, @PathVariable("story") final String id) {
         final String checked = storyId(project, id);
-        final WorkRun work = projects.work(name(project));
-        return work.view((board, snapshot) -> storyDetail(board, snapshot, checked, work.derive()));
+        final Projects.Given given = projects.given(name(project));
+        final String format = given.store().textFormat().name();
+        final WorkRun work = given.work();
+        return work.view(
+                (board, snapshot) -> storyDetail(board, snapshot, checked, work.derive(), format));
     }
 
     private static StoryReply storyDetail(
             final Board board,
             final WorkRun.Snapshot snapshot,
             final String checked,
-            final Moves.StoryState derive) {
+            final Moves.StoryState derive,
+            final String format) {
         final Story story = found(board, checked);
         return new StoryReply(
                 board.revision().value(),
@@ -668,7 +672,8 @@ public class BoardController {
                         story.link(),
                         issues(board, story, snapshot),
                         WorkAnswers.work(board, snapshot.runs().get(checked)),
-                        story.description()));
+                        story.description(),
+                        format));
     }
 
     /**
@@ -701,12 +706,17 @@ public class BoardController {
     public IssueReply issue(
             @PathVariable("project") final String project, @PathVariable("issue") final String id) {
         final String checked = checked(project, () -> Ids.issue(id), "issue");
-        return projects.work(name(project))
-                .view((board, snapshot) -> issueDetail(board, snapshot, checked));
+        final Projects.Given given = projects.given(name(project));
+        final String format = given.store().textFormat().name();
+        return given.work()
+                .view((board, snapshot) -> issueDetail(board, snapshot, checked, format));
     }
 
     private static IssueReply issueDetail(
-            final Board board, final WorkRun.Snapshot snapshot, final String checked) {
+            final Board board,
+            final WorkRun.Snapshot snapshot,
+            final String checked,
+            final String format) {
         final Issue issue =
                 board.issue(checked).orElseThrow(() -> new StoreException.NoSuchIssue(checked));
         final Matcher what = WHAT_MUST_BE_TRUE.matcher(issue.text());
@@ -732,6 +742,7 @@ public class BoardController {
                         IssueDetail.AttentionEnum.fromValue(view.attention().getValue()),
                         view.findings(),
                         issue.text(),
+                        format,
                         board.issues().stream()
                                 .filter(other -> checked.equals(other.parent()))
                                 .map(Issue::id)

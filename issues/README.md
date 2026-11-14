@@ -42,12 +42,6 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -55,6 +49,7 @@ left out.
 | <a id="pl127"></a>[PL127](PL127-A-Link-To-A-Story-Row-Is-Read-Against-Its-Page.md) | S | - | A link from an issue to a row anchor on a page of its own repository outside issues/, such as the stories index, is read against that page, and a story anchor of one digit is checked as well, so a link that reaches its row is no finding |
 | <a id="pl128"></a>[PL128](PL128-One-Reload-Planning-Button-Whatever-The-State.md) | S | - | The planning screen has one button, Reload planning, which in one press fetches the repositories and reads the board anew, re-opening the planner's stream first when it is down or the board has a problem, instead of a Retry planning and a Reload planning the person cannot tell apart |
 | <a id="pl129"></a>[PL129](PL129-No-Show-Finished-And-Rejected-Filter.md) | S | - | The planning screen has no Show Finished and Rejected filter: the closed states always stand in their phase, which folds like any other, and the filter's preference and count go |
+| <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and the stage records a commit carries are checked by the planner's command line, `check-commits`, with the build tools' fault lines and exit codes |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The minutes a repository's issues of one size took are computed in core from the record Porelo keeps of each task over the board's issues, whatever the backend, and the Git store's own velocity goes |

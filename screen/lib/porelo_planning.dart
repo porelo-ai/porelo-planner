@@ -22,6 +22,7 @@ export 'src/ui/planning_detail_widgets.dart';
 export 'src/ui/planning_move_warning.dart';
 export 'src/ui/planning_issue_view.dart';
 export 'src/ui/planning_story_view.dart';
+export 'src/ui/planning_text.dart';
 export 'src/ui/planning_view.dart';
 export 'src/ui/story_work_attention.dart';
 export 'src/ui/story_work_dialog.dart';

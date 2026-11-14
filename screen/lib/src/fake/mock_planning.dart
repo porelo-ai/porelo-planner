@@ -294,7 +294,11 @@ class MockPlanningSource implements PlanningSource {
     if (readStory case final read?) return read(project, story);
     final record = mockPlanningStory(board(project), story);
     if (record == null) throw mockRefusal('NoSuchStory', {'story': story});
-    return PlanStoryDetail.from({'story': record, 'revision': board(project)['revision']});
+    // The format the planner names for the Git store it stands in for.
+    return PlanStoryDetail.from({
+      'story': {...record, 'descriptionFormat': 'MARKDOWN'},
+      'revision': board(project)['revision'],
+    });
   }
 
   @override
@@ -313,7 +317,10 @@ class MockPlanningSource implements PlanningSource {
     if (partFailures['Issue'] case final failure?) throw failure;
     final record = mockPlanningIssue(board(project), issue);
     if (record == null) throw mockRefusal('NoSuchIssue', {'issue': issue});
-    return PlanIssueDetail.from({'issue': record, 'revision': board(project)['revision']});
+    return PlanIssueDetail.from({
+      'issue': {...record, 'textFormat': 'MARKDOWN'},
+      'revision': board(project)['revision'],
+    });
   }
 
   @override

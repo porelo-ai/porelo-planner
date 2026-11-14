@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../planning_detail.dart';
 import 'planning_detail_widgets.dart';
+import 'planning_text.dart';
 import 'style.dart';
 
 /// The issue's facts, sub-issues, acceptance criteria, last reading and sub-agents.
@@ -138,6 +139,16 @@ class PlanningIssueView extends StatelessWidget {
             const Text('No acceptance criteria.'),
           for (final text in reply.whatMustBeTrue) SelectableText(planningShown(text)),
         ]),
+        // A settled issue's file is gone and an unreported text is said nowhere, so neither leaves an empty box.
+        if (!settled && reply.textReported && reply.text.trim().isNotEmpty)
+          planningSection(context, 'Text', [
+            PlanningText(
+              key: const Key('planning-issue-text'),
+              text: reply.text,
+              format: reply.textFormat,
+              openLink: openLink,
+            ),
+          ]),
         planningSection(context, 'Last reader findings', [
           if (!reply.findingsReported)
             Text(reply.findingsSupplied ? 'Findings not reported completely' : 'Findings not reported'),

@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
@@ -138,6 +139,11 @@ class BoardReadsTest {
                     @Override
                     public @Nullable String storyState(final List<String> issueStates) {
                         return BoardReadsTest.storyState(issueStates);
+                    }
+
+                    @Override
+                    public TextFormat textFormat() {
+                        return TextFormat.MARKDOWN;
                     }
                 };
         final Projects projects =
@@ -270,6 +276,9 @@ class BoardReadsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("porelo-store@c1"))
                 .andExpect(jsonPath("$.story.description").value("The story's text."))
+                // Harm: the window shows the store's Markdown as raw signs, or a text as Markdown
+                // that is none.
+                .andExpect(jsonPath("$.story.descriptionFormat").value("MARKDOWN"))
                 .andExpect(jsonPath("$.story.size").value("M"))
                 // Harm: the story page showing a given state as fitting while the board marks it.
                 .andExpect(
@@ -296,7 +305,8 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.issue", org.hamcrest.Matchers.hasKey("parent")));
         mvc.perform(get("/projects/alpha/issues/AB01.1"))
                 .andExpect(jsonPath("$.issue.whatMustBeTrue").doesNotExist())
-                .andExpect(jsonPath("$.issue.text").value("No such paragraph."));
+                .andExpect(jsonPath("$.issue.text").value("No such paragraph."))
+                .andExpect(jsonPath("$.issue.textFormat").value("MARKDOWN"));
     }
 
     @Test

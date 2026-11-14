@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextFormat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -154,6 +155,14 @@ class GitStoreReadTest {
                                 Map.of(
                                         "porelo-store", repositories.head("porelo-store"),
                                         "porelo-other", repositories.head("porelo-other"))));
+    }
+
+    @Test
+    void itsTextsAreMarkdown() throws Exception {
+        // Named plain, a story's description would show its Markdown signs on the screen.
+        assertThat(store(null).textFormat())
+                .as("the Git store's stories and issues are Markdown files")
+                .isEqualTo(TextFormat.MARKDOWN);
     }
 
     @Test

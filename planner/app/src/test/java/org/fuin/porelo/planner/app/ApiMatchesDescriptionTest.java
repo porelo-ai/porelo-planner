@@ -342,6 +342,15 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
+    void theTextFormatPatternIsTheOneTheStoreChecks() {
+        // A format the store gives that the description refuses breaks the window's reading of
+        // every story and issue.
+        assertThat(description.at("/components/schemas/TextFormat/pattern").asText())
+                .as("the description's text format pattern against TextFormat's")
+                .isEqualTo("^" + org.fuin.porelo.planner.store.TextFormat.NAME.pattern() + "$");
+    }
+
+    @Test
     void bothWorkOperationsDescribeTheirBodiesAndEveryRefusal() {
         // A refusal omitted from the contract can be treated as a successful decision by a client.
         for (final String suffix : List.of("proposal", "work")) {

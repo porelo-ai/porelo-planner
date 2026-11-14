@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -260,6 +261,12 @@ public final class MockStore implements PlanningStore {
         }
         current = saved(board, writes);
         return current;
+    }
+
+    /** Answers Markdown: as the Git store it stands in for. */
+    @Override
+    public TextFormat textFormat() {
+        return TextFormat.MARKDOWN;
     }
 
     /**

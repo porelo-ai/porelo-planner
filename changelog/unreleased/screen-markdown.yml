@@ -1,0 +1,2 @@
+title: The planning screen renders a story's description and an issue's text as Markdown when the planner names that format - headings, emphasis, lists, quotes, code and https links opened through the window - shows an image as its alternative text without fetching it, and shows any other format as plain text.
+type: added

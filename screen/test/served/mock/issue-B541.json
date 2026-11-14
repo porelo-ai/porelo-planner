@@ -16,6 +16,7 @@
     "noRunHere" : true,
     "attention" : "NONE",
     "text" : "**What must be true.** The work meets the story description.\n",
+    "textFormat" : "MARKDOWN",
     "subIssues" : [ ],
     "whatMustBeTrue" : "The work meets the story description."
   }

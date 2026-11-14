@@ -1511,6 +1511,12 @@ components:
       description: A story's identifier.
       type: string
       pattern: '^ST[0-9]{1,5}$'
+    TextFormat:
+      description: >-
+        The format a store writes its texts in, an open name: MARKDOWN for the Git store, PLAIN, or a store's own. A
+        reader shows a format it does not know as plain text.
+      type: string
+      pattern: '^[A-Z][A-Z0-9_]{0,31}$'
     IssueId:
       description: An issue's identifier, a prefix and a number, with a sub-issue's number after a dot.
       type: string
@@ -2166,11 +2172,13 @@ components:
       allOf:
         - $ref: '#/components/schemas/Story'
         - type: object
-          required: [description]
+          required: [description, descriptionFormat]
           properties:
             description:
               type: string
               description: The story's text.
+            descriptionFormat:
+              $ref: '#/components/schemas/TextFormat'
 
     IssueList:
       description: A story's issues at one revision.
@@ -2269,11 +2277,13 @@ components:
       allOf:
         - $ref: '#/components/schemas/Issue'
         - type: object
-          required: [text, subIssues]
+          required: [text, textFormat, subIssues]
           properties:
             text:
               type: string
               description: The issue's text.
+            textFormat:
+              $ref: '#/components/schemas/TextFormat'
             subIssues:
               type: array
               items:

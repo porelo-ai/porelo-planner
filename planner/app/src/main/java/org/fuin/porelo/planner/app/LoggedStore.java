@@ -8,6 +8,7 @@ import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
@@ -70,6 +71,11 @@ final class LoggedStore implements PlanningStore {
     @Override
     public @Nullable String storyState(final List<String> issueStates) {
         return store.storyState(issueStates);
+    }
+
+    @Override
+    public TextFormat textFormat() {
+        return store.textFormat();
     }
 
     @Override
