@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL133",
   "title": "The Issue Page Laid Out Anew",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 7,
