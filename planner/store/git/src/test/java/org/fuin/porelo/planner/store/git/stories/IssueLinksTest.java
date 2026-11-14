@@ -234,6 +234,44 @@ class IssueLinksTest {
     }
 
     @Test
+    void aLinkToAStoryRowIsReadAgainstTheStoriesIndex() throws Exception {
+        // A row that stands must not be named as missing, and one that does not must be.
+        elsewhere.put(
+                "stories/README.md",
+                "| <a id=\"st5\"></a>[ST5](ST5-A.md) |\n| <a id=\"st11\"></a>[ST11](ST11-B.md) |\n");
+        pages.put(
+                "issues/B11-Another.md",
+                "For [ST5](../stories/README.md#st5), [ST11](../stories/README.md#st11),"
+                        + " not [ST12](../stories/README.md#st12) or [ST6](../stories/README.md#st6).\n");
+        assertThat(check())
+                .as("only the links to rows that do not stand, one digit and two")
+                .containsExactly(
+                        "issues/B11-Another.md:1: ../stories/README.md#st12 reaches no row's anchor",
+                        "issues/B11-Another.md:1: ../stories/README.md#st6 reaches no row's anchor");
+        assertThat(asked).as("the stories index read once").containsExactly("stories/README.md");
+    }
+
+    @Test
+    void aPageOutsideTheIssuesAndStoriesIsNeverFetched() throws Exception {
+        // Each such page would cost a Git process of its own, as many as one issue cares to link.
+        elsewhere.put("doc/a.md", "<a id=\"st5\"></a>\n");
+        pages.put("issues/B11-Another.md", "See [a](../doc/a.md#st5) and [b](../doc/b.md#b10).\n");
+        assertThat(check())
+                .as("no row stands outside the issues and stories, so neither link reaches one")
+                .containsExactly(
+                        "issues/B11-Another.md:1: ../doc/a.md#st5 reaches no row's anchor",
+                        "issues/B11-Another.md:1: ../doc/b.md#b10 reaches no row's anchor");
+        assertThat(asked).as("no page fetched outside the issues and stories").isEmpty();
+    }
+
+    @Test
+    void aHeadingAnchorOfOneDigitIsNoRow() throws Exception {
+        // A heading's own anchor has no <a id>, so taking it for a row would name a false finding.
+        pages.put("issues/B11-Another.md", "See [v2](notes.md#v2) and [h1](#h1).\n");
+        assertThat(check()).as("anchors of one digit that are no story's").isEmpty();
+    }
+
+    @Test
     void anIndexThatCannotBeReadLendsItsAnchorsAndIsNotReadForRows() throws Exception {
         // Its fault is named where the index is read; guessed rows would add faults of their own.
         pages.put("issues/README.md", TWO_ROWS);

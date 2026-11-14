@@ -32,8 +32,11 @@ public final class IssueLinks {
     /** A Markdown link with its text and target. */
     private static final Pattern LINK = Pattern.compile("\\[([^\\]\\n]*)\\]\\(([^)\\s]+)\\)");
 
-    /** A target ending in an anchor of an issue number's shape. */
-    private static final Pattern TO_A_ROW = Pattern.compile("#([a-z]{1,3}\\d{2,3})$");
+    /** A target ending in a row's anchor: an issue's number, or a story's of any length. */
+    private static final Pattern TO_A_ROW = Pattern.compile("#([a-z]{1,3}\\d{2,3}|st\\d{1,5})$");
+
+    /** The folders whose pages the reading already holds, so a link into them costs no Git run. */
+    private static final List<String> LINKED_FOLDERS = List.of("issues/", "stories/");
 
     /** The text of a link that is one issue number, perhaps emphasized. */
     private static final Pattern NUMBER_TEXT =
@@ -94,8 +97,8 @@ public final class IssueLinks {
      * @param pages each page read, by its path in the repository: the issue files and the indexes
      * @param indexes the rows of each index page that could be read, by its path; an index left out
      *     is named apart and only lends its anchors
-     * @param more reads another page under {@code issues/} that a link names, empty when there is
-     *     none
+     * @param more reads another Markdown page under {@code issues/} or {@code stories/} that a link
+     *     names, such as the stories index, empty when there is none
      * @return each fault, as {@code <path>:<line>: <what is wrong>}
      */
     public static List<String> check(
@@ -259,14 +262,14 @@ public final class IssueLinks {
         }
     }
 
-    /** The anchors of a page, a page no reading fetched read once when a link names it. */
+    /** The anchors of a page, a Markdown page no reading fetched read once when a link names it. */
     private Set<String> anchorsOf(final String file) {
         final Set<String> known = anchors.get(file);
         if (known != null) {
             return known;
         }
         final Set<String> found =
-                file.startsWith("issues/") && file.endsWith(".md")
+                file.endsWith(".md") && LINKED_FOLDERS.stream().anyMatch(file::startsWith)
                         ? more.apply(file).map(IssueLinks::anchorsIn).orElse(Set.of())
                         : Set.of();
         anchors.put(file, found);

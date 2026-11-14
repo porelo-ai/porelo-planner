@@ -1,0 +1,2 @@
+title: A link from an issue to a row of the project's stories index is read against that page, so a story that stands is no longer reported as an anchor no row has, and a story link of one digit is checked too.
+type: fixed
