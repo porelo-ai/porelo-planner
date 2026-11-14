@@ -1878,6 +1878,13 @@ components:
         to:
           type: string
           description: The state it moves to.
+        follow:
+          type: boolean
+          description: >-
+            For a story only: true when the story gives up its given state and takes the one its issues give, which
+            `to` names as the board's `derivedState` showed it. The move carries no issue and starts no work; it is
+            refused when the story's state is not given, when the board does not hold every issue its head names, or
+            when the issues give another state now.
     Moved:
       description: >-
         The board's revision after the save, every issue the batch moved, each once, and every run a confirmed save
@@ -2124,7 +2131,7 @@ components:
     Story:
       description: One story as the board shows it.
       type: object
-      required: [id, title, state, stateGiven, misfits, priority, size, link, issues, work]
+      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -2147,6 +2154,12 @@ components:
             known.
           items:
             $ref: '#/components/schemas/IssueId'
+        derivedState:
+          type: [string, 'null']
+          description: >-
+            For a given state, the state the story's issues give by the workflow's rule, which a move with `follow`
+            hands the story back to. Null when its state is not given, when the board does not hold every issue its
+            head names, or when the planner could not apply the rule.
         priority:
           type: string
         size:

@@ -92,6 +92,44 @@ public final class Misfits {
     }
 
     /**
+     * Answers the state a story's issues give it, for a story whose state was given: null when its
+     * state is not given, when the board does not hold every issue its head names, or when the
+     * store's rule cannot be applied, so nothing is offered from part of its issues.
+     *
+     * @param board the board
+     * @param story the story
+     * @param derive derives a story's state from its issues' states
+     * @return the state its issues give, or null
+     */
+    public static @Nullable String derivedState(
+            final Board board, final Story story, final Moves.StoryState derive) {
+        if (!story.stateGiven()) {
+            return null;
+        }
+        final Map<String, String> states = new HashMap<>();
+        for (final String id : story.issues()) {
+            board.issue(id).map(Issue::state).ifPresent(state -> states.put(id, state));
+        }
+        return derivedOf(story, states, derive);
+    }
+
+    /** The state the story's issues give, or null unless every issue it names is held. */
+    static @Nullable String derivedOf(
+            final Story story, final Map<String, String> states, final Moves.StoryState derive) {
+        if (!story.issuesWhole()
+                || story.issues().isEmpty()
+                || known(story.issues(), states).size() != story.issues().size()) {
+            return null;
+        }
+        try {
+            return derived(story.issues(), states, derive);
+        } catch (final RuntimeException e) {
+            // A store without a read board, or a state its rule does not know: not known.
+            return null;
+        }
+    }
+
+    /**
      * Answers those of a story's issues the board holds.
      *
      * @param issues the story's issues, in its order

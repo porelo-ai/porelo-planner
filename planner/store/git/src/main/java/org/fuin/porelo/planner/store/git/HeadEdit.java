@@ -137,7 +137,27 @@ final class HeadEdit {
      */
     static String storyState(final String text, final @Nullable String state) {
         final String[] lines = text.split("\n", -1);
-        return edit(lines, storyFence(lines), state == null ? null : plain(state), true);
+        final String edited =
+                edit(lines, storyFence(lines), state == null ? null : plain(state), true);
+        return state == null ? withSchema(edited) : edited;
+    }
+
+    /**
+     * A head that names no schema is the first one's, where a state is required; without its state
+     * it becomes the second's.
+     */
+    private static String withSchema(final String text) {
+        final String[] lines = text.split("\n", -1);
+        final int fence = storyFence(lines);
+        final int end = close(lines, fence);
+        for (int line = fence + 2; line < end - 1; line++) {
+            if (lines[line].stripLeading().startsWith("\"$schema\"")) {
+                return text;
+            }
+        }
+        final List<String> out = new ArrayList<>(List.of(lines));
+        out.add(fence + 2, "  \"$schema\": \"story-2.json\",");
+        return String.join("\n", out);
     }
 
     /** The line of the fence a story's head opens with, under its last data heading. */

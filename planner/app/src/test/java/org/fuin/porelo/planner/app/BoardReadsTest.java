@@ -250,6 +250,10 @@ class BoardReadsTest {
                                 .value(org.hamcrest.Matchers.contains("AB01")))
                 .andExpect(jsonPath("$.stories[1].misfits").isEmpty())
                 .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("misfits")))
+                // Harm: a given story offered back to its issues without the state they give.
+                .andExpect(jsonPath("$.stories[0].derivedState").value("Backlog"))
+                .andExpect(jsonPath("$.stories[1].derivedState").isEmpty())
+                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("derivedState")))
                 .andExpect(jsonPath("$.stories[1].issues[0].id").value("AB01.1"))
                 .andExpect(jsonPath("$.stories[1].issues[1].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories").param("state", "Backlog"))
@@ -267,6 +271,11 @@ class BoardReadsTest {
                 .as("ST1 given Review over AB01 in Backlog; ST2 by its issues")
                 .extracting(org.fuin.porelo.planner.app.answers.Story::misfits)
                 .containsExactly(List.of("AB01"), List.of());
+        // Harm: a stream without the state a given story's issues give hands the story nowhere.
+        assertThat(streamed.stories())
+                .as("ST1's issue gives Backlog; ST2's state is not given")
+                .extracting(org.fuin.porelo.planner.app.answers.Story::derivedState)
+                .containsExactly("Backlog", null);
     }
 
     @Test
@@ -283,6 +292,7 @@ class BoardReadsTest {
                 // Harm: the story page showing a given state as fitting while the board marks it.
                 .andExpect(
                         jsonPath("$.story.misfits").value(org.hamcrest.Matchers.contains("AB01")))
+                .andExpect(jsonPath("$.story.derivedState").value("Backlog"))
                 .andExpect(jsonPath("$.story.issues[0].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories/ST2/issues"))
                 .andExpect(status().isOk())

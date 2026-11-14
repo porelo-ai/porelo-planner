@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL132",
   "title": "Follow The Issues Again From The Pin",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Highest",
   "rank": 6,
@@ -48,6 +48,21 @@ one click, and the story stands at once where its issues put it.
   `BoardReadsTest` that a given story's answer carries `derivedState` and null where an issue is not held; a screen test
   that the entry removes the pin and moves the story, and that a story without issues shows no entry.
 - The window's agent is told of the new members before the hand-over.
+- Read in the code's reading, each fixed with a test seen red:
+  - A story whose head names an issue the store left out has no `derivedState` and follows nothing: a store story says
+    whether its issues are every one its head names.
+  - A follow move touches no issue and no story's work, so its preview warns of no running work and its save stops
+    none.
+  - A follow move stands in a batch of its own, since judged after the batch's own issue moves its issues would give
+    another state than the board's.
+  - A follow into a closed state is refused for the state its issues give, not for the issues not being done.
+  - A head of the first schema, which requires a state, names the second schema once its state is removed.
+  - The pin's entry sends the state it offered, so an offer read before the issues moved is refused by the planner.
+  - The mock refuses a follow as the planner does: in a batch with other moves, or with an issue in a state outside the
+    workflow.
+- Fixed without a test: a follow raises no local warning for a start the window handed on.
+- Declined: after a stale board, the re-asked question with no warnings stays, as for every move: it tells the person
+  that planning changed and asks again.
 
 ## Acceptance
 

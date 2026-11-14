@@ -89,6 +89,24 @@ class HeadEditTest {
         assertThat(HeadEdit.storyState(stated, null)).as("removed again").isEqualTo(STORY);
     }
 
+    // Prevents a head of the first schema, which requires a state, from losing it and no longer
+    // being read.
+    @Test
+    void aFirstSchemaHeadThatLosesItsStateNamesTheSecondSchema() {
+        final String first =
+                HeadEdit.storyState(STORY, "Idea")
+                        .replace("  \"$schema\": \"story-2.json\",\n", "");
+        assertThat(first).as("the fixture names no schema").doesNotContain("$schema");
+        final String unstated = HeadEdit.storyState(first, null);
+        assertThat(unstated)
+                .as("the second schema named, and no state")
+                .contains("{\n  \"$schema\": \"story-2.json\",\n")
+                .doesNotContain("\"state\"");
+        assertThat(HeadEdit.storyState(HeadEdit.storyState(STORY, "Idea"), null))
+                .as("a head that names its schema is left as it was")
+                .isEqualTo(STORY);
+    }
+
     @Test
     void aStoryWithoutItsDataSectionIsRefused() {
         assertThatThrownBy(() -> HeadEdit.storyState(STORY.replace("## Data\n\n", ""), "Rejected"))

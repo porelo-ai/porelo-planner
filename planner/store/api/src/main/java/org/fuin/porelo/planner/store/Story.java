@@ -17,6 +17,8 @@ import org.jspecify.annotations.Nullable;
  * @param issues the ids of the issues it needs, in its order
  * @param description its body, the text below the head
  * @param link where a person reads it on the forge, if known
+ * @param issuesWhole whether {@code issues} holds every issue its head names; false when the store
+ *     left one out, so nothing is read from its issues as if they were all
  */
 public record Story(
         String id,
@@ -27,7 +29,8 @@ public record Story(
         @Nullable String size,
         List<String> issues,
         String description,
-        @Nullable URI link) {
+        @Nullable URI link,
+        boolean issuesWhole) {
 
     /** The priorities a story may have, the highest first. */
     public static final List<String> PRIORITIES =
@@ -38,5 +41,31 @@ public record Story(
         Ids.story(id);
         issues = List.copyOf(issues);
         issues.forEach(Ids::issue);
+    }
+
+    /**
+     * A story whose issues are every one its head names.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state its state
+     * @param stateGiven whether its head states the state
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final boolean stateGiven,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link) {
+        this(id, title, state, stateGiven, priority, size, issues, description, link, true);
     }
 }

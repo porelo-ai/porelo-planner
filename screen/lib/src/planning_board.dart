@@ -988,6 +988,28 @@ class PlanningBoard extends ChangeNotifier {
     await _moveNow(id, PlanningStoryMove(id, to), PendingPlanningMove(story.state, to), revision: revision);
   }
 
+  /// Hands a story whose state was given back to its issues: it takes the state they give and keeps none of its own.
+  ///
+  /// [to] is the state the person was offered; the planner checks that its issues still give it, so an offer read
+  /// before they moved moves nothing.
+  Future<void> followIssues(String id, String to, {String? revision}) async {
+    if (_disposed || snapshot?.complete != true || !live) return;
+    final story = stories.where((story) => story.id == id).firstOrNull;
+    if (story == null || !story.stateGiven) return;
+    if (snapshot!.revision.isEmpty) {
+      moveProblem = 'The planner did not report a planning revision. Reload planning before moving stories.';
+      _changed();
+      return;
+    }
+    if (_oneAtATime(id)) return;
+    await _moveNow(
+      id,
+      PlanningStoryMove(id, to, follow: true),
+      PendingPlanningMove(story.state, to),
+      revision: revision,
+    );
+  }
+
   /// The issue move in flight, by issue id.
   Map<String, PendingPlanningMove> get pendingIssues => {
     for (final entry in _pending.entries)
@@ -1112,6 +1134,8 @@ class PlanningBoard extends ChangeNotifier {
   /// A start this window handed to Porelo that the planner does not report yet, a story's own or a follow-up task's,
   /// which no digest covers.
   List<PlanningMoveWarning> _localWarnings(PlanningMove move, PlanningMovePreview preview) {
+    // A story that follows its issues moves none of them, so it stops no start.
+    if (move is PlanningStoryMove && move.follow) return const [];
     final story = switch (move) {
       PlanningStoryMove(:final story) => story,
       PlanningIssueMove(:final issue) =>
@@ -1328,9 +1352,14 @@ class PlanningBoard extends ChangeNotifier {
       final previous = snapshot!;
       final destinations = <String, String>{};
       final storyDestinations = <String, String>{};
+      final followed = <String>{};
       final story = previous.stories.where((story) => story.id == move.id).firstOrNull;
+      final follows = move is PlanningStoryMove && move.follow;
+      // A story that follows its issues moves none of them.
       final expected = move is PlanningIssueMove
           ? [move.id]
+          : follows
+          ? <String>[]
           : story?.leastAdvancedIssues(previous.states, move.to)?.map((issue) => issue.id).toList();
       _pending.remove(key);
       if (expected != null && expected.every(reply.moved.contains)) {
@@ -1339,12 +1368,13 @@ class PlanningBoard extends ChangeNotifier {
         }
         // A story with issues stands where the daemon computes it, read again below.
         if (move is PlanningStoryMove && expected.isEmpty) storyDestinations[move.id] = move.to;
+        if (follows) followed.add(move.id);
         moveNotice = move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.';
       } else {
         moveProblem = planningShown('${move.id}: the planner did not confirm this destination.');
       }
       _accept(
-        PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations),
+        PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations, followed: followed),
         // Numbered after the save: a board streamed while it waited was read before the save was made.
         order: _readStarts(),
         reconcile: false,

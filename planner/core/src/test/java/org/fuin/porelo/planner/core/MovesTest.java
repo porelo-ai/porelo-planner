@@ -388,6 +388,137 @@ class MovesTest {
         assertThat(planned.moved()).as("as the window expects").containsExactly("PL1", "PL2");
     }
 
+    /** Stories given a state of their own, for a story that follows its issues again. */
+    private static Board given() {
+        return new Board(
+                new Revision("r1"),
+                new Workflow(STATES, List.of(), CLOSED),
+                List.of(
+                        story("ST1", "Backlog", false, "PL1"),
+                        story("ST2", "Idea", true),
+                        story("ST3", "Review", true, "PL3"),
+                        story("ST4", "Idea", true, "PL1", "PL6"),
+                        story("ST5", "Idea", true, "PL1", "OT99")), // not-a-citation
+                List.of(
+                        issue("PL1", "Review", null),
+                        issue("PL3", "Review", null),
+                        issue("PL6", "Building", null)),
+                WORK);
+    }
+
+    @Test
+    void aStoryThatFollowsItsIssuesAgainLosesItsGivenStateAndCarriesNoIssue() {
+        // Harm: a story handed back to its issues that moves an issue, or starts work, changes what
+        // nobody asked.
+        for (final Map.Entry<String, String> story :
+                List.of(entry("ST4", "Building"), entry("ST3", "Review"))) {
+            final Moves.Planned planned =
+                    Moves.check(
+                            given(),
+                            List.of(new Moves.Move(true, story.getKey(), story.getValue(), true)),
+                            false,
+                            DERIVE);
+            assertThat(planned.unstated())
+                    .as("%s's given state goes, to a working state or its own", story.getKey())
+                    .containsExactly(story.getKey());
+            assertThat(planned.issues()).as("no issue moves").isEmpty();
+            assertThat(planned.stories()).as("no state is given").isEmpty();
+        }
+        final MovePreview preview =
+                Moves.preview(
+                        given(),
+                        List.of(new Moves.Move(true, "ST4", "Building", true)),
+                        DERIVE,
+                        (issues, stories) -> List.of());
+        assertThat(preview.warnings()).as("nothing to confirm, so one click does it").isEmpty();
+    }
+
+    @Test
+    void aStoryFollowsItsIssuesOnlyToTheStateTheyGiveNowWithAllOfThemHeld() {
+        // Harm: a stale board, or one missing an issue, unstates a story into a state its issues do
+        // not give.
+        for (final Moves.Move move :
+                List.of(
+                        new Moves.Move(true, "ST4", "Backlog", true),
+                        new Moves.Move(true, "ST5", "Review", true),
+                        new Moves.Move(true, "ST2", "Idea", true),
+                        new Moves.Move(true, "ST1", "Review", true),
+                        new Moves.Move(false, "PL1", "Review", true))) {
+            final Moves.Refused refused = refused(given(), List.of(move));
+            assertThat(refused.name()).as("%s refused", move).isEqualTo("MoveNotAllowed");
+        }
+        assertThat(
+                        refused(given(), List.of(new Moves.Move(true, "ST4", "Backlog", true)))
+                                .getMessage())
+                .as("the state its issues give now is named")
+                .contains("Building");
+    }
+
+    @Test
+    void aStoryThatFollowsItsIssuesTouchesNoneOfThemSoItStopsNoWork() {
+        // Harm: handing a story back to its issues stops the work running on them.
+        final List<Moves.Move> follow = List.of(new Moves.Move(true, "ST4", "Building", true));
+        assertThat(Moves.touched(given(), follow)).as("no issue whose run it stops").isEmpty();
+        assertThat(Moves.stories(given(), follow)).as("no story whose run it stops").isEmpty();
+    }
+
+    @Test
+    void aStoryFollowsItsIssuesOnlyInABatchOfItsOwn() {
+        // Harm: judged after the batch's own issue moves, a story follows into a state its issues
+        // on the board do not give.
+        final Moves.Refused refused =
+                refused(
+                        given(),
+                        List.of(
+                                new Moves.Move(false, "PL6", "Review"),
+                                new Moves.Move(true, "ST4", "Review", true)));
+        assertThat(refused.getMessage()).as("refused for the batch").contains("batch of its own");
+    }
+
+    @Test
+    void aStoryFollowingIntoAClosedStateIsJudgedByWhatItsIssuesGive() {
+        // Harm: a refusal that names the wrong cause sends the person after a fault that is not
+        // there.
+        assertThat(
+                        refused(given(), List.of(new Moves.Move(true, "ST4", "Finished", true)))
+                                .getMessage())
+                .as("the state its issues give is named")
+                .contains("Its issues give Building now");
+    }
+
+    @Test
+    void aStoryWhoseHeadNamesAnIssueTheStoreLeftOutFollowsNothing() {
+        // Harm: read from the issues the store kept, the story would follow into a state its
+        // whole set of issues does not give.
+        final Story partial =
+                new Story(
+                        "ST6",
+                        "A story",
+                        "Idea",
+                        true,
+                        "High",
+                        null,
+                        List.of("PL1"),
+                        "",
+                        null,
+                        false);
+        final Board board =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(STATES, List.of(), CLOSED),
+                        List.of(partial),
+                        List.of(issue("PL1", "Review", null)),
+                        WORK);
+        assertThat(Misfits.derivedState(board, partial, DERIVE))
+                .as("no state its issues give is known")
+                .isNull();
+        assertThat(
+                        refused(board, List.of(new Moves.Move(true, "ST6", "Review", true)))
+                                .getMessage())
+                .as("the follow is refused")
+                .contains("does not hold all of its issues");
+    }
+
     private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {
         return refused(board, moves, confirm);
     }

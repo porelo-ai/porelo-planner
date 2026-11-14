@@ -49,6 +49,14 @@ class MovesEndpointTest {
     private ChangesRegistry changes;
 
     private static Board board(final String revision, final String state) {
+        return board(revision, state, false, state);
+    }
+
+    private static Board board(
+            final String revision,
+            final String state,
+            final boolean given,
+            final String issueState) {
         return new Board(
                 new Revision(revision),
                 new Workflow(
@@ -60,7 +68,7 @@ class MovesEndpointTest {
                                 "ST1",
                                 "A story",
                                 state,
-                                false,
+                                given,
                                 "High",
                                 null,
                                 List.of("AB01"),
@@ -71,7 +79,7 @@ class MovesEndpointTest {
                                 "AB01",
                                 "porelo-store",
                                 "An issue",
-                                state,
+                                issueState,
                                 "S",
                                 List.of(),
                                 null,
@@ -370,6 +378,38 @@ class MovesEndpointTest {
                 post("/projects/alpha/moves")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(Previewed.moves(body, preview)));
+    }
+
+    @Test
+    void aStoryThatFollowsItsIssuesLosesItsGivenStateAndMovesNoIssue() throws Exception {
+        // Harm: the follow member dropped on the way, so the story's move carries its issues
+        // instead.
+        current = board("r1", "Backlog", true, "Review");
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Review\", \"follow\": true}]}";
+        final String shown =
+                preview(body)
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.issues").isEmpty())
+                        .andExpect(jsonPath("$.warnings").isEmpty())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        mvc.perform(
+                        post("/projects/alpha/moves")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        Previewed.moves(
+                                                body.replace(", \"follow\": true", ""), shown)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
+        assertThat(saved).as("a plain move never saves on a follow move's preview").isEmpty();
+
+        moves(body).andExpect(status().isOk());
+        assertThat(saved).as("one save").hasSize(1);
+        assertThat(saved.get(0).unstated()).as("its given state goes").containsExactly("ST1");
+        assertThat(saved.get(0).issues()).as("no issue moves").isEmpty();
+        assertThat(saved.get(0).stories()).as("no state is given").isEmpty();
     }
 
     private ResultActions preview(final String body) throws Exception {

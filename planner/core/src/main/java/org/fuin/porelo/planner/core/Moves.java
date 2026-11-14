@@ -35,8 +35,22 @@ public final class Moves {
      * @param story whether it moves a story rather than an issue
      * @param id the story's or the issue's id
      * @param to the state it moves to
+     * @param follow for a story, whether it gives up its given state for the one its issues give,
+     *     which {@code to} names as the window saw it
      */
-    public record Move(boolean story, String id, String to) {}
+    public record Move(boolean story, String id, String to, boolean follow) {
+
+        /**
+         * One plain move.
+         *
+         * @param story whether it moves a story rather than an issue
+         * @param id the story's or the issue's id
+         * @param to the state it moves to
+         */
+        public Move(final boolean story, final String id, final String to) {
+            this(story, id, to, false);
+        }
+    }
 
     /** Derives a story's state from its issues' states, as the stories index does. */
     @FunctionalInterface
@@ -165,6 +179,11 @@ public final class Moves {
     public static Set<String> touched(final Board board, final List<Move> moves) {
         final Set<String> affected = new LinkedHashSet<>();
         for (final Move move : moves) {
+            if (move.follow()) {
+                // A story that follows its issues moves none of them, so it stops no work over
+                // them.
+                continue;
+            }
             if (!move.story()) {
                 affected.add(move.id());
                 continue;
@@ -196,6 +215,9 @@ public final class Moves {
     public static Set<String> stories(final Board board, final List<Move> moves) {
         final Set<String> stories = new LinkedHashSet<>();
         for (final Move move : moves) {
+            if (move.follow()) {
+                continue;
+            }
             if (move.story()) {
                 stories.add(move.id());
                 continue;
@@ -239,6 +261,12 @@ public final class Moves {
         for (final Move move : moves) {
             checkOne(board, working, move, seen);
         }
+        if (moves.size() > 1 && moves.stream().anyMatch(Move::follow)) {
+            // Judged with other moves, the state its issues give would be the batch's, not the
+            // board's.
+            final String reason = "A story follows its issues in a batch of its own.";
+            throw new Refused("MoveNotAllowed", reason, item("", "", "", reason));
+        }
         final Map<String, String> states = new LinkedHashMap<>();
         board.issues().forEach(issue -> states.put(issue.id(), issue.state()));
         final Map<String, String> issues = new LinkedHashMap<>();
@@ -248,8 +276,9 @@ public final class Moves {
         for (final Move move : moves) {
             if (move.story()) {
                 // A story is completed over its issues' own moves, never by carrying them along.
+                // A story that follows its issues again carries none: they already give its state.
                 final List<String> carried =
-                        completed(workflow, move.to())
+                        move.follow() || completed(workflow, move.to())
                                 ? List.of()
                                 : leastAdvanced(workflow, story(board, move.id()), states);
                 along.put(move.id(), carried);
@@ -269,7 +298,7 @@ public final class Moves {
         }
         checkParents(board, workflow, states);
         for (final Move move : moves) {
-            if (move.story() && completed(workflow, move.to())) {
+            if (move.story() && !move.follow() && completed(workflow, move.to())) {
                 checkCompleted(board, story(board, move.id()), move.to(), states);
             }
         }
@@ -279,6 +308,11 @@ public final class Moves {
         for (final Move move : moves) {
             if (move.story()) {
                 final Story story = story(board, move.id());
+                if (move.follow()) {
+                    checkFollow(story, move.to(), states, derive);
+                    unstated.add(story.id());
+                    continue;
+                }
                 // A story none of whose issues the board holds has nothing to fit, as one without.
                 if (Misfits.known(story.issues(), states).isEmpty()) {
                     stories.put(story.id(), move.to());
@@ -322,6 +356,10 @@ public final class Moves {
                     "Each move must name exactly one item, once.",
                     item(move.id(), "", move.to(), "Each move must name exactly one item, once."));
         }
+        if (move.follow() && !move.story()) {
+            final String reason = "Only a story follows its issues.";
+            throw new Refused("MoveNotAllowed", reason, item(move.id(), "", move.to(), reason));
+        }
         final String from;
         boolean manual = false;
         if (move.story()) {
@@ -346,7 +384,9 @@ public final class Moves {
             from = issue.state();
             manual = issue.worker() == Worker.MANUAL;
         }
-        if (working.contains(move.to()) && !manual) {
+        // A story that follows its issues takes their state, a working one too, without starting
+        // work.
+        if (working.contains(move.to()) && !manual && !move.follow()) {
             final Map<String, String> parameters = new LinkedHashMap<>();
             parameters.put("item", move.id());
             parameters.put("to", move.to());
@@ -361,6 +401,30 @@ public final class Moves {
             final String reason = "The destination must be a configured waiting or closed state.";
             throw new Refused("StateNotAllowed", reason, item(move.id(), from, move.to(), reason));
         }
+    }
+
+    /**
+     * A story follows its issues again only from a given state, with every issue its head names
+     * held, and only to the state those issues give now, so a stale board moves nothing.
+     */
+    private static void checkFollow(
+            final Story story,
+            final String to,
+            final Map<String, String> states,
+            final StoryState derive) {
+        final String reason;
+        final String now = Misfits.derivedOf(story, states, derive);
+        if (!story.stateGiven()) {
+            reason = "Its state is not given; it follows its issues already.";
+        } else if (now == null) {
+            reason =
+                    "The board does not hold all of its issues, so the state they give is not known.";
+        } else if (!now.equals(to)) {
+            reason = "Its issues give " + now + " now.";
+        } else {
+            return;
+        }
+        throw new Refused("MoveNotAllowed", reason, item(story.id(), story.state(), to, reason));
     }
 
     /** After the batch, no parent stands in a closed state while a sub-issue of it is open. */

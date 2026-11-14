@@ -112,7 +112,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
               Text(story.id),
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
-              ?planningGivenMark(story),
+              ?planningGivenMark(story, onFollow: (to) => unawaited(detail.board.followIssues(story.id, to))),
             ],
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),

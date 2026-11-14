@@ -326,16 +326,23 @@ class PlanIssue {
 /// One story, whose state is always the machine's answer.
 class PlanStory {
   /// Applies destinations explicitly confirmed by the save answer.
-  PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination)
+  ///
+  /// A story that [followed] its issues again stands in its [destination] with no state of its own.
+  PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination, {bool followed = false})
     : id = source.id,
       title = source.title,
       state = destination ?? source.state,
       // A story without issues saved to a destination states it, as the planner writes it.
-      stateGiven = destination != null || source.stateGiven,
+      stateGiven = !followed && (destination != null || source.stateGiven),
       // Misfits read before a move of the story or its issues are unknown until the board read after the save.
-      misfits = destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
+      misfits = followed
+          ? const []
+          : destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
           ? null
           : source.misfits,
+      derivedState = followed || destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
+          ? null
+          : source.derivedState,
       priority = source.priority,
       size = source.size,
       description = source.description,
@@ -353,6 +360,7 @@ class PlanStory {
       state = _planText(map, 'state'),
       stateGiven = map['stateGiven'] == true,
       misfits = map['misfits'] is List ? _planStrings(map['misfits']) : null,
+      derivedState = map['derivedState'] is String ? map['derivedState'] as String : null,
       priority = map['priority'] is String ? map['priority'] as String : null,
       size = _planText(map, 'size'),
       description = _planText(map, 'description'),
@@ -377,6 +385,9 @@ class PlanStory {
 
   /// The ids of its issues that do not fit its given state, in its order; empty when they fit, null when unknown.
   final List<String>? misfits;
+
+  /// For a given state, the state its issues give, to which it can follow them again; null when not offered.
+  final String? derivedState;
 
   /// Its reported priority, empty when unsaid.
   final String? priority;
@@ -444,17 +455,21 @@ class PlanningSnapshot {
     PlanningSnapshot source,
     this.revision,
     Map<String, String> moves,
-    Map<String, String> destinations,
-  ) : states = source.states,
-      phases = source.phases,
-      work = source.work,
-      faults = source.faults,
-      repositories = source.repositories,
-      repositoriesReported = source.repositoriesReported,
-      statesReported = source.statesReported,
-      phasesReported = source.phasesReported,
-      storiesReported = source.storiesReported,
-      stories = [for (final story in source.stories) PlanStory.withMoves(story, moves, destinations[story.id])];
+    Map<String, String> destinations, {
+    Set<String> followed = const {},
+  }) : states = source.states,
+       phases = source.phases,
+       work = source.work,
+       faults = source.faults,
+       repositories = source.repositories,
+       repositoriesReported = source.repositoriesReported,
+       statesReported = source.statesReported,
+       phasesReported = source.phasesReported,
+       storiesReported = source.storiesReported,
+       stories = [
+         for (final story in source.stories)
+           PlanStory.withMoves(story, moves, destinations[story.id], followed: followed.contains(story.id)),
+       ];
 
   /// Reads a snapshot without deriving story states.
   PlanningSnapshot.from(Map<String, dynamic> map)
@@ -538,8 +553,11 @@ sealed class PlanningMove {
 
 /// One story destination in an atomic board save.
 class PlanningStoryMove extends PlanningMove {
-  /// Keeps the daemon's story identifier and destination.
-  const PlanningStoryMove(this.story, this.to);
+  /// Keeps the daemon's story identifier and destination; [follow] hands a given story back to its issues.
+  const PlanningStoryMove(this.story, this.to, {this.follow = false});
+
+  /// Whether the story gives up its given state for [to], the state its issues give.
+  final bool follow;
 
   /// The story to move.
   final String story;
@@ -556,7 +574,7 @@ class PlanningStoryMove extends PlanningMove {
   /// The wire fields.
   @override
   /// Serializes the complete record with its stable identity.
-  Map<String, dynamic> toMap() => {'story': story, 'to': to};
+  Map<String, dynamic> toMap() => {'story': story, 'to': to, if (follow) 'follow': true};
 }
 
 /// One issue destination sent as part of an atomic issue move.

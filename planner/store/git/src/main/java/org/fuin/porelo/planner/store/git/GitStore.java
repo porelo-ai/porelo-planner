@@ -1531,7 +1531,8 @@ public final class GitStore implements PlanningStore {
                 story.size(),
                 ids,
                 story.body(),
-                null);
+                null,
+                !dropped);
     }
 
     private static <T> T of(final Map<String, T> map, final String repository) {

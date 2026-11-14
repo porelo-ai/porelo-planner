@@ -206,7 +206,9 @@ public record MovePreview(
                     move.story()
                             ? storyState(board, move.id())
                             : board.issue(move.id()).map(Issue::state).orElse("");
-            final List<String> skipped = skipped(board.workflow(), working, from, move.to());
+            // A story that follows its issues again passes no state of its own on the way.
+            final List<String> skipped =
+                    move.follow() ? List.of() : skipped(board.workflow(), working, from, move.to());
             if (!skipped.isEmpty()) {
                 warnings.add(
                         new Warning(
@@ -255,7 +257,8 @@ public record MovePreview(
         digest.add(branch == null ? "\u0000" : branch);
         digest.count(moves.size());
         for (final Moves.Move move : moves) {
-            digest.add(move.story() ? "story" : "issue");
+            // A follow move is its own kind, so a preview without it never saves one with it.
+            digest.add(move.follow() ? "story follow" : move.story() ? "story" : "issue");
             digest.add(move.id());
             digest.add(move.to());
         }

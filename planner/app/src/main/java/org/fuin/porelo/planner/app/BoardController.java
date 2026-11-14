@@ -135,8 +135,28 @@ public class BoardController {
      * @param story the story's id, or null
      * @param issue the issue's id, or null
      * @param to the state it moves to
+     * @param follow for a story, true when it gives up its given state for the one its issues give
      */
-    public record MoveBody(@Nullable String story, @Nullable String issue, @Nullable String to) {}
+    public record MoveBody(
+            @Nullable String story,
+            @Nullable String issue,
+            @Nullable String to,
+            @Nullable Boolean follow) {
+
+        /**
+         * One plain move.
+         *
+         * @param story the story's id, or null
+         * @param issue the issue's id, or null
+         * @param to the state it moves to
+         */
+        public MoveBody(
+                final @Nullable String story,
+                final @Nullable String issue,
+                final @Nullable String to) {
+            this(story, issue, to, null);
+        }
+    }
 
     /**
      * Answers what a batch of moves would do and what it can do harm by, writing nothing.
@@ -492,7 +512,7 @@ public class BoardController {
             if (to == null || !STATE.matcher(to).matches()) {
                 throw notAllowed(id, "", "The destination must be a state's name.");
             }
-            moves.add(new Moves.Move(story != null, id, to));
+            moves.add(new Moves.Move(story != null, id, to, Boolean.TRUE.equals(move.follow())));
         }
         return moves;
     }
@@ -667,6 +687,7 @@ public class BoardController {
                         story.state(),
                         story.stateGiven(),
                         Misfits.of(board, story, derive),
+                        Misfits.derivedState(board, story, derive),
                         story.priority(),
                         story.size(),
                         story.link(),
@@ -1030,6 +1051,7 @@ public class BoardController {
                 story.state(),
                 story.stateGiven(),
                 Misfits.of(board, story, derive),
+                Misfits.derivedState(board, story, derive),
                 story.priority(),
                 story.size(),
                 story.link(),

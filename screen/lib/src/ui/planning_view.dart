@@ -1048,7 +1048,7 @@ class _BoardViewState extends State<_BoardView> {
                   children: [
                     Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
-                    ?planningGivenMark(story),
+                    ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
                     ?_size(context, story.size, key: 'planning-size ${story.id}'),
                     _menu(story),
                     IconButton(

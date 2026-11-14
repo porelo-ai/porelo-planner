@@ -42,12 +42,6 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl132"></a>[PL132](PL132-Follow-The-Issues-Again-From-The-Pin.md) | M | - | A click or right-click on a story's pin opens a menu with one entry, Follow the issues again, which removes the story's given state so it moves at once to the state its issues give; a story without issues is not offered it, since its head must hold a state |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -57,6 +51,7 @@ left out.
 | <a id="pl129"></a>[PL129](PL129-No-Show-Finished-And-Rejected-Filter.md) | S | - | The planning screen has no Show Finished and Rejected filter: the closed states always stand in their phase, which folds like any other, and the filter's preference and count go |
 | <a id="pl130"></a>[PL130](PL130-The-Docs-Say-What-The-Code-Does.md) | S | - | Every sentence of the repository's user-facing documents - the READMEs, doc/ and the changelog's unreleased entries - is borne out by the code on main: no command, flag, path, default, state, message or behavior that is gone, renamed or never was |
 | <a id="pl131"></a>[PL131](PL131-One-Pin-For-A-Given-State.md) | XS | - | A story whose state was given shows one mark, the filled pin, whether its issues fit that state or not; its tooltip still names the issues that do not fit, and no warning colour is added |
+| <a id="pl132"></a>[PL132](PL132-Follow-The-Issues-Again-From-The-Pin.md) | M | - | A click or right-click on a story's pin opens a menu with one entry, Follow the issues again, which removes the story's given state so it moves at once to the state its issues give; a story without issues is not offered it, since its head must hold a state |
 | <a id="pl133"></a>[PL133](PL133-The-Issue-Page-Laid-Out-Anew.md) | S | - | The issue page has one header - its id, repository, project and title, its state, size and worker as chips in one row with Switch to Manual in the worker's chip, and its revision shortened to seven characters with a copy button - and two columns: what must be true as flowing text and the description as Markdown on the left, one details panel with each named item a link on the right, below the text in a narrow window |
 | <a id="pl36"></a>[PL36](PL36-A-Description-Shown-In-Its-Own-Format.md) | L | - | Each text a store gives - a story's or an issue's description - comes with the format it is written in, set by the store's adapter (the Git store says Markdown), and the screen renders Markdown and shows any other format as plain text |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |

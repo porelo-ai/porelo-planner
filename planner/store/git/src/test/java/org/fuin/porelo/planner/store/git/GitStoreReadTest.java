@@ -234,6 +234,13 @@ class GitStoreReadTest {
                 .contains(
                         org.assertj.core.groups.Tuple.tuple("ST3", List.of("CD01")),
                         org.assertj.core.groups.Tuple.tuple("ST1", List.of("AB01")));
+        // Read from the issues kept, a state given by its issues would not be the whole set's.
+        assertThat(board.stories())
+                .as("the story says it lost an issue; the others hold all of theirs")
+                .extracting(Story::id, Story::issuesWhole)
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("ST3", false),
+                        org.assertj.core.groups.Tuple.tuple("ST1", true));
     }
 
     @Test
