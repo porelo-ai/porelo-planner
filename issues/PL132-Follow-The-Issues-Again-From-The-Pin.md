@@ -28,14 +28,26 @@ one click, and the story stands at once where its issues put it.
   workflow's rule; null when the board holds none of its issues or the rule cannot be applied. `BoardController` fills
   it from `store.storyState` over the held issues' states, as `Moves.check` does; the mock board and its served answers
   are recorded anew.
+- A plain story move to that state is not enough: the planner carries the least advanced issues to a story's target
+  and refuses a working state for a story, the screen drops a move to the state the story already has, and a move read
+  from a stale board would carry issues backwards. So a story move gains `follow` (boolean, optional): with it the
+  planner checks that the story's state is given, that the board holds every issue its head names, and that those
+  issues give `to` now (else it refuses, naming the state they give), carries no issue, warns of nothing, and only
+  removes the given state. A store that cannot write the result - the Git store keeps a story's tested day only on a
+  completed story - refuses the save as today, and the screen says so.
+- `derivedState` is null too when the board does not hold every issue the story's head names, so the screen never
+  offers a state read from part of its issues. One public helper in `Misfits` answers it for both of
+  `BoardController`'s story answers and returns null where the rule throws.
 - Screen: `PlanStory.derivedState`; the pin becomes a button whose tap and secondary tap open a menu with the one entry
-  "Follow the issues again", offered when the story's state is given and `derivedState` is not null. The entry moves the
-  story to `derivedState` through the board's existing `move`, so the save, the refusals and the live update stay one
-  path. The fake source unstates as the planner does.
-- Red first: a `BoardReadsTest` case that a given story's answer carries the state its issues give, and null for one
-  without held issues; a screen test that the entry moves the story and removes the pin, and that a story without issues
-  shows no entry.
-- The window's agent is told of the new member before the hand-over.
+  "Follow the issues again", offered when the story's state is given and `derivedState` is not null, on the board and
+  on the story's page. The entry calls `PlanningBoard.followIssues`, which sends the story move with `follow` through
+  the board's one save path, so the refusals and the live update stay one path. The fake source does what the planner
+  does and keeps `derivedState`.
+- Red first: `MovesTest` cases that a follow move unstates without carrying an issue, also to a working state and to
+  the state the story already has, and is refused when the issues give another state or one is not held;
+  `BoardReadsTest` that a given story's answer carries `derivedState` and null where an issue is not held; a screen test
+  that the entry removes the pin and moves the story, and that a story without issues shows no entry.
+- The window's agent is told of the new members before the hand-over.
 
 ## Acceptance
 
