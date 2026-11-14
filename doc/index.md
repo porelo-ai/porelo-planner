@@ -102,6 +102,19 @@ exits. Each command is run from the repository's root:
   `POST /proof` needs no signature; a proof asked with anything but one challenge gets `400`, empty and unlogged. The
   token is new on every start, the mock mode's too.
 
+- **`GET /health` names the planner the window talks to**: its status, the package version (`x.y.z` or
+  `x.y.z~snapshot.<run>`, as the packages carry it) and the commit it was built from, `null` for a build without a
+  checkout, so a planner left running from an older install is seen at once.
+
+## The mock mode
+
+`porelo-planner --mock` serves the window's mock board, for the window's planning tests, through the same API and
+Server-Sent Events, with no Git and no network. Each project gets its own board in memory; a move saves into it with a
+new revision and a change event, one fixed story answers `PartlySaved`, and `POST /mock/reset` restores every board and
+forgets the projects given. Only the option turns the mode on, and it refuses to start unless its runtime directory
+is set - `XDG_RUNTIME_DIR`, or the property `planner.runtime-directory` - and is not the account's own, so the
+person's window never finds a mock.
+
 ## Where it keeps its files
 
 | What | Linux | Windows |
@@ -146,5 +159,8 @@ exits. Each command is run from the repository's root:
   - `store/git`, the store in Git;
   - `app`, the Spring Boot application serving the REST API.
 - **The OpenAPI description is the contract with the window.**
+- **Whether the Build may publish and sign** is read by starting the workflow *Publishing preconditions* by hand: one
+  pass or fail line for every secret and variable the publish and signing steps use, for reading, uploading and
+  deleting in Artifactory's `porelo-files`, and for the Windows signing key opening as the pinned signer.
 
 See the [decisions](decisions.md) for what holds and why.

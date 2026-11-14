@@ -9,7 +9,7 @@
   "size": "L",
   "priority": "Medium",
   "rank": 29,
-  "blockedBy": ["PL48"],
+  "blockedBy": [],
   "covers": "The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand"
 }
 ```
@@ -28,8 +28,8 @@ desktop.
 
 The board scrolls as one page with all its columns in it, so a column is laid out whole: unfolding one of 125 cards
 builds all 125, about 70 ms in profile mode, and a keystroke in the search still takes 21 to 28 ms, a third of it
-garbage collection. Only cards in sight can be built lazily once each column scrolls by itself. It is built after the
-folded boxes and folded cards of [PL48](README.md#pl48), so the layout it changes is the one that stays.
+garbage collection. Only cards in sight can be built lazily once each column scrolls by itself. It builds on the board's
+folded boxes and folded cards, so the layout it changes is the one that stays.
 
 ## Plan
 
@@ -41,7 +41,7 @@ folded boxes and folded cards of [PL48](README.md#pl48), so the layout it change
   `planning_board.dart` sorts once per change; both stay. `PlanningPreferences` keeps one `verticalOffset`.
 - **The layout.** The horizontal scroll view stays the outer one, with the sideways bar at the view's foot. Each
   phase column is a `CustomScrollView` of the view's height with its own controller: per state a heading and a
-  `SliverList.builder` over `board.cards(state)` (a folded box its heading alone, as [PL48](README.md#pl48) leaves
+  `SliverList.builder` over `board.cards(state)` (a folded box its heading alone, as the board folds
   it), the "Stories outside the reported workflow" column likewise. A `DragTarget` cannot wrap a sliver, so the
   heading and each card of a state are each a target for that state, sharing one hover flag per state for the
   "Drop here for" hint. `verticalOffset` becomes one offset per column name, kept as today.

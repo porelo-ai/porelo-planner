@@ -37,9 +37,6 @@ count and the column's width, and a folded story card leaves only its heading.
      before and after, is the same.
   3. The column's own chevron (`planning-fold-phase <phase>`) still narrows the column.
   4. Folding one story card leaves only its heading with number and priority; the cards beside it stay open.
-- **This repository's issues of the story not in Review:** [PL47](README.md#pl47) (a story's size beside its
-  priority, Implementing) and [PL48](README.md#pl48) (sizes, folded boxes and folded cards, Backlog). The run is
-  started with `--expect 1=PL47`, `--expect 2=PL48` and `--expect 4=PL48`; step 3 plays what the board has today.
 
 **Rules for this story test (operator)**
 

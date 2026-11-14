@@ -39,9 +39,6 @@ from the source shows a mock board, takes moves and shows every state the window
      refusal, a board that is not live, a story or issue opened - shows on the screen as the window would show it.
   5. A task event sent by hand - started, ended, stopped - is reacted to on the board, and every call the screen
      makes toward the window is listed in the app.
-- **This repository's issues of the story not in Review:** [PL35](README.md#pl35), the test app itself, Backlog. Until
-  it is built, step 1 fails as expected and the steps after it print `SKIPPED` naming step 1; the run is started with
-  `--expect 1=PL35`.
 
 **Rules for this story test (operator)**
 

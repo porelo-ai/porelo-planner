@@ -9,9 +9,7 @@
   "size": "M",
   "priority": "Low",
   "rank": 47,
-  "blockedBy": [
-    "PL29"
-  ],
+  "blockedBy": [],
   "covers": "On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen"
 }
 ```
@@ -29,8 +27,7 @@ shows that the planner service is not running and offers to start it.
 
 ## Plan
 
-- **Today, read in the code.** The Windows executable and its MSIX are built and shipped by
-  [PL29](README.md#pl29); the window finds the executable through its alias and starts it detached when no address
+- **Today, read in the code.** The Build builds and ships the Windows executable and its MSIX; the window finds the executable through its alias and starts it detached when no address
   answers.
 - **The startup task.** The MSIX manifest declares the planner executable as a startup task
   (`windows.startupTask`), enabled, which needs no restricted capability and runs in the person's session with the

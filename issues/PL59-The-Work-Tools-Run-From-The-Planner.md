@@ -46,9 +46,6 @@ What was built:
 - `AGENTS.md`'s rules on the stories index and the hand-over's issue checks, `doc/index.md`'s *The work tools*,
   `planner/app/README.md`, and a changelog entry.
 
-Publishing the bare executable for the CI, and this repository's hand-over checks running the downloaded one, are
-left to [PL78](README.md#pl78), which waits on its place in Artifactory.
-
 Tests:
 
 - Unit, `WorkCommandsTest`, over a fixture the build tools indexed once (`src/test/resources/work`: the project

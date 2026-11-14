@@ -52,10 +52,6 @@ earliest open state of its issues.
   4. In a fresh clone the story's head and `stories/README.md` hold the state, and the issues kept theirs.
   5. A story whose head states none stands in the earliest open state of its issues, on the board and in the index.
   6. A state written into a story's head by hand and pushed stands on the board after `POST /refresh`.
-- **This repository's issues of the story not in Review:** [PL45](README.md#pl45) (a story moving with its issues,
-  no step of its own; [PL84](README.md#pl84), the board's answer naming the issues that do not fit, is in Review):
-  the run is started with `--expect story=PL45`, and a failing step is read against [PL45](README.md#pl45) before it
-  is taken as a fault.
 - **Built.** `tool/story-tests/story-test.sh`, `st309.sh` and `run-on-vm.sh`, as above, with these findings from the
   code: the planner's Git calls set their own `GIT_SSH_COMMAND`, so the run's key reaches them through an `ssh-agent`
   of the run's own, and localhost's host key is added to the account's `known_hosts` as one marked line, removed again; the

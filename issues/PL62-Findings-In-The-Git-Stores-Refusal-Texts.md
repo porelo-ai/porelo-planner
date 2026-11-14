@@ -33,9 +33,9 @@ Small findings, no harm beyond a misleading or missing text, except the first, w
   passes it whole; `C:/Users/...` leaves `C:` and is scrubbed. `GitStore.local` takes the save's scratch out only as
   `scratch + "/"` or the bare `scratch`, so on Windows its `\` after the scratch stays.
 - **A JSON pointer is taken for a path.** `GitStore.refuseFaults` passes the planning index's first fault through
-  `GitRunner.scrubbed`; a fault such as `PL12-X.md: /size: a dash, but Review needs a size` (`IssuesIndex`, and the
+  `GitRunner.scrubbed`; a fault such as `PL<nn>-X.md: /size: a dash, but Review needs a size` (`IssuesIndex`, and the
   schema faults `<pointer>: <found> found, <expected> expected` of `IssueSchema` and `StorySchema`) reaches the window
-  as `PL12-X.md: <path> a dash, ...`. The faults of `IssuesIndex.write` name files relative to `issues/`, as
+  as `PL<nn>-X.md: <path> a dash, ...`. The faults of `IssuesIndex.write` name files relative to `issues/`, as
   `IssuesIndex.Result` says, so they hold no local path the path pattern must catch.
 - **A refused central names no value.** `stories.Project.repository` refuses a central it does not take as
   `<where>: unsupported repository central <value>`; for `file:///x` or `/srv/x` the scrub in `ProjectFile.read`

@@ -47,7 +47,7 @@ call the screen made named in the OpenAPI description.
   5. A story moved to a state its issues do not fit shows the warning naming those issues; confirmed, it keeps that
      state on the board and in Git.
   6. Every call the screen made is a path and method of `planner.yaml`, read from the bundle line by line.
-- **This repository's issues of the story not in Review:** [PL87](README.md#pl87), reading private repositories with
+- **This repository's issues of the story not in Review:** [PL125](README.md#pl125), reading private repositories with
   Porelo's login. The fixture's forge takes the account's own SSH key, so no step plays it; the run names it with
   `--expect` as an expected failure of the story, not of a step.
 
