@@ -106,14 +106,14 @@ class PlanningTaskLink extends StatelessWidget {
     crossAxisAlignment: WrapCrossAlignment.center,
     children: [
       Tooltip(
-        message: unavailable ?? 'Open $name',
+        message: planningShown(unavailable ?? 'Open $name', multiline: false),
         child: TextButton(
           key: Key('planning-task $name'),
           onPressed: unavailable == null ? onOpen : null,
-          child: Text(name),
+          child: Text(planningShown(name, multiline: false)),
         ),
       ),
-      if (unavailable case final reason?) Text(reason),
+      if (unavailable case final reason?) Text(planningShown(reason, multiline: false)),
     ],
   );
 }
@@ -136,7 +136,10 @@ String planningWorker(IssueWorker? worker) => switch (worker) {
 Widget? planningGivenMark(PlanStory story) {
   if (!story.stateGiven) return null;
   final states = {for (final issue in story.issues) issue.id: issue.state};
-  final misfits = [for (final id in story.misfits ?? const <String>[]) '$id ${planningValue(states[id] ?? '')}'];
+  final misfits = [
+    for (final id in story.misfits ?? const <String>[])
+      '${planningShown(id, multiline: false)} ${planningValue(states[id] ?? '')}',
+  ];
   final message = story.misfits == null
       ? 'State given to the story; whether its issues fit it is not known.'
       : misfits.isEmpty

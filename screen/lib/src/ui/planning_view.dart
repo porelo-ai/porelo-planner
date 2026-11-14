@@ -86,8 +86,13 @@ class PlanningScreen extends StatelessWidget {
     required this.startTask,
     required this.taskChanges,
     required this.agents,
+    this.pageButton,
     super.key,
   });
+
+  /// The window's own button for the page, such as its help, shown beside the screen's title: after the board's head
+  /// and at the end of a story's or an issue's breadcrumb; none when null.
+  final Widget? pageButton;
 
   /// The projects and their planning providers, kept by the window while the screen is not shown.
   final PlanningBoards boards;
@@ -148,6 +153,7 @@ class PlanningScreen extends StatelessWidget {
             offstage: place.story != null,
             child: _BoardView(
               key: ObjectKey(board),
+              pageButton: pageButton,
               board: board,
               projects: boards.projects,
               select: (project) {
@@ -169,6 +175,7 @@ class PlanningScreen extends StatelessWidget {
           if (place.story != null && detailBoard != null)
             _PlanningDetailView(
               key: ValueKey((detailBoard, place.story, place.issue)),
+              pageButton: pageButton,
               startTask: startTask,
               agents: agents,
               machines: boards.machinesOf(detailBoard),
@@ -181,6 +188,7 @@ class PlanningScreen extends StatelessWidget {
               onParent: () => open(detailBoard, place.story!),
               onStory: (story) => open(detailBoard, story),
               onIssue: (issue) => open(detailBoard, place.story!, issue),
+              onIssueOf: (story, issue) => open(detailBoard, story, issue),
               onTask: (task) => taskChanges.open(detailBoard, task),
               taskUnavailable: (task) => taskChanges.unavailable(detailBoard, task),
               openLink: host.openLink,
@@ -193,6 +201,7 @@ class PlanningScreen extends StatelessWidget {
 
 class _BoardView extends StatefulWidget {
   const _BoardView({
+    required this.pageButton,
     required this.board,
     required this.projects,
     required this.select,
@@ -207,6 +216,7 @@ class _BoardView extends StatefulWidget {
     required this.unavailableMachines,
     super.key,
   });
+  final Widget? pageButton;
   final PlanningBoard board;
   final List<String> projects;
   final ValueChanged<String> select;
@@ -356,7 +366,13 @@ class _BoardViewState extends State<_BoardView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Planning', style: theme.textTheme.headlineSmall),
+                      Row(
+                        spacing: Space.small,
+                        children: [
+                          Text('Planning', style: theme.textTheme.headlineSmall),
+                          ?widget.pageButton,
+                        ],
+                      ),
                       Text('The stories of project ${board.project} by state, the most important first.'),
                       Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
                       const SizedBox(height: Space.normal),
@@ -1188,6 +1204,7 @@ Future<void> _openStart(
 
 class _PlanningDetailView extends StatefulWidget {
   const _PlanningDetailView({
+    required this.pageButton,
     required this.startTask,
     required this.agents,
     required this.machines,
@@ -1200,6 +1217,7 @@ class _PlanningDetailView extends StatefulWidget {
     required this.onParent,
     required this.onStory,
     required this.onIssue,
+    required this.onIssueOf,
     required this.onTask,
     required this.taskUnavailable,
     required this.openLink,
@@ -1214,8 +1232,10 @@ class _PlanningDetailView extends StatefulWidget {
   final Future<void> Function(Uri) openLink;
   final String story;
   final String? issue;
+  final Widget? pageButton;
   final VoidCallback onBoard, onParent;
   final ValueChanged<String> onStory, onIssue, onTask;
+  final void Function(String story, String issue) onIssueOf;
   final String? Function(String) taskUnavailable;
 
   @override
@@ -1273,11 +1293,17 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
               ),
               if (widget.issue != null) ...[
                 const Text('›'),
-                Text(planningShown(widget.issue!, multiline: false), key: const Key('planning-crumb 2')),
+                // A text button pads its label; the last crumb, plain text, takes the same room.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Space.small),
+                  child: Text(planningShown(widget.issue!, multiline: false), key: const Key('planning-crumb 2')),
+                ),
               ],
+              ?widget.pageButton,
             ],
           ),
-          Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
+          // The issue page names the project in its own header.
+          if (widget.issue == null) Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
           if (detail.loading) const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
           if (widget.board.problem case final problem?) Text(problem, key: const Key('planning-watch-error')),
           if (!widget.board.live) const Text('Planning is no longer live. The last answer may be out of date.'),
@@ -1321,6 +1347,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
               detail: detail,
               onStory: widget.onStory,
               onIssue: widget.onIssue,
+              onIssueOf: widget.onIssueOf,
               onTask: widget.onTask,
               taskUnavailable: widget.taskUnavailable,
               openLink: widget.openLink,

@@ -76,7 +76,12 @@ class _Source extends FakePlanningSource implements PlanningReconnect {
   }
 }
 
-Future<(PlanningBoards, TestHost)> _show(WidgetTester tester, _Source source, {bool answer = true}) async {
+Future<(PlanningBoards, TestHost)> _show(
+  WidgetTester tester,
+  _Source source, {
+  bool answer = true,
+  Widget? pageButton,
+}) async {
   tester.view
     ..physicalSize = const Size(1280, 1000)
     ..devicePixelRatio = 1;
@@ -93,7 +98,7 @@ Future<(PlanningBoards, TestHost)> _show(WidgetTester tester, _Source source, {b
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: planningView(boards: boards, host: host),
+        body: planningView(boards: boards, host: host, pageButton: pageButton),
       ),
     ),
   );
@@ -347,6 +352,24 @@ void main() {
   });
 
   // Harm: source control characters disguise issue identities, acceptance criteria and workflow faults on screen.
+  // Harm: the window's own button for the page, its help, is lost on the board or on a story's or an issue's page.
+  testWidgets('the window\'s page button stands on the board and beside the breadcrumb', (tester) async {
+    final (_, host) = await _show(tester, _Source(), pageButton: const Icon(Icons.info_outline, key: Key('help')));
+    expect(find.byKey(const Key('help')), findsOneWidget, reason: 'on the board');
+    for (final place in const [
+      PlanningPlace(project: 'demo', source: 'local', story: 'S1'),
+      PlanningPlace(project: 'demo', source: 'local', story: 'S1', issue: 'I1'),
+    ]) {
+      host.go(place);
+      await settle(tester);
+      expect(
+        find.descendant(of: find.byKey(const Key('planning-detail')), matching: find.byKey(const Key('help'))),
+        findsOneWidget,
+        reason: 'beside the breadcrumb of $place',
+      );
+    }
+  });
+
   testWidgets('shown issue details and workflow faults are cleaned while navigation keeps raw ids', (tester) async {
     const story = 'S1\x07\u202e';
     const child = 'I1.1\x07\u202e';
@@ -378,7 +401,11 @@ void main() {
     expect(find.byKey(const Key('planning-crumb 2')), findsOneWidget);
     final details = shownText();
     expect(details.where((text) => text.contains('I1.1')).length, 2);
-    expect(details.any((text) => text.contains('First criterion') && text.contains('\nSecond criterion')), isTrue);
+    expect(
+      details.any((text) => text.contains('First criterion') && text.contains('Second criterion')),
+      isTrue,
+      reason: 'the criteria flow as one text',
+    );
     shown.addAll(details);
     final unsafe = RegExp(r'[\u202e\x00-\x09\x0b-\x1f]');
     expect(shown.where(unsafe.hasMatch), isEmpty);

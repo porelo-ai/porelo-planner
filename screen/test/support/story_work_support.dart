@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Widget;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
@@ -101,11 +102,16 @@ class NoTasks implements PlanningTaskChanges {
 }
 
 /// The planning screen over [boards], starting on the stand-in and choosing from [agents].
-PlanningScreen planningView({required PlanningBoards boards, PlanningHost? host, PlanningAgents? agents}) =>
-    PlanningScreen(
-      boards: boards,
-      host: host ?? TestHost(),
-      startTask: mockStartTask,
-      taskChanges: const NoTasks(),
-      agents: agents ?? FakeAgents(),
-    );
+PlanningScreen planningView({
+  required PlanningBoards boards,
+  PlanningHost? host,
+  PlanningAgents? agents,
+  Widget? pageButton,
+}) => PlanningScreen(
+  boards: boards,
+  host: host ?? TestHost(),
+  startTask: mockStartTask,
+  taskChanges: const NoTasks(),
+  agents: agents ?? FakeAgents(),
+  pageButton: pageButton,
+);

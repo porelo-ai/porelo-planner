@@ -162,7 +162,8 @@ class _MarkdownBlocks extends StatelessWidget {
   ];
 
   List<InlineSpan> _span(BuildContext context, md.Node node, TextStyle style) {
-    if (node is md.Text) return [TextSpan(text: planningShown(node.text))];
+    // A single line break inside a paragraph is a space in Markdown; a hard break comes as its own element.
+    if (node is md.Text) return [TextSpan(text: planningShown(node.text.replaceAll('\n', ' ')))];
     if (node is! md.Element) return [TextSpan(text: planningShown(node.textContent))];
     final children = node.children ?? const <md.Node>[];
     switch (node.tag) {
