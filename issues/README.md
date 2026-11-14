@@ -32,6 +32,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl136"></a>[PL136](PL136-The-Board-Opens-At-Once.md) | L | - | A board of hundreds of stories opens, reopens and folds a lane at once: each phase builds only the cards in its view and scrolls on its own, a fold rebuilds no card out of view, and a loading mark stands while the planner answers |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
 | <a id="pl105"></a>[PL105](PL105-ST311-Played-Through-On-The-Test-VM.md) | M | [PL104](README.md#pl104) | A script plays the test of story ST311 once on the local test VM through the planning screen against the real planner, as a person opens Planning, and lays the screen driver the other screen story tests use |
