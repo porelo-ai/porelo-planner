@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL132",
   "title": "Follow The Issues Again From The Pin",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Highest",
   "rank": 6,
