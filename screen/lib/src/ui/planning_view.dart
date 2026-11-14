@@ -255,10 +255,9 @@ class _BoardViewState extends State<_BoardView> {
   Key _project = UniqueKey();
   bool _faultsOpen = false;
   PlanningBoard get board => widget.board;
-  late final _vertical = ScrollController(
-    initialScrollOffset: board.preferences.verticalOffset,
-    keepScrollOffset: false,
-  )..addListener(_rememberScroll);
+
+  /// Each phase's own vertical scroll, by phase name, starting where the person left it.
+  final Map<String, ScrollController> _phaseScrolls = {};
   late final _horizontal = ScrollController(
     initialScrollOffset: board.preferences.horizontalOffset,
     keepScrollOffset: false,
@@ -268,8 +267,27 @@ class _BoardViewState extends State<_BoardView> {
   PlanningMoveQuestion? _asked;
 
   void _rememberScroll() {
-    if (_vertical.hasClients) board.preferences.verticalOffset = _vertical.offset;
     if (_horizontal.hasClients) board.preferences.horizontalOffset = _horizontal.offset;
+  }
+
+  /// The vertical scroll of the column [id], which remembers its offset under [remember]; a folded phase has a
+  /// scroll of its own, so its short column never clamps the open one's.
+  ScrollController _phaseScroll(String id, {required String remember, bool folded = false}) =>
+      _phaseScrolls.putIfAbsent(folded ? '$id folded' : id, () {
+        late final ScrollController controller;
+        controller = _RememberedScroll(() => folded ? 0 : board.preferences.phaseOffsets[remember] ?? 0)
+          ..addListener(() {
+            if (!folded && controller.hasClients) board.preferences.phaseOffsets[remember] = controller.offset;
+          });
+        return controller;
+      });
+
+  /// The key name of the phase at [index]: its name, and for a later phase of a name already shown its index too, so
+  /// no two columns share a key or a scroll.
+  String _phaseId(int index) {
+    final name = board.phases[index].name;
+    final first = board.phases.indexWhere((phase) => phase.name == name);
+    return first == index ? name : '$name #$index';
   }
 
   /// Searches, and once the frame stands brings the first card holding a found issue into view; only a change of the
@@ -281,27 +299,84 @@ class _BoardViewState extends State<_BoardView> {
       _shownFound = null;
       return;
     }
-    final keys = [
-      for (final story in [
-        for (final phase in board.phases)
-          for (final state in board.statesIn(phase)) ...board.cards(state.name),
-        ...board.unplaced,
-      ])
-        if (story.issues.any((issue) => found.contains(issue.id))) Key('planning-card ${story.id}'),
-    ];
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final built = _elementsKeyed(context, keys.toSet());
-      // A card in a folded phase is not built; a folded state shows the story's mark, without its issues.
-      final key = keys.where(built.containsKey).firstOrNull;
-      // The same first card again is left where the person scrolled it.
-      if (key == null || key == _shownFound) return;
-      _shownFound = key;
-      Scrollable.ensureVisible(built[key]!);
-    });
+    final generation = ++_searches;
+    // The first found card in a state that shows its cards; a folded state shows only its heading.
+    for (final (at, phase) in board.phases.indexed) {
+      final folded = board.preferences.foldedPhases.contains(phase.name);
+      final shown = [
+        for (final state in board.statesIn(phase))
+          if (folded || !board.preferences.foldedStates.contains(state.name)) ...board.cards(state.name),
+      ];
+      final index = shown.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
+      if (index < 0) continue;
+      _reveal(_phaseId(at), folded, shown, index, generation);
+      return;
+    }
+    final unplaced = board.unplaced;
+    final index = unplaced.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
+    if (index >= 0) {
+      _reveal('', false, unplaced, index, generation);
+      return;
+    }
+    _shownFound = null;
   }
 
-  /// The card the search last brought into view, so a further key finding it again does not scroll.
+  /// Each search's number, so a scroll toward an older search's card stops once a newer search began.
+  int _searches = 0;
+
+  /// Brings the card at [index] of the column [id]'s [stories] into view, unless it is the card the search showed last.
+  void _reveal(String id, bool folded, List<PlanStory> stories, int index, int generation) {
+    final key = Key('planning-card ${stories[index].id}');
+    // The same first card again is left where the person scrolled it.
+    if (key == _shownFound) return;
+    final cards = [for (final story in stories) Key('planning-card ${story.id}')];
+    WidgetsBinding.instance.addPostFrameCallback((_) => _step(id, folded, cards, index, generation, 0));
+  }
+
+  /// Scrolls the column toward the card at [index] of its [cards], frame by frame, until the card stands in view; a
+  /// column builds only the cards near its view, and their heights differ, so one jump rarely lands.
+  void _step(String id, bool folded, List<Key> cards, int index, int generation, int tries) {
+    if (!mounted || generation != _searches || tries > 60) return;
+    final controller = _phaseScrolls[folded ? '$id folded' : id];
+    if (controller == null || !controller.hasClients) return;
+    final position = controller.position;
+    final viewport = position.context.notificationContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return;
+    final viewTop = viewport.localToGlobal(Offset.zero).dy;
+    final built = _elementsKeyed(context, cards.toSet());
+    // Each built card with where its top stands in the column's view.
+    final shown = [
+      for (final (at, key) in cards.indexed)
+        if (built[key]?.findRenderObject() case final RenderBox box when box.hasSize && box.attached)
+          (at, box.localToGlobal(Offset.zero).dy - viewTop, box.size.height),
+    ];
+    final double target;
+    final hit = shown.where((card) => card.$1 == index).firstOrNull;
+    if (hit != null) {
+      // A card taller than the view stands in it once its top does.
+      final fits = hit.$2 + hit.$3 <= position.viewportDimension || hit.$2 <= Space.normal;
+      if (hit.$2 >= 0 && fits) {
+        _shownFound = cards[index];
+        return;
+      }
+      target = hit.$2;
+    } else if (shown.isEmpty) {
+      target = position.viewportDimension;
+    } else {
+      final mean = shown.fold<double>(0, (sum, card) => sum + card.$3) / shown.length;
+      // From the nearest built card on the card's side, so the step always goes toward it.
+      final (at, top, height) = index > shown.last.$1 ? shown.last : shown.first;
+      target = index > at ? top + height + (index - at - 1) * mean : top - (at - index) * mean;
+    }
+    final next = (position.pixels + target - Space.normal).clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (next == position.pixels) return;
+    controller.jumpTo(next);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _step(id, folded, cards, index, generation, tries + 1));
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  /// The card the search last brought into view, so a further key finding it again does not scroll; set only once it
+  /// stands in view, so a search that a newer one cut short is taken up again.
   Key? _shownFound;
 
   /// The elements under [root] whose widgets carry one of [keys].
@@ -322,7 +397,10 @@ class _BoardViewState extends State<_BoardView> {
 
   @override
   void dispose() {
-    _vertical.dispose();
+    for (final controller in _phaseScrolls.values) {
+      controller.dispose();
+    }
+    _hovered.dispose();
     _horizontal.dispose();
     _top.dispose();
     _search.dispose();
@@ -509,7 +587,14 @@ class _BoardViewState extends State<_BoardView> {
                         ),
                       PlanningMoveWarningPanel(key: _panel, board: board, buttons: false),
                       if (board.snapshot == null && board.problem == null)
-                        const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
+                        const Row(
+                          spacing: Space.small,
+                          children: [
+                            // A still mark: an endless animation would keep a waiting page from ever settling.
+                            Icon(Icons.hourglass_empty, key: Key('planning-loading'), size: PlanningStyle.mark),
+                            Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
+                          ],
+                        ),
                     ],
                   ),
                 ),
@@ -526,32 +611,21 @@ class _BoardViewState extends State<_BoardView> {
                         key: const Key('planning-board-sideways'),
                         controller: _horizontal,
                         thumbVisibility: true,
-                        notificationPredicate: (notification) => notification.depth == 1,
+                        notificationPredicate: (notification) =>
+                            notification.depth == 0 && notification.metrics.axis == Axis.horizontal,
                         child: SingleChildScrollView(
                           key: const Key('planning-board-scroll'),
-                          controller: _vertical,
-                          child: SingleChildScrollView(
-                            controller: _horizontal,
-                            scrollDirection: Axis.horizontal,
+                          controller: _horizontal,
+                          scrollDirection: Axis.horizontal,
+                          // Each phase scrolls on its own and builds only the cards in its view.
+                          child: SizedBox(
+                            height: room.maxHeight,
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                for (final phase in board.phases)
-                                  if (board.statesIn(phase).isNotEmpty) _phase(context, phase, room.maxHeight),
-                                if (board.unplaced.isNotEmpty)
-                                  SizedBox(
-                                    width: PlanningStyle.column,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Stories outside the reported workflow'),
-                                        for (final story in board.unplaced) ...[
-                                          Text('State: ${story.state.isEmpty ? 'not reported' : _line(story.state)}'),
-                                          _card(context, story),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
+                                for (final (at, phase) in board.phases.indexed)
+                                  if (board.statesIn(phase).isNotEmpty) _phase(context, at),
+                                if (board.unplaced.isNotEmpty) _unplaced(context),
                               ],
                             ),
                           ),
@@ -611,78 +685,125 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  /// A phase reaches at least the foot of the board's [room], so the board fills the height left below what stands
-  /// above it.
-  Widget _phase(BuildContext context, PlanPhase phase, double room) {
+  /// A phase fills the board's height and scrolls on its own; its states' cards are built only once in its view.
+  Widget _phase(BuildContext context, int at) {
+    final phase = board.phases[at];
+    final id = _phaseId(at);
     final folded = board.preferences.foldedPhases.contains(phase.name);
     final states = board.statesIn(phase);
     final count = states.fold<int>(0, (count, state) => count + board.cards(state.name).length);
+    final controller = _phaseScroll(id, remember: phase.name, folded: folded);
     return Container(
-      key: Key('planning-phase ${phase.name}'),
+      key: Key('planning-phase $id'),
       width: folded ? PlanningStyle.foldedColumn : PlanningStyle.column,
-      constraints: BoxConstraints(minHeight: room.isFinite ? room : 0),
       margin: const EdgeInsets.only(right: Space.normal),
       padding: const EdgeInsets.all(Space.small),
       decoration: BoxDecoration(
         color: PlanningStyle.phase(Theme.of(context).colorScheme),
         borderRadius: BorderRadius.circular(PlanningStyle.radiusMedium),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text(_line(phase.name).toUpperCase(), style: Theme.of(context).textTheme.labelLarge)),
-              Text('$count'),
-              IconButton(
-                key: Key('planning-fold-phase ${phase.name}'),
-                tooltip: '${folded ? 'Unfold' : 'Fold'} ${_line(phase.name)}',
-                onPressed: () => board.foldPhase(phase.name),
-                icon: Icon(folded ? Icons.chevron_right : Icons.chevron_left),
+      child: Scrollbar(
+        controller: controller,
+        child: CustomScrollView(
+          key: Key('planning-phase-scroll $id'),
+          controller: controller,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Expanded(child: Text(_line(phase.name).toUpperCase(), style: Theme.of(context).textTheme.labelLarge)),
+                  Text('$count'),
+                  IconButton(
+                    key: Key('planning-fold-phase $id'),
+                    tooltip: '${folded ? 'Unfold' : 'Fold'} ${_line(phase.name)}',
+                    onPressed: () => board.foldPhase(phase.name),
+                    icon: Icon(folded ? Icons.chevron_right : Icons.chevron_left),
+                  ),
+                ],
               ),
-            ],
+            ),
+            for (final state in states) _state(context, state, phaseFolded: folded),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The stories whose state the workflow does not report, in a column of their own that takes no drop.
+  Widget _unplaced(BuildContext context) {
+    final stories = board.unplaced;
+    return SizedBox(
+      width: PlanningStyle.column,
+      child: CustomScrollView(
+        controller: _phaseScroll('', remember: ''),
+        slivers: [
+          const SliverToBoxAdapter(child: Text('Stories outside the reported workflow')),
+          SliverList.builder(
+            itemCount: stories.length,
+            itemBuilder: (context, index) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('State: ${stories[index].state.isEmpty ? 'not reported' : _line(stories[index].state)}'),
+                _card(context, stories[index]),
+              ],
+            ),
           ),
-          for (final state in states) _state(context, state, phaseFolded: folded),
         ],
       ),
     );
   }
 
+  /// The state a dragged card is held over, so its heading says where it would land.
+  final _hovered = ValueNotifier<String?>(null);
+
+  bool _accepts(PlanState state, _CardDrag drag) =>
+      !board.saving &&
+      board.pending.isEmpty &&
+      {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
+      board.live &&
+      board.stories.any((story) => story.id == drag.story && board.displayedState(story) != state.name);
+
+  void _dropped(PlanState state, _CardDrag drag) {
+    _hovered.value = null;
+    final story = board.stories.where((story) => story.id == drag.story).firstOrNull;
+    if (story == null || board.displayedState(story) == state.name) return;
+    if (state.kind == 'WORKING') {
+      unawaited(_start(story, target: state));
+    } else {
+      unawaited(board.move(drag.story, state.name, revision: drag.revision));
+    }
+  }
+
+  /// [child] as a part of [state] a card may be dropped on: its heading and each of its cards.
+  Widget _dropOn(PlanState state, Widget child, {Key? key}) => DragTarget<_CardDrag>(
+    key: key,
+    onWillAcceptWithDetails: (details) {
+      final accepted = _accepts(state, details.data);
+      if (accepted) _hovered.value = state.name;
+      return accepted;
+    },
+    onLeave: (_) {
+      if (_hovered.value == state.name) _hovered.value = null;
+    },
+    onAcceptWithDetails: (details) => _dropped(state, details.data),
+    builder: (context, candidates, rejected) => child,
+  );
+
+  /// A state as slivers: its heading, then its cards built as they come into view, on the state's own colour.
   Widget _state(BuildContext context, PlanState state, {required bool phaseFolded}) {
     final cards = board.cards(state.name);
     // Only the column's chevron narrows its boxes to tiles; a box's own chevron folds it to its heading.
     final folded = !phaseFolded && board.preferences.foldedStates.contains(state.name);
     final raised = folded ? cards.where(_needsYou).length : 0;
     final theme = Theme.of(context);
-    return DragTarget<_CardDrag>(
+    final heading = _dropOn(
+      state,
       key: Key('planning-drop ${state.name}'),
-      onWillAcceptWithDetails: (details) =>
-          !board.saving &&
-          board.pending.isEmpty &&
-          {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
-          board.live &&
-          board.stories.any((story) => story.id == details.data.story && board.displayedState(story) != state.name),
-      onAcceptWithDetails: (details) {
-        final story = board.stories.where((story) => story.id == details.data.story).firstOrNull;
-        if (story == null || board.displayedState(story) == state.name) return;
-        if (state.kind == 'WORKING') {
-          unawaited(_start(story, target: state));
-        } else {
-          unawaited(board.move(details.data.story, state.name, revision: details.data.revision));
-        }
-      },
-      builder: (context, candidates, rejected) => Container(
-        key: Key('planning-state ${state.name}'),
+      Container(
         padding: const EdgeInsets.all(Space.tight),
-        margin: const EdgeInsets.only(bottom: Space.small),
-        decoration: BoxDecoration(
-          color: state.kind == 'WORKING' ? PlanningStyle.working(theme.colorScheme) : null,
-          borderRadius: BorderRadius.circular(PlanningStyle.radiusSmall),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (candidates.isNotEmpty) Text('Drop here for ${_line(state.name)}'),
             Row(
               children: [
                 if (state.kind == 'WORKING')
@@ -690,7 +811,18 @@ class _BoardViewState extends State<_BoardView> {
                     padding: EdgeInsets.only(right: Space.tight),
                     child: Icon(Icons.schedule, size: PlanningStyle.mark),
                   ),
-                Expanded(child: Text(_line(state.name), style: theme.textTheme.labelMedium)),
+                // The hint takes the name's place, so nothing under the pointer moves while a card is dragged.
+                Expanded(
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: _hovered,
+                    builder: (context, hovered, _) => Text(
+                      hovered == state.name ? 'Drop here for ${_line(state.name)}' : _line(state.name),
+                      style: theme.textTheme.labelMedium,
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
+                    ),
+                  ),
+                ),
                 if (raised > 0)
                   Tooltip(
                     message: '$raised need you',
@@ -718,71 +850,91 @@ class _BoardViewState extends State<_BoardView> {
               const Text('State kind not reported')
             else if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind))
               Text(_line(state.kind)),
-            if (folded)
-              const SizedBox.shrink()
-            else if (phaseFolded)
-              Wrap(
-                spacing: Space.tight,
-                runSpacing: Space.tight,
-                children: [
-                  for (final story in cards)
-                    _drag(
-                      story,
-                      InkWell(
-                        key: Key('planning-story ${story.id}'),
-                        onTap: story.id.isEmpty ? null : () => widget.onStory(story.id),
-                        child: Tooltip(
-                          message: _line('${story.id} — ${story.title} (${story.priority})'),
-                          child: Container(
-                            key: Key('planning-card ${story.id}'),
-                            padding: const EdgeInsets.all(Space.tight),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    // One width for every mark, so the numbers and menus stand in line.
-                                    SizedBox(
-                                      width: PlanningStyle.foldedMark,
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: _priority(context, story.priority ?? '', mark: true),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade),
-                                    ),
-                                    ?_size(context, story.size, key: 'planning-size ${story.id}'),
-                                    if (_needsYou(story))
-                                      Icon(
-                                        Icons.warning_amber,
-                                        key: Key('planning-needs-you ${story.id}'),
-                                        size: PlanningStyle.mark,
-                                        semanticLabel: 'needs you',
-                                      ),
-                                    _menu(story, dense: true),
-                                  ],
-                                ),
-                                if (board.pending.containsKey(story.id)) const Text('Saving…'),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              )
-            else
-              for (final story in cards) _card(context, story),
           ],
+        ),
+      ),
+    );
+    // The state's key stands over its heading and its cards alike, so a card is found within its state.
+    return KeyedSubtree(
+      key: Key('planning-state ${state.name}'),
+      child: SliverPadding(
+        padding: const EdgeInsets.only(bottom: Space.small),
+        sliver: DecoratedSliver(
+          decoration: BoxDecoration(
+            color: state.kind == 'WORKING' ? PlanningStyle.working(theme.colorScheme) : null,
+            borderRadius: BorderRadius.circular(PlanningStyle.radiusSmall),
+          ),
+          sliver: SliverMainAxisGroup(
+            slivers: [
+              SliverToBoxAdapter(child: heading),
+              if (!folded)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: Space.tight),
+                  sliver: SliverList.builder(
+                    itemCount: cards.length,
+                    itemBuilder: (context, index) =>
+                        _dropOn(state, phaseFolded ? _tile(context, cards[index]) : _card(context, cards[index])),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  /// A story in a folded phase: its priority, id, size and marks on one line.
+  Widget _tile(BuildContext context, PlanStory story) => Padding(
+    padding: const EdgeInsets.only(bottom: Space.tight),
+    child: _drag(
+      story,
+      InkWell(
+        key: Key('planning-story ${story.id}'),
+        onTap: story.id.isEmpty ? null : () => widget.onStory(story.id),
+        child: Tooltip(
+          message: _line('${story.id} — ${story.title} (${story.priority})'),
+          child: Container(
+            key: Key('planning-card ${story.id}'),
+            padding: const EdgeInsets.all(Space.tight),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    // One width for every mark, so the numbers and menus stand in line.
+                    SizedBox(
+                      width: PlanningStyle.foldedMark,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _priority(context, story.priority ?? '', mark: true),
+                      ),
+                    ),
+                    Expanded(child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade)),
+                    ?_size(context, story.size, key: 'planning-size ${story.id}'),
+                    if (_needsYou(story))
+                      Icon(
+                        Icons.warning_amber,
+                        key: Key('planning-needs-you ${story.id}'),
+                        size: PlanningStyle.mark,
+                        semanticLabel: 'needs you',
+                      ),
+                    _menu(story, dense: true),
+                  ],
+                ),
+                if (board.pending.containsKey(story.id)) const Text('Saving…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   // The data is taken when the drag starts, so the drop carries the board the person saw then.
   Widget _drag(PlanStory story, Widget child) => Draggable<_CardDrag>(
     data: (story: story.id, revision: board.snapshot?.revision ?? ''),
+    // A card under the pointer may leave the view while it is dragged, and its target then says nothing.
+    onDragEnd: (_) => _hovered.value = null,
     maxSimultaneousDrags: board.saving || board.pending.isNotEmpty || !board.live ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
@@ -1014,6 +1166,8 @@ class _BoardViewState extends State<_BoardView> {
       _foundIn(story).join(' '),
       _work(story),
       board.pending[story.id],
+      board.pending.isNotEmpty,
+      board.snapshot?.revision,
       board.pendingPriorities[story.id],
       board.priorityUnavailable(story.id),
       board.saving,
@@ -1431,3 +1585,13 @@ String _line(String text) => planningShown(text, multiline: false);
 
 /// A card being dragged: its story and the board's revision when the drag began.
 typedef _CardDrag = ({String story, String revision});
+
+/// A scroll that starts where its column was left, read when it attaches, so a column built again keeps its place.
+class _RememberedScroll extends ScrollController {
+  _RememberedScroll(this._offset) : super(keepScrollOffset: false);
+
+  final double Function() _offset;
+
+  @override
+  double get initialScrollOffset => _offset();
+}

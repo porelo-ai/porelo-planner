@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart' as widgets;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
@@ -31,7 +30,8 @@ void main() {
           {
             'id': 'Story$i',
             'title': 'Story number $i',
-            'state': ['Ready', 'Building', 'Review'][i % 3],
+            // One story at work, the rest waiting, so cards of Ready stand in view below it.
+            'state': i == 0 ? 'Building' : ['Ready', 'Review'][i % 2],
             'issues': <Map<String, dynamic>>[],
           },
       ],
@@ -55,23 +55,26 @@ void main() {
       ),
     );
     await settle(tester);
-    expect(find.byKey(const Key('planning-card Story0')), findsOneWidget, reason: 'the board is shown');
+    final ready = boards.selected!.cards('Ready').first.id;
+    expect(find.byKey(Key('planning-card $ready')), findsOneWidget, reason: 'a card of Ready is in view');
 
-    final rebuilt = <String>[];
-    var seen = 0;
-    final before = widgets.debugOnRebuildDirtyWidget;
-    widgets.debugOnRebuildDirtyWidget = (element, builtOnce) {
-      seen++;
-      if (element.widget case Draggable<String>(:final data?)) rebuilt.add(data);
+    // A card built again is a new widget; one taken from the board's cache is the very same.
+    Map<String, Widget> shown() => {
+      for (final element in find.byWidgetPredicate((widget) => widget.key is ValueKey<String>).evaluate())
+        if ((element.widget.key! as ValueKey<String>).value case final key when key.startsWith('planning-card '))
+          key: element.widget,
     };
-    addTearDown(() => widgets.debugOnRebuildDirtyWidget = before);
-    // The column is taller than the view; its button is pressed as a click on it would.
-    tester.widget<IconButton>(find.byKey(const Key('planning-fold-state Review'))).onPressed!();
+    final before = shown();
+    expect(before, contains('planning-card $ready'), reason: 'the cards in view are read');
+    tester.widget<IconButton>(find.byKey(const Key('planning-fold-state Building'))).onPressed!();
     await tester.pump();
-    widgets.debugOnRebuildDirtyWidget = before;
+    final after = shown();
 
-    expect(seen, isNonZero, reason: 'the fold rebuilds its column, so the count is read');
-    final others = rebuilt.where((id) => int.parse(id.substring('Story'.length)) % 3 != 2).toList();
-    expect(others, isEmpty, reason: 'a card whose story did not change is not built again; ${others.length} were');
+    expect(find.byKey(const Key('planning-card Story0')), findsNothing, reason: 'the folded state shows no card');
+    final rebuilt = [
+      for (final entry in before.entries)
+        if (after[entry.key] case final card? when !identical(card, entry.value)) entry.key,
+    ];
+    expect(rebuilt, isEmpty, reason: 'a card whose story did not change is not built again; ${rebuilt.length} were');
   });
 }

@@ -385,6 +385,24 @@ void main() {
     expect(boards.selected!.pending, isEmpty, reason: 'the save was answered');
   });
   // Harm: a WORKING drop starts without the shell's request or silently does nothing.
+  // Harm: the drop hint pushes the state's heading and cards under the pointer, so the card lands elsewhere or nowhere.
+  testWidgets('the drop hint moves nothing under the pointer', (tester) async {
+    await _showBoard(tester);
+    final heading = find.byKey(const Key('planning-drop Review'));
+    final before = tester.getRect(heading);
+    final drag = await tester.startGesture(
+      tester.getTopLeft(find.byKey(const Key('planning-card StoryOne'))) + const Offset(20, 20),
+    );
+    await drag.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await drag.moveTo(tester.getCenter(find.descendant(of: heading, matching: find.text('Review'))));
+    await tester.pump();
+    expect(find.text('Drop here for Review'), findsOneWidget, reason: 'the hint is shown');
+    expect(tester.getRect(heading), before, reason: 'the heading neither grew nor moved');
+    await drag.cancel();
+    await settle(tester);
+  });
+
   testWidgets('an unfolded working drop opens the shipped start dialog', (tester) async {
     final (backend, boards) = await _showBoard(tester);
     final source = find.byKey(const Key('planning-card StoryOne'));
@@ -576,6 +594,121 @@ void main() {
     expect(await first, isFalse);
   });
 
+  // Harm: two phases of one name, or a nameless phase beside the stories outside the workflow, share one scroll and
+  // crash the board.
+  testWidgets('phases of one name and a nameless phase show without a crash', (tester) async {
+    final (backend, _) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['phases'] = [
+      {
+        'name': 'Work',
+        'states': ['Ready'],
+      },
+      {
+        'name': 'Work',
+        'states': ['Building'],
+      },
+      {
+        'name': '',
+        'states': ['Review'],
+      },
+    ];
+    data['stories'] = [
+      {'id': 'StoryOne', 'title': 'A story', 'state': 'Ready', 'issues': <Map<String, dynamic>>[]},
+      {'id': 'StoryTwo', 'title': 'Outside', 'state': 'Elsewhere', 'issues': <Map<String, dynamic>>[]},
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+    expect(tester.takeException(), isNull, reason: 'no scroll is shared and no key repeats');
+    expect(find.byKey(const Key('planning-card StoryTwo')), findsOneWidget, reason: 'the board stands');
+  });
+
+  // Harm: a found issue in the first card of a state far down its phase, or one the person narrowed the search to
+  // while the board still scrolled, stays out of view and is taken for missing.
+  testWidgets('a search brings the first card of a far state into view, and a narrowed search its own card', (
+    tester,
+  ) async {
+    // Room above the board, as warnings and faults take it, must not turn the search's steps around.
+    final (backend, _) = await _showBoard(tester, above: 250);
+    final data = backend.boards['checkout']!;
+    data['stories'] = [
+      for (var number = 1; number <= 40; number++)
+        {
+          'id': 'Story$number',
+          'title': 'Story number $number',
+          'state': number == 40 ? 'Review' : 'Ready',
+          'priority': 'High',
+          'issues': [
+            {'id': 'AB$number', 'repository': 'planner', 'title': 'Issue $number', 'state': 'Ready'},
+          ],
+        },
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+    final view = tester.getRect(find.byKey(const Key('planning-phase-scroll Work')));
+    bool inView(String id) {
+      final card = find.byKey(Key('planning-card $id'));
+      if (card.evaluate().isEmpty) return false;
+      final shown = tester.getRect(card);
+      // A card taller than the view stands in it once its top does.
+      return shown.top >= view.top && (shown.bottom <= view.bottom || shown.top <= view.top + 16);
+    }
+
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab40');
+    await settle(tester);
+    expect(inView('Story40'), isTrue, reason: 'the first card of Review, far below, is in view');
+    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await settle(tester);
+    // Scrolled below the card it finds, the search must step up to it.
+    tester
+        .state<ScrollableState>(
+          find
+              .descendant(of: find.byKey(const Key('planning-phase-scroll Work')), matching: find.byType(Scrollable))
+              .first,
+        )
+        .position
+        .jumpTo(4000);
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab12');
+    await settle(tester);
+    expect(inView('Story12'), isTrue, reason: 'a card above the view is brought into it');
+    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab3');
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab39');
+    await settle(tester);
+    expect(inView('Story39'), isTrue, reason: 'the narrowed search shows its own card');
+  });
+
+  // Harm: an issue in a story outside the reported workflow lies far down that column, unseen, and is taken for missing.
+  testWidgets('a search brings a far card outside the workflow into view', (tester) async {
+    final (backend, _) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['stories'] = [
+      for (var number = 1; number <= 30; number++)
+        {
+          'id': 'Story$number',
+          'title': 'Story number $number after ab42',
+          'state': 'Elsewhere',
+          'priority': 'High',
+          'issues': [
+            if (number == 30) {'id': 'AB42', 'repository': 'planner', 'title': 'The far issue', 'state': 'Elsewhere'},
+          ],
+        },
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+    final card = find.byKey(const Key('planning-card Story30'));
+    expect(card, findsNothing, reason: 'the card starts far below the visible column');
+    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42');
+    await settle(tester);
+    expect(find.byKey(const Key('planning-issue-found AB42')), findsOneWidget, reason: 'the found issue is shown');
+    final view = tester.getRect(find.byKey(const Key('planning-board-scroll')));
+    final shown = tester.getRect(card);
+    expect(shown.top >= view.top && shown.bottom <= view.bottom, isTrue, reason: 'the card $shown is inside $view');
+  });
+
   // Harm: an issue searched for by its number lies in a story far down its column, unseen, and is taken for missing.
   testWidgets('a search for an issue opens its story, marks the issue and brings the card into view', (tester) async {
     final (backend, boards) = await _showBoard(tester);
@@ -595,9 +728,11 @@ void main() {
     ];
     backend.push('checkout', data);
     await settle(tester);
-    final view = tester.getRect(find.byKey(const Key('planning-board-scroll')));
+    final phase = find.byKey(const Key('planning-phase-scroll Work'));
+    final view = tester.getRect(phase);
     final card = find.byKey(const Key('planning-card Story30'));
-    expect(view.overlaps(tester.getRect(card)), isFalse, reason: 'the card starts below the visible board');
+    // A phase builds only the cards near its view, so the far card is not built yet.
+    expect(card, findsNothing, reason: 'the card starts far below the visible phase');
     await tester.enterText(find.byKey(const Key('planning-search')), 'ab42');
     await settle(tester);
     expect(find.byKey(const Key('planning-issue-found AB42')), findsOneWidget, reason: 'the found issue is marked');
@@ -611,19 +746,13 @@ void main() {
 
     // Harm: a person who scrolled away while typing is pulled back on every key.
     tester
-        .state<ScrollableState>(
-          find.descendant(of: find.byKey(const Key('planning-board-scroll')), matching: find.byType(Scrollable)).first,
-        )
+        .state<ScrollableState>(find.descendant(of: phase, matching: find.byType(Scrollable)).first)
         .position
         .jumpTo(0);
     await settle(tester);
-    expect(view.overlaps(tester.getRect(card)), isFalse, reason: 'the person scrolled the card out of view again');
+    expect(card, findsNothing, reason: 'the person scrolled the card out of view again');
     await tester.enterText(find.byKey(const Key('planning-search')), 'ab42 ');
     await settle(tester);
-    expect(
-      view.overlaps(tester.getRect(card)),
-      isFalse,
-      reason: 'a search that finds the same first card does not scroll again',
-    );
+    expect(card, findsNothing, reason: 'a search that finds the same first card does not scroll again');
   });
 }

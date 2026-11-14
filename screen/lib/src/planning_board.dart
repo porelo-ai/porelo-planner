@@ -41,8 +41,9 @@ class PlanningPreferences {
   /// The search over identifier and title.
   String search = '';
 
-  /// The last vertical board position, retained across provider replacements.
-  double verticalOffset = 0;
+  /// Each phase's last vertical position by phase name, retained across provider replacements; each phase scrolls on
+  /// its own.
+  final Map<String, double> phaseOffsets = {};
 
   /// The last horizontal board position, retained across provider replacements.
   double horizontalOffset = 0;
