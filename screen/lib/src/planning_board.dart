@@ -47,11 +47,8 @@ class PlanningPreferences {
   /// The last horizontal board position, retained across provider replacements.
   double horizontalOffset = 0;
 
-  /// Whether closed states are shown.
-  bool showClosed = false;
-
-  /// Phase names folded to marks and counts: only Done, whose closed stories show when asked, so a first open shows
-  /// every open story's card whole.
+  /// Phase names folded to marks and counts: only Done, which holds the closed stories, so a first open shows every
+  /// open story's card whole.
   final Set<String> foldedPhases = {'Done'};
 
   /// State names folded to their heading; every box starts open.
@@ -1452,19 +1449,11 @@ class PlanningBoard extends ChangeNotifier {
   /// The reported state with this name, if any.
   PlanState? state(String name) => states.where((state) => state.name == name).firstOrNull;
 
-  /// Whether a state is shown under the closed-state choice.
-  bool visible(PlanState state) => preferences.showClosed || state.kind != 'CLOSED';
-
-  /// Visible states of a phase, working first and otherwise in workflow order.
+  /// The states of a phase, working first and otherwise in workflow order.
   List<PlanState> statesIn(PlanPhase phase) {
-    final listed = states.where((state) => phase.states.contains(state.name) && visible(state)).toList();
+    final listed = states.where((state) => phase.states.contains(state.name)).toList();
     return [...listed.where((state) => state.kind == 'WORKING'), ...listed.where((state) => state.kind != 'WORKING')];
   }
-
-  /// The number of closed stories before filtering.
-  int? get closedCount => snapshot?.complete != true || stories.any((story) => state(story.state)?.kind.isEmpty ?? true)
-      ? null
-      : stories.where((story) => state(story.state)?.kind == 'CLOSED').length;
 
   /// The priority rank, with unknown or missing values after known ones.
   static int rank(String? priority) => switch (priority) {
@@ -1570,12 +1559,6 @@ class PlanningBoard extends ChangeNotifier {
   /// Updates the search.
   void search(String query) {
     preferences.search = query;
-    _changed();
-  }
-
-  /// Toggles closed states.
-  void toggleClosed() {
-    preferences.showClosed = !preferences.showClosed;
     _changed();
   }
 

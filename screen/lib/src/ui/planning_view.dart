@@ -420,12 +420,6 @@ class _BoardViewState extends State<_BoardView> {
                               ),
                             ),
                           ),
-                          FilterChip(
-                            key: const Key('planning-show-closed'),
-                            label: Text('Show Finished and Rejected (${board.closedCount ?? '?'})'),
-                            selected: board.preferences.showClosed,
-                            onSelected: (_) => board.toggleClosed(),
-                          ),
                           PlanningActionMenu(
                             key: const Key('planning-board-menu'),
                             tooltip: 'Planning of ${board.project}',

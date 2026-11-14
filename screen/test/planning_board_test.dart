@@ -482,7 +482,6 @@ void main() {
     backend.controllers['project']!.add(PlanningSnapshot.from({}));
     await Future<void>.delayed(Duration.zero);
     expect(board.workingCount, isNull);
-    expect(board.closedCount, isNull);
     backend.controllers['project']!.add(
       PlanningSnapshot.from({
         'states': <Map<String, dynamic>>[],

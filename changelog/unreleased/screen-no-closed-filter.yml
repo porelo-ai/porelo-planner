@@ -1,0 +1,2 @@
+title: The planning screen has no Show Finished and Rejected filter any more; finished and rejected stories stand in the Done phase, which is folded at first and opens like any other phase.
+type: removed
