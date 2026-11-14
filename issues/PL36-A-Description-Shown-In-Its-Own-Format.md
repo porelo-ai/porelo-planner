@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL36",
   "title": "A Description Shown In Its Own Format",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 1,
@@ -17,9 +17,8 @@
 **Size:** L - one more member in the store's interface, the Git store and the mock mode, a contract change the window
 reads, and a Markdown rendering in the screen that keeps links and images under the screen's own rules.
 
-**Estimate:** 113 min, the measured median of L; the steps sum to 133 by the medians (S 33 + S 33 + M 67). Uncertain:
-the choice of the Markdown package (step 3), and whether a rendering of its own is needed when no maintained package
-routes links and turns images off.
+**Estimate:** 113 min, the measured median of L; the steps sum to 133 by the medians (S 33 + S 33 + M 67), and the
+rendering of the screen's own adds about an hour to step 3.
 
 **What must be true.** A story's or an issue's description reads as its author wrote it: headings, emphasis, lists
 and links rendered, not shown as raw Markdown signs. The store's interface names the format of each text it gives -
@@ -62,7 +61,8 @@ Steps:
    member on both answers - harm: a contract the window reads that the planner does not serve.
 3. **Screen (M).** `PlanStory` and `PlanIssueDetail` read the format, absent or unknown read as plain. One widget,
    `PlanningText`, renders `MARKDOWN` (headings, paragraphs, emphasis, lists, block quotes, code, links) and shows any
-   other format as today's `SelectableText`. `PlanningStoryView` shows the description through it, and
+   other format as today's `SelectableText`. The screen takes only the Dart team's `markdown` parser and renders its
+   nodes itself; no Flutter Markdown widget package. `PlanningStoryView` shows the description through it, and
    `PlanningIssueView` gains a section with the issue's text through it, beside What must be true; the Git store's text
    keeps its head, which Markdown shows as a code block, and `Issue`'s Javadoc is corrected to say so. Rules the widget
    keeps: a link opens only through `openLink` and only for `https` with a host, as `PlanningWebLink` does; an image is
@@ -87,11 +87,7 @@ No test needs a VM; every level is unit or widget level, plus the app's existing
 
 ## To be checked
 
-- Whether the window takes in a Markdown package through the screen waits on the operator's choice of dependency;
-  step 3 starts only after it. The window keeps caret constraints in `pubspec.yaml`, commits `pubspec.lock` and pins
-  the screen by commit.
-- Which Flutter Markdown package to use: a maintained one (publisher, last release, open issues) whose link taps can
-  be routed to `openLink` and whose images can be turned off; otherwise the `markdown` parser of the Dart team with a
-  small rendering of its own in `PlanningText`, which adds about an hour to step 3.
-- Whether the package builds with the Flutter version `pubspec.yaml` pins and resolves offline in the screen's
+- The window keeps caret constraints in `pubspec.yaml`, commits `pubspec.lock` and pins the screen by commit; the
+  `markdown` parser reaches it through the screen.
+- Whether the `markdown` parser builds with the Flutter version `pubspec.yaml` pins and resolves offline in the screen's
   Maven build as the other dependencies do.
