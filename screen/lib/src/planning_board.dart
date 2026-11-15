@@ -546,9 +546,10 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
-  /// Says why [story]'s start, which goes on after its form closed, was refused or failed.
+  /// Says why [story]'s start, which goes on after its form closed, was refused or failed; the person's own cancel of
+  /// a start in the window is no fault, as for an idea's discussion.
   void reportStartProblem(String story, Object error) {
-    if (_disposed) return;
+    if (_disposed || planningRefused(error, 'NotStarted')) return;
     actionProblem = 'Start work on ${planningShown(story, multiline: false)}: ${planningFailureWords(error)}';
     _changed();
   }
