@@ -206,6 +206,61 @@ void main() {
     expect(planningWithoutHeading('# AB1 note\nBody.', 'AB1', 'JIRA_WIKI'), '# AB1 note\nBody.');
   });
 
+  // Prevents a person's own text being dropped while the issue's JSON head and What must be true are left out.
+  test('a Markdown description leaves out the head and the What must be true shown above, and keeps the rest', () {
+    const text =
+        '# AB1 — A title\n\n```json\n{ "id": "AB1",\n  "state": "Idea" }\n```\n\n**Why this size.** XS - one file.\n\n'
+        '**What must be true.** It holds,\nin two lines.\n\n## Plan\n\n- A step.\n\n```json\n{"kept": true}\n```\n';
+    const rest = '**Why this size.** XS - one file.\n\n## Plan\n\n- A step.\n\n```json\n{"kept": true}\n```\n';
+    expect(
+      planningWithoutHeading(text, 'AB1', 'MARKDOWN', whatMustBeTrueShown: true).trim(),
+      rest.trim(),
+      reason: 'neither the head nor What must be true is shown twice, and everything else stays',
+    );
+    expect(
+      planningWithoutHeading(text, 'AB1', 'MARKDOWN').trim(),
+      '**Why this size.** XS - one file.\n\n**What must be true.** It holds,\nin two lines.\n\n'
+      '## Plan\n\n- A step.\n\n```json\n{"kept": true}\n```',
+      reason: 'What must be true stays when the page does not show it above',
+    );
+    const unheaded = 'Text first.\n\n```json\n{"id": "AB1"}\n```\n';
+    expect(
+      planningWithoutHeading(unheaded, 'AB1', 'MARKDOWN', whatMustBeTrueShown: true),
+      unheaded,
+      reason: 'a JSON block not right below the heading is the person\'s own',
+    );
+  });
+
+  // Prevents the Description showing the issue's JSON head and What must be true a second time.
+  testWidgets('the issue page shows its head and What must be true nowhere in the description', (tester) async {
+    await _page(
+      tester,
+      _board(
+        first: [
+          _issue(
+            'PL1',
+            more: {
+              'whatMustBeTrue': 'It holds.',
+              'textFormat': 'MARKDOWN',
+              'text':
+                  '# PL1 — Issue PL1\n\n```json\n{ "id": "PL1" }\n```\n\n**What must be true.** It holds.\n\n'
+                  '## Plan\n\n- The plan step.\n',
+            },
+          ),
+        ],
+      ),
+    );
+    final description = [
+      for (final text in tester.widgetList<RichText>(
+        find.descendant(of: find.byKey(const Key('planning-issue-text')), matching: find.byType(RichText)),
+      ))
+        text.text.toPlainText(),
+    ].join('\n');
+    expect(description, contains('The plan step.'), reason: 'the plan stays');
+    expect(description, isNot(contains('"id"')), reason: 'the JSON head is left out');
+    expect(description, isNot(contains('What must be true')), reason: 'shown once, above');
+  });
+
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.
   testWidgets('a task link and a given state\'s tooltip show no control or direction character', (tester) async {
     await tester.pumpWidget(

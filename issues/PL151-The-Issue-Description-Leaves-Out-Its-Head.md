@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL151",
   "title": "The Issue Description Leaves Out Its Head",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 71,

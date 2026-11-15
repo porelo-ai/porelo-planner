@@ -193,7 +193,12 @@ class PlanningIssueView extends StatelessWidget {
       // A settled issue's file is gone and an unreported text is said nowhere, so neither leaves an empty box.
       if (!settled &&
           reply.textReported &&
-          planningWithoutHeading(reply.text, issue.id, reply.textFormat).trim().isNotEmpty)
+          planningWithoutHeading(
+            reply.text,
+            issue.id,
+            reply.textFormat,
+            whatMustBeTrueShown: _whatMustBeTrueShown(reply),
+          ).trim().isNotEmpty)
         _part(context, 'Description', [
           Card(
             margin: EdgeInsets.zero,
@@ -201,7 +206,12 @@ class PlanningIssueView extends StatelessWidget {
               padding: const EdgeInsets.all(Space.wide),
               child: PlanningText(
                 key: const Key('planning-issue-text'),
-                text: planningWithoutHeading(reply.text, issue.id, reply.textFormat),
+                text: planningWithoutHeading(
+                  reply.text,
+                  issue.id,
+                  reply.textFormat,
+                  whatMustBeTrueShown: _whatMustBeTrueShown(reply),
+                ),
                 format: reply.textFormat,
                 openLink: openLink,
               ),
@@ -428,11 +438,29 @@ class PlanningIssueView extends StatelessWidget {
 /// How many characters of a revision the issue page shows; the tooltip and the copy carry the whole.
 const planningRevisionShown = 7;
 
-/// A Markdown [text] without a first heading that opens with the issue's [id], since the page's header already shows
-/// its id and title; any other text, heading or format stays whole.
-String planningWithoutHeading(String text, String id, String format) {
-  if (format != 'MARKDOWN' || id.isEmpty) return text;
+/// A Markdown [text] without what the page already shows: a first heading that opens with the issue's [id], the fenced
+/// JSON head right below it, and, when [whatMustBeTrueShown], the paragraph opening with `**What must be true.**`; any
+/// other text, heading or format stays whole.
+String planningWithoutHeading(String text, String id, String format, {bool whatMustBeTrueShown = false}) {
+  if (format != 'MARKDOWN') return text;
+  var rest = _withoutHeadingAndHead(text, id);
+  if (whatMustBeTrueShown) rest = rest.replaceFirst(_whatMustBeTrueParagraph, '');
+  return rest;
+}
+
+final _jsonHead = RegExp(r'^(?:[ \t]*\n)*(`{3,})json[ \t]*\n(?:[\s\S]*?\n)?\1[ \t]*(?:\n|$)');
+final _whatMustBeTrueParagraph = RegExp(
+  r'(?:^|(?<=\n))\*\*What must be true\.\*\*.*(?:\n(?![ \t]*(?:\n|$)).*)*(?:\n[ \t]*(?=\n))*\n?',
+);
+
+String _withoutHeadingAndHead(String text, String id) {
+  if (id.isEmpty) return text;
   final match = RegExp(r'^\s*#[ \t]+([^\n]*)\n?').firstMatch(text);
   if (match == null || !RegExp('^${RegExp.escape(id)}(?![A-Za-z0-9._-])').hasMatch(match.group(1)!)) return text;
-  return text.substring(match.end);
+  final rest = text.substring(match.end);
+  return rest.replaceFirst(_jsonHead, '');
 }
+
+/// Whether the page shows What must be true from [reply] above the Description.
+bool _whatMustBeTrueShown(PlanIssueDetail reply) =>
+    reply.criteriaReported && reply.whatMustBeTrue.any((text) => text.trim().isNotEmpty);
