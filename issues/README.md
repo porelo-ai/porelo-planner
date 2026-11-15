@@ -10,7 +10,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl125"></a>[PL125](PL125-Porelos-Login-Lent-Once-Porelo-Answers-Git.md) | - | - | A planner Porelo starts reads and writes a project's private https repositories with the login Porelo's vault holds, now that Porelo's credential command answers Git, without a Git configuration the person writes by hand |
-| <a id="pl157"></a>[PL157](PL157-The-Start-Work-Wizard-In-The-Screen.md) | - | [PL156](README.md#pl156) | The screen package gives Start work's steps and review as the window's wizard shows them, with single choices as text and agent, model and effort as lists, as the design decides; built once the design is settled |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
@@ -22,6 +21,12 @@ left out.
 | <a id="pl145"></a>[PL145](PL145-A-Story-Finished-Over-Rejected-Issues-Or-An-Open-Stage.md) | - | - | A story moved to Finished whose issues are all Rejected, or none, and one whose carried issue has an unclosed stage record, is either saved whole or refused with one line why, never failing in the store after the preview passed it |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
+
+## Analyzed
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl157"></a>[PL157](PL157-The-Start-Work-Wizard-In-The-Screen.md) | L | [PL146](README.md#pl146), [PL156](README.md#pl156) | The screen package gives Start work's steps and review as the window's wizard shows them, with single choices as text and agent, model and effort as lists, as the design decides; built once the design is settled |
 
 ## Estimated
 
