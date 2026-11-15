@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL140",
   "title": "Start Work Shows It Waits",
-  "state": "Backlog",
+  "state": "Review",
   "size": "XS",
   "priority": "Medium",
   "rank": 63,
@@ -31,6 +31,8 @@ it, instead of a dialog whose fields are all grey with no sign that anything hap
 - The hook stays one Future: the start's steps are the window's to show, in the operation it opens at once, so the
   screen holds no second copy of them and the contract does not change.
 - No test: the dialog only reads wrong while it waits; nothing is started twice or lost.
+- Read in the code's reading: a key on the waiting row would stand once per task still starting, and two tasks
+  starting at once would make duplicate sibling keys; the rows carry no key, since no test finds them.
 
 ## Acceptance
 

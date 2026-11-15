@@ -18,6 +18,16 @@ class StoryWorkDialog extends StatefulWidget {
   State<StoryWorkDialog> createState() => _StoryWorkDialogState();
 }
 
+/// A wait the person sees as one: the screen's still mark beside its words.
+Widget _waiting(String words) => Row(
+  spacing: Space.small,
+  children: [
+    // A still mark: an endless animation would keep a waiting dialog from ever settling.
+    const Icon(Icons.hourglass_empty, size: PlanningStyle.mark),
+    Flexible(child: Text(words)),
+  ],
+);
+
 class _StoryWorkDialogState extends State<StoryWorkDialog> {
   StoryWork get work => widget.work;
   late final VoidCallback _stopFollowing;
@@ -109,7 +119,7 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                           if (value != null) work.changeTarget(value);
                         },
                 ),
-                if (work.busy) const Text('Waiting for the planner’s answer…'),
+                if (work.busy) _waiting('Waiting for the planner’s answer…'),
                 if (!work.current)
                   const Text('The board changed or is no longer live. Cancel and open Start work again.'),
                 if (work.problem case final problem?) ...[
@@ -125,7 +135,9 @@ class _StoryWorkDialogState extends State<StoryWorkDialog> {
                   if (task.started case final started?) Text(_said('Started ${started.task} in ${started.container}')),
                   if (task.problem case final problem?) Text(_said(problem, multiline: true)),
                   if (task.started == null && task.problem == null)
-                    Text(work.starting ? 'Waiting for Start' : 'Not started'),
+                    work.starting
+                        ? _waiting('Waiting for Start; the window shows how far it is.')
+                        : const Text('Not started'),
                 ],
                 if (proposal != null)
                   KeyedSubtree(key: ObjectKey(proposal), child: _proposal(context, proposal, enabled)),
