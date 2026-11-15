@@ -70,6 +70,7 @@ Future<List<(String?, String)>> _page(
   Map<String, dynamic> data, {
   String story = 'ST1',
   String issue = 'PL1',
+  List<String>? tasksOpened,
 }) async {
   final opened = <(String?, String)>[];
   final source = MockPlanningSource()..boards['demo'] = data;
@@ -92,8 +93,8 @@ Future<List<(String?, String)>> _page(
               onStory: (_) {},
               onIssue: (id) => opened.add((null, id)),
               onIssueOf: (story, id) => opened.add((story, id)),
-              onTask: (_) {},
-              taskUnavailable: (_) => null,
+              onTask: (task) => tasksOpened?.add(task),
+              taskUnavailable: (task) => 'This window does not know task $task on this machine',
               openLink: (_) async {},
             ),
           ),
@@ -259,6 +260,48 @@ void main() {
     expect(description, contains('The plan step.'), reason: 'the plan stays');
     expect(description, isNot(contains('"id"')), reason: 'the JSON head is left out');
     expect(description, isNot(contains('What must be true')), reason: 'shown once, above');
+  });
+
+  // Prevents a person sent to look for a task on the wrong machine, or for a task that already ended.
+  testWidgets('a task of the issue says where it ran and that it ended, and opens nothing', (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': false,
+      'tasks': [
+        {
+          'task': 'pi-2',
+          'containerId': 'c1',
+          'machine': 'host-2',
+          'repository': 'repo',
+          'issues': ['PL1'],
+          'state': 'Implementing',
+          'done': 'Review',
+          'mode': 'AGENT',
+          'agent': 'agent',
+          'model': 'model',
+          'role': 'MAIN',
+          'since': '2026-01-02T03:04:05Z',
+          'atWork': false,
+          'ended': {'at': '2026-01-02T04:05:06Z', 'finished': true, 'why': '', 'answer': ''},
+        },
+      ],
+    };
+    final tasksOpened = <String>[];
+    await _page(tester, data, tasksOpened: tasksOpened);
+    final details = [
+      for (final text in tester.widgetList<RichText>(
+        find.descendant(of: find.byKey(const Key('planning-issue-details')), matching: find.byType(RichText)),
+      ))
+        text.text.toPlainText(),
+    ].join('\n');
+    expect(details, contains('pi-2'), reason: 'the task is named');
+    expect(details, contains('on host-2'), reason: 'the machine it ran on, as reported');
+    expect(details, contains('ended'), reason: 'an ended task says so');
+    expect(details, isNot(contains('does not know task')), reason: 'no window words for a task that ended');
+    await tester.ensureVisible(find.byKey(const Key('planning-task pi-2')));
+    await tester.tap(find.byKey(const Key('planning-task pi-2')), warnIfMissed: false);
+    await tester.pump();
+    expect(tasksOpened, isEmpty, reason: 'an ended task opens nothing');
   });
 
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.

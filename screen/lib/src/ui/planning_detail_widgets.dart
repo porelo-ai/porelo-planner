@@ -86,10 +86,19 @@ class _PlanningWebLinkState extends State<PlanningWebLink> {
   }
 }
 
-/// A task named by this story, with a visible explanation when the window cannot open it.
+/// A task named by this story, with the machine it runs on as reported and when it ended; one at work opens in the
+/// window, with a visible explanation when the window cannot open it, and any other is named alone.
 class PlanningTaskLink extends StatelessWidget {
   /// Takes availability from the task's own machine.
-  const PlanningTaskLink({required this.name, required this.onOpen, required this.unavailable, super.key});
+  const PlanningTaskLink({
+    required this.name,
+    required this.onOpen,
+    required this.unavailable,
+    this.machine,
+    this.endedAt,
+    this.opens = true,
+    super.key,
+  });
 
   /// The task's full name.
   final String name;
@@ -100,22 +109,52 @@ class PlanningTaskLink extends StatelessWidget {
   /// Why the machine or task is unavailable, if so.
   final String? unavailable;
 
+  /// The machine the task runs or ran on, as the planner reports it, if reported.
+  final String? machine;
+
+  /// When the task ended, as the planner reports it, if it ended.
+  final String? endedAt;
+
+  /// Whether the window is asked to open the task, which only a task at work can be.
+  final bool opens;
+
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: Space.small,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      Tooltip(
-        message: planningShown(unavailable ?? 'Open $name', multiline: false),
-        child: TextButton(
-          key: Key('planning-task $name'),
-          onPressed: unavailable == null ? onOpen : null,
-          child: Text(planningShown(name, multiline: false)),
+  Widget build(BuildContext context) {
+    final where = [
+      if (machine case final machine? when machine.trim().isNotEmpty) 'on ${planningShown(machine, multiline: false)}',
+      if (endedAt case final at?) 'ended ${planningLocalTime(at)}',
+    ].join(' · ');
+    if (!opens) {
+      return Text(
+        [planningShown(name, multiline: false), if (where.isNotEmpty) where].join(' · '),
+        key: Key('planning-task $name'),
+      );
+    }
+    return Wrap(
+      spacing: Space.small,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Tooltip(
+          message: planningShown(unavailable ?? 'Open $name', multiline: false),
+          child: TextButton(
+            key: Key('planning-task $name'),
+            onPressed: unavailable == null ? onOpen : null,
+            child: Text(planningShown(name, multiline: false)),
+          ),
         ),
-      ),
-      if (unavailable case final reason?) Text(planningShown(reason, multiline: false)),
-    ],
-  );
+        if (where.isNotEmpty) Text(where),
+        if (unavailable case final reason?) Text(planningShown(reason, multiline: false)),
+      ],
+    );
+  }
+}
+
+/// A reported time in the person's own zone to the minute, or the reported text when it is no time.
+String planningLocalTime(String at) {
+  final time = DateTime.tryParse(at)?.toLocal();
+  if (time == null) return planningShown(at, multiline: false);
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${time.year}-${two(time.month)}-${two(time.day)} ${two(time.hour)}:${two(time.minute)}';
 }
 
 /// Human-readable names for known work modes; later daemon values remain as reported.
