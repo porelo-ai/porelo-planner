@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
+import org.fuin.porelo.planner.store.git.stories.IssueLinks;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 
 /**
@@ -75,6 +76,43 @@ public final class ResultText {
             throw new IllegalArgumentException("its head does not read back with the result");
         }
         return crlf ? edited.replace("\n", "\r\n") : edited;
+    }
+
+    /**
+     * Writes the result into the issue's file, every bare number of the repository's index in the
+     * result's text written as the link to its row.
+     *
+     * @param text the issue's file
+     * @param result the issue's result
+     * @param workflow the project's workflow, which the written head is checked against
+     * @param numbers the issue numbers of the repository's index
+     * @return the file with the result
+     * @throws IllegalArgumentException as {@link #apply(String, StageResult.ForIssue, Workflow)}
+     */
+    static String apply(
+            final String text,
+            final StageResult.ForIssue result,
+            final Workflow workflow,
+            final java.util.Set<String> numbers) {
+        return apply(text, linked(result, numbers), workflow);
+    }
+
+    /** The result with its plan, what is to be checked and its findings linking their numbers. */
+    private static StageResult.ForIssue linked(
+            final StageResult.ForIssue result, final java.util.Set<String> numbers) {
+        final String plan = result.plan();
+        return new StageResult.ForIssue(
+                result.id(),
+                result.from(),
+                result.to(),
+                plan == null ? null : IssueLinks.linked(plan, numbers),
+                result.size(),
+                result.sizeWhy(),
+                result.estimateMinutes(),
+                result.toBeChecked().stream()
+                        .map(item -> IssueLinks.linked(item, numbers))
+                        .toList(),
+                result.findings().stream().map(item -> IssueLinks.linked(item, numbers)).toList());
     }
 
     /**

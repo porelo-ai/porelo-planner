@@ -167,6 +167,86 @@ class ResultTextTest {
                 .hasMessageContaining("/state");
     }
 
+    @Test
+    void aResultLinksEveryBareNumberOfTheIndexAndLeavesLinksCodeAndOtherNumbersAsTheyAre()
+            throws Exception {
+        // Prevents a saved result that makes the store's own issue check warn on every board.
+        final String other = "AB02"; // not-a-citation
+        final String foreign = "CD07"; // not-a-citation
+        final StageResult.ForIssue result =
+                new StageResult.ForIssue(
+                        ID,
+                        "Backlog",
+                        "Review",
+                        "- Touch "
+                                + ID
+                                + " and "
+                                + other
+                                + ", see "
+                                + link(other)
+                                + " and `"
+                                + ID
+                                + "`.\n\n```\n"
+                                + other
+                                + " in a fence\n```\n\n- Not "
+                                + foreign
+                                + ".\n",
+                        "M",
+                        "one module",
+                        null,
+                        List.of("Ask about " + other + "."),
+                        List.of(ID + " holds."));
+        final String written =
+                ResultText.apply(ISSUE, result, WORKFLOW, java.util.Set.of(ID, other));
+        assertThat(written.lines().toList())
+                .as("exactly the bare numbers of the index are links to their rows")
+                .contains(
+                        "- Touch "
+                                + link(ID)
+                                + " and "
+                                + link(other)
+                                + ", see "
+                                + link(other)
+                                + " and `"
+                                + ID
+                                + "`.",
+                        other + " in a fence",
+                        "- Not " + foreign + ".",
+                        "- Ask about " + link(other) + ".",
+                        "- " + link(ID) + " holds.");
+        final String index =
+                "## Idea\n| <a id=\""
+                        + ID.toLowerCase(java.util.Locale.ROOT)
+                        + "\"></a>["
+                        + ID
+                        + "]("
+                        + ID
+                        + "-An-issue.md) | an issue |\n| <a id=\""
+                        + other.toLowerCase(java.util.Locale.ROOT)
+                        + "\"></a>["
+                        + other
+                        + "]("
+                        + other
+                        + "-Other.md) | another |\n";
+        final java.util.Map<String, String> pages = new java.util.LinkedHashMap<>();
+        pages.put("issues/README.md", index);
+        pages.put("issues/" + ID + "-An-issue.md", written);
+        assertThat(
+                        org.fuin.porelo.planner.store.git.stories.IssueLinks.check(
+                                pages,
+                                java.util.Map.of(
+                                        "issues/README.md",
+                                        org.fuin.porelo.planner.store.git.stories.IssueIndexes.read(
+                                                index, "sample", WORKFLOW)),
+                                path -> java.util.Optional.empty()))
+                .as("the written file passes the store's issue check")
+                .isEmpty();
+    }
+
+    private static String link(final String number) {
+        return "[" + number + "](README.md#" + number.toLowerCase(java.util.Locale.ROOT) + ")";
+    }
+
     private static StageResult.ForIssue analysis(
             final List<String> toBeChecked, final @Nullable Integer minutes) {
         return new StageResult.ForIssue(

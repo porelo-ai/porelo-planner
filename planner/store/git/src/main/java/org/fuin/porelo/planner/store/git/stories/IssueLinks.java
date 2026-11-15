@@ -110,6 +110,57 @@ public final class IssueLinks {
         return List.copyOf(links.faults);
     }
 
+    /**
+     * Writes each bare issue number of a text that names a row of the index as the link to that
+     * row, as {@link #check} asks of a page under {@code issues/}; a number already linked, in a
+     * code span, in a fence, in a heading or on a line marked as holding the shape on purpose stays
+     * as it is.
+     *
+     * @param text the text, with line feeds
+     * @param numbers the issue numbers that have a row in the repository's index
+     * @return the text with those numbers linked
+     */
+    public static String linked(final String text, final Set<String> numbers) {
+        final String[] lines = text.split("\n", -1);
+        boolean fenced = false;
+        for (int i = 0; i < lines.length; i++) {
+            final String line = lines[i];
+            if (line.strip().startsWith("```")) {
+                fenced = !fenced;
+                continue;
+            }
+            if (fenced || line.startsWith("#") || line.contains(MARKED)) {
+                continue;
+            }
+            lines[i] = linkedLine(line, numbers);
+        }
+        return String.join("\n", lines);
+    }
+
+    /** One line with its bare numbers linked, read past code spans and links as the check reads. */
+    private static String linkedLine(final String line, final Set<String> numbers) {
+        final String masked = blank(LINK, blank(CODE_SPAN, line));
+        final Matcher number = NUMBER.matcher(masked);
+        final StringBuilder out = new StringBuilder();
+        int last = 0;
+        while (number.find()) {
+            final String found = number.group();
+            if (!numbers.contains(found) || NOT_ISSUES.contains(found)) {
+                continue;
+            }
+            out.append(line, last, number.start())
+                    .append('[')
+                    .append(found)
+                    .append("](")
+                    .append(INDEX)
+                    .append('#')
+                    .append(found.toLowerCase(Locale.ROOT))
+                    .append(')');
+            last = number.end();
+        }
+        return out.append(line.substring(last)).toString();
+    }
+
     private void read() {
         for (final String page : pages.keySet()) {
             final Matcher file = ISSUE_FILE.matcher(name(page));

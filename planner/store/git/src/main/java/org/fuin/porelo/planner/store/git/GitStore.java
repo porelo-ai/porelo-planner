@@ -703,6 +703,8 @@ public final class GitStore implements PlanningStore {
             final Path root = scratch.resolve(name);
             final Map<String, StageResult.ForIssue> results =
                     edits.results().getOrDefault(name, Map.of());
+            final Set<String> numbers =
+                    results.isEmpty() ? Set.of() : indexed(root, name, workflow);
             for (final Map.Entry<String, String> head : moved.entrySet()) {
                 final StageResult.ForIssue result = results.get(head.getKey());
                 edit(
@@ -713,7 +715,7 @@ public final class GitStore implements PlanningStore {
                         text ->
                                 result == null
                                         ? HeadEdit.issueState(text, head.getValue())
-                                        : ResultText.apply(text, result, workflow));
+                                        : ResultText.apply(text, result, workflow, numbers));
             }
             final List<String> heads = written(moved.keySet(), added, name);
             heads.addAll(workers.getOrDefault(name, Map.of()).keySet());
@@ -1172,6 +1174,28 @@ public final class GitStore implements PlanningStore {
     }
 
     /** Edits one head, a refusal naming the item whose file it is. */
+    /**
+     * The issue numbers of a repository's index as it stood before the save, which a result's text
+     * links; an index that cannot be read links none, and the board's own check names it.
+     */
+    private static Set<String> indexed(
+            final Path root,
+            final String name,
+            final org.fuin.porelo.planner.store.git.stories.Workflow workflow) {
+        final Path index = root.resolve("issues").resolve("README.md");
+        if (!Files.isRegularFile(index)) {
+            return Set.of();
+        }
+        try {
+            return Set.copyOf(
+                    org.fuin.porelo.planner.store.git.stories.IssueIndexes.read(
+                                    Files.readString(index, StandardCharsets.UTF_8), name, workflow)
+                            .keySet());
+        } catch (final IOException | IllegalArgumentException e) {
+            return Set.of();
+        }
+    }
+
     private static void edit(
             final Snapshot snapshot,
             final String name,

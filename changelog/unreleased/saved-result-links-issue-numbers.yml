@@ -1,0 +1,2 @@
+title: A saved analysis or estimate writes each bare issue number of the repository's index as the link to its row, so the store's own issue check no longer warns on it.
+type: fixed

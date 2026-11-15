@@ -135,6 +135,8 @@ public final class StageOrder {
                 + result.name()
                 + "\", and issues, one object per issue the order names with its id, "
                 + fields
-                + ". Edit nothing under issues/, commit nothing and push nothing.";
+                + ". In the result, name an issue of this repository by its number, which the"
+                + " planner links to its row, and name no other repository's issue."
+                + " Edit nothing under issues/, commit nothing and push nothing.";
     }
 }

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL150",
   "title": "A Saved Result Links Its Issue Numbers",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 70,
@@ -34,11 +34,9 @@ issue's file.
   already linked and one in a code span; the written file passes the store's issue check and links exactly the bare
   ones. Harm: a saved result that makes the store warn on every board.
 
+- The store's issue check reads only numbers whose prefix is the repository's own or has a row in its index; another
+  repository's number has neither, so the check says nothing of it, and the result's text leaves it bare.
+
 ## Acceptance
 
 - The test above, seen red against today's text; the Git store's suite passes.
-
-## To be checked
-
-- What the store's issue check says of another repository's issue number in an issue's file, and what the result's text
-  does with one.
