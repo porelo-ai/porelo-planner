@@ -32,8 +32,11 @@ saying a task is at work or that it needs them, and the Planning count without i
   `needsYou` and reason and not the rows the person put away.
 - The planner reports a stopped run's offers as ended, not started, once the Stop is recorded, so the work names no task
   at work; the card counts only tasks at work, and says the run stopped where nothing is at work.
-- An issue row put away on this machine leaves the card's "needs you" and the Planning count while its reason and state
-  stand, as it leaves Needs you.
+- The window keeps what the person marked seen, as its own marks: an issue's reason as the screen's `PlanningPutAway`
+  (machine, project, issue, reason, state), and a story's ended work by its end's time. The screen takes them as one
+  input of the boards, `PlanningSeen`, a `Listenable` the window owns, answering whether an issue's put-away is seen and
+  whether a story's end at a time is seen; the board's card "needs you" and the Planning count leave out what it
+  answers seen and follow its changes. The screen keeps no copy of the marks.
 - `since` is shown as the window shows times: the local time in the person's zone, with the date only when it is not
   today.
 - Red first: in the core's work run tests, a stopped run's report names no started task; in the screen's tests, a card
@@ -48,4 +51,3 @@ saying a task is at work or that it needs them, and the Planning count without i
 
 - Why the offer stayed `STARTED` after the Stop: whether the window's end of the task reached the planner after the run
   was halted, and what the planner did with it.
-- What the window's "Seen" sets: the screen's put-away of the row, or a mark of its own.
