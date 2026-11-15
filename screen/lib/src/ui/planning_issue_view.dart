@@ -443,14 +443,17 @@ const planningRevisionShown = 7;
 /// other text, heading or format stays whole.
 String planningWithoutHeading(String text, String id, String format, {bool whatMustBeTrueShown = false}) {
   if (format != 'MARKDOWN') return text;
-  var rest = _withoutHeadingAndHead(text, id);
+  var rest = _withoutHeadingAndHead(text.replaceAll('\r\n', '\n'), id);
   if (whatMustBeTrueShown) rest = rest.replaceFirst(_whatMustBeTrueParagraph, '');
   return rest;
 }
 
-final _jsonHead = RegExp(r'^(?:[ \t]*\n)*(`{3,})json[ \t]*\n(?:[\s\S]*?\n)?\1[ \t]*(?:\n|$)');
+final _jsonHead = RegExp(r'^(?:[ \t]*\n)*(`{3,})json[ \t]*\n(?:[\s\S]*?\n)?\1(?:\n|$)');
+// The paragraph ends at a blank line or at a line opening a heading, a list item or a fence.
 final _whatMustBeTrueParagraph = RegExp(
-  r'(?:^|(?<=\n))\*\*What must be true\.\*\*.*(?:\n(?![ \t]*(?:\n|$)).*)*(?:\n[ \t]*(?=\n))*\n?',
+  r'(?:^|(?<=\n))\*\*What must be true\.\*\*.*'
+  r'(?:\n(?![ \t]*(?:\n|$))(?![ \t]{0,3}(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|\d+[.)][ \t]|`{3,}|~{3,})).*)*'
+  r'(?:\n[ \t]*(?=\n))*\n?',
 );
 
 String _withoutHeadingAndHead(String text, String id) {
