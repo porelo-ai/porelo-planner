@@ -369,7 +369,6 @@ public record WorkProposal(
                 .isPresent();
     }
 
-    /** The issues an agent works; one a person works never gets an agent's task. */
     /** How many open issues a refusal names before it only counts the rest, to keep it short. */
     private static final int MOST_NAMED = 10;
 
@@ -403,6 +402,7 @@ public record WorkProposal(
         return String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.getLast();
     }
 
+    /** The issues an agent works; one a person works never gets an agent's task. */
     private static List<Issue> agents(final List<Issue> issues) {
         return issues.stream().filter(i -> i.worker() != Worker.MANUAL).toList();
     }
