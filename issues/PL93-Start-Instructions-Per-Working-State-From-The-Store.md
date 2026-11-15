@@ -115,6 +115,12 @@ Tests, red first, by level:
 
 ## To be checked
 
+- How the instructions the planner appends to an analysis's or an estimate's order (the given issue texts, the result
+  file, nothing edited, committed or pushed) sit with the start instructions per working state, so the two are not
+  written twice.
+- The given directory's path and the result directory as Porelo mounts them, and the result file's name and JSON format
+  (`porelo-stage-result-1`, `analysis.json` or `estimate.json`), confirmed with Porelo's agent, which writes the result
+  directory; the window's side stands in the OpenAPI description.
 - Whether a repository's own checks (`check-readmes`, `check-doc-site`, `check-citations`) trip on a Markdown file
   under `readings/`.
 - Whether a reader's landed commit has reached the tracked branch when its issue moves on; if not, the move deletes

@@ -156,7 +156,11 @@ A move on the board is saved as it is made, with no Save and no Undo; a mistaken
 save reaches the store with no gate and no review, each kind of move first warns where it can do harm - running agent
 tasks to stop, issues of other repositories moving along, states skipped, a story's issues not fitting its target -
 and goes on only once the person confirms. A move into Finished or Rejected is not asked about as such, since it can
-be moved back. A move back keeps the story's run as its history, so a new start counts on from it.
+be moved back. A story moved to Finished takes its issues that stand where the work rules' last work leads, and only
+those, judged on the states the whole batch leaves, to Finished with it, each settled as its own move would be; since
+their files are deleted, the warning lists every issue it takes. After a story move that takes issues, the board shows
+them at once and the story where the planner wrote it once the board is read again right after the save. A move back
+keeps the story's run as its history, so a new start counts on from it.
 
 ## A save answers once its commits stand locally
 
