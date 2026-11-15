@@ -9,7 +9,7 @@
   "size": "XS",
   "priority": "High",
   "rank": 73,
-  "blockedBy": [],
+  "blockedBy": ["PL156"],
   "covers": "The Start work dialog shows the machine and the working state as labeled text where there is only one to choose, and leaves the machine out where only one planner reports the project, instead of drop-down lists of one"
 }
 ```
