@@ -291,9 +291,10 @@ void main() {
 
     final work = planningStoryWork(board, board.stories.single, 'Implementing');
     addTearDown(work.dispose);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await settle(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-manual')));
     expect(
       tester.widget<Text>(find.byKey(const Key('story-work-manual'))).data,
       contains('PL2'),
@@ -310,9 +311,10 @@ void main() {
     final (_, board) = await _open(tester, _board());
     final work = planningStoryWork(board, board.stories.single, 'Implementing');
     addTearDown(work.dispose);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await settle(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-main-effort repo')));
     final field = find.byKey(const Key('story-work-main-effort repo'));
     expect(
       tester.widget<EditableText>(find.descendant(of: field, matching: find.byType(EditableText))).controller.text,

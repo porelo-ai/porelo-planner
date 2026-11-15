@@ -55,7 +55,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl151"></a>[PL151](PL151-The-Issue-Description-Leaves-Out-Its-Head.md) | XS | - | The issue page's Description shows the issue's text without its heading, its JSON head and the What must be true the page already shows above it |
-| <a id="pl157"></a>[PL157](PL157-The-Start-Work-Wizard-In-The-Screen.md) | S | [PL146](README.md#pl146), [PL156](README.md#pl156) | The screen package gives Start work's steps and review as the window's wizard shows them, with single choices as text and agent, model and effort as lists, as the design decides; built once the design is settled |
 
 ## Review
 
@@ -77,6 +76,7 @@ left out.
 | <a id="pl147"></a>[PL147](PL147-A-Task-Events-Save-Survives-A-Moved-Board.md) | S | - | The save the planner makes for a task's event, its start or its end, is made once more against the board as it is now when the store changed in the meantime and pushed nothing, so a commit to the project's repository during a task's start no longer halts its run with saving refused |
 | <a id="pl148"></a>[PL148](PL148-A-Needs-You-Row-Says-Its-Reason-In-Words.md) | XS | - | A row of the screen's Needs you says its reason in words a person can act on, once, and never shows the reason's wire code such as SAVE_REFUSED or STOPPED, on an issue's row or a story's |
 | <a id="pl156"></a>[PL156](PL156-Start-Work-As-A-Wizard-Design.md) | XS | - | A short design note: the wizard's steps, which of today's dialog fields go to which step, the review, model as a list that fills a text field, effort from the agent's listed efforts |
+| <a id="pl157"></a>[PL157](PL157-The-Start-Work-Wizard-In-The-Screen.md) | S | [PL146](README.md#pl146), [PL156](README.md#pl156) | The screen package gives Start work's steps and review as the window's wizard shows them, with single choices as text and agent, model and effort as lists, as the design decides; built once the design is settled |
 | <a id="pl158"></a>[PL158](PL158-The-Planner-Takes-Any-Model-Of-An-Offered-Agent.md) | XS | - | A story's work order takes, for its main task and each changed sub-agent, any model a person chose for an agent the rule offers, not only the rule's model of that agent; a model the agent or its provider refuses fails at the task's start with its reason |
 | <a id="pl65"></a>[PL65](PL65-Work-Obeys-An-Issues-Worker.md) | L | - | Only an Agent issue gets a task: the proposal and every step the planner starts by itself leave a Manual issue out, a person moves a Manual issue through the work, and a story of both kinds follows its least advanced issue |
 | <a id="pl66"></a>[PL66](PL66-An-Issues-Risk-Chooses-Its-Model-And-Effort.md) | L | - | An issue's head may say how much harm its change can do, the work rules give per working state the model and effort for each risk, and the planner's core proposes that choice for every task it offers or starts by itself |

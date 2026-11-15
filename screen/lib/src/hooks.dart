@@ -147,12 +147,14 @@ abstract interface class PlanningAgents {
 
 /// What a start from a Needs you row asks of the window, held by the row's board before the screen was ever shown.
 class PlanningStartHooks {
-  /// Takes how a start reaches the window, the agents it may choose and the machines it may run on.
+  /// Takes how a start reaches the window, the agents it may choose, the machines it may run on and, when the window
+  /// has one, the wizard that shows its steps.
   const PlanningStartHooks({
     required this.startTask,
     required this.agents,
     required this.machines,
     required this.unavailableMachines,
+    this.wizards,
   });
 
   /// How a start of story work reaches the window.
@@ -166,6 +168,9 @@ class PlanningStartHooks {
 
   /// The machines that have not supplied a board's project, by name.
   final List<String> Function(PlanningBoard board) unavailableMachines;
+
+  /// The window's wizard that shows Start work's steps, or null for the screen's own frame.
+  final PlanningWizards? wizards;
 }
 
 /// Where the screen stands: the board, a story, or one of its issues, on the provider that supplied it.

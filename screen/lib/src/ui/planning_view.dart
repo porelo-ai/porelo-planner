@@ -17,7 +17,7 @@ import 'planning_detail_widgets.dart';
 import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
-import 'story_work_dialog.dart';
+import 'story_work_wizard.dart';
 import 'style.dart';
 
 final _planningLeaveDialogs = Expando<bool>();
@@ -86,6 +86,7 @@ class PlanningScreen extends StatelessWidget {
     required this.startTask,
     required this.taskChanges,
     required this.agents,
+    this.wizards,
     this.pageButton,
     this.pageNote,
     super.key,
@@ -114,6 +115,9 @@ class PlanningScreen extends StatelessWidget {
   /// The agents a start may choose.
   final PlanningAgents agents;
 
+  /// The window's wizard that shows Start work's steps, or null for the screen's own frame.
+  final PlanningWizards? wizards;
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([boards, host]),
@@ -125,6 +129,7 @@ class PlanningScreen extends StatelessWidget {
         board.startHooks ??= PlanningStartHooks(
           startTask: startTask,
           agents: agents,
+          wizards: wizards,
           machines: boards.machinesOf,
           unavailableMachines: boards.unavailableMachinesOf,
         );
@@ -179,6 +184,7 @@ class PlanningScreen extends StatelessWidget {
               onStarted: taskChanges.started,
               startTask: startTask,
               agents: agents,
+              wizards: wizards,
               unavailableMachines: boards.unavailableMachinesOf(board),
               machines: boards.machinesOf(board),
               onStory: (story) => open(board, story),
@@ -192,6 +198,7 @@ class PlanningScreen extends StatelessWidget {
               pageNote: pageNote,
               startTask: startTask,
               agents: agents,
+              wizards: wizards,
               machines: boards.machinesOf(detailBoard),
               unavailableMachines: boards.unavailableMachinesOf(detailBoard),
               onStarted: taskChanges.started,
@@ -227,6 +234,7 @@ class _BoardView extends StatefulWidget {
     required this.onStarted,
     required this.startTask,
     required this.agents,
+    required this.wizards,
     required this.machines,
     required this.unavailableMachines,
     super.key,
@@ -244,6 +252,7 @@ class _BoardView extends StatefulWidget {
   final Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>) onStarted;
   final PlanningStartTask startTask;
   final PlanningAgents agents;
+  final PlanningWizards? wizards;
   final Map<PlanningBoard, String> machines;
   final List<String> unavailableMachines;
   @override
@@ -1069,6 +1078,7 @@ class _BoardViewState extends State<_BoardView> {
       target,
       startTask: widget.startTask,
       agents: widget.agents,
+      wizards: widget.wizards,
       machines: widget.machines,
       unavailableMachines: widget.unavailableMachines,
       onStarted: widget.onStarted,
@@ -1348,6 +1358,7 @@ Future<void> _openStart(
   PlanState target, {
   required PlanningStartTask startTask,
   required PlanningAgents agents,
+  required PlanningWizards? wizards,
   required Map<PlanningBoard, String> machines,
   required List<String> unavailableMachines,
   required Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>)
@@ -1367,7 +1378,7 @@ Future<void> _openStart(
     issues: issues,
   );
   try {
-    await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
+    await showStoryWork(context, work, wizards: wizards);
   } finally {
     work.dispose();
   }
@@ -1379,6 +1390,7 @@ class _PlanningDetailView extends StatefulWidget {
     required this.pageNote,
     required this.startTask,
     required this.agents,
+    required this.wizards,
     required this.machines,
     required this.unavailableMachines,
     required this.onStarted,
@@ -1397,6 +1409,7 @@ class _PlanningDetailView extends StatefulWidget {
   });
   final PlanningStartTask startTask;
   final PlanningAgents agents;
+  final PlanningWizards? wizards;
   final Map<PlanningBoard, String> machines;
   final List<String> unavailableMachines;
   final Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>) onStarted;
@@ -1431,6 +1444,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
         target,
         startTask: widget.startTask,
         agents: widget.agents,
+        wizards: widget.wizards,
         machines: widget.machines,
         unavailableMachines: widget.unavailableMachines,
         onStarted: widget.onStarted,

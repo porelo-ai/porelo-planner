@@ -153,24 +153,74 @@ class StoryWork extends ChangeNotifier {
   /// Whether a sub-agent was dropped or selected for a change.
   bool get needsComment => choices.values.any((each) => each.choice != 'KEEP');
 
-  bool get _validSubAgents => proposal!.repositories.every(
-    (repo) =>
-        (repo.main.role == 'MAIN' || repo.main.role == 'READER' && repo.subAgents.isEmpty) &&
-        repo.subAgents.every((sub) {
-          final chosen = choices[(repo.repository, sub.id)];
-          return switch (chosen?.choice) {
-            'KEEP' => sub.role == 'BUILDER' && sub.agent.isNotEmpty && sub.model.isNotEmpty,
-            'DROP' => true,
-            'CHANGE' =>
-              sub.role == 'BUILDER' &&
-                  chosen!.agent?.isNotEmpty == true &&
-                  chosen.model?.isNotEmpty == true &&
-                  _soundEffort(chosen.effort) &&
-                  (chosen.agent != sub.agent || chosen.model != sub.model || chosen.effort != sub.effort),
-            _ => false,
-          };
-        }),
-  );
+  /// The agent the window listed by [name], or null when it listed none by that name.
+  PlanningAgent? _listed(String name) => agents.where((each) => each.name == name).firstOrNull;
+
+  /// The proposed effort for [agent]: kept where the agent lists it or its efforts are unknown, else none.
+  String? _effortFor(String agent, String? proposed) {
+    final efforts = _listed(agent)?.efforts;
+    return proposed == null || efforts == null || efforts.contains(proposed) ? proposed : null;
+  }
+
+  /// Why [what]'s agent, model or effort cannot start, or null when they can.
+  String? _assignmentProblem(String what, String? agent, String? model, String? effort) {
+    if (agent == null || agent.isEmpty) return 'Choose an agent for $what.';
+    if (_listed(agent)?.unready case final unready?) {
+      return '${planningShown(agent)} cannot work there: ${planningShown(unready)}';
+    }
+    if (model == null || model.trim().isEmpty) return 'Choose a model for $what.';
+    if (model.contains(RegExp(r'[\r\n\u2028\u2029]'))) return 'The model for $what must be one line.';
+    if (!_soundEffort(effort)) return 'The effort for $what must be one line of at most 128 characters.';
+    return null;
+  }
+
+  /// Why the chosen agents, models and efforts cannot start, in words, or null when they can.
+  String? get whoProblem {
+    final proposal = this.proposal;
+    if (proposal == null) return 'The planner has not proposed the work yet.';
+    for (final repo in proposal.repositories) {
+      final name = planningShown(repo.repository);
+      if (!(repo.main.role == 'MAIN' || repo.main.role == 'READER' && repo.subAgents.isEmpty)) {
+        return 'The planner proposed no main agent for $name.';
+      }
+      final main = repositories[repo.repository];
+      if (main == null) return 'Choose the agent for $name.';
+      if (_assignmentProblem(name, main.agent, main.model, main.effort) case final problem?) return problem;
+      for (final sub in repo.subAgents) {
+        final chosen = choices[(repo.repository, sub.id)];
+        final what = '${planningShown(sub.name)} in $name';
+        switch (chosen?.choice) {
+          case 'KEEP':
+            if (sub.role != 'BUILDER' || sub.agent.isEmpty || sub.model.isEmpty) return 'Change or drop $what.';
+          case 'DROP':
+            break;
+          case 'CHANGE':
+            if (sub.role != 'BUILDER') return 'Drop $what.';
+            if (_assignmentProblem(what, chosen!.agent, chosen.model, chosen.effort) case final problem?) {
+              return problem;
+            }
+            if (chosen.agent == sub.agent && chosen.model == sub.model && chosen.effort == sub.effort) {
+              return 'Change the agent, model or effort of $what, or keep it.';
+            }
+          default:
+            return 'Keep, change or drop $what.';
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Why the comment or the reading rounds cannot start, in words, or null when they can.
+  String? get readingProblem {
+    if (needsComment && comment.trim().isEmpty) return 'Say in the comment why a sub-agent is changed or dropped.';
+    if (_rounds(rounds) == null) return 'The most reading rounds must be a whole number from 1 to 10.';
+    for (final each in issueRounds.entries) {
+      if (each.value.isNotEmpty && _rounds(each.value) == null) {
+        return 'The reading rounds of ${planningShown(each.key)} must be a whole number from 1 to 10.';
+      }
+    }
+    return null;
+  }
 
   /// An effort typed empty is none.
   static String? _chosenEffort(String typed) => typed.trim().isEmpty ? null : typed;
@@ -197,13 +247,8 @@ class StoryWork extends ChangeNotifier {
       proposal!.modes.contains(mode) &&
       ['UNATTENDED', 'AGENT'].contains(mode) &&
       repositories.length == proposal!.repositories.length &&
-      repositories.values.every(
-        (repo) => repo.agent.isNotEmpty && repo.model.isNotEmpty && _soundEffort(repo.effort),
-      ) &&
-      (!needsComment || comment.trim().isNotEmpty) &&
-      _rounds(rounds) != null &&
-      issueRounds.values.every((value) => value.isEmpty || _rounds(value) != null) &&
-      _validSubAgents;
+      whoProblem == null &&
+      readingProblem == null;
 
   /// The daemon's action-specific label, or a count from its proposed tasks.
   String get startLabel => proposal == null
@@ -271,6 +316,17 @@ class StoryWork extends ChangeNotifier {
       final listed = await agentChoices.on(source);
       if (!valid()) return;
       agents = listed.agents;
+      for (final main in repositories.values.toList()) {
+        final effort = _effortFor(main.agent, main.effort);
+        if (effort != main.effort) {
+          repositories[main.repository] = StoryWorkMainAgent(
+            repository: main.repository,
+            agent: main.agent,
+            model: main.model,
+            effort: effort,
+          );
+        }
+      }
       if (listed.failures.isNotEmpty) {
         problem = listed.failures.entries
             .map((each) => planningShown('${each.key}: ${each.value}', multiline: false))
@@ -342,11 +398,19 @@ class StoryWork extends ChangeNotifier {
     if (!current || busy) return;
     final previous = repositories[repository];
     if (previous == null) return;
+    final proposed = proposal?.repositories.where((each) => each.repository == repository).firstOrNull;
+    final next = agent ?? previous.agent;
+    // Another agent's model and effort were proposed for the one before, so they start again from the proposal.
+    final changed = next != previous.agent;
     repositories[repository] = StoryWorkMainAgent(
       repository: repository,
-      agent: agent ?? previous.agent,
-      model: model ?? previous.model,
-      effort: effort == null ? previous.effort : _chosenEffort(effort),
+      agent: next,
+      model: model?.trim() ?? (!changed ? previous.model : (next == proposed?.agent ? proposed!.model : '')),
+      effort: effort != null
+          ? _chosenEffort(effort)
+          : changed
+          ? _effortFor(next, proposed?.main.effort)
+          : previous.effort,
     );
     _changed();
   }
@@ -382,19 +446,25 @@ class StoryWork extends ChangeNotifier {
   void choose(String repository, PlanAssignment sub, String choice, {String? agent, String? model, String? effort}) {
     if (busy || !current || sub.role != 'BUILDER') return;
     final previous = choices[(repository, sub.id)];
+    final before = previous?.choice == 'CHANGE' ? previous : null;
+    final next = agent ?? previous?.agent ?? sub.agent;
+    // Another agent's model and effort were proposed for the one before, so they start again from the proposal.
+    final changed = next != (before?.agent ?? sub.agent);
     choices[(repository, sub.id)] = StoryWorkChoice(
       repository: repository,
       name: sub.id,
       choice: choice,
-      agent: choice == 'CHANGE' ? agent ?? previous?.agent ?? sub.agent : null,
-      model: choice == 'CHANGE' ? model ?? (previous?.choice == 'CHANGE' ? previous?.model : null) ?? sub.model : null,
+      agent: choice == 'CHANGE' ? next : null,
+      model: choice != 'CHANGE'
+          ? null
+          : model?.trim() ?? (!changed ? before?.model ?? sub.model : (next == sub.agent ? sub.model : '')),
       effort: choice != 'CHANGE'
           ? null
           : effort != null
           ? _chosenEffort(effort)
-          : previous?.choice == 'CHANGE'
-          ? previous?.effort
-          : sub.effort,
+          : before != null && !changed
+          ? before.effort
+          : _effortFor(next, sub.effort),
     );
     _changed();
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show Widget;
+import 'package:flutter/widgets.dart' show Key, Widget;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
@@ -49,6 +49,17 @@ Future<void> settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 350));
   await tester.pump(const Duration(milliseconds: 350));
+}
+
+/// Goes on through Start work's steps, as a person pressing Next does, until [target] shows.
+Future<void> nextUntil(WidgetTester tester, Finder target) async {
+  for (var step = 0; step < 5 && target.evaluate().isEmpty; step++) {
+    final next = find.byKey(const Key('story-work-next'));
+    expect(next, findsOneWidget, reason: 'Start work offers Next on the way to $target');
+    await tester.tap(next);
+    await settle(tester);
+  }
+  expect(target, findsWidgets, reason: 'Start work reaches $target');
 }
 
 /// The window's place as a test holds it: where the screen stands, and every move it asked for.

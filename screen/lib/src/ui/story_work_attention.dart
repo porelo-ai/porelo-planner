@@ -8,7 +8,7 @@ import '../models.dart';
 import '../run_attention.dart';
 import '../story_work.dart';
 import 'actions.dart';
-import 'story_work_dialog.dart';
+import 'story_work_wizard.dart';
 import 'style.dart';
 
 /// Story outcomes and reading stops retain the daemon's words until the board clears them.
@@ -385,7 +385,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
           passOver: passOver,
         );
         try {
-          await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => StoryWorkDialog(work));
+          await showStoryWork(context, work, wizards: hooks.wizards);
         } finally {
           work.dispose();
         }

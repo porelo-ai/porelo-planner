@@ -156,9 +156,16 @@ void main() {
       planning.dispose();
       await source.end();
     });
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
     await settle(tester);
     expect(work.proposal, isNotNull, reason: 'the proposal was read: ${work.problem}');
+    await nextUntil(tester, find.byKey(const Key('story-work-coordinator')));
+    for (final tile in find.byType(ExpansionTile).evaluate().toList()) {
+      await tester.tap(find.byWidget(tile.widget));
+      await settle(tester);
+    }
+    expect(_shown(tester).where((text) => text.contains('Build the sub-issue.')), isNotEmpty, reason: 'the brief');
+    _expectClean(tester, 'the Who step');
     work.chooseMode('AGENT');
     await tester.runAsync(work.start);
     await settle(tester);
@@ -169,7 +176,6 @@ void main() {
     }
     final shown = _shown(tester);
     expect(shown.where((text) => text.contains('task-MAIN')), isNotEmpty, reason: 'the started task is named');
-    expect(shown.where((text) => text.contains('Build the sub-issue.')), isNotEmpty, reason: 'the brief is shown');
     _expectClean(tester, 'the Start dialog');
   });
 
@@ -290,7 +296,7 @@ void main() {
       planning.dispose();
       await source.end();
     });
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
     await settle(tester);
     final shown = _shown(tester);
     expect(shown.where((text) => text.contains('manifest cannot be read')), isNotEmpty, reason: 'the failure shows');

@@ -281,7 +281,9 @@ void main() {
     expect(work.choices[('repo', 'reader')]!.model, 'proposal-model');
     expect(await work.start(), isFalse);
     work.choose('repo', work.proposal!.repositories.single.subAgents.single, 'CHANGE', agent: 'other-agent');
-    expect(work.choices[('repo', 'reader')]!.model, 'proposal-model');
+    expect(work.choices[('repo', 'reader')]!.model, '', reason: 'another agent starts without the proposed model');
+    expect(work.canStart, isFalse);
+    work.choose('repo', work.proposal!.repositories.single.subAgents.single, 'CHANGE', model: 'proposal-model');
     expect(work.canStart, isTrue);
     work.dispose();
     board.dispose();

@@ -284,7 +284,7 @@ void main() {
         isEmpty,
         reason: 'a held start neither proposes nor starts work',
       );
-      expect(find.byType(StoryWorkDialog), findsNothing, reason: 'a held start opens no start dialog');
+      expect(find.byType(StoryWorkWizard), findsNothing, reason: 'a held start opens no start dialog');
     });
 
     // Harm: a way on read from a board that changed since the menu opened leads somewhere stale.

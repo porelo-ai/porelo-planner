@@ -109,11 +109,13 @@ void main() {
       'In analysis',
       machines: {a: 'first', b: 'second'},
     );
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkDialog(work))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
     await settle(tester);
     work.changeMachine(b);
     await settle(tester);
-    expect(tester.widget<DropdownButton<String>>(find.byKey(const Key('story-work-target'))).value, 'Investigating');
+    // The second machine's one working state is no choice, so it stands as text.
+    expect(find.text('Working state: Investigating'), findsOneWidget);
+    expect(find.byKey(const Key('story-work-target')), findsNothing);
     expect(tester.widget<DropdownButton<PlanningBoard>>(find.byKey(const Key('story-work-machine'))).value, same(b));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

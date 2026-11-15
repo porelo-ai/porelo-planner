@@ -25,5 +25,5 @@ export 'src/ui/planning_story_view.dart';
 export 'src/ui/planning_text.dart';
 export 'src/ui/planning_view.dart';
 export 'src/ui/story_work_attention.dart';
-export 'src/ui/story_work_dialog.dart';
+export 'src/ui/story_work_wizard.dart' show PlanningModelField, StoryWorkWizard;
 export 'src/ui/style.dart';

@@ -1662,14 +1662,16 @@ class PlanningBoard extends ChangeNotifier {
 /// Keeps boards for watched projects and selects an available planning provider.
 class PlanningBoards extends ChangeNotifier {
   /// Observes the client's providers without opening anything of its own; with [startTask] and [agents] each board
-  /// it makes can start work from its Needs you rows, on every board of the same project.
-  PlanningBoards(this.client, {PlanningStartTask? startTask, PlanningAgents? agents}) {
+  /// it makes can start work from its Needs you rows, on every board of the same project, through [wizards] when the
+  /// window has them.
+  PlanningBoards(this.client, {PlanningStartTask? startTask, PlanningAgents? agents, PlanningWizards? wizards}) {
     if (startTask != null && agents != null) {
       startHooks = PlanningStartHooks(
         startTask: startTask,
         agents: agents,
         machines: machinesOf,
         unavailableMachines: unavailableMachinesOf,
+        wizards: wizards,
       );
     }
     client.addListener(_sync);

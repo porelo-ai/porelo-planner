@@ -183,6 +183,7 @@ void main() {
     await settle(tester);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-start')));
     await tester.tap(find.byKey(const Key('story-work-start')));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);
@@ -299,6 +300,7 @@ void main() {
     await settle(tester);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-start')));
     await tester.tap(find.byKey(const Key('story-work-start')));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await settle(tester);

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL157",
   "title": "The Start Work Wizard In The Screen",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 77,
