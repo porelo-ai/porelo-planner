@@ -45,14 +45,86 @@ abstract interface class PlanningTaskChanges {
 
 /// An agent a start may choose, with what the window shows for it.
 class PlanningAgent {
-  /// Takes the agent's name and, when the window has one, what it shows in a choice.
-  const PlanningAgent(this.name, {this.choice});
+  /// Takes the agent's name and, when the window has them, what it shows in a choice, why it cannot work on the
+  /// machine the agents were listed for, its models and its effort levels.
+  const PlanningAgent(this.name, {this.choice, this.unready, this.models = const [], this.efforts});
 
   /// The agent's name, as a start names it.
   final String name;
 
   /// What a choice shows for it, or null for its name alone.
   final Widget? choice;
+
+  /// Why the agent cannot work on that machine, in the window's words, or null when it can or the window cannot say.
+  final String? unready;
+
+  /// The models the window knows for the agent there, to choose from; a model may still be typed.
+  final List<PlanningModel> models;
+
+  /// The effort levels the agent takes, or null when the window does not know them; empty when it takes none.
+  final List<String>? efforts;
+}
+
+/// A model an agent may start with.
+class PlanningModel {
+  /// Takes the model's id, as a start names it, and the words a person knows it by.
+  const PlanningModel(this.id, {this.label});
+
+  /// The model's id, as a start names it.
+  final String id;
+
+  /// The model's readable name, or null for its id alone.
+  final String? label;
+}
+
+/// One step of a wizard: its panel of choices, whether it lets the person go on, and its lines on the review.
+class PlanningWizardStep {
+  /// Takes the step's title, its panel, its check and its review lines; [shown] false passes it over, though its
+  /// lines stay on the review.
+  const PlanningWizardStep({
+    required this.title,
+    required this.panel,
+    required this.check,
+    required this.summary,
+    this.words = '',
+    this.shown = _always,
+  });
+
+  /// The step's title.
+  final String title;
+
+  /// What the step asks, in a sentence, or empty.
+  final String words;
+
+  /// The step's own fields; the wizard draws its frame around them.
+  final WidgetBuilder panel;
+
+  /// Why the person cannot go on from this step, or null when they can.
+  final String? Function() check;
+
+  /// The step's choices in words, one line each, as the review lists them.
+  final List<String> Function() summary;
+
+  /// Whether the step has anything to choose now.
+  final bool Function() shown;
+}
+
+bool _always() => true;
+
+/// How the window shows a wizard of the screen's steps with its own wizard frame.
+abstract interface class PlanningWizards {
+  /// Shows [steps] and a review with a Change per step, redrawn on each of [changes], and ends with [startLabel],
+  /// which runs [start] and closes when it answers true; answers whether it was started. Cancel is offered while
+  /// [canCancel] answers true.
+  Future<bool> show(
+    BuildContext context, {
+    required String title,
+    required List<PlanningWizardStep> steps,
+    required Listenable changes,
+    required String startLabel,
+    required Future<bool> Function() start,
+    required bool Function() canCancel,
+  });
 }
 
 /// The agents a provider offers, and why any could not be asked.
