@@ -184,12 +184,12 @@ public final class HandedIdeas {
                     .map(Map.Entry::getKey)
                     .ifPresent(ideas::remove);
         }
-        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas);
+        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas, snapshot.results());
     }
 
     private static WorkRun.Snapshot without(final WorkRun.Snapshot snapshot, final String offer) {
         final Map<String, Handed> ideas = new LinkedHashMap<>(snapshot.ideas());
         ideas.remove(offer);
-        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas);
+        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas, snapshot.results());
     }
 }

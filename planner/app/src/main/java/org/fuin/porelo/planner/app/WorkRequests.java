@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.fuin.porelo.planner.core.HandedIdeas;
+import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NewIssues;
@@ -322,6 +323,151 @@ public final class WorkRequests {
         }
         return new HandIn(
                 new IdeaRequest(offer.asString(), new NewIdeas.Idea(readStory, issues)), shape);
+    }
+
+    /**
+     * A stage's hand-in as the description names it: the offer and either the result file or why it
+     * is missing.
+     *
+     * @param offer the offer of the stage's task
+     * @param result the result file, or null when missing
+     * @param missing why the result is missing, or null when it is handed in
+     */
+    public record StageResultRequest(
+            String offer,
+            @JsonInclude(JsonInclude.Include.NON_NULL) HandedResults.@Nullable File result,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String missing) {}
+
+    /**
+     * A stage's hand-in as read: its offer and what the core checks.
+     *
+     * @param offer the offer
+     * @param handIn the result or why it is missing, with the faults of its shape
+     */
+    record ResultHandIn(String offer, HandedResults.HandIn handIn) {}
+
+    /** The most bytes of a stage's hand-in: a result file of 262144 bytes and its envelope. */
+    static final int MOST_RESULT = AccessFilter.MOST_RESULT;
+
+    private static final String NO_RESULT = "body: The body is no hand-in of a stage's result.";
+
+    /**
+     * Reads a stage's hand-in strictly: at most {@value #MOST_RESULT} bytes, one JSON object with
+     * an offer and exactly one of a result object and a missing line; a member of the result of the
+     * wrong type arrives as an empty text or zero, and a member the format does not name as a fault
+     * of its shape, so the core names every fault by its field and nothing sent is repeated.
+     *
+     * @param request the request
+     * @return the hand-in
+     * @throws WorkRefusal {@code ResultRefused} for a body that is no hand-in
+     */
+    static ResultHandIn stageResult(final HttpServletRequest request) {
+        final JsonNode body;
+        try {
+            body = read(request, MOST_RESULT);
+        } catch (final WorkRefusal invalid) {
+            throw WorkRefusal.resultRefused(NOT_HANDED, List.of(NO_RESULT));
+        }
+        if (!Set.of("offer", "result", "missing").containsAll(body.propertyNames())
+                || !body.has("offer")) {
+            throw WorkRefusal.resultRefused(
+                    NOT_HANDED,
+                    List.of(
+                            "body: The body must hold an offer and a result or why it is missing."));
+        }
+        final JsonNode offer = body.get("offer");
+        if (!offer.isString()) {
+            throw WorkRefusal.resultRefused(
+                    NOT_HANDED, List.of("offer: The offer must be a lowercase UUID."));
+        }
+        HandedResults.offer(offer.asString());
+        // An envelope that is no hand-in is refused before the offer's outcome is recorded.
+        if (body.has("result") == body.has("missing")) {
+            throw WorkRefusal.resultRefused(
+                    NOT_HANDED,
+                    List.of("body: The body must hold either a result or why it is missing."));
+        }
+        if (body.has("result") && !body.get("result").isObject()) {
+            throw WorkRefusal.resultRefused(
+                    NOT_HANDED, List.of("result: The result must be an object."));
+        }
+        final List<String> shape = new ArrayList<>();
+        HandedResults.File file = null;
+        if (body.has("result")) {
+            file = resultFile(body.get("result"), shape);
+        }
+        String missing = null;
+        if (body.has("missing")) {
+            final JsonNode reason = body.get("missing");
+            missing = reason.isString() ? reason.asString() : "";
+        }
+        return new ResultHandIn(offer.asString(), new HandedResults.HandIn(file, missing, shape));
+    }
+
+    private static final String NOT_HANDED = "The hand-in is refused.";
+
+    private static HandedResults.File resultFile(final JsonNode result, final List<String> shape) {
+        if (!Set.of("format", "kind", "issues").containsAll(result.propertyNames())) {
+            shape.add("result: It holds a member the result format does not name.");
+        }
+        List<HandedResults.@Nullable Entry> entries = null;
+        final JsonNode items = result.get("issues");
+        if (items != null && items.isArray()) {
+            entries = new ArrayList<>();
+            for (final JsonNode item : items) {
+                entries.add(
+                        item.isObject()
+                                ? resultEntry(item, "issues[" + entries.size() + "]", shape)
+                                : null);
+            }
+        }
+        return new HandedResults.File(anyText(result, "format"), anyText(result, "kind"), entries);
+    }
+
+    private static HandedResults.Entry resultEntry(
+            final JsonNode item, final String at, final List<String> shape) {
+        if (!Set.of("id", "plan", "size", "sizeWhy", "estimateMinutes", "toBeChecked", "findings")
+                .containsAll(item.propertyNames())) {
+            shape.add(at + ": It holds a member the result format does not name.");
+        }
+        final JsonNode minutes = item.get("estimateMinutes");
+        return new HandedResults.Entry(
+                anyText(item, "id"),
+                anyText(item, "plan"),
+                anyText(item, "size"),
+                anyText(item, "sizeWhy"),
+                minutes == null
+                        ? null
+                        : minutes.canConvertToLong() && minutes.isIntegralNumber()
+                                ? minutes.asLong()
+                                : 0L,
+                lines(item, "toBeChecked", at, shape),
+                lines(item, "findings", at, shape));
+    }
+
+    /** A text member as sent, an empty text for any other value, or null when absent. */
+    private static @Nullable String anyText(final JsonNode node, final String name) {
+        final JsonNode value = node.get(name);
+        if (value == null) {
+            return null;
+        }
+        return value.isString() ? value.asString() : "";
+    }
+
+    /** A list of texts, each other value an empty text, or null when absent. */
+    private static @Nullable List<String> lines(
+            final JsonNode node, final String name, final String at, final List<String> shape) {
+        final JsonNode value = node.get(name);
+        if (value == null) {
+            return null;
+        }
+        if (!value.isArray()) {
+            shape.add(at + "." + name + ": It must be a list of one-line texts.");
+            return List.of();
+        }
+        final List<String> lines = new ArrayList<>();
+        value.forEach(item -> lines.add(item.isString() ? item.asString() : ""));
+        return lines;
     }
 
     private static WorkRefusal noHandIn(final String fault) {

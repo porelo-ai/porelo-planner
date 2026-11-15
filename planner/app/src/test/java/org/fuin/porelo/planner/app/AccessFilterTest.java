@@ -203,6 +203,31 @@ class AccessFilterTest {
     }
 
     @Test
+    void onlyAStagesResultTakesALargerBodyThanAnyOtherOperation() {
+        // Harm: a result file within its agreed bound refused as unsigned, or a stranger's larger
+        // body held for any other path.
+        final MockHttpServletRequest result =
+                new MockHttpServletRequest("POST", "/projects/p/tasks/analyze/result");
+        final MockHttpServletRequest event =
+                new MockHttpServletRequest("POST", "/projects/p/tasks/analyze/events");
+        final MockHttpServletRequest read =
+                new MockHttpServletRequest("GET", "/projects/p/tasks/analyze/result");
+        final MockHttpServletRequest nested =
+                new MockHttpServletRequest("POST", "/projects/p/tasks/a/b/result");
+
+        assertThat(AccessFilter.most(result))
+                .as("a result file of 262144 bytes and its envelope")
+                .isEqualTo(266240);
+        assertThat(
+                        List.of(
+                                AccessFilter.most(event),
+                                AccessFilter.most(read),
+                                AccessFilter.most(nested)))
+                .as("every other operation's bound")
+                .containsOnly(AccessFilter.MOST_BODY);
+    }
+
+    @Test
     void anAsyncOrErrorDispatchPassesOnlyAfterTheRequestWasVerifiedAndIsNotVerifiedAgain()
             throws Exception {
         // Harm: a dispatch the filter let through unchecked is a way around it; one it checked

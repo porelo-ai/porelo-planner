@@ -76,7 +76,7 @@ public final class Refusal extends RuntimeException {
                             "PreviewChanged" ->
                             HttpStatus.CONFLICT;
                     case "WorkRecordUnavailable" -> HttpStatus.SERVICE_UNAVAILABLE;
-                    case "IdeaRefused" -> HttpStatus.UNPROCESSABLE_CONTENT;
+                    case "IdeaRefused", "ResultRefused" -> HttpStatus.UNPROCESSABLE_CONTENT;
                     default -> HttpStatus.BAD_REQUEST;
                 };
         return new Refusal(

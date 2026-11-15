@@ -151,6 +151,18 @@ public final class WorkRefusal extends RuntimeException {
                                 "faults", List.copyOf(faults), "pushed", String.join(",", pushed)));
     }
 
+    /**
+     * Refuses a stage's result, listing its faults in fixed words, each by its field.
+     *
+     * @param detail the refusal's words
+     * @param faults the faults, each starting with the field it names
+     * @return the refusal
+     */
+    public static WorkRefusal resultRefused(final String detail, final List<String> faults) {
+        return new WorkRefusal(
+                HandedResults.REFUSED_NAME, detail, Map.of("faults", List.copyOf(faults)));
+    }
+
     /** Refuses unreadable input without echoing its contents. */
     public static WorkRefusal invalidSettings() {
         return invalidSettings("The work request is invalid.");

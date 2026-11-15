@@ -1,0 +1,2 @@
+title: An analysis or estimation task hands in its result with `POST /projects/{project}/tasks/{task}/result`, which the planner checks, saves through its store once per offer and only then moves the issue to the rule's done state, while a task that ends without a saved result leaves its issue in its working state with one line why.
+type: added

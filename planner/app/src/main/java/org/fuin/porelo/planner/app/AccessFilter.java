@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,8 +45,15 @@ public final class AccessFilter implements Filter {
     /** The seconds a signature's time may be off the planner's clock. */
     static final long WINDOW = 60;
 
-    /** The largest body any operation of the description takes, a task's event report. */
+    /** The largest body any operation of the description takes but a stage's result. */
     static final int MOST_BODY = 131072;
+
+    /** The largest body of a stage's result: a result file of 262144 bytes and its envelope. */
+    static final int MOST_RESULT = 266240;
+
+    /** The raw path a stage's result is handed in on. */
+    private static final Pattern RESULT_PATH =
+            Pattern.compile("/projects/[^/?#;%]+/tasks/[^/?#;%]+/result");
 
     /** The largest body a proof's request may have. */
     static final int MOST_PROOF = 128;
@@ -132,12 +140,13 @@ public final class AccessFilter implements Filter {
             return;
         }
         // Read before it is checked, as it was sent, but never more than an operation takes.
-        if (request.getContentLengthLong() > MOST_BODY) {
+        final int most = most(request);
+        if (request.getContentLengthLong() > most) {
             refuse(response);
             return;
         }
-        final byte[] body = request.getInputStream().readNBytes(MOST_BODY + 1);
-        if (body.length > MOST_BODY) {
+        final byte[] body = request.getInputStream().readNBytes(most + 1);
+        if (body.length > most) {
             refuse(response);
             return;
         }
@@ -153,6 +162,14 @@ public final class AccessFilter implements Filter {
         if (!request.isAsyncStarted()) {
             answer.finish();
         }
+    }
+
+    /** The most bytes the request's operation takes, by its method and raw path. */
+    static int most(final HttpServletRequest request) {
+        return "POST".equals(request.getMethod())
+                        && RESULT_PATH.matcher(request.getRequestURI()).matches()
+                ? MOST_RESULT
+                : MOST_BODY;
     }
 
     /** An async or error dispatch of a request the filter verified, and nothing else. */

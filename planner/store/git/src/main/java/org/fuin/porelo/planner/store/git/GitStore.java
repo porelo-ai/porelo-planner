@@ -221,7 +221,12 @@ public final class GitStore implements PlanningStore {
     }
 
     private Board refreshed() {
-        try (ProjectLock.Held held = lock.acquire()) {
+        return refreshed(lock.acquire());
+    }
+
+    /** Refreshes under a lock already held, which this releases. */
+    private Board refreshed(final ProjectLock.Held lease) {
+        try (ProjectLock.Held held = lease) {
             requireActive();
             final Snapshot old = current.get();
             // A repository with saves not pushed yet is read at its last save, never fetched over.
@@ -286,8 +291,13 @@ public final class GitStore implements PlanningStore {
         final Map<String, String> moves = new LinkedHashMap<>();
         result.issues().forEach(issue -> moves.put(issue.id(), issue.to()));
         final Writes writes = new Writes(moves, Map.of(), List.of());
+        final String own = repositories.get(0).name();
         for (int attempt = 1; ; attempt++) {
-            final Board board = refreshed();
+            // A hand-in waits a bounded time, so a long check answers it try later, never hangs it.
+            final Board board =
+                    refreshed(
+                            lock.acquire(LOCK_WAIT)
+                                    .orElseThrow(() -> new StoreException.Busy(own)));
             try {
                 return saved(board.revision(), writes, List.of(), null, result).board();
             } catch (final StoreException.StaleRevision e) {

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL141",
   "title": "A Stage Result Handed In Moves Its Issue",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 3,
@@ -35,7 +35,17 @@ a person sees on the board why an analysis or estimation that ended did not move
   malformed result saves nothing and is refused as `ResultRefused`, naming what failed. A valid result is saved through
   the store's stage-result write in one save, then each issue moves to the rule's `done`. One offer saves once: a second
   hand-in of a saved offer answers the saved result and writes nothing.
-- The core: an ENDED DONE of a result stage moves nothing; the run waits for the hand-in. A result refused, or an end
+- Agreed with the window: it posts the result, or `{"offer", "missing": "<one line why>"}` when the task left no
+  readable file, before the task's ENDED, and retries an unreached planner on later sweeps, after a restart too. A
+  second hand-in of the same offer answers the first outcome - saved, or the same refusal - never a new refusal or a
+  second save. A refusal is `422 ResultRefused` with `parameters.faults`, each starting with the field it names, as
+  `IdeaRefused`; an unknown project `404 NoSuchProject`. The result is written through `PlanningStore.saveResult`, on
+  the store as it stands when saved, each issue with `from` the working state and `to` the rule's `done`.
+- The signed body bound is 266240 bytes for this path alone (the 262144-byte file and its envelope), 131072 for every
+  other; agreed with the window. Each offer's outcome is kept beside the runs, compact and at most 500, so a replay is
+  answered after its run was replaced too.
+- The core: an ENDED DONE of a result stage moves nothing; an ENDED of a result stage whose offer has no saved result
+  counts as `missing`. A result refused, or an end
   without one (the window says so when the task left no file), stops the issue in its working state under Needs you
   with one line of why, and the person may start the stage again; the store is never written.
 - Red first, in `WorkRunTest` over fakes: a DONE end of an analysis rule leaves the issue In analysis; a valid hand-in

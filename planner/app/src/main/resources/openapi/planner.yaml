@@ -6,7 +6,8 @@ info:
     Serves a project's planning board - its workflow, stories and issues kept in Git - to the Porelo window on the
     same computer. No call carries the planner's token. Every call but the proof is signed in its Porelo-Signature
     header with an HMAC-SHA256 under the token's UTF-8 bytes; a request without one valid signature, with two, or with
-    an Authorization header answers 401 with an empty body, and so does one whose body is larger than 131072 bytes.
+    an Authorization header answers 401 with an empty body, and so does one whose body is larger than 131072 bytes,
+    or 266240 bytes for POST /projects/{project}/tasks/{task}/result.
     The signature is `porelo-planner-request-1;t=<time>;n=<nonce>;s=<hmac>`: the UTC time in seconds in decimal, no
     leading zero, at most 60 s off the planner's clock; 16 random bytes as nonce, each taken once; the HMAC over the
     ASCII label porelo-planner-request-1 and one zero byte, then each of these fields as its length in four bytes,
@@ -861,7 +862,9 @@ paths:
         changes nothing. Unknown, void or foreign offers and contradictory bindings are refused.
         Identical reports replay their disposition after restart, without saving or counting twice, and return only
         still-valid offers. The report is at most 131072 bytes, its answer at most 65536 UTF-8 bytes. Every save
-        refusal halts the run and voids unstarted work. A late end after cancellation only clears activity.
+        refusal halts the run and voids unstarted work. A late end after cancellation only clears activity. An ENDED
+        of a task whose rule hands back a result moves none of its issues, whatever its outcome: a saved result
+        moved them already, and without one they stay with NEXT_STEP_UNAVAILABLE and one line why.
       tags: [work]
       requestBody:
         required: true
@@ -894,6 +897,61 @@ paths:
           $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/tasks/{task}/result:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - name: task
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/TaskLabel'
+    post:
+      operationId: handStageResult
+      summary: Hand in the result a stage's task wrote
+      description: >-
+        Takes the result file an analysis or estimation task wrote, which the window hands in unchanged with the
+        task's offer while the task is at work, before its ENDED; or, when the task left no readable file, one line
+        why it is missing. Only a started offer of the project's run, bound to this task, whose rule hands back a
+        result is taken; an unknown, void or foreign offer is refused as TaskNotAnswered, and an offer whose task
+        hands back no result (a reader's, or one of work that pushes) or is not at work as ResultRefused, both
+        recording nothing. The result is checked before anything is saved: its format and kind match the rule, it
+        names exactly the offer's issues, each once, every member follows the result format, and no text holds a
+        control or direction character but a newline in a plan. Each issue must still belong to the offer, stand in
+        the state the stage works in and be worked by an agent. A sound result is saved through the store in one save
+        on the store as it stands, each issue moving from that state to the rule's done state; a result refused, or
+        one missing, saves nothing and its issues stay where they stand, under Needs you once the task ended. One
+        offer has one outcome: the first hand-in's - saved, missing, or the refusal with its faults - is recorded,
+        and a second hand-in of the same offer answers it again and writes nothing, whatever it holds; a save that
+        failed or did not end is recorded as a refusal. A stage task's ENDED never moves its issues; an ENDED of an
+        offer with no hand-in records its result as missing. The JSON body is at most 266240 bytes. The changes stream
+        announces the new board after a save.
+      tags: [work]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageResultRequest'
+      responses:
+        '200':
+          description: The offer's outcome, by this hand-in or an earlier one of the same offer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageResultReply'
+        '400':
+          $ref: '#/components/responses/WorkRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '422':
+          $ref: '#/components/responses/ResultRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
 
   /projects/{project}/stories/{story}/work/stop:
     parameters:
@@ -1069,7 +1127,7 @@ components:
     Unauthorized:
       description: >-
         The request carries no one valid signature, carries an Authorization header, or has a body larger than 131072
-        bytes; the body is empty, and the answer carries no Porelo-Answer header.
+        bytes (266240 bytes for a stage's result); the body is empty, and the answer carries no Porelo-Answer header.
       headers:
         WWW-Authenticate:
           description: Names the form of signature the planner expects.
@@ -1446,6 +1504,32 @@ components:
                   pushed: porelo-other
                   faults:
                     - 'offer: The idea of this offer was saved only in part and is not saved again.'
+    ResultRefused:
+      description: >-
+        A stage's hand-in is refused (ResultRefused), with fixed words; what was sent is never repeated. The body is
+        no hand-in - larger than 266240 bytes, not JSON, not an object, a member unknown, offer no lowercase UUID, or
+        neither or both of result and missing - with one fault; or the offer takes no result now, with one fault
+        starting with offer; or the result breaks the result format, at most 10 faults, each starting with the field
+        it names (format, kind, issues, issues[0].plan, issues[0].toBeChecked[1], missing, counted from 0); or an
+        issue no longer belongs to the offer, stands in another state or is worked by a person, with one fault
+        starting with issues; or the store did not save it, or its save did not end, with one fault starting with
+        result. Every refusal of an offer that takes a result is its recorded outcome, answered again to a second
+        hand-in of the offer.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            Malformed:
+              value:
+                type: urn:porelo-planner:ResultRefused
+                title: ResultRefused
+                status: 422
+                detail: The result does not follow the result format.
+                parameters:
+                  faults:
+                    - 'issues[0].size: The size must be one of XS, S, M, L, XL.'
+                    - 'issues[0].plan: An analysis needs a plan.'
     PriorityRefused:
       description: >-
         A project name or story id was refused (InvalidName), or the body is no priority change (PriorityNotAllowed,
@@ -1474,7 +1558,8 @@ components:
                   story: ST7
     NotOffered:
       description: >-
-        This planner's store saves no moves, adds no issues, saves no workers, saves no priorities or adds no ideas;
+        This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
+        saves no stage's result;
         the mock mode previews and saves moves, saves workers and adds ideas into its in-memory board, but adds no
         issues and saves no priorities (NotOffered).
       content:
@@ -2788,6 +2873,102 @@ components:
           oneOf:
             - $ref: '#/components/schemas/PlanWork'
             - type: 'null'
+    StageResultRequest:
+      description: >-
+        A stage task's offer and either the result file it wrote, handed on unchanged, or one line why it left none;
+        exactly one of result and missing, and no other member.
+      type: object
+      additionalProperties: false
+      required: [offer]
+      properties:
+        offer:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: The offer of the stage's task, as the planner offered it.
+        result:
+          $ref: '#/components/schemas/StageResultFile'
+        missing:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: >-
+            One line why the task left no result: no file, one too large or one unreadable. Length in code points.
+    StageResultFile:
+      description: >-
+        The result format porelo-stage-result-1, as the task wrote it to analysis.json or estimate.json, at most
+        262144 bytes: one entry per issue the order named. ANALYSIS needs plan, size and sizeWhy and takes no
+        estimateMinutes; ESTIMATE needs size, sizeWhy and estimateMinutes, and plan corrects the plan. No text holds a
+        control or direction character, but a plan its newlines; lengths are in code points. Unknown members are
+        refused, so a later format changes format.
+      type: object
+      additionalProperties: false
+      required: [format, kind, issues]
+      properties:
+        format:
+          type: string
+          const: porelo-stage-result-1
+        kind:
+          type: string
+          enum: [ANALYSIS, ESTIMATE]
+        issues:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/StageResultIssue'
+    StageResultIssue:
+      type: object
+      additionalProperties: false
+      required: [id, size, sizeWhy]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        plan:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: Markdown, the base design read in today's code.
+        size:
+          type: string
+          enum: [XS, S, M, L, XL]
+        sizeWhy:
+          type: string
+          minLength: 1
+          maxLength: 300
+        estimateMinutes:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        toBeChecked:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+        findings:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+    StageResultReply:
+      description: >-
+        The offer's outcome - SAVED, its issues moved to the rule's done state, or MISSING, its issues left where they
+        stand - and the offer's issues as the board shows them now.
+      type: object
+      required: [outcome, revision, issues]
+      properties:
+        outcome:
+          type: string
+          enum: [SAVED, MISSING]
+        revision:
+          $ref: '#/components/schemas/Revision'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
     TaskEventReply:
       type: object
       required: [revision, work, tasks]
@@ -3025,7 +3206,7 @@ components:
                 type: string
             faults:
               type: array
-              description: An idea's faults, each starting with the field it names, in fixed words.
+              description: An idea's or a stage result's faults, each starting with the field it names, in fixed words.
               maxItems: 100
               items:
                 type: string

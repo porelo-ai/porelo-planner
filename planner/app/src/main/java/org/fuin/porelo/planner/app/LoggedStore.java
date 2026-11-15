@@ -7,6 +7,7 @@ import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Writes;
@@ -66,6 +67,11 @@ final class LoggedStore implements PlanningStore {
     @Override
     public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
         return store.createIdea(revision, idea);
+    }
+
+    @Override
+    public Board saveResult(final StageResult result) {
+        return store.saveResult(result);
     }
 
     @Override

@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.fuin.porelo.planner.core.HandedIdeas;
+import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -325,6 +326,25 @@ class WorkRecordTest {
                     .as(
                             "a stage's own issue given once reads, so each refusal below is its forgery's")
                     .hasSize(1);
+            final ObjectNode compacted = arguments.deepCopy();
+            given(compacted, "analysis.json");
+            offer.set("arguments", compacted);
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThat(
+                            records.open("project", "https://example.org/store.git", null)
+                                    .locked(
+                                            session ->
+                                                    session.read()
+                                                            .runs()
+                                                            .values()
+                                                            .iterator()
+                                                            .next())
+                                    .offers()
+                                    .getFirst()
+                                    .arguments()
+                                    .result())
+                    .as("an ended stage's offer, compacted to its result alone, still reads")
+                    .isEqualTo("analysis.json");
             final Map<String, java.util.function.Consumer<ObjectNode>> forgeries =
                     new java.util.LinkedHashMap<>();
             forgeries.put(
@@ -339,7 +359,6 @@ class WorkRecordTest {
             forgeries.put(
                     "one issue given twice",
                     forged -> given(forged, "analysis.json", issue + ".md", issue + ".md"));
-            forgeries.put("a stage given no file", forged -> given(forged, "analysis.json"));
             for (final Map.Entry<String, java.util.function.Consumer<ObjectNode>> forgery :
                     forgeries.entrySet()) {
                 final ObjectNode forged = arguments.deepCopy();
@@ -428,6 +447,75 @@ class WorkRecordTest {
                                         .as("the sub-agent's absent basis stays empty")
                                         .isEmpty();
                             });
+        }
+    }
+
+    @Test
+    void handedResultsSurviveRestartAndARecordWrittenBeforeStagesReads() throws Exception {
+        // Prevents a lost outcome saving a stage's result twice, and an older record that cannot
+        // open losing the person's running work.
+        final String offer = "00000000-0000-0000-0000-000000000002";
+        final HandedResults.Handed handed =
+                new HandedResults.Handed(
+                        HandedResults.REFUSED,
+                        "task",
+                        List.of("AA1"),
+                        List.of("issues[0].size: The size must be one of XS, S, M, L, XL."),
+                        "",
+                        2);
+        final WorkRun.Run run = writeTaskRecord("workstation");
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(
+                                        new WorkRun.Snapshot(
+                                                2,
+                                                Map.of(run.story(), run),
+                                                Map.of(),
+                                                Map.of(offer, handed)));
+                                return true;
+                            });
+        }
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final Map<String, HandedResults.Handed> restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().results());
+            assertThat(restored)
+                    .as("the offer's outcome after a restart")
+                    .isEqualTo(Map.of(offer, handed));
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final ObjectNode document = (ObjectNode) json.readTree(Files.readString(file));
+        final ObjectNode written =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        assertThat(document.remove("results")).as("the record holds the outcomes").isNotNull();
+        final ObjectNode arguments = (ObjectNode) written.path("arguments");
+        assertThat(arguments.has("result") && arguments.has("given"))
+                .as("the reference record names the task's result file and given files")
+                .isTrue();
+        arguments.remove(List.of("result", "given"));
+        assertThat(((ObjectNode) written.path("binding").path("rule")).remove("result"))
+                .as("the reference record names what the rule hands back")
+                .isNotNull();
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final WorkRun.Snapshot older =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read());
+            assertThat(older.results())
+                    .as("a record written before stages handed in results holds none")
+                    .isEmpty();
+            final WorkRun.Offer olderOffer =
+                    older.runs().values().iterator().next().offers().getFirst();
+            assertThat(olderOffer.arguments().result())
+                    .as("a task recorded before stages hands back no result")
+                    .isNull();
+            assertThat(olderOffer.binding().rule().result())
+                    .as("a rule recorded before stages hands back no result")
+                    .isNull();
         }
     }
 

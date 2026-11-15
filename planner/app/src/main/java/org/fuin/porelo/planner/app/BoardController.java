@@ -22,6 +22,7 @@ import org.fuin.porelo.planner.app.answers.Phase;
 import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.PrioritySaved;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
+import org.fuin.porelo.planner.app.answers.StageResultReply;
 import org.fuin.porelo.planner.app.answers.State;
 import org.fuin.porelo.planner.app.answers.StoppedRun;
 import org.fuin.porelo.planner.app.answers.StoppedTask;
@@ -33,6 +34,7 @@ import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.StoryWorkReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.answers.WorkerSaved;
+import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.core.MovePreview;
@@ -898,6 +900,52 @@ public class BoardController {
                     WorkAnswers.starts(answer.tasks()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    /**
+     * Takes the result a stage's task wrote, or why it left none, once per offer: a sound result is
+     * saved and moves its issues to the rule's done state.
+     *
+     * @param project the project's name
+     * @param task the task's name
+     * @param request the request, whose body is the offer and the result or why it is missing
+     * @return the offer's outcome and its issues as they stand
+     */
+    @PostMapping("/projects/{project}/tasks/{task}/result")
+    public StageResultReply handStageResult(
+            @PathVariable("project") final String project,
+            @PathVariable("task") final String task,
+            final HttpServletRequest request) {
+        final String name = name(project);
+        final WorkRequests.ResultHandIn handIn = WorkRequests.stageResult(request);
+        try {
+            final WorkRun work = projects.work(name);
+            final HandedResults.Answer answer = work.result(task, handIn.offer(), handIn.handIn());
+            LOG.info(
+                    "Task {} of project {} handed in its result: {}",
+                    LogText.of(task),
+                    LogText.of(name),
+                    answer.outcome());
+            final WorkRun.Snapshot snapshot = work.snapshot();
+            final List<org.fuin.porelo.planner.app.answers.Issue> issues = new ArrayList<>();
+            for (final String id : answer.issues()) {
+                answer.board()
+                        .issue(id)
+                        .ifPresent(issue -> issues.add(issue(answer.board(), issue, snapshot)));
+            }
+            return new StageResultReply(
+                    StageResultReply.OutcomeEnum.fromValue(answer.outcome()),
+                    answer.board().revision().value(),
+                    issues);
+        } catch (final UnsupportedOperationException unavailable) {
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not save a stage's result.",
+                    Map.of("project", name));
         } finally {
             changes.saved(name);
         }

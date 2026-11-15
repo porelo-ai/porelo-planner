@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -98,11 +99,14 @@ public final class WorkRun {
     }
 
     /**
-     * The current runs and the discussions' offers whose ideas were handed in, with a monotonically
-     * increasing local generation.
+     * The current runs, the discussions' offers whose ideas were handed in and the stage offers
+     * whose results were handed in, with a monotonically increasing local generation.
      */
     public record Snapshot(
-            long generation, Map<String, Run> runs, Map<String, HandedIdeas.Handed> ideas) {
+            long generation,
+            Map<String, Run> runs,
+            Map<String, HandedIdeas.Handed> ideas,
+            Map<String, HandedResults.Handed> results) {
         /** Prevents actions from mutating an already published generation. */
         public Snapshot {
             if (generation < 0) {
@@ -110,9 +114,18 @@ public final class WorkRun {
             }
             runs = Map.copyOf(runs);
             ideas = Map.copyOf(ideas);
+            results = Map.copyOf(results);
         }
 
-        /** A snapshot of runs without a handed-in idea. */
+        /** A snapshot of runs and handed-in ideas without a handed-in result. */
+        public Snapshot(
+                final long generation,
+                final Map<String, Run> runs,
+                final Map<String, HandedIdeas.Handed> ideas) {
+            this(generation, runs, ideas, Map.of());
+        }
+
+        /** A snapshot of runs without a handed-in idea or result. */
         public Snapshot(final long generation, final Map<String, Run> runs) {
             this(generation, runs, Map.of());
         }
@@ -748,6 +761,7 @@ public final class WorkRun {
                     }
                     final Draft draft = new Draft(run);
                     final Board board = store.board();
+                    Snapshot recorded = snapshot;
                     Writes writes = NOTHING;
                     Offer accepted;
                     final List<String> following = new ArrayList<>();
@@ -849,29 +863,37 @@ public final class WorkRun {
                                                                     ended.answer()));
                                                 }
                                             });
-                            final WorkEnds.Judgment judgment =
-                                    WorkEnds.judge(
-                                            known.binding().role(),
-                                            WorkEnds.Outcome.of(
-                                                    ended.finished(),
-                                                    ended.unpushed(),
-                                                    ended.outcome()),
-                                            ended.answer());
-                            final NextStep.Result next =
-                                    next(
-                                            board,
-                                            known.binding(),
-                                            judgment,
-                                            draft.progress,
-                                            draft.comment,
-                                            new NextStep.Build(task, ended.landed()));
-                            draft.progress.putAll(next.progress());
-                            draft.unavailable.putAll(next.unavailable());
-                            writes = next.writes();
-                            for (final NextStep.Planned planned : next.tasks()) {
-                                final Offer offer = offer(planned, run.story());
-                                draft.offers.add(offer);
-                                following.add(offer.id());
+                            List<String> deferred = List.of();
+                            if (staged(known.binding())) {
+                                // The store moved the issues when it saved the result; without
+                                // one, they stay where the stage works on them.
+                                recorded = endedStage(snapshot, draft, known, task);
+                            } else {
+                                final WorkEnds.Judgment judgment =
+                                        WorkEnds.judge(
+                                                known.binding().role(),
+                                                WorkEnds.Outcome.of(
+                                                        ended.finished(),
+                                                        ended.unpushed(),
+                                                        ended.outcome()),
+                                                ended.answer());
+                                final NextStep.Result next =
+                                        next(
+                                                board,
+                                                known.binding(),
+                                                judgment,
+                                                draft.progress,
+                                                draft.comment,
+                                                new NextStep.Build(task, ended.landed()));
+                                draft.progress.putAll(next.progress());
+                                draft.unavailable.putAll(next.unavailable());
+                                writes = next.writes();
+                                deferred = next.deferred();
+                                for (final NextStep.Planned planned : next.tasks()) {
+                                    final Offer offer = offer(planned, run.story());
+                                    draft.offers.add(offer);
+                                    following.add(offer.id());
+                                }
                             }
                             accepted =
                                     new Offer(
@@ -886,7 +908,7 @@ public final class WorkRun {
                                             accepted.ended(),
                                             accepted.fingerprint(),
                                             following,
-                                            next.deferred(),
+                                            deferred,
                                             null);
                         }
                     }
@@ -895,9 +917,43 @@ public final class WorkRun {
                     draft.setFollowing(accepted.id(), following);
                     draft.compact(accepted.id());
                     final Run saved =
-                            save(session, snapshot, draft, writes, accepted.id(), board, null);
+                            save(session, recorded, draft, writes, accepted.id(), board, null);
                     return answer(saved, following);
                 });
+    }
+
+    /** Whether an offer's task hands back its result instead of pushing its work. */
+    private static boolean staged(final NextStep.Binding binding) {
+        return binding.rule().result() != null && !binding.role().equals("READER");
+    }
+
+    /**
+     * Ends a stage's task: its issues moved with its saved result, or stay and ask the person,
+     * saying why; an end before any hand-in is recorded as the offer's missing result.
+     */
+    private static Snapshot endedStage(
+            final Snapshot snapshot, final Draft draft, final Offer known, final String task) {
+        final HandedResults.Handed handed = snapshot.results().get(known.id());
+        if (handed != null && HandedResults.SAVED.equals(handed.status())) {
+            return snapshot;
+        }
+        final String why = HandedResults.why(handed);
+        for (final String id : known.binding().issues()) {
+            final NextStep.Progress p = draft.progress.get(id);
+            if (p != null) {
+                draft.unavailable(id, p, why);
+            }
+        }
+        return handed != null
+                ? snapshot
+                : HandedResults.with(
+                        snapshot,
+                        known.id(),
+                        HandedResults.MISSING,
+                        task,
+                        known.binding().issues(),
+                        List.of(),
+                        "The task ended without handing in a result.");
     }
 
     /**
@@ -1359,6 +1415,244 @@ public final class WorkRun {
         NewIdeas.check(store.board(), idea, shape);
         return record.locked(
                 session -> HandedIdeas.save(store, session, read(session), offer, idea, shape));
+    }
+
+    /**
+     * Takes the result a stage's task handed in for its offer, once per offer: a sound result is
+     * saved through the store, which moves its issues to the rule's done state, and the offer's
+     * outcome is recorded, so a repeated hand-in answers the first outcome and writes nothing.
+     *
+     * @param task the task's name, as the offer was bound to it when it started
+     * @param offer the offer
+     * @param handIn the hand-in
+     * @return the outcome, saved or missing
+     * @throws WorkRefusal {@code InvalidSettings} for a malformed task name, {@code
+     *     TaskNotAnswered} for an unknown, void or foreign offer, {@code ResultRefused} for an
+     *     offer that takes no result now or a result that is refused
+     */
+    public HandedResults.Answer result(
+            final String task, final String offer, final HandedResults.HandIn handIn) {
+        if (!Ids.isTask(task)) {
+            throw WorkRefusal.invalidSettings();
+        }
+        HandedResults.offer(offer);
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final HandedResults.Handed known = snapshot.results().get(offer);
+                    if (known != null) {
+                        if (!known.task().equals(task)) {
+                            throw WorkRefusal.taskNotAnswered(task, offer);
+                        }
+                        return replayed(session, snapshot, offer, known);
+                    }
+                    final Run run =
+                            snapshot.runs().values().stream()
+                                    .filter(
+                                            r ->
+                                                    r.offers().stream()
+                                                            .anyMatch(o -> o.id().equals(offer)))
+                                    .findFirst()
+                                    .orElseThrow(() -> WorkRefusal.taskNotAnswered(task, offer));
+                    final Offer bound =
+                            run.offers().stream()
+                                    .filter(o -> o.id().equals(offer))
+                                    .findFirst()
+                                    .orElseThrow();
+                    if (bound.status().equals("VOID")
+                            || bound.task() != null && !task.equals(bound.task())) {
+                        throw WorkRefusal.taskNotAnswered(task, offer);
+                    }
+                    final NextStep.Binding binding = bound.binding();
+                    final WorkRule.Result kind = binding.rule().result();
+                    if (kind == null || binding.role().equals("READER")) {
+                        throw HandedResults.refused(
+                                "offer: The offer's task hands back no result.");
+                    }
+                    if (!bound.status().equals("STARTED") || run.stopped() || run.halted()) {
+                        throw HandedResults.refused("offer: The offer's task is not at work.");
+                    }
+                    final List<String> faults = HandedResults.check(kind, binding.issues(), handIn);
+                    if (!faults.isEmpty()) {
+                        write(
+                                session,
+                                HandedResults.with(
+                                        snapshot,
+                                        offer,
+                                        HandedResults.REFUSED,
+                                        task,
+                                        binding.issues(),
+                                        faults,
+                                        ""));
+                        throw HandedResults.refused(faults);
+                    }
+                    final String missing = handIn.missing();
+                    if (missing != null) {
+                        write(
+                                session,
+                                HandedResults.with(
+                                        snapshot,
+                                        offer,
+                                        HandedResults.MISSING,
+                                        task,
+                                        binding.issues(),
+                                        List.of(),
+                                        missing));
+                        return new HandedResults.Answer(
+                                HandedResults.MISSING, store.board(), binding.issues());
+                    }
+                    final Board board = store.board();
+                    final String unowned = unowned(board, binding);
+                    if (unowned != null) {
+                        final List<String> said = List.of("issues: " + unowned);
+                        final Snapshot refused =
+                                HandedResults.with(
+                                        snapshot,
+                                        offer,
+                                        HandedResults.REFUSED,
+                                        task,
+                                        binding.issues(),
+                                        said,
+                                        "");
+                        final Draft draft = new Draft(run);
+                        for (final String id : binding.issues()) {
+                            final NextStep.Progress p = draft.progress.get(id);
+                            if (p != null) {
+                                draft.unavailable(id, p, "its result was refused: " + said.get(0));
+                            }
+                        }
+                        save(session, refused, draft, NOTHING, offer, board, null);
+                        throw HandedResults.refused(said);
+                    }
+                    return saved(session, snapshot, offer, task, binding, kind, handIn);
+                });
+    }
+
+    /** Saves a checked result, recorded as pending first, so no stop between saves it twice. */
+    private HandedResults.Answer saved(
+            final Session session,
+            final Snapshot snapshot,
+            final String offer,
+            final String task,
+            final NextStep.Binding binding,
+            final WorkRule.Result kind,
+            final HandedResults.HandIn handIn) {
+        final StageResult result =
+                HandedResults.result(
+                        kind,
+                        binding.state(),
+                        binding.rule().done(),
+                        java.util.Objects.requireNonNull(handIn.result()));
+        final Snapshot pending =
+                HandedResults.with(
+                        snapshot,
+                        offer,
+                        HandedResults.PENDING,
+                        task,
+                        binding.issues(),
+                        List.of(),
+                        "");
+        write(session, pending);
+        final Board saved;
+        try {
+            saved = store.saveResult(result);
+        } catch (final UnsupportedOperationException notOffered) {
+            // A store that saves no result saved nothing, so the window may hand it in again.
+            session.write(snapshot);
+            throw notOffered;
+        } catch (final StoreException.Busy | StoreException.StaleRevision notStarted) {
+            // The store refuses these before it writes anything, so the window tries again later.
+            session.write(snapshot);
+            throw notStarted;
+        } catch (final RuntimeException failed) {
+            final List<String> said =
+                    List.of(
+                            "result: The store did not save the result: "
+                                    + HandedResults.bound(
+                                            failed.getMessage() == null
+                                                    ? failed.getClass().getSimpleName()
+                                                    : failed.getMessage()));
+            session.write(
+                    HandedResults.with(
+                            pending,
+                            offer,
+                            HandedResults.REFUSED,
+                            task,
+                            binding.issues(),
+                            said,
+                            ""));
+            throw HandedResults.refused(said);
+        }
+        session.write(
+                HandedResults.with(
+                        pending,
+                        offer,
+                        HandedResults.SAVED,
+                        task,
+                        binding.issues(),
+                        List.of(),
+                        ""));
+        return new HandedResults.Answer(HandedResults.SAVED, saved, binding.issues());
+    }
+
+    /** Answers an offer's recorded outcome; a save left pending is refused from now on. */
+    private HandedResults.Answer replayed(
+            final Session session,
+            final Snapshot snapshot,
+            final String offer,
+            final HandedResults.Handed known) {
+        switch (known.status()) {
+            case HandedResults.SAVED, HandedResults.MISSING -> {
+                return new HandedResults.Answer(known.status(), store.board(), known.issues());
+            }
+            case HandedResults.PENDING -> {
+                final List<String> said =
+                        List.of(
+                                "result: The save of this offer's result did not end and is not"
+                                        + " made again.");
+                write(
+                        session,
+                        HandedResults.with(
+                                snapshot,
+                                offer,
+                                HandedResults.REFUSED,
+                                known.task(),
+                                known.issues(),
+                                said,
+                                ""));
+                throw HandedResults.refused(said);
+            }
+            default -> throw HandedResults.refused(known.faults());
+        }
+    }
+
+    private static void write(final Session session, final Snapshot snapshot) {
+        session.preflight(snapshot);
+        session.write(snapshot);
+    }
+
+    /**
+     * Why the offer's issues can no longer take its result: no longer its own, out of its working
+     * state, or taken over by a person; null when they all can.
+     */
+    private static @Nullable String unowned(final Board board, final NextStep.Binding binding) {
+        if (!NextStep.owns(board, binding)) {
+            return "The issues no longer belong to story "
+                    + binding.story()
+                    + " in repository "
+                    + binding.repository()
+                    + ".";
+        }
+        for (final String id : binding.issues()) {
+            final Issue issue = board.issue(id).orElseThrow();
+            if (!issue.state().equals(binding.state())) {
+                return id + " no longer stands in " + binding.state() + ".";
+            }
+            if (issue.worker() == Worker.MANUAL) {
+                return id + " is now worked by a person.";
+            }
+        }
+        return null;
     }
 
     /**
@@ -2161,7 +2455,7 @@ public final class WorkRun {
         }
         return runs.size() == snapshot.runs().size()
                 ? snapshot
-                : new Snapshot(snapshot.generation(), runs, snapshot.ideas());
+                : new Snapshot(snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
     }
 
     private static Snapshot replace(final Snapshot snapshot, final Run run) {
@@ -2170,7 +2464,7 @@ public final class WorkRun {
         if (snapshot.generation() == Long.MAX_VALUE) {
             throw WorkRefusal.invalidSettings();
         }
-        return new Snapshot(snapshot.generation() + 1, runs, snapshot.ideas());
+        return new Snapshot(snapshot.generation() + 1, runs, snapshot.ideas(), snapshot.results());
     }
 
     /**

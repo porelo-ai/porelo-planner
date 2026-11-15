@@ -22,6 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.core.HandedIdeas;
+import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.StageOrder;
@@ -122,7 +123,8 @@ public final class WorkRecord implements AutoCloseable {
             @Nullable String branch,
             long generation,
             Map<String, WorkRun.Run> runs,
-            Map<String, HandedIdeas.Handed> ideas) {}
+            Map<String, HandedIdeas.Handed> ideas,
+            Map<String, HandedResults.Handed> results) {}
 
     /** Opens a project's one writer, clearing a record from a different repository or branch. */
     public synchronized WorkRun.Record open(
@@ -312,7 +314,7 @@ public final class WorkRecord implements AutoCloseable {
                 write(reset);
                 return reset;
             }
-            return new WorkRun.Snapshot(doc.generation(), doc.runs(), doc.ideas());
+            return new WorkRun.Snapshot(doc.generation(), doc.runs(), doc.ideas(), doc.results());
         }
 
         private Path opened() {
@@ -366,6 +368,10 @@ public final class WorkRecord implements AutoCloseable {
             // A record written before ideas were handed in holds none.
             if (tree instanceof ObjectNode root && !root.has("ideas")) {
                 root.putObject("ideas");
+            }
+            // A record written before stages handed in their results holds none.
+            if (tree instanceof ObjectNode root && !root.has("results")) {
+                root.putObject("results");
             }
             for (final JsonNode run : tree.path("runs")) {
                 for (final JsonNode repository : run.path("repositories")) {
@@ -623,7 +629,8 @@ public final class WorkRecord implements AutoCloseable {
                                         branch,
                                         snapshot.generation(),
                                         snapshot.runs(),
-                                        snapshot.ideas()));
+                                        snapshot.ideas(),
+                                        snapshot.results()));
                 if (bytes.length > MOST_RECORD) {
                     throw WorkRefusal.recordUnavailable(project, "The work record is full.");
                 }
@@ -635,6 +642,7 @@ public final class WorkRecord implements AutoCloseable {
 
         private void validate(final Document doc) {
             doc.ideas().forEach(HandedIdeas::validate);
+            doc.results().forEach(HandedResults::validate);
             final Set<String> ids = new HashSet<>();
             doc.runs()
                     .forEach(
@@ -772,8 +780,8 @@ public final class WorkRecord implements AutoCloseable {
 
     /**
      * Whether an offer's result and given files are what its role is served: an idea for a
-     * discussion, a stage's file for its main or builder, then each owned issue once by its id
-     * within the bounds a task is given, and no file for work that pushes.
+     * discussion, a stage's file for its main or builder, then each owned issue at most once by its
+     * id within the bounds a task is given, and no file for work that pushes.
      */
     private static boolean givenFits(final WorkOrder.Task task) {
         final String result = task.result();
@@ -787,7 +795,8 @@ public final class WorkRecord implements AutoCloseable {
                         : stage && !task.role().equals("READER"))) {
             return false;
         }
-        if (stage == task.given().isEmpty() || task.given().size() > StageOrder.MOST_FILES) {
+        // An ended stage's offer is kept compacted, its result named and its files dropped.
+        if (!stage && !task.given().isEmpty() || task.given().size() > StageOrder.MOST_FILES) {
             return false;
         }
         final java.util.Set<String> names = new java.util.HashSet<>();

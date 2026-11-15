@@ -124,7 +124,11 @@ class ApiMatchesDescriptionTest {
                     Map.entry("PassOver", WorkRun.PassOver.class),
                     Map.entry("StopRequest", WorkRequests.StopRequest.class),
                     Map.entry("TaskEventRequest", WorkRequests.TaskEventRequest.class),
-                    Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class));
+                    Map.entry("ReadingRequest", WorkRequests.ReadingRequest.class),
+                    Map.entry(
+                            "StageResultReply",
+                            org.fuin.porelo.planner.app.answers.StageResultReply.class),
+                    Map.entry("StageResultRequest", WorkRequests.StageResultRequest.class));
 
     /** The bodies' own records of schemas an answer carries too, each read by hand. */
     private static final Map<String, Class<?>> READ_BY_HAND =
@@ -474,6 +478,56 @@ class ApiMatchesDescriptionTest {
         assertThat(schemas.at("/Problem/properties/parameters/properties/faults/type").asText())
                 .as("an idea's faults are a list")
                 .isEqualTo("array");
+    }
+
+    @Test
+    void theHandInOfAStageResultDescribesItsBodyItsAnswerAndEveryRefusal() {
+        // A refusal or a member missing from the contract lets the window take a refused result
+        // as saved, or hand in a result the planner reads otherwise.
+        final JsonNode operation =
+                description
+                        .path("paths")
+                        .path("/projects/{project}/tasks/{task}/result")
+                        .path("post");
+        assertThat(operation.at("/requestBody/content/application~1json/schema/$ref").asText())
+                .as("the hand-in's body")
+                .isEqualTo("#/components/schemas/StageResultRequest");
+        assertThat(operation.at("/responses/200/content/application~1json/schema/$ref").asText())
+                .as("the hand-in's answer")
+                .isEqualTo("#/components/schemas/StageResultReply");
+        final Set<String> statuses = new TreeSet<>();
+        operation.path("responses").fieldNames().forEachRemaining(statuses::add);
+        assertThat(statuses)
+                .as("every answer of the hand-in")
+                .isEqualTo(Set.of("200", "400", "401", "404", "422", "501", "503"));
+        assertThat(operation.at("/responses/422/$ref").asText())
+                .as("a refused result's answer")
+                .isEqualTo("#/components/responses/ResultRefused");
+        assertThat(operation.path("description").asText())
+                .as("the body's bound the planner reads")
+                .contains("at most " + AccessFilter.MOST_RESULT + " bytes");
+        final JsonNode schemas = description.path("components").path("schemas");
+        for (final Map.Entry<String, Class<?>> format :
+                Map.<String, Class<?>>of(
+                                "StageResultFile",
+                                org.fuin.porelo.planner.core.HandedResults.File.class,
+                                "StageResultIssue",
+                                org.fuin.porelo.planner.core.HandedResults.Entry.class)
+                        .entrySet()) {
+            final Set<String> properties = new TreeSet<>();
+            schemas.path(format.getKey())
+                    .path("properties")
+                    .fieldNames()
+                    .forEachRemaining(properties::add);
+            assertThat(properties)
+                    .as("%s has exactly the members the planner reads", format.getKey())
+                    .isEqualTo(names(format.getValue().getRecordComponents()));
+        }
+        final Set<String> required = new TreeSet<>();
+        schemas.at("/StageResultIssue/required").forEach(field -> required.add(field.asText()));
+        assertThat(required)
+                .as("the members every kind of result needs")
+                .isEqualTo(Set.of("id", "size", "sizeWhy"));
     }
 
     private static void wireType(

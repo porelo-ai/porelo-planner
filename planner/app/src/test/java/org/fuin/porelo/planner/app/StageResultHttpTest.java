@@ -1,0 +1,293 @@
+package org.fuin.porelo.planner.app;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.StageResult;
+import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
+import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+class StageResultHttpTest {
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    private MockMvc mvc;
+
+    private ChangesRegistry changes;
+
+    private Store store;
+
+    @BeforeEach
+    void serveARealRunOverAFakeStore() {
+        store = new Store();
+        final Projects projects = new Projects((p, r, b) -> store, 8);
+        projects.put("project", "https://example.org/store.git", null);
+        changes =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor());
+        mvc =
+                MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
+                        .setControllerAdvice(new Problems())
+                        .build();
+    }
+
+    @AfterEach
+    void closeTheFollower() {
+        changes.close();
+    }
+
+    @Test
+    void aHandedInResultIsSavedOnceAndAnsweredWithTheIssueInItsDoneState() throws Exception {
+        // Prevents an issue counted analyzed whose store holds no plan, and a result saved twice
+        // when the window hands it in again.
+        final String offer = started();
+
+        final JsonNode saved = call("/tasks/analyze/result", handIn(offer, "M"), 200);
+        final JsonNode again = call("/tasks/analyze/result", handIn(offer, "XL"), 200);
+
+        assertThat(saved.path("outcome").asString()).as("the outcome").isEqualTo("SAVED");
+        assertThat(saved.at("/issues/0/state").asString())
+                .as("the issue in the rule's done state")
+                .isEqualTo("Analyzed");
+        assertThat(saved.path("revision").asString())
+                .as("the board's revision after the save")
+                .isEqualTo(store.board().revision().value());
+        assertThat(again).as("the replay answers the same").isEqualTo(saved);
+        assertThat(store.results).as("one save").hasSize(1);
+        assertThat(store.results.getFirst().issues().getFirst().size())
+                .as("the first hand-in's size")
+                .isEqualTo("M");
+    }
+
+    @Test
+    void aMalformedResultIsRefusedNamingItsFieldsAndSavesNothing() throws Exception {
+        // Prevents a result the store cannot hold being saved, or a refusal the window cannot read.
+        final String offer = started();
+        final ObjectNode body = (ObjectNode) JSON.readTree(handIn(offer, "XXL"));
+        ((ObjectNode) body.at("/result/issues/0")).put("extra", "x");
+
+        final JsonNode refused = call("/tasks/analyze/result", body.toString(), 422);
+
+        assertThat(refused.path("type").asString())
+                .as("the refusal")
+                .isEqualTo("urn:porelo-planner:ResultRefused");
+        final List<String> faults = new ArrayList<>();
+        refused.at("/parameters/faults").forEach(f -> faults.add(f.asString()));
+        assertThat(faults)
+                .as("each fault names its field")
+                .anySatisfy(
+                        f -> assertThat(f).as("the size's fault").startsWith("issues[0].size: "))
+                .anySatisfy(f -> assertThat(f).as("the member's fault").startsWith("issues[0]: "));
+        assertThat(store.results).as("nothing is saved").isEmpty();
+        assertThat(call("/tasks/analyze/result", handIn(offer, "M"), 422).at("/parameters/faults"))
+                .as("the replay answers the same refusal")
+                .isEqualTo(refused.at("/parameters/faults"));
+    }
+
+    // Prevents a malformed envelope from being recorded as the offer's outcome, so the window's
+    // proper hand-in afterwards would be refused for good.
+    @Test
+    void anEnvelopeWithNeitherBothOrAWrongResultIsRefusedAloneAndRecordsNothing() throws Exception {
+        final String offer = started();
+        final ObjectNode both = (ObjectNode) JSON.readTree(handIn(offer, "M"));
+        both.put("missing", "no file");
+        for (final String body :
+                List.of(
+                        "{\"offer\":\"" + offer + "\"}",
+                        both.toString(),
+                        "{\"offer\":\"" + offer + "\",\"result\":1}")) {
+            final JsonNode refused = call("/tasks/analyze/result", body, 422);
+            assertThat(refused.at("/parameters/faults"))
+                    .as("one fault for the envelope %s", body)
+                    .hasSize(1);
+        }
+        assertThat(
+                        call("/tasks/analyze/result", handIn(offer, "M"), 200)
+                                .path("outcome")
+                                .asString())
+                .as("the proper hand-in afterwards is saved")
+                .isEqualTo("SAVED");
+    }
+
+    @Test
+    void aBodyThatIsNoHandInAndAnUnknownOfferAreRefused() throws Exception {
+        // Prevents a hand-in for work this task was never given moving an issue.
+        started();
+
+        assertThat(call("/tasks/analyze/result", "[1]", 422).path("type").asString())
+                .as("a body that is no object")
+                .isEqualTo("urn:porelo-planner:ResultRefused");
+        assertThat(
+                        call(
+                                        "/tasks/analyze/result",
+                                        handIn("0b1d6f0e-6c43-4e8e-9a51-6f5cbb5b3a11", "M"),
+                                        404)
+                                .path("type")
+                                .asString())
+                .as("an unknown offer")
+                .isEqualTo("urn:porelo-planner:TaskNotAnswered");
+        assertThat(store.results).as("nothing is saved").isEmpty();
+    }
+
+    private String started() throws Exception {
+        final JsonNode order =
+                call(
+                        "/stories/ST1/work",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"In analysis\","
+                                + "\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                        200);
+        final String offer = order.at("/tasks/0/offer").asString();
+        call(
+                "/tasks/analyze/events",
+                "{\"offer\":\""
+                        + offer
+                        + "\",\"event\":\"STARTED\",\"container\":\"box\",\"machine\":\"workstation\"}",
+                200);
+        return offer;
+    }
+
+    private static String handIn(final String offer, final String size) {
+        return "{\"offer\":\""
+                + offer
+                + "\",\"result\":{\"format\":\"porelo-stage-result-1\",\"kind\":\"ANALYSIS\","
+                + "\"issues\":[{\"id\":\"AA1\",\"plan\":\"Read it.\\nChange it.\",\"size\":\""
+                + size
+                + "\",\"sizeWhy\":\"One module.\",\"toBeChecked\":[\"The bound.\"]}]}}";
+    }
+
+    private JsonNode call(final String path, final String body, final int status) throws Exception {
+        final var response =
+                mvc.perform(
+                                post("/projects/project" + path)
+                                        .contentType("application/json")
+                                        .content(body))
+                        .andReturn()
+                        .getResponse();
+        assertThat(response.getStatus())
+                .as("the response to %s: %s", path, response.getContentAsString())
+                .isEqualTo(status);
+        return JSON.readTree(response.getContentAsString());
+    }
+
+    /** A store with one analysis stage, whose saved results can be seen. */
+    private static final class Store implements PlanningStore {
+        private Board current;
+        private final List<StageResult> results = new ArrayList<>();
+        private int saves;
+
+        Store() {
+            final WorkRule analysis =
+                    new WorkRule(
+                            List.of("Backlog"),
+                            "Analyzed",
+                            null,
+                            null,
+                            WorkRule.Per.REPOSITORY,
+                            List.of("AGENT"),
+                            "Analyze {story}: {issues}; {tasks}",
+                            Map.of("codex", "model"),
+                            Map.of(),
+                            WorkRule.Result.ANALYSIS);
+            current =
+                    new Board(
+                            new Revision("r1"),
+                            new Workflow(
+                                    List.of("Backlog", "In analysis", "Analyzed", "Finished"),
+                                    List.of(),
+                                    List.of("Finished")),
+                            List.of(
+                                    new Story(
+                                            "ST1",
+                                            "Story",
+                                            "Backlog",
+                                            false,
+                                            "High",
+                                            null,
+                                            List.of("AA1"),
+                                            "",
+                                            null)),
+                            List.of(issueIn("Backlog")),
+                            new Work(Map.of("In analysis", analysis), List.of()),
+                            List.of("alpha"));
+        }
+
+        private static Issue issueIn(final String state) {
+            return new Issue(
+                    "AA1",
+                    "alpha",
+                    "Issue",
+                    state,
+                    null,
+                    List.of(),
+                    null,
+                    null,
+                    "**What must be true.** It works.",
+                    Worker.AGENT,
+                    Risk.ORDINARY);
+        }
+
+        private void moved(final String state) {
+            saves++;
+            current =
+                    new Board(
+                            new Revision("r" + (saves + 1)),
+                            current.workflow(),
+                            current.stories(),
+                            List.of(issueIn(state)),
+                            current.work(),
+                            current.repositories());
+        }
+
+        @Override
+        public Board board() {
+            return current;
+        }
+
+        @Override
+        public Board refresh() {
+            return current;
+        }
+
+        @Override
+        public Board save(final Revision revision, final Writes writes) {
+            moved(writes.issues().getOrDefault("AA1", current.issues().getFirst().state()));
+            return current;
+        }
+
+        @Override
+        public Board saveResult(final StageResult result) {
+            results.add(result);
+            moved(result.issues().getFirst().to());
+            return current;
+        }
+
+        @Override
+        public String storyState(final List<String> states) {
+            return states.getFirst();
+        }
+    }
+}
