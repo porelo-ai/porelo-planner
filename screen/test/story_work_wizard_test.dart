@@ -55,6 +55,19 @@ Map<String, dynamic> _board() => {
 
 const _sub = 'repo/AA1/BUILDER';
 
+/// The board of [_board] with a second agent's issue in a second repository.
+Map<String, dynamic> _twoRepositories() {
+  final board = _board();
+  final story = (board['stories'] as List).single as Map<String, dynamic>;
+  final first = (story['issues'] as List).single as Map<String, dynamic>;
+  story['issues'] = [
+    first,
+    {...first, 'id': 'AB1', 'repository': 'repo2', 'title': 'Issue AB1', 'link': 'https://example.org/issues/AB1'},
+  ];
+  board['repositories'] = ['repo', 'repo2'];
+  return board;
+}
+
 /// A window's wizard that keeps the steps it was handed and never closes on its own.
 class _Wizards implements PlanningWizards {
   List<PlanningWizardStep> steps = const [];
@@ -205,6 +218,29 @@ void main() {
       isEmpty,
       reason: 'nothing reached the planner',
     );
+  });
+
+  // Prevents the Who step from failing to draw when two of its tasks name the same agent.
+  testWidgets('the Who step draws two repositories\' tasks on the same agent', (tester) async {
+    final source = MockPlanningSource()..boards['demo'] = _twoRepositories();
+    final board = PlanningBoard(source, 'demo');
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    addTearDown(() async {
+      board.dispose();
+      await tester.runAsync(source.end);
+    });
+    final work = _work(board, const [
+      PlanningAgent('codex', efforts: ['low', 'high']),
+    ]);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
+    await _answered(tester);
+    expect(work.proposal!.repositories, hasLength(2), reason: 'both repositories get a task');
+    work.chooseMain('repo', agent: 'codex', model: 'a-model');
+    work.chooseMain('repo2', agent: 'codex', model: 'a-model');
+    await _next(tester);
+    expect(tester.takeException(), isNull, reason: 'the step draws both effort choices');
+    expect(_title(tester), 'Start work — Who', reason: 'the Who step shows');
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   // Prevents a task from starting with another model than the one the person chose or typed.

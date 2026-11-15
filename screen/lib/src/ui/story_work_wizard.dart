@@ -368,7 +368,7 @@ class _StoryWorkSteps {
       ),
       KeyedSubtree(
         // Another agent starts its effort again from the proposal, so the field is drawn anew.
-        key: ValueKey(('effort', agent)),
+        key: ValueKey(('effort', what, agent)),
         child: efforts == null
             ? _effortField(
                 key: Key('${keys.$4} $what'),
