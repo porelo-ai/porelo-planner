@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL150",
   "title": "A Saved Result Links Its Issue Numbers",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 70,

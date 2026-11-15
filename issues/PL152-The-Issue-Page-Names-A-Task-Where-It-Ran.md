@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL152",
   "title": "The Issue Page Names A Task Where It Ran",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 72,

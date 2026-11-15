@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL154",
   "title": "Start Work Says Where The Open Issues Stand",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "XS",
   "priority": "High",
   "rank": 74,

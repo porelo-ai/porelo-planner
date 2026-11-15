@@ -33,10 +33,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl150"></a>[PL150](PL150-A-Saved-Result-Links-Its-Issue-Numbers.md) | S | - | The Git store writes a stage result into an issue's file with every issue number of the repository as the link to its index row, so a saved analysis or estimate never makes the store's own check warn |
-| <a id="pl152"></a>[PL152](PL152-The-Issue-Page-Names-A-Task-Where-It-Ran.md) | S | - | The issue page's Work part lists each task of the story with the machine it ran on, as the planner reports it, and whether it ended, and asks the window to open only a task known where it runs |
 | <a id="pl153"></a>[PL153](PL153-Start-Work-Shows-A-Single-Choice-As-Text.md) | XS | [PL156](README.md#pl156) | The Start work dialog shows the machine and the working state as labeled text where there is only one to choose, and leaves the machine out where only one planner reports the project, instead of drop-down lists of one |
-| <a id="pl154"></a>[PL154](PL154-Start-Work-Says-Where-The-Open-Issues-Stand.md) | XS | - | When no open issue of a story stands where the chosen rule takes from, the planner's refusal names each open issue with its state and the states the rule takes from, so the person sees why nothing can start |
 | <a id="pl155"></a>[PL155](PL155-Start-Work-Preselects-An-Agent-Signed-In-There.md) | S | [PL156](README.md#pl156) | The Start work dialog preselects, for each task, the first agent of the rule's offered list that the window says is signed in on the machine the task goes to, says why it passed over the ones before it, and offers an agent not signed in there only as the person's own choice |
 | <a id="pl93"></a>[PL93](PL93-Start-Instructions-Per-Working-State-From-The-Store.md) | L | - | Every task order the planner builds carries the start instructions of its working state, given by the store's adapter from the project's settings: where a reader writes its findings and what a task does with findings it finds |
 | <a id="pl94"></a>[PL94](PL94-Findings-Read-From-The-Readers-Committed-File.md) | L | [PL93](README.md#pl93) | A reading's findings are read from the file the reader committed where its work landed, checked by today's rules for a Findings block, with the answer's block as the fallback while readers do not yet write the file |
@@ -48,6 +45,14 @@ left out.
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl144"></a>[PL144](PL144-The-Moves-Stand-In-Holds-One-Copy-Of-A-Shared-Issue.md) | S | - | The screen package's stand-in for the planner's moves treats an issue two stories share as one issue, so a move, its preview and the checks after the batch read and write the same state, as the planner's moves do |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl150"></a>[PL150](PL150-A-Saved-Result-Links-Its-Issue-Numbers.md) | S | - | The Git store writes a stage result into an issue's file with every issue number of the repository as the link to its index row, so a saved analysis or estimate never makes the store's own check warn |
+| <a id="pl152"></a>[PL152](PL152-The-Issue-Page-Names-A-Task-Where-It-Ran.md) | S | - | The issue page's Work part lists each task of the story with the machine it ran on, as the planner reports it, and whether it ended, and asks the window to open only a task known where it runs |
+| <a id="pl154"></a>[PL154](PL154-Start-Work-Says-Where-The-Open-Issues-Stand.md) | XS | - | When no open issue of a story stands where the chosen rule takes from, the planner's refusal names each open issue with its state and the states the rule takes from, so the person sees why nothing can start |
 
 ## Review
 
