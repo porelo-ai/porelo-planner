@@ -17,6 +17,7 @@ import 'planning_detail_widgets.dart';
 import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
 import 'planning_story_view.dart';
+import 'planning_text.dart';
 import 'story_work_wizard.dart';
 import 'style.dart';
 
@@ -1005,8 +1006,9 @@ class _BoardViewState extends State<_BoardView> {
   String? _work(PlanStory story) {
     final work = board.workOf(story);
     final working = board.state(story.state)?.kind == 'WORKING';
-    final mainTasks = work?.tasks.where((task) => task.role == 'MAIN').length ?? 0;
+    final mainTasks = work?.tasks.where((task) => task.role == 'MAIN' && task.atWork == true).length ?? 0;
     if (work == null) return working ? 'Work not reported' : null;
+    if (work.atWork == false && work.issues.any((issue) => issue.reason == 'STOPPED')) return 'stopped';
     if (work.atWork == false) return working ? 'nobody at work' : null;
     return [
       if (work.atWork == null) 'Work status not reported',
@@ -1020,7 +1022,7 @@ class _BoardViewState extends State<_BoardView> {
           'AGENT' => 'shell with you',
           _ => _line(work.mode),
         },
-      if (work.since.isNotEmpty) 'since ${_line(work.since)}',
+      if (work.since.isNotEmpty) 'since ${_line(planningLocalTime(work.since))}',
     ].join(' · ');
   }
 
@@ -1041,10 +1043,12 @@ class _BoardViewState extends State<_BoardView> {
   }
 
   /// Whether the story waits on the person for any reason, a stopped reading included; what a fold leaves showing.
-  bool _needsYou(PlanStory story) => _raised(story) || story.issues.any((issue) => issue.readingStopped == true);
+  bool _needsYou(PlanStory story) =>
+      !board.attentionSeen(story) && (_raised(story) || story.issues.any((issue) => issue.readingStopped == true));
 
   /// Whether an issue of the story was raised outside a stopped reading, such as by a task that failed.
   bool _raised(PlanStory story) {
+    if (board.attentionSeen(story)) return false;
     final stopped = {
       for (final issue in story.issues)
         if (issue.readingStopped == true) issue.id,
@@ -1175,6 +1179,7 @@ class _BoardViewState extends State<_BoardView> {
       board.preferences.foldedStories.contains(story.id),
       _foundIn(story).join(' '),
       _work(story),
+      _needsYou(story),
       board.pending[story.id],
       board.pending.isNotEmpty,
       board.snapshot?.revision,

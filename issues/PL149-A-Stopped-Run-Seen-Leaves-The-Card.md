@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL149",
   "title": "A Stopped Run Seen Leaves The Card",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 69,
@@ -33,30 +33,25 @@ saying a task is at work or that it needs them, and the Planning count without i
 - The same live run showed the dead end this leaves: the story's start stayed unavailable ("the run needs attention -
   PI68: its work was stopped, it needs you"), since the screen lets a start pass over a stopped run only with no task
   at work (`PlanningBoard._passes`), and the planner reports a task at work for every offer `STARTED`
-  (`WorkAnswers.atWork`), which this offer stayed because the window never reported its end; the card's Stop work did
-  nothing, since `WorkRun.stop` answers nothing for a run already stopped and the window then has nothing to end.
-- The planner reports a stopped run's offers as ended, not started, once the Stop is recorded, so the work names no task
-  at work and the story's start passes over the stop; a task's end reported later is still taken. The card counts only
-  tasks at work, and says the run stopped where nothing is at work. Stop on a run already stopped answers that it is
-  stopped, with the tasks it holds as at work, so the window ends any still running, instead of nothing.
+  (`WorkAnswers.atWork`), which this offer stayed because the window never reported its end. The offer's STARTED save
+  had been refused, so the window's start was answered with an error and it ended nothing.
+- The core keeps its guard: a Start passing over a Stop is refused while a task is still `STARTED`, so no second agent
+  works beside one nobody stopped. Stop on a run already stopped answers the stopped run with its tasks still `STARTED`
+  as at work, so the window stops them and reports their end; an `ENDED` report is taken for such an offer, also where
+  its `STARTED` save was refused and the run halted, and clears it, after which the story starts again. The window
+  ends a task whose start it was answered with an error, and the tasks a Stop answers as at work.
 - The window keeps what the person marked seen, as its own marks: an issue's reason as the screen's `PlanningPutAway`
-  (machine, project, issue, reason, state), and a story's ended work by its end's time. The screen takes them as one
-  input of the boards, `PlanningSeen`, a `Listenable` the window owns, answering whether an issue's put-away is seen and
-  whether a story's end at a time is seen; the board's card "needs you" and the Planning count leave out what it
-  answers seen and follow its changes. The screen keeps no copy of the marks.
-- `since` is shown as the window shows times: the local time in the person's zone, with the date only when it is not
-  today.
-- Red first: in the core's work run tests, a stopped run's report names no started task, a Stop of a stopped run
-  answers its tasks, and a new start of the story after a Stop is not refused for a task at work; in the screen's tests, a card
-  of a stopped run whose row is put away shows no task and no needs you, the count drops by one, and `since` reads as a
-  local time. Harm: a story that can never be started again, a person sent to a story that needs nothing, and a count that never
-  clears.
+  (machine, project, issue, reason, state), and a story's ended work by its end's time (`PlanningStoryEnd`). The
+  screen takes them as one input of the boards, `PlanningSeen`, a `Listenable` the window owns, answering whether an
+  issue's put-away is seen and whether a story's end at a time is seen; the card's "needs you" and the Planning count
+  leave out what it answers seen and follow its changes. The card counts only tasks at work, and says the run stopped
+  where nothing is at work; `since` is shown as local time, with the date only when it is not today.
+- Tests: in the core's work run tests, Stop, a second Stop answering the task, its end and a new Start being taken, for
+  a stopped run and for one halted by a refused STARTED save; in the screen's tests, a stopped run's row marked seen
+  leaves the card and the count until unmarked, and a story end marked seen leaves the count while it ended at that
+  time. Harm: a story that can never be started again, a person sent to a story that needs nothing, and a count that
+  never clears.
 
 ## Acceptance
 
 - The tests above, seen red against today's code; the core's and the screen's suites pass.
-
-## To be checked
-
-- Why the offer stayed `STARTED` after the Stop: whether the window's end of the task reached the planner after the run
-  was halted, and what the planner did with it.

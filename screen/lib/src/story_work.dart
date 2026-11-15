@@ -637,6 +637,55 @@ class PlanningAttention {
     ),
     null => null,
   };
+
+  /// What the window keeps when a person marks this story's ended run seen on [machine], or null for an issue's row.
+  PlanningStoryEnd? endOn(String machine) => switch ((issue, ended)) {
+    (null, final ended?) => PlanningStoryEnd(machine: machine, project: project, story: story.id, at: ended.at),
+    _ => null,
+  };
+}
+
+/// What a person marked seen in Needs you, kept by the window alone; the screen asks it and keeps no copy.
+///
+/// It notifies its listeners when a mark is added or taken back, so the cards and Needs you follow.
+abstract interface class PlanningSeen implements Listenable {
+  /// Whether the person marked this issue's row seen with this reason and state.
+  bool putAwaySeen(PlanningPutAway row);
+
+  /// Whether the person marked this story's run seen as ended at this time.
+  bool endSeen(PlanningStoryEnd end);
+}
+
+/// A story's ended run a person marked seen, kept by the window alone.
+///
+/// It names the end's time, so a later end of the story is seen anew.
+@immutable
+class PlanningStoryEnd {
+  /// Takes the run's source, project, story and the time its end was reported at.
+  const PlanningStoryEnd({required this.machine, required this.project, required this.story, required this.at});
+
+  /// The provider that reported the end.
+  final String machine;
+
+  /// The project the story belongs to.
+  final String project;
+
+  /// The story's identifier.
+  final String story;
+
+  /// The end's reported time, as the planner wrote it.
+  final String at;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningStoryEnd &&
+      other.machine == machine &&
+      other.project == project &&
+      other.story == story &&
+      other.at == at;
+
+  @override
+  int get hashCode => Object.hash(machine, project, story, at);
 }
 
 /// An issue's Needs you row a person put away, kept by the window alone.

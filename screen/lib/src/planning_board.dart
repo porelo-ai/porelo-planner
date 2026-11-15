@@ -228,6 +228,17 @@ class PlanningBoard extends ChangeNotifier {
   /// What a start from a Needs you row of this board asks of the window; null until the window handed it.
   PlanningStartHooks? startHooks;
 
+  /// Whether the window marked a row of Needs you seen, handed in by the boards that made this board.
+  bool Function(PlanningAttention row)? rowSeen;
+
+  /// Whether the window marked seen every issue row of [story] that needs a person, so its card no longer says so.
+  bool attentionSeen(PlanStory story) {
+    final seen = rowSeen;
+    if (seen == null) return false;
+    final rows = PlanningBoards.storyAttention(this, story).where((row) => row.issue != null);
+    return rows.isNotEmpty && rows.every(seen);
+  }
+
   /// All forms and task reports share the same origin and stop epoch.
   PlanningRun runOf(String story) {
     final run = PlanningRun.on(backend, project, story);
@@ -1664,7 +1675,15 @@ class PlanningBoards extends ChangeNotifier {
   /// Observes the client's providers without opening anything of its own; with [startTask] and [agents] each board
   /// it makes can start work from its Needs you rows, on every board of the same project, through [wizards] when the
   /// window has them.
-  PlanningBoards(this.client, {PlanningStartTask? startTask, PlanningAgents? agents, PlanningWizards? wizards}) {
+  ///
+  /// With [seen], the rows the person marked seen leave [needsYou] and each board's cards, following its changes.
+  PlanningBoards(
+    this.client, {
+    PlanningStartTask? startTask,
+    PlanningAgents? agents,
+    PlanningWizards? wizards,
+    this.seen,
+  }) {
     if (startTask != null && agents != null) {
       startHooks = PlanningStartHooks(
         startTask: startTask,
@@ -1675,11 +1694,15 @@ class PlanningBoards extends ChangeNotifier {
       );
     }
     client.addListener(_sync);
+    seen?.addListener(_changed);
     _sync();
   }
 
   /// The providers of planning and what the window tells them.
   final PlanningClient client;
+
+  /// What the person marked seen in Needs you, kept by the window; null when the window keeps no marks.
+  final PlanningSeen? seen;
 
   /// What a start from a Needs you row asks of the window, handed to each board this makes; null without it.
   PlanningStartHooks? startHooks;
@@ -1732,6 +1755,7 @@ class PlanningBoards extends ChangeNotifier {
         preferences: _preferences.putIfAbsent(entry.key.$2, PlanningPreferences.new),
       );
       board.startHooks = startHooks;
+      board.rowSeen = (row) => _seenRow(board, row);
       board.addListener(_changed);
       _boards[entry.key] = board;
     }
@@ -1786,12 +1810,12 @@ class PlanningBoards extends ChangeNotifier {
   }
 
   /// Ended story runs and stopped readings that need a person, from every source including stale ones, without
-  /// the rows the window keeps put away.
+  /// the rows the window keeps put away or marks seen in [seen].
   List<PlanningNeedsYou> get needsYou => [
     for (final board in sources)
       for (final story in board.stories)
         for (final row in storyAttention(board, story))
-          if (!_putAway.contains(row.putAwayOn(machineOf(board))))
+          if (!_seenRow(board, row))
             PlanningNeedsYou(
               row.issue == null
                   ? 'story ended ${machineOf(board)}/${board.project}/${story.id}'
@@ -1800,6 +1824,16 @@ class PlanningBoards extends ChangeNotifier {
               row,
             ),
   ];
+
+  /// Whether the window keeps [row] of [board] put away or marked seen.
+  bool _seenRow(PlanningBoard board, PlanningAttention row) {
+    final machine = machineOf(board);
+    if (row.putAwayOn(machine) case final kept?) {
+      return _putAway.contains(kept) || (seen?.putAwaySeen(kept) ?? false);
+    }
+    if (row.endOn(machine) case final end?) return seen?.endSeen(end) ?? false;
+    return false;
+  }
 
   /// The rows of one story that need a person, from its own board: the run's end, then each issue.
   static List<PlanningAttention> storyAttention(PlanningBoard board, PlanStory story) => [
@@ -1929,6 +1963,7 @@ class PlanningBoards extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     client.removeListener(_sync);
+    seen?.removeListener(_changed);
     for (final board in _boards.values) {
       board.removeListener(_changed);
       board.dispose();
