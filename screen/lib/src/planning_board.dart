@@ -1411,6 +1411,13 @@ class PlanningBoard extends ChangeNotifier {
           if (!_current(generation)) return;
           _acceptNewest(reply.$1, reply.$2);
           final now = shown == null ? null : _reportedState(snapshot!, key, shown);
+          if (shown != null && now == shown.to) {
+            // Made elsewhere meanwhile: nothing is left to save, and nothing went wrong.
+            _pending.remove(key);
+            moveProblem = null;
+            moveNotice = planningShown('Planning already shows ${move.id} in $now.');
+            return;
+          }
           if (shown == null || now != shown.from) {
             _pending.remove(key);
             moveProblem = planningShown(

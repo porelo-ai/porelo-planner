@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL137",
   "title": "A Move Planning Already Shows Is No Problem",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "Low",
   "rank": 60,
@@ -28,7 +28,11 @@ from both where the move came from and where it went is still shown in red as no
   (for instance `'Planning already shows <id> in <state>.'`), and returns without previewing anew.
 - When `now` is neither `shown.from` nor `shown.to`, the red "Planning changed: ... it was not moved." stays as it is;
   when `now == shown.from`, the move is previewed and asked about anew, as today.
-- No test: the board only reads wrong here and nothing is lost or written twice, since no save is made in either case.
+- Red first, in `screen/test/planning_moves_test.dart`: a stale save whose read board shows the story in the move's
+  target leaves no problem, a quiet notice, no pending move and no second save; one that shows it in a third state is
+  still refused. The earlier test that asked for the red refusal in the target's case becomes the first of the two.
+- Read in the code's reading: no red finding. Noted, not tested on their own, since they run the same lines: an issue's
+  move and a `PreviewChanged` refusal take this branch as a story's move and a `StaleRevision` do.
 
 ## Acceptance
 

@@ -617,22 +617,38 @@ void main() {
     expect(board.snapshot!.revision, 'later');
   });
 
-  // Harm: after a stale save the move is asked about anew although the board now shows it made elsewhere.
-  test('a stale save tells what the board that stays shows', () async {
-    backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
-    backend.listing = Completer<PlanningSnapshot>();
-    backend.listingStarted = Completer<void>();
-    final operation = board.move('StoryOne', 'Rejected');
-    await backend.listingStarted!.future;
-    final streamed = _fixture()..['revision'] = 'streamed';
-    (streamed['stories'] as List<dynamic>).first['state'] = 'Rejected';
-    backend.changes.add(PlanningSnapshot.from(streamed));
-    backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
-    await operation;
-    expect(board.pending, isEmpty);
-    expect(board.question, isNull, reason: 'nothing is asked about a board that moved on');
-    expect(board.moveProblem, contains('now stands in Rejected'));
-  });
+  // Harm: after a stale save the move is asked about anew, or refused in red, although the board now shows it made
+  // elsewhere; a board that shows it in neither its source nor its target still refuses it.
+  for (final (stands, refused) in [('Rejected', false), ('Elsewhere', true)]) {
+    test(
+      'a stale save whose board now shows the story in $stands ${refused ? 'refuses' : 'counts'} the move',
+      () async {
+        backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+        backend.listing = Completer<PlanningSnapshot>();
+        backend.listingStarted = Completer<void>();
+        final operation = board.move('StoryOne', 'Rejected');
+        await backend.listingStarted!.future;
+        final streamed = _fixture()..['revision'] = 'streamed';
+        (streamed['stories'] as List<dynamic>).first['state'] = stands;
+        backend.changes.add(PlanningSnapshot.from(streamed));
+        backend.listing!.complete(PlanningSnapshot.from(_fixture()..['revision'] = 'read'));
+        await operation;
+        expect(board.pending, isEmpty, reason: 'the move is settled either way');
+        expect(board.question, isNull, reason: 'nothing is asked about a board that moved on');
+        if (refused) {
+          expect(
+            board.moveProblem,
+            contains('now stands in Elsewhere'),
+            reason: 'a state other than source and target',
+          );
+        } else {
+          expect(board.moveProblem, isNull, reason: 'planning already shows the move made');
+          expect(board.moveNotice, contains('Rejected'), reason: 'the quiet notice names where it stands');
+        }
+        expect(backend.calls, hasLength(1), reason: 'no second save is made');
+      },
+    );
+  }
 
   // Harm: missing watch fields erase the complete board returned by a successful save.
   test('incomplete and unversioned buffered watches cannot replace a saved reply', () async {
