@@ -29,6 +29,12 @@ final class HeadEdit {
     /** A top-level priority member, as the heads are written. */
     private static final Pattern PRIORITY = Pattern.compile("  \"priority\": \"[^\"\\\\]*\",?");
 
+    /** A top-level size member, as the heads are written. */
+    private static final Pattern SIZE_MEMBER = Pattern.compile("  \"size\": \"[^\"\\\\]*\",?");
+
+    /** A size as the work format spells one. */
+    private static final Pattern SIZE = Pattern.compile("[A-Z]{1,2}|-");
+
     private static final Pattern PLAIN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}");
 
     private HeadEdit() {}
@@ -44,6 +50,38 @@ final class HeadEdit {
     static String issueState(final String text, final String state) {
         final String[] lines = text.split("\n", -1);
         return edit(lines, issueFence(lines), plain(state), false);
+    }
+
+    /**
+     * Sets an issue's size in the head its file opens with, replacing the one size line it holds.
+     *
+     * @param text the issue's file
+     * @param size the new size, capitals or a dash
+     * @return the file with the new size
+     * @throws IllegalArgumentException when the size could not stand in JSON as it is, or the file
+     *     opens with no head holding exactly one size line
+     */
+    static String issueSize(final String text, final String size) {
+        if (!SIZE.matcher(size).matches()) {
+            throw new IllegalArgumentException("the size is no plain size");
+        }
+        final String[] lines = text.split("\n", -1);
+        final int fence = issueFence(lines);
+        final int end = close(lines, fence);
+        final List<Integer> found = new ArrayList<>();
+        for (int line = fence + 2; line < end - 1; line++) {
+            if (SIZE_MEMBER.matcher(lines[line]).matches()) {
+                found.add(line);
+            }
+        }
+        if (found.size() != 1) {
+            throw new IllegalArgumentException(
+                    "the JSON head holds " + found.size() + " size members, not one");
+        }
+        final int line = found.get(0);
+        final String[] out = lines.clone();
+        out[line] = "  \"size\": \"" + size + "\"" + (lines[line].endsWith(",") ? "," : "");
+        return String.join("\n", out);
     }
 
     /** The line of the fence an issue's head opens with. */

@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.git;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.io.IOException;
@@ -19,7 +20,9 @@ import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
@@ -1556,6 +1559,227 @@ class GitStoreSaveTest {
         assertThat(refused).as("refused as no such story").isNotNull();
         assertThat(refused.subject()).as("naming the story").isEqualTo("ST9");
         assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
+    }
+
+    /** An issue file with each part a stage's result writes, and the parts it must not touch. */
+    private static final String RICH_BODY =
+            "\n**Size:** S - a guess\n\n**What must be true.** Something.\n\n"
+                    + "## Why\n\nA reason the result keeps.\n\n"
+                    + "## Plan\n\n- Old plan.\n\n"
+                    + "## Acceptance\n\n- Measured.\n\n"
+                    + "## To be checked\n\n- Old check.\n";
+
+    @Test
+    void aResultRewritesTheIssuesHeadSizePlanAndChecksAndItsIndexRowAndLeavesTheRestAlone()
+            throws Exception {
+        // Prevents an issue's description, its other sections or a sibling issue from being lost
+        // or garbled by a save nobody reviews.
+        writeRich();
+        final GitStore store = store();
+        store.board();
+        final String sibling = read(OWN, "issues/AB02-Kept.md");
+        final List<String> siblingRows = rows(read(OWN, "issues/README.md"), "ab02");
+        final String other = head(OTHER);
+
+        final Board saved = store.saveResult(analysis("Backlog", "Review", List.of("Measure.")));
+
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the head's state and size, the size line, the plan and the checks rewritten")
+                .isEqualTo(
+                        issue("AB01", "Review")
+                                        .replace("\"size\": \"S\"", "\"size\": \"M\"")
+                                        .replace("\n**What must be true.** Something.\n", "")
+                                + RICH_BODY
+                                        .replace("S - a guess", "M - one module")
+                                        .replace("- Old plan.", "- Read it.\n- Change it.")
+                                        .replace("- Old check.", "- Measure."));
+        assertThat(read(OWN, "issues/AB02-Kept.md"))
+                .as("the sibling issue byte for byte")
+                .isEqualTo(sibling);
+        assertThat(rows(read(OWN, "issues/README.md"), "ab02"))
+                .as("the sibling's index row as it was")
+                .isEqualTo(siblingRows);
+        assertThat(rows(read(OWN, "issues/README.md"), "ab01"))
+                .as("the issue's index row with its new size")
+                .singleElement()
+                .asString()
+                .contains("| M |");
+        assertThat(head(OTHER)).as("the other repository untouched").isEqualTo(other);
+        assertThat(saved.issue("AB01").orElseThrow())
+                .as("the board after the save")
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.state()).as("state").isEqualTo("Review");
+                            assertThat(issue.size()).as("size").isEqualTo("M");
+                        });
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
+    }
+
+    @Test
+    void anEstimateWritesItsMinutesRightAfterTheSizeLine() throws Exception {
+        // Prevents an estimate from being lost while the issue moves on as if it had one.
+        writeRich();
+        final GitStore store = store();
+        store.board();
+
+        store.saveResult(
+                new StageResult(
+                        WorkRule.Result.ESTIMATE,
+                        List.of(
+                                new StageResult.ForIssue(
+                                        "AB01",
+                                        "Backlog",
+                                        "Review",
+                                        null,
+                                        "L",
+                                        "several modules",
+                                        90,
+                                        List.of(),
+                                        List.of()))));
+
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the size and the estimate, the plan as it was")
+                .contains("\n**Size:** L - several modules\n\n**Estimate:** 90 min\n\n**What")
+                .contains("## Plan\n\n- Old plan.\n");
+    }
+
+    @Test
+    void aResultTheWorkflowOrTheFileCannotTakeIsRefusedAndNothingIsPushed() throws Exception {
+        // Prevents a result from closing an issue, naming a state nobody knows or rewriting the
+        // line endings of a file, each pushed without review.
+        Files.writeString(
+                repositories.work(OWN).resolve("issues/AB02-Kept.md"),
+                issue("AB02", "Backlog").replace("**What", "\r\n**What"));
+        repositories.commit(OWN);
+        final GitStore store = store();
+        store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        for (final StageResult refused :
+                List.of(
+                        analysis("Backlog", "Finished", List.of()),
+                        analysis("Backlog", "Nowhere", List.of()),
+                        new StageResult(
+                                WorkRule.Result.ANALYSIS,
+                                List.of(
+                                        forIssue("AB01", "Backlog", "Review", List.of()),
+                                        forIssue("AB02", "Backlog", "Review", List.of()))))) {
+            assertThatThrownBy(() -> store.saveResult(refused))
+                    .as("the result %s", refused)
+                    .isInstanceOf(StoreException.NotSavable.class);
+        }
+        assertThatThrownBy(
+                        () ->
+                                store.saveResult(
+                                        new StageResult(
+                                                WorkRule.Result.ANALYSIS,
+                                                List.of(
+                                                        forIssue(
+                                                                "AB09", "Backlog", "Review",
+                                                                List.of())))))
+                .as("an issue the board does not have")
+                .isInstanceOf(StoreException.NoSuchIssue.class);
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed to either repository")
+                .containsExactly(own, other);
+    }
+
+    @Test
+    void aResultIsWrittenOnTheTipAndKeepsAChangeToTheSameIssueMadeWhileTheStageRan()
+            throws Exception {
+        // Prevents a stage's long run from losing another's change, or its own result, when the
+        // central repository moved meanwhile.
+        writeRich();
+        final GitStore store = store();
+        store.board();
+        final Path work = repositories.work(OWN);
+        final Path file = work.resolve("issues/AB01-Own.md");
+        Files.writeString(file, Files.readString(file).replace("- Measured.", "- Measured twice."));
+        Files.writeString(
+                work.resolve("issues/AB02-Kept.md"),
+                Files.readString(work.resolve("issues/AB02-Kept.md")) + "\nAnother's note.\n");
+        repositories.commit(OWN);
+        final String theirs = head(OWN);
+
+        final Board saved = store.saveResult(analysis("Backlog", "Review", List.of()));
+
+        assertThat(git(OWN, "rev-parse", head(OWN) + "^").strip())
+                .as("the result follows the other's change")
+                .isEqualTo(theirs);
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the other's change and the result in one file")
+                .contains("- Measured twice.")
+                .contains("- Read it.\n- Change it.")
+                .contains("\"state\": \"Review\"")
+                .doesNotContain("## To be checked");
+        assertThat(read(OWN, "issues/AB02-Kept.md"))
+                .as("the other's change to another issue kept")
+                .endsWith("\nAnother's note.\n");
+        assertThat(saved.issue("AB01").orElseThrow().state())
+                .as("the board after the save")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void aResultForAnIssueMovedOutOfTheStagesStateMeanwhileIsRefusedAndNothingIsPushed()
+            throws Exception {
+        // Prevents a stale result from overwriting an issue someone moved on while the stage ran.
+        final GitStore store = store();
+        store.board();
+        final Path issues = repositories.work(OWN).resolve("issues");
+        Files.writeString(issues.resolve("AB01-Own.md"), issue("AB01", "Idea"));
+        IssuesIndex.write(issues);
+        repositories.commit(OWN);
+        final String theirs = head(OWN);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () -> store.saveResult(analysis("Backlog", "Review", List.of())));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.subject()).as("naming the issue").isEqualTo("AB01");
+        assertThat(head(OWN)).as("nothing pushed over the move").isEqualTo(theirs);
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the issue as the other left it")
+                .isEqualTo(issue("AB01", "Idea"));
+    }
+
+    /** Gives AB01 a file with every part a result writes, its index unchanged. */
+    private void writeRich() throws Exception {
+        Files.writeString(
+                repositories.work(OWN).resolve("issues/AB01-Own.md"),
+                issue("AB01", "Backlog").replace("\n**What must be true.** Something.\n", "")
+                        + RICH_BODY);
+        repositories.commit(OWN);
+    }
+
+    /** The index's lines that carry an issue's anchor. */
+    private static List<String> rows(final String index, final String anchor) {
+        return index.lines().filter(line -> line.contains("<a id=\"" + anchor + "\">")).toList();
+    }
+
+    private static StageResult analysis(
+            final String from, final String to, final List<String> toBeChecked) {
+        return new StageResult(
+                WorkRule.Result.ANALYSIS, List.of(forIssue("AB01", from, to, toBeChecked)));
+    }
+
+    private static StageResult.ForIssue forIssue(
+            final String id, final String from, final String to, final List<String> toBeChecked) {
+        return new StageResult.ForIssue(
+                id,
+                from,
+                to,
+                "- Read it.\n- Change it.\n",
+                "M",
+                "one module",
+                null,
+                toBeChecked,
+                List.of());
     }
 
     /** Saves the writes, expects a refusal naming the issue, and checks nothing was pushed. */

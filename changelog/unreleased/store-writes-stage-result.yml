@@ -1,0 +1,2 @@
+title: The Git store writes a stage's result into each issue's file - its size, an estimate, the plan, what is still to be checked and the findings, each replacing what stood there - and moves the issues in the same save, and the mock writes it into its issues the same way.
+type: added

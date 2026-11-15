@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
@@ -27,6 +28,7 @@ import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.git.ResultText;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -263,6 +265,63 @@ public final class MockStore implements PlanningStore {
                             + PARTLY_SAVED);
         }
         current = saved(board, writes);
+        return current;
+    }
+
+    /**
+     * Saves a stage's result into the board in memory: each issue's state, size and a text built
+     * from the result, refused as a whole when an issue no longer stands in the state the stage
+     * completes or would move to a closed state.
+     */
+    @Override
+    public synchronized Board saveResult(final StageResult result) {
+        final Board board = current;
+        final Map<String, StageResult.ForIssue> given = new LinkedHashMap<>();
+        final Map<String, String> states = new LinkedHashMap<>();
+        for (final StageResult.ForIssue issue : result.issues()) {
+            final Issue known =
+                    board.issue(issue.id())
+                            .orElseThrow(() -> new StoreException.NoSuchIssue(issue.id()));
+            if (!known.state().equals(issue.from())) {
+                throw new StoreException.NotSavable(
+                        issue.id(), "It stands in " + known.state() + ", not in " + issue.from());
+            }
+            if (!board.workflow().states().contains(issue.to())
+                    || board.workflow().closed().contains(issue.to())) {
+                throw new StoreException.NotSavable(issue.id(), "It moves to no open state");
+            }
+            given.put(issue.id(), issue);
+            states.put(issue.id(), issue.to());
+        }
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue issue : board.issues()) {
+            final StageResult.ForIssue written = given.get(issue.id());
+            issues.add(
+                    written == null
+                            ? issue
+                            : new Issue(
+                                    issue.id(),
+                                    issue.repository(),
+                                    issue.title(),
+                                    issue.state(),
+                                    written.size(),
+                                    issue.blockedBy(),
+                                    issue.parent(),
+                                    issue.link(),
+                                    ResultText.withoutHead(issue.text(), written),
+                                    issue.worker(),
+                                    issue.risk()));
+        }
+        final Board sized =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        issues,
+                        board.work(),
+                        board.repositories(),
+                        board.faults());
+        current = saved(sized, new Writes(states, Map.of(), List.of()));
         return current;
     }
 

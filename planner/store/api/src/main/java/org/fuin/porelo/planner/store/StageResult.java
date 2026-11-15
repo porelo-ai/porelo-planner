@@ -22,7 +22,10 @@ public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
     public static final int MOST_MINUTES = 100_000;
 
     /** A first- or second-level heading, which would open a section of its own. */
-    private static final Pattern HEADING = Pattern.compile("#{1,2}( .*)?");
+    private static final Pattern HEADING = Pattern.compile("#{1,2}(\\s.*)?");
+
+    /** A code block's opening line: three backticks and at most a plain language name. */
+    private static final Pattern OPENING = Pattern.compile("```[A-Za-z0-9_+.-]*");
 
     /**
      * Copies the issues and refuses none, one issue twice, and an estimate without minutes.
@@ -117,7 +120,10 @@ public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
 
     /**
      * Refuses a plan that is blank, holds a lone carriage return, opens a section of its own
-     * outside a code block, or leaves a code block open, which would swallow the sections below.
+     * outside a code block, or leaves a code block open, which would swallow the sections below. A
+     * code block opens with three backticks and a plain language name at the line's start and
+     * closes with three backticks alone; any other line that reads as a fence or a first- or
+     * second-level heading, at any indentation, is refused, so the file reads as checked.
      */
     private static void checkPlan(final String plan, final String id) {
         if (plan.isBlank() || plan.chars().anyMatch(c -> breaks(c) && c != '\n')) {
@@ -125,11 +131,15 @@ public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
         }
         boolean fenced = false;
         for (final String line : plan.split("\n", -1)) {
-            if (line.startsWith("```")) {
+            final String bare = line.stripLeading();
+            final boolean fence = bare.startsWith("```") || bare.startsWith("~~~");
+            if (fenced ? line.equals("```") : OPENING.matcher(line).matches()) {
                 fenced = !fenced;
-            } else if (!fenced && HEADING.matcher(line).matches()) {
+            } else if (fence || !fenced && HEADING.matcher(bare).matches()) {
                 throw new IllegalArgumentException(
-                        id + ": the plan holds a heading that would open a section of its own");
+                        id
+                                + ": the plan holds a heading or a code fence that would open a"
+                                + " section of its own or leave a code block open");
             }
         }
         if (fenced) {

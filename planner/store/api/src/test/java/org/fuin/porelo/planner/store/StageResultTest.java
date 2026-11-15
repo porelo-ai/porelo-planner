@@ -20,7 +20,14 @@ class StageResultTest {
                 "# Title",
                 "##",
                 "Steps.\n```\nopen code block",
-                "Steps.\rhidden"
+                "Steps.\rhidden",
+                " ## Acceptance\n- forged",
+                "- step\n  ## Acceptance",
+                " ```\n- step",
+                "```java\ncode\n```still open",
+                "````\ncode\n```",
+                "~~~\ncode",
+                "```\ncode\n~~~"
             })
     void aPlanThatWouldOpenASectionOrLeaveACodeBlockOpenIsRefused(final String plan) {
         assertThatThrownBy(() -> issue(plan, List.of(), List.of(), "Why."))
@@ -31,7 +38,8 @@ class StageResultTest {
     @Test
     void aPlanWithAHeadingInsideACodeBlockOrADeeperHeadingIsTaken() {
         // Prevents a plan quoting a shell comment or a sub-heading from being refused for nothing.
-        final String plan = "Steps.\n\n### Detail\n\n```\n## not a heading\n```\n";
+        final String plan =
+                "Steps.\n\n### Detail\n\n```\n## not a heading\n```\n\n```java\nint x;\n```\n";
 
         assertThat(issue(plan, List.of(), List.of(), "Why.").plan())
                 .as("the plan as given")

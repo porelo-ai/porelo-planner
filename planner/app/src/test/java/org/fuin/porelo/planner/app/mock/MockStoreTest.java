@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -259,6 +260,79 @@ class MockStoreTest {
                 Thread.onSpinWait();
             }
         }
+    }
+
+    @Test
+    void aStageResultMovesTheIssueAndKeepsItsSizeAndTextAndOneFromAnotherStateIsRefused() {
+        // Prevents the window's tests of a stage's result from passing against a mock that drops
+        // it.
+        final Board before = store.board();
+
+        assertThatThrownBy(() -> store.saveResult(result("Idea")))
+                .as("a result for an issue no longer in the stage's state")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(store.board()).as("the board after the refusal").isEqualTo(before);
+
+        final Board after = store.saveResult(result("Backlog"));
+
+        assertThat(after.issue("B542").orElseThrow())
+                .as("the issue after the result")
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.state()).as("state").isEqualTo("Review");
+                            assertThat(issue.size()).as("size").isEqualTo("M");
+                            assertThat(issue.text())
+                                    .as("text")
+                                    .contains("**Size:** M - one module")
+                                    .contains("- Read it.")
+                                    .contains("- Measure it.");
+                        });
+        assertThat(after.revision().value()).as("the next revision").isEqualTo("mock@2");
+    }
+
+    // Prevents the window's tests from reading a mock issue holding two plans or sizes after an
+    // estimate follows an analysis, which the Git store would have replaced.
+    @Test
+    void anEstimateAfterAnAnalysisReplacesTheSizeAndPlanAndDropsWhatIsNoLongerToBeChecked() {
+        store.saveResult(result("Backlog"));
+        final Board after =
+                store.saveResult(
+                        new StageResult(
+                                WorkRule.Result.ESTIMATE,
+                                List.of(
+                                        new StageResult.ForIssue(
+                                                "B542",
+                                                "Review",
+                                                "Review",
+                                                "- Build it.",
+                                                "L",
+                                                "two modules",
+                                                90,
+                                                List.of(),
+                                                List.of()))));
+        final String text = after.issue("B542").orElseThrow().text();
+        assertThat(text.split("\\*\\*Size:\\*\\*", -1)).as("one size line in %s", text).hasSize(2);
+        assertThat(text.split("## Plan", -1)).as("one plan in %s", text).hasSize(2);
+        assertThat(text)
+                .as("the estimate's parts and not the analysis's")
+                .contains("**Size:** L - two modules", "**Estimate:** 90 min", "- Build it.")
+                .doesNotContain("- Read it.", "## To be checked");
+    }
+
+    private static StageResult result(final String from) {
+        return new StageResult(
+                WorkRule.Result.ANALYSIS,
+                List.of(
+                        new StageResult.ForIssue(
+                                "B542",
+                                from,
+                                "Review",
+                                "- Read it.",
+                                "M",
+                                "one module",
+                                null,
+                                List.of("Measure it."),
+                                List.of())));
     }
 
     private static Writes moves(final Map<String, String> issues) {

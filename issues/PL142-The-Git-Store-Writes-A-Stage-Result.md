@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL142",
   "title": "The Git Store Writes A Stage Result",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 4,
