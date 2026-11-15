@@ -35,7 +35,7 @@ a last step before anything starts.
   | How to work: Unattended, With you | the rule's `modes` | the first offered | yes, when the rule offers both | step 2, two cards; one mode offered is fixed text |
   | Tasks to start: repository, issues | the proposal | - | yes, as context | step 3, fixed text per task |
   | Agent of a task (`story-work-main-agent`) | the rule's offered models; the window's agent list | the rule's first | yes | step 3, a list; preselects the first agent ready on that machine, says why others were passed over ([PL155](README.md#pl155)) |
-  | Model of a task (`story-work-main-model`), free text | the rule's model for that agent | the rule's | yes, but cannot be typed | step 3, a list of the chosen agent's models on that machine, the rule's marked "proposed" |
+  | Model of a task (`story-work-main-model`), free text | the rule's model for that agent | the rule's | yes, but cannot be typed | step 3, a list of the chosen agent's models on that machine, the rule's marked "proposed", that fills a text field which can also be typed; any model of an agent the rule offers may start, and one the agent or provider refuses fails at the start with its reason |
   | Effort (`story-work-main-effort`), free text, "none" | the rule's risk entry | the rule's or none | rarely | step 3, a list of the chosen agent's effort levels plus "the agent's default", the rule's marked "proposed" |
   | Sub-agents: name, role, agent, model, Keep/Change/Drop, and on Change agent, model, effort | the proposal | Keep (Drop for a non-builder) | sometimes | step 3, folded per task under "Sub-agents"; the same three lists on Change |
   | The work order per task, and all of them | the planner's order text | - | to read, not to edit | a "Show the work order" view from step 3 and the review |
@@ -72,20 +72,17 @@ a last step before anything starts.
   "the agent's default" means passing none. Today no agent's start passes an effort at all, so the dialog's Effort field
   has no effect; Porelo's agent definitions gain an effort flag and a list of models, which is Porelo's contract and
   each agent's adapter, filed there.
+- A person may start an agent the rule offers with any model, not only the rule's: the planner checks only that the
+  agent is offered, for the main task and the sub-agents alike ([PL158](README.md#pl158)); a typed model need not be in
+  the listed models.
 - The build splits into: the screen package's wizard steps and state, with [PL153](README.md#pl153) and [PL155](README.md#pl155) folded in (one issue of this
-  repository, its step types and hook among them); the planner's rule check, if the open question below is answered yes; [PL154](README.md#pl154) stays the core's own and
+  repository, its step types and hook among them); the planner's rule check ([PL158](README.md#pl158)); [PL154](README.md#pl154) stays the core's own and
   is shown on step 1; the window's wizard frame and its agent, model and effort lists (the window's issues).
 
 ## Acceptance
 
 - The operator has read the design, settled its open question, and the build issues are filed with their sizes in the
   screen package, the planner and the window.
-
-## Open questions
-
-- May a person start an agent with a model of that agent the rule does not name? Today the planner refuses any pair
-  the rule does not offer ("Choose an agent and model offered by the rule."), and a rule names one model per agent; a
-  yes lets the list offer every model the agent names there, and the planner checks only that the agent is offered.
 
 ## To be checked
 
