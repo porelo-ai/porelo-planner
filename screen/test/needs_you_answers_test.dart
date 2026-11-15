@@ -128,7 +128,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
-  Future<void> show(WidgetTester tester) async {
+  Future<void> show(WidgetTester tester, {PlanningAttention? shown}) async {
     tester.view
       ..physicalSize = const Size(1600, 1200)
       ..devicePixelRatio = 1;
@@ -137,7 +137,8 @@ void main() {
       board.dispose();
       await backend.end();
     });
-    final row = PlanningBoards.storyAttention(board, board.stories.single).firstWhere((row) => row.issue != null);
+    final row =
+        shown ?? PlanningBoards.storyAttention(board, board.stories.single).firstWhere((row) => row.issue != null);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -269,7 +270,8 @@ void main() {
     expect(find.byKey(const Key('reading-resolve AA1 ONE_MORE_ROUND')), findsOneWidget, reason: 'it reads again');
     expect(find.byKey(const Key('reading-resolve AA1 REVIEW_ANYWAY')), findsOneWidget, reason: 'it goes to Review');
     expect(find.byKey(const Key('reading-resolve AA1 REWORK')), findsNothing, reason: 'nothing guides a rework');
-    expect(find.text('FAILED'), findsOneWidget, reason: 'the row keeps its reason');
+    expect(find.text('its work failed'), findsOneWidget, reason: 'the row keeps its reason, in words');
+    expect(find.text('FAILED'), findsNothing, reason: 'the row never shows the reason\'s code');
     expect(find.byKey(const Key('story-work-open-task AA1')), findsOneWidget, reason: 'the row opens the failed task');
   });
 
@@ -310,6 +312,33 @@ void main() {
       'run': _run,
     }, reason: 'the Start names the issue, its reason, the revision and the run the row showed');
     expect(sent.single['replaces'], _run, reason: 'the Start names the run it replaces');
+  });
+
+  // Prevents a person who cannot tell from an issue's row what to do: a wire code above its words, or in their place.
+  testWidgets('an issue\'s row whose save was refused says so once in words and never its code', (tester) async {
+    await tester.runAsync(() => open('SAVE_REFUSED', hooks: _hooks(), changes: const NoTasks()));
+    await show(tester);
+
+    expect(find.text('saving its findings was refused'), findsOneWidget, reason: 'the row says its reason once');
+    expect(find.text('SAVE_REFUSED'), findsNothing, reason: 'the row never shows the reason\'s code');
+  });
+
+  // Prevents a person who cannot tell from a story's row what to do: a wire code where its words belong.
+  testWidgets('a story\'s row whose save was refused says so once in words and never its code', (tester) async {
+    await tester.runAsync(() => open('SAVE_REFUSED'));
+    await show(tester, shown: PlanningAttention(board, board.stories.single, reason: 'SAVE_REFUSED'));
+
+    expect(find.text('saving its findings was refused'), findsOneWidget, reason: 'the row says its reason once');
+    expect(find.text('SAVE_REFUSED'), findsNothing, reason: 'the row never shows the reason\'s code');
+  });
+
+  // Prevents a person who cannot tell from a row what to do when the planner sends a reason the screen has no words for.
+  testWidgets('a story\'s row with a reason the screen has no words for says it needs you', (tester) async {
+    await tester.runAsync(() => open('SAVE_REFUSED'));
+    await show(tester, shown: PlanningAttention(board, board.stories.single, reason: 'LATER_REASON'));
+
+    expect(find.text('it needs you'), findsOneWidget, reason: 'the row says it needs the person, in words');
+    expect(find.text('LATER_REASON'), findsNothing, reason: 'the row never shows the reason\'s code');
   });
 
   // Harm: a Start offered past findings that could not be read launches work over a reading nobody answered.

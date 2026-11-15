@@ -63,7 +63,7 @@ void main() {
     await settle(tester);
     expect(find.textContaining('the source machine'), findsOneWidget);
     expect(find.textContaining('item · repo'), findsOneWidget);
-    expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
+    expect(find.text('Blocking: Keep the key inside.'), findsOneWidget);
     for (final choice in ['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK']) {
       final button = find.byKey(Key('reading-resolve item $choice'));
       expect(button, findsOneWidget);
@@ -169,17 +169,17 @@ void main() {
       ),
     );
     await settle(tester);
-    expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
+    expect(find.text('Blocking: Keep the key inside.'), findsOneWidget);
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('reading-resolve item REWORK'))).onPressed, isNull);
     backend.heldFindings = Completer<PlanningIssueDetail>();
     await tester.tap(find.byKey(const Key('reading-refresh item')));
     await tester.pump();
-    expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
+    expect(find.text('Blocking: Keep the key inside.'), findsOneWidget);
     backend.heldFindings!.completeError(
       mockRefusal('org.fuin.porelo.Tasks1.Refused', {'detail': 'The findings cannot be refreshed.'}),
     );
     await settle(tester);
-    expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
+    expect(find.text('Blocking: Keep the key inside.'), findsOneWidget);
     expect(find.text('The findings cannot be refreshed.'), findsOneWidget);
     expect(find.text('The board changed or is no longer live.'), findsOneWidget);
     backend.heldFindings = Completer<PlanningIssueDetail>();
@@ -187,7 +187,7 @@ void main() {
     await tester.pump();
     backend.heldFindings!.complete(PlanningIssueDetail.from({}));
     await settle(tester);
-    expect(find.text('BLOCKING: Keep the key inside.'), findsOneWidget);
+    expect(find.text('Blocking: Keep the key inside.'), findsOneWidget);
     expect(find.byKey(const Key('reading-error item')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     board.dispose();
@@ -219,13 +219,13 @@ void main() {
       ),
     );
     await settle(tester);
-    expect(find.text('BLOCKING: First issue finding.'), findsOneWidget);
+    expect(find.text('Blocking: First issue finding.'), findsOneWidget);
     backend.push('demo', _snapshot(3, issue: 'other')..['revision'] = 'other-issue');
     await settle(tester);
     row.value = _row(board);
     await settle(tester);
-    expect(find.text('NOTE: Other issue finding.'), findsOneWidget);
-    expect(find.text('BLOCKING: First issue finding.'), findsNothing);
+    expect(find.text('Note: Other issue finding.'), findsOneWidget);
+    expect(find.text('Blocking: First issue finding.'), findsNothing);
     expect(
       tester.widget<OutlinedButton>(find.byKey(const Key('reading-resolve other REVIEW_ANYWAY'))).onPressed,
       isNotNull,

@@ -169,15 +169,13 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                   ),
                 ),
             ],
-            if (planReasonNeedsAttention(row.reason)) Text(planningShown(row.reason)),
-            if (row.issue case final issue? when issue.readingStopped != true && !widget.resolved) ...[
+            if (planReasonNeedsAttention(row.reason) && !_taskEndSaysReason)
+              Text(_reasonWords(row.reason), key: Key('story-work-attention-reason ${row.story.id}')),
+            if (_taskEndIssue case final issue?) ...[
               _taskEnd(issue),
-              _answers(context, issue),
+              // A reader that failed or was blocked stopped its reading; the row still says why and opens the task.
+              if (issue.readingStopped != true) _answers(context, issue),
             ],
-            // A reader that failed or was blocked stopped its reading; the row still says why and opens the task.
-            if (row.issue case final issue?
-                when issue.readingStopped == true && !widget.resolved && _readerEnds.contains(row.reason))
-              _taskEnd(issue),
             if (row.issue case final issue?) ...[
               Text(
                 planningShown(
@@ -198,7 +196,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
               if (!widget.resolved && reading?.detail == null && reading?.busy == true)
                 const Text('Reading the last findings…'),
               for (final finding in reading?.detail?.blockingFirst ?? <PlanFinding>[])
-                Text('${planningShown(finding.severity, multiline: false)}: ${planningShown(finding.text)}'),
+                Text('${_severityWords(finding.severity)}: ${planningShown(finding.text)}'),
               if (reading?.problem case final problem?) Text(problem, key: Key('reading-error ${issue.id}')),
               if (!widget.resolved && reading != null) ...[
                 if (reading.problem != null)
@@ -245,21 +243,46 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     );
   }
 
-  /// The task end that raised the issue, opened in the window, or the reason in words where it cannot be.
-  Widget _taskEnd(PlanIssue issue) {
+  /// The issue whose task end the row shows: an open row's issue, unless its reading stopped other than by a
+  /// reader's end; null where the row shows none.
+  PlanIssue? get _taskEndIssue {
+    final issue = widget.row.issue;
+    if (issue == null || widget.resolved) return null;
+    return issue.readingStopped != true || _readerEnds.contains(widget.row.reason) ? issue : null;
+  }
+
+  /// Whether the row's task end says the reason in words, as it does wherever it cannot offer to open the task.
+  bool get _taskEndSaysReason {
+    final issue = _taskEndIssue;
+    if (issue == null) return false;
+    final (task, _, unavailable) = _raising(issue);
+    return task == null || unavailable != null;
+  }
+
+  /// The task whose end raised the row's reason for [issue], how the window opens it, and why it cannot; the task is
+  /// null where none can be told.
+  (PlanWorkTask?, PlanningTaskChanges?, String?) _raising(PlanIssue issue) {
     final row = widget.row;
     final reason = row.reason;
-    final words = planReasonNeedsAttention(reason) ? planningReasonWords(reason) : 'it needs you';
     final task = planningTaskEndReasons.contains(reason)
         ? planningRaisingTask(row.board.workOf(row.story), issue.id, reason)
         : null;
-    if (task == null) return Text(words, key: Key('story-work-reason ${issue.id}'));
+    if (task == null) return (null, null, null);
     final changes = widget.taskChanges ?? row.board.taskChanges;
     final unavailable = row.board.isDisposed
         ? 'this source is no longer watched'
         : changes == null
         ? 'the window cannot open tasks here'
         : changes.unavailable(row.board, task.task);
+    return (task, changes, unavailable);
+  }
+
+  /// The task end that raised the issue, opened in the window, or the reason in words where it cannot be.
+  Widget _taskEnd(PlanIssue issue) {
+    final row = widget.row;
+    final words = _reasonWords(row.reason);
+    final (task, changes, unavailable) = _raising(issue);
+    if (task == null) return Text(words, key: Key('story-work-reason ${issue.id}'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -523,6 +546,20 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
   };
 }
 
+/// A row's reason in words a person can act on; a reason the screen has no words for says only that it needs the
+/// person, since its wire code tells them nothing.
+String _reasonWords(String reason) {
+  final words = planningReasonWords(reason);
+  return planReasonNeedsAttention(reason) && words != reason ? words : 'it needs you';
+}
+
+/// A finding's severity in a word; a severity the screen does not know is shown as a finding only.
+String _severityWords(String severity) => switch (severity) {
+  'BLOCKING' => 'Blocking',
+  'NOTE' => 'Note',
+  _ => 'Finding',
+};
+
 /// The reasons whose row moves its issue on by the person's own move.
 const _movesOn = {'STOPPED', 'FAILED', 'BLOCKED'};
 
@@ -584,7 +621,7 @@ class _ReworkingDialogState extends State<_ReworkingDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final finding in widget.findings)
-              Text('${planningShown(finding.severity, multiline: false)}: ${planningShown(finding.text)}'),
+              Text('${_severityWords(finding.severity)}: ${planningShown(finding.text)}'),
             if (rule == null)
               const Text('The Reworking rule was not reported; the planner takes its first mode and model.')
             else ...[
