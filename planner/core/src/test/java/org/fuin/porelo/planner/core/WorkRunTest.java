@@ -4469,6 +4469,111 @@ class WorkRunTest {
                 .saved();
     }
 
+    @Test
+    void aStartSavedOnABoardThatMovedSinceItsReadKeepsTheRunGoing() {
+        // Prevents a run halted with its saving refused while its task works on, after another
+        // writer committed between the start's read of the board and its save.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.moves.add(board -> board);
+        f.start(offer);
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the start was saved once more, so the run goes on").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(f.store.saves).as("the start's writes are saved exactly once").isEqualTo(1);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stands in the working state")
+                .isEqualTo("Building");
+        assertThat(f.active("ST1")).as("the task is at work").containsExactly("task");
+        assertThat(f.record.wentBack)
+                .as("the retried save writes a newer generation, so the change is seen")
+                .isFalse();
+    }
+
+    @Test
+    void anEndSavedOnABoardThatMovedSinceItsReadKeepsTheRunGoing() {
+        // Prevents a run halted with its saving refused when another writer committed between an
+        // end's read of the board and its save.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final int before = f.store.saves;
+        f.store.moves.add(board -> board);
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the end was saved once more, so the run goes on").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(f.store.saves - before)
+                .as("the end's writes are saved exactly once")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aStartOnABoardThatMovedItsIssueAwayStillHaltsTheRunNamingWhy() {
+        // Prevents a start saved for issues the moved board no longer gives this story.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.moves.add(
+                board ->
+                        new Board(
+                                board.revision(),
+                                board.workflow(),
+                                board.stories().stream()
+                                        .map(
+                                                s ->
+                                                        new Story(
+                                                                s.id(),
+                                                                s.title(),
+                                                                s.state(),
+                                                                false,
+                                                                s.priority(),
+                                                                null,
+                                                                List.of(),
+                                                                s.description(),
+                                                                s.link()))
+                                        .toList(),
+                                board.issues(),
+                                board.work(),
+                                board.repositories()));
+        final Throwable refused = catchThrowable(() -> f.start(offer));
+        assertThat(refused)
+                .as("the refusal names that the issues are no longer the story's")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        e ->
+                                assertThat(((WorkRefusal) e).parameters().get("reason"))
+                                        .as("why")
+                                        .isEqualTo("The offered ownership has changed."));
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the run halts").isTrue();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(f.store.saves).as("nothing was saved").isZero();
+    }
+
+    @Test
+    void aStartOnABoardThatMovesOnEverySaveHaltsTheRunAfterTheSecondTry() {
+        // Prevents a run that retries without end, and a start saved on a board it never read.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.moves.add(board -> board);
+        f.store.moves.add(board -> board);
+        f.store.moves.add(board -> board);
+        assertThatThrownBy(() -> f.start(offer))
+                .as("the second refusal reaches the caller")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the run halts").isTrue();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.issues().get("AA1").reason())
+                .as("the issue needs attention")
+                .isEqualTo("SAVE_REFUSED");
+        assertThat(f.store.moved).as("the save was tried exactly twice").isEqualTo(2);
+        assertThat(f.store.saves).as("nothing was saved").isZero();
+    }
+
     static String conflictOf(final Throwable refused) {
         return ((WorkRefusal) refused).name();
     }
@@ -4479,6 +4584,9 @@ class WorkRunTest {
         boolean held;
         int writes;
         @Nullable Board checkedBoard;
+
+        /** Whether a write reused or lowered a generation already written. */
+        boolean wentBack;
 
         /** Serializes actions as a disk record must. */
         @Override
@@ -4504,6 +4612,7 @@ class WorkRunTest {
                         @Override
                         public void write(final WorkRun.Snapshot snapshot) {
                             writes++;
+                            wentBack |= snapshot.generation() <= value.generation();
                             value = snapshot;
                         }
 
@@ -4660,6 +4769,12 @@ class WorkRunTest {
         int saves;
         @Nullable StoreException failure;
 
+        /** Commits another writer makes right before each next save, as a moving repository. */
+        final java.util.ArrayDeque<java.util.function.UnaryOperator<Board>> moves =
+                new java.util.ArrayDeque<>();
+
+        int moved;
+
         FakeStore() {
             final Board source = NextStepTest.board("Backlog", "Finished");
             current =
@@ -4689,6 +4804,22 @@ class WorkRunTest {
         public Board save(final Revision revision, final Writes writes) {
             if (failure != null) {
                 throw failure;
+            }
+            final java.util.function.UnaryOperator<Board> move = moves.poll();
+            if (move != null) {
+                moved++;
+                final Board other = move.apply(current);
+                current =
+                        new Board(
+                                new Revision("moved@" + moved),
+                                other.workflow(),
+                                other.stories(),
+                                other.issues(),
+                                other.work(),
+                                other.repositories());
+            }
+            if (!revision.equals(current.revision())) {
+                throw new StoreException.StaleRevision(current.revision().value());
             }
             saves++;
             final List<Issue> issues =

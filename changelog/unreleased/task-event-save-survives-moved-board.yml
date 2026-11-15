@@ -1,0 +1,2 @@
+title: A task's start or end is saved once more against the planning as it is now when the project's repository took another commit in between, instead of halting the story's run with its saving refused.
+type: fixed

@@ -759,167 +759,199 @@ public final class WorkRun {
                     if (report.event() == Event.STARTED && (run.stopped() || run.halted())) {
                         throw WorkRefusal.taskNotAnswered(task, report.offer());
                     }
-                    final Draft draft = new Draft(run);
                     final Board board = store.board();
-                    Snapshot recorded = snapshot;
-                    Writes writes = NOTHING;
-                    Offer accepted;
-                    final List<String> following = new ArrayList<>();
-                    if (report.event() == Event.STARTED) {
-                        if (!NextStep.owns(board, known.binding())) {
-                            throw conflict(
-                                    task, report.event(), "The offered ownership has changed.");
-                        }
-                        for (final Run other : snapshot.runs().values()) {
-                            if (!other.story().equals(run.story())) {
-                                final List<String> owners =
-                                        other.offers().stream()
-                                                .filter(o -> o.status().equals("STARTED"))
-                                                .filter(
-                                                        o ->
-                                                                o.binding().issues().stream()
-                                                                        .anyMatch(
-                                                                                known.binding()
-                                                                                                .issues()
-                                                                                        ::contains))
-                                                .map(o -> String.valueOf(o.task()))
-                                                .toList();
-                                if (!owners.isEmpty()) {
-                                    throw WorkRefusal.workRunning(other.story(), owners);
-                                }
-                            }
-                        }
-                        if (snapshot.runs().values().stream()
-                                .flatMap(r -> r.offers().stream())
-                                .anyMatch(o -> task.equals(o.task()))) {
-                            throw conflict(task, report.event(), "The task is already bound.");
-                        }
-                        writes = NextStep.started(board, known.binding(), store::storyState);
-                        accepted =
-                                new Offer(
-                                        known.id(),
-                                        known.arguments(),
-                                        known.binding(),
-                                        "STARTED",
-                                        task,
-                                        report.container(),
-                                        report.machine(),
-                                        clock.instant().toString(),
-                                        null,
-                                        "",
-                                        List.of(),
-                                        List.of(),
-                                        null);
-                    } else {
-                        accepted =
-                                new Offer(
-                                        known.id(),
-                                        known.arguments(),
-                                        known.binding(),
-                                        report.event().name(),
-                                        task,
-                                        report.container(),
-                                        report.machine(),
-                                        known.since(),
-                                        report.ended(),
-                                        fingerprint(report),
-                                        List.of(),
-                                        List.of(),
-                                        null);
-                        draft.set(accepted);
-                        if (run.stopped() || run.halted() || report.event() == Event.STOPPED) {
-                            known.binding()
-                                    .issues()
-                                    .forEach(
-                                            id ->
-                                                    draft.progress.computeIfPresent(
-                                                            id,
-                                                            (key, value) ->
-                                                                    value.attention(
-                                                                            run.halted()
-                                                                                    ? "SAVE_REFUSED"
-                                                                                    : "STOPPED")));
-                        } else {
-                            final Ended ended = report.ended();
-                            if (ended == null) {
-                                throw WorkRefusal.invalidSettings();
-                            }
-                            known.binding()
-                                    .issues()
-                                    .forEach(
-                                            id -> {
-                                                final NextStep.Progress p = draft.progress.get(id);
-                                                if (p != null
-                                                        && known.binding()
-                                                                .role()
-                                                                .equals("READER")) {
-                                                    draft.progress.put(
-                                                            id,
-                                                            new NextStep.Progress(
-                                                                    p.rounds(),
-                                                                    p.findings(),
-                                                                    p.needsYou(),
-                                                                    p.reason(),
-                                                                    ended.answer()));
-                                                }
-                                            });
-                            List<String> deferred = List.of();
-                            if (staged(known.binding())) {
-                                // The store moved the issues when it saved the result; without
-                                // one, they stay where the stage works on them.
-                                recorded = endedStage(snapshot, draft, known, task);
-                            } else {
-                                final WorkEnds.Judgment judgment =
-                                        WorkEnds.judge(
-                                                known.binding().role(),
-                                                WorkEnds.Outcome.of(
-                                                        ended.finished(),
-                                                        ended.unpushed(),
-                                                        ended.outcome()),
-                                                ended.answer());
-                                final NextStep.Result next =
-                                        next(
-                                                board,
-                                                known.binding(),
-                                                judgment,
-                                                draft.progress,
-                                                draft.comment,
-                                                new NextStep.Build(task, ended.landed()));
-                                draft.progress.putAll(next.progress());
-                                draft.unavailable.putAll(next.unavailable());
-                                writes = next.writes();
-                                deferred = next.deferred();
-                                for (final NextStep.Planned planned : next.tasks()) {
-                                    final Offer offer = offer(planned, run.story());
-                                    draft.offers.add(offer);
-                                    following.add(offer.id());
-                                }
-                            }
-                            accepted =
-                                    new Offer(
-                                            accepted.id(),
-                                            accepted.arguments(),
-                                            accepted.binding(),
-                                            accepted.status(),
-                                            accepted.task(),
-                                            accepted.containerId(),
-                                            accepted.machine(),
-                                            accepted.since(),
-                                            accepted.ended(),
-                                            accepted.fingerprint(),
-                                            following,
-                                            deferred,
-                                            null);
-                        }
+                    final Judged judged = judge(snapshot, run, known, task, report, board);
+                    try {
+                        return answer(saved(session, judged, board), judged.following());
+                    } catch (final StoreException.StaleRevision moved) {
+                        // Nothing was pushed and the run stands halted, so the event is judged
+                        // once more on the board as it is now and saved once more.
+                        final Snapshot base =
+                                new Snapshot(
+                                        session.read().generation(),
+                                        snapshot.runs(),
+                                        snapshot.ideas(),
+                                        snapshot.results());
+                        final Board now = store.refresh();
+                        final Judged again = judge(base, run, known, task, report, now);
+                        return answer(saved(session, again, now), again.following());
                     }
-                    draft.set(accepted);
-                    writes = reconcile(board, draft, writes, following);
-                    draft.setFollowing(accepted.id(), following);
-                    draft.compact(accepted.id());
-                    final Run saved =
-                            save(session, recorded, draft, writes, accepted.id(), board, null);
-                    return answer(saved, following);
                 });
+    }
+
+    /** An event's judgment on one board: the record and run to save and the store's writes. */
+    private record Judged(
+            Snapshot recorded, Draft draft, Writes writes, String offer, List<String> following) {}
+
+    private Run saved(final Session session, final Judged judged, final Board board) {
+        return save(
+                session,
+                judged.recorded(),
+                judged.draft(),
+                judged.writes(),
+                judged.offer(),
+                board,
+                null);
+    }
+
+    /** Judges a task's start or end on one board, refusing an event that board no longer allows. */
+    private Judged judge(
+            final Snapshot snapshot,
+            final Run run,
+            final Offer known,
+            final String task,
+            final Report report,
+            final Board board) {
+        final Draft draft = new Draft(run);
+        Snapshot recorded = snapshot;
+        Writes writes = NOTHING;
+        Offer accepted;
+        final List<String> following = new ArrayList<>();
+        if (report.event() == Event.STARTED) {
+            if (!NextStep.owns(board, known.binding())) {
+                throw conflict(task, report.event(), "The offered ownership has changed.");
+            }
+            for (final Run other : snapshot.runs().values()) {
+                if (!other.story().equals(run.story())) {
+                    final List<String> owners =
+                            other.offers().stream()
+                                    .filter(o -> o.status().equals("STARTED"))
+                                    .filter(
+                                            o ->
+                                                    o.binding().issues().stream()
+                                                            .anyMatch(
+                                                                    known.binding().issues()
+                                                                            ::contains))
+                                    .map(o -> String.valueOf(o.task()))
+                                    .toList();
+                    if (!owners.isEmpty()) {
+                        throw WorkRefusal.workRunning(other.story(), owners);
+                    }
+                }
+            }
+            if (snapshot.runs().values().stream()
+                    .flatMap(r -> r.offers().stream())
+                    .anyMatch(o -> task.equals(o.task()))) {
+                throw conflict(task, report.event(), "The task is already bound.");
+            }
+            writes = NextStep.started(board, known.binding(), store::storyState);
+            accepted =
+                    new Offer(
+                            known.id(),
+                            known.arguments(),
+                            known.binding(),
+                            "STARTED",
+                            task,
+                            report.container(),
+                            report.machine(),
+                            clock.instant().toString(),
+                            null,
+                            "",
+                            List.of(),
+                            List.of(),
+                            null);
+        } else {
+            accepted =
+                    new Offer(
+                            known.id(),
+                            known.arguments(),
+                            known.binding(),
+                            report.event().name(),
+                            task,
+                            report.container(),
+                            report.machine(),
+                            known.since(),
+                            report.ended(),
+                            fingerprint(report),
+                            List.of(),
+                            List.of(),
+                            null);
+            draft.set(accepted);
+            if (run.stopped() || run.halted() || report.event() == Event.STOPPED) {
+                known.binding()
+                        .issues()
+                        .forEach(
+                                id ->
+                                        draft.progress.computeIfPresent(
+                                                id,
+                                                (key, value) ->
+                                                        value.attention(
+                                                                run.halted()
+                                                                        ? "SAVE_REFUSED"
+                                                                        : "STOPPED")));
+            } else {
+                final Ended ended = report.ended();
+                if (ended == null) {
+                    throw WorkRefusal.invalidSettings();
+                }
+                known.binding()
+                        .issues()
+                        .forEach(
+                                id -> {
+                                    final NextStep.Progress p = draft.progress.get(id);
+                                    if (p != null && known.binding().role().equals("READER")) {
+                                        draft.progress.put(
+                                                id,
+                                                new NextStep.Progress(
+                                                        p.rounds(),
+                                                        p.findings(),
+                                                        p.needsYou(),
+                                                        p.reason(),
+                                                        ended.answer()));
+                                    }
+                                });
+                List<String> deferred = List.of();
+                if (staged(known.binding())) {
+                    // The store moved the issues when it saved the result; without
+                    // one, they stay where the stage works on them.
+                    recorded = endedStage(snapshot, draft, known, task);
+                } else {
+                    final WorkEnds.Judgment judgment =
+                            WorkEnds.judge(
+                                    known.binding().role(),
+                                    WorkEnds.Outcome.of(
+                                            ended.finished(), ended.unpushed(), ended.outcome()),
+                                    ended.answer());
+                    final NextStep.Result next =
+                            next(
+                                    board,
+                                    known.binding(),
+                                    judgment,
+                                    draft.progress,
+                                    draft.comment,
+                                    new NextStep.Build(task, ended.landed()));
+                    draft.progress.putAll(next.progress());
+                    draft.unavailable.putAll(next.unavailable());
+                    writes = next.writes();
+                    deferred = next.deferred();
+                    for (final NextStep.Planned planned : next.tasks()) {
+                        final Offer offer = offer(planned, run.story());
+                        draft.offers.add(offer);
+                        following.add(offer.id());
+                    }
+                }
+                accepted =
+                        new Offer(
+                                accepted.id(),
+                                accepted.arguments(),
+                                accepted.binding(),
+                                accepted.status(),
+                                accepted.task(),
+                                accepted.containerId(),
+                                accepted.machine(),
+                                accepted.since(),
+                                accepted.ended(),
+                                accepted.fingerprint(),
+                                following,
+                                deferred,
+                                null);
+            }
+        }
+        draft.set(accepted);
+        writes = reconcile(board, draft, writes, following);
+        draft.setFollowing(accepted.id(), following);
+        draft.compact(accepted.id());
+        return new Judged(recorded, draft, writes, accepted.id(), following);
     }
 
     /** Whether an offer's task hands back its result instead of pushing its work. */
