@@ -67,12 +67,12 @@ left out.
 | <a id="pl123"></a>[PL123](PL123-A-Refused-Start-Reads-As-An-Error.md) | XS | - | A Start or another board action the window or the planner refuses is shown above the board in the theme's error colour with an error icon, as the screen's other failures are, so the person sees that nothing was created |
 | <a id="pl62"></a>[PL62](PL62-Findings-In-The-Git-Stores-Refusal-Texts.md) | S | - | A refusal of the Git store scrubs a local path on Windows too, keeps the field a fault names, such as /size, instead of taking it for a path, says which forms a central must take when it refuses one, and quotes a repository name it does not know |
 | <a id="pl15"></a>[PL15](PL15-The-Answer-Types-Generated-From-The-Description.md) | M | - | The planner's answer records generated from openapi/planner.yaml instead of written by hand; the controllers stay hand-written |
-| <a id="pl137"></a>[PL137](PL137-A-Move-Planning-Already-Shows-Is-No-Problem.md) | XS | - | When a move's save meets a changed planning and the planning read again already shows the story or issue in the move's target state, the board counts the move as done instead of refusing it in red; a state that differs from both the move's source and target is still refused |
 
 ## Finished
 
 | # | Title | What was built |
 |---|---|---|
+| <a id="pl137"></a>PL137 | A Move Planning Already Shows Is No Problem | A move whose save meets a changed planning that already shows it in its target state counts as done with a quiet notice, and only a third state is refused in red |
 | <a id="pl136"></a>PL136 | The Board Opens At Once | Each phase of the board builds only the cards in its view and scrolls on its own, so a board of hundreds of stories opens, reopens and folds a lane as fast as a small one, with a still loading mark while the planner answers |
 | <a id="pl135"></a>PL135 | The Windows Button And Note On Every Page | The window's page button stands beside the crumb of the page without planning too, and an optional page note of the window stands under the board's head row and every page's breadcrumb |
 | <a id="pl134"></a>PL134 | A Sub-Issue Names Its Parent | A sub-issue's page shows Parent as a link to the parent's page instead of an empty Sub-issues row |
