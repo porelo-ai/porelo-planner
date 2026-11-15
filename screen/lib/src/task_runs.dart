@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'client.dart';
 import 'hooks.dart';
 import 'models.dart';
@@ -78,8 +80,14 @@ class PlanningRun {
     if (work?.issues.any((issue) => issue.reason == 'STOPPED') == true) cancel();
   }
 
-  /// Reserves an offer permanently before Start; failure never permits replaying it.
-  Future<PlanningTaskStarted> start(PlanningTaskOrder order, PlanningStartTask startTask, int expected) async {
+  /// Reserves an offer permanently before Start; failure never permits replaying it. [asked] is told right before
+  /// the window's Start is asked.
+  Future<PlanningTaskStarted> start(
+    PlanningTaskOrder order,
+    PlanningStartTask startTask,
+    int expected, {
+    void Function()? asked,
+  }) async {
     if (epoch != expected) throw const PlanningRefusal('Cancelled');
     final offer = order.offer;
     final offers = _offers[source] ??= {};
@@ -91,6 +99,7 @@ class PlanningRun {
     offers[offer] = binding;
     _unreported.add(offer);
     try {
+      asked?.call();
       final started = await startTask(source, project, story, order);
       binding.started = started;
       return started;
@@ -99,6 +108,56 @@ class PlanningRun {
       _unreported.remove(offer);
       rethrow;
     }
+  }
+
+  /// Starts a taken order's tasks in order, then ends the board's start with [ended] exactly once and confirms the
+  /// tasks that started; owned by this run alone, so only its epoch (a Stop) cuts it, never a closed form.
+  ///
+  /// The answer is true once the first task's start is asked of the window, false where nothing was asked; the rest
+  /// goes on in [done]. [onTask] is told each task's start or failure; [onProblem] a failure of a start or of the
+  /// confirmation, which no form may be left to show.
+  ({Future<bool> asked, Future<void> done}) startOrder(
+    List<PlanningTaskOrder> tasks,
+    PlanningStartTask startTask,
+    int expected, {
+    required void Function({required bool accepted}) ended,
+    void Function(int index, PlanningTaskStarted? started, Object? error)? onTask,
+    void Function(Object error)? onProblem,
+    Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>)? onStarted,
+  }) {
+    final asked = Completer<bool>();
+    void ask() {
+      if (!asked.isCompleted) asked.complete(true);
+    }
+
+    Future<void> run() async {
+      final started = <(PlanningTaskOrder, PlanningTaskStarted)>[];
+      try {
+        for (final (index, task) in tasks.indexed) {
+          if (epoch != expected) return;
+          try {
+            final answer = await start(task, startTask, expected, asked: ask);
+            started.add((task, answer));
+            onTask?.call(index, answer, null);
+          } catch (error) {
+            onTask?.call(index, null, error);
+            // Before anything was asked the form is still open and says it; a Stop's cut is no fault.
+            if (asked.isCompleted && !planningRefused(error, 'Cancelled')) onProblem?.call(error);
+            return;
+          }
+        }
+      } finally {
+        if (!asked.isCompleted) asked.complete(false);
+        ended(accepted: started.isNotEmpty);
+        try {
+          await confirmed(started, expected, onStarted: onStarted);
+        } catch (error) {
+          onProblem?.call(error);
+        }
+      }
+    }
+
+    return (asked: asked.future, done: run());
   }
 
   /// Tracks partial starts, sending late starts directly to Stop without authorizing reports.

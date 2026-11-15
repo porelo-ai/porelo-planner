@@ -546,6 +546,13 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
+  /// Says why [story]'s start, which goes on after its form closed, was refused or failed.
+  void reportStartProblem(String story, Object error) {
+    if (_disposed) return;
+    actionProblem = 'Start work on ${planningShown(story, multiline: false)}: ${planningFailureWords(error)}';
+    _changed();
+  }
+
   Future<void> _readWork(PlanningSnapshot reply, int generation) async {
     final source = backend;
     final name = project;

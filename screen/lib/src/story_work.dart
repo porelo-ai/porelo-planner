@@ -444,36 +444,44 @@ class StoryWork extends ChangeNotifier {
         owned() &&
         revision == request.revision &&
         current &&
-        origin.startUnavailable(
-              story,
-              ownStart: token,
-              ownTasks: [for (final task in startedTasks) task.$2],
-              passOver: passOver,
-            ) ==
-            null;
+        origin.startUnavailable(story, ownStart: token, passOver: passOver) == null;
     token = origin.beginStoryStart(story, passOver: passOver);
     if (token == null) return false;
     busy = true;
     starting = true;
     _changed();
+    var handed = false;
     try {
       final order = await source.startStoryWork(request);
       // An order for a board that moved on is not shown, so the form stays open to choose again.
       if (!valid()) return false;
       tasks = List.unmodifiable(order.tasks.map(StoryWorkTask.new));
       _changed();
-      // Once the planner took the order, its own tasks' starts move the board; only a lost owner stops the rest.
-      for (final task in tasks) {
-        if (!owned()) return false;
-        try {
-          task.started = await run.start(task.order, startTask, epoch);
-        } catch (error) {
-          task.error = error;
-          return false;
+      // Once the planner took the order, its tasks' starts belong to the run: a closed form no longer cuts them.
+      final shown = tasks;
+      final handover = run.startOrder(
+        order.tasks,
+        startTask,
+        epoch,
+        ended: ({required accepted}) => origin.endStoryStart(source, name, id, token!, accepted: accepted),
+        onTask: (index, started, error) {
+          shown[index]
+            ..started = started
+            ..error = error;
+          _changed();
+        },
+        onProblem: (error) => origin.reportStartProblem(id, error),
+        onStarted: onStarted,
+      );
+      handed = true;
+      _ended = handover.done.whenComplete(() {
+        if (!_disposed && generation == _generation) {
+          starting = false;
+          busy = false;
+          _changed();
         }
-        _changed();
-      }
-      return owned();
+      });
+      return await handover.asked;
     } catch (error) {
       if (valid()) {
         problem = planningFailureWords(error);
@@ -484,22 +492,22 @@ class StoryWork extends ChangeNotifier {
       }
       return false;
     } finally {
-      origin.endStoryStart(source, name, id, token, accepted: startedTasks.isNotEmpty);
-      final started = startedTasks;
-      if (started.isNotEmpty) {
-        try {
-          await run.confirmed(started, epoch, onStarted: onStarted);
-        } catch (error) {
-          if (!_disposed && generation == _generation) problem = planningFailureWords(error);
+      if (!handed) {
+        origin.endStoryStart(source, name, id, token, accepted: false);
+        if (!_disposed && generation == _generation) {
+          starting = false;
+          busy = false;
+          _changed();
         }
-      }
-      if (!_disposed && generation == _generation) {
-        starting = false;
-        busy = false;
-        _changed();
       }
     }
   }
+
+  Future<void>? _ended;
+
+  /// Completes once a handed-over start's tasks started, failed or were cut, and their confirmation ended; at once
+  /// where nothing was handed over.
+  Future<void> get ended => _ended ?? Future.value();
 
   void _changed() {
     if (!_disposed) notifyListeners();

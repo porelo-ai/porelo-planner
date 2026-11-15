@@ -190,6 +190,13 @@ void main() {
     return work;
   }
 
+  /// Starts the story's order from a form and waits until its tasks started and were confirmed.
+  Future<void> started() async {
+    final work = await form();
+    expect(await work.start(), isTrue, reason: 'the order was taken and its first start asked');
+    await work.ended;
+  }
+
   Future<void> report({
     String? offer,
     String project = 'demo',
@@ -221,7 +228,7 @@ void main() {
 
   // Harm: a report or follow-up is routed to the selected board instead of the source and story that offered it.
   test('reports and replayed follow-ups stay on their offer origin after provider changes', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     final other = _Source();
     addTearDown(other.close);
     client.retainPlanningSources();
@@ -242,7 +249,7 @@ void main() {
 
   // Harm: ending the last running task loses its offered follow-up or starts it twice on replay.
   test('an ENDED answer with atWork false starts its follow-up exactly once', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     const ended = PlanningTaskEnded(at: '', finished: true, why: '', answer: 'Findings:\n', unpushed: 0);
     Future<void> builderReport(PlanningTaskEvent event) => report(
       offer: servedOffer(2),
@@ -275,7 +282,7 @@ void main() {
 
   // Harm: an ordinary inactive watch refresh cancels a Start already in flight and drops the rest of its batch.
   test('an inactive watch keeps an in-flight follow-up batch authorized', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     final gate = Completer<PlanningTaskStarted>();
     board.runOf('ST1').startTask = (source, project, story, task) =>
         task.offer == servedOffer(10) ? gate.future : start(source, project, story, task);
@@ -296,7 +303,7 @@ void main() {
 
   // Harm: an unknown offer or a contradictory runtime identity reports or starts another story's work.
   test('unknown offers and changed project task container or machine never reach the source', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     await report();
     for (final call in <Future<void> Function()>[
       () => report(offer: servedOffer(99)),
@@ -313,7 +320,7 @@ void main() {
 
   // Harm: an invalid first machine name permanently poisons an offer's runtime binding.
   test('machine bindings reject invalid names and keep 128 Unicode code points verbatim', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     for (final machine in [
       '',
       'a' * 129,
@@ -333,7 +340,7 @@ void main() {
 
   // Harm: a rejected STARTED report binds a machine and blocks the actual machine from reporting or ending.
   test('a failed STARTED report leaves no machine binding', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     source.reportError = const PlanningRefusal('TaskEventConflict');
     await expectLater(report(machine: 'Rejected machine'), throwsA(isA<PlanningRefusal>()));
     source.reportError = null;
@@ -346,7 +353,7 @@ void main() {
 
   // Harm: one provider reuses an offer under another project and starts the same work twice.
   test('an offer is consumed across every project and story on its source', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     final other = PlanningBoard(source, 'other');
     addTearDown(other.dispose);
     await pumpEventQueue();
@@ -360,7 +367,7 @@ void main() {
 
   // Harm: a second task's failed Start makes the first running task disappear from the window's tracking.
   test('a partial follow-up start is tracked and its refusal is surfaced', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     board.runOf('ST1').startTask = (source, project, story, task) async {
       if (task.offer == servedOffer(11)) throw const PlanningRefusal('StartRefused');
       return start(source, project, story, task);
@@ -374,7 +381,7 @@ void main() {
 
   // Harm: an in-flight report hands new work to Start after Stop was requested.
   test('stop voids a report batch and applies active tasks even when reload fails', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     source.showWork(servedWork()..['tasks'] = [servedRunTask()]);
     await pumpEventQueue();
     source.reportGate = Completer<TaskEventResolution>();
@@ -439,7 +446,8 @@ void main() {
       sourceProject: 'demo',
     );
     gate.complete(const PlanningTaskStarted(task: 'late', container: 'late-container'));
-    expect(await pending, isFalse);
+    expect(await pending, isTrue, reason: 'the first start had been asked before the Stop');
+    await work.ended;
     expect(changes.tracked, isEmpty);
     expect(changes.stopped.last.$4.single.task, 'late');
     expect(source.reports, isEmpty);
@@ -447,7 +455,7 @@ void main() {
 
   // Harm: a recorded stop lets an in-flight batch start more tasks while another task is still active.
   test('a STOPPED issue cancels follow-ups even while atWork is true', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     source.showWork(servedWork(atWork: false));
     await pumpEventQueue();
     final gate = Completer<PlanningTaskStarted>();
@@ -473,7 +481,7 @@ void main() {
 
   // Harm: an unchecked follow-up starts a shell, a coordinator, another issue scope or a different execution mode.
   test('the whole follow-up batch is checked before any Start', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     for (final mutation in <Map<String, dynamic>>[
       {'mode': 'SHELL'},
       {'role': 'MAIN'},
@@ -711,7 +719,7 @@ void main() {
 
   // Harm: a save refusal leaves a pending report's follow-up offers authorized to start.
   test('save refusals cancel pending offers and keep the decision unsubmitted', () async {
-    expect(await (await form()).start(), isTrue);
+    await started();
     final decision = await reading();
     source.reportGate = Completer<TaskEventResolution>();
     final pending = report();

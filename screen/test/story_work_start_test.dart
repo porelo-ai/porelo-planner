@@ -46,6 +46,17 @@ class _Source extends MockPlanningSource {
   }
 }
 
+/// A window that records the tasks it is told to stop.
+class _Stops extends NoTasks {
+  _Stops();
+
+  final stopped = <PlanningTaskStarted>[];
+
+  @override
+  Future<void> stop(PlanningSource source, String project, String story, List<PlanningTaskStarted> tasks) async =>
+      stopped.addAll(tasks);
+}
+
 Map<String, dynamic> _fields(PlanningTaskOrder task) => {
   'offer': task.offer,
   'repository': task.repository,
@@ -144,6 +155,101 @@ void main() {
     }
   });
 
+  /// Starts [work] without awaiting it, answering whether it answered and with what once asked.
+  (bool? Function(), Future<bool>) begin(StoryWork work) {
+    bool? answer;
+    final pending = work.start()..then((value) => answer = value);
+    return (() => answer, pending);
+  }
+
+  // Prevents a dialog held open through every task's image build, which the person cannot close or see go on.
+  test('a start answers once the order is taken and the first task\'s start is asked', () async {
+    final gate = Completer<PlanningTaskStarted>();
+    final calls = <PlanningTaskOrder>[];
+    final work = await form((source, project, story, task) {
+      calls.add(task);
+      return gate.future;
+    });
+    final (answer, _) = begin(work);
+    await pumpEventQueue();
+    expect(calls, [source.order.tasks.first], reason: 'the first task\'s start was asked');
+    expect(answer(), isTrue, reason: 'the start answers before the window\'s Start does');
+    gate.complete(const PlanningTaskStarted(task: 'main-task', container: 'main-container'));
+    await pumpEventQueue();
+  });
+
+  // Prevents a start cut short by the dialog closing: a story half started that the person never stopped.
+  test('a closed form\'s start still starts the later task and tells the window', () async {
+    final gates = [Completer<PlanningTaskStarted>(), Completer<PlanningTaskStarted>()];
+    final calls = <PlanningTaskOrder>[];
+    final told = <(PlanningTaskOrder, PlanningTaskStarted)>[];
+    final work = StoryWork(
+      board,
+      board.stories.single,
+      'Building',
+      startTask: (source, project, story, task) {
+        calls.add(task);
+        return gates[calls.length - 1].future;
+      },
+      agentChoices: FakeAgents(),
+      onStarted: (source, project, story, tasks) async => told.addAll(tasks),
+    );
+    await work.load();
+    work.chooseMode('AGENT');
+    final (answer, _) = begin(work);
+    await pumpEventQueue();
+    work.dispose();
+    gates.first.complete(const PlanningTaskStarted(task: 'main-task', container: 'main-container'));
+    await pumpEventQueue();
+    expect(calls, source.order.tasks, reason: 'the second task starts after the form closed');
+    gates.last.complete(const PlanningTaskStarted(task: 'builder-task', container: 'builder-container'));
+    await pumpEventQueue();
+    expect(told.map((each) => each.$2.task), ['main-task', 'builder-task'], reason: 'the window is told of both');
+    expect(answer(), isTrue, reason: 'the closed form had answered that the start goes on');
+  });
+
+  // Prevents a refusal lost with the closed dialog, so the person never learns the later task did not start.
+  test('a refusal of a later start is said on the board after the form closed', () async {
+    final refusal = mockRefusal('StartRefused', {'detail': 'The selected agent cannot start.'});
+    final gate = Completer<PlanningTaskStarted>();
+    var calls = 0;
+    final work = await form((source, project, story, task) {
+      if (++calls == 2) throw refusal;
+      return gate.future;
+    });
+    begin(work);
+    await pumpEventQueue();
+    work.dispose();
+    forms.remove(work);
+    gate.complete(const PlanningTaskStarted(task: 'main-task', container: 'main-container'));
+    await pumpEventQueue();
+    expect(calls, 2, reason: 'the second start was asked');
+    expect(
+      board.actionProblem,
+      allOf(contains('ST1'), contains(planningFailureWords(refusal))),
+      reason: 'the board says which story\'s start was refused and why',
+    );
+  });
+
+  // Prevents a task started after the person pressed Stop.
+  test('a Stop between two starts prevents the second and stops the first', () async {
+    final stops = _Stops();
+    board.taskChanges = stops;
+    final gate = Completer<PlanningTaskStarted>();
+    final calls = <PlanningTaskOrder>[];
+    final work = await form((source, project, story, task) {
+      calls.add(task);
+      return gate.future;
+    });
+    begin(work);
+    await pumpEventQueue();
+    board.runOf('ST1').cancel();
+    gate.complete(const PlanningTaskStarted(task: 'main-task', container: 'main-container'));
+    await pumpEventQueue();
+    expect(calls, [source.order.tasks.first], reason: 'nothing starts after the Stop');
+    expect(stops.stopped.map((task) => task.task), ['main-task'], reason: 'the task started before it is stopped');
+  });
+
   // Harm: a refused Start launches later tasks or hides tasks that have already started.
   test('a refused Start stops the order and marks only the refused task', () async {
     final calls = <PlanningTaskOrder>[];
@@ -153,7 +259,8 @@ void main() {
       if (calls.length == 2) throw refusal;
       return const PlanningTaskStarted(task: 'actual-task', container: 'actual-container');
     });
-    expect(await work.start(), isFalse);
+    expect(await work.start(), isTrue, reason: 'the first start was asked');
+    await work.ended;
     expect(calls, source.order.tasks);
     expect(work.problem, isNull);
     expect(work.tasks.first.started?.task, 'actual-task');
@@ -199,7 +306,8 @@ void main() {
     await stopped.load();
     stopped.chooseMode('AGENT');
     calls.clear();
-    expect(await stopped.start(), isFalse);
+    expect(await stopped.start(), isTrue, reason: 'the first start was asked');
+    await stopped.ended;
     expect(calls, [next.order.tasks.first]);
     expect(stopped.tasks.first.refusal, same(refusal));
     expect(stopped.tasks.last.refusal, isNull);
@@ -224,7 +332,8 @@ void main() {
     forms.add(work);
     await work.load();
     work.chooseMode('AGENT');
-    expect(await work.start(), isFalse);
+    expect(await work.start(), isTrue, reason: 'the first start was asked');
+    await work.ended;
     expect(told, [(source.order.tasks.first, work.tasks.first.started!)]);
   });
 
@@ -243,6 +352,7 @@ void main() {
     expect(calls, [(source, 'demo', 'ST1', source.order.tasks.first)]);
     first.complete(const PlanningTaskStarted(task: 'main-task', container: 'main-container'));
     expect(await pending, isTrue);
+    await work.ended;
     expect(calls.map((call) => call.$4), source.order.tasks);
     expect(calls.map((call) => (call.$1, call.$2, call.$3)), [(source, 'demo', 'ST1'), (source, 'demo', 'ST1')]);
     expect(calls.map((call) => _fields(call.$4)), [
@@ -273,7 +383,8 @@ void main() {
       }
       return PlanningTaskStarted(task: 'task-${calls.length}', container: 'container-${calls.length}');
     });
-    expect(await work.start(), isTrue, reason: 'every task of the accepted order started');
+    expect(await work.start(), isTrue, reason: 'the order was taken and its first start asked');
+    await work.ended;
     expect(calls, source.order.tasks, reason: 'the second task starts after the board moved');
   });
 
@@ -295,7 +406,8 @@ void main() {
     expect(second.canStart, isFalse);
     expect(await second.start(), isFalse);
     gate.completeError(mockRefusal('StartRefused', {'detail': 'No capacity.'}));
-    expect(await pending, isFalse);
+    expect(await pending, isTrue, reason: 'the first start had been asked');
+    await first.ended;
     expect(second.canStart, isTrue);
   });
 
@@ -308,6 +420,7 @@ void main() {
       fail('An unconfirmed or running order must prevent another Start.');
     });
     expect(await first.start(), isTrue);
+    await first.ended;
     expect(second.canStart, isFalse);
     expect(await second.start(), isFalse);
     expect(source.orders, 1);
@@ -339,6 +452,7 @@ void main() {
       (source, project, story, task) async => PlanningTaskStarted(task: task.role, container: 'container-${task.role}'),
     );
     expect(await first.start(), isTrue);
+    await first.ended;
     final second = await form((source, project, story, task) async => throw StateError('not started here'));
     expect(second.canStart, isFalse, reason: 'held until a board answers');
     source.push('demo', {...source.boards['demo']!, 'revision': 'r1'});
@@ -346,8 +460,8 @@ void main() {
     expect(board.startUnavailable(board.stories.single), isNull);
   });
 
-  // Harm: a late Start answer launches the rest of an order after its form or board was replaced.
-  test('a changed binding stops further tasks after a pending Start answers', () async {
+  // Harm: a closed form or a reloaded board cuts a start the planner took, leaving a story half started.
+  test('a closed form or a reloaded board does not cut a start the planner took', () async {
     for (final disposed in [false, true]) {
       source.offerPrefix = disposed ? 'disposed' : 'replaced';
       final gate = Completer<PlanningTaskStarted>();
@@ -365,10 +479,10 @@ void main() {
         await board.retry();
       }
       gate.complete(const PlanningTaskStarted(task: 'actual-task', container: 'actual-container'));
-      expect(await pending, isFalse);
-      expect(calls, [source.order.tasks.first]);
-      expect(work.startedTasks.single.$2.task, 'actual-task');
-      await pumpEventQueue();
+      expect(await pending, isTrue, reason: 'the first start had been asked');
+      await work.ended;
+      expect(calls, source.order.tasks, reason: 'every task of the taken order starts');
+      expect(work.startedTasks, hasLength(2), reason: 'both tasks started');
       final orders = source.orders;
       final next = await form((source, project, story, task) async {
         fail('A late confirmed Start must prevent another order.');
@@ -395,7 +509,8 @@ void main() {
     }
 
     final first = await form(start);
-    expect(await first.start(), isFalse);
+    expect(await first.start(), isTrue, reason: 'the first start was asked');
+    await first.ended;
     board.dispose();
     board = PlanningBoard(source, 'demo');
     await pumpEventQueue();

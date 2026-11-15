@@ -67,7 +67,7 @@ void main() {
     final before = notifications;
     work.dispose();
     backend.started.complete(const PlanningTaskStarted(task: 'late-task', container: 'late-container'));
-    expect(await starting, isFalse);
+    expect(await starting, isTrue, reason: 'the first start had been asked before the form closed');
     expect(notifications, before);
     board.dispose();
     await backend.end();

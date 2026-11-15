@@ -131,6 +131,7 @@ void main() {
     expect(identical(work.board, a), isTrue);
     first.heldStart!.complete(const PlanningTaskStarted(task: 'first-task', container: 'first-container'));
     expect(await pending, isTrue);
+    await work.ended;
     expect(work.starting, isFalse);
     expect(work.startedTasks.single.$2.task, 'first-task');
     expect(identical(work.backend, first), isTrue);

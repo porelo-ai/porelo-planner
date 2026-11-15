@@ -1,0 +1,2 @@
+title: Start work closes its dialog once the planner took the order and the first task's start is asked, while the remaining starts go on for the story's run, and a later refusal is said on the board.
+type: changed
