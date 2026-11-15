@@ -192,10 +192,10 @@ class ResultTextTest {
                                 + foreign
                                 + ".\n",
                         "M",
-                        "one module",
+                        "like " + other,
                         null,
                         List.of("Ask about " + other + "."),
-                        List.of(ID + " holds."));
+                        List.of(ID + " holds.", "```" + other + " stays a finding."));
         final String written =
                 ResultText.apply(ISSUE, result, WORKFLOW, java.util.Set.of(ID, other));
         assertThat(written.lines().toList())
@@ -213,7 +213,9 @@ class ResultTextTest {
                         other + " in a fence",
                         "- Not " + foreign + ".",
                         "- Ask about " + link(other) + ".",
-                        "- " + link(ID) + " holds.");
+                        "- " + link(ID) + " holds.",
+                        "**Size:** M - like " + link(other),
+                        "- ```" + link(other) + " stays a finding.");
         final String index =
                 "## Idea\n| <a id=\""
                         + ID.toLowerCase(java.util.Locale.ROOT)

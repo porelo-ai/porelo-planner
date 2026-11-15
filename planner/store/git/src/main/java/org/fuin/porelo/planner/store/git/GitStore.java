@@ -1173,7 +1173,6 @@ public final class GitStore implements PlanningStore {
         }
     }
 
-    /** Edits one head, a refusal naming the item whose file it is. */
     /**
      * The issue numbers of a repository's index as it stood before the save, which a result's text
      * links; an index that cannot be read links none, and the board's own check names it.
@@ -1196,6 +1195,7 @@ public final class GitStore implements PlanningStore {
         }
     }
 
+    /** Edits one head, a refusal naming the item whose file it is. */
     private static void edit(
             final Snapshot snapshot,
             final String name,

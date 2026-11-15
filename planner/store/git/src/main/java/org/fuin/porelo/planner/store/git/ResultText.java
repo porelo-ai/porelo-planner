@@ -97,7 +97,11 @@ public final class ResultText {
         return apply(text, linked(result, numbers), workflow);
     }
 
-    /** The result with its plan, what is to be checked and its findings linking their numbers. */
+    /**
+     * The result with its plan, why it has its size, what is to be checked and its findings linking
+     * their numbers, each read in the line it is written as, so the linker sees what the store's
+     * check sees.
+     */
     private static StageResult.ForIssue linked(
             final StageResult.ForIssue result, final java.util.Set<String> numbers) {
         final String plan = result.plan();
@@ -105,14 +109,22 @@ public final class ResultText {
                 result.id(),
                 result.from(),
                 result.to(),
-                plan == null ? null : IssueLinks.linked(plan, numbers),
+                plan == null ? null : IssueLinks.linked(plan.strip(), numbers),
                 result.size(),
-                result.sizeWhy(),
+                linkedAs(SIZE + " " + result.size() + " - ", result.sizeWhy(), numbers),
                 result.estimateMinutes(),
                 result.toBeChecked().stream()
-                        .map(item -> IssueLinks.linked(item, numbers))
+                        .map(item -> linkedAs("- ", item.strip(), numbers))
                         .toList(),
-                result.findings().stream().map(item -> IssueLinks.linked(item, numbers)).toList());
+                result.findings().stream()
+                        .map(item -> linkedAs("- ", item.strip(), numbers))
+                        .toList());
+    }
+
+    /** A text linked as the line it is written in after a prefix, which names no number. */
+    private static String linkedAs(
+            final String prefix, final String text, final java.util.Set<String> numbers) {
+        return IssueLinks.linked(prefix + text, numbers).substring(prefix.length());
     }
 
     /**
