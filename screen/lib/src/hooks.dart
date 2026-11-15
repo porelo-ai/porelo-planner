@@ -47,7 +47,7 @@ abstract interface class PlanningTaskChanges {
 class PlanningAgent {
   /// Takes the agent's name and, when the window has them, what it shows in a choice, why it cannot work on the
   /// machine the agents were listed for, its models and its effort levels.
-  const PlanningAgent(this.name, {this.choice, this.unready, this.models = const [], this.efforts});
+  const PlanningAgent(this.name, {this.choice, this.unready, this.models = const [], this.modelsWhy, this.efforts});
 
   /// The agent's name, as a start names it.
   final String name;
@@ -60,6 +60,9 @@ class PlanningAgent {
 
   /// The models the window knows for the agent there, to choose from; a model may still be typed.
   final List<PlanningModel> models;
+
+  /// Why the window could not list the agent's models there, in its words, or null when it could.
+  final String? modelsWhy;
 
   /// The effort levels the agent takes, or null when the window does not know them; empty when it takes none.
   final List<String>? efforts;

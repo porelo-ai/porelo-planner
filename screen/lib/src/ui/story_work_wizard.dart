@@ -361,7 +361,7 @@ class _StoryWorkSteps {
         initialValue: model,
         models: listed?.models ?? const [],
         proposed: ownProposal ? proposed.model : null,
-        help: help,
+        help: _modelHelp(help, listed?.modelsWhy),
         hint: 'Choose a model',
         enabled: enabled,
         onChanged: (value) => choose(model: value),
@@ -854,4 +854,13 @@ class _PlanningModelFieldState extends State<PlanningModelField> {
     enabled: widget.enabled,
     onChanged: widget.onChanged,
   );
+}
+
+/// The model field's help: the proposal's words, then why the agent's models could not be listed.
+String? _modelHelp(String? help, String? modelsWhy) {
+  final words = [
+    if (help != null && help.isNotEmpty) help,
+    if (modelsWhy != null && modelsWhy.isNotEmpty) planningShown(modelsWhy, multiline: false),
+  ];
+  return words.isEmpty ? null : words.join(' ');
 }
