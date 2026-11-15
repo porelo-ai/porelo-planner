@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL149",
   "title": "A Stopped Run Seen Leaves The Card",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 69,

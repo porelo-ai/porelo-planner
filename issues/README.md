@@ -33,7 +33,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl149"></a>[PL149](PL149-A-Stopped-Run-Seen-Leaves-The-Card.md) | M | - | A story's run the person stopped shows on its card as ended, with no task at work and no needs you once the person has seen it, the Planning count follows, and the story can be started again; Stop on a stopped run answers instead of doing nothing; the card's since is a time in the person's zone, as the window says times |
 | <a id="pl150"></a>[PL150](PL150-A-Saved-Result-Links-Its-Issue-Numbers.md) | S | - | The Git store writes a stage result into an issue's file with every issue number of the repository as the link to its index row, so a saved analysis or estimate never makes the store's own check warn |
 | <a id="pl152"></a>[PL152](PL152-The-Issue-Page-Names-A-Task-Where-It-Ran.md) | S | - | The issue page's Work part lists each task of the story with the machine it ran on, as the planner reports it, and whether it ended, and asks the window to open only a task known where it runs |
 | <a id="pl153"></a>[PL153](PL153-Start-Work-Shows-A-Single-Choice-As-Text.md) | XS | [PL156](README.md#pl156) | The Start work dialog shows the machine and the working state as labeled text where there is only one to choose, and leaves the machine out where only one planner reports the project, instead of drop-down lists of one |
@@ -54,6 +53,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl149"></a>[PL149](PL149-A-Stopped-Run-Seen-Leaves-The-Card.md) | M | - | A story's run the person stopped shows on its card as ended, with no task at work and no needs you once the person has seen it, the Planning count follows, and the story can be started again; Stop on a stopped run answers instead of doing nothing; the card's since is a time in the person's zone, as the window says times |
 | <a id="pl151"></a>[PL151](PL151-The-Issue-Description-Leaves-Out-Its-Head.md) | XS | - | The issue page's Description shows the issue's text without its heading, its JSON head and the What must be true the page already shows above it |
 
 ## Review
