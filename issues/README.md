@@ -52,7 +52,6 @@ left out.
 |---|---|---|---|
 | <a id="pl150"></a>[PL150](PL150-A-Saved-Result-Links-Its-Issue-Numbers.md) | S | - | The Git store writes a stage result into an issue's file with every issue number of the repository as the link to its index row, so a saved analysis or estimate never makes the store's own check warn |
 | <a id="pl152"></a>[PL152](PL152-The-Issue-Page-Names-A-Task-Where-It-Ran.md) | S | - | The issue page's Work part lists each task of the story with the machine it ran on, as the planner reports it, and whether it ended, and asks the window to open only a task known where it runs |
-| <a id="pl154"></a>[PL154](PL154-Start-Work-Says-Where-The-Open-Issues-Stand.md) | XS | - | When no open issue of a story stands where the chosen rule takes from, the planner's refusal names each open issue with its state and the states the rule takes from, so the person sees why nothing can start |
 
 ## Review
 
@@ -75,6 +74,7 @@ left out.
 | <a id="pl148"></a>[PL148](PL148-A-Needs-You-Row-Says-Its-Reason-In-Words.md) | XS | - | A row of the screen's Needs you says its reason in words a person can act on, once, and never shows the reason's wire code such as SAVE_REFUSED or STOPPED, on an issue's row or a story's |
 | <a id="pl149"></a>[PL149](PL149-A-Stopped-Run-Seen-Leaves-The-Card.md) | M | - | A story's run the person stopped shows on its card as ended, with no task at work and no needs you once the person has seen it, the Planning count follows, and the story can be started again; Stop on a stopped run answers instead of doing nothing; the card's since is a time in the person's zone, as the window says times |
 | <a id="pl151"></a>[PL151](PL151-The-Issue-Description-Leaves-Out-Its-Head.md) | XS | - | The issue page's Description shows the issue's text without its heading, its JSON head and the What must be true the page already shows above it |
+| <a id="pl154"></a>[PL154](PL154-Start-Work-Says-Where-The-Open-Issues-Stand.md) | XS | - | When no open issue of a story stands where the chosen rule takes from, the planner's refusal names each open issue with its state and the states the rule takes from, so the person sees why nothing can start |
 | <a id="pl156"></a>[PL156](PL156-Start-Work-As-A-Wizard-Design.md) | XS | - | A short design note: the wizard's steps, which of today's dialog fields go to which step, the review, model as a list that fills a text field, effort from the agent's listed efforts |
 | <a id="pl157"></a>[PL157](PL157-The-Start-Work-Wizard-In-The-Screen.md) | S | [PL146](README.md#pl146), [PL156](README.md#pl156) | The screen package gives Start work's steps and review as the window's wizard shows them, with single choices as text and agent, model and effort as lists, as the design decides; built once the design is settled |
 | <a id="pl158"></a>[PL158](PL158-The-Planner-Takes-Any-Model-Of-An-Offered-Agent.md) | XS | - | A story's work order takes, for its main task and each changed sub-agent, any model a person chose for an agent the rule offers, not only the rule's model of that agent; a model the agent or its provider refuses fails at the task's start with its reason |

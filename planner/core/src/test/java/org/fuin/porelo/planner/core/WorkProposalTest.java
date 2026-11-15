@@ -609,6 +609,63 @@ class WorkProposalTest {
     }
 
     @Test
+    void nothingToStartNamesEachOpenIssueWithItsStateAndWhereTheRuleTakesFrom() {
+        // Prevents a person who cannot tell why the story's work does not start.
+        final WorkRule rule =
+                new WorkRule(
+                        List.of("Backlog", "Rework"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Build {story}; issues {issues}.",
+                        Map.of("zeta", "large"));
+        final Board board =
+                new Board(
+                        new Revision("board@1"),
+                        new Workflow(
+                                List.of(
+                                        "Idea",
+                                        "Backlog",
+                                        "Rework",
+                                        "Implementing",
+                                        "Review",
+                                        "Finished"),
+                                List.of(),
+                                List.of("Finished")),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Backlog",
+                                        true,
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null)),
+                        List.of(
+                                issue("AA1", "alpha", "Done", "Finished", null, ""),
+                                issue("AA2", "alpha", "Open", "Idea", null, "")),
+                        new Work(Map.of("Implementing", rule), List.of()),
+                        List.of("project", "alpha"));
+        assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Implementing"))
+                .as("the refusal says where the open issue stands and where the rule takes from")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(
+                        error ->
+                                assertThat(((WorkRefusal) error).parameters())
+                                        .as("the refusal keeps its parameters and names the states")
+                                        .containsEntry("from", "Backlog")
+                                        .containsEntry("to", "Implementing")
+                                        .containsEntry(
+                                                "reason",
+                                                "AA2 stands in Idea; Implementing takes from"
+                                                        + " Backlog and Rework."));
+    }
+
+    @Test
     void aNamedIssueListThatIsEmptyRepeatsOrNamesWhatTheRuleCannotWorkIsRefused() {
         // An issue started that is not the story's, not in a state the rule takes from, worked
         // by a person, or named twice would start work no one asked for or two agents on one.

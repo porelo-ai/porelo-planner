@@ -167,10 +167,7 @@ public record WorkProposal(
                         : List.of();
         final boolean reading = rule.blocked() != null;
         if (issues.isEmpty() && !agents(open).isEmpty()) {
-            throw WorkRefusal.notAllowed(
-                    story.state(),
-                    to,
-                    "No open issue of the story stands where the rule takes from.");
+            throw WorkRefusal.notAllowed(story.state(), to, standing(agents(open), to, rule));
         }
         if (issues.isEmpty() && !manual.isEmpty()) {
             throw WorkRefusal.notAllowed(
@@ -373,6 +370,39 @@ public record WorkProposal(
     }
 
     /** The issues an agent works; one a person works never gets an agent's task. */
+    /** How many open issues a refusal names before it only counts the rest, to keep it short. */
+    private static final int MOST_NAMED = 10;
+
+    /**
+     * Where the agents' open issues stand and where the rule takes from, so a person sees why
+     * nothing starts, for example {@code AA2 stands in Idea; Implementing takes from Backlog and
+     * Rework.}
+     */
+    private static String standing(final List<Issue> agents, final String to, final WorkRule rule) {
+        final List<String> named =
+                agents.stream()
+                        .limit(MOST_NAMED)
+                        .map(i -> i.id() + " stands in " + i.state())
+                        .toList();
+        final String more =
+                agents.size() > MOST_NAMED ? " and " + (agents.size() - MOST_NAMED) + " more" : "";
+        return String.join(", ", named)
+                + more
+                + "; "
+                + to
+                + " takes from "
+                + spoken(rule.from())
+                + ".";
+    }
+
+    /** Names joined as words: {@code A}, {@code A and B}, {@code A, B and C}. */
+    private static String spoken(final List<String> names) {
+        if (names.size() < 2) {
+            return String.join("", names);
+        }
+        return String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.getLast();
+    }
+
     private static List<Issue> agents(final List<Issue> issues) {
         return issues.stream().filter(i -> i.worker() != Worker.MANUAL).toList();
     }
