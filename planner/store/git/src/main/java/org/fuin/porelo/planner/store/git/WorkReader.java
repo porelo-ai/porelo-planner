@@ -36,7 +36,9 @@ public final class WorkReader {
                             .build());
 
     private static final Set<String> KEYS =
-            Set.of("from", "done", "then", "blocked", "per", "modes", "order", "models", "risks");
+            Set.of(
+                    "from", "done", "then", "blocked", "per", "modes", "order", "models", "risks",
+                    "result");
 
     private static final Set<String> RISK_KEYS = Set.of("models", "effort");
 
@@ -103,7 +105,8 @@ public final class WorkReader {
                 strings(node, "modes", "modes"),
                 text(node, "order"),
                 models(node),
-                risks(node));
+                risks(node),
+                result(optional(node, "result")));
     }
 
     private static void known(final JsonNode node, final Set<String> keys) throws Fault {
@@ -151,6 +154,17 @@ public final class WorkReader {
         } catch (final IllegalArgumentException e) {
             throw new Fault(at + e.getMessage());
         }
+    }
+
+    private static WorkRule.@Nullable Result result(final @Nullable String result) throws Fault {
+        if (result == null) {
+            return null;
+        }
+        return switch (result) {
+            case "ANALYSIS" -> WorkRule.Result.ANALYSIS;
+            case "ESTIMATE" -> WorkRule.Result.ESTIMATE;
+            default -> throw new Fault("result '" + result + "' is neither ANALYSIS nor ESTIMATE");
+        };
     }
 
     private static WorkRule.Per per(final String per) throws Fault {

@@ -22,7 +22,10 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.core.HandedIdeas;
+import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.StageOrder;
+import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
@@ -409,6 +412,19 @@ public final class WorkRecord implements AutoCloseable {
                             && !rule.has("risks")) {
                         rule.putObject("risks");
                     }
+                    // A record written before stages handed back results names none and no files.
+                    if (offer.path("binding").path("rule") instanceof ObjectNode rule
+                            && !rule.has("result")) {
+                        rule.putNull("result");
+                    }
+                    if (offer.path("arguments") instanceof ObjectNode arguments) {
+                        if (!arguments.has("result")) {
+                            arguments.putNull("result");
+                        }
+                        if (!arguments.has("given")) {
+                            arguments.putArray("given");
+                        }
+                    }
                 }
             }
             return tree;
@@ -699,7 +715,8 @@ public final class WorkRecord implements AutoCloseable {
                                     final String used = offer.arguments().used();
                                     if (effort != null && !WorkRule.sound(effort)
                                             || used != null && !WorkRule.sound(used)
-                                            || offer.arguments().basis().length() > 4000) {
+                                            || offer.arguments().basis().length() > 4000
+                                            || !givenFits(offer.arguments())) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }
@@ -751,5 +768,39 @@ public final class WorkRecord implements AutoCloseable {
                 mutex.unlock();
             }
         }
+    }
+
+    /**
+     * Whether an offer's result and given files are what its role is served: an idea for a
+     * discussion, a stage's file for its main or builder, then each owned issue once by its id
+     * within the bounds a task is given, and no file for work that pushes.
+     */
+    private static boolean givenFits(final WorkOrder.Task task) {
+        final String result = task.result();
+        final boolean stage =
+                result != null
+                        && java.util.Arrays.stream(WorkRule.Result.values())
+                                .anyMatch(kind -> kind.file().equals(result));
+        if (result != null
+                && !(task.role().equals("DISCUSSION")
+                        ? result.equals(IdeaDiscussion.RESULT)
+                        : stage && !task.role().equals("READER"))) {
+            return false;
+        }
+        if (stage == task.given().isEmpty() || task.given().size() > StageOrder.MOST_FILES) {
+            return false;
+        }
+        final java.util.Set<String> names = new java.util.HashSet<>();
+        int all = 0;
+        for (final WorkOrder.Given given : task.given()) {
+            final int bytes = given.text().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            all += bytes;
+            if (bytes > StageOrder.MOST_TEXT
+                    || !names.add(given.name())
+                    || task.issues().stream().noneMatch(id -> given.name().equals(id + ".md"))) {
+                return false;
+            }
+        }
+        return all <= StageOrder.MOST_ALL;
     }
 }

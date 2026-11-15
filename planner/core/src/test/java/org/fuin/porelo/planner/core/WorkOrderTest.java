@@ -69,6 +69,122 @@ class WorkOrderTest {
                 .isEqualTo(before.revision());
     }
 
+    // Prevents an analysis of an outdated issue copy and a stage task that pushes beside its
+    // result.
+    @Test
+    void anAnalysisIsGivenEachIssuesTextAndAskedForItsResultAlone() {
+        final WorkOrder order =
+                WorkOrder.accept(
+                        analysis(WorkProposalTest.board(WorkRule.Per.REPOSITORY)),
+                        "ST1",
+                        "Building",
+                        decision(null, null, null, null));
+        final WorkOrder.Task main = order.tasks().getFirst();
+        assertThat(main.result()).as("the analysis's result file").isEqualTo("analysis.json");
+        assertThat(main.given())
+                .as("the issue it owns, whole, as the board holds it; its builder owns AA1.1")
+                .containsExactly(
+                        new WorkOrder.Given("AA1.md", "**What must be true.** Parent holds."));
+        assertThat(order.tasks().get(1).given())
+                .as("the kept builder's own issue")
+                .containsExactly(
+                        new WorkOrder.Given(
+                                "AA1.1.md",
+                                "**What must be true.** Keep the data.\n\nPrivate notes"));
+        assertThat(main.prompt())
+                .as("the order names the given file and the result, and forbids a push")
+                .contains("AA1.md", "analysis.json", "porelo-stage-result-1")
+                .contains("Edit nothing under issues/, commit nothing and push nothing.");
+        assertThat(order.tasks())
+                .as("every task of the stage hands back a result")
+                .allSatisfy(
+                        task ->
+                                assertThat(task.result())
+                                        .as("result of " + task.role())
+                                        .isEqualTo("analysis.json"));
+    }
+
+    // Prevents a build from being told to push nothing or carrying files it does not read.
+    @Test
+    void workThatPushesIsGivenNoFileAndAskedForNoResult() {
+        final WorkOrder order =
+                WorkOrder.accept(
+                        WorkProposalTest.board(WorkRule.Per.REPOSITORY),
+                        "ST1",
+                        "Building",
+                        decision(null, null, null, null));
+        assertThat(order.tasks())
+                .as("no task of a build hands back a result or is given a file")
+                .allSatisfy(
+                        task -> {
+                            assertThat(task.result()).as("no result").isNull();
+                            assertThat(task.given()).as("no given file").isEmpty();
+                            assertThat(task.prompt())
+                                    .as("no stage instructions")
+                                    .doesNotContain("push nothing");
+                        });
+    }
+
+    // Prevents a task that reads half an issue: a text over the bound refuses the start.
+    @Test
+    void anIssueTextOverTheBoundRefusesTheStage() {
+        final Board board = analysis(WorkProposalTest.board(WorkRule.Per.REPOSITORY));
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue issue : board.issues()) {
+            issues.add(
+                    issue.id().equals("AA1")
+                            ? WorkProposalTest.issue(
+                                    "AA1",
+                                    "alpha",
+                                    "Parent",
+                                    "Backlog",
+                                    null,
+                                    "**What must be true.** Parent holds.\n\n" + "x".repeat(65536))
+                            : issue);
+        }
+        final Board large =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        issues,
+                        board.work(),
+                        board.repositories());
+        assertThatThrownBy(
+                        () ->
+                                WorkOrder.accept(
+                                        large, "ST1", "Building", decision(null, null, null, null)))
+                .as("refused, naming the issue")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1");
+    }
+
+    /** The board with its Building rule handing back an analysis instead of pushing. */
+    static Board analysis(final Board board) {
+        final WorkRule rule = board.work().rules().get("Building");
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues(),
+                new Work(
+                        Map.of(
+                                "Building",
+                                new WorkRule(
+                                        rule.from(),
+                                        rule.done(),
+                                        rule.then(),
+                                        rule.blocked(),
+                                        rule.per(),
+                                        rule.modes(),
+                                        rule.order(),
+                                        rule.models(),
+                                        rule.risks(),
+                                        WorkRule.Result.ANALYSIS)),
+                        List.of()),
+                board.repositories());
+    }
+
     @Test
     void storyWorkKeepsItsMainInTheOwnRepositoryAndBuildersWithTheirIssues() {
         // Grouping story work must not send builders into a checkout that lacks their sub-issue.

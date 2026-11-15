@@ -131,6 +131,41 @@ class WorkRulesTest {
         assertThat(checked.rules()).as("the rule dropped").doesNotContainKey("Finished");
     }
 
+    // Prevents a stage whose saved result moves its issues to done from also offering readers or
+    // a blocked state, whose tasks would push or start without the issues' texts.
+    @Test
+    void aRuleThatHandsBackAResultAndLeadsOnIsNamedAndDropped() {
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Implementing", resulting(rules.get("Implementing")));
+        rules.put("Reading", resulting(rules.get("Reading")));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.faults())
+                .as("each fault named")
+                .contains(
+                        "stories/work.yml: Implementing: a rule with a result names no then and no"
+                                + " blocked",
+                        "stories/work.yml: Reading: a rule with a result names no then and no"
+                                + " blocked");
+        assertThat(checked.rules())
+                .as("both rules dropped")
+                .doesNotContainKeys("Implementing", "Reading");
+    }
+
+    /** The rule handing back an analysis instead of pushing. */
+    private static WorkRule resulting(final WorkRule rule) {
+        return new WorkRule(
+                rule.from(),
+                rule.done(),
+                rule.then(),
+                rule.blocked(),
+                rule.per(),
+                rule.modes(),
+                rule.order(),
+                rule.models(),
+                rule.risks(),
+                WorkRule.Result.ANALYSIS);
+    }
+
     @Test
     void aRuleLeadingIntoADroppedRuleIsDroppedToo() {
         // Work would end in a state the board shows as waiting, which no one starts.

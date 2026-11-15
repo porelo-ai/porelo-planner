@@ -59,6 +59,44 @@ class WorkReaderTest {
         assertThat(work.rules().get("Reading").per()).as("per story").isEqualTo(WorkRule.Per.STORY);
     }
 
+    // Prevents a stage that should hand back its result from being started as work that pushes.
+    @Test
+    void aRulesResultIsReadAndAnUnknownOneDropsTheRule() {
+        final Work work =
+                WorkReader.read(
+                        """
+                        work:
+                          In analysis:
+                            from: [Accepted]
+                            done: Analyzed
+                            per: repository
+                            modes: [UNATTENDED]
+                            order: "Analyze {issues}."
+                            models: {claude-code: claude-opus-5-5}
+                            result: ANALYSIS
+                          Under estimation:
+                            from: [Analyzed]
+                            done: Estimated
+                            per: repository
+                            modes: [UNATTENDED]
+                            order: "Estimate {issues}."
+                            models: {claude-code: claude-opus-5-5}
+                            result: GUESS
+                        """);
+        assertThat(work.rules().get("In analysis").result())
+                .as("the analysis hands back its result")
+                .isEqualTo(WorkRule.Result.ANALYSIS);
+        assertThat(work.rules()).as("the rule with an unknown result is dropped").hasSize(1);
+        assertThat(work.faults())
+                .as("its fault named")
+                .containsExactly(
+                        "stories/work.yml: Under estimation: result 'GUESS' is neither ANALYSIS"
+                                + " nor ESTIMATE");
+        assertThat(WorkReader.read(SOUND).rules().get("Implementing").result())
+                .as("a rule without result pushes its work")
+                .isNull();
+    }
+
     @Test
     void aMissingFileIsAFaultNotAFailure() {
         // Without work rules the board is still read; only work cannot start.

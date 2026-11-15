@@ -10,6 +10,7 @@ final _issueName = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
 const _modes = {'SHELL', 'AGENT', 'UNATTENDED'};
 // A plain file name: the window takes it from the task's result directory, so it must not leave that directory.
 final _resultName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
+const _stageResults = {'analysis.json', 'estimate.json'};
 
 Never _invalid(String reason) => throw FormatException(reason);
 
@@ -248,6 +249,18 @@ class StoryWorkOrder {
   final List<PlanningTaskOrder> tasks;
 }
 
+/// One file a task is given to read: an issue's text by its id.
+class PlanningGivenFile {
+  /// A given file of [name], `<issue>.md`, holding [text].
+  const PlanningGivenFile(this.name, this.text);
+
+  /// The plain file name.
+  final String name;
+
+  /// The issue's text.
+  final String text;
+}
+
 /// The planner's exact arguments for one future Start, with no runtime identity inferred.
 class PlanningTaskOrder {
   PlanningTaskOrder._(
@@ -263,6 +276,7 @@ class PlanningTaskOrder {
     this.reads, {
     this.effort,
     this.chosenBy,
+    this.given = const [],
   });
 
   /// Reads one served offer without inventing missing Start arguments.
@@ -286,8 +300,15 @@ class PlanningTaskOrder {
     } else {
       repository = _text(map, 'repository');
       if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
-      if (map.containsKey('result')) _invalid('Only a discussion hands back a result.');
+      if (map.containsKey('result')) {
+        // A stage that hands back its result writes one of the planner's two files, never an idea.
+        if (role == 'READER') _invalid('A reader hands back no result.');
+        result = _text(map, 'result');
+        if (!_stageResults.contains(result)) _invalid('A stage hands back analysis.json or estimate.json.');
+      }
     }
+    final given = map.containsKey('given') ? _given(map['given'], issues) : const <PlanningGivenFile>[];
+    if (given.isNotEmpty && (discussion || result == null)) _invalid('Only a stage with a result is given files.');
     final prompt = _text(map, 'prompt', blank: true);
     if (utf8.encode(prompt).length > 65536) _invalid('The task prompt exceeds 64 KiB.');
     final reads = map.containsKey('reads') ? _strings(map['reads']) : const <String>[];
@@ -311,7 +332,28 @@ class PlanningTaskOrder {
       List.unmodifiable(reads),
       effort: _effort(map),
       chosenBy: _chosenBy(map),
+      given: given,
     );
+  }
+
+  /// Reads the given files: each owned issue's text once, by its id, within what one task is given.
+  static List<PlanningGivenFile> _given(Object? value, List<String> issues) {
+    final files = <PlanningGivenFile>[];
+    final names = <String>{};
+    var all = 0;
+    for (final item in _records(value)) {
+      final name = _text(item, 'name');
+      final text = _text(item, 'text', blank: true);
+      if (!issues.any((issue) => name == '$issue.md') || !names.add(name)) {
+        _invalid('A given file is not one of the task\'s issues, once.');
+      }
+      final bytes = utf8.encode(text).length;
+      if (bytes > 65536) _invalid('A given file exceeds 64 KiB.');
+      all += bytes;
+      files.add(PlanningGivenFile(name, text));
+    }
+    if (files.length > 16 || all > 1048576) _invalid('The given files exceed 16 files or 1 MiB.');
+    return List.unmodifiable(files);
   }
 
   /// The effort Start is handed, null for none.
@@ -344,8 +386,12 @@ class PlanningTaskOrder {
   /// The complete prompt as served, preserved without trimming or rewriting.
   final String prompt;
 
-  /// The plain file name a discussion hands back from its result directory; null for every other role.
+  /// The plain file name a discussion, or a stage that hands back its result, writes in its result directory;
+  /// null for work that pushes.
   final String? result;
+
+  /// The issues' texts a stage's task reads, read only, as the planner holds them now; empty for work that pushes.
+  final List<PlanningGivenFile> given;
 
   /// The Porelo task names whose work a reader reads, passed to Start; empty for every other role.
   final List<String> reads;
@@ -359,7 +405,8 @@ class PlanningTaskOrder {
       // The effort the person confirmed, none included, is the one the window may start.
       effort == other.effort &&
       mode == other.mode &&
-      result == other.result &&
+      // A story's stage result is the planner's rule, which the person's request does not name.
+      (role != 'DISCUSSION' || result == other.result) &&
       // An expected reader names no build; the planner's names one, which reading it refuses otherwise.
       (role == 'READER' && other.reads.isEmpty || listEquals(reads, other.reads));
 }

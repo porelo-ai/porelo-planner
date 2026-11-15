@@ -73,6 +73,52 @@ void main() {
     }
   });
 
+  // Harm: a stage's task is started without the issues' current texts, or a served order names a file outside its
+  // issues, writes an idea, or gives a pushing task files it does not read.
+  test('a stage order keeps its result and given files and refuses any other', () {
+    Map<String, dynamic> stage() => servedFollowUp(1, role: 'MAIN')
+      ..['result'] = 'analysis.json'
+      ..['given'] = [
+        {'name': 'PR1.md', 'text': '# PR1\n'},
+      ];
+    final order = PlanningTaskOrder.from(stage());
+    expect(order.result, 'analysis.json', reason: 'the window starts the stage with its result file');
+    expect(
+      [for (final file in order.given) '${file.name}=${file.text}'],
+      ['PR1.md=# PR1\n'],
+      reason: 'the window mounts each issue\'s text read only',
+    );
+    final changes = <String, Map<String, dynamic>>{
+      'an idea result': stage()..['result'] = 'idea.json',
+      'a reader with a stage result': servedFollowUp(1)..['result'] = 'analysis.json',
+      'given without a result': stage()..remove('result'),
+      'a file of another issue': stage()
+        ..['given'] = [
+          {'name': 'PR2.md', 'text': ''},
+        ],
+      'a path': stage()
+        ..['given'] = [
+          {'name': '../PR1.md', 'text': ''},
+        ],
+      'one issue twice': stage()
+        ..['given'] = [
+          {'name': 'PR1.md', 'text': ''},
+          {'name': 'PR1.md', 'text': ''},
+        ],
+      'a text over 64 KiB': stage()
+        ..['given'] = [
+          {'name': 'PR1.md', 'text': 'x' * 65537},
+        ],
+      'a file without text': stage()
+        ..['given'] = [
+          {'name': 'PR1.md'},
+        ],
+    };
+    for (final MapEntry(key: name, value: map) in changes.entries) {
+      expect(() => PlanningTaskOrder.from(map), throwsFormatException, reason: name);
+    }
+  });
+
   // Harm: a reader started naming no build reads nothing and polls; another task given a build's work could change it.
   test('only a reader names the tasks whose work it reads, and it names at least one', () {
     expect(PlanningTaskOrder.from(servedFollowUp(1)..['reads'] = ['porelo-foo-project_foo-1']).reads, [

@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,32 @@ class MockStoreTest {
     private static final Revision FIRST = new Revision("mock@1");
 
     private final MockStore store = MockStore.fromClassPath().copy();
+
+    // Prevents the window's planning tests from starting the mock board's analysis as work that
+    // pushes, with no issue text and no result to hand in.
+    @Test
+    void anAnalysisStartedOnTheMockBoardIsGivenItsIssueAndAskedForItsResult() {
+        final Board board = store.board();
+        final org.fuin.porelo.planner.core.WorkOrder order =
+                org.fuin.porelo.planner.core.WorkOrder.accept(
+                        board,
+                        "ST14",
+                        "In analysis",
+                        new org.fuin.porelo.planner.core.WorkOrder.Decision(
+                                "AGENT", FIRST.value(), null, null, null, null));
+        final var main = order.tasks().getFirst();
+        assertThat(main.result()).as("the analysis's result file").isEqualTo("analysis.json");
+        assertThat(main.given())
+                .as("the issue's text as the mock board holds it")
+                .extracting(org.fuin.porelo.planner.core.WorkOrder.Given::name)
+                .containsExactly("PJ58.md");
+        assertThat(main.prompt())
+                .as("the stage's instructions")
+                .contains("analysis.json", "push nothing");
+        assertThat(board.work().rules().get("Under estimation").result())
+                .as("the estimation hands back its result too")
+                .isEqualTo(WorkRule.Result.ESTIMATE);
+    }
 
     @Test
     void aSaveAnswersANewRevisionWithTheMoveAndLeavesTheBoardBeforeItAsItWas() {

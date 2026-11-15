@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,6 +50,10 @@ public record WorkOrder(
      * @param reads the Porelo tasks whose work it reads
      * @param basis where the rule's choice of agent, model and effort came from, empty when unknown
      * @param used the effort the window said the task starts with, null while nobody said
+     * @param result the plain name of the file a stage's task hands back instead of pushing, or
+     *     null for work that pushes
+     * @param given the files the task is given to read, each issue's text as the store holds it;
+     *     empty for work that pushes
      */
     public record Task(
             String repository,
@@ -61,11 +66,43 @@ public record WorkOrder(
             String prompt,
             List<String> reads,
             String basis,
-            @Nullable String used) {
+            @Nullable String used,
+            @Nullable String result,
+            List<Given> given) {
         /** Copies issue identities to preserve the accepted scope. */
         public Task {
             issues = List.copyOf(issues);
             reads = List.copyOf(reads);
+            given = List.copyOf(given);
+        }
+
+        /** A task that pushes its work, given no file and handing back none. */
+        public Task(
+                final String repository,
+                final List<String> issues,
+                final String role,
+                final String agent,
+                final String model,
+                final @Nullable String effort,
+                final String mode,
+                final String prompt,
+                final List<String> reads,
+                final String basis,
+                final @Nullable String used) {
+            this(
+                    repository,
+                    issues,
+                    role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    reads,
+                    basis,
+                    used,
+                    null,
+                    List.of());
         }
 
         /** A task whose choice's origin is unknown and whose effort nobody confirmed. */
@@ -95,6 +132,14 @@ public record WorkOrder(
             this(repository, issues, role, agent, model, effort, mode, prompt, List.of());
         }
     }
+
+    /**
+     * A file a task is given to read, read only, beside its checkout.
+     *
+     * @param name the file's plain name, an issue's id with {@code .md}
+     * @param text its text
+     */
+    public record Given(String name, String text) {}
 
     /** An issue's chosen reading limit before validation. */
     public record Limit(String issue, Number rounds) {}
@@ -268,7 +313,38 @@ public record WorkOrder(
                                 helper.basis()));
             }
         }
-        return new WorkOrder(board.revision(), tasks, accepted);
+        return new WorkOrder(
+                board.revision(),
+                tasks.stream()
+                        .map(
+                                task ->
+                                        StageOrder.staged(
+                                                board, rule, to, task, owned(board, task, tasks)))
+                        .toList(),
+                accepted);
+    }
+
+    /**
+     * The issues a task owns: those of its repository, and for a main none a kept builder works on,
+     * as the run binds them.
+     */
+    static List<String> owned(final Board board, final Task task, final List<Task> tasks) {
+        return task.issues().stream()
+                .filter(
+                        id ->
+                                Objects.equals(
+                                        task.repository(),
+                                        board.issue(id).orElseThrow().repository()))
+                .filter(
+                        id ->
+                                !task.role().equals("MAIN")
+                                        || tasks.stream()
+                                                .noneMatch(
+                                                        other ->
+                                                                other.role().equals("BUILDER")
+                                                                        && other.issues()
+                                                                                .contains(id)))
+                .toList();
     }
 
     private static List<WorkProposal.Assignment> validate(

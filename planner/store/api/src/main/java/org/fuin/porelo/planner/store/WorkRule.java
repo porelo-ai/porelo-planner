@@ -22,6 +22,7 @@ import org.jspecify.annotations.Nullable;
  * @param models the model per agent, the first agent the default
  * @param risks what the rule chooses for an issue's risk instead of its own models, per risk it
  *     names
+ * @param result what the work hands back instead of pushing, or null when it pushes its work
  */
 public record WorkRule(
         List<String> from,
@@ -32,7 +33,8 @@ public record WorkRule(
         List<String> modes,
         String order,
         Map<String, String> models,
-        Map<Risk, ForRisk> risks) {
+        Map<Risk, ForRisk> risks,
+        @Nullable Result result) {
 
     /** Longest agent, model or effort a rule names, as a task's settings allow. */
     public static final int LONGEST = 128;
@@ -86,6 +88,58 @@ public record WorkRule(
             final String order,
             final Map<String, String> models) {
         this(from, done, then, blocked, per, modes, order, models, Map.of());
+    }
+
+    /**
+     * A rule that pushes its work, as every rule did before a stage handed back a result.
+     *
+     * @param from the states a story or an issue may enter this work from
+     * @param done the state the work's success leads to when no further work follows
+     * @param then the working state success leads to instead, or null when it leads to {@code done}
+     * @param blocked the working state blocking findings lead to, or null when none do
+     * @param per whether one task runs per story or per repository
+     * @param modes the modes a task of this work may be started in, the first the default
+     * @param order the order the task is given
+     * @param models the model per agent, the first agent the default
+     * @param risks what the rule chooses for an issue's risk, per risk it names
+     */
+    public WorkRule(
+            final List<String> from,
+            final String done,
+            final @Nullable String then,
+            final @Nullable String blocked,
+            final Per per,
+            final List<String> modes,
+            final String order,
+            final Map<String, String> models,
+            final Map<Risk, ForRisk> risks) {
+        this(from, done, then, blocked, per, modes, order, models, risks, null);
+    }
+
+    /**
+     * What a stage hands back instead of pushing: a file of its result, which the planner saves
+     * through its store before the issue moves on.
+     */
+    public enum Result {
+        /** An analysis: each issue's plan, size and what is still to be checked. */
+        ANALYSIS("analysis.json"),
+        /** An estimate: each issue's size and minutes. */
+        ESTIMATE("estimate.json");
+
+        private final String file;
+
+        Result(final String file) {
+            this.file = file;
+        }
+
+        /**
+         * Answers the plain name of the file the task writes its result to.
+         *
+         * @return the file's name, without a directory
+         */
+        public String file() {
+            return file;
+        }
     }
 
     /** Whether one task runs for the whole story or one for each of its repositories. */

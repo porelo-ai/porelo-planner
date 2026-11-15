@@ -87,6 +87,7 @@ public final class MockStore implements PlanningStore {
      * @param order the order the task is given
      * @param models the model per agent
      * @param risks what the rule chooses per risk, by the risk's name, or null for nothing
+     * @param result what the stage hands back instead of pushing, or null when it pushes
      */
     record RuleFile(
             List<String> from,
@@ -97,7 +98,8 @@ public final class MockStore implements PlanningStore {
             List<String> modes,
             String order,
             Map<String, String> models,
-            @Nullable Map<String, RiskFile> risks) {}
+            @Nullable Map<String, RiskFile> risks,
+            WorkRule.@Nullable Result result) {}
 
     /**
      * What a rule of the mock board chooses for one risk.
@@ -201,7 +203,8 @@ public final class MockStore implements PlanningStore {
                 rule.modes(),
                 rule.order(),
                 rule.models(),
-                risks(rule.risks()));
+                risks(rule.risks()),
+                rule.result());
     }
 
     private static Map<Risk, WorkRule.ForRisk> risks(final @Nullable Map<String, RiskFile> risks) {

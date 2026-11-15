@@ -2563,7 +2563,8 @@ components:
       required: [offer, issues, role, agent, model, mode, prompt, reads]
       description: >-
         repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present for
-        DISCUSSION alone.
+        DISCUSSION and for MAIN or BUILDER of a stage that hands back its result instead of pushing, and given only for
+        the latter.
       properties:
         offer:
           type: string
@@ -2603,7 +2604,19 @@ components:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-          description: The plain name of the file the task hands back, without a directory.
+          description: >-
+            The plain name of the file the task hands back, without a directory: idea.json for a DISCUSSION,
+            analysis.json or estimate.json for a stage that hands back its result.
+        given:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          maxItems: 16
+          description: >-
+            The files the task is given to read, read only, in the order of its issues: each issue's text as the store
+            holds it now, newer than any copy in the task's checkout. Absent or empty for work that pushes. At most
+            16 files, each text at most 65536 UTF-8 bytes, all together at most 1048576.
+          items:
+            $ref: '#/components/schemas/GivenFile'
         reads:
           type: array
           description: >-
@@ -2612,6 +2625,17 @@ components:
           items:
             $ref: '#/components/schemas/TaskLabel'
 
+    GivenFile:
+      type: object
+      required: [name, text]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?\.md$'
+          description: The plain file name, an issue's id the task owns with .md.
+        text:
+          type: string
+          description: The issue's text, at most 65536 UTF-8 bytes.
     TaskLabel:
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'

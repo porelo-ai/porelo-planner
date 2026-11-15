@@ -620,6 +620,47 @@ class NextStepTest {
                 .isEqualTo("Reading, risk ordinary");
     }
 
+    // Prevents a stage the planner starts by itself from pushing or reading a stale issue copy.
+    @Test
+    void aStageThePlannerStartsByItselfIsGivenTheIssueAndAskedForItsResult() {
+        final Board board = board("Building", "Finished");
+        final Issue issue = board.issue("AA1").orElseThrow();
+        final WorkRule plain = risky("Reading");
+        final WorkRule estimate =
+                new WorkRule(
+                        plain.from(),
+                        plain.done(),
+                        plain.then(),
+                        plain.blocked(),
+                        plain.per(),
+                        plain.modes(),
+                        plain.order(),
+                        plain.models(),
+                        plain.risks(),
+                        WorkRule.Result.ESTIMATE);
+        final WorkOrder.Task task =
+                NextStep.task(
+                                board,
+                                "ST1",
+                                issue,
+                                "Reworking",
+                                estimate,
+                                null,
+                                "",
+                                "",
+                                "BUILDER",
+                                BUILT)
+                        .task();
+        assertThat(task.result()).as("the estimate's result file").isEqualTo("estimate.json");
+        assertThat(task.given())
+                .as("the issue's text as the board holds it")
+                .containsExactly(
+                        new WorkOrder.Given("AA1.md", "**What must be true.** Preserve work."));
+        assertThat(task.prompt())
+                .as("the stage's instructions close the prompt")
+                .endsWith("Edit nothing under issues/, commit nothing and push nothing.");
+    }
+
     @Test
     void aReworkChosenWithAModelHarmDoesNotOfferIsRefusedForAHarmIssue() {
         // A person's choice of the rule's light model for work that can do harm would bypass

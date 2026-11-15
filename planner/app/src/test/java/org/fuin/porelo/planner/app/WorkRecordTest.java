@@ -269,6 +269,96 @@ class WorkRecordTest {
         }
     }
 
+    // Prevents an upgrade from making a running story's work record unreadable, and a forged
+    // given file name from reaching a task's start.
+    @Test
+    void aRecordWrittenBeforeStageResultsOpensAndAGivenNameOutsideItsIssuesDoesNot()
+            throws Exception {
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        final ObjectNode rule = (ObjectNode) offer.path("binding").get("rule");
+        assertThat(arguments.has("given")).as("the reference record holds given files").isTrue();
+        assertThat(rule.has("result")).as("the reference record holds the rule's result").isTrue();
+        arguments.remove("result");
+        arguments.remove("given");
+        rule.remove("result");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored.offers().getFirst().arguments().result())
+                    .as("an absent result is none")
+                    .isNull();
+            assertThat(restored.offers().getFirst().arguments().given())
+                    .as("absent given files are none")
+                    .isEmpty();
+            assertThat(restored.offers().getFirst().binding().rule().result())
+                    .as("an absent rule's result pushes its work")
+                    .isNull();
+            final String issue = "AA1";
+            arguments.putArray("issues").add(issue);
+            ((ObjectNode) offer.get("binding")).putArray("issues").add(issue);
+            final ObjectNode sound = arguments.deepCopy();
+            given(sound, "analysis.json", issue + ".md");
+            offer.set("arguments", sound);
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThat(
+                            records.open("project", "https://example.org/store.git", null)
+                                    .locked(
+                                            session ->
+                                                    session.read()
+                                                            .runs()
+                                                            .values()
+                                                            .iterator()
+                                                            .next())
+                                    .offers()
+                                    .getFirst()
+                                    .arguments()
+                                    .given())
+                    .as(
+                            "a stage's own issue given once reads, so each refusal below is its forgery's")
+                    .hasSize(1);
+            final Map<String, java.util.function.Consumer<ObjectNode>> forgeries =
+                    new java.util.LinkedHashMap<>();
+            forgeries.put(
+                    "a given file named outside the task's issues",
+                    forged -> given(forged, "analysis.json", "../escape.md"));
+            forgeries.put(
+                    "an idea's result on work in a repository",
+                    forged -> given(forged, "idea.json", issue + ".md"));
+            forgeries.put(
+                    "given files on work that pushes",
+                    forged -> given(forged, null, issue + ".md"));
+            forgeries.put(
+                    "one issue given twice",
+                    forged -> given(forged, "analysis.json", issue + ".md", issue + ".md"));
+            forgeries.put("a stage given no file", forged -> given(forged, "analysis.json"));
+            for (final Map.Entry<String, java.util.function.Consumer<ObjectNode>> forgery :
+                    forgeries.entrySet()) {
+                final ObjectNode forged = arguments.deepCopy();
+                forgery.getValue().accept(forged);
+                offer.set("arguments", forged);
+                Files.writeString(file, json.writeValueAsString(document));
+                assertThatThrownBy(
+                                () ->
+                                        records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)
+                                                .locked(session -> session.read()))
+                        .as(forgery.getKey() + " is refused")
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
     @Test
     void aRecordWrittenBeforeRisksOpensWithItsRepositoriesMainAndSubAgent() throws Exception {
         // An upgrade must not make a running story's work record unreadable when its run names
@@ -903,6 +993,16 @@ class WorkRecordTest {
             assertThat(generation)
                     .as("the record is written once the file is free again")
                     .isEqualTo(7);
+        }
+    }
+
+    /** Sets a forged offer's result and given files, each holding a line of text. */
+    private static void given(
+            final ObjectNode arguments, final @Nullable String result, final String... names) {
+        arguments.put("result", result);
+        final var given = arguments.putArray("given");
+        for (final String name : names) {
+            given.addObject().put("name", name).put("text", "x");
         }
     }
 }

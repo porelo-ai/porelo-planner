@@ -629,18 +629,22 @@ public final class NextStep {
             throw WorkRefusal.invalidSettings();
         }
         return new Planned(
-                new WorkOrder.Task(
-                        issue.repository(),
-                        List.of(issue.id()),
-                        role,
-                        settings.agent(),
-                        settings.model(),
-                        effort == null ? choice.effort() : effort.effort(),
-                        settings.mode(),
-                        prompt,
-                        role.equals("READER") ? List.of(built.task()) : List.of(),
-                        choice.basis(),
-                        effort == null ? null : effort.effort()),
+                StageOrder.staged(
+                        board,
+                        rule,
+                        state,
+                        new WorkOrder.Task(
+                                issue.repository(),
+                                List.of(issue.id()),
+                                role,
+                                settings.agent(),
+                                settings.model(),
+                                effort == null ? choice.effort() : effort.effort(),
+                                settings.mode(),
+                                prompt,
+                                role.equals("READER") ? List.of(built.task()) : List.of(),
+                                choice.basis(),
+                                effort == null ? null : effort.effort())),
                 state,
                 rule,
                 choice.basis());

@@ -91,6 +91,10 @@ public final class WorkRules {
         if (rule.blocked() != null) {
             known(workflow, at, "blocked", rule.blocked(), faults);
         }
+        // A saved result moves the issues to done itself, past any reading or blocked state.
+        if (rule.result() != null && (rule.then() != null || rule.blocked() != null)) {
+            faults.add(at + "a rule with a result names no then and no blocked");
+        }
         return faults;
     }
 

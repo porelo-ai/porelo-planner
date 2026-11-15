@@ -93,6 +93,22 @@ public interface PlanningStore {
     }
 
     /**
+     * Saves what a stage handed back for its issues, each with its new state, in one save on the
+     * store as it stands when saved: a stage runs for minutes, and a change elsewhere meanwhile
+     * does not refuse it. All of it is written, or none.
+     *
+     * @param result the stage's result
+     * @return the board after the save
+     * @throws StoreException.NoSuchIssue if the board has no issue the result names
+     * @throws StoreException.NotSavable if an issue no longer stands in the state the stage
+     *     completes, its new state is closed, or its file cannot take the result
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     */
+    default Board saveResult(final StageResult result) {
+        throw new UnsupportedOperationException("This store does not save stage results");
+    }
+
+    /**
      * Derives a story's state from its issues' states, as the store's stories index does.
      *
      * @param issueStates the states of the story's issues

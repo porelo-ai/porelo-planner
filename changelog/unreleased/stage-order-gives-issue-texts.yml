@@ -1,0 +1,2 @@
+title: "A work rule may name `result: ANALYSIS` or `result: ESTIMATE`; its tasks are then given each issue's current text read only as `given`, asked for `analysis.json` or `estimate.json`, and told to push nothing."
+type: added

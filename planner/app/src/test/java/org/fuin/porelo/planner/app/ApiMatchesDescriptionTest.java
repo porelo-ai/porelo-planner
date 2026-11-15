@@ -94,6 +94,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry(
                             "PlanningStartTask",
                             org.fuin.porelo.planner.app.answers.PlanningStartTask.class),
+                    Map.entry("GivenFile", org.fuin.porelo.planner.app.answers.GivenFile.class),
                     Map.entry("TaskEnded", org.fuin.porelo.planner.app.answers.TaskEnded.class),
                     Map.entry("Landing", org.fuin.porelo.planner.app.answers.Landing.class),
                     Map.entry(

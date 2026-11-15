@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
 import org.fuin.porelo.planner.app.answers.Finding;
+import org.fuin.porelo.planner.app.answers.GivenFile;
 import org.fuin.porelo.planner.app.answers.IssueReadingRounds;
 import org.fuin.porelo.planner.app.answers.Landing;
 import org.fuin.porelo.planner.app.answers.PlanAssignment;
@@ -49,6 +50,7 @@ public final class WorkAnswers {
                 discussion.mode(),
                 discussion.prompt(),
                 IdeaDiscussion.RESULT,
+                null,
                 List.of());
     }
 
@@ -86,7 +88,16 @@ public final class WorkAnswers {
                                     said(task.basis()),
                                     task.mode(),
                                     task.prompt(),
-                                    null,
+                                    task.result(),
+                                    task.given().isEmpty()
+                                            ? null
+                                            : task.given().stream()
+                                                    .map(
+                                                            given ->
+                                                                    new GivenFile(
+                                                                            given.name(),
+                                                                            given.text()))
+                                                    .toList(),
                                     task.reads());
                         })
                 .toList();

@@ -94,7 +94,8 @@
       "models": {
         "claude": "claude-opus-5-5"
       },
-      "risks": {}
+      "risks": {},
+      "result": "ANALYSIS"
     },
     "Under estimation": {
       "from": [
@@ -118,7 +119,8 @@
       "models": {
         "claude": "claude-opus-5-5"
       },
-      "risks": {}
+      "risks": {},
+      "result": "ESTIMATE"
     },
     "Implementing": {
       "from": [
@@ -147,7 +149,8 @@
           "models": {},
           "effort": "high"
         }
-      }
+      },
+      "result": null
     },
     "Reading": {
       "from": [
@@ -171,7 +174,8 @@
       "models": {
         "claude": "claude-opus-5-5"
       },
-      "risks": {}
+      "risks": {},
+      "result": null
     },
     "Reworking": {
       "from": [
@@ -195,7 +199,8 @@
       "models": {
         "claude": "claude-opus-5-5"
       },
-      "risks": {}
+      "risks": {},
+      "result": null
     },
     "Finishing": {
       "from": [
@@ -219,7 +224,8 @@
       "models": {
         "claude": "claude-opus-5-5"
       },
-      "risks": {}
+      "risks": {},
+      "result": null
     }
   },
   "faults": [],

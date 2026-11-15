@@ -623,18 +623,22 @@ public final class WorkRun {
                                     "A task prompt exceeds 65536 UTF-8 bytes.");
                         }
                         final WorkOrder.Task scoped =
-                                new WorkOrder.Task(
-                                        task.repository(),
-                                        owned,
-                                        task.role(),
-                                        task.agent(),
-                                        task.model(),
-                                        task.effort(),
-                                        task.mode(),
-                                        prompt,
-                                        task.reads(),
-                                        task.basis(),
-                                        task.used());
+                                StageOrder.staged(
+                                        board,
+                                        rule,
+                                        to,
+                                        new WorkOrder.Task(
+                                                task.repository(),
+                                                owned,
+                                                task.role(),
+                                                task.agent(),
+                                                task.model(),
+                                                task.effort(),
+                                                task.mode(),
+                                                prompt,
+                                                task.reads(),
+                                                task.basis(),
+                                                task.used()));
                         offers.add(
                                 offer(
                                         new NextStep.Planned(scoped, to, rule, task.basis()),
@@ -2078,7 +2082,9 @@ public final class WorkRun {
                                     arguments.prompt(),
                                     List.of(built),
                                     arguments.basis(),
-                                    arguments.used())));
+                                    arguments.used(),
+                                    arguments.result(),
+                                    arguments.given())));
         }
         return changed ? draft.freeze() : run;
     }
@@ -2742,7 +2748,9 @@ public final class WorkRun {
                                         "",
                                         arguments.reads(),
                                         arguments.basis(),
-                                        arguments.used()),
+                                        arguments.used(),
+                                        arguments.result(),
+                                        List.of()),
                                 o.binding(),
                                 o.status(),
                                 o.task(),
