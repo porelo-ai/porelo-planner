@@ -113,15 +113,15 @@ bool _always() => true;
 
 /// How the window shows a wizard of the screen's steps with its own wizard frame.
 abstract interface class PlanningWizards {
-  /// Shows [steps] and a review with a Change per step, redrawn on each of [changes], and ends with [startLabel],
-  /// which runs [start] and closes when it answers true; answers whether it was started. Cancel is offered while
-  /// [canCancel] answers true.
+  /// Shows [steps] and a review with a Change per step, redrawn on each of [changes], and ends with the button
+  /// [startLabel] names, read on each redraw, which runs [start] and closes when it answers true; answers whether it
+  /// was started. Cancel is offered while [canCancel] answers true.
   Future<bool> show(
     BuildContext context, {
     required String title,
     required List<PlanningWizardStep> steps,
     required Listenable changes,
-    required String startLabel,
+    required String Function() startLabel,
     required Future<bool> Function() start,
     required bool Function() canCancel,
   });

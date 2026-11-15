@@ -192,6 +192,7 @@ class StoryWork extends ChangeNotifier {
         switch (chosen?.choice) {
           case 'KEEP':
             if (sub.role != 'BUILDER' || sub.agent.isEmpty || sub.model.isEmpty) return 'Change or drop $what.';
+            if (_assignmentProblem(what, sub.agent, sub.model, sub.effort) case final problem?) return problem;
           case 'DROP':
             break;
           case 'CHANGE':
@@ -302,7 +303,7 @@ class StoryWork extends ChangeNotifier {
         repositories[repo.repository] = StoryWorkMainAgent(
           repository: repo.repository,
           agent: repo.agent,
-          model: repo.model,
+          model: repo.model.trim(),
           effort: repo.main.effort,
         );
         for (final sub in repo.subAgents) {
@@ -405,7 +406,7 @@ class StoryWork extends ChangeNotifier {
     repositories[repository] = StoryWorkMainAgent(
       repository: repository,
       agent: next,
-      model: model?.trim() ?? (!changed ? previous.model : (next == proposed?.agent ? proposed!.model : '')),
+      model: model?.trim() ?? (!changed ? previous.model : (next == proposed?.agent ? proposed!.model.trim() : '')),
       effort: effort != null
           ? _chosenEffort(effort)
           : changed
@@ -457,7 +458,8 @@ class StoryWork extends ChangeNotifier {
       agent: choice == 'CHANGE' ? next : null,
       model: choice != 'CHANGE'
           ? null
-          : model?.trim() ?? (!changed ? before?.model ?? sub.model : (next == sub.agent ? sub.model : '')),
+          : model?.trim() ??
+                (!changed ? before?.model ?? sub.model.trim() : (next == sub.agent ? sub.model.trim() : '')),
       effort: choice != 'CHANGE'
           ? null
           : effort != null

@@ -66,7 +66,7 @@ class _Wizards implements PlanningWizards {
     required String title,
     required List<PlanningWizardStep> steps,
     required Listenable changes,
-    required String startLabel,
+    required String Function() startLabel,
     required Future<bool> Function() start,
     required bool Function() canCancel,
   }) {
@@ -188,6 +188,23 @@ void main() {
     expect(work.choices[('repo', _sub)]!.effort, isNull, reason: 'and takes the proposal\'s effort, none here');
     work.choose('repo', sub, 'CHANGE', agent: 'codex');
     expect(work.choices[('repo', _sub)]!.model, sub.model, reason: 'the proposed agent gets the proposed model');
+  });
+
+  // Prevents a kept sub-agent's task from starting on an agent that cannot work on that machine.
+  testWidgets('a kept sub-agent on an agent that cannot work there is refused', (tester) async {
+    final (source, board) = await _open(tester);
+    final work = _work(board, const [PlanningAgent('codex', unready: 'Not signed in.'), PlanningAgent('ok-agent')]);
+    await tester.runAsync(work.load);
+    work.chooseMain('repo', agent: 'ok-agent', model: 'a-model');
+    expect(work.choices[('repo', _sub)]!.choice, 'KEEP', reason: 'the sub-agent is kept on the proposed agent');
+    expect(work.whoProblem, contains('Not signed in.'), reason: 'the Who step says why in the window\'s words');
+    expect(work.canStart, isFalse, reason: 'nor can it start');
+    expect(await tester.runAsync(work.start), isFalse, reason: 'a start is refused');
+    expect(
+      source.work.calls.where((call) => call.$1 == 'StartStoryWork'),
+      isEmpty,
+      reason: 'nothing reached the planner',
+    );
   });
 
   // Prevents a task from starting with another model than the one the person chose or typed.

@@ -25,7 +25,7 @@ Future<bool> showStoryWork(BuildContext context, StoryWork work, {PlanningWizard
     title: 'Start work',
     steps: _StoryWorkSteps(work).steps,
     changes: work,
-    startLabel: work.startLabel,
+    startLabel: () => work.startLabel,
     start: work.start,
     canCancel: () => _canCancel(work),
   );
