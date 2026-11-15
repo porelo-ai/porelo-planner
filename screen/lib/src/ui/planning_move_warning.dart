@@ -41,7 +41,7 @@ class PlanningMoveWarningPanel extends StatelessWidget {
                 'Planning changed since you confirmed this move; check it again.',
                 key: Key('planning-move-warning-again'),
               ),
-            for (final warning in asked.warnings) ..._warning(warning),
+            for (final warning in asked.warnings) ..._warning(warning, _closed(board)),
             if (buttons) ...[const SizedBox(height: Space.small), PlanningMoveButtons(board: board)],
           ],
         ),
@@ -49,9 +49,15 @@ class PlanningMoveWarningPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _warning(PlanningMoveWarning warning) => [
+  /// The board's closed states, into which a moved issue is settled and its file deleted.
+  static Set<String> _closed(PlanningBoard board) => {
+    for (final state in board.states)
+      if (state.kind == 'CLOSED') state.name,
+  };
+
+  List<Widget> _warning(PlanningMoveWarning warning, Set<String> closed) => [
     Text(
-      planningShown(_said(warning), multiline: false),
+      planningShown(_said(warning, closed), multiline: false),
       key: Key('planning-move-warning-item ${warning.kind} ${warning.item}'),
     ),
     for (final issue in warning.issues)
@@ -67,11 +73,13 @@ class PlanningMoveWarningPanel extends StatelessWidget {
       ),
   ];
 
-  static String _said(PlanningMoveWarning warning) => switch (warning.kind) {
+  static String _said(PlanningMoveWarning warning, Set<String> closed) => switch (warning.kind) {
     PlanningMoveWarning.runningWork when warning.local =>
       '${warning.item} has a start this window handed on that the planner does not report yet; it is stopped first.',
     PlanningMoveWarning.runningWork =>
       '${warning.item} has agent tasks at work, stopped first: ${[...warning.tasks, ...warning.offers.map((offer) => 'offer $offer, not started')].join(', ')}.',
+    PlanningMoveWarning.issuesAlong when closed.contains(warning.to) =>
+      '${warning.item} carries these issues along; their files are deleted as each is closed:',
     PlanningMoveWarning.issuesAlong => '${warning.item} carries these issues along:',
     PlanningMoveWarning.skipsStates =>
       '${warning.item} skips ${warning.skipped.join(', ')} on its way from ${warning.from} to ${warning.to}.',

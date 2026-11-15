@@ -424,15 +424,22 @@ class PlanStory {
   /// The first recorded outcome requiring attention, if any.
   WorkEnded? get ended => work?.ended;
 
-  /// The issues a move of this story to [to] changes, as the daemon chooses them: none for a move to a closed state
-  /// other than Rejected, which completes the story over its issues' own moves; otherwise those in the earliest open
-  /// state in workflow order, or in the earliest closed state when all are closed. Null when that cannot be told: the
-  /// issues were not reported, or one stands in a state outside the workflow.
-  List<PlanIssue>? leastAdvancedIssues(List<PlanState> states, String to) {
+  /// The issues a move of this story to [to] changes, as the daemon chooses them: for a move to a closed state other
+  /// than Rejected, which completes the story, those in the state the last of the work rules [work] leads to, where
+  /// finished work waits for its test; otherwise those in the earliest open state in workflow order, or in the
+  /// earliest closed state when all are closed. Null when that cannot be told: the issues were not reported, or one
+  /// stands in a state outside the workflow.
+  List<PlanIssue>? leastAdvancedIssues(List<PlanState> states, List<PlanWorkRule> work, String to) {
     int place(PlanIssue issue) => states.indexWhere((state) => state.name == issue.state);
     if (!issuesReported || issues.any((issue) => place(issue) < 0)) return null;
-    final completes = to != 'Rejected' && states.any((state) => state.name == to && state.kind == 'CLOSED');
-    if (issues.isEmpty || completes) return const [];
+    if (issues.isEmpty) return const [];
+    if (_completes(states, to)) {
+      final done = _lastDone(states, work);
+      return [
+        for (final issue in issues)
+          if (issue.state == done) issue,
+      ];
+    }
     final open = issues.where((issue) => states[place(issue)].kind != 'CLOSED').toList();
     final candidates = open.isEmpty ? issues : open;
     final earliest = candidates.map(place).reduce((a, b) => a < b ? a : b);
@@ -440,6 +447,32 @@ class PlanStory {
       for (final issue in candidates)
         if (place(issue) == earliest) issue,
     ];
+  }
+
+  /// Whether a move to [to] completes this story and its issues, with [moves] applied, then give [to]: all closed,
+  /// [to] the earliest of their states, so it stands there with no state of its own, as the planner leaves it.
+  bool fitsCompleted(List<PlanState> states, Map<String, String> moves, String to) {
+    if (!issuesReported || issues.isEmpty || !_completes(states, to)) return false;
+    final after = [for (final issue in issues) moves[issue.id] ?? issue.state];
+    final closed = [
+      for (final state in states)
+        if (state.kind == 'CLOSED') state.name,
+    ];
+    if (after.any((state) => !closed.contains(state))) return false;
+    return after.map(closed.indexOf).reduce((a, b) => a < b ? a : b) == closed.indexOf(to);
+  }
+
+  static bool _completes(List<PlanState> states, String to) =>
+      to != 'Rejected' && states.any((state) => state.name == to && state.kind == 'CLOSED');
+
+  /// The state the last of the work rules leads to in workflow order, or null when there is none.
+  static String? _lastDone(List<PlanState> states, List<PlanWorkRule> work) {
+    int place(String state) => states.indexWhere((each) => each.name == state);
+    String? last;
+    for (final rule in work) {
+      if (last == null || place(rule.done) > place(last)) last = rule.done;
+    }
+    return last;
   }
 
   /// The number in Review or Finished, when the list and every issue state were reported.

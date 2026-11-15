@@ -269,18 +269,22 @@ public final class Moves {
         }
         final Map<String, String> states = new LinkedHashMap<>();
         board.issues().forEach(issue -> states.put(issue.id(), issue.state()));
+        final Map<String, String> onBoard = Map.copyOf(states);
         final Map<String, String> issues = new LinkedHashMap<>();
         final Set<String> moved = new LinkedHashSet<>();
         final Map<String, List<String>> along = new LinkedHashMap<>();
         // Story moves first, so an issue's own move in the same batch wins, as the window shows it.
         for (final Move move : moves) {
             if (move.story()) {
-                // A story is completed over its issues' own moves, never by carrying them along.
                 // A story that follows its issues again carries none: they already give its state.
-                final List<String> carried =
-                        move.follow() || completed(workflow, move.to())
-                                ? List.of()
-                                : leastAdvanced(workflow, story(board, move.id()), states);
+                final List<String> carried;
+                if (move.follow()) {
+                    carried = List.of();
+                } else if (completed(workflow, move.to())) {
+                    carried = finished(board, story(board, move.id()), move.to(), onBoard, states);
+                } else {
+                    carried = leastAdvanced(workflow, story(board, move.id()), states);
+                }
                 along.put(move.id(), carried);
                 for (final String id : carried) {
                     states.put(id, move.to());
@@ -294,6 +298,11 @@ public final class Moves {
                 states.put(move.id(), move.to());
                 issues.put(move.id(), move.to());
                 moved.add(move.id());
+            }
+        }
+        for (final Move move : moves) {
+            if (move.story() && !move.follow() && completed(workflow, move.to())) {
+                checkCarriedParents(board, move, along.getOrDefault(move.id(), List.of()), states);
             }
         }
         checkParents(board, workflow, states);
@@ -458,7 +467,7 @@ public final class Moves {
     }
 
     /** Whether a state completes the work: closed, but not the rejection. */
-    private static boolean completed(final Workflow workflow, final String state) {
+    static boolean completed(final Workflow workflow, final String state) {
         return workflow.closed().contains(state) && !REJECTED.equals(state);
     }
 
@@ -471,10 +480,7 @@ public final class Moves {
             final Story story,
             final String to,
             final Map<String, String> states) {
-        final Optional<String> done =
-                board.work().rules().values().stream()
-                        .map(WorkRule::done)
-                        .max(Comparator.comparingInt(board.workflow().states()::indexOf));
+        final Optional<String> done = lastDone(board);
         final Set<String> finished = new HashSet<>(board.workflow().closed());
         done.ifPresent(finished::add);
         final List<String> open =
@@ -492,6 +498,67 @@ public final class Moves {
             throw new Refused(
                     "MoveNotAllowed", reason, item(story.id(), story.state(), to, reason));
         }
+    }
+
+    /**
+     * The issues a story's move to a completed state finishes with it: each of its issues and their
+     * sub-issues standing in the last done state on the board before any other move of the batch,
+     * and not taken elsewhere by an earlier story move of it, so only work that reached the
+     * person's test is finished, whatever order the moves come in.
+     */
+    private static List<String> finished(
+            final Board board,
+            final Story story,
+            final String to,
+            final Map<String, String> onBoard,
+            final Map<String, String> states) {
+        checkCompleted(board, story, to, onBoard);
+        final Optional<String> done = lastDone(board);
+        if (done.isEmpty()) {
+            return List.of();
+        }
+        return Misfits.known(withSubIssues(board, story.issues()), onBoard).stream()
+                .filter(id -> done.get().equals(onBoard.get(id)))
+                .filter(id -> done.get().equals(states.get(id)))
+                .toList();
+    }
+
+    /**
+     * Refuses a story's move that finishes an issue whose parent the batch leaves rejected, so work
+     * under a rejected issue is never finished as accepted, the parent's own move included.
+     */
+    private static void checkCarriedParents(
+            final Board board,
+            final Move move,
+            final List<String> carried,
+            final Map<String, String> states) {
+        for (final String id : carried) {
+            final @Nullable String parent = board.issue(id).map(Issue::parent).orElse(null);
+            if (move.to().equals(states.get(id))
+                    && parent != null
+                    && REJECTED.equals(states.get(parent))) {
+                final Story story = story(board, move.id());
+                final String reason =
+                        "Its issue "
+                                + id
+                                + " would be finished under "
+                                + parent
+                                + ", which is "
+                                + REJECTED
+                                + ".";
+                throw new Refused(
+                        "MoveNotAllowed",
+                        reason,
+                        item(story.id(), story.state(), move.to(), reason));
+            }
+        }
+    }
+
+    /** The state the last work of the rules leads to, where finished work waits for its test. */
+    private static Optional<String> lastDone(final Board board) {
+        return board.work().rules().values().stream()
+                .map(WorkRule::done)
+                .max(Comparator.comparingInt(board.workflow().states()::indexOf));
     }
 
     /**

@@ -71,9 +71,32 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       if (issues.any((item) => !states.any((state) => state['name'] == item['state']))) {
         invalid('An issue of the story stands in a state outside the workflow.');
       }
-      // A story is completed over its issues' own moves, never by carrying them along, as the planner does.
+      // A story moved to a completed state is judged on the shown board, before any other move of the batch, and
+      // finishes its issues in the last done state with it, as the planner does.
       final completes = target['kind'] == 'CLOSED' && to != _rejected;
-      final least = completes ? const <Map<String, dynamic>>[] : _leastAdvanced(states, issues);
+      final done = _lastDone(states, board['work']);
+      void checkOpen() {
+        final open = [
+          for (final item in issues)
+            if (item['state'] != done &&
+                states.where((state) => state['name'] == item['state']).firstOrNull?['kind'] != 'CLOSED')
+              '${item['id']}:${item['state']}',
+        ];
+        if (open.isNotEmpty) {
+          final reason = done == null
+              ? 'Its issues ${open.join(', ')} are not closed.'
+              : 'Its issues ${open.join(', ')} stand neither in $done nor closed.';
+          refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
+        }
+      }
+
+      if (completes) checkOpen();
+      final least = completes
+          ? [
+              for (final item in issues)
+                if (done != null && item['state'] == done) item,
+            ]
+          : _leastAdvanced(states, issues);
       storyWrites.add(() {
         for (final item in least) {
           item['state'] = to;
@@ -83,16 +106,19 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       });
       storyChecks.add(() {
         if (issues.isEmpty) return;
-        if (completes) {
-          final open = [
-            for (final item in issues)
-              if (item['state'] != _review &&
-                  states.where((state) => state['name'] == item['state']).firstOrNull?['kind'] != 'CLOSED')
-                '${item['id']}:${item['state']}',
-          ];
-          if (open.isNotEmpty) {
-            final reason = 'Its issues ${open.join(', ')} stand neither in $_review nor closed.';
-            refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
+        // Checked again after the batch, so an issue's own move that reopens it keeps the story open.
+        if (completes) checkOpen();
+        // Work under an issue the batch leaves rejected is never finished as accepted, as the planner refuses it.
+        for (final item in completes ? least : const <Map<String, dynamic>>[]) {
+          final parent = item['parent'];
+          final parentState = issues.where((each) => each['id'] == parent).firstOrNull?['state'];
+          if (item['state'] == to && parent is String && parentState == _rejected) {
+            refuse('MoveNotAllowed', {
+              'item': id,
+              'from': from,
+              'to': to,
+              'reason': 'Its issue ${item['id']} would be finished under $parent, which is $_rejected.',
+            });
           }
         }
         final derived = _leastAdvanced(states, issues).firstOrNull?['state'];
@@ -130,13 +156,25 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   return board;
 }
 
-/// The state finished work waits in for the person's test, and the closed state that is not completed work.
-const _review = 'Review', _rejected = 'Rejected';
+/// The closed state that is not completed work.
+const _rejected = 'Rejected';
+
+/// The state the last work of the board's rules leads to, where finished work waits for the person's test; null when
+/// the board has no work rules.
+String? _lastDone(List<Map<String, dynamic>> states, Object? work) {
+  int place(Object? state) => states.indexWhere((each) => each['name'] == state);
+  String? last;
+  for (final rule in (work is List ? work : const <Object?>[]).whereType<Map<String, dynamic>>()) {
+    final done = rule['done'];
+    if (done is String && (last == null || place(done) > place(last))) last = done;
+  }
+  return last;
+}
 
 /// Answers what a batch would do as the planner's preview does, writing nothing: every issue it carries with its
 /// repository and states, and the warnings the stand-in can tell from its board - issues a story's move carries
-/// along from a working state or another repository than the project's own, a move forward past waiting states, and a
-/// story that would not fit its issues. A refusal is the save's own.
+/// along from a working state or another repository than the project's own, or finishes with it, a move forward past
+/// waiting states, and a story that would not fit its issues. A refusal is the save's own.
 Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String, dynamic> parameters) {
   // Previewed as confirmed, so a story that would not fit its issues is warned of, as the planner's preview does.
   final after = applyPlanningMove(source, {...parameters, 'confirm': true});
@@ -182,11 +220,13 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
     final id = (move['story'] ?? move['issue']) as String;
     final from = (story ?? issues[id])?['state'] as String? ?? '';
     if (story != null) {
+      // Each issue a story's finish takes along is settled and its file deleted, so all are named.
+      final finishes = kind(to) == 'CLOSED' && to != _rejected;
       final along = [
         for (final issue in (story['issues'] as List? ?? []).cast<Map<String, dynamic>>())
           if (!ownMoves.contains(issue['id']) &&
               (after['moved'] as List).contains(issue['id']) &&
-              (issue['repository'] != own || kind(issue['state']) == 'WORKING'))
+              (finishes || issue['repository'] != own || kind(issue['state']) == 'WORKING'))
             moved(issue['id'] as String),
       ];
       if (along.isNotEmpty) warnings.add(warning('ISSUES_ALONG', id, from, to, issues: along));

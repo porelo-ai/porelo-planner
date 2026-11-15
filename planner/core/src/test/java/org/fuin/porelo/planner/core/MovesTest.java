@@ -331,8 +331,8 @@ class MovesTest {
     }
 
     @Test
-    void aStoryFinishedOverIssuesInReviewOrClosedMovesAloneAndTakesNoIssueAlong() {
-        // Harm: a story's Finished carrying its issues past the person's test in Review.
+    void aStoryFinishedOverIssuesInReviewOrClosedFinishesThoseInReviewAndFitsThem() {
+        // Prevents a story finished while its issues in Review stay open for good.
         final Board ready =
                 new Board(
                         new Revision("r1"),
@@ -340,16 +340,174 @@ class MovesTest {
                         List.of(story("ST1", "Review", false, "PL1", "PL2", "PL5")),
                         List.of(
                                 issue("PL1", "Review", null),
+                                issue("PL1.1", "Review", "PL1"),
                                 issue("PL2", "Rejected", null),
                                 issue("PL5", "Finished", null)),
                         WORK);
         final Moves.Planned planned =
-                Moves.check(ready, List.of(story("ST1", "Finished")), true, DERIVE);
-        assertThat(planned.issues()).as("no issue is moved along").isEmpty();
-        assertThat(planned.moved()).as("nor named as moved to the window").isEmpty();
+                Moves.check(ready, List.of(story("ST1", "Finished")), false, DERIVE);
+        assertThat(planned.issues())
+                .as("the issue in Review and its sub-issue in Review finish with the story")
+                .containsExactly(entry("PL1", "Finished"), entry("PL1.1", "Finished"));
+        assertThat(planned.moved())
+                .as("named as moved to the window")
+                .containsExactly("PL1", "PL1.1");
         assertThat(planned.stories())
-                .as("the story alone stands Finished")
-                .containsExactly(entry("ST1", "Finished"));
+                .as("the story fits its issues and is given no state")
+                .isEmpty();
+
+        final MovePreview preview =
+                Moves.preview(
+                        ready,
+                        List.of(story("ST1", "Finished")),
+                        DERIVE,
+                        (issues, stories) -> List.of());
+        assertThat(preview.warnings())
+                .as("only the issues carried along are asked about, no misfit")
+                .extracting(MovePreview.Warning::kind)
+                .containsExactly(MovePreview.ISSUES_ALONG);
+        assertThat(preview.warnings().getFirst().issues())
+                .as(
+                        "each issue that finishes, own repository too, so the person sees whose file goes")
+                .extracting(MovePreview.MovedIssue::id)
+                .containsExactly("PL1", "PL1.1");
+    }
+
+    @Test
+    void aStoryFinishedNamesItsIssueThatAnotherOpenStoryHoldsTooInTheWarning() {
+        // Prevents an issue finished under a second open story without the person seeing it.
+        final Board shared =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(
+                                story("ST1", "Review", false, "PL1"),
+                                story("ST2", "Backlog", false, "PL1", "PL2")),
+                        List.of(issue("PL1", "Review", null), issue("PL2", "Backlog", null)),
+                        WORK);
+        final MovePreview preview =
+                Moves.preview(
+                        shared,
+                        List.of(story("ST1", "Finished")),
+                        DERIVE,
+                        (issues, stories) -> List.of());
+        assertThat(preview.warnings())
+                .as("the carried issue is named for ST1's move")
+                .filteredOn(warning -> MovePreview.ISSUES_ALONG.equals(warning.kind()))
+                .singleElement()
+                .satisfies(
+                        warning ->
+                                assertThat(warning.issues())
+                                        .as("PL1 finishing")
+                                        .containsExactly(
+                                                new MovePreview.MovedIssue(
+                                                        "PL1",
+                                                        "porelo-planner",
+                                                        "Review",
+                                                        "Finished")));
+    }
+
+    @Test
+    void aStoryFinishedIsJudgedOnTheBoardSoAnIssueMovedToReviewInTheSameBatchIsRefused() {
+        // Prevents an issue finished that never reached the person's test in Review.
+        final Board forged =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(
+                                story("ST1", "Review", false, "PL1", "PL2"),
+                                story("ST2", "Backlog", false, "PL1")),
+                        List.of(issue("PL1", "Backlog", null), issue("PL2", "Review", null)),
+                        WORK);
+        for (final List<Moves.Move> batch :
+                List.of(
+                        List.of(issue("PL1", "Review"), story("ST1", "Finished")),
+                        List.of(issue("PL1", "Finished"), story("ST1", "Finished")),
+                        List.of(story("ST2", "Review"), story("ST1", "Finished")))) {
+            final Moves.Refused refused = refused(forged, batch, true);
+            assertThat(refused.parameters().get("reason"))
+                    .as("%s refused naming the issue as the board holds it", batch)
+                    .contains("PL1:Backlog");
+        }
+    }
+
+    @Test
+    void aStoryFinishedOverASubIssueInReviewUnderARejectedParentIsRefused() {
+        // Prevents work under a rejected issue finished as if it were accepted.
+        final Board rejected =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Review", false, "PL1", "PL2")),
+                        List.of(
+                                issue("PL1", "Rejected", null),
+                                issue("PL1.1", "Review", "PL1"),
+                                issue("PL2", "Review", null)),
+                        WORK);
+        final Moves.Refused refused = refused(rejected, List.of(story("ST1", "Finished")), true);
+        assertThat(refused.parameters())
+                .as("the story's move is refused")
+                .containsEntry("item", "ST1")
+                .containsEntry("to", "Finished");
+        assertThat(refused.parameters().get("reason"))
+                .as("names the sub-issue and its rejected parent")
+                .contains("PL1.1", "PL1", "Rejected");
+    }
+
+    @Test
+    void aStoryFinishedBesideTheRejectionOfTheParentOfAReviewSubIssueIsRefused() {
+        // Prevents work under an issue rejected in the same batch finished as if it were accepted.
+        final Board review =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Review", false, "PL1")),
+                        List.of(issue("PL1", "Review", null), issue("PL1.1", "Review", "PL1")),
+                        WORK);
+        final Moves.Refused refused =
+                refused(review, List.of(story("ST1", "Finished"), issue("PL1", "Rejected")), true);
+        assertThat(refused.parameters().get("reason"))
+                .as("names the sub-issue and its rejected parent")
+                .contains("PL1.1", "PL1", "Rejected");
+    }
+
+    @Test
+    void aStoryFinishedOverAnIssueAnotherStorysMoveTakesBackIsRefusedInEitherOrder() {
+        // Prevents a shared issue finished or not by the order two story moves are sent in.
+        final Board shared =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(
+                                story("ST1", "Review", false, "PL1"),
+                                story("ST2", "Review", false, "PL1")),
+                        List.of(issue("PL1", "Review", null)),
+                        WORK);
+        for (final List<Moves.Move> batch :
+                List.of(
+                        List.of(story("ST2", "Backlog"), story("ST1", "Finished")),
+                        List.of(story("ST1", "Finished"), story("ST2", "Backlog")))) {
+            assertThat(refused(shared, batch, true).parameters())
+                    .as("the finish is refused for %s", batch)
+                    .containsEntry("item", "ST1");
+        }
+    }
+
+    @Test
+    void aStoryFinishedOverAnIssueItsOwnMoveTakesBackIsRefused() {
+        // Prevents a story finished while the same batch reopens one of its issues.
+        final Board ready =
+                new Board(
+                        new Revision("r1"),
+                        board.workflow(),
+                        List.of(story("ST1", "Review", false, "PL1", "PL2")),
+                        List.of(issue("PL1", "Review", null), issue("PL2", "Review", null)),
+                        WORK);
+        final Moves.Refused refused =
+                refused(ready, List.of(story("ST1", "Finished"), issue("PL2", "Backlog")), true);
+        assertThat(refused.parameters().get("reason"))
+                .as("names the issue as the batch leaves it")
+                .contains("PL2:Backlog");
     }
 
     @Test

@@ -35,7 +35,10 @@ public record MovePreview(
     /** A story's run has tasks at work over what moves; its stop ends or voids them. */
     public static final String RUNNING_WORK = "RUNNING_WORK";
 
-    /** A story's move carries along issues in a working state or of another repository. */
+    /**
+     * A story's move carries along issues in a working state or of another repository, or finishes
+     * issues with it.
+     */
     public static final String ISSUES_ALONG = "ISSUES_ALONG";
 
     /** A move forward past waiting states into an open one. */
@@ -176,6 +179,9 @@ public record MovePreview(
         final String own = board.repositories().isEmpty() ? "" : board.repositories().getFirst();
         final Set<String> working = board.work().rules().keySet();
         for (final Map.Entry<String, List<String>> carried : plan.along().entrySet()) {
+            // Each issue a story's finish takes along is settled and its file deleted, so all are
+            // named.
+            final boolean finishes = Moves.completed(board.workflow(), to(moves, carried.getKey()));
             final List<MovedIssue> along =
                     carried.getValue().stream()
                             // An issue's own move in the batch wins, so it was asked for.
@@ -183,7 +189,8 @@ public record MovePreview(
                             .map(id -> moved(board, id, after))
                             .filter(
                                     issue ->
-                                            !issue.repository().equals(own)
+                                            finishes
+                                                    || !issue.repository().equals(own)
                                                     || working.contains(issue.from()))
                             .toList();
             if (!along.isEmpty()) {

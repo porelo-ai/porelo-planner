@@ -1361,14 +1361,22 @@ class PlanningBoard extends ChangeNotifier {
           ? [move.id]
           : follows
           ? <String>[]
-          : story?.leastAdvancedIssues(previous.states, move.to)?.map((issue) => issue.id).toList();
+          : story?.leastAdvancedIssues(previous.states, previous.work, move.to)?.map((issue) => issue.id).toList();
       _pending.remove(key);
       if (expected != null && expected.every(reply.moved.contains)) {
         for (final issue in expected) {
           destinations[issue] = move.to;
         }
-        // A story with issues stands where the daemon computes it, read again below.
-        if (move is PlanningStoryMove && expected.isEmpty) storyDestinations[move.id] = move.to;
+        if (move is PlanningStoryMove &&
+            !follows &&
+            story?.fitsCompleted(previous.states, destinations, move.to) == true) {
+          // A completed story whose issues give its state stands there with no state of its own, as one following them.
+          storyDestinations[move.id] = move.to;
+          followed.add(move.id);
+        } else if (move is PlanningStoryMove && expected.isEmpty) {
+          // A story with issues stands where the daemon computes it, read again below.
+          storyDestinations[move.id] = move.to;
+        }
         if (follows) followed.add(move.id);
         moveNotice = move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.';
       } else {

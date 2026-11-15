@@ -985,17 +985,25 @@ void main() {
     await saving;
   });
 
-  Map<String, dynamic> finishing(String first) => {
+  Map<String, dynamic> finishing(String first, {String done = 'Review', String last = 'Review'}) => {
     'states': [
       {'name': 'Ready', 'kind': 'WAITING'},
-      {'name': 'Review', 'kind': 'WAITING'},
+      {'name': 'Building', 'kind': 'WORKING'},
+      {'name': done, 'kind': 'WAITING'},
       {'name': 'Finished', 'kind': 'CLOSED'},
       {'name': 'Rejected', 'kind': 'CLOSED'},
     ],
     'phases': [
       {
         'name': 'Work',
-        'states': ['Ready', 'Review', 'Finished', 'Rejected'],
+        'states': ['Ready', 'Building', done, 'Finished', 'Rejected'],
+      },
+    ],
+    'work': [
+      {
+        'state': 'Building',
+        'from': ['Ready'],
+        'done': done,
       },
     ],
     'stories': [
@@ -1004,7 +1012,7 @@ void main() {
         'state': first,
         'issues': [
           {'id': 'IssueOne', 'state': first},
-          {'id': 'IssueTwo', 'state': 'Review'},
+          {'id': 'IssueTwo', 'state': last},
           {'id': 'IssueThree', 'state': 'Rejected'},
         ],
       },
@@ -1035,26 +1043,113 @@ void main() {
     expect(issues.map((issue) => issue['state']), ['Ready', 'Review', 'Rejected'], reason: 'nothing moves');
   });
 
-  // Harm: the window's tests carrying issues past the person's test in Review, which the planner leaves there.
-  test('a story finished over issues in Review or closed moves alone and the board expects no issue along', () async {
-    final result = applyPlanningMove(finishing('Review'), {
-      'revision': 'finishing',
-      'moves': [
-        {'story': 'StoryOne', 'to': 'Finished'},
-      ],
-      'confirm': true,
-    });
-    expect(result['moved'], isEmpty, reason: 'no issue is taken along');
-    final story = (result['stories'] as List<dynamic>).first as Map<String, dynamic>;
-    expect((story['issues'] as List<dynamic>).map((issue) => issue['state']), ['Review', 'Review', 'Rejected']);
-    expect(story['state'], 'Finished', reason: 'the story alone stands Finished');
+  // Prevents a story finished while its issues in the last done state stay open, in the stand-in or on the board.
+  for (final done in ['Review', 'Tested']) {
+    test(
+      'a story finished takes its issues in $done along and the board shows them and the story in Finished',
+      () async {
+        final result = applyPlanningMove(finishing(done, done: done, last: done), {
+          'revision': 'finishing',
+          'moves': [
+            {'story': 'StoryOne', 'to': 'Finished'},
+          ],
+        });
+        expect(result['moved'], ['IssueOne', 'IssueTwo'], reason: 'the issues in $done finish with the story');
+        final story = (result['stories'] as List<dynamic>).first as Map<String, dynamic>;
+        expect((story['issues'] as List<dynamic>).map((issue) => issue['state']), ['Finished', 'Finished', 'Rejected']);
+        expect(story['state'], 'Finished');
+        expect(story['stateGiven'], isNot(true), reason: 'the story fits its issues');
 
-    backend.data = finishing('Review');
+        backend.data = finishing(done, done: done, last: done);
+        backend.changes.add(PlanningSnapshot.from(backend.data));
+        await Future<void>.delayed(Duration.zero);
+        backend.listing = Completer<PlanningSnapshot>();
+        backend.listingStarted = Completer<void>();
+        final saving = board.move('StoryOne', 'Finished');
+        await backend.listingStarted!.future;
+        expect(board.moveProblem, isNull, reason: 'the board took the carried issues as the confirmation');
+        final shown = board.stories.first;
+        expect(shown.issues.map((issue) => issue.state), [
+          'Finished',
+          'Finished',
+          'Rejected',
+        ], reason: 'before the reread');
+        expect(shown.state, 'Finished', reason: 'the story stands where it was moved before the reread');
+        expect(shown.stateGiven, isFalse, reason: 'its issues give its state');
+        backend.listing!.complete(PlanningSnapshot.from(backend.data));
+        await saving;
+      },
+    );
+  }
+
+  // Prevents a story shown with a given state after a save that left it following its closed issues.
+  test('a story finished over issues all closed stands in Finished with no state of its own', () async {
+    backend.data = finishing('Finished', last: 'Finished');
+    final given = (backend.data['stories'] as List<dynamic>).first as Map<String, dynamic>;
+    given['state'] = 'Rejected';
+    given['stateGiven'] = true;
     backend.changes.add(PlanningSnapshot.from(backend.data));
     await Future<void>.delayed(Duration.zero);
-    await board.move('StoryOne', 'Finished');
-    expect(board.moveProblem, isNull, reason: 'the board took the empty answer as the confirmation');
+    backend.listing = Completer<PlanningSnapshot>();
+    backend.listingStarted = Completer<void>();
+    final saving = board.move('StoryOne', 'Finished');
+    await backend.listingStarted!.future;
+    expect(board.stories.first.state, 'Finished');
+    expect(board.stories.first.stateGiven, isFalse, reason: 'its issues give Finished');
+    backend.listing!.complete(PlanningSnapshot.from(backend.data));
+    await saving;
   });
+
+  // Prevents the window's tests finishing an issue that reached Review only through the same batch.
+  test('the stand-in judges a story finished on the shown board, so an issue moved to Review beside it is refused', () {
+    final source = finishing('Ready');
+    expect(
+      () => applyPlanningMove(source, {
+        'revision': 'finishing',
+        'moves': [
+          {'issue': 'IssueOne', 'to': 'Review'},
+          {'story': 'StoryOne', 'to': 'Finished'},
+        ],
+        'confirm': true,
+      }),
+      throwsA(
+        isA<PlanningRefusal>()
+            .having((error) => error.name, 'refusal', 'MoveNotAllowed')
+            .having((error) => '${error.parameters['reason']}', 'the issue as shown', contains('IssueOne:Ready')),
+      ),
+    );
+  });
+
+  // Prevents the window's tests finishing work under a rejected issue, which the planner refuses.
+  for (final rejectedBeside in [false, true]) {
+    test('the stand-in refuses a story finished over a Review sub-issue whose parent is rejected'
+        '${rejectedBeside ? ' in the same batch' : ''}', () {
+      final source = finishing('Review', done: 'Review', last: 'Review');
+      final issues = ((source['stories'] as List<dynamic>).first as Map<String, dynamic>)['issues'] as List<dynamic>;
+      issues[0]['state'] = rejectedBeside ? 'Review' : 'Rejected';
+      issues[1]['parent'] = 'IssueOne';
+      expect(
+        () => applyPlanningMove(source, {
+          'revision': 'finishing',
+          'moves': [
+            {'story': 'StoryOne', 'to': 'Finished'},
+            if (rejectedBeside) {'issue': 'IssueOne', 'to': 'Rejected'},
+          ],
+          'confirm': true,
+        }),
+        throwsA(
+          isA<PlanningRefusal>()
+              .having((error) => error.name, 'refusal', 'MoveNotAllowed')
+              .having((error) => error.parameters['item'], 'the story', 'StoryOne')
+              .having(
+                (error) => '${error.parameters['reason']}',
+                'the sub-issue and its parent',
+                allOf(contains('IssueTwo'), contains('IssueOne'), contains('Rejected')),
+              ),
+        ),
+      );
+    });
+  }
 
   // Harm: a prepared order changes planning state or a reading decision publishes an incorrect story state.
   test('the stand-in leaves an order unstarted and computes a reading decision from issue states', () {
