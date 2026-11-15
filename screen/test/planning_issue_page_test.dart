@@ -71,6 +71,7 @@ Future<List<(String?, String)>> _page(
   String story = 'ST1',
   String issue = 'PL1',
   List<String>? tasksOpened,
+  String? Function(String)? taskUnavailable,
 }) async {
   final opened = <(String?, String)>[];
   final source = MockPlanningSource()..boards['demo'] = data;
@@ -94,7 +95,7 @@ Future<List<(String?, String)>> _page(
               onIssue: (id) => opened.add((null, id)),
               onIssueOf: (story, id) => opened.add((story, id)),
               onTask: (task) => tasksOpened?.add(task),
-              taskUnavailable: (task) => 'This window does not know task $task on this machine',
+              taskUnavailable: taskUnavailable ?? (task) => 'This window does not know task $task on this machine',
               openLink: (_) async {},
             ),
           ),
@@ -302,6 +303,44 @@ void main() {
     await tester.tap(find.byKey(const Key('planning-task pi-2')), warnIfMissed: false);
     await tester.pump();
     expect(tasksOpened, isEmpty, reason: 'an ended task opens nothing');
+  });
+
+  // Prevents a person who cannot reach a running task from its issue.
+  testWidgets('a task of the issue at work on this machine says where it runs and opens', (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': true,
+      'tasks': [
+        {
+          'task': 'pi-3',
+          'containerId': 'c1',
+          'machine': 'local',
+          'repository': 'repo',
+          'issues': ['PL1'],
+          'state': 'Implementing',
+          'done': 'Review',
+          'mode': 'AGENT',
+          'agent': 'agent',
+          'model': 'model',
+          'role': 'MAIN',
+          'since': '2026-01-02T03:04:05Z',
+          'atWork': true,
+        },
+      ],
+    };
+    final tasksOpened = <String>[];
+    await _page(tester, data, tasksOpened: tasksOpened, taskUnavailable: (_) => null);
+    final details = [
+      for (final text in tester.widgetList<RichText>(
+        find.descendant(of: find.byKey(const Key('planning-issue-details')), matching: find.byType(RichText)),
+      ))
+        text.text.toPlainText(),
+    ].join('\n');
+    expect(details, contains('on local'), reason: 'the machine it runs on, as reported');
+    await tester.ensureVisible(find.byKey(const Key('planning-task pi-3')));
+    await tester.tap(find.byKey(const Key('planning-task pi-3')));
+    await tester.pump();
+    expect(tasksOpened, ['pi-3'], reason: 'a task at work opens in the window');
   });
 
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.
