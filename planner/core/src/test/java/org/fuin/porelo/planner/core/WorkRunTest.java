@@ -4574,6 +4574,81 @@ class WorkRunTest {
         assertThat(f.store.saves).as("nothing was saved").isZero();
     }
 
+    @Test
+    void aStopOfAStoppedRunAnswersItsTaskUntilTheTasksEndLetsTheStoryStartAgain() {
+        // Prevents a story that can never be started again: a stopped run whose task the window
+        // never ended stays at work, and a Stop asked again must name that task to end.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+
+        final WorkRun.Run again = java.util.Objects.requireNonNull(f.run.stop("ST1", stopped.id()));
+        assertThat(again.offers())
+                .as("a Stop asked again names the task still at work, so the window ends it")
+                .anyMatch(o -> o.status().equals("STARTED") && "task".equals(o.task()));
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+        assertThat(f.active("ST1")).as("the task's end clears it").isEmpty();
+
+        assertThat(rowStart(f).tasks())
+                .as("the story's work starts again from the row the stop raised")
+                .isNotEmpty();
+    }
+
+    @Test
+    void aTaskWhoseStartWasRefusedEndsAndItsStoryStartsAgainAfterAStop() {
+        // Prevents a story that can never be started again after its task's start was answered
+        // with a refusal: the window then reports the task's end, which must be taken.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.failure = new StoreException.StaleRevision("board@9");
+        assertThatThrownBy(() -> f.start(offer))
+                .as("the start's save is refused")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        f.store.failure = null;
+        final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
+        assertThat(f.run.stop("ST1", stopped.id()).offers())
+                .as("a Stop names the task whose start was refused, so the window ends it")
+                .anyMatch(o -> o.status().equals("STARTED") && "task".equals(o.task()));
+
+        final WorkRun.Answer end =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                offer.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
+        assertThat(end.tasks()).as("the end releases no work").isEmpty();
+        assertThat(f.active("ST1")).as("the task's end clears it").isEmpty();
+
+        assertThat(rowStart(f).tasks())
+                .as("the story's work starts again from the row the stop raised")
+                .isNotEmpty();
+    }
+
+    /** Starts the story's work again as its raised row does: its issue, past the reason shown. */
+    static WorkRun.Order rowStart(final Fixture f) {
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        final String reason = run.issues().get("AA1").reason();
+        return f.run.order(
+                "ST1",
+                "Building",
+                new WorkOrder.Decision(
+                        "AGENT",
+                        f.store.board().revision().value(),
+                        null,
+                        "",
+                        1,
+                        null,
+                        List.of("AA1")),
+                new WorkRun.Start(null, f.passOver(run, "AA1", reason)));
+    }
+
     static String conflictOf(final Throwable refused) {
         return ((WorkRefusal) refused).name();
     }
