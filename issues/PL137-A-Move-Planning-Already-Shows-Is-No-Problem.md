@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL137",
   "title": "A Move Planning Already Shows Is No Problem",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "XS",
   "priority": "Low",
   "rank": 60,
