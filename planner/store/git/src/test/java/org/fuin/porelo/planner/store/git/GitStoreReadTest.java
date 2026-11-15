@@ -45,6 +45,8 @@ class GitStoreReadTest {
 
     private Map<String, String> person;
 
+    private GitRemote remote;
+
     @BeforeEach
     void serve() throws Exception {
         repositories = new ServedRepositories(dir);
@@ -96,13 +98,19 @@ class GitStoreReadTest {
         Files.writeString(config, "[http]\n\tsslCAInfo = " + server.ca() + "\n");
         person.put("GIT_CONFIG_GLOBAL", config.toString());
         final Path cache = CacheDirectory.of(person, "project");
-        final GitRemote remote =
+        remote =
                 new GitRemote(
                         cache,
                         person,
                         Duration.ofSeconds(5),
                         new GitRunner(Duration.ofSeconds(20), 1 << 20),
                         1 << 16);
+        return reopened(Runnable::run);
+    }
+
+    /** A store opened anew over the same clones, as a restarted planner opens it. */
+    private GitStore reopened(final java.util.concurrent.Executor background) {
+        final Path cache = CacheDirectory.of(person, "project");
         return new GitStore(
                 List.of(
                         new Repository(
@@ -117,7 +125,7 @@ class GitStoreReadTest {
                 Clock.systemUTC(),
                 Duration.ofSeconds(10),
                 4,
-                Runnable::run);
+                background);
     }
 
     @Test
@@ -155,6 +163,39 @@ class GitStoreReadTest {
                                 Map.of(
                                         "porelo-store", repositories.head("porelo-store"),
                                         "porelo-other", repositories.head("porelo-other"))));
+    }
+
+    // Prevents a first board after a restart that pairs commits no check read together, showing
+    // a just-added issue of another repository as no issue of the project.
+    @Test
+    void theFirstBoardAfterAReopenReadsEveryRepositoryAtTheLastChecksCommits() throws Exception {
+        final Board first = store(null).board();
+        repositories.repository(
+                "porelo-other",
+                Map.of("issues/base/CD02-Added.md", issue("CD02", "Added", "Backlog", "")));
+        repositories.repository(
+                "porelo-store",
+                Map.of(
+                        "project.yml",
+                        "project:\n    name: \"porelo\"\n    central: \""
+                                + server.url("porelo-store.git")
+                                + "\"\nrepositories:\n    other:\n        central: \""
+                                + server.url("porelo-other.git")
+                                + "\"\n        issues: [\"CD\"]\n",
+                        "stories/ST3-Naming-It.md",
+                        story("ST3", "Naming it", "", "\"porelo-other#CD02\"")));
+        assertThat(
+                        ProjectFile.repositories(
+                                remote, new CloneUrl(server.url("porelo-store.git")), null, 16))
+                .as("the project opened anew reads its repositories from the newer project.yml")
+                .hasSize(2);
+        final Board reopened = reopened(work -> {}).board();
+        assertThat(reopened.revision())
+                .as("the commits the last check read, of every repository")
+                .isEqualTo(first.revision());
+        assertThat(reopened.faults())
+                .as("no story names an issue the board does not hold")
+                .noneMatch(fault -> fault.contains("CD02"));
     }
 
     @Test

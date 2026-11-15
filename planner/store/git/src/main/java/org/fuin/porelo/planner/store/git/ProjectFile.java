@@ -35,7 +35,7 @@ public final class ProjectFile {
         final String name = checkedName(own);
         final String text;
         try {
-            final String commit = remote.fetch(name, own, branch);
+            final String commit = remote.fetchToOpen(name, own, branch);
             text =
                     remote.read(name, commit, FILE)
                             .orElseThrow(

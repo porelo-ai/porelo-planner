@@ -31,6 +31,20 @@ public interface Remote {
     String fetch(String repository, CloneUrl url, @Nullable String branch);
 
     /**
+     * Fetches a repository's branch to read the project's file as a project is opened, leaving the
+     * commit the last check fetched as it was, so a board read from the clones reads one moment.
+     *
+     * @param repository the repository's name
+     * @param url its clone URL
+     * @param branch its branch, or {@code null} for the remote's default
+     * @return the commit id fetched
+     */
+    default String fetchToOpen(
+            final String repository, final CloneUrl url, final @Nullable String branch) {
+        return fetch(repository, url, branch);
+    }
+
+    /**
      * Answers the commit last fetched into the planner's own clone, without asking the remote.
      *
      * @param repository the repository's name

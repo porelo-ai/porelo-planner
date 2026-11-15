@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL138",
   "title": "The First Board After A Start Reads One Moment",
-  "state": "Backlog",
+  "state": "Review",
   "size": "S",
   "priority": "Medium",
   "rank": 61,
@@ -31,11 +31,11 @@ the project's repositories.
   such faults on the first board and none on the board read about 25 seconds later.
 - `ProjectFile.repositories` reads `project.yml` from a fetch into a ref of its own, `refs/planner/opened`, and leaves
   `refs/planner/fetched` as the last check wrote it, so `fromClones` reads one moment for every repository; the check
-  `fromClones` starts at once then moves each repository forward together. `Remote.fetch` takes the local ref it writes;
-  `GitStore.refreshed` and `LocalSaves` keep `refs/planner/fetched`.
+  `fromClones` starts at once then moves each repository forward together. `Remote.fetchToOpen` fetches into
+  `refs/planner/opened`; `GitStore.refreshed` and `LocalSaves` keep `Remote.fetch` and `refs/planner/fetched`.
 - A project whose `project.yml` names a repository the clones do not hold yet still gets no board from the clones, as
   today: `fromClones` finds no fetched commit and the first board is read in full.
-- Red first, in `GitProjectsTest` over local bare repositories: a project is opened and read; an issue is added to one
+- Red first, in `GitStoreReadTest` over local repositories served by its HTTPS fixture: a project is opened and read; an issue is added to one
   repository and a story naming it to the own repository; the project is opened anew, and its first board leaves out
   nothing and names the earlier revision. Harm: a fault shown for an issue that exists, and a board whose revision
   pairs commits no check ever read together.

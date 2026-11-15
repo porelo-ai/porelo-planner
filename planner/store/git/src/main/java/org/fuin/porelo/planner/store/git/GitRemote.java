@@ -29,6 +29,9 @@ public final class GitRemote implements Remote {
     /** The local ref a fetch writes; the remote's own names never reach the clone. */
     private static final String FETCHED = "refs/planner/fetched";
 
+    /** Where opening a project fetches its own repository, leaving the last check's commit be. */
+    private static final String OPENED = "refs/planner/opened";
+
     /** How many commits' planning files are kept per repository: the board's and a save's. */
     private static final int KEPT_COMMITS = 2;
 
@@ -107,6 +110,20 @@ public final class GitRemote implements Remote {
     @Override
     public String fetch(
             final String repository, final CloneUrl url, final @Nullable String branch) {
+        return fetch(repository, url, branch, FETCHED);
+    }
+
+    @Override
+    public String fetchToOpen(
+            final String repository, final CloneUrl url, final @Nullable String branch) {
+        return fetch(repository, url, branch, OPENED);
+    }
+
+    private String fetch(
+            final String repository,
+            final CloneUrl url,
+            final @Nullable String branch,
+            final String local) {
         final Path clone = clone(repository);
         if (!Files.isDirectory(clone)) {
             run(null, List.of("init", "--bare", "--quiet", "--", clone.toString()));
@@ -123,7 +140,7 @@ public final class GitRemote implements Remote {
                         "--depth=1",
                         "--",
                         url.value(),
-                        "+" + ref + ":" + FETCHED));
+                        "+" + ref + ":" + local));
         return commit(
                 text(run(
                                 clone,
@@ -131,7 +148,7 @@ public final class GitRemote implements Remote {
                                         "rev-parse",
                                         "--verify",
                                         "--end-of-options",
-                                        FETCHED + "^{commit}")))
+                                        local + "^{commit}")))
                         .strip());
     }
 

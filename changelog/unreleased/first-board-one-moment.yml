@@ -1,0 +1,2 @@
+title: The first board a started planner shows reads every repository at the commits of the last check, so a story naming a just-added issue is no longer shown as naming no issue of the project.
+type: fixed
