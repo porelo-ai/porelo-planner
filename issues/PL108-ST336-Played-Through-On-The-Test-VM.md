@@ -39,9 +39,7 @@ and keeps that when the person comes back.
   4. The issue list's search narrows it to the issues whose title holds the word typed.
   5. A filter by state narrows it, and a sort by number and by size orders it.
   6. Back on the board and into the story again, the search, filter and sort stand as left.
-- **This repository's issues of the story not in Review:** [PL36](README.md#pl36) (a description shown in its own
-  format) and [PL37](README.md#pl37) (a folding description and a searchable issue list), both Backlog. The run is
-  started with `--expect 2=PL36`, `--expect 3=PL37`, `--expect 4=PL37`, `--expect 5=PL37` and `--expect 6=PL37`.
+- **This repository's issues of the story:** all built, so the run is started with no `--expect`.
 
 **Rules for this story test (operator)**
 

@@ -20,6 +20,7 @@ What holds and why: one row per decision, and its full text below.
 | Build | [Windows ships beside Linux, never holding it back](#windows-ships-beside-linux-never-holding-it-back) |
 | Work | [A move is saved at once, warned where it can do harm](#a-move-is-saved-at-once-warned-where-it-can-do-harm) |
 | Store | [A save answers once its commits stand locally](#a-save-answers-once-its-commits-stand-locally) |
+| Screen | [A store's text is shown in its own format, never reaching out](#a-stores-text-is-shown-in-its-own-format-never-reaching-out) |
 
 ## Git is a plain store
 
@@ -164,3 +165,14 @@ loses none; the pushes follow in the background, the other repositories before t
 because the remote moved is replayed on the fetched head; one that conflicts drops the save and the board names what
 was dropped. A save of several repositories is not dropped all or none: what another repository took is on its
 remote and stays, since unmaking a pushed commit would be a second write over the remote.
+
+## A store's text is shown in its own format, never reaching out
+
+A story's description and an issue's text come with the format the store's adapter names, an open name the window
+does not enumerate; the screen renders Markdown and shows any other format as plain text. The screen renders the Dart
+team's `markdown` parser's nodes itself, with no Markdown widget package, so it decides what a text can do: a link is
+followed only for `https` with a host and no user part, through the window's guarded call; an image is never fetched
+and stands as its alternative text; raw HTML is shown as text; control and direction characters are stripped from every
+rendered piece, character references included. A text past a size or nesting bound is shown plain before it is parsed,
+since the parser follows nesting by recursion. The text is parsed again on each rebuild of its page: within the bounds
+that costs milliseconds, and a cache would hold a second copy of every description.
