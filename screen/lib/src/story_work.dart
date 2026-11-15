@@ -626,22 +626,24 @@ class PlanningAttention {
   /// The durable issue reason, independent of the agent’s finished flag.
   final String reason;
 
-  /// What the window keeps when a person puts this issue's row away on [machine], or null for a story's end.
-  PlanningPutAway? putAwayOn(String machine) => switch (issue) {
-    final issue? => PlanningPutAway(
+  /// What the window keeps when a person puts this issue's row away on [machine], or null for a row with an end, which
+  /// only [endOn] marks, so a later end is never hidden by an older put-away.
+  PlanningPutAway? putAwayOn(String machine) => switch ((issue, ended)) {
+    (final issue?, null) => PlanningPutAway(
       machine: machine,
       project: project,
       issue: issue.id,
       reason: planReasonNeedsAttention(reason) ? reason : issue.attention,
       state: issue.state,
     ),
-    null => null,
+    _ => null,
   };
 
-  /// What the window keeps when a person marks this story's ended run seen on [machine], or null for an issue's row.
-  PlanningStoryEnd? endOn(String machine) => switch ((issue, ended)) {
-    (null, final ended?) => PlanningStoryEnd(machine: machine, project: project, story: story.id, at: ended.at),
-    _ => null,
+  /// What the window keeps when a person marks this row's end seen on [machine]: the story's run's end, or an issue's
+  /// task's end, by the story and the end's time; null for a row without an end.
+  PlanningStoryEnd? endOn(String machine) => switch (ended) {
+    final ended? => PlanningStoryEnd(machine: machine, project: project, story: story.id, at: ended.at),
+    null => null,
   };
 }
 

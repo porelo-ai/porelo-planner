@@ -6,7 +6,7 @@ import 'package:porelo_planning/porelo_planning.dart';
 import 'support/story_work_support.dart';
 
 /// A board whose one story holds two raised issues; [reason] and [state] are those of the issue `Broken`.
-Map<String, dynamic> _board({String reason = 'FAILED', String state = 'Building', bool raised = true}) => {
+Map<String, dynamic> _board({String reason = 'FAILED', String state = 'Building'}) => {
   'states': [
     {'name': 'Ready', 'kind': 'WAITING'},
     {'name': 'Building', 'kind': 'WORKING'},
@@ -24,20 +24,14 @@ Map<String, dynamic> _board({String reason = 'FAILED', String state = 'Building'
       'title': 'A held story',
       'state': 'Building',
       'issues': [
-        {
-          'id': 'Broken',
-          'repository': 'repo',
-          'state': state,
-          'needsYou': raised,
-          'attention': raised ? reason : 'NONE',
-        },
+        {'id': 'Broken', 'repository': 'repo', 'state': state, 'needsYou': true, 'attention': reason},
         {'id': 'Unpushed', 'repository': 'repo', 'state': 'Building', 'needsYou': true, 'attention': 'UNPUSHED'},
       ],
       'work': {
         'atWork': false,
         'tasks': <Map<String, dynamic>>[],
         'issues': [
-          if (raised) {'issue': 'Broken', 'reason': reason, 'needsYou': true},
+          {'issue': 'Broken', 'reason': reason, 'needsYou': true},
           {'issue': 'Unpushed', 'reason': 'UNPUSHED', 'needsYou': true},
         ],
       },
@@ -46,23 +40,37 @@ Map<String, dynamic> _board({String reason = 'FAILED', String state = 'Building'
   'revision': 'r1',
 };
 
+/// The rows a window keeps put away, as the window owns them.
+class _Seen extends ChangeNotifier implements PlanningSeen {
+  final Set<PlanningPutAway> rows = {};
+
+  @override
+  bool putAwaySeen(PlanningPutAway row) => rows.contains(row);
+
+  @override
+  bool endSeen(PlanningStoryEnd end) => false;
+
+  void add(PlanningPutAway row) {
+    rows.add(row);
+    notifyListeners();
+  }
+}
+
 void main() {
   // Harm: a row put away never comes back when its issue needs the person anew, or comes back at once and buries
   // the rows that still wait.
-  for (final (change, changed, again) in [
-    ('reason', _board(reason: 'STOPPED'), null),
-    ('state', _board(state: 'Reading'), null),
-    ('settling', _board(raised: false), _board()),
-  ]) {
+  for (final (change, changed) in [('reason', _board(reason: 'STOPPED')), ('state', _board(state: 'Reading'))]) {
     testWidgets('a row put away stays out while its reason and state stand and returns when its $change changes', (
       tester,
     ) async {
       final backend = MockPlanningSource()..boards['checkout'] = _board();
       final client = MockPlanningClient.of(backend, projects: ['checkout']);
-      final boards = PlanningBoards(client);
+      final seen = _Seen();
+      final boards = PlanningBoards(client, seen: seen);
       addTearDown(() async {
         boards.dispose();
         client.dispose();
+        seen.dispose();
         await backend.end();
       });
       await settle(tester);
@@ -78,7 +86,7 @@ void main() {
                 row: row.attention,
                 resolved: false,
                 machine: row.machine,
-                onPutAway: (kept) => boards.putAway = {...boards.putAway, kept},
+                onPutAway: seen.add,
               ),
             ),
           ),
@@ -95,11 +103,6 @@ void main() {
 
       backend.push('checkout', changed);
       await settle(tester);
-      if (again != null) {
-        // A row no longer raised is forgotten, so the same reason raised anew is seen.
-        backend.push('checkout', again);
-        await settle(tester);
-      }
       expect(raised(), contains('Broken'), reason: 'a changed $change shows the row again');
     });
   }

@@ -142,8 +142,116 @@ void main() {
 
     backend.push('checkout', _board(endedAt: '2026-01-01T02:00:00Z'));
     await settle(tester);
-    expect(rows(), [
-      startsWith('story ended'),
-    ], reason: 'a later end of the story is seen anew, the issue row marked seen stays away');
+    expect(rows(), hasLength(2), reason: 'a later end of the story, and of its issue\'s task, is seen anew');
+  });
+
+  // Harm: a person sent to a reading that needs nothing, by an unfolded card that keeps saying its reading stopped
+  // and needs them after the person marked that row seen.
+  testWidgets('a stopped reading the window marks seen leaves the unfolded card', (tester) async {
+    final board = _board();
+    final story = (board['stories'] as List).single as Map<String, dynamic>;
+    story
+      ..['state'] = 'Building'
+      ..['issues'] = [
+        {
+          'id': 'Read',
+          'repository': 'repo',
+          'state': 'Building',
+          'readingStopped': true,
+          'rounds': 2,
+          'roundsMost': 2,
+          'attention': 'NONE',
+        },
+      ]
+      ..['work'] = {
+        'run': 'run-1',
+        'atWork': false,
+        'tasks': <Map<String, dynamic>>[],
+        'issues': [
+          {'issue': 'Read', 'reason': 'NONE', 'readingStopped': true, 'rounds': 2, 'roundsMost': 2},
+        ],
+      };
+    final (boards, _, seen) = await show(tester, board);
+    final line = find.text('stopped in Reading - needs you');
+    expect(line, findsOneWidget, reason: 'the stopped reading needs the person at first');
+    expect(boards.needsYou, hasLength(1), reason: 'the count holds the stopped reading at first');
+
+    seen.mark(boards.needsYou.single);
+    await settle(tester);
+    expect(boards.needsYou, isEmpty, reason: 'the reading marked seen leaves the count');
+    expect(line, findsNothing, reason: 'the unfolded card no longer sends the person to the reading');
+  });
+
+  /// Held with a stopped reading of its issue Read, and with [end] a task of [endOf] ended unfinished at that time.
+  Map<String, dynamic> reading({String? end, String endOf = 'Read'}) {
+    final board = _board();
+    final story = (board['stories'] as List).single as Map<String, dynamic>;
+    story
+      ..['issues'] = [
+        {'id': 'Read', 'repository': 'repo', 'state': 'Building', 'readingStopped': true, 'attention': 'NONE'},
+        if (endOf != 'Read') {'id': endOf, 'repository': 'repo', 'state': 'Building', 'attention': 'NONE'},
+      ]
+      ..['work'] = {
+        'run': 'run-1',
+        'atWork': false,
+        'tasks': [
+          if (end != null)
+            {
+              'task': 'reader',
+              'containerId': 'box-reader',
+              'machine': 'local',
+              'repository': 'repo',
+              'issues': [endOf],
+              'state': 'Building',
+              'done': 'Review',
+              'mode': 'UNATTENDED',
+              'agent': 'an-agent',
+              'model': 'a-model',
+              'role': 'MAIN',
+              'since': '2026-01-01T00:00:00Z',
+              'atWork': false,
+              'ended': {'at': end, 'finished': false, 'why': 'It broke', 'answer': ''},
+            },
+        ],
+        'issues': [
+          {'issue': 'Read', 'reason': 'NONE', 'readingStopped': true},
+        ],
+      };
+    return board;
+  }
+
+  // Harm: a run's end hidden from the person, because the reading it ended was marked seen before it ended.
+  testWidgets('a reading marked seen still counts and shows once a later end of its issue is reported', (tester) async {
+    final (boards, backend, seen) = await show(tester, reading());
+    seen.mark(boards.needsYou.single);
+    await settle(tester);
+    expect(boards.needsYou, isEmpty, reason: 'the reading marked seen leaves the count');
+
+    backend.push('checkout', reading(end: '2026-01-01T03:00:00Z'));
+    await settle(tester);
+    expect(
+      [for (final row in boards.needsYou) row.id],
+      contains('reading mock/checkout/Read'),
+      reason: 'the issue\'s end, reported after the mark, counts again',
+    );
+    expect(find.text('stopped in Reading - needs you'), findsOneWidget, reason: 'and the card shows it');
+  });
+
+  // Harm: a run's end hidden from the person, by a card that a seen reading quiets while the story's end is unseen.
+  testWidgets('a card stays loud while the story\'s end is unseen and quiets once every row is seen', (tester) async {
+    final (boards, _, seen) = await show(tester, reading(end: '2026-01-01T03:00:00Z', endOf: 'Other'));
+    final line = find.text('stopped in Reading - needs you');
+    final readingRow = boards.needsYou.singleWhere((row) => row.attention.issue?.id == 'Read');
+    final endRow = boards.needsYou.singleWhere((row) => row.attention.issue == null);
+
+    seen.mark(readingRow);
+    await settle(tester);
+    expect(boards.needsYou.map((row) => row.id), [endRow.id], reason: 'the unseen end still counts');
+    expect(line, findsOneWidget, reason: 'the card stays loud while the story\'s end is unseen');
+
+    seen.mark(endRow);
+    await settle(tester);
+    expect(boards.needsYou, isEmpty, reason: 'every row seen leaves the count');
+    expect(line, findsNothing, reason: 'the story\'s end marked seen quiets the card');
   });
 }

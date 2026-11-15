@@ -1,0 +1,2 @@
+title: A run's end reported after its row was marked seen shows again in Needs you and on the card, and a card stays marked until every row of its story, the run's end among them, is seen.
+type: fixed

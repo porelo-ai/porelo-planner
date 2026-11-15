@@ -231,11 +231,12 @@ class PlanningBoard extends ChangeNotifier {
   /// Whether the window marked a row of Needs you seen, handed in by the boards that made this board.
   bool Function(PlanningAttention row)? rowSeen;
 
-  /// Whether the window marked seen every issue row of [story] that needs a person, so its card no longer says so.
+  /// Whether the window marked seen every row of [story] that needs a person, its run's end among them, so its card
+  /// no longer says so.
   bool attentionSeen(PlanStory story) {
     final seen = rowSeen;
     if (seen == null) return false;
-    final rows = PlanningBoards.storyAttention(this, story).where((row) => row.issue != null);
+    final rows = PlanningBoards.storyAttention(this, story);
     return rows.isNotEmpty && rows.every(seen);
   }
 
@@ -1767,7 +1768,6 @@ class PlanningBoards extends ChangeNotifier {
 
   void _changed() {
     if (_disposed) return;
-    _forgetSettled();
     notifyListeners();
   }
 
@@ -1781,36 +1781,8 @@ class PlanningBoards extends ChangeNotifier {
   /// The provider names known now, for saying which did not supply a project.
   List<String> get providerNames => [for (final provider in client.providers) provider.name];
 
-  Set<PlanningPutAway> _putAway = const {};
-
-  /// The issue rows the window keeps put away; [needsYou] leaves each out while its reason and state stand.
-  Set<PlanningPutAway> get putAway => _putAway;
-
-  set putAway(Set<PlanningPutAway> rows) {
-    _putAway = Set.unmodifiable(rows);
-    _changed();
-  }
-
-  /// Forgets each row put away whose issue no longer needs the person, so the same reason raised anew is seen.
-  ///
-  /// The window reads [putAway] back after a change to keep only what still stands.
-  void _forgetSettled() {
-    if (_putAway.isEmpty) return;
-    final raised = <(String, String, String)>{
-      for (final board in sources)
-        for (final story in board.stories)
-          for (final row in storyAttention(board, story))
-            if (row.issue case final issue?) (machineOf(board), board.project, issue.id),
-    };
-    final standing = {
-      for (final kept in _putAway)
-        if (raised.contains((kept.machine, kept.project, kept.issue))) kept,
-    };
-    if (standing.length != _putAway.length) _putAway = Set.unmodifiable(standing);
-  }
-
   /// Ended story runs and stopped readings that need a person, from every source including stale ones, without
-  /// the rows the window keeps put away or marks seen in [seen].
+  /// the rows the window marks seen in [seen].
   List<PlanningNeedsYou> get needsYou => [
     for (final board in sources)
       for (final story in board.stories)
@@ -1825,13 +1797,11 @@ class PlanningBoards extends ChangeNotifier {
             ),
   ];
 
-  /// Whether the window keeps [row] of [board] put away or marked seen.
+  /// Whether the window marked [row] of [board] seen.
   bool _seenRow(PlanningBoard board, PlanningAttention row) {
     final machine = machineOf(board);
-    if (row.putAwayOn(machine) case final kept?) {
-      return _putAway.contains(kept) || (seen?.putAwaySeen(kept) ?? false);
-    }
     if (row.endOn(machine) case final end?) return seen?.endSeen(end) ?? false;
+    if (row.putAwayOn(machine) case final kept?) return seen?.putAwaySeen(kept) ?? false;
     return false;
   }
 

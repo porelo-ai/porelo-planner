@@ -1027,7 +1027,7 @@ class _BoardViewState extends State<_BoardView> {
 
   Widget _reading(PlanStory story) {
     final reading = story.issues.where((issue) => issue.state == 'Reading' || issue.state == 'Reworking');
-    final stopped = story.issues.any((issue) => issue.readingStopped == true);
+    final stopped = !board.attentionSeen(story) && story.issues.any((issue) => issue.readingStopped == true);
     final lines = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
