@@ -149,12 +149,17 @@ class PlanningTaskLink extends StatelessWidget {
   }
 }
 
-/// A reported time in the person's own zone to the minute, or the reported text when it is no time.
-String planningLocalTime(String at) {
-  final time = DateTime.tryParse(at)?.toLocal();
-  if (time == null) return planningShown(at, multiline: false);
+/// A reported time in the person's own zone to the minute, with its date only when it is not today, or the reported
+/// text when it is no time.
+String planningLocalTime(String reported, {DateTime? now}) {
+  final at = DateTime.tryParse(reported)?.toLocal();
+  if (at == null) return planningShown(reported, multiline: false);
+  final today = (now ?? DateTime.now()).toLocal();
   String two(int value) => value.toString().padLeft(2, '0');
-  return '${time.year}-${two(time.month)}-${two(time.day)} ${two(time.hour)}:${two(time.minute)}';
+  final time = '${two(at.hour)}:${two(at.minute)}';
+  return at.year == today.year && at.month == today.month && at.day == today.day
+      ? time
+      : '${at.year}-${two(at.month)}-${two(at.day)} $time';
 }
 
 /// Human-readable names for known work modes; later daemon values remain as reported.

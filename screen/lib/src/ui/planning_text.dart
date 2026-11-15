@@ -243,16 +243,3 @@ Uri? planningLinkAddress(String href) {
   }
   return address;
 }
-
-/// A reported time as the window shows times: the local time in the person's zone, with the date only when it is
-/// not [now]'s day; a time that cannot be read is shown as reported.
-String planningLocalTime(String reported, {DateTime? now}) {
-  final at = DateTime.tryParse(reported)?.toLocal();
-  if (at == null) return reported;
-  final today = (now ?? DateTime.now()).toLocal();
-  String two(int value) => value.toString().padLeft(2, '0');
-  final time = '${two(at.hour)}:${two(at.minute)}';
-  return at.year == today.year && at.month == today.month && at.day == today.day
-      ? time
-      : '${at.year}-${two(at.month)}-${two(at.day)} $time';
-}
