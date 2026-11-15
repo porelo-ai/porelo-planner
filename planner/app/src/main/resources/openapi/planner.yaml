@@ -524,8 +524,9 @@ paths:
         Recomputes the proposal and validates the window's choices against it. Checks revision before recorded active
         work. Omitted repositories and limits take the proposal's defaults; an omitted comment is empty. Every
         repository and assignment must occur exactly once. Immutable proposal fields must match, KEEP retains the
-        proposed agent and model, CHANGE selects an offered agent/model pair, and DROP leaves the brief to the main
-        task. CHANGE and DROP need a nonblank comment. OTHER may only be dropped. No prompt comes from the body.
+        proposed agent and model, CHANGE selects an agent the rule offers for the issues' risk with any model that is
+        a plain name (the rule's model is only the proposal), and DROP leaves the brief to the main task. The main
+        task's agent and model are taken the same way. CHANGE and DROP need a nonblank comment. OTHER may only be dropped. No prompt comes from the body.
         Expands order placeholders once per task, with repository text delimited by longer backtick fences.
         Refuses any brief over 4000 characters or task prompt over 65536 UTF-8 bytes. The JSON body is at most 65536
         bytes. Persists scoped opaque offers before answering, without starting or moving anything. While the story's

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL158",
   "title": "The Planner Takes Any Model Of An Offered Agent",
-  "state": "Backlog",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 78,

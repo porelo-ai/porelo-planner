@@ -456,8 +456,9 @@ public record WorkOrder(
             final Choice choice,
             final String agent,
             final String model) {
-        if (!choice.offers(agent, model)) {
-            throw refused(story, to, "Choose an agent and model offered by the rule.");
+        if (!choice.takes(agent, model)) {
+            throw refused(
+                    story, to, "Choose an agent the rule offers and a model that is a plain name.");
         }
     }
 

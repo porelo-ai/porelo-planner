@@ -86,4 +86,16 @@ public record Choice(
     public boolean offers(final String agent, final String model) {
         return !agent.isBlank() && !model.isBlank() && model.equals(offered.get(agent));
     }
+
+    /**
+     * Whether a person may start an agent with a model of their own for the risk: the risk must
+     * offer the agent, and the model may be any plain name, the offered one only being proposed.
+     *
+     * @param agent the chosen agent
+     * @param model the chosen model
+     * @return whether the risk offers the agent and the model is a plain name
+     */
+    public boolean takes(final String agent, final String model) {
+        return offered.containsKey(agent) && WorkRule.sound(model);
+    }
 }

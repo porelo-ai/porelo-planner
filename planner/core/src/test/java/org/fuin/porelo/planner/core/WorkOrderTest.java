@@ -315,7 +315,7 @@ class WorkOrderTest {
                                 main.model(),
                                 "forged brief"),
                         new WorkProposal.Main(
-                                main.name(), main.role(), "alpha", "large", main.brief()),
+                                main.name(), main.role(), "unknown", "large", main.brief()),
                         new WorkProposal.Main(
                                 main.name(), main.role(), " ", main.model(), main.brief()))) {
             refused(
@@ -476,7 +476,6 @@ class WorkOrderTest {
                 changed(proposed, sub -> sub(sub, "SURPRISE", sub.agent(), sub.model())),
                 "Chosen.");
         refused(board, changed(proposed, sub -> sub(sub, "CHANGE", "unknown", "large")), "Chosen.");
-        refused(board, changed(proposed, sub -> sub(sub, "CHANGE", "alpha", "large")), "Chosen.");
         refused(board, changed(proposed, sub -> sub(sub, "CHANGE", "alpha", " ")), "Chosen.");
         assertThatThrownBy(
                         () ->
@@ -488,6 +487,51 @@ class WorkOrderTest {
                                                 "UNATTENDED", "board@1", null, null, null, null)))
                 .as("mode must be offered by the rule")
                 .isInstanceOf(WorkRefusal.class);
+    }
+
+    @Test
+    void anyPlainModelOfAnOfferedAgentIsTakenAndCarriedIntoTheOrder() {
+        // Prevents a person who needs another model of an offered agent from starting the work.
+        final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        final WorkOrder order =
+                WorkOrder.accept(
+                        board,
+                        "ST1",
+                        "Building",
+                        decision(
+                                changed(
+                                        withMain(proposed, "zeta", "medium-2"),
+                                        sub -> sub(sub, "CHANGE", "alpha", "large")),
+                                "Another model.",
+                                null,
+                                null));
+        assertThat(order.tasks())
+                .as("the main and the changed helper start with the models the person chose")
+                .extracting(WorkOrder.Task::role, WorkOrder.Task::agent, WorkOrder.Task::model)
+                .startsWith(
+                        org.assertj.core.groups.Tuple.tuple("MAIN", "zeta", "medium-2"),
+                        org.assertj.core.groups.Tuple.tuple("BUILDER", "alpha", "large"));
+    }
+
+    @Test
+    void anAgentTheRuleDoesNotNameOrAModelThatIsNoPlainNameIsRefused() {
+        // Prevents an agent the rule never allowed, or a model name no Start can carry, from
+        // reaching a task.
+        final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
+        final List<WorkProposal.Repository> proposed =
+                WorkProposal.propose(board, "ST1", "Building").repositories();
+        refused(board, withMain(proposed, "unknown", "large"), "");
+        refused(board, changed(proposed, sub -> sub(sub, "CHANGE", "unknown", "large")), "Chosen.");
+        for (final String unsound :
+                List.of("", "  ", "large\nsmall", "x".repeat(WorkRule.LONGEST + 1))) {
+            refused(board, withMain(proposed, "zeta", unsound), "");
+            refused(
+                    board,
+                    changed(proposed, sub -> sub(sub, "CHANGE", "alpha", unsound)),
+                    "Chosen.");
+        }
     }
 
     @Test
@@ -912,6 +956,26 @@ class WorkOrderTest {
                 .filter(task -> task.role().equals("BUILDER"))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private static List<WorkProposal.Repository> withMain(
+            final List<WorkProposal.Repository> proposed, final String agent, final String model) {
+        final WorkProposal.Repository first = proposed.getFirst();
+        final WorkProposal.Main main = first.main();
+        return List.of(
+                new WorkProposal.Repository(
+                        first.repository(),
+                        first.issues(),
+                        new WorkProposal.Main(
+                                main.name(),
+                                main.role(),
+                                agent,
+                                model,
+                                main.brief(),
+                                main.effort(),
+                                main.basis()),
+                        first.subAgents()),
+                proposed.get(1));
     }
 
     private static List<WorkProposal.Repository> mainEffort(
