@@ -41,6 +41,7 @@ left out.
 | <a id="pl14"></a>[PL14](PL14-A-Project-Whose-Repositories-Are-Local-Paths.md) | M | [PL42](README.md#pl42) | Planning a project whose own repository and project.yml repositories are absolute local paths in one directory, any other path refused, such as Porelo's Default project or a local checkout |
 | <a id="pl33"></a>[PL33](PL33-The-Planner-As-A-Service-Of-The-System.md) | L | - | On Linux the planner runs as a systemd user service the deb and rpm packages install, started at sign-in once the account opts in, stopped and seen with the system's own commands, instead of a process the window leaves running unseen |
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
+| <a id="pl137"></a>[PL137](PL137-A-Move-Planning-Already-Shows-Is-No-Problem.md) | XS | - | When a move's save meets a changed planning and the planning read again already shows the story or issue in the move's target state, the board counts the move as done instead of refusing it in red; a state that differs from both the move's source and target is still refused |
 
 ## Review
 
