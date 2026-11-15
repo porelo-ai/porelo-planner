@@ -66,6 +66,10 @@ void main() {
     await settle(tester);
     await tester.tap(find.byKey(const Key('planning-start ST15')), warnIfMissed: false);
     await settle(tester);
+    for (var step = 0; step < 5 && find.byKey(const Key('story-work-start')).evaluate().isEmpty; step++) {
+      await tester.tap(find.byKey(const Key('story-work-next')));
+      await settle(tester);
+    }
     await tester.tap(find.byKey(const Key('story-work-start')));
     await settle(tester);
     expect(window.started, isNotEmpty, reason: 'the window reported a task started');
