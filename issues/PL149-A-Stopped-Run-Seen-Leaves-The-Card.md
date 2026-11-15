@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 69,
   "blockedBy": [],
-  "covers": "A story's run the person stopped shows on its card as ended, with no task at work and no needs you once the person has seen it, and the Planning count follows; the card's since is a time in the person's zone, as the window says times"
+  "covers": "A story's run the person stopped shows on its card as ended, with no task at work and no needs you once the person has seen it, the Planning count follows, and the story can be started again; Stop on a stopped run answers instead of doing nothing; the card's since is a time in the person's zone, as the window says times"
 }
 ```
 
@@ -18,7 +18,7 @@
 the report's members stay.
 
 **What must be true.** A person who stopped a story's work and marked its Needs you entry seen finds the card no longer
-saying a task is at work or that it needs them, and the Planning count without it.
+saying a task is at work or that it needs them, and the Planning count without it, and can start the story's work again from the card or Needs you.
 
 ## Plan
 
@@ -30,8 +30,15 @@ saying a task is at work or that it needs them, and the Planning count without i
   of the story's reported work, whatever its state, and prints `since` as the raw wire time; "needs you" and the count
   come from `_needsYou` and the board's `needsYou` (`screen/lib/src/planning_board.dart`), which read the issue's
   `needsYou` and reason and not the rows the person put away.
+- The same live run showed the dead end this leaves: the story's start stayed unavailable ("the run needs attention -
+  PI68: its work was stopped, it needs you"), since the screen lets a start pass over a stopped run only with no task
+  at work (`PlanningBoard._passes`), and the planner reports a task at work for every offer `STARTED`
+  (`WorkAnswers.atWork`), which this offer stayed because the window never reported its end; the card's Stop work did
+  nothing, since `WorkRun.stop` answers nothing for a run already stopped and the window then has nothing to end.
 - The planner reports a stopped run's offers as ended, not started, once the Stop is recorded, so the work names no task
-  at work; the card counts only tasks at work, and says the run stopped where nothing is at work.
+  at work and the story's start passes over the stop; a task's end reported later is still taken. The card counts only
+  tasks at work, and says the run stopped where nothing is at work. Stop on a run already stopped answers that it is
+  stopped, with the tasks it holds as at work, so the window ends any still running, instead of nothing.
 - The window keeps what the person marked seen, as its own marks: an issue's reason as the screen's `PlanningPutAway`
   (machine, project, issue, reason, state), and a story's ended work by its end's time. The screen takes them as one
   input of the boards, `PlanningSeen`, a `Listenable` the window owns, answering whether an issue's put-away is seen and
@@ -39,9 +46,11 @@ saying a task is at work or that it needs them, and the Planning count without i
   answers seen and follow its changes. The screen keeps no copy of the marks.
 - `since` is shown as the window shows times: the local time in the person's zone, with the date only when it is not
   today.
-- Red first: in the core's work run tests, a stopped run's report names no started task; in the screen's tests, a card
+- Red first: in the core's work run tests, a stopped run's report names no started task, a Stop of a stopped run
+  answers its tasks, and a new start of the story after a Stop is not refused for a task at work; in the screen's tests, a card
   of a stopped run whose row is put away shows no task and no needs you, the count drops by one, and `since` reads as a
-  local time. Harm: a person sent to a story that needs nothing, and a count that never clears.
+  local time. Harm: a story that can never be started again, a person sent to a story that needs nothing, and a count that never
+  clears.
 
 ## Acceptance
 
