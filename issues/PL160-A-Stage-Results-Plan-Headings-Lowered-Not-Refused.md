@@ -5,21 +5,23 @@
   "$schema": "issue-1.json",
   "id": "PL160",
   "title": "A Stage Result's Plan Headings Lowered, Not Refused",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "Highest",
   "rank": 1,
   "blockedBy": [],
-  "covers": "A stage's order tells the agent that its plan holds no first- or second-level heading and closes every code block, and a handed-in plan's first- and second-level headings outside code blocks are lowered to third-level ones before the result is checked and saved, so an analysis is no longer lost for a heading; a code block left open is still refused"
+  "covers": "A stage's order tells the agent that its plan holds no first- or second-level heading and closes every code block, and a handed-in plan's first- and second-level headings outside code blocks are lowered to third-level ones before the result is checked and saved, so an analysis is no longer lost for a heading; a code block left open is still refused. The order names every bound of the result, and a list item over its bound is split at its sentence ends and a line break in it becomes a space; only a sentence over the bound, or a list grown past its most items, is still refused"
 }
 ```
 
-**Why this size.** S: the order's text in `StageOrder.instructions`, and one rewrite of the plan in `HandedResults`
-before `StageResult` checks it. Tests in `StageOrderTest` and `HandedResultsTest`.
+**Why this size.** S: the order's text in `StageOrder.instructions`, and two repairs in `HandedResults` before the
+result is checked: the plan's headings and the list items. Tests in `NextStepTest` (the order's text; there is no
+`StageOrderTest`) and `HandedResultsTest`.
 
 **What must be true.** An analysis whose plan opens with a heading such as `## CC81: ...` is saved, with the
 heading kept as a third-level one, and the agent is told the rule before it writes. The planner refuses only a plan it
-cannot repair.
+cannot repair. The same holds for a list item: an estimate whose finding is one line too long is saved, split at its
+sentence ends, and the agent is told every bound of the result before it writes.
 
 ## Found
 
@@ -28,6 +30,10 @@ On 2026-11-17, in a live test on a rented host. The analysis of a story with one
 follow the result format. issues: CC81: the plan holds a heading or a code fence that would open a section of its own
 or leave a code block open." The plan's first line was `## CC81: audit the documentation against the code`. Its
 other headings were `###` and are allowed. The whole run's work was lost.
+
+In the same test, with the heading fix in place, the estimate that followed was refused: "issues[0].findings[0]: An
+item must be one line of 1 to 500 characters." The first finding was one line of 524 characters; the order names no
+bound of an item, a list or any other field.
 
 ## Plan
 
@@ -43,14 +49,25 @@ other headings were `###` and are allowed. The whole run's work was lost.
   matches `#{1,2}(\s.*)?` becomes `### ` plus its text, with the indentation dropped. The same fence logic as
   `checkPlan` decides what is inside a block. Fences are not repaired: a `~~~` fence or a block left open is still
   refused, with the same message.
+- Change 3: the order's text names every bound `HandedResults` and `StageResult` hold a result to, read from their
+  constants: the sizes, `sizeWhy` one line of at most `MOST_LINE` characters, the plan at most `MOST_PLAN`
+  characters, the estimate's minutes, lists of at most `MOST_ITEMS` items, each item one line of at most `MOST_ITEM`
+  characters not starting with `#`, and no control or direction character.
+- Change 4: in `HandedResults`, before the check and the save, each item of `toBeChecked` and `findings` has its
+  line breaks replaced by a space; an item still over `MOST_ITEM` is split at its sentence ends (`.`, `!` or `?`
+  followed by white space) into items packed within the bound. A sentence over the bound is not cut: the item stays
+  and is refused; a list grown past `MOST_ITEMS` by the split is refused too.
 - Red first: a `HandedResultsTest` with a plan whose first line is `## CC81: x` and that holds a `### Steps`. Today
-  it is refused; after the change it is saved with `### CC81: x`. A `StageOrderTest` checks that the order's text
-  names the heading rule.
+  it is refused; after the change it is saved with `### CC81: x`. A `HandedResultsTest` with a finding of 524
+  characters in three sentences and an item holding a line break, saved split and joined. A `NextStepTest` checks
+  that the order's text names the heading rule and the bounds.
 
 ## Acceptance
 
 - An analysis whose plan holds `#` or `##` headings outside code blocks is saved, with those headings as `###`.
 - A `##` line inside a code block is kept as it is.
 - A plan with a code block left open is still refused.
-- An analysis order's text names the heading and code-block rule.
+- An analysis order's text names the heading and code-block rule and every bound of the result.
+- A list item over 500 characters is saved as several items split at its sentence ends; a line break in an item is
+  saved as a space; a sentence over 500 characters, or a list past 20 items after the split, is still refused.
 - The tests above fail without the change.

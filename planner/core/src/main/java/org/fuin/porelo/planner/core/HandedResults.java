@@ -264,7 +264,7 @@ public final class HandedResults {
             } else if (!named.add(id)) {
                 faults.add(at + ".id: The issue " + id + " is named twice.");
             }
-            entry(kind, entry, at, faults);
+            entry(kind, repaired(entry), at, faults);
         }
         for (final String id : issues) {
             if (!named.contains(id)) {
@@ -419,14 +419,14 @@ public final class HandedResults {
             final WorkRule.Result kind, final String from, final String to, final File file) {
         final List<StageResult.ForIssue> issues = new ArrayList<>();
         for (final Entry entry : java.util.Objects.requireNonNull(file.issues())) {
-            final Entry e = java.util.Objects.requireNonNull(entry);
+            final Entry e = repaired(java.util.Objects.requireNonNull(entry));
             final Long minutes = e.estimateMinutes();
             issues.add(
                     new StageResult.ForIssue(
                             java.util.Objects.requireNonNull(e.id()),
                             from,
                             to,
-                            e.plan(),
+                            lowered(e.plan()),
                             java.util.Objects.requireNonNull(e.size()),
                             java.util.Objects.requireNonNull(e.sizeWhy()),
                             minutes == null ? null : Math.toIntExact(minutes),
@@ -435,6 +435,112 @@ public final class HandedResults {
         }
         return new StageResult(kind, issues);
     }
+
+    /**
+     * Lowers a plan's first- and second-level headings outside code blocks to third-level ones,
+     * since the plan stands under the issue's own Plan section. Code blocks are told apart as the
+     * store's check tells them apart; a fence is never repaired, so one left open is still refused.
+     *
+     * @param plan the plan as handed in, or null
+     * @return the plan with its headings lowered, or null
+     */
+    static @Nullable String lowered(final @Nullable String plan) {
+        if (plan == null) {
+            return null;
+        }
+        final String[] lines = plan.replace("\r\n", "\n").split("\n", -1);
+        boolean fenced = false;
+        for (int i = 0; i < lines.length; i++) {
+            final String line = lines[i];
+            if (fenced ? line.equals("```") : OPENING.matcher(line).matches()) {
+                fenced = !fenced;
+            } else if (!fenced) {
+                final java.util.regex.Matcher heading = HEADING.matcher(line.stripLeading());
+                if (heading.matches()) {
+                    final String text = heading.group(1) == null ? "" : heading.group(1).strip();
+                    lines[i] = text.isEmpty() ? "###" : "### " + text;
+                }
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    /**
+     * An entry with its list items repaired where they can be: a line break becomes a space, and an
+     * item over {@value #MOST_ITEM} code points is split at its sentence ends into items within
+     * that bound. An item holding a sentence over the bound stays as it is, and a list grown past
+     * {@value #MOST_ITEMS} items stays so, for the check to refuse.
+     *
+     * @param entry the entry as handed in
+     * @return the entry with its items repaired
+     */
+    static Entry repaired(final Entry entry) {
+        return new Entry(
+                entry.id(),
+                entry.plan(),
+                entry.size(),
+                entry.sizeWhy(),
+                entry.estimateMinutes(),
+                repaired(entry.toBeChecked()),
+                repaired(entry.findings()));
+    }
+
+    private static @Nullable List<String> repaired(final @Nullable List<String> items) {
+        if (items == null) {
+            return null;
+        }
+        final List<String> repaired = new ArrayList<>();
+        for (final String item : items) {
+            final String line = LINE_BREAKS.matcher(item).replaceAll(" ");
+            if (line.codePointCount(0, line.length()) <= MOST_ITEM) {
+                repaired.add(line);
+                continue;
+            }
+            final List<String> parts = split(line.strip());
+            repaired.addAll(parts.isEmpty() ? List.of(line) : parts);
+        }
+        return repaired;
+    }
+
+    /** The item's sentences packed into parts within the bound, or none when one is over it. */
+    private static List<String> split(final String item) {
+        final List<String> parts = new ArrayList<>();
+        final StringBuilder part = new StringBuilder();
+        for (final String sentence : SENTENCE_END.split(item)) {
+            final int length = sentence.codePointCount(0, sentence.length());
+            if (length > MOST_ITEM) {
+                return List.of();
+            }
+            if (!part.isEmpty() && part.codePointCount(0, part.length()) + 1 + length > MOST_ITEM) {
+                parts.add(part.toString());
+                part.setLength(0);
+            }
+            if (!part.isEmpty()) {
+                part.append(' ');
+            }
+            part.append(sentence);
+        }
+        if (!part.isEmpty()) {
+            parts.add(part.toString());
+        }
+        return parts;
+    }
+
+    /** One or more line breaks of any kind in a row. */
+    private static final java.util.regex.Pattern LINE_BREAKS =
+            java.util.regex.Pattern.compile("\\R+");
+
+    /** The space after a sentence's end. */
+    private static final java.util.regex.Pattern SENTENCE_END =
+            java.util.regex.Pattern.compile("(?<=[.!?])\\s+");
+
+    /** A first- or second-level heading, as the store's check refuses it, and its text. */
+    private static final java.util.regex.Pattern HEADING =
+            java.util.regex.Pattern.compile("#{1,2}(\\s.*)?");
+
+    /** A code block's opening line, as the store's check takes it. */
+    private static final java.util.regex.Pattern OPENING =
+            java.util.regex.Pattern.compile("```[A-Za-z0-9_+.-]*");
 
     /**
      * One line saying why an offer's issues did not move, for the person.

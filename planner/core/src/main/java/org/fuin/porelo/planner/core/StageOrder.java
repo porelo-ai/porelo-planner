@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.WorkRule;
 
 /**
@@ -118,10 +119,28 @@ public final class StageOrder {
             final WorkRule.Result result, final List<WorkOrder.Given> given) {
         final String fields =
                 result == WorkRule.Result.ANALYSIS
-                        ? "plan (Markdown, the base design read in today's code), size, sizeWhy"
-                                + " (one line), toBeChecked and findings (lists of one-line items)"
-                        : "size, sizeWhy (one line), estimateMinutes (whole minutes), and optionally"
-                                + " plan, toBeChecked and findings";
+                        ? "plan (Markdown, the base design read in today's code), size, sizeWhy,"
+                                + " toBeChecked and findings"
+                        : "size, sizeWhy, estimateMinutes (whole minutes from 1 to "
+                                + StageResult.MOST_MINUTES
+                                + "), and optionally plan, toBeChecked and findings";
+        final String bounds =
+                ". The size is one of "
+                        + String.join(", ", StageResult.SIZES)
+                        + ". sizeWhy is one line of at most "
+                        + HandedResults.MOST_LINE
+                        + " characters. The plan has at most "
+                        + HandedResults.MOST_PLAN
+                        + " characters; it stands under the issue's own Plan section, so it holds"
+                        + " no first- or second-level heading and starts at ###, and each code"
+                        + " block opens with three backticks and a plain language name and closes"
+                        + " with three backticks alone. toBeChecked and findings are lists of at"
+                        + " most "
+                        + HandedResults.MOST_ITEMS
+                        + " items, each item one line of at most "
+                        + HandedResults.MOST_ITEM
+                        + " characters that does not start with #. No text holds a control or"
+                        + " direction character, nor a line break outside the plan";
         return "\n\nThis stage hands back its result; the planner saves it and moves the issues."
                 + " Read each issue as the planner holds it now from its given file, read only,"
                 + " in Porelo's given directory: "
@@ -135,6 +154,7 @@ public final class StageOrder {
                 + result.name()
                 + "\", and issues, one object per issue the order names with its id, "
                 + fields
+                + bounds
                 + ". In the result, name an issue of this repository by its number, which the"
                 + " planner links to its row, and name no other repository's issue."
                 + " Edit nothing under issues/, commit nothing and push nothing.";

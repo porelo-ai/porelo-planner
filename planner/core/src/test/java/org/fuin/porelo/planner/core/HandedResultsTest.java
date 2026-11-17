@@ -143,6 +143,83 @@ class HandedResultsTest {
     }
 
     @Test
+    void aPlansFirstAndSecondLevelHeadingsOutsideCodeBlocksAreSavedAsThirdLevelOnes() {
+        // Prevents a whole analysis lost because its plan opens with a heading of its own.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final String plan =
+                String.join(
+                        "\n",
+                        "## AA1: audit the docs",
+                        "### Steps",
+                        "  # Top",
+                        "##",
+                        "```text",
+                        "## kept in the block",
+                        "```",
+                        "#hashtag stays");
+
+        final HandedResults.Answer answer =
+                f.handIn(offer, hand(file(entry("AA1", plan, "M", "One module.", null))));
+
+        assertThat(answer.outcome()).as("the outcome").isEqualTo(HandedResults.SAVED);
+        assertThat(f.store.results)
+                .as("the saved plan")
+                .singleElement()
+                .satisfies(
+                        result ->
+                                assertThat(result.issues().getFirst().plan())
+                                        .as("the headings lowered, the code block kept")
+                                        .isEqualTo(
+                                                String.join(
+                                                        "\n",
+                                                        "### AA1: audit the docs",
+                                                        "### Steps",
+                                                        "### Top",
+                                                        "###",
+                                                        "```text",
+                                                        "## kept in the block",
+                                                        "```",
+                                                        "#hashtag stays")));
+        assertThat(f.store.state("AA1")).as("the issue after the save").isEqualTo(DONE);
+    }
+
+    @Test
+    void anItemOverItsBoundIsSplitAtSentenceEndsAndALineBreakBecomesASpace() {
+        // Prevents a whole stage's result lost for one long finding or a wrapped line.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final String first = "a".repeat(298) + ".";
+        final String second = "b".repeat(199) + "!";
+        final String third = "c".repeat(22) + "?";
+        final String long524 = first + " " + second + " " + third;
+        assertThat(long524.length()).as("the item as long as the one refused live").isEqualTo(524);
+
+        final HandedResults.Answer answer =
+                f.handIn(
+                        offer,
+                        hand(
+                                file(
+                                        new HandedResults.Entry(
+                                                "AA1",
+                                                "Plan.",
+                                                "M",
+                                                "One module.",
+                                                null,
+                                                List.of("Read\nthe log.", "Short."),
+                                                List.of(long524)))));
+
+        assertThat(answer.outcome()).as("the outcome").isEqualTo(HandedResults.SAVED);
+        final StageResult.ForIssue saved = f.store.results.getFirst().issues().getFirst();
+        assertThat(saved.findings())
+                .as("the long finding split at its sentence ends, each part within 500")
+                .containsExactly(first + " " + second, third);
+        assertThat(saved.toBeChecked())
+                .as("the line break as a space")
+                .containsExactly("Read the log.", "Short.");
+    }
+
+    @Test
     void aReplayOfASavedHandInWritesNothingAndAnswersTheSame() {
         // Prevents a result saved twice when the window hands it in again.
         final Stage f = new Stage();
@@ -212,6 +289,48 @@ class HandedResultsTest {
                         "a zero-width character in the plan",
                         hand(file(entry("AA1", "Pl​an.", "M", "Why.", null))),
                         "issues[0].plan: "),
+                Arguments.of(
+                        "a plan leaving a code block open after a heading",
+                        hand(file(entry("AA1", "## Top\n```text\n## x", "M", "Why.", null))),
+                        "issues: "),
+                Arguments.of(
+                        "a plan with a tilde fence around a heading",
+                        hand(file(entry("AA1", "~~~\n## x\n~~~", "M", "Why.", null))),
+                        "issues: "),
+                Arguments.of(
+                        "one sentence over an item's bound",
+                        hand(
+                                file(
+                                        new HandedResults.Entry(
+                                                "AA1",
+                                                "Plan.",
+                                                "M",
+                                                "Why.",
+                                                null,
+                                                null,
+                                                List.of("x".repeat(400) + " " + "y".repeat(200))))),
+                        "issues[0].findings[0]: "),
+                Arguments.of(
+                        "a split past the most items",
+                        hand(
+                                file(
+                                        new HandedResults.Entry(
+                                                "AA1",
+                                                "Plan.",
+                                                "M",
+                                                "Why.",
+                                                null,
+                                                Stream.concat(
+                                                                Stream.of(
+                                                                        "x".repeat(300)
+                                                                                + ". "
+                                                                                + "y".repeat(300)
+                                                                                + "."),
+                                                                Stream.generate(() -> "Item.")
+                                                                        .limit(19))
+                                                        .toList(),
+                                                null))),
+                        "issues[0].toBeChecked: "),
                 Arguments.of(
                         "a plan too long",
                         hand(file(entry("AA1", "x".repeat(20_001), "M", "Why.", null))),

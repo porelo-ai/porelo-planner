@@ -661,6 +661,52 @@ class NextStepTest {
                 .endsWith("Edit nothing under issues/, commit nothing and push nothing.");
     }
 
+    // Prevents an analysis written against a plan rule the agent was never told.
+    @Test
+    void anAnalysisOrderNamesThePlansHeadingAndCodeBlockRule() {
+        final Board board = board("Building", "Finished");
+        final Issue issue = board.issue("AA1").orElseThrow();
+        final WorkRule plain = risky("Reading");
+        final WorkRule analysis =
+                new WorkRule(
+                        plain.from(),
+                        plain.done(),
+                        plain.then(),
+                        plain.blocked(),
+                        plain.per(),
+                        plain.modes(),
+                        plain.order(),
+                        plain.models(),
+                        plain.risks(),
+                        WorkRule.Result.ANALYSIS);
+        final String prompt =
+                NextStep.task(
+                                board,
+                                "ST1",
+                                issue,
+                                "Reworking",
+                                analysis,
+                                null,
+                                "",
+                                "",
+                                "BUILDER",
+                                BUILT)
+                        .task()
+                        .prompt();
+        assertThat(prompt)
+                .as("the bounds of an item and a list")
+                .contains("at most 500 characters")
+                .contains("at most 20 items")
+                .as("the bound of sizeWhy")
+                .contains("at most 300 characters")
+                .as("the bound of the plan")
+                .contains("at most 20000 characters")
+                .as("the heading rule")
+                .contains("no first- or second-level heading")
+                .as("the code-block rule")
+                .contains("closes with three backticks alone");
+    }
+
     @Test
     void aReworkChosenWithAModelHarmDoesNotOfferIsRefusedForAHarmIssue() {
         // A person's choice of the rule's light model for work that can do harm would bypass
