@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL160",
   "title": "A Stage Result's Plan Headings Lowered, Not Refused",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "Highest",
   "rank": 1,
