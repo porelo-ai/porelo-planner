@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL161",
   "title": "The Boards Take the Window's Stop Hook at Their Start",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "XS",
   "priority": "High",
   "rank": 2,
