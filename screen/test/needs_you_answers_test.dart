@@ -445,4 +445,26 @@ void main() {
       'remote',
     ], reason: 'a machine that has not supplied the project is named as unavailable');
   });
+
+  // Harm: running work shown in Needs you before the planning screen ever was cannot be stopped.
+  test('the boards hand the window\'s task changes to every board they make', () async {
+    final source = MockPlanningSource()..boards['checkout'] = _board('NEXT_STEP_UNAVAILABLE');
+    final client = FakePlanningClient([provider('local', source, project: 'checkout')]);
+    const changes = NoTasks();
+    final boards = PlanningBoards(client, startTask: mockStartTask, agents: FakeAgents(), taskChanges: changes);
+    addTearDown(() async {
+      boards.dispose();
+      await source.end();
+    });
+
+    final made = boards.sources.single;
+    await made.reload();
+    expect(made.taskChanges, same(changes), reason: 'the board holds the stop hook before any screen is shown');
+    expect(made.stories, isNotEmpty, reason: 'the board read its story');
+    expect(
+      made.stopUnavailable(made.stories.first),
+      isNull,
+      reason: 'raised work is offered Stop work without the planning screen',
+    );
+  });
 }

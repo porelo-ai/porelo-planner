@@ -48,12 +48,6 @@ left out.
 | <a id="pl111"></a>[PL111](PL111-The-Planner-Started-At-Sign-In-On-Windows.md) | M | - | On Windows the MSIX package starts the planner at sign-in as a startup task the person sees and switches in the Task Manager, with its own way to stop and see a running planner, instead of a process the window leaves running unseen |
 | <a id="pl144"></a>[PL144](PL144-The-Moves-Stand-In-Holds-One-Copy-Of-A-Shared-Issue.md) | S | - | The screen package's stand-in for the planner's moves treats an issue two stories share as one issue, so a move, its preview and the checks after the batch read and write the same state, as the planner's moves do |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="pl161"></a>[PL161](PL161-The-Boards-Take-The-Windows-Stop-Hook-At-Their-Start.md) | XS | - | PlanningBoards takes the window's task changes when it is made, as it takes the start hooks, and hands them to every board it makes, so Stop work on a Needs you row is offered before the planning page was ever shown |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -63,6 +57,7 @@ left out.
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The minutes a repository's issues of one size took are computed in core from the record Porelo keeps of each task over the board's issues, whatever the backend, and the Git store's own velocity goes |
 | <a id="pl81"></a>[PL81](PL81-The-Push-Check-And-Stage-Commands-In-The-Planner.md) | L | [PL60](README.md#pl60) | The checks of the pushes to main and the agents' stage commands are given by the planner's command line, `check-pushes` and `stage`, with the build tools' rules, fault lines and exit codes, so the build tools hold none of the work format |
 | <a id="pl124"></a>[PL124](PL124-A-Readers-Leftovers-Do-Not-Stop-Its-Reading.md) | XS | - | A reader that ends finished with commits or staged files left in its workspace is judged by its findings, not raised as UNPUSHED, since a reader delivers nothing but its answer |
+| <a id="pl161"></a>[PL161](PL161-The-Boards-Take-The-Windows-Stop-Hook-At-Their-Start.md) | XS | - | PlanningBoards takes the window's task changes when it is made, as it takes the start hooks, and hands them to every board it makes, so Stop work on a Needs you row is offered before the planning page was ever shown |
 | <a id="pl100"></a>[PL100](PL100-A-Story-File-Without-A-Title-Is-Read.md) | S | - | A story file named `ST<n>.md`, which the work format allows beside `ST<n>-<Title>.md`, is read onto the board and seen as added, as the stories index already takes it |
 | <a id="pl101"></a>[PL101](PL101-The-CPU-Check-Taken-From-Porelo.md) | XS | - | The build checks the native executable's instruction set with porelo's porelo-cpu-check at porelo's published version, not with the build tools' copy, which the build tools drop |
 | <a id="pl102"></a>[PL102](PL102-The-Executable-Published-On-Every-Push.md) | M | - | Every push to main that builds publishes the planner's native executable under its package version, never replaced, with its sha256 beside it, so a repository's CI can pin a change before a release |

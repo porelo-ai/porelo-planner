@@ -1678,12 +1678,14 @@ class PlanningBoards extends ChangeNotifier {
   /// window has them.
   ///
   /// With [seen], the rows the person marked seen leave [needsYou] and each board's cards, following its changes.
+  /// With [taskChanges], each board it makes can stop its running work before any planning screen was shown.
   PlanningBoards(
     this.client, {
     PlanningStartTask? startTask,
     PlanningAgents? agents,
     PlanningWizards? wizards,
     this.seen,
+    this.taskChanges,
   }) {
     if (startTask != null && agents != null) {
       startHooks = PlanningStartHooks(
@@ -1707,6 +1709,9 @@ class PlanningBoards extends ChangeNotifier {
 
   /// What a start from a Needs you row asks of the window, handed to each board this makes; null without it.
   PlanningStartHooks? startHooks;
+
+  /// The window's task changes, which stop a story's work, handed to each board this makes; null without them.
+  final PlanningTaskChanges? taskChanges;
 
   /// Every board of [board]'s project, by its machine.
   Map<PlanningBoard, String> machinesOf(PlanningBoard board) => {
@@ -1756,6 +1761,7 @@ class PlanningBoards extends ChangeNotifier {
         preferences: _preferences.putIfAbsent(entry.key.$2, PlanningPreferences.new),
       );
       board.startHooks = startHooks;
+      if (taskChanges case final changes?) board.taskChanges = changes;
       board.rowSeen = (row) => _seenRow(board, row);
       board.addListener(_changed);
       _boards[entry.key] = board;
