@@ -267,7 +267,9 @@ class GitHubAddsHttpTest {
                         Duration.ofHours(1),
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
-                MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
+                MockMvcBuilders.standaloneSetup(
+                                new BoardController(projects, changes),
+                                new EditsController(new BoardEdits(projects, changes)))
                         .setControllerAdvice(new Problems())
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
@@ -307,6 +309,22 @@ class GitHubAddsHttpTest {
                                                 + "}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("porelo-store#1"));
+        assertThat(made)
+                .as("the issues GitHub made, the story first")
+                .containsExactly("porelo-store#1", "porelo-other#2");
+    }
+
+    @Test
+    void aNewStoryIsAnsweredByItsAndItsIssuesTrackerReferences() throws Exception {
+        // Harm: a project GitHub keeps answering the window that it makes no stories.
+        mvc.perform(
+                        post("/projects/alpha/stories")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"idea\": " + IDEA + ", \"revision\": \"r1\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("porelo-store#1"))
+                .andExpect(jsonPath("$.issues[0]").value("porelo-other#2"))
+                .andExpect(jsonPath("$.revision").value("r2"));
         assertThat(made)
                 .as("the issues GitHub made, the story first")
                 .containsExactly("porelo-store#1", "porelo-other#2");

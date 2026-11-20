@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL182",
   "title": "The Board Kept by Hand Through the Planner's API",
-  "state": "Implementing",
+  "state": "Review",
   "size": "L",
   "priority": "Highest",
   "rank": 2,

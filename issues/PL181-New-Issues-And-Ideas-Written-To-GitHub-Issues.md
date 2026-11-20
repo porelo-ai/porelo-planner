@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL181",
   "title": "New Issues and Ideas Written to GitHub Issues",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Highest",
   "rank": 1,
