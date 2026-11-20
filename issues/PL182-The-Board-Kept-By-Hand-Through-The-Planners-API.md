@@ -84,7 +84,8 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   nothing, since the board shows none. The idea object of a new story is read by the reader a hand-in uses.
 - **The mock board takes every edit by hand in memory**: a size on the issue, its estimate, priority and rank kept
   beside the board, which shows none of them; a story's list and an issue's blockers as given; a comment kept
-  nowhere. Each answers a new revision and refuses an old one, as a save does.
+  nowhere. Each answers a new revision and refuses an old one, as a save does; one equal to the board saves nothing
+  and answers the current revision.
 - **The GitHub store writes the edits through `FieldsBoardWriter`**, after the same read of every item it touches
   as a save, the linked sub-issues and blockers included. The REST id GitHub names a linked issue by is taken from
   that read (`BoardIssue.databaseId`), not from the board's items, so `ItemView` is left as it is. A story's sub-issues

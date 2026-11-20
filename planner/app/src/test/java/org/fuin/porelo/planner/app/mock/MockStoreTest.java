@@ -396,4 +396,38 @@ class MockStoreTest {
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(store.board()).as("the board after the stale edit").isEqualTo(blocked);
     }
+
+    @Test
+    void anEditEqualToTheBoardSavesNothingAndAnswersTheCurrentRevision() {
+        // A save of nothing answered with a new revision tells the window's tests of an unchanged
+        // edit that the board moved, against what the description says.
+        final Board board = store.board();
+        final Issue issue = board.issue("PJ74").orElseThrow();
+
+        assertThat(
+                        store.setFields(
+                                        FIRST,
+                                        issue.id(),
+                                        new org.fuin.porelo.planner.store.Fields(
+                                                java.util.Set.of(
+                                                        org.fuin.porelo.planner.store.Fields.Field
+                                                                .SIZE),
+                                                issue.size(),
+                                                null,
+                                                null,
+                                                null))
+                                .revision())
+                .as("the size the issue has")
+                .isEqualTo(FIRST);
+        assertThat(
+                        store.setStoryIssues(
+                                        FIRST, "ST72", board.story("ST72").orElseThrow().issues())
+                                .revision())
+                .as("the list the story holds")
+                .isEqualTo(FIRST);
+        assertThat(store.setBlockedBy(FIRST, issue.id(), issue.blockedBy()).revision())
+                .as("the blockers the issue has")
+                .isEqualTo(FIRST);
+        assertThat(store.board()).as("the board after edits of nothing").isEqualTo(board);
+    }
 }

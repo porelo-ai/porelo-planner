@@ -339,12 +339,28 @@ public final class MockStore implements PlanningStore {
     public synchronized Board setFields(
             final Revision revision, final String issue, final Fields fields) {
         final Board board = fresh(revision);
-        board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
-        if (fields.none()) {
-            return board;
-        }
+        final Issue held =
+                board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
         final Map<Fields.Field, Object> values =
                 kept.computeIfAbsent(issue, id -> new java.util.EnumMap<>(Fields.Field.class));
+        final Map<Fields.Field, @Nullable Object> asked =
+                new java.util.EnumMap<>(Fields.Field.class);
+        asked.put(Fields.Field.ESTIMATE, fields.estimateMinutes());
+        asked.put(Fields.Field.PRIORITY, fields.priority());
+        asked.put(Fields.Field.RANK, fields.rank());
+        boolean changes =
+                fields.named().contains(Fields.Field.SIZE)
+                        && !java.util.Objects.equals(fields.size(), held.size());
+        for (final Map.Entry<Fields.Field, @Nullable Object> entry : asked.entrySet()) {
+            changes |=
+                    fields.named().contains(entry.getKey())
+                            && !java.util.Objects.equals(
+                                    entry.getValue(), values.get(entry.getKey()));
+        }
+        if (!changes) {
+            // Values equal to the issue's save nothing, as the description says.
+            return board;
+        }
         keep(values, fields, Fields.Field.ESTIMATE, fields.estimateMinutes());
         keep(values, fields, Fields.Field.PRIORITY, fields.priority());
         keep(values, fields, Fields.Field.RANK, fields.rank());
@@ -375,7 +391,12 @@ public final class MockStore implements PlanningStore {
     public synchronized Board setStoryIssues(
             final Revision revision, final String story, final List<String> issues) {
         final Board board = fresh(revision);
-        board.story(story).orElseThrow(() -> new StoreException.NoSuchStory(story));
+        if (board.story(story)
+                .orElseThrow(() -> new StoreException.NoSuchStory(story))
+                .issues()
+                .equals(issues)) {
+            return board;
+        }
         final List<Story> stories = new ArrayList<>();
         for (final Story known : board.stories()) {
             stories.add(
@@ -402,7 +423,12 @@ public final class MockStore implements PlanningStore {
     public synchronized Board setBlockedBy(
             final Revision revision, final String issue, final List<String> blockedBy) {
         final Board board = fresh(revision);
-        board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        if (board.issue(issue)
+                .orElseThrow(() -> new StoreException.NoSuchIssue(issue))
+                .blockedBy()
+                .equals(blockedBy)) {
+            return board;
+        }
         final List<Issue> issues = new ArrayList<>();
         for (final Issue known : board.issues()) {
             issues.add(
