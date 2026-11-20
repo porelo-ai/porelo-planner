@@ -82,6 +82,16 @@ planner's HTTP API with a signing client, and needs no window and no other way t
 - **The mock board takes every edit by hand in memory**: a size on the issue, its estimate, priority and rank kept
   beside the board, which shows none of them; a story's list and an issue's blockers as given; a comment kept
   nowhere. Each answers a new revision and refuses an old one, as a save does.
+- **The GitHub store writes the edits through `FieldsBoardWriter`**, after the same read of every item it touches
+  as a save, the linked sub-issues and blockers included. The REST id GitHub names a linked issue by is taken from
+  that read (`BoardIssue.databaseId`), not from the board's items, so `ItemView` is left as it is. A story's sub-issues
+  are told apart from its `Also needs` issues by the story item's sub-issues: one held only under `Also needs` is
+  refused taken out, since the edit does not change the body, and keeps its place after the sub-issues. An issue that
+  has a parent on GitHub is refused hung in (`addSubIssue` with `replaceParent` false). A call GitHub refuses with a
+  4xx other than an access or rate-limit refusal is `NotSavable` in fixed words naming the status, since
+  `ForgeAccessRefusals` would answer it as unreachable and GitHub's words may repeat what was sent; after another call
+  wrote, it is `PartlySaved`. A comment is written under the store's lock without reading the board again. An edit
+  that writes nothing does not read the board again either.
 
 ## Acceptance
 

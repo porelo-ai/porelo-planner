@@ -1,9 +1,11 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.util.List;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
@@ -101,6 +103,68 @@ public interface BoardWriter {
     default IdeaIds createIdea(
             final Snapshot current, final Revision revision, final NewIdea idea) {
         throw new UnsupportedOperationException("This store does not add ideas yet");
+    }
+
+    /**
+     * Sets an issue's fields; a value the issue holds is not written again.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param issue the issue's id
+     * @param fields the fields to set
+     * @return whether anything was written
+     */
+    default boolean setFields(
+            final Snapshot current,
+            final Revision revision,
+            final String issue,
+            final Fields fields) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets a story's whole issue list.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param story the story's id
+     * @param issues the issues' ids, in the story's order
+     * @return whether anything was written
+     */
+    default boolean setStoryIssues(
+            final Snapshot current,
+            final Revision revision,
+            final String story,
+            final List<String> issues) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets an issue's whole list of blockers.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param issue the issue's id
+     * @param blockedBy the blockers' ids
+     * @return whether anything was written
+     */
+    default boolean setBlockedBy(
+            final Snapshot current,
+            final Revision revision,
+            final String issue,
+            final List<String> blockedBy) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Writes a comment on an issue.
+     *
+     * @param current the snapshot the store holds
+     * @param issue the issue's id
+     * @param text the comment's text
+     */
+    default void comment(final Snapshot current, final String issue, final String text) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 
     /**

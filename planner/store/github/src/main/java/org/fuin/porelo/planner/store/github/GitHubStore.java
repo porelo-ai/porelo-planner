@@ -8,8 +8,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -229,6 +231,49 @@ public final class GitHubStore implements PlanningStore {
                         });
         final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
         return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
+    }
+
+    @Override
+    public Board setFields(final Revision revision, final String issue, final Fields fields) {
+        return edited(snapshot -> parts.writer().setFields(snapshot, revision, issue, fields));
+    }
+
+    @Override
+    public Board setStoryIssues(
+            final Revision revision, final String story, final List<String> issues) {
+        return edited(snapshot -> parts.writer().setStoryIssues(snapshot, revision, story, issues));
+    }
+
+    @Override
+    public Board setBlockedBy(
+            final Revision revision, final String issue, final List<String> blockedBy) {
+        return edited(
+                snapshot -> parts.writer().setBlockedBy(snapshot, revision, issue, blockedBy));
+    }
+
+    /**
+     * Writes a comment under the lock; the board shows no comment, so it is not read again and the
+     * board kept stays.
+     */
+    @Override
+    public void comment(final String issue, final String text) {
+        locked(
+                () -> {
+                    final Snapshot now = current();
+                    parts.writer().comment(now, issue, text);
+                    return now;
+                });
+    }
+
+    /** Runs an edit; the board is read again only when the edit wrote anything. */
+    private Board edited(final Predicate<Snapshot> edit) {
+        return served(
+                writing(
+                                () -> {
+                                    final Snapshot now = current();
+                                    return edit.test(now) ? readAfterWriting() : now;
+                                })
+                        .board());
     }
 
     @Override

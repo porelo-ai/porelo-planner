@@ -127,6 +127,19 @@ is refused as partly saved, naming the repositories, with the references of what
 window reads the board anew and never hands the same idea in again. An issue GitHub makes only after the read that
 looked for it is not found and is made once more; that moment is the one left.
 
+An edit by hand is written the same way, with the person's own access and after the same check of every item it
+touches, the issue and each sub-issue or blocker it links included. An issue's size, estimate, priority and rank are
+field values, one mutation, and a value the issue holds is not written again. A story's issue list sets its
+sub-issues: those it no longer names are taken out first, the new ones made its sub-issues next, then they are ordered
+as the list is; an issue that has a parent on GitHub already is refused, never taken from that parent, and one the
+story holds only under `Also needs` in its body keeps its place after the sub-issues and is refused taken out, since
+the edit leaves the body as it is. An issue's blockers are added and removed as GitHub's "blocked by". GitHub names
+the issue linked by its REST id, which the read right before the write answers. A link GitHub refuses is refused
+naming only the status GitHub answered, since GitHub's own words may repeat what was sent; one refused after another
+was written is partly saved. A comment is written as the person's text, never one opening with the planner's own
+marker `<!-- porelo:`, and the board is not read again after it; a comment GitHub took without answering is partly
+saved, so it is not written twice.
+
 ## The carry-over
 
 `porelo-planner carry-over --project <dir> --to <owner>/<number>` moves a Markdown project's open stories and
@@ -151,6 +164,7 @@ item about to be made is recorded first, and found again on GitHub by its title 
 carried, the run adds `tracker` and, with `--seed <csv>` (rows `repository,size,minutes`), the velocity's starting
 minutes as `velocity.seed.<repository>.<size>` to `project.yml`, removes the map and commits nothing: the person
 reviews the file, signs it with `porelo project sign` and commits it.
+
 
 ## Access
 

@@ -14,6 +14,7 @@ import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -21,6 +22,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -202,6 +204,160 @@ public final class FieldsBoardWriter implements BoardWriter {
         plan.write(token);
     }
 
+    @Override
+    public boolean setFields(
+            final Snapshot current,
+            final Revision revision,
+            final String issue,
+            final Fields fields) {
+        fresh(current, revision);
+        final ItemView item = issueItem(current, issue);
+        final Plan plan = new Plan(current);
+        for (final Fields.Field field : fields.named()) {
+            switch (field) {
+                case SIZE -> plan.optionOrClear(issue, item, FieldNames.SIZE, fields.size());
+                case ESTIMATE ->
+                        plan.numberOrClear(
+                                issue, item, FieldNames.ESTIMATE, fields.estimateMinutes());
+                case PRIORITY ->
+                        plan.optionOrClear(issue, item, FieldNames.PRIORITY, fields.priority());
+                case RANK -> plan.numberOrClear(issue, item, FieldNames.RANK, fields.rank());
+            }
+        }
+        if (plan.empty()) {
+            return false;
+        }
+        plan.write(tokens.token(current.config().forge()));
+        return true;
+    }
+
+    /**
+     * Sets a story's sub-issues to the list: takes out those it no longer names, makes the new ones
+     * its sub-issues, then orders them as the list does. An issue the story holds only under {@code
+     * Also needs} in its body keeps its place after the sub-issues and is refused taken out, since
+     * this write does not change the body.
+     */
+    @Override
+    public boolean setStoryIssues(
+            final Snapshot current,
+            final Revision revision,
+            final String story,
+            final List<String> issues) {
+        fresh(current, revision);
+        final ItemView parent = storyItem(current, story);
+        final Story found =
+                current.board()
+                        .story(story)
+                        .orElseThrow(() -> new StoreException.NoSuchStory(story));
+        final Map<String, String> idOf = new LinkedHashMap<>();
+        current.items().forEach((id, view) -> idOf.put(view.issueId(), id));
+        final List<String> subs = new ArrayList<>();
+        for (final String node : parent.subIssueIds()) {
+            final String id = idOf.get(node);
+            if (id != null && found.issues().contains(id)) {
+                subs.add(id);
+            }
+        }
+        final Plan plan = new Plan(current);
+        final List<String> order = new ArrayList<>();
+        for (final String id : subs) {
+            if (issues.contains(id)) {
+                order.add(id);
+            } else {
+                plan.link(Link.Kind.REMOVE_SUB, story, parent, issueItem(current, id));
+            }
+        }
+        for (final String id : found.issues()) {
+            if (!subs.contains(id) && !issues.contains(id)) {
+                throw new StoreException.NotSavable(
+                        story,
+                        "the issue "
+                                + id
+                                + " stands under Also needs in the story's body, which this"
+                                + " write does not change");
+            }
+        }
+        for (final String id : issues) {
+            if (found.issues().contains(id)) {
+                continue;
+            }
+            final ItemView child = issueItem(current, id);
+            if (child.parentIssueId() != null) {
+                throw new StoreException.NotSavable(
+                        story, "the issue " + id + " has a parent on GitHub already");
+            }
+            plan.link(Link.Kind.ADD_SUB, story, parent, child);
+            order.add(id);
+        }
+        final List<String> wanted = issues.stream().filter(id -> order.contains(id)).toList();
+        for (int at = 0; at < wanted.size(); at++) {
+            final String id = wanted.get(at);
+            if (order.get(at).equals(id)) {
+                continue;
+            }
+            order.remove(id);
+            final ItemView sibling = issueItem(current, order.get(at));
+            order.add(at, id);
+            final ItemView child = issueItem(current, id);
+            if (at == 0) {
+                plan.order(story, parent, child, null, sibling);
+            } else {
+                plan.order(story, parent, child, issueItem(current, wanted.get(at - 1)), null);
+            }
+        }
+        if (plan.empty()) {
+            return false;
+        }
+        plan.write(tokens.token(current.config().forge()));
+        return true;
+    }
+
+    @Override
+    public boolean setBlockedBy(
+            final Snapshot current,
+            final Revision revision,
+            final String issue,
+            final List<String> blockedBy) {
+        fresh(current, revision);
+        final ItemView item = issueItem(current, issue);
+        final Issue found =
+                current.board()
+                        .issue(issue)
+                        .orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        final Plan plan = new Plan(current);
+        for (final String id : found.blockedBy()) {
+            if (!blockedBy.contains(id)) {
+                plan.link(Link.Kind.REMOVE_BLOCKER, issue, item, issueItem(current, id));
+            }
+        }
+        for (final String id : blockedBy) {
+            if (!found.blockedBy().contains(id)) {
+                plan.link(Link.Kind.ADD_BLOCKER, issue, item, issueItem(current, id));
+            }
+        }
+        if (plan.empty()) {
+            return false;
+        }
+        plan.write(tokens.token(current.config().forge()));
+        return true;
+    }
+
+    @Override
+    public void comment(final Snapshot current, final String issue, final String text) {
+        final ItemView item = issueItem(current, issue);
+        final String token = tokens.token(current.config().forge());
+        try {
+            github.createIssueComment(
+                    token,
+                    current.config().project().owner(),
+                    item.repository(),
+                    item.number(),
+                    text);
+        } catch (final RuntimeException e) {
+            throw new Plan(current).refusedCall(e, issue, item.repository(), Set.of(), token);
+        }
+    }
+
     /** Refuses a write planned on another board than the store holds, before any call. */
     private static void fresh(final Snapshot current, final Revision revision) {
         if (!current.board().revision().equals(revision)) {
@@ -243,6 +399,12 @@ public final class FieldsBoardWriter implements BoardWriter {
         private final Map<String, String> bodies = new LinkedHashMap<>();
 
         private @Nullable Stage stage;
+
+        /** The links to change, in their order, after every field value. */
+        private final List<Link> links = new ArrayList<>();
+
+        /** What GitHub held of each item right before the write, by the issue's node id. */
+        private final Map<String, GitHubGraphQl.BoardIssue> reads = new LinkedHashMap<>();
 
         Plan(final Snapshot current) {
             this.current = current;
@@ -294,6 +456,79 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         void clear(final String id, final ItemView item, final String field) {
             put(id, item, field, GitHubGraphQl.FieldValue.clear(item.itemId(), fieldId(id, field)));
+        }
+
+        /** Sets an option, or clears the field for null; a value the item holds is left. */
+        void optionOrClear(
+                final String id,
+                final ItemView item,
+                final String field,
+                final @Nullable String name) {
+            final String held = item.fields().getOrDefault(field, "");
+            if (name == null) {
+                if (!held.isEmpty()) {
+                    clear(id, item, field);
+                }
+            } else if (!name.equals(held)) {
+                option(id, item, field, name);
+            }
+        }
+
+        /** Sets a whole number, or clears the field for null; a value the item holds is left. */
+        void numberOrClear(
+                final String id,
+                final ItemView item,
+                final String field,
+                final @Nullable Integer n) {
+            final String held = item.fields().getOrDefault(field, "");
+            if (n == null) {
+                if (!held.isEmpty()) {
+                    clear(id, item, field);
+                }
+            } else if (!Integer.toString(n).equals(held)) {
+                number(id, item, field, n);
+            }
+        }
+
+        /** Adds a link to change; both items are read before the write and checked unchanged. */
+        void link(final Link.Kind kind, final String id, final ItemView from, final ItemView to) {
+            items.putIfAbsent(id, from);
+            items.putIfAbsent(idOf(to), to);
+            links.add(new Link(kind, id, from, to, null, null));
+        }
+
+        /** Moves a sub-issue right after one sibling or right before another. */
+        void order(
+                final String id,
+                final ItemView parent,
+                final ItemView child,
+                final @Nullable ItemView after,
+                final @Nullable ItemView before) {
+            items.putIfAbsent(id, parent);
+            for (final ItemView each : java.util.Arrays.asList(child, after, before)) {
+                if (each != null) {
+                    items.putIfAbsent(idOf(each), each);
+                }
+            }
+            links.add(new Link(Link.Kind.ORDER, id, parent, child, after, before));
+        }
+
+        /** Whether nothing is to be written. */
+        boolean empty() {
+            return values.isEmpty()
+                    && openings.isEmpty()
+                    && bodies.isEmpty()
+                    && links.isEmpty()
+                    && stage == null;
+        }
+
+        private String idOf(final ItemView item) {
+            for (final Map.Entry<String, ItemView> entry : current.items().entrySet()) {
+                if (entry.getValue().issueId().equals(item.issueId())) {
+                    return entry.getKey();
+                }
+            }
+            throw new IllegalStateException("An item of the snapshot has no id");
         }
 
         void body(final String id, final ItemView item, final String body) {
@@ -458,6 +693,16 @@ public final class FieldsBoardWriter implements BoardWriter {
                             refused.item().repository(), List.copyOf(written), reason);
                 }
             }
+            final String owner = current.config().project().owner();
+            for (final Link link : links) {
+                final ItemView from = link.from();
+                try {
+                    change(token, owner, link);
+                } catch (final RuntimeException e) {
+                    throw refusedCall(e, link.id(), from.repository(), written, token);
+                }
+                written.add(from.repository());
+            }
             if (toComment != null) {
                 final ItemView item = Objects.requireNonNull(items.get(toComment.id()));
                 try {
@@ -471,6 +716,72 @@ public final class FieldsBoardWriter implements BoardWriter {
                     throw failed(e, item.repository(), written, token);
                 }
             }
+        }
+
+        private void change(final String token, final String owner, final Link link) {
+            final ItemView from = link.from();
+            final long to = databaseId(link.to());
+            switch (link.kind()) {
+                case ADD_SUB ->
+                        github.addSubIssue(token, owner, from.repository(), from.number(), to);
+                case REMOVE_SUB ->
+                        github.removeSubIssue(token, owner, from.repository(), from.number(), to);
+                case ORDER -> {
+                    final ItemView after = link.after();
+                    final ItemView before = link.before();
+                    github.reprioritizeSubIssue(
+                            token,
+                            owner,
+                            from.repository(),
+                            from.number(),
+                            to,
+                            after == null ? null : databaseId(after),
+                            before == null ? null : databaseId(before));
+                }
+                case ADD_BLOCKER ->
+                        github.addBlockedBy(token, owner, from.repository(), from.number(), to);
+                case REMOVE_BLOCKER ->
+                        github.removeBlockedBy(token, owner, from.repository(), from.number(), to);
+            }
+        }
+
+        /** An issue's id in REST, as GitHub answered it in the read right before the write. */
+        private long databaseId(final ItemView item) {
+            final GitHubGraphQl.BoardIssue read = reads.get(item.issueId());
+            if (read == null) {
+                throw new IllegalStateException("An item linked was not read before the write");
+            }
+            return read.databaseId();
+        }
+
+        /**
+         * The refusal of a call GitHub refused or did not answer: a refusal of the request itself,
+         * such as a link GitHub does not allow, is not savable in fixed words, since GitHub's own
+         * words may repeat what was sent; partly saved once anything was written before it.
+         */
+        StoreException refusedCall(
+                final RuntimeException e,
+                final String id,
+                final String repository,
+                final Set<String> written,
+                final String token) {
+            if (e instanceof GitHubException refused
+                    && refused.delivery() != Delivery.SENT_UNANSWERED
+                    && refused.status() >= 400
+                    && refused.status() < 500
+                    && refused.status() != 401
+                    && refused.status() != 403
+                    && refused.status() != 429) {
+                final String reason = "GitHub refused the call with status " + refused.status();
+                if (written.isEmpty()) {
+                    return new StoreException.NotSavable(id, reason);
+                }
+                return new StoreException.PartlySaved(
+                        repository,
+                        List.copyOf(written),
+                        "A part of the save was written before a call failed: " + reason);
+            }
+            return failed(e, repository, written, token);
         }
 
         private boolean summedField(final String fieldId) {
@@ -513,6 +824,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                         throw new StoreException.StaleRevision(
                                 current.board().revision().value(), chunk.get(at).getKey());
                     }
+                    reads.put(item.issueId(), now.issue());
                 }
             }
         }
@@ -588,6 +900,34 @@ public final class FieldsBoardWriter implements BoardWriter {
      * @param value the value
      */
     private record Value(String id, ItemView item, GitHubGraphQl.FieldValue value) {}
+
+    /**
+     * A link of one issue to another to change.
+     *
+     * @param kind what changes
+     * @param id the Porelo id of the item it is changed on
+     * @param from the parent, or the issue whose blockers change
+     * @param to the sub-issue, or the blocker
+     * @param after the sibling an ordered sub-issue follows, or null
+     * @param before the sibling an ordered sub-issue precedes, or null
+     */
+    private record Link(
+            Kind kind,
+            String id,
+            ItemView from,
+            ItemView to,
+            @Nullable ItemView after,
+            @Nullable ItemView before) {
+
+        /** What a link's change does. */
+        enum Kind {
+            ADD_SUB,
+            REMOVE_SUB,
+            ORDER,
+            ADD_BLOCKER,
+            REMOVE_BLOCKER
+        }
+    }
 
     /**
      * A stage to be written as a comment.

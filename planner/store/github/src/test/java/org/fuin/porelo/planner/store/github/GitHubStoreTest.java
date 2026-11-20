@@ -239,6 +239,51 @@ class GitHubStoreTest {
     }
 
     @Test
+    void anEditThatWroteIsAnsweredWithTheBoardReadAgainAndOneThatWroteNothingIsNot() {
+        // Harm: the window shown the board from before a written edit, or the person's rate
+        // limit spent on a full read after an edit or a comment that changed no board.
+        final AtomicInteger reads = new AtomicInteger();
+        final java.util.List<String> written = new java.util.ArrayList<>();
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        config -> snapshot("r" + reads.incrementAndGet()),
+                                        states -> null)
+                                .probe(current -> true)
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public boolean setBlockedBy(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final String issue,
+                                                    final List<String> blockedBy) {
+                                                return !blockedBy.isEmpty();
+                                            }
+
+                                            @Override
+                                            public void comment(
+                                                    final Snapshot current,
+                                                    final String issue,
+                                                    final String text) {
+                                                written.add(text);
+                                            }
+                                        }));
+        store.board();
+
+        assertThat(store.setBlockedBy(new Revision("r1"), "AB1", List.of()).revision())
+                .as("the board after an edit that wrote nothing")
+                .isEqualTo(new Revision("r1"));
+        store.comment("AB1", "A note.");
+        assertThat(reads.get()).as("full reads before anything was written").isEqualTo(1);
+        assertThat(written).as("the comment written").containsExactly("A note.");
+
+        assertThat(store.setBlockedBy(new Revision("r1"), "AB1", List.of("AB2")).revision())
+                .as("the board after an edit that wrote")
+                .isEqualTo(new Revision("r2"));
+    }
+
+    @Test
     void aReadRefusedAfterAWriteIsPartlySavedNeverAMissingAccess() {
         // Harm: a write that reached GitHub answered as refused before writing, so the window or
         // a stage's hand-in makes it again once a token is handed on, writing it twice.
