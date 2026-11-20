@@ -507,7 +507,7 @@ public final class CarryOver {
         for (final String reference : item.blockedBy()) {
             final long blocker = known(byReference, reference).databaseId();
             if (!blockers.contains(blocker)) {
-                calls.addBlockedBy(token, owner, repository, number, blocker);
+                writes.addBlockedBy(token, owner, repository, number, blocker);
             }
         }
         if (!bodyLeft && body.equals(firstBody) && !body.equals(item.body())) {

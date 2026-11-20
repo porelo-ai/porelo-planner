@@ -53,17 +53,6 @@ public interface CarryOverCalls {
     List<Long> blockedBy(String token, String owner, String repository, int number);
 
     /**
-     * Records that an issue is blocked by another.
-     *
-     * @param token the person's token
-     * @param owner the repository's owner
-     * @param repository the blocked issue's repository
-     * @param number the blocked issue's number
-     * @param blockerId the blocking issue's database id
-     */
-    void addBlockedBy(String token, String owner, String repository, int number, long blockerId);
-
-    /**
      * Calls through the forge client's REST calls.
      *
      * @param rest the REST client
@@ -117,16 +106,6 @@ public interface CarryOverCalls {
                 }
                 throw new IllegalStateException(
                         repository + "#" + number + " has more blockers than are read");
-            }
-
-            @Override
-            public void addBlockedBy(
-                    final String token,
-                    final String owner,
-                    final String repository,
-                    final int number,
-                    final long blockerId) {
-                rest.addBlockedBy(token, owner, repository, number, blockerId);
             }
         };
     }

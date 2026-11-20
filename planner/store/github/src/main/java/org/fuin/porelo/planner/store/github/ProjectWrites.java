@@ -170,6 +170,60 @@ public interface ProjectWrites {
     void addSubIssue(String token, String owner, String repository, int number, long subIssueId);
 
     /**
+     * Takes a sub-issue from its parent; it stays an issue of its own.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the parent's repository
+     * @param number the parent's number
+     * @param subIssueId the sub-issue's id in REST
+     */
+    void removeSubIssue(String token, String owner, String repository, int number, long subIssueId);
+
+    /**
+     * Moves a sub-issue among its parent's sub-issues, right after one sibling or right before
+     * another.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the parent's repository
+     * @param number the parent's number
+     * @param subIssueId the sub-issue's id in REST
+     * @param afterId the sibling it follows, in REST, or null
+     * @param beforeId the sibling it precedes, in REST, or null when it follows one
+     */
+    void reprioritizeSubIssue(
+            String token,
+            String owner,
+            String repository,
+            int number,
+            long subIssueId,
+            @Nullable Long afterId,
+            @Nullable Long beforeId);
+
+    /**
+     * Makes an issue wait on another.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the waiting issue's repository
+     * @param number the waiting issue's number
+     * @param blockerId the blocker's id in REST
+     */
+    void addBlockedBy(String token, String owner, String repository, int number, long blockerId);
+
+    /**
+     * Ends an issue's wait on another.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the waiting issue's repository
+     * @param number the waiting issue's number
+     * @param blockerId the blocker's id in REST
+     */
+    void removeBlockedBy(String token, String owner, String repository, int number, long blockerId);
+
+    /**
      * Reads a page of the open issues the token's owner made in a repository at or after a moment,
      * pull requests left out; an issue the person closed is never taken for one made.
      *
@@ -332,6 +386,49 @@ public interface ProjectWrites {
                     }
                 }
                 return new FoundPage(found, issues.more());
+            }
+
+            @Override
+            public void removeSubIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long subIssueId) {
+                rest.removeSubIssue(token, owner, repository, number, subIssueId);
+            }
+
+            @Override
+            public void reprioritizeSubIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long subIssueId,
+                    final @Nullable Long afterId,
+                    final @Nullable Long beforeId) {
+                rest.reprioritizeSubIssue(
+                        token, owner, repository, number, subIssueId, afterId, beforeId);
+            }
+
+            @Override
+            public void addBlockedBy(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long blockerId) {
+                rest.addBlockedBy(token, owner, repository, number, blockerId);
+            }
+
+            @Override
+            public void removeBlockedBy(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long blockerId) {
+                rest.removeBlockedBy(token, owner, repository, number, blockerId);
             }
 
             @Override

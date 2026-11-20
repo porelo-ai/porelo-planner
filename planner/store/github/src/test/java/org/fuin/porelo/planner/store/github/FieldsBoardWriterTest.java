@@ -372,6 +372,48 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public void removeSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            throw new AssertionError("a save changed a link");
+        }
+
+        @Override
+        public void reprioritizeSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId,
+                final @Nullable Long afterId,
+                final @Nullable Long beforeId) {
+            throw new AssertionError("a save changed a link");
+        }
+
+        @Override
+        public void addBlockedBy(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long blockerId) {
+            throw new AssertionError("a save changed a link");
+        }
+
+        @Override
+        public void removeBlockedBy(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long blockerId) {
+            throw new AssertionError("a save changed a link");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,
