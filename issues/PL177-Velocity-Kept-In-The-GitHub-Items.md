@@ -51,12 +51,15 @@ themselves.
   same on the command line, in place of the Markdown store's `stories stage median|p80`; an estimate stage writes
   the forecast into `Estimate`. There is no Markdown branch: the Markdown store goes
   ([PL178](README.md#pl178)).
-- **A stage from Porelo**: `POST /projects/{project}/issues/{issue}/stages` takes one stage a task ended, as
-  Porelo's daemon measures it from the `Porelo-Stage: <stage> <result>` trailer of the task's pushed commit: `key`
-  (the task and the stage, so a stage sent twice counts once), `stage` (one lower-case word, checked against the
-  project's work rules, an unknown one answered as a problem), `result` (`done`, `blocked`, `failed`), `actor`,
-  `model`, `effort`, `minutes`, `vmMinutes` (0 until something measures it), `tokens`; it answers 204 or a problem.
-  The store writes it as its stage entry and adds it to the fields, as an agent's stage is written today.
+- **The stages, read from Porelo**: Porelo never calls the planner; the planner reads Porelo as it reads its task
+  records today (`porelo task records -p <project> --since <instant> --json`, `PoreloTaskRecords`). Porelo's daemon
+  keeps each stage a task ended in its own record - an id per stage, the item's tracker reference, the stage (one
+  lower-case word), the result (`done`, `blocked`, `failed`), start, end, and tokens by model and kind - and offers
+  them through that read. The planner fetches them on a task's event and on its regular refresh, writes each as
+  the item's stage entry (a GitHub stage comment whose key is the stage's id) and adds it to the number fields;
+  a stage whose id already stands among the item's entries is neither written nor added again, so a fetch repeated
+  or overlapping writes nothing twice. A stage naming an item not on the board, or a stage the project's work rules
+  do not know, is a fault shown on the task, not written. `VM minutes` stays 0 until something measures it.
 - Red first: `VelocityFromItemsTest` - the fallback order at 4 and 5 samples, a repository with none taking the
   project's, a project with none taking the seed, an open item and one of `Minutes` 0 left out, a `Ready` that is no
   instant a fault; a GitHub store test that `Started` and `Ready` are written once and in the state's call; a
@@ -70,4 +73,5 @@ themselves.
 
 ## To be checked
 
-- How Porelo's daemon signs its calls to the planner, with Agent Core.
+- The read's shape - a member of `porelo task records`' answer or a read of its own, and its cursor - with Agent
+  Core.
