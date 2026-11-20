@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL167",
   "title": "The GitHub Board Read Again Only When Changed",
-  "state": "Analyzed",
+  "state": "Backlog",
   "size": "S",
   "priority": "High",
   "rank": 83,

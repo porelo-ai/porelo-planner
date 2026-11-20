@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL169",
   "title": "A Missing Forge Token Offered From the Board",
-  "state": "Analyzed",
+  "state": "Backlog",
   "size": "M",
   "priority": "High",
   "rank": 85,

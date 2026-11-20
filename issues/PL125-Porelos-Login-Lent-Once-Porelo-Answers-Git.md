@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL125",
   "title": "Porelo's Login Lent Once Porelo Answers Git",
-  "state": "Analyzed",
+  "state": "Backlog",
   "size": "M",
   "priority": "High",
   "rank": 1,
