@@ -28,8 +28,11 @@ first as a dry run, and every story and issue keeps the id people know it by.
   checkouts, writes through `GitHubStore` ([PL166](README.md#pl166)) with [PL164](README.md#pl164)'s mapping, the old id into `Id`. A story or issue whose
   `Id` is already on the GitHub project is updated, never made again, so a run that stopped can run again.
 - Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. The highest
-  number each prefix ever used, its rows included, is written into `project.yml` as that prefix's `issueFloor`, so a
-  new issue never takes a number already used.
+  number each prefix ever used, its rows included, is written into `project.yml` as that prefix's `issue_floor`, so a
+  new issue never takes a number already used: a top-level map from prefix to number, which Porelo refuses as an
+  unknown key until it knows it, so the real run waits until the Porelo the project runs on accepts `issue_floor`
+  (the dry run does not write it). In an organization's project the person signs the changed file afterwards with
+  `porelo project sign`, as for any change to `project.yml`; the run's last line says so.
 - References in the texts are rewritten: `[PL12](README.md#pl12)` and a link to another repository's index row
   become the GitHub issue's address; a reference to a number not carried (a finished or rejected one) is listed and left as plain text, not guessed.
 - The dry run prints one line per item (id, repository, state, fields, dependencies, references rewritten) and
@@ -42,7 +45,7 @@ first as a dry run, and every story and issue keeps the id people know it by.
 
 - In the test organization a copy of a real project is carried over: the dry run's count equals the board's, and
   after the run the planner's board from GitHub equals the board from Markdown for every open issue, id for id and
-  field for field, and each prefix's `issueFloor` is its highest number used.
+  field for field, and each prefix's `issue_floor` is its highest number used.
 
 ## To be checked
 

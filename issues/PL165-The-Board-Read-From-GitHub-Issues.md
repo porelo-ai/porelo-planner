@@ -26,7 +26,9 @@ however many repositories it has, with exactly what GitHub holds.
 - Today `StoreConfiguration.projects` (`planner/app`) opens every project with `GitProjects.open(project, url,
   branch)`; `GitStore` reads `project.yml`, `stories/workflow.yml`, the work rules and every repository's
   `issues/` from fetched clones (`StoreReader`).
-- `project.yml` gains `tracker: {kind: github, project: <owner>/<number>}`; without it the Git store opens as today.
+- `project.yml` gains `tracker: {kind: github, project: <owner>/<number>}`, top level, snake_case like its other
+  keys; without it the Git store opens as today. Porelo refuses a key it does not know, so a project carries it
+  only once its Porelo accepts it.
   `GitProjects` reads it and hands the project to an opener of `store/github` (no Git there: the project's files are
   read by the Git store's own reader and handed in, so only `store/git` knows Git).
 - `GitHubStore implements PlanningStore`: `refresh()` reads the GitHub project's items with their fields, sub-issues,

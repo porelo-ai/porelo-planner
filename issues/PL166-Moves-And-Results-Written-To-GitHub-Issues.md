@@ -33,10 +33,11 @@ stands on its issue under the person's name, with no fetch, commit or push.
   write the planner reads the prefix's ids again, and of two items with one `Id` the one with the higher GitHub
   number takes the next free one. `createIdea`: the story and its issues the same way, bundled.
 - `saveResult(result)`: the plan, why this size, to be checked and the stage's footprint into the fixed block of each issue's body, the new
-  state into `State`, and one comment with the result, written with the person's token so GitHub shows the person
+  state into `Status`, and one comment with the result, written with the person's token so GitHub shows the person
   as its author; findings become new issues as today.
 - No stage record is written and no measured-state rule is checked: the stage's footprint is added to the fixed
-  block beside its analysis result, in the same body edit.
+  block beside its analysis result, in the same body edit, and the number fields `Estimate`, `Minutes`,
+  `VM minutes`, `Tokens` and `Stages` are set to the block's new sums in the same field mutation as `Status`.
 - Red first: `GitHubStoreSaveTest` over recorded answers: a move of two issues in two repositories ends in one
   mutation; a board changed meanwhile is refused; the second of two calls failing gives `PartlySaved`; a stage
   result leaves the person's text above the fixed block byte for byte.
