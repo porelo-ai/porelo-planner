@@ -43,7 +43,7 @@ public final class IssueMapping {
      * @param issues the issues, by priority and then rank
      * @param faults one fixed sentence per item left out or shown other than GitHub holds it
      * @param sums each issue's stage comments' sums, by its id, which the board shows over its
-     *     number fields
+     *     number fields; an issue whose comments were not read has none
      * @param rewrite the issues whose number fields disagree with their sums, which the next save
      *     of each writes again
      */
@@ -143,7 +143,13 @@ public final class IssueMapping {
         final List<String> rewrite = new ArrayList<>();
         for (final String id : issues.keySet()) {
             final ItemView item = Objects.requireNonNull(issueItems.get(id));
-            final StageComment.Sums sum = StageComment.sums(item.comments());
+            final List<CommentView> comments = item.comments();
+            if (comments == null) {
+                // Comments not read have no sum: the board shows the number fields as GitHub holds
+                // them, and the check runs when the issue is saved, over its own comments.
+                continue;
+            }
+            final StageComment.Sums sum = StageComment.sums(comments);
             sum.faults().forEach(fault -> faults.add(id + ": " + fault));
             sums.put(id, sum);
             if (checkSums(id, item, sum, faults)) {
@@ -586,7 +592,13 @@ public final class IssueMapping {
         }
     }
 
-    private static @Nullable String idOf(final ItemView item) {
+    /**
+     * Answers the Porelo id an item's {@code Id} field holds.
+     *
+     * @param item the item
+     * @return the id, or null when the field is missing or holds no valid id
+     */
+    static @Nullable String idOf(final ItemView item) {
         final String id = item.fields().get(FieldNames.ID);
         if (id == null) {
             return null;

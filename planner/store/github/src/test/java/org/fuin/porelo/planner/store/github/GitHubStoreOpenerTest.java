@@ -28,10 +28,11 @@ class GitHubStoreOpenerTest {
                     asked.add(origin);
                     return "a-token";
                 },
-                config -> {
-                    read.add(config);
-                    throw new StoreException.Unreachable(config.own(), "read in this test");
-                },
+                project ->
+                        config -> {
+                            read.add(config);
+                            throw new StoreException.Unreachable(config.own(), "read in this test");
+                        },
                 Duration.ofSeconds(1));
     }
 

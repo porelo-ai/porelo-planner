@@ -1,20 +1,22 @@
 package org.fuin.porelo.planner.app;
 
+import java.net.URI;
+import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.app.mock.MockStore;
-import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
-import org.fuin.porelo.planner.store.github.BoardReader;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
+import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -69,18 +71,24 @@ public class StoreConfiguration {
                 tracked(environment));
     }
 
+    /** GitHub's API, to which the client adds each call's path. */
+    private static final URI GITHUB_API = URI.create("https://api.github.com");
+
     /**
      * Opens a project a GitHub project keeps, with the token Porelo's vault lends for its forge.
      */
     private static TrackedStores tracked(final Map<String, String> environment) {
         final ForgeTokens tokens = ForgeTokens.of(environment);
-        final BoardReader reader =
-                config -> {
-                    throw new StoreException.Unreadable(
-                            config.own(), "reading a project from GitHub is not built yet");
-                };
+        // GitHub's answers are never followed elsewhere, so the token goes to GitHub's API alone.
+        final HttpClient http =
+                HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
         return new GitHubStoreOpener(
-                origin -> tokens.token(origin, origin.getHost()), reader, Duration.ofSeconds(30));
+                origin -> tokens.token(origin, origin.getHost()),
+                ProjectQueries.over(new GitHubGraphQl(GITHUB_API, http)),
+                Duration.ofSeconds(30));
     }
 
     /**

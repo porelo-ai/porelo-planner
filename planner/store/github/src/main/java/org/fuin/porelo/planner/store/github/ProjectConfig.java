@@ -17,6 +17,8 @@ import org.fuin.porelo.planner.store.Workflow;
  * @param forge the forge's origin, {@code https://github.com} or an enterprise host, which the
  *     token is asked for
  * @param project the GitHub project that holds the fields
+ * @param commit the commit of the own repository the project's files were read from, which the
+ *     board's revision covers
  * @param workflow the project's workflow
  * @param work the project's work rules
  * @param repositories the project's repositories by name, its own first
@@ -27,6 +29,7 @@ import org.fuin.porelo.planner.store.Workflow;
 public record ProjectConfig(
         URI forge,
         ProjectRef project,
+        String commit,
         Workflow workflow,
         Work work,
         List<String> repositories,
@@ -36,6 +39,9 @@ public record ProjectConfig(
     /** Checks the forge and the names, and copies the lists and maps. */
     public ProjectConfig {
         TokenSource.checkedOrigin(forge);
+        if (commit.isBlank()) {
+            throw new IllegalArgumentException("A project's files are read from a commit");
+        }
         repositories = List.copyOf(repositories);
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project holds its own repository");

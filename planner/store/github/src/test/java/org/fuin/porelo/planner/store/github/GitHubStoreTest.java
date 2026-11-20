@@ -34,6 +34,7 @@ class GitHubStoreTest {
             new ProjectConfig(
                     URI.create("https://github.com"),
                     new ProjectRef("example-org", 7),
+                    "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
                     List.of("example-project"),

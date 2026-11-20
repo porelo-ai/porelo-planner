@@ -38,6 +38,7 @@ class IssueMappingTest {
             new ProjectConfig(
                     URI.create("https://github.com"),
                     new ProjectRef("example-org", 7),
+                    "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
                     List.of("example-project", "example-lib"),
@@ -63,6 +64,7 @@ class IssueMappingTest {
         private boolean archived;
         private String body = SECRET_BODY;
         private final List<CommentView> comments = new ArrayList<>();
+        private boolean commentsRead = true;
 
         private Item(final String repository, final int number, final @Nullable String id) {
             this.repository = repository;
@@ -114,6 +116,11 @@ class IssueMappingTest {
             return this;
         }
 
+        private Item commentsNotRead() {
+            commentsRead = false;
+            return this;
+        }
+
         private Item body(final String text) {
             body = text;
             return this;
@@ -158,7 +165,7 @@ class IssueMappingTest {
                     parent,
                     subs,
                     blockers,
-                    comments,
+                    commentsRead ? comments : null,
                     URI.create(
                             "https://github.com/example-org/" + repository + "/issues/" + number),
                     Instant.parse("2026-01-01T00:00:00Z"),
@@ -420,6 +427,25 @@ class IssueMappingTest {
                         "LB5 has a Minutes apart from its stage comments' sum, shown as the sum",
                         "LB5 has a VM minutes apart from its stage comments' sum, shown as the sum",
                         "LB5 has a Tokens apart from its stage comments' sum, shown as the sum");
+    }
+
+    @Test
+    void anIssueWhoseCommentsWereNotReadShowsItsFieldsWithoutASumOrARewrite() {
+        // Harm: a board read that reads no comments takes every issue's fields for disagreeing
+        // with an empty sum, names a fault for each and writes them all to zero at the next save.
+        final Item unread =
+                new Item("example-lib", 3, "LB5")
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.MINUTES, "99")
+                        .field(FieldNames.STAGES, "2")
+                        .commentsNotRead();
+
+        final IssueMapping.Mapped mapped = read(unread);
+
+        assertThat(mapped.issues()).as("the issue is on the board").hasSize(1);
+        assertThat(mapped.sums()).as("no sum stands for comments not read").isEmpty();
+        assertThat(mapped.rewrite()).as("nothing is written again").isEmpty();
+        assertThat(mapped.faults()).as("its fields are no fault").isEmpty();
     }
 
     @Test
