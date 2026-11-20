@@ -51,6 +51,48 @@ however many repositories it has, with exactly what GitHub holds.
   `CredentialRefused`; a page beyond the bound gives a fault, not a cut board. Then one live check against the
   test organization, measured against the 0.8 s the story names.
 
+### Plan reading
+
+What agy's reading of this plan found, and how the build answers it:
+
+- **Where it reads and with whose token.** The forge origin is `https://<host>` of the own repository's clone
+  address, which the window gave. `kind: github` is taken for `github.com` alone. Its API base is
+  `https://api.github.com/`, and its token is asked for `https://github.com`, through `TokenSource.checkedOrigin`.
+  A `project.yml` whose `tracker.project` names another owner than the own repository's, or whose repositories
+  stand on another host or under another owner, is `Unreadable`. So are a `tracker` with another `kind` or with
+  keys the planner does not know.
+- **Read only.** Opening, `board()` and `refresh()` send no mutation: no `setFieldOptions`, no `setFieldValues`,
+  no rewrite of a sum. A missing field or option, or one of the wrong type, is a fault on the board; the writes
+  come only from [PL166](README.md#pl166). The `HttpClient` follows no redirect and has a connect timeout.
+- **What one read reads.** `projectFields` and every page of `projectItems`, 100 items to a page and at most 50
+  pages. Beyond that the read is `Unreadable`, never a cut board, and one read has a deadline of 60 s. An item
+  without an issue (a draft or a pull request) is left out. An item whose issue's repository belongs to another
+  owner is left out as a fault. An item whose sub-issues or blockers run to a second page is left out as a fault,
+  and its story is not whole. An item seen twice across pages counts once by its node id. A cursor that does not
+  advance is refused.
+- **Stage comments are not read on the board.** The client's board answer carries no comments, and reading them
+  per issue would cost one call per issue. The board shows the number fields as GitHub holds them. The check of
+  the fields against their comments ([PL164](README.md#pl164)) runs when an issue is saved, over that issue's
+  comments alone. `ItemView` tells comments not read apart from none.
+- **`archived` and the owner come from the client.** `ProjectItem` gains `isArchived`, and `BoardIssue` gains its
+  repository's owner, asked of Agent Gorge. Until they are in, an archived item reads as live, which shows it and
+  keeps its alias taken.
+- **The revision.** It is a digest of every item's node id, `updatedAt`, open and archived state, parent,
+  sub-issues, blockers and field values, in a fixed order, with the project files' commit. A change of a field
+  alone changes it.
+- **The project's files** are read again on `refresh()` from the own repository's head, as the Git store reads
+  them, so a changed workflow or work rule is seen without reopening.
+- **Refusals.** A 401 or 403 that GitHub marks as rate limited is `Unreachable` and names the wait. Until the wait
+  ends, background reads are held off and the board kept is served. Every other refusal follows
+  [PL169](README.md#pl169)'s `ForgeAccessRefusals`. The token a call used is the one scrubbed from its failure:
+  the reader passes it on, and no second ask is made.
+- **Ids** stay [PL164](README.md#pl164)'s aliases until [PL170](README.md#pl170) makes the tracker reference the
+  id.
+- **Tests**: `ItemsBoardReaderTest` (two pages with field values, `projectFields` held in the snapshot's config, a
+  field change that changes the revision, a draft item, an item with a second page of sub-issues, the bound, a
+  non-advancing cursor, a rate limit, a token in a failure, and a fake client that fails on any mutation) and
+  `GitHubProjectsTest` (the `tracker` key, another owner, another host, an unknown kind, an unknown key).
+
 ## Order and files
 
 Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;
