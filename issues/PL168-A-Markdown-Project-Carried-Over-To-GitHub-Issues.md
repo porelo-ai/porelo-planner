@@ -6,21 +6,52 @@
   "id": "PL168",
   "title": "A Markdown Project Carried Over to GitHub Issues",
   "state": "Backlog",
-  "size": "M",
+  "size": "L",
   "priority": "High",
   "rank": 84,
   "blockedBy": ["PL165", "PL166"],
-  "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every issue, field, dependency and rewritten reference it would write; the real run keeps each old id, can be run again without doubling anything, and says what it could not carry"
+  "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every item, field, dependency and rewritten reference it would write; the real run makes each item on GitHub, rewrites every old id to the new tracker reference, can go on after a stop without doubling anything, and writes the velocity seed per repository and size into project.yml; step 1 (the dry run) built, step 2 (the real run) next"
 }
 ```
 
-**Why this size.** M: one command in the executable over the Git store's reading and the GitHub store's writing,
-the rewriting of references, and its tests; the removal of the Markdown files is each repository's own work.
+**Why this size.** L, not M: besides the command over the Git store's reading, step 2 makes every item on GitHub
+in an order that lets each old id be rewritten to a reference not yet known when the text was read, carries the
+stage comments and sums, goes on after a stop without an id on GitHub to find what it made, and seeds the velocity;
+the removal of the Markdown files is each repository's own work.
 
 **What must be true.** On the cut-over day a project's planning moves to GitHub Issues in one run that was seen
-first as a dry run, and every story and issue keeps the id people know it by.
+first as a dry run, and every reference between the carried stories and issues points at the new item.
 
 ## Plan
+
+### Step 2, the real run, as decided for the cut-over
+
+- **No id survives on GitHub.** The run makes each open story and issue as a GitHub issue in its repository and
+  keeps a map old id -> new tracker reference only while it copies. Nothing on GitHub names the old id: no `Id`
+  field, no alias, no marker in a body.
+- **Order**: first every item is made with its title and a body of its sections whose references are not yet
+  rewritten, and added to the project with its fields and sums; the map is then whole, and a second pass rewrites
+  every old id in the stories' issue lists (as sub-issues), `blockedBy` (as GitHub's dependencies) and the bodies
+  to the new reference, and writes the stage comments, oldest first. An old id outside the map (finished, rejected,
+  or of another project) is left as text and listed.
+- **A stop and a run again**: the map is written, as it grows, to a file of the run's own under the planner's
+  private state (never into a repository), with the project and the time it began; a run again with that file
+  goes on from it and makes no item twice. Without the file a run refuses a project that already holds items, so
+  nothing is doubled. The file is removed once the run ends whole, and its last line says so.
+- **Velocity seed**: `--seed <csv>` takes a file of `repository,size,minutes` rows (the current medians, which the
+  person derives from the velocity records); the run writes them into `project.yml` as the starting value per
+  repository and size, in the key [PL177](README.md#pl177) agrees, and nothing into `stats/`. Reading the seed and
+  the median from the items is [PL177](README.md#pl177)'s.
+- `project.yml` gains `tracker` and the seed; the person signs the changed file afterwards with
+  `porelo project sign`, and the run's last line says so.
+- Ends non-zero naming each item it could not carry; the dry run's lines are printed again with each item's new
+  address.
+- Red first: `CarryOverTest` over the two-repository fixture against a fake GitHub: the items made, every old id in
+  the issue lists, dependencies and bodies rewritten to the new references, the comments in order, the sums; a run
+  stopped after the first pass and run again with its map makes nothing twice; a project already holding items and
+  no map is refused; the seed written into `project.yml` and nothing under `stats/`.
+
+### Step 1, built
 
 - Today the executable's `issues` and `stories` commands read the Markdown store through `store/git` (`IssueIndex`,
   `StoriesIndex`, `IssueLinks`); the Git store's `refresh()` gives every story and issue with its text.
@@ -106,15 +137,17 @@ its own.
     `stats/<id>.jsonl`), and `ReferenceRewrite` with its list of numbers not carried; the command prints the dry
     run's lines and writes nothing. Owns `store/github`'s `CarryOverPlan` and `ReferenceRewrite`, `planner/app`'s
     `carry-over` command with `--dry-run` alone, and `CarryOverPlanTest`, `ReferenceRewriteTest`.
-  - **Step 2, the real run**, after [PL165](README.md#pl165) and [PL166](README.md#pl166): `CarryOver` writes the
-    plan through `BoardWriter`, finds an item already carried by its alias on the read board, and ends non-zero on
-    a failed item; owns `CarryOver` and `CarryOverTest`.
+  - **Step 2, the real run**, after [PL165](README.md#pl165) and [PL166](README.md#pl166): `CarryOver` makes the
+    items through the forge client's issue and project calls, keeps its map of old ids in its own state file,
+    rewrites the references, writes the seed, and ends non-zero on a failed item; owns `CarryOver`, `CarryOverMap`
+    and `CarryOverTest`. Step 1's plan names no alias any more: the `Id` field leaves its lines.
 
 ## Acceptance
 
 - In the test organization a copy of a real project is carried over: the dry run's count equals the board's, and
-  after the run the planner's board from GitHub equals the board from Markdown for every open issue, id for id and
-  field for field, each item's old id standing as its alias.
+  after the run the planner's board from GitHub equals the board from Markdown for every open issue, field for
+  field, each old id mapped to its new reference in every issue list, dependency and text; a run stopped midway and
+  run again doubles nothing.
 
 ## To be checked
 

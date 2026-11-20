@@ -10,18 +10,48 @@
   "priority": "High",
   "rank": 87,
   "blockedBy": ["PL164"],
-  "covers": "A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference, a carried-over one showing its old id as its alias, so an item made after the cut-over needs no Porelo id"
+  "covers": "A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference alone, with no Id field and no alias, so an item made after the cut-over needs no Porelo id; step 1 (contract, Ids, screen) built, step 2 (the GitHub store's ids, the alias taken out) next"
 }
 ```
 
 **Why this size.** M, not S: one contract change the window builds against - the id's form in `planner.yaml`, its
-paths and the screen - with the store API's `Ids` it rests on; not L, since the store and the board keep their
-shape and only what an id may be widens.
+paths and the screen - with the store API's `Ids` it rests on, and in step 2 the GitHub store's mapping with the
+alias taken out of the contract, the records and the screen again; not L, since the store and the board keep their
+shape.
 
 **What must be true.** A person sees and moves a story or issue made on GitHub after the cut-over like any other,
-and finds a carried-over one under its old id too.
+and every item, carried over or new, is known by its tracker reference alone.
 
 ## Plan
+
+### Step 2, as decided for the cut-over
+
+- **The id is the tracker reference, nothing else.** A GitHub item's id is `<repository>#<number>`, the repository
+  being the GitHub repository the issue lives in, lowercased, as `Ids.name` takes it, and the number GitHub's.
+  There is no project field `Id` and no alias: `IssueMapping` builds every id from the item's repository and number,
+  `FieldNames.ID` and the `Id` field go (the planner adds 10 fields), and an item whose repository is not one of
+  `project.yml`'s, or whose name `Ids.name` refuses, is left out as a fault naming its repository and number.
+- **The alias goes again**: `alias` leaves `Story` and `Issue` in `store/api`, `planner.yaml` (`StoryAlias`,
+  `IssueAlias`, the members), `Ids.storyAlias`/`Ids.issueAlias`, the mock board, `MockStore`, `WorkRun` and the
+  screen (card, issue rows, tile, story page, search, filter). Step 1's tests of the alias go with it. A story is
+  told from an issue by the label `story`; a sub-issue of a sub-issue is refused as a fault.
+- **`work` filled**: `WorkOrder.Task` carries `work: {issue, phase}` for a planned stage of a GitHub-tracked
+  project, the issue `<owner>/<repository>#<number>` with the owner `TrackedProject` verified, the phase the
+  stage's; `WorkRecord` reads an older `work.json` without it as absent; `PoreloTaskRecords` takes the owner's
+  reference for an issue; a MAIN task over several issues names its first. The window hands `work` to Porelo's
+  `Start` (Agent Frontend's side, after the pin moves).
+- **A given file's name** for a tracker's issue replaces `#` by `-` (`porelo-planner-12.md`), so no file name
+  Porelo mounts holds a `#`.
+- Old ids are matched to nothing after the cut-over: old commits, velocity rows and task records stay under them.
+  No task is open at the cut-over.
+- Red first: `IssueMappingTest` - an item named by its repository and number with no `Id` field on the project, an
+  item of a repository outside `project.yml` left out as a fault, a sub-issue of a sub-issue refused; a controller
+  test that a board answer carries no `alias`; `WorkOrder`/`WorkRecord` tests of `work` in a start and an older
+  record; the screen's tests without the alias.
+
+### Step 1, built
+
+What step 1 built of the alias is taken out by step 2; the rest stands.
 
 - Today an id has one form: `planner.yaml`'s `StoryId` (`^ST[0-9]{1,5}$`) and `IssueId`
   (`^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$`), checked by `Ids` in `store/api`, which 17 main files of the planner
@@ -98,5 +128,5 @@ answered:
 
 ## Acceptance
 
-- The window shows a GitHub board in the test organization with an item made after the cut-over and a carried-over
-  one, moves each, and finds the carried one under its alias.
+- The board of a GitHub project in the test organization, with no `Id` field, shows an item made after the
+  cut-over and a carried-over one, each by its tracker reference, and moves each, measured on the native planner.

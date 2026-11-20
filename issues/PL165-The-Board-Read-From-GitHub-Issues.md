@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL165",
   "title": "The Board Read From GitHub Issues",
-  "state": "Backlog",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 81,
