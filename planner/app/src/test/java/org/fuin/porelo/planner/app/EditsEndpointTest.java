@@ -202,6 +202,12 @@ class EditsEndpointTest {
                         "{\"blockedBy\": [\"AB2\"], \"extra\": 1, \"revision\": \"r1\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        send("PUT", "/issues/AB1/blockedBy", "{\"blockedBy\": [], \"revision\": \" \"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        send("POST", "/stories", "{\"idea\": {}, \"revision\": \"\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("IdeaRefused"));
         send("PUT", "/issues/ab-1/blockedBy", "{\"blockedBy\": [], \"revision\": \"r1\"}")
                 .andExpect(status().isBadRequest());
         assertThat(written).as("nothing written").isEmpty();

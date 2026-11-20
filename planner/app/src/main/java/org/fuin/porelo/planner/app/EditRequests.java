@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -70,6 +71,9 @@ final class EditRequests {
 
     private static final String NO_STORY = "The body is no new story.";
 
+    /** A revision as the description's {@code Revision} gives it. */
+    private static final Pattern REVISION = Pattern.compile("[!-~]{1,200}");
+
     /**
      * Reads a new story: at most 65536 bytes, one JSON object with exactly an idea object and a
      * revision.
@@ -88,7 +92,7 @@ final class EditRequests {
         if (!Set.of("idea", "revision").equals(Set.copyOf(body.propertyNames()))) {
             throw noStory("body: The body must hold exactly an idea and a revision.");
         }
-        if (!body.get("revision").isString()) {
+        if (!isRevision(body.get("revision"))) {
             throw noStory("revision: The revision must be a text.");
         }
         final JsonNode idea = body.get("idea");
@@ -217,10 +221,15 @@ final class EditRequests {
 
     private static String revision(final JsonNode body, final String item) {
         final JsonNode revision = body.get("revision");
-        if (revision == null || !revision.isString()) {
+        if (revision == null || !isRevision(revision)) {
             throw Edits.refused(item, "revision", "The body names no revision.");
         }
         return revision.asString();
+    }
+
+    /** Whether a member is a revision as the description gives it: 1 to 200 printable ASCII. */
+    private static boolean isRevision(final JsonNode revision) {
+        return revision.isString() && REVISION.matcher(revision.asString()).matches();
     }
 
     private static @Nullable String text(
