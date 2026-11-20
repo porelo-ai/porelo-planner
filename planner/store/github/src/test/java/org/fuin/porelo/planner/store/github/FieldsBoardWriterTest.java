@@ -297,6 +297,16 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public FoundPage issuesCreatedSince(
+                final String token,
+                final String owner,
+                final String repository,
+                final Instant since,
+                final int page) {
+            throw new AssertionError("a save looked for issues made");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,

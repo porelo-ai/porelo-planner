@@ -1,15 +1,24 @@
 package org.fuin.porelo.planner.store.github;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
+import org.fuin.porelo.forge.github.model.PrivateUser;
+import org.fuin.porelo.forge.github.model.PublicUser;
+import org.fuin.porelo.forge.github.model.SimpleUser;
+import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -20,6 +29,9 @@ public interface ProjectWrites {
 
     /** The most comments one page of an issue's comments carries. */
     int COMMENTS_PER_PAGE = 100;
+
+    /** The most issues one page of a repository's issues carries. */
+    int ISSUES_PER_PAGE = 100;
 
     /**
      * What an issue's state is set to.
@@ -56,6 +68,29 @@ public interface ProjectWrites {
         /** Copies the labels. */
         public Created {
             labels = List.copyOf(labels);
+        }
+    }
+
+    /**
+     * An issue the person made, as a look for one GitHub may have made without answering finds it.
+     *
+     * @param issue the issue
+     * @param title its title
+     * @param body its body, empty when it has none
+     */
+    record Found(Created issue, String title, String body) {}
+
+    /**
+     * A page of the issues the person made in a repository.
+     *
+     * @param issues the issues on the page
+     * @param more whether a later page follows
+     */
+    record FoundPage(List<Found> issues, boolean more) {
+
+        /** Copies the issues. */
+        public FoundPage {
+            issues = List.copyOf(issues);
         }
     }
 
@@ -133,6 +168,20 @@ public interface ProjectWrites {
      * @param subIssueId the sub-issue's id in REST, {@link Created#databaseId}
      */
     void addSubIssue(String token, String owner, String repository, int number, long subIssueId);
+
+    /**
+     * Reads a page of the issues the token's owner made in a repository at or after a moment, open
+     * or closed, pull requests left out.
+     *
+     * @param token the person's token
+     * @param owner the repository's owner
+     * @param repository the repository's name
+     * @param since the earliest moment an issue was made at
+     * @param page the page, from 1
+     * @return the page
+     */
+    FoundPage issuesCreatedSince(
+            String token, String owner, String repository, Instant since, int page);
 
     /**
      * Writes an issue's body or its open state.
@@ -247,6 +296,44 @@ public interface ProjectWrites {
             }
 
             @Override
+            public FoundPage issuesCreatedSince(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final Instant since,
+                    final int page) {
+                final String login = login(rest.user(token));
+                // GitHub lists by the last change, so an issue made since was changed since too.
+                final Page<Issue> issues =
+                        rest.issues(
+                                token,
+                                owner,
+                                repository,
+                                "all",
+                                null,
+                                since,
+                                page,
+                                ISSUES_PER_PAGE);
+                final List<Found> found = new ArrayList<>();
+                for (final Issue issue : issues.items()) {
+                    final SimpleUser author = issue.user();
+                    final OffsetDateTime made = issue.createdAt();
+                    if (issue.pullRequest() == null
+                            && author != null
+                            && login.equals(author.login())
+                            && made != null
+                            && !made.toInstant().isBefore(since)) {
+                        found.add(
+                                new Found(
+                                        created(issue),
+                                        Objects.requireNonNullElse(issue.title(), ""),
+                                        Objects.requireNonNullElse(issue.body(), "")));
+                    }
+                }
+                return new FoundPage(found, issues.more());
+            }
+
+            @Override
             public void updateIssue(
                     final String token,
                     final String owner,
@@ -312,6 +399,26 @@ public interface ProjectWrites {
     }
 
     /**
+     * The login of the account GitHub answered for the token.
+     *
+     * @param user GitHub's answer
+     * @return the login
+     * @throws IllegalStateException when the answer names none
+     */
+    private static String login(final UsersGetAuthenticated200Response user) {
+        final String login =
+                switch (user) {
+                    case PrivateUser own -> own.login();
+                    case PublicUser shown -> shown.login();
+                    default -> null;
+                };
+        if (login == null || login.isEmpty()) {
+            throw new IllegalStateException("GitHub named no account for the token");
+        }
+        return login;
+    }
+
+    /**
      * An issue as GitHub answered it, refused when the answer lacks what a write goes on with.
      *
      * @param issue GitHub's answer
@@ -334,7 +441,7 @@ public interface ProjectWrites {
                         ? List.of()
                         : labels.stream()
                                 .map(IssueLabelsInner::name)
-                                .filter(java.util.Objects::nonNull)
+                                .filter(Objects::nonNull)
                                 .toList());
     }
 }
