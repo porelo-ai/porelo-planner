@@ -52,10 +52,12 @@ themselves.
   the forecast into `Estimate`. There is no Markdown branch: the Markdown store goes
   ([PL178](README.md#pl178)).
 - **The stages, read from Porelo**: Porelo never calls the planner; the planner reads Porelo as it reads its task
-  records today (`porelo task records -p <project> --since <instant> --json`, `PoreloTaskRecords`). Porelo's daemon
-  keeps each stage a task ended in its own record - an id per stage, the item's tracker reference, the stage (one
-  lower-case word), the result (`done`, `blocked`, `failed`), start, end, and tokens by model and kind - and offers
-  them through that read. The planner fetches them on a task's event and on its regular refresh, writes each as
+  records today (`porelo task records -p <project> --since <instant> --json`, `PoreloTaskRecords`). Each task record
+  of that answer gains `stages`, a list of what Porelo's daemon measured: `id` (a random UUID, given once), `item`
+  (`<owner>/<repository>#<number>`, the task's `work.issue`), `stage` (one lower-case word), `result` (`done`,
+  `blocked`, `failed`), `start` and `end` (UTC instants), and `tokens`, a list of `{model, input, cacheWrite,
+  cacheRead, output}`; agent, model and effort stay the record's own members. `--since` needs no change: a stage ends
+  no later than its task, so every stage that ended since the cursor comes with its task. The planner fetches them on a task's event and on its regular refresh, writes each as
   the item's stage entry (a GitHub stage comment whose key is the stage's id) and adds it to the number fields;
   a stage whose id already stands among the item's entries is neither written nor added again, so a fetch repeated
   or overlapping writes nothing twice. A stage naming an item not on the board, or a stage the project's work rules
@@ -70,8 +72,3 @@ themselves.
 - On the test organization's project, after two items of one size are carried and finished, the velocity answer
   shows their median per repository and over the project, and a third item's estimate stage writes the figure the
   rule picks; no file under `stats/` is written.
-
-## To be checked
-
-- The read's shape - a member of `porelo task records`' answer or a read of its own, and its cursor - with Agent
-  Core.
