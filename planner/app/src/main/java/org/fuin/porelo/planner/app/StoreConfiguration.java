@@ -8,6 +8,9 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.Enterprise;
+import org.fuin.porelo.forge.github.model.Integration;
+import org.fuin.porelo.forge.github.model.IntegrationPermissions;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
@@ -69,6 +72,9 @@ public class StoreConfiguration {
         IssuesUpdateRequest.class,
         IssuesUpdate200Response.class,
         Issue.class,
+        Integration.class,
+        IntegrationPermissions.class,
+        Enterprise.class,
         IssuesCreateRequest.class,
         IssuesAddSubIssueRequest.class,
         IssuesAddBlockedByDependencyRequest.class,
