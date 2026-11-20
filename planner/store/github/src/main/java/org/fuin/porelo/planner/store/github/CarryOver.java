@@ -170,14 +170,27 @@ public final class CarryOver {
         final CarryOverPlan first = planner.apply((repository, id) -> repository + "#" + NOT_YET);
         whole(longest);
         whole(first);
-        final Set<String> planned = new HashSet<>();
-        first.items().forEach(item -> planned.add(item.id()));
-        for (final String id : map.entries().keySet()) {
-            if (!planned.contains(id)) {
+        final Map<String, String> planned = new HashMap<>();
+        first.items().forEach(item -> planned.put(item.id(), item.repository()));
+        for (final Map.Entry<String, CarryOverMap.Entry> kept : map.entries().entrySet()) {
+            final String id = kept.getKey();
+            final String repository = planned.get(id);
+            if (repository == null) {
                 throw new Stopped(
                         "The map holds "
                                 + id
                                 + ", which the project no longer carries; nothing was written");
+            }
+            if (!repository.equals(kept.getValue().repository())) {
+                // Its issue would be written in a repository the item no longer belongs to.
+                throw new Stopped(
+                        "The map holds "
+                                + id
+                                + " in "
+                                + kept.getValue().repository()
+                                + ", which the project carries in "
+                                + repository
+                                + "; nothing was written");
             }
         }
 
