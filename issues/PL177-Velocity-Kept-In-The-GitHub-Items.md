@@ -24,6 +24,9 @@ themselves.
 
 ## Plan
 
+- **When**: the cut-over goes ahead without stage figures on GitHub - the GitHub store writes a stage result's
+  state, sections and comment, but adds nothing to `Minutes`, `VM minutes`, `Tokens` and `Stages`, as its
+  `StageMetrics` is none - and this issue is built first right after the cut-over.
 - **Today**: the median exists only in the Markdown store, `stories stage median|p80` (`StageCommand`,
   `StageRecords.statistic`), over `stats/seed.csv` and `stats/<id>.jsonl`; an estimate stage writes it as
   `estimate_min`. The GitHub store already keeps an item's sums in the number fields `Minutes`, `VM minutes`,
