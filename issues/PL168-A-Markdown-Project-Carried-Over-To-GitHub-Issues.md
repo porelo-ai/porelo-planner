@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL168",
   "title": "A Markdown Project Carried Over to GitHub Issues",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "L",
   "priority": "High",
   "rank": 84,

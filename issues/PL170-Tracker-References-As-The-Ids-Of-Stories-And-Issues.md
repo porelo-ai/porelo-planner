@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL170",
   "title": "Tracker References as the Ids of Stories and Issues",
-  "state": "Analyzed",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 87,
