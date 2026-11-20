@@ -1261,7 +1261,9 @@ components:
     StoreRefused:
       description: >-
         The store could not be read: the workflow is missing (WorkflowMissing), the Git login was refused
-        (CredentialRefused), or a repository could not be read (Unreadable).
+        (CredentialRefused), the person's access to the forge's API is missing or lacks a right (NoForgeAccess,
+        naming the forge's address and, where the forge names it, the right), or a repository could not be read
+        (Unreadable).
       content:
         application/problem+json:
           schema:
@@ -1283,6 +1285,15 @@ components:
                 detail: The Git login was refused for the repository.
                 parameters:
                   repository: example
+            NoForgeAccess:
+              value:
+                type: urn:porelo-planner:NoForgeAccess
+                title: NoForgeAccess
+                status: 502
+                detail: The person's access to https://github.com lacks the right Projects
+                parameters:
+                  address: https://github.com
+                  right: Projects
             Unreadable:
               value:
                 type: urn:porelo-planner:Unreadable
@@ -1415,8 +1426,8 @@ components:
     SaveRefused:
       description: >-
         The store could not save: the store could not be read or written (WorkflowMissing, CredentialRefused,
-        Unreadable; an account whose Git has no name and email to commit with is refused as Unreadable, with words
-        that say so). The Git store answers once its commits stand in its own clones and pushes afterwards, so a push
+        NoForgeAccess, Unreadable; an account whose Git has no name and email to commit with is refused as
+        Unreadable, with words that say so). The Git store answers once its commits stand in its own clones and pushes afterwards, so a push
         a repository refuses becomes a fault on the board, never this answer; the mock mode answers PartlySaved, naming
         the repositories pushed and the one that failed, for a move of its fixed story over two repositories.
       content:
@@ -1441,6 +1452,14 @@ components:
                 detail: The Git login was refused for the repository.
                 parameters:
                   repository: example
+            NoForgeAccess:
+              value:
+                type: urn:porelo-planner:NoForgeAccess
+                title: NoForgeAccess
+                status: 502
+                detail: The person's access to https://github.com is missing or refused
+                parameters:
+                  address: https://github.com
     IssueConflict:
       description: The board moved since the given revision (StaleRevision, naming the current one).
       content:
@@ -3168,6 +3187,12 @@ components:
               type: string
             repository:
               type: string
+            address:
+              type: string
+              description: A forge's https origin, for NoForgeAccess.
+            right:
+              type: string
+              description: The right a forge names as missing, for NoForgeAccess, when it names one.
             revision:
               type: string
             item:

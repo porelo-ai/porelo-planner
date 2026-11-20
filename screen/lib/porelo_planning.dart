@@ -2,8 +2,9 @@
 ///
 /// The window gives it a `PlanningClient` to read and write through, and takes part through a few hooks: how a
 /// start reaches it (`PlanningStartTask`), what the screen shows of a run (`PlanningTaskChanges`), the agents a start
-/// may choose (`PlanningAgents`), and where the screen stands (`PlanningHost`). The package imports nothing of the
-/// window; its colors come from the window's theme.
+/// may choose (`PlanningAgents`), where the screen stands (`PlanningHost`) and, where the window offers it, how a
+/// forge token reaches the vault (`PlanningForgeAccess`). The package imports nothing of the window; its colors come
+/// from the window's theme.
 library;
 
 export 'src/client.dart';

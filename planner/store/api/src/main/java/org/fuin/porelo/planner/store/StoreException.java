@@ -1,5 +1,10 @@
 package org.fuin.porelo.planner.store;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
+
 /**
  * Why the store could not answer; each kind is its own subclass, so the window can say what to do.
  */
@@ -8,6 +13,7 @@ public abstract sealed class StoreException extends RuntimeException
                 StoreException.NoSuchIssue,
                 StoreException.WorkflowMissing,
                 StoreException.CredentialRefused,
+                StoreException.NoForgeAccess,
                 StoreException.Unreachable,
                 StoreException.Unreadable,
                 StoreException.StaleRevision,
@@ -90,6 +96,68 @@ public abstract sealed class StoreException extends RuntimeException
             super(
                     Ids.name(repository),
                     "Repository " + repository + " needs a Git login that works without a prompt");
+        }
+    }
+
+    /**
+     * The forge's API cannot be used with the person's access: the vault lends no token for its
+     * address, or the forge refuses the token for a right it lacks.
+     */
+    public static final class NoForgeAccess extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private static final Pattern RIGHT = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
+
+        private final @Nullable String right;
+
+        /**
+         * Names the forge's address and the right it lacks, never the token; the words are fixed.
+         *
+         * @param address the forge's origin, {@code https} with a host and nothing else
+         * @param right the right the forge names as missing, or null when it names none or no token
+         *     is lent
+         * @throws IllegalArgumentException if the address is no such origin or the right is not a
+         *     plain name
+         */
+        public NoForgeAccess(final String address, final @Nullable String right) {
+            super(
+                    origin(address),
+                    right == null
+                            ? "The person's access to " + address + " is missing or refused"
+                            : "The person's access to "
+                                    + address
+                                    + " lacks the right "
+                                    + checked(right));
+            this.right = right;
+        }
+
+        /**
+         * Answers the right the forge names as missing.
+         *
+         * @return the right, or null
+         */
+        public @Nullable String right() {
+            return right;
+        }
+
+        private static String origin(final String address) {
+            final URI uri;
+            try {
+                uri = new URI(address);
+            } catch (final URISyntaxException unparsable) {
+                // Not kept as the cause: its message repeats the address, which may hold a
+                // credential.
+                throw new IllegalArgumentException("A forge's address is an https origin");
+            }
+            TokenSource.checkedOrigin(uri);
+            return address;
+        }
+
+        private static String checked(final String right) {
+            if (!RIGHT.matcher(right).matches()) {
+                throw new IllegalArgumentException("A forge's right is a plain name");
+            }
+            return right;
         }
     }
 

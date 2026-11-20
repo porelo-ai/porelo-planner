@@ -376,6 +376,23 @@ class BoardReadsTest {
     }
 
     @Test
+    void aMissingForgeAccessIsAProblemNamingTheAddressAndTheRight() throws Exception {
+        // Harm: the window cannot tell which forge and which right to offer the person a token for.
+        given();
+        refusal = new StoreException.NoForgeAccess("https://github.com", "Projects");
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoForgeAccess"))
+                .andExpect(jsonPath("$.parameters.address").value("https://github.com"))
+                .andExpect(jsonPath("$.parameters.right").value("Projects"));
+        refusal = new StoreException.NoForgeAccess("https://github.com", null);
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.parameters.address").value("https://github.com"))
+                .andExpect(jsonPath("$.parameters.right").doesNotExist());
+    }
+
+    @Test
     void aBodyThatIsNoSourceIsAProblemTheWindowCanRead() throws Exception {
         // The window shows the planner's words; an answer of another shape would show none.
         mvc.perform(

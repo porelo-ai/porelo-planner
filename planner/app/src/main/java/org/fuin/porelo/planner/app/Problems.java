@@ -7,6 +7,7 @@ import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -158,6 +159,12 @@ public class Problems {
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
+            case StoreException.NoForgeAccess refusedAccess ->
+                    problem(
+                            "NoForgeAccess",
+                            HttpStatus.BAD_GATEWAY,
+                            detail,
+                            forgeAccess(subject, refusedAccess.right()));
             case StoreException.Unreachable any ->
                     problem(
                             "Unreachable",
@@ -203,6 +210,8 @@ public class Problems {
         switch (refusal) {
             case StoreException.WorkflowMissing any -> warn("has no workflow", subject, detail);
             case StoreException.CredentialRefused any -> warn("refused the login", subject, detail);
+            case StoreException.NoForgeAccess any ->
+                    warn("refused the forge access", subject, detail);
             case StoreException.Unreachable any -> warn("could not be reached", subject, detail);
             case StoreException.Unreadable any -> warn("could not be read", subject, detail);
             case StoreException.PartlySaved any -> warn("was not pushed", subject, detail);
@@ -230,5 +239,12 @@ public class Problems {
         problem.setInstance(URI.create("/"));
         problem.setProperty("parameters", parameters);
         return ResponseEntity.status(status).body(problem);
+    }
+
+    private static Map<String, Object> forgeAccess(
+            final String address, final @Nullable String right) {
+        return right == null
+                ? Map.of("address", address)
+                : Map.of("address", address, "right", right);
     }
 }

@@ -35,7 +35,8 @@ public interface TokenSource {
                         && origin.getPort() == -1
                         && (origin.getRawPath() == null || origin.getRawPath().isEmpty())
                         && origin.getRawQuery() == null
-                        && origin.getRawFragment() == null;
+                        && origin.getRawFragment() == null
+                        && origin.toString().equals("https://" + host);
         if (!plain) {
             throw new IllegalArgumentException(
                     "A forge is an https origin without user, port, path, query or fragment");

@@ -225,3 +225,15 @@ abstract interface class PlanningHost implements Listenable {
   /// Opens Needs you, where a stopped reading is decided.
   void openNeedsYou();
 }
+
+/// What a window may also do for the screen: put the person's forge token into the vault of the machine whose
+/// planner refused the board for it.
+///
+/// Optional: the screen finds it by `host is PlanningForgeAccess` and offers nothing to a host without it.
+abstract interface class PlanningForgeAccess {
+  /// Puts the person's token for [address], a forge's https origin, into the vault of [provider], the machine whose
+  /// planner refused with `NoForgeAccess`, asking the person for it where none is kept there.
+  ///
+  /// Answers whether a token now stands there; the screen reads the board again only after `true`.
+  Future<bool> handOnForgeToken({required String provider, required String address});
+}
