@@ -4,7 +4,10 @@ import java.util.List;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
+import org.fuin.porelo.forge.github.model.IssueLabelsInner;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
 import org.jspecify.annotations.Nullable;
@@ -37,6 +40,22 @@ public interface ProjectWrites {
         /** Copies the texts. */
         public CommentsPage {
             bodies = List.copyOf(bodies);
+        }
+    }
+
+    /**
+     * An issue GitHub made, as it answered it.
+     *
+     * @param nodeId its node id, which the project adds it by
+     * @param databaseId its id in REST, which a parent takes it as a sub-issue by
+     * @param number its number in its repository
+     * @param labels the names of the labels GitHub gave it
+     */
+    record Created(String nodeId, long databaseId, int number, List<String> labels) {
+
+        /** Copies the labels. */
+        public Created {
+            labels = List.copyOf(labels);
         }
     }
 
@@ -83,6 +102,26 @@ public interface ProjectWrites {
      */
     GitHubGraphQl.FieldOptions setFieldOptions(
             String token, String fieldId, List<GitHubGraphQl.NewOption> options);
+
+    /**
+     * Makes an issue. GitHub drops the labels in silence for an account without push access, so the
+     * caller reads them in the answer.
+     *
+     * @param token the person's token
+     * @param owner the repository's owner
+     * @param repository the repository's name
+     * @param title the issue's title
+     * @param body the issue's body
+     * @param labels the names of the labels it is to carry
+     * @return the issue as GitHub made it
+     */
+    Created createIssue(
+            String token,
+            String owner,
+            String repository,
+            String title,
+            String body,
+            List<String> labels);
 
     /**
      * Writes an issue's body or its open state.
@@ -163,6 +202,30 @@ public interface ProjectWrites {
             }
 
             @Override
+            public Created createIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final String title,
+                    final String body,
+                    final List<String> labels) {
+                return created(
+                        rest.createIssue(
+                                token,
+                                owner,
+                                repository,
+                                new IssuesCreateRequest(
+                                        title,
+                                        body,
+                                        null,
+                                        labels.isEmpty() ? null : labels,
+                                        null,
+                                        null,
+                                        null,
+                                        null)));
+            }
+
+            @Override
             public void updateIssue(
                     final String token,
                     final String owner,
@@ -225,5 +288,32 @@ public interface ProjectWrites {
                         token, owner, repository, number, new IssuesUpdateCommentRequest(body));
             }
         };
+    }
+
+    /**
+     * An issue as GitHub answered it, refused when the answer lacks what a write goes on with.
+     *
+     * @param issue GitHub's answer
+     * @return the issue
+     * @throws IllegalStateException when the answer names no node id, id or number
+     */
+    private static Created created(final Issue issue) {
+        final String nodeId = issue.nodeId();
+        final Long id = issue.id();
+        final Integer number = issue.number();
+        if (nodeId == null || id == null || number == null) {
+            throw new IllegalStateException("GitHub answered an issue without its ids");
+        }
+        final List<IssueLabelsInner> labels = issue.labels();
+        return new Created(
+                nodeId,
+                id,
+                number,
+                labels == null
+                        ? List.of()
+                        : labels.stream()
+                                .map(IssueLabelsInner::name)
+                                .filter(java.util.Objects::nonNull)
+                                .toList());
     }
 }

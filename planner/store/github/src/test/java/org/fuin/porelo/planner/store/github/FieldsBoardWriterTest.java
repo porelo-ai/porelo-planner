@@ -276,6 +276,17 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public Created createIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final String title,
+                final String body,
+                final List<String> labels) {
+            throw new AssertionError("a save made an issue");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,

@@ -264,6 +264,17 @@ class StatusOptionsWriterTest {
         }
 
         @Override
+        public Created createIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final String title,
+                final String body,
+                final List<String> labels) {
+            throw new AssertionError("the step makes no issue");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,
