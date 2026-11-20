@@ -82,14 +82,21 @@ final class CarryOverState implements CarryOver.Journal, AutoCloseable {
      * @param file the map's file, in a directory that stands
      * @param files the platform's private files
      * @return the held state
-     * @throws IOException when the directory does not stand, the lock is another account's or a
-     *     link, or another run holds it
+     * @throws IOException when the directory does not stand or another account could read or change
+     *     it, the lock is another account's or a link, or another run holds it
      */
     static CarryOverState open(final Path file, final PrivateFiles files) throws IOException {
         final Path absolute = file.toAbsolutePath().normalize();
         final Path directory = absolute.getParent();
         if (directory == null || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("the map's directory does not stand");
+        }
+        try {
+            // Held to the rule of the default place: another account can neither read the map
+            // nor swap it.
+            files.directories(directory, false, PrivateFiles.Kind.RUNTIME, List.of());
+        } catch (final IllegalStateException | UncheckedIOException e) {
+            throw new IOException(String.valueOf(e.getMessage()), e);
         }
         final Path lockFile = directory.resolve(absolute.getFileName() + ".lock");
         try {

@@ -364,6 +364,31 @@ class CarryOverRunTest {
     }
 
     @Test
+    void aStateFileInADirectoryOthersCanWriteIsRefusedBeforeAnyCall() throws Exception {
+        // Harm: a map named by --state in a shared directory is read or swapped by another
+        // account, which steers the run onto issues it never made.
+        final Path shared =
+                Files.createDirectory(
+                        dir.resolve("shared"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwxrwx---")));
+        Files.setPosixFilePermissions(shared, PosixFilePermissions.fromString("rwxrwx---"));
+        final WorkFixture.Answer answer = carry("--state", shared.resolve("map.json").toString());
+        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.err()).as("the refusal").contains("shared");
+        assertThat(remotes).as("the GitHub clients made").isZero();
+        assertThat(github.calls).as("the calls").isEmpty();
+        final Path own =
+                Files.createDirectory(
+                        dir.resolve("own"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwx------")));
+        assertThat(carry("--state", own.resolve("map.json").toString()).code())
+                .as("the exit code with a directory the account's alone")
+                .isZero();
+    }
+
+    @Test
     void aMapOpenToOthersIsRefused() throws Exception {
         // Harm: a map another account could change steers the run onto issues it never made.
         github.failingIssue = 2;
