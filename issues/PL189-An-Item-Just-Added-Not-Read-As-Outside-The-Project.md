@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL189",
   "title": "An Item Just Added Not Read As Outside The Project",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 2,
