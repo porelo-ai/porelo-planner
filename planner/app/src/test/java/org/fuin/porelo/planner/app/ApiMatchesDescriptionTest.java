@@ -71,6 +71,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("MoveWarning", org.fuin.porelo.planner.app.answers.MoveWarning.class),
                     Map.entry("IssueAdded", org.fuin.porelo.planner.app.answers.IssueAdded.class),
                     Map.entry("IdeaAdded", org.fuin.porelo.planner.app.answers.IdeaAdded.class),
+                    Map.entry("StoryAdded", org.fuin.porelo.planner.app.answers.StoryAdded.class),
+                    Map.entry("EditSaved", org.fuin.porelo.planner.app.answers.EditSaved.class),
                     Map.entry("WorkerSaved", org.fuin.porelo.planner.app.answers.WorkerSaved.class),
                     Map.entry(
                             "PrioritySaved",
@@ -222,7 +224,12 @@ class ApiMatchesDescriptionTest {
                         "GET /health",
                         "PUT /projects/{project}",
                         "POST /projects/{project}/stories/{story}/proposal",
-                        "POST /projects/{project}/stories/{story}/work")
+                        "POST /projects/{project}/stories/{story}/work",
+                        "POST /projects/{project}/stories",
+                        "PUT /projects/{project}/issues/{issue}/fields",
+                        "PUT /projects/{project}/stories/{story}/issues",
+                        "PUT /projects/{project}/issues/{issue}/blockedBy",
+                        "POST /projects/{project}/issues/{issue}/comments")
                 .isEqualTo(served);
     }
 

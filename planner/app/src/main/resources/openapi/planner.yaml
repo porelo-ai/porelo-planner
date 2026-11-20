@@ -300,6 +300,48 @@ paths:
           $ref: '#/components/responses/RecordUnavailable'
         '504':
           $ref: '#/components/responses/Unreachable'
+    post:
+      operationId: createStory
+      summary: Make a story with its issues
+      description: >-
+        Saves an idea a person, or an agent acting for them, wrote without a discussion: one story in state Idea in
+        the project's own repository and an issue in state Idea in each repository the idea names, in one save against
+        the board at the given revision, as a discussion's hand-in is saved. The idea is checked against the idea
+        format before anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a
+        part of it stands answers PartlySaved, naming the repositories that hold their part. The JSON body is at most
+        65536 bytes. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryRequest'
+      responses:
+        '201':
+          description: The story and its issues are saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryAdded'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/IdeaRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
 
   /projects/{project}/stories/{story}:
     parameters:
@@ -356,6 +398,46 @@ paths:
           $ref: '#/components/responses/StoreRefused'
         '503':
           $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+    put:
+      operationId: setStoryIssues
+      summary: Set a story's issues
+      description: >-
+        Writes the story's whole issue list, in its order, against the board at the given revision: an issue taken out
+        is no longer the story's, an issue hung in becomes the story's, and the order is the one sent. Each issue is
+        named once and is one of the board's; an issue that is a sub-issue of another issue, or that another story
+        holds, is refused (EditNotAllowed), since an issue belongs to one story. A list equal to the story's saves
+        nothing and answers the current revision. The JSON body is at most 65536 bytes. The changes stream announces
+        the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryIssuesRequest'
+      responses:
+        '200':
+          description: The list is saved, or was the story's already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -648,6 +730,130 @@ paths:
           $ref: '#/components/responses/SaveRefused'
         '503':
           $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/fields:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    put:
+      operationId: setIssueFields
+      summary: Set an issue's size, estimate, priority and rank
+      description: >-
+        Writes the members the body names against the board at the given revision: a member left out stays as it is,
+        and null clears a size, an estimate or a rank; a priority is never cleared. Values equal to the issue's save
+        nothing and answer the current revision. The JSON body is at most 65536 bytes. The changes stream announces
+        the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueFieldsRequest'
+      responses:
+        '200':
+          description: The fields are saved, or held those values already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/blockedBy:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    put:
+      operationId: setBlockedBy
+      summary: Set the issues an issue waits on
+      description: >-
+        Writes the issue's whole list of blockers against the board at the given revision: a blocker taken out no
+        longer blocks it, one added does. Each blocker is named once, is one of the board's issues and is not the
+        issue itself; a list that would make an issue wait on itself through its blockers is refused
+        (EditNotAllowed) before anything is written. A list equal to the issue's saves nothing and answers the
+        current revision. The JSON body is at most 65536 bytes. The changes stream announces the new board as it does
+        after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockedByRequest'
+      responses:
+        '200':
+          description: The blockers are saved, or were the issue's already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/comments:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    post:
+      operationId: comment
+      summary: Write a comment on an issue
+      description: >-
+        Writes one comment of the person's text on the issue, with the person's own access. The board shows no
+        comment, so the call carries no revision and the board's revision stays. The JSON body is at most 131072
+        bytes.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '204':
+          description: The comment is written.
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -1502,12 +1708,12 @@ components:
               reason: The title must have 1 to 120 characters.
     IdeaRefused:
       description: >-
-        An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in -
-        larger than 65536 bytes, not JSON, not an object, a member missing or unknown, or offer no lowercase UUID -
-        with one fault; or the idea breaks the idea format, at most 100 faults, each starting with the field it names
-        (story, story.title, issues, issues[0].repository, counted from 0); or the store cannot write it, its words
-        as the one fault; or the offer's save is still pending or was only partly pushed, with pushed naming the
-        repositories already pushed (comma-joined, empty when none).
+        An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in or
+        no new story - larger than 65536 bytes, not JSON, not an object, a member missing or unknown, offer no
+        lowercase UUID, or revision no revision - with one fault; or the idea breaks the idea format, at most 100
+        faults, each starting with the field it names (story, story.title, issues, issues[0].repository, counted from
+        0); or the store cannot write it, its words as the one fault; or the offer's save is still pending or was only
+        partly pushed, with pushed naming the repositories already pushed (comma-joined, empty when none).
       content:
         application/problem+json:
           schema:
@@ -1533,6 +1739,41 @@ components:
                   pushed: porelo-other
                   faults:
                     - 'offer: The idea of this offer was saved only in part and is not saved again.'
+    EditRefused:
+      description: >-
+        A change of an issue's fields, a story's issues or an issue's blockers, or a comment, is refused, with fixed
+        words; what was sent is never repeated. EditNotAllowed (item, field, reason) when the body is not that change
+        - not one JSON object of its size, a member unknown, missing or of another kind, a value out of its bounds -
+        or the change breaks the board: an issue or blocker named twice, an issue of another story or a sub-issue of
+        an issue hung into a story, an issue blocking itself, or blockers that lead back to the issue. MoveNotAllowed
+        (item, from, to, reason) when the store cannot write it, among them a store that does not offer the change,
+        with the store's words.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            EditNotAllowed:
+              value:
+                type: urn:porelo-planner:EditNotAllowed
+                title: EditNotAllowed
+                status: 422
+                detail: The blockers lead back to the issue through PL4.
+                parameters:
+                  item: PL3
+                  field: blockedBy
+                  reason: The blockers lead back to the issue through PL4.
+            MoveNotAllowed:
+              value:
+                type: urn:porelo-planner:MoveNotAllowed
+                title: MoveNotAllowed
+                status: 422
+                detail: not offered by this store
+                parameters:
+                  item: PL3
+                  from: ''
+                  to: ''
+                  reason: not offered by this store
     ResultRefused:
       description: >-
         A stage's hand-in is refused (ResultRefused), with fixed words; what was sent is never repeated. The body is
@@ -1588,9 +1829,9 @@ components:
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
-        saves no stage's result;
-        the mock mode previews and saves moves, saves workers and adds ideas into its in-memory board, but adds no
-        issues and saves no priorities (NotOffered).
+        stories or saves no stage's result;
+        the mock mode previews and saves moves, saves workers and adds ideas and stories into its in-memory board, but
+        adds no issues and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -2213,6 +2454,99 @@ components:
           type: string
           description: Who works the issue, as the person chose it.
           enum: [Agent, Manual]
+    StoryRequest:
+      description: A new story with its issues, in the idea format, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [idea, revision]
+      properties:
+        idea:
+          $ref: '#/components/schemas/Idea'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    StoryAdded:
+      description: The new story's id, its issues' ids in the idea's order, and the board's revision after the save.
+      type: object
+      required: [id, issues, revision]
+      properties:
+        id:
+          $ref: '#/components/schemas/StoryId'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    IssueFieldsRequest:
+      description: >-
+        An issue's fields to set, against the board at a revision; a member left out stays as it is, null clears it
+        where the issue may be without it, and no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        size:
+          type: [string, 'null']
+          description: The issue's size, XS to XL; null clears it.
+          pattern: '^(XS|S|M|L|XL)$'
+        estimateMinutes:
+          type: [integer, 'null']
+          description: The issue's estimate in minutes; null clears it.
+          minimum: 1
+          maximum: 100000
+        priority:
+          $ref: '#/components/schemas/Priority'
+        rank:
+          type: [integer, 'null']
+          description: The issue's order within its priority, the lowest first; null clears it.
+          minimum: 1
+          maximum: 99999
+        revision:
+          $ref: '#/components/schemas/Revision'
+    StoryIssuesRequest:
+      description: A story's whole issue list, in its order, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [issues, revision]
+      properties:
+        issues:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    BlockedByRequest:
+      description: An issue's whole list of blockers, against the board at a revision; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [blockedBy, revision]
+      properties:
+        blockedBy:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    CommentRequest:
+      description: A comment's text; no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The person's text, as they wrote it; not blank, at most 65536 characters.
+          minLength: 1
+          maxLength: 65536
+    EditSaved:
+      description: The board's revision after the save.
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
     IdeaAdded:
       description: The id of the story the offer's idea was saved as.
       type: object
@@ -3244,7 +3578,7 @@ components:
               type: string
             field:
               type: string
-              description: The member of a new issue's body a refusal is about, or empty.
+              description: The member of a new issue's or an edit's body a refusal is about, or empty.
             from:
               type: string
             to:

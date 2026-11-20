@@ -1,0 +1,2 @@
+title: The planner's API makes a story with its issues, sets an issue's size, estimate, priority and rank, a story's issue list and an issue's blockers, each against the revision the caller read, and writes a comment on an issue, so a GitHub project's board is kept through the API alone.
+type: added
