@@ -159,7 +159,8 @@ final class Checkouts implements Remote {
 
     /**
      * Answers whether a file of a checkout differs from what its head commit holds, or is not
-     * tracked at all; Git looks for the repository in the checkout alone and changes no file.
+     * tracked at all, ignored or not; Git looks for the repository in the checkout alone and
+     * changes no file.
      *
      * @param repository the repository
      * @param path the file's path in it
@@ -177,6 +178,8 @@ final class Checkouts implements Remote {
                                 "--porcelain=v1",
                                 "-z",
                                 "--untracked-files=all",
+                                // An ignored file is no more committed than an untracked one.
+                                "--ignored",
                                 "--",
                                 RepoPath.checked(path)));
         final Map<String, String> variables = new TreeMap<>(call.environment());
