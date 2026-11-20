@@ -773,18 +773,24 @@ class WorkRunTest {
                         WorkRefusal.class,
                         () ->
                                 f.run.storyIssues(
-                                        List.of("AA1"),
-                                        () -> {
+                                        "ST1",
+                                        without(f.store.current, "AA1"),
+                                        board -> {},
+                                        board -> {
                                             saved.set(true);
-                                            return f.store.board();
+                                            return board;
                                         }));
 
         assertThat(refused).as("a running task owns AA1").isNotNull();
         assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
         assertThat(saved).as("a refused list never reaches the save").isFalse();
-        assertThat(f.run.storyIssues(List.of(), () -> f.record.held))
-                .as("a list taking nothing out is saved under the record's lock")
-                .isTrue();
+        final Boolean held =
+                f.run.storyIssues(
+                        "ST1",
+                        f.store.current.story("ST1").orElseThrow().issues(),
+                        board -> {},
+                        board -> f.record.held);
+        assertThat(held).as("a list taking nothing out is saved under the record's lock").isTrue();
     }
 
     @Test
@@ -805,12 +811,131 @@ class WorkRunTest {
 
         final Map<String, WorkRun.Run> atSave =
                 f.run.newStory(
-                        () -> {
+                        board -> board,
+                        (board, checked) -> {
                             assertThat(f.record.held).as("the record is held").isTrue();
                             return f.record.value.runs();
                         });
 
         assertThat(atSave).as("the runs the record holds while the story is saved").isEmpty();
+    }
+
+    @Test
+    void anIssueHungInAndStartedMeanwhileIsNotTakenOutUnderItsRunningTask() {
+        // A list planned on the board from before an issue was hung in and started would take
+        // that issue out from under its task, which never saw the list.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        f.start(f.order().tasks().getFirst());
+        final Board now = f.store.current;
+        final Board before = withIssues(now, "ST1", without(now, "AA1"));
+        f.store.current = before;
+        f.record.onLock = () -> f.store.current = now;
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () ->
+                                f.run.storyIssues(
+                                        "ST1",
+                                        without(before, "AA1"),
+                                        board -> {},
+                                        board -> {
+                                            saved.set(true);
+                                            return board;
+                                        }));
+
+        assertThat(refused).as("the issue hung in meanwhile under a running task").isNotNull();
+        assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
+        assertThat(saved).as("a refused list never reaches the save").isFalse();
+    }
+
+    @Test
+    void aStaleStoryListIsRefusedAsStaleEvenWhenItTakesOutAnIssueAtWork() {
+        // A stale list answered as work running sends the window to wait for a task, when it
+        // must read the board again.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        f.start(f.order().tasks().getFirst());
+        final List<String> list = without(f.store.current, "AA1");
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.storyIssues(
+                                        "ST1",
+                                        list,
+                                        board -> Edits.storyIssues(board, "older", "ST1", list),
+                                        board -> board))
+                .as("a list against an older revision")
+                .isInstanceOf(StoreException.StaleRevision.class);
+    }
+
+    @Test
+    void aRefusedNewStoryWritesNoWork() {
+        // A refused story that still dropped a gone story's run writes the work record and
+        // announces a change for a call that made nothing.
+        final Fixture f = new Fixture();
+        f.order();
+        final Board source = f.store.current;
+        f.store.current =
+                new Board(
+                        source.revision(),
+                        source.workflow(),
+                        List.of(),
+                        source.issues(),
+                        source.work(),
+                        source.repositories());
+        final WorkRun.Snapshot before = f.record.value;
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.newStory(
+                                        board -> {
+                                            Edits.fresh(board, "older");
+                                            return board;
+                                        },
+                                        (board, checked) -> board))
+                .as("a new story against an older revision")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(f.record.value).as("the work record and its generation").isSameAs(before);
+    }
+
+    /** A story's issues on a board, without one. */
+    private static List<String> without(final Board board, final String issue) {
+        return board.story("ST1").orElseThrow().issues().stream()
+                .filter(id -> !id.equals(issue))
+                .toList();
+    }
+
+    /** The board with a story's issue list replaced. */
+    private static Board withIssues(
+            final Board board, final String story, final List<String> issues) {
+        final List<Story> stories = new java.util.ArrayList<>();
+        for (final Story known : board.stories()) {
+            stories.add(
+                    known.id().equals(story)
+                            ? new Story(
+                                    known.id(),
+                                    known.title(),
+                                    known.state(),
+                                    known.stateGiven(),
+                                    known.priority(),
+                                    known.size(),
+                                    issues,
+                                    known.description(),
+                                    known.link(),
+                                    known.issuesWhole())
+                            : known);
+        }
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                stories,
+                board.issues(),
+                board.work(),
+                board.repositories(),
+                board.faults());
     }
 
     @Test
@@ -4742,6 +4867,10 @@ class WorkRunTest {
         boolean refuseReaders;
         boolean held;
         int writes;
+
+        /** Runs once when the lock is next taken, as another call's change right before it. */
+        @Nullable Runnable onLock;
+
         @Nullable Board checkedBoard;
 
         /** Whether a write reused or lowered a generation already written. */
@@ -4750,6 +4879,11 @@ class WorkRunTest {
         /** Serializes actions as a disk record must. */
         @Override
         public synchronized <T extends @Nullable Object> T locked(final WorkRun.Action<T> action) {
+            final Runnable hook = onLock;
+            if (hook != null) {
+                onLock = null;
+                hook.run();
+            }
             held = true;
             try {
                 return apply(action);

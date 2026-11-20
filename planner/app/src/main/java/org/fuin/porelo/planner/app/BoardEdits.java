@@ -1,6 +1,5 @@
 package org.fuin.porelo.planner.app;
 
-import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.NewIdeas;
@@ -61,13 +60,13 @@ public class BoardEdits {
             final NewIdea.Added added =
                     projects.work(project)
                             .newStory(
-                                    () -> {
-                                        final PlanningStore store = projects.store(project);
-                                        final Board board = store.board();
+                                    board -> {
                                         Edits.fresh(board, revision);
-                                        final NewIdea checked = NewIdeas.check(board, idea, shape);
-                                        return store.createIdea(board.revision(), checked);
-                                    });
+                                        return NewIdeas.check(board, idea, shape);
+                                    },
+                                    (board, checked) ->
+                                            projects.store(project)
+                                                    .createIdea(board.revision(), checked));
             LOG.info(
                     "Made story {} in project {} as revision {}",
                     LogText.of(added.story()),
@@ -124,28 +123,22 @@ public class BoardEdits {
             final String story,
             final String revision,
             final List<String> issues) {
-        final List<String> removed = new ArrayList<>();
-        projects.store(project)
-                .board()
-                .story(story)
-                .map(Story::issues)
-                .ifPresent(
-                        held ->
-                                held.stream()
-                                        .filter(id -> !issues.contains(id))
-                                        .forEach(removed::add));
         try {
             return projects.work(project)
                     .storyIssues(
-                            removed,
-                            () -> {
-                                final PlanningStore store = projects.store(project);
-                                final Board board = store.board();
-                                if (!Edits.storyIssues(board, revision, story, issues)) {
+                            story,
+                            issues,
+                            board -> Edits.storyIssues(board, revision, story, issues),
+                            board -> {
+                                if (board.story(story)
+                                        .map(Story::issues)
+                                        .orElseThrow()
+                                        .equals(issues)) {
                                     return board.revision().value();
                                 }
                                 final String saved =
-                                        store.setStoryIssues(board.revision(), story, issues)
+                                        projects.store(project)
+                                                .setStoryIssues(board.revision(), story, issues)
                                                 .revision()
                                                 .value();
                                 saved("the issues of story", story, project, saved);

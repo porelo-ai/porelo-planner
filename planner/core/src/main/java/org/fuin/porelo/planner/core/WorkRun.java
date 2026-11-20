@@ -7,7 +7,6 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -16,6 +15,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
@@ -1473,48 +1475,64 @@ public final class WorkRun {
     }
 
     /**
-     * Saves a new story under the record's lock, after dropping every run whose story is gone, so a
-     * story saved under a gone story's id never takes its run over.
+     * Saves a new story under the record's lock: checks it against the board read under the lock
+     * first, then drops every run whose story is gone, so a story saved under a gone story's id
+     * never takes its run over and a refused story writes nothing.
      *
-     * @param save the write
+     * @param check checks the story against the board and answers what the save takes
+     * @param save the write, given the board and what the check answered
+     * @param <C> what the check answers
      * @param <T> what the write answers
      * @return what the write answered
      * @throws WorkRefusal {@code WorkRunning} while a task of a gone story's run still works
      */
-    public <T> T newStory(final Supplier<T> save) {
+    public <C, T> T newStory(final Function<Board, C> check, final BiFunction<Board, C, T> save) {
         return record.locked(
                 session -> {
+                    final Board board = store.board();
+                    final C checked = check.apply(board);
                     final Snapshot snapshot = read(session);
-                    final Snapshot kept = withoutGoneRuns(snapshot, store.board());
+                    final Snapshot kept = withoutGoneRuns(snapshot, board);
                     if (!kept.runs().equals(snapshot.runs())) {
                         session.preflight(kept);
                         session.write(kept);
                     }
-                    return save.get();
+                    return save.apply(board, checked);
                 });
     }
 
     /**
      * Saves a story's new issue list under the record's lock, refusing it while a started task
      * works an issue it takes out, or one of its sub-issues: the task's results would no longer
-     * belong to the story.
+     * belong to the story. The board is read, checked and compared with the list under the lock, so
+     * an issue hung in and started meanwhile is never taken out unseen, and a stale or wrong list
+     * is refused as such before any run is asked.
      *
-     * @param removed the issues the list takes out
-     * @param save the write
+     * @param story the story's id
+     * @param issues the story's new issue list
+     * @param check checks the list against the board read under the lock
+     * @param save the write, given that board
      * @param <T> what the write answers
      * @return what the write answered
      * @throws WorkRefusal {@code WorkRunning} while a started task owns an issue taken out
      */
-    public <T> T storyIssues(final Collection<String> removed, final Supplier<T> save) {
-        removed.forEach(Ids::issue);
+    public <T> T storyIssues(
+            final String story,
+            final List<String> issues,
+            final Consumer<Board> check,
+            final Function<Board, T> save) {
+        Ids.story(story);
+        issues.forEach(Ids::issue);
         return record.locked(
                 session -> {
-                    final Snapshot snapshot = read(session);
                     final Board board = store.board();
+                    check.accept(board);
                     final Set<String> owned = new HashSet<>();
-                    removed.forEach(issue -> owned.addAll(withSubIssues(board, issue)));
-                    refuseOwned(snapshot, owned, Set.of());
-                    return save.get();
+                    board.story(story).map(Story::issues).orElse(List.of()).stream()
+                            .filter(issue -> !issues.contains(issue))
+                            .forEach(issue -> owned.addAll(withSubIssues(board, issue)));
+                    refuseOwned(read(session), owned, Set.of());
+                    return save.apply(board);
                 });
     }
 

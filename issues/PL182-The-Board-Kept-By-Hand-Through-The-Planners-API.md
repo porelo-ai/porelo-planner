@@ -64,10 +64,13 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   every issue of the story (`issuesWhole` false), since a list written whole would drop the one not shown. A change
   of fields naming none is refused. A comment is refused blank, past 65536 code points, or when it opens with the
   planner's own marker `<!-- porelo:`, since the GitHub store reads its stage records from such comments.
-- **The work record's lock**: `WorkRun.newStory` drops a gone story's run before a story is made, as a hand-in does;
-  `WorkRun.storyIssues` refuses a list that takes out an issue, or its sub-issue, a started task works
-  (`WorkRunning`). A reorder or an issue hung in leaves a run's bound issues as they are, so the story itself is not
-  refused while its work runs. The other edits run under `WorkRun.alone`.
+- **The work record's lock**: `WorkRun.newStory` checks the story against the board read under the lock - the
+  revision and the idea - and only then drops a gone story's run, as a hand-in does, so a refused story writes no work
+  and announces nothing. `WorkRun.storyIssues` reads the board, checks the list and computes the issues it takes out
+  all under the lock, the revision and ids first, so an issue hung in and started meanwhile is never taken out unseen
+  and a stale list is answered `StaleRevision`; it then refuses a list that takes out an issue, or its sub-issue, a
+  started task works (`WorkRunning`). A reorder or an issue hung in leaves a run's bound issues as they are, so the
+  story itself is not refused while its work runs. The other edits run under `WorkRun.alone`.
 - **A store that does not offer an edit**: `PlanningStore`'s defaults throw `UnsupportedOperationException`, answered
   501 `NotOffered` as an idea a store does not add is, so a window tells a missing feature from a refused write;
   `MoveNotAllowed` stays for a write the store refuses. `LoggedStore`, which wraps every store, forwards each edit.
