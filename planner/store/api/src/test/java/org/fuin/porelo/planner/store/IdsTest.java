@@ -124,12 +124,97 @@ class IdsTest {
                 .isEqualTo(task);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"porelo-planner#1", "porelo-ai.github.io#123456789", "a#9", "x_y-z#40"})
+    void aTrackerReferenceIsTakenAsAStoryIdAndAnIssueId(final String id) {
+        assertThat(Ids.story(id)).as("a tracker's story reference passes unchanged").isEqualTo(id);
+        assertThat(Ids.issue(id)).as("a tracker's issue reference passes unchanged").isEqualTo(id);
+        assertThat(Ids.repositoryOf(id))
+                .as("the repository the reference names")
+                .isEqualTo(id.substring(0, id.indexOf('#')));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "#1",
+                "repo#",
+                "repo#0",
+                "repo#01",
+                "repo#1234567890",
+                "repo#-1",
+                "repo#1#2",
+                "repo#1.1",
+                "Repo#1",
+                "../repo#1",
+                "a/b#1",
+                "a..b#1",
+                "..#1",
+                ".repo#1",
+                "-repo#1",
+                "repo #1",
+                "repo# 1",
+                "repo#1 ",
+                "repo#1\n",
+                "repo\t#1",
+                "re\u0000po#1",
+                "repo#1/../x",
+                "https://host/repo#1"
+            })
+    void aTrackerReferenceThatCouldReachAnotherPathOrItemIsRefused(final String id) {
+        // Harm: a reference reaches a path and the tracker's API; one that leaves its repository or
+        // reads as two items reads or writes another one.
+        assertThat(Ids.isReference(id)).as("'%s' is no tracker reference", id).isFalse();
+        assertThatThrownBy(() -> Ids.issue(id))
+                .as("'%s' is no issue id", id)
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Ids.story(id))
+                .as("'%s' is no story id", id)
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
-    void aRefusedIdIsShownShortAndPrintable() {
-        // A refusal reaches a log; a control character there rewrites the person's terminal.
-        assertThatThrownBy(() -> Ids.issue("PL\u001b[2J" + "x".repeat(60)))
-                .as("the refusal quotes a short, printable start of what it refused")
-                .hasMessageNotContaining("\u001b")
-                .hasMessageEndingWith("...'");
+    void aTrackerReferenceWithARepositoryNameLongerThanANameIsRefused() {
+        // Harm: a reference whose repository no project names reaches the tracker's API as given.
+        assertThat(Ids.isReference("a".repeat(100) + "#1"))
+                .as("a repository name of 100 characters")
+                .isTrue();
+        assertThatThrownBy(() -> Ids.issue("a".repeat(101) + "#1"))
+                .as("a repository name of 101 characters")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"repo#1", "ST1.1", "xy1", "XY01#2", ""})
+    void anAliasIsOnlyAGitStoreId(final String alias) {
+        // Harm: an alias that is a reference names a second tracker item under the first one's id.
+        assertThatThrownBy(() -> Ids.storyAlias(alias))
+                .as("'%s' is no story alias", alias)
+                .isInstanceOf(IllegalArgumentException.class);
+        if (!"ST1.1".equals(alias)) {
+            assertThatThrownBy(() -> Ids.issueAlias(alias))
+                    .as("'%s' is no issue alias", alias)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(Ids.storyAlias("ST12")).as("a story's old id").isEqualTo("ST12");
+        assertThat(Ids.issueAlias("XY03.1")).as("an issue's old id").isEqualTo("XY03.1");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"ghp_secret0123456789", "https://user:secret@host/r#1", "XY\u001b[2Jsecret"})
+    void aRefusedIdIsNeverShown(final String id) {
+        // Harm: what a caller passed as an id may be a token, and a refusal reaches a log and an
+        // answer.
+        assertThatThrownBy(() -> Ids.issue(id))
+                .as("the issue id's refusal does not repeat what it refused")
+                .hasMessageNotContaining("secret")
+                .hasMessageNotContaining("\u001b");
+        assertThatThrownBy(() -> Ids.story(id))
+                .as("the story id's refusal does not repeat what it refused")
+                .hasMessageNotContaining("secret");
+        assertThatThrownBy(() -> Ids.issueAlias(id))
+                .as("the alias's refusal does not repeat what it refused")
+                .hasMessageNotContaining("secret");
     }
 }

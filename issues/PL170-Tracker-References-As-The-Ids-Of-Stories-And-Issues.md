@@ -45,6 +45,49 @@ and finds a carried-over one under its old id too.
   test refusing a reference with a path, white space or a number out of range; a screen test that a tracker id is
   read and its alias shown.
 
+### Plan reading
+
+Read by another model before the build. Step 1 builds the contract, `Ids`, the records and the screen; step 2, the
+GitHub store's ids, builds what only a store that keeps references and aliases can answer. How each point is
+answered:
+
+- **The owner in `work.issue`** comes from the owner the store verified for a tracked project (`TrackedProject`),
+  never from `project.yml`'s `central` entry. Step 1 only describes `work`; step 2 fills it.
+- **`work: {issue, phase}`** stands in `planner.yaml`'s `PlanningStartTask` as `TrackedWork`, only on a planned
+  stage's task of a project a tracker keeps, never on a discussion's, absent and never null otherwise: `issue` is
+  `<owner>/<repository>#<number>`, one line without white space, at most 200 characters; `phase` is the name of the
+  stage's phase, one line, at most 64 characters. The screen reads it as `PlanningWork` on `PlanningTaskOrder` and
+  refuses an order whose `work` is not that shape or stands on a discussion. Step 1 always answers it absent.
+  Step 2 adds it to `WorkOrder.Task`, with `WorkRecord` writing it null into an older `work.json` so that file
+  stays readable; says which issue a MAIN task over several issues names; widens `PoreloTaskRecords`' issue check to
+  the owner's reference; has `Velocity` sum a carried issue's records under its reference and its alias; and has the
+  window hand `work` to `Start`.
+- **A refused id is never repeated**: `Ids.story`, `Ids.issue` and the alias checks name the shape and the length
+  only, as `Ids.name` and `Ids.task` do.
+- **Sub-issues**: `Issue` takes a tracker sub-issue whose parent is a reference in the same repository, and refuses
+  a reference into another repository than the issue's own, an issue and parent of different forms, and an alias on
+  an item of the Git store. Telling a story from an issue by the `story` label, refusing a sub-issue of a sub-issue,
+  checking an item's repository and number before its reference is built, reading an empty `Id` field as no alias,
+  and never writing a reference into the `Id` field belong to the GitHub store's mapping, step 2.
+- **The id's shape**: a reference is `<repository>#<number>`, the repository as `Ids.name` takes it, without `..`,
+  the number `[1-9][0-9]{0,8}`; `planner.yaml` and the screen refuse `..` too, by a lookahead. An alias takes only
+  the Git store's form (`Ids.storyAlias`, `Ids.issueAlias`; `StoryAlias`, `IssueAlias`). `HandedIdeas` takes a
+  reference as a handed idea's story. The Git store needs no change: `GitRemote.grep` passes ids as fixed strings,
+  and a reference finds no item there, so it answers it as unknown. A story's reference into another repository than
+  the own one, an alias unique over the board, and a given file's name for a tracker's issue in `GivenFile.name`
+  (a `#` in a file name Porelo mounts needs the window's agreement) are step 2.
+- **Calls by alias**: `Board.story` and `Board.issue` finding an item by its alias, and every entry point resolving
+  an alias to the reference - moves, workers, priorities, proposals, orders, and the runs, offers, task reports and
+  stage results a pre-cut-over task recorded under its old ids - are step 2, since only the GitHub store gives
+  aliases. Step 1 answers an issue's sub-issues by the issue's own id rather than the id called. The screen reads
+  `alias`, shows it beside the id on the board and the story's page, keeps it across a move, and finds an item by
+  it in the board's search and the issue filter; taking an answer whose alias matches the id asked is step 2.
+- **Tests**: step 1 sees red first the shape (`a..b#1`, `repo#0`, a leading zero, a second `#`, white space), an
+  alias that is a reference, no repeated value, a board read and a move by a percent-encoded reference through the
+  controllers and through the real server, the description's id patterns against `Ids`, and the screen's reading
+  and encoding. A GitHub sub-issue, a pre-cut-over run reported after the cut-over, a batch naming one item by
+  reference and alias, and `work` in a start and in Porelo's records are tested in step 2.
+
 ## Acceptance
 
 - The window shows a GitHub board in the test organization with an item made after the cut-over and a carried-over

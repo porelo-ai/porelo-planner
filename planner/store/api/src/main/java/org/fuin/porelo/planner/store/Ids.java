@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** The shapes an id or a name must have before the planner lets it reach a path or a command. */
@@ -11,12 +12,15 @@ public final class Ids {
 
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9._-]{0,99}");
 
+    private static final Pattern REFERENCE =
+            Pattern.compile("(" + NAME.pattern() + ")#([1-9][0-9]{0,8})");
+
     private static final Pattern TASK = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
 
     private Ids() {}
 
     /**
-     * Refuses a story id that is not {@code ST} and a number.
+     * Refuses a story id that is neither {@code ST} and a number nor a tracker reference.
      *
      * @param id the id to check
      * @return the id
@@ -26,14 +30,63 @@ public final class Ids {
     }
 
     /**
-     * Refuses an issue id that is not a prefix of capitals, a number and an optional sub-issue
-     * number.
+     * Refuses an issue id that is neither a prefix of capitals, a number and an optional sub-issue
+     * number nor a tracker reference.
      *
      * @param id the id to check
      * @return the id
      */
     public static String issue(final String id) {
         return checked(ISSUE, id, "issue id");
+    }
+
+    /**
+     * Refuses a story's alias, the id a story carried over into a tracker had in the Git store:
+     * {@code ST} and a number, never a tracker reference.
+     *
+     * @param alias the alias to check
+     * @return the alias
+     */
+    public static String storyAlias(final String alias) {
+        return shaped(STORY.matcher(alias).matches(), STORY.pattern(), alias, "story alias");
+    }
+
+    /**
+     * Refuses an issue's alias, the id an issue carried over into a tracker had in the Git store,
+     * never a tracker reference.
+     *
+     * @param alias the alias to check
+     * @return the alias
+     */
+    public static String issueAlias(final String alias) {
+        return shaped(ISSUE.matcher(alias).matches(), ISSUE.pattern(), alias, "issue alias");
+    }
+
+    /**
+     * Whether an id is a tracker reference within the project, {@code <repository>#<number>}: a
+     * repository's name as {@link #name} takes it and a number of one to nine digits without a
+     * leading zero.
+     *
+     * @param id the id to look at
+     * @return whether it is one
+     */
+    public static boolean isReference(final String id) {
+        final Matcher matcher = REFERENCE.matcher(id);
+        return matcher.matches() && !matcher.group(1).contains("..");
+    }
+
+    /**
+     * The repository a tracker reference names.
+     *
+     * @param reference a tracker reference, {@code <repository>#<number>}
+     * @return the repository's name
+     */
+    public static String repositoryOf(final String reference) {
+        if (!isReference(reference)) {
+            throw new IllegalArgumentException(
+                    "Not a tracker reference, " + reference.length() + " characters");
+        }
+        return reference.substring(0, reference.indexOf('#'));
     }
 
     /**
@@ -82,9 +135,19 @@ public final class Ids {
     }
 
     private static String checked(final Pattern pattern, final String value, final String what) {
-        if (!pattern.matcher(value).matches()) {
+        return shaped(
+                pattern.matcher(value).matches() || isReference(value),
+                pattern.pattern() + " or <repository>#<number>",
+                value,
+                what);
+    }
+
+    // A refused id is never shown: what a caller put in its place may be a token or a URL.
+    private static String shaped(
+            final boolean fits, final String shape, final String value, final String what) {
+        if (!fits) {
             throw new IllegalArgumentException(
-                    "Not a " + what + " (" + pattern.pattern() + "): " + quoted(value));
+                    "Not a " + what + " (" + shape + "), " + value.length() + " characters");
         }
         return value;
     }

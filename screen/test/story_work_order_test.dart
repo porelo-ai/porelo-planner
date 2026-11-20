@@ -119,6 +119,40 @@ void main() {
     }
   });
 
+  // Harm: Start names another tracker issue than the planner's, or a malformed one, or a discussion names one.
+  test('a stage order reads the tracker work it carries and refuses one that is not its shape', () {
+    Map<String, dynamic> stage() => servedFollowUp(1, role: 'MAIN')..['issues'] = ['porelo-x#3'];
+    expect(PlanningTaskOrder.from(stage()).work, isNull, reason: 'an order without work stays as it was');
+    final work = PlanningTaskOrder.from(stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'Analysis'})
+        .work;
+    expect(work, const PlanningWork('porelo-ai/porelo-x#3', 'Analysis'));
+    expect(work?.toJson(), {'issue': 'porelo-ai/porelo-x#3', 'phase': 'Analysis'});
+    final changes = <String, Map<String, dynamic>>{
+      'work as null': stage()..['work'] = null,
+      'no owner': stage()..['work'] = {'issue': 'porelo-x#3', 'phase': 'Analysis'},
+      'white space': stage()..['work'] = {'issue': 'porelo-ai/porelo-x #3', 'phase': 'Analysis'},
+      'a second item': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3#4', 'phase': 'Analysis'},
+      'over 200 characters': stage()..['work'] = {'issue': '${'a' * 190}/porelo-x#3', 'phase': 'Analysis'},
+      'a line break in the phase': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'Analysis\nx'},
+      'no phase': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3'},
+      'another member': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'A', 'more': 1},
+      'a discussion': _discussion()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'Analysis'},
+    };
+    for (final MapEntry(key: name, value: map) in changes.entries) {
+      expect(() => PlanningTaskOrder.from(map), throwsFormatException, reason: name);
+    }
+  });
+
+  // Harm: a task over an issue a tracker keeps cannot be started, or one naming a path or two items is.
+  test('a task order names an issue by its tracker reference and refuses one that is no id', () {
+    expect(PlanningTaskOrder.from(servedFollowUp(1)..['issues'] = ['porelo-x#3']).issues, [
+      'porelo-x#3',
+    ], reason: 'a tracker reference is an issue id');
+    for (final id in ['porelo-x#03', 'porelo-x#0', 'a..b#1', 'x/y#1', 'porelo-x#3#4', 'Porelo-x#3', 'porelo-x #3']) {
+      expect(() => PlanningTaskOrder.from(servedFollowUp(1)..['issues'] = [id]), throwsFormatException, reason: id);
+    }
+  });
+
   // Harm: a reader started naming no build reads nothing and polls; another task given a build's work could change it.
   test('only a reader names the tasks whose work it reads, and it names at least one', () {
     expect(PlanningTaskOrder.from(servedFollowUp(1)..['reads'] = ['porelo-foo-project_foo-1']).reads, [

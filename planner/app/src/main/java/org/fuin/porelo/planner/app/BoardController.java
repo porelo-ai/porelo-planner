@@ -685,6 +685,7 @@ public class BoardController {
                 board.revision().value(),
                 new StoryDetail(
                         story.id(),
+                        story.alias(),
                         story.title(),
                         story.state(),
                         story.stateGiven(),
@@ -748,6 +749,7 @@ public class BoardController {
                 board.revision().value(),
                 new IssueDetail(
                         issue.id(),
+                        issue.alias(),
                         issue.repository(),
                         issue.title(),
                         issue.state(),
@@ -767,7 +769,7 @@ public class BoardController {
                         issue.text(),
                         format,
                         board.issues().stream()
-                                .filter(other -> checked.equals(other.parent()))
+                                .filter(other -> issue.id().equals(other.parent()))
                                 .map(Issue::id)
                                 .toList(),
                         what.find() ? what.group(1).strip() : null));
@@ -1095,6 +1097,7 @@ public class BoardController {
             final Moves.StoryState derive) {
         return new org.fuin.porelo.planner.app.answers.Story(
                 story.id(),
+                story.alias(),
                 story.title(),
                 story.state(),
                 story.stateGiven(),

@@ -84,7 +84,9 @@ public final class HandedIdeas {
         final String story = handed.story();
         switch (handed.status()) {
             case DONE -> {
-                if (story == null || !story.matches("ST[1-9][0-9]{0,4}")) {
+                // A tracker answers the new story's reference, the Git store an ST number.
+                if (story == null
+                        || !Ids.isReference(story) && !story.matches("ST[1-9][0-9]{0,4}")) {
                     throw new IllegalArgumentException("a handed idea fails its check");
                 }
                 Ids.story(story);

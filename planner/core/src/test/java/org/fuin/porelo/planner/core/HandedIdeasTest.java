@@ -205,6 +205,9 @@ class HandedIdeasTest {
                         List.of(
                                 new HandedIdeas.Handed(HandedIdeas.DONE, null, List.of(), 1),
                                 new HandedIdeas.Handed(HandedIdeas.DONE, "ST01", List.of(), 1),
+                                new HandedIdeas.Handed(
+                                        HandedIdeas.DONE, "porelo-x#01", List.of(), 1),
+                                new HandedIdeas.Handed(HandedIdeas.DONE, "a..b#1", List.of(), 1),
                                 new HandedIdeas.Handed(HandedIdeas.PENDING, "ST1", List.of(), 1),
                                 new HandedIdeas.Handed(
                                         HandedIdeas.PARTLY, null, List.of("../x"), 1),
@@ -229,6 +232,9 @@ class HandedIdeasTest {
                 .isInstanceOf(IllegalArgumentException.class);
         HandedIdeas.validate(
                 OFFER, new HandedIdeas.Handed(HandedIdeas.PARTLY, null, List.of("porelo-x"), 0));
+        // Harm: a tracker's new story recorded as handed makes the whole work record unreadable.
+        HandedIdeas.validate(
+                OFFER, new HandedIdeas.Handed(HandedIdeas.DONE, "porelo-x#12", List.of(), 0));
     }
 
     @Test

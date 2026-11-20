@@ -548,8 +548,11 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   static const _parameters = 16;
   static const _key = 64;
   static final _name = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
-  static final _storyId = RegExp(r'^ST[0-9]{1,5}$');
-  static final _issueId = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
+  // An id in the Git store's form or a tracker's reference within the project, as the description gives them.
+  static final _storyId = RegExp(r'^(ST[0-9]{1,5}|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$');
+  static final _issueId = RegExp(
+    r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
+  );
 
   /// Closes the connections it holds; calls after it fail.
   void close() => _link.close();

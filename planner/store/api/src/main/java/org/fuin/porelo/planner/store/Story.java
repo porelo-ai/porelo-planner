@@ -7,7 +7,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * A story as its head and body state it.
  *
- * @param id the story's id, {@code ST} and a number
+ * @param id the story's id, {@code ST} and a number, or a tracker reference {@code
+ *     <repository>#<number>}
  * @param title its title
  * @param state its state, one of the workflow's
  * @param stateGiven whether its head states the state, rather than its issues giving it
@@ -19,6 +20,8 @@ import org.jspecify.annotations.Nullable;
  * @param link where a person reads it on the forge, if known
  * @param issuesWhole whether {@code issues} holds every issue its head names; false when the store
  *     left one out, so nothing is read from its issues as if they were all
+ * @param alias the id a story carried over into a tracker had before, {@code ST} and a number; null
+ *     for any other
  */
 public record Story(
         String id,
@@ -30,7 +33,8 @@ public record Story(
         List<String> issues,
         String description,
         @Nullable URI link,
-        boolean issuesWhole) {
+        boolean issuesWhole,
+        @Nullable String alias) {
 
     /** The priorities a story may have, the highest first. */
     public static final List<String> PRIORITIES =
@@ -41,6 +45,52 @@ public record Story(
         Ids.story(id);
         issues = List.copyOf(issues);
         issues.forEach(Ids::issue);
+        if (alias != null) {
+            Ids.storyAlias(alias);
+            // Only a carried-over item has an old id; on any other it would name a second story.
+            if (!Ids.isReference(id)) {
+                throw new IllegalArgumentException("Only a story a tracker keeps has an alias");
+            }
+        }
+    }
+
+    /**
+     * A story without an alias.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state its state
+     * @param stateGiven whether its head states the state
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final boolean stateGiven,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole) {
+        this(
+                id,
+                title,
+                state,
+                stateGiven,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                null);
     }
 
     /**

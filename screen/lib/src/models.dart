@@ -7,6 +7,12 @@ import 'story_work_order.dart';
 import 'work_reply.dart';
 
 String _planText(Map<String, dynamic> map, String key) => map[key] is String ? map[key] as String : '';
+
+/// The old id a carried-over item answers, or null when it answers none.
+String? _planAlias(Map<String, dynamic> map) =>
+    map['alias'] is String && (map['alias'] as String).isNotEmpty ? map['alias'] as String : null;
+
+String _planShownId(String id, String? alias) => alias == null ? id : '$id ($alias)';
 List<String> _planStrings(Object? value) =>
     value is List ? value.whereType<String>().where((text) => text.trim().isNotEmpty).toList() : const [];
 bool _planMapsReported(Object? value) => value is List && value.every((entry) => entry is Map<String, dynamic>);
@@ -215,6 +221,7 @@ class PlanIssue {
   /// Applies destinations explicitly confirmed by the save answer.
   PlanIssue.withState(PlanIssue source, this.state)
     : id = source.id,
+      alias = source.alias,
       repository = source.repository,
       title = source.title,
       size = source.size,
@@ -238,6 +245,7 @@ class PlanIssue {
   /// Reads fields leniently.
   PlanIssue.from(Map<String, dynamic> map)
     : id = _planText(map, 'id'),
+      alias = _planAlias(map),
       repository = _planText(map, 'repository'),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
@@ -261,6 +269,12 @@ class PlanIssue {
 
   /// The issue's identifier.
   final String id;
+
+  /// The id it had before a tracker took it over, or null for any other issue.
+  final String? alias;
+
+  /// Its identifier as the board shows it, the old one beside it.
+  String get shownId => _planShownId(id, alias);
 
   /// Its repository.
   final String repository;
@@ -330,6 +344,7 @@ class PlanStory {
   /// A story that [followed] its issues again stands in its [destination] with no state of its own.
   PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination, {bool followed = false})
     : id = source.id,
+      alias = source.alias,
       title = source.title,
       state = destination ?? source.state,
       // A story without issues saved to a destination states it, as the planner writes it.
@@ -356,6 +371,7 @@ class PlanStory {
   /// Reads fields leniently and preserves unknown priorities.
   PlanStory.from(Map<String, dynamic> map)
     : id = _planText(map, 'id'),
+      alias = _planAlias(map),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
       stateGiven = map['stateGiven'] == true,
@@ -373,6 +389,12 @@ class PlanStory {
 
   /// Its identifier.
   final String id;
+
+  /// The id it had before a tracker took it over, or null for any other story.
+  final String? alias;
+
+  /// Its identifier as the board shows it, the old one beside it.
+  String get shownId => _planShownId(id, alias);
 
   /// Its title.
   final String title;

@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
  * An issue as its repository's index and its head state it.
  *
  * @param id the issue's id, its prefix and number, and for a sub-issue its parent's id, a dot and a
- *     number
+ *     number; or a tracker reference {@code <repository>#<number>} naming its own repository
  * @param repository the name of the repository that holds it
  * @param title its title
  * @param state its state, one of the workflow's
@@ -21,6 +21,8 @@ import org.jspecify.annotations.Nullable;
  * @param worker who works it; a head that names none is worked by an agent
  * @param risk how much harm its change can do; a head that names none is ordinary, and a sub-issue
  *     is worked with the higher of its own and its parent's
+ * @param alias the id an issue carried over into a tracker had before, in the Git store's form;
+ *     null for any other
  */
 public record Issue(
         String id,
@@ -33,7 +35,8 @@ public record Issue(
         @Nullable URI link,
         String text,
         Worker worker,
-        Risk risk) {
+        Risk risk,
+        @Nullable String alias) {
 
     /** Checks the ids and the repository's name and copies the list. */
     public Issue {
@@ -41,13 +44,58 @@ public record Issue(
         Ids.name(repository);
         blockedBy = List.copyOf(blockedBy);
         blockedBy.forEach(Ids::issue);
+        final boolean reference = Ids.isReference(id);
+        // A reference into another repository would read or write an issue there.
+        if (reference && !Ids.repositoryOf(id).equals(repository)) {
+            throw new IllegalArgumentException(
+                    "Issue " + id + " does not stand in its repository " + repository);
+        }
         if (parent != null) {
             Ids.issue(parent);
-            if (!id.startsWith(parent + ".")) {
+            if (reference
+                    ? !Ids.isReference(parent) || !Ids.repositoryOf(parent).equals(repository)
+                    : !id.startsWith(parent + ".")) {
                 throw new IllegalArgumentException(
                         "Sub-issue " + id + " does not carry its parent's id " + parent);
             }
         }
+        if (alias != null) {
+            Ids.issueAlias(alias);
+            // Only a carried-over item has an old id; on any other it would name a second issue.
+            if (!reference) {
+                throw new IllegalArgumentException("Only an issue a tracker keeps has an alias");
+            }
+        }
+    }
+
+    /**
+     * An issue without an alias.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk) {
+        this(id, repository, title, state, size, blockedBy, parent, link, text, worker, risk, null);
     }
 
     /**

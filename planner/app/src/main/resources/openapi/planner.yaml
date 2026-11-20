@@ -1076,14 +1076,18 @@ components:
       name: story
       in: path
       required: true
-      description: The story's identifier.
+      description: >-
+        The story's identifier. The `#` of a tracker reference is percent-encoded in the path, `%23`, as is any other
+        character a path segment cannot carry; the planner decodes the segment before it checks the id.
       schema:
         $ref: '#/components/schemas/StoryId'
     Issue:
       name: issue
       in: path
       required: true
-      description: The issue's identifier.
+      description: >-
+        The issue's identifier. The `#` of a tracker reference is percent-encoded in the path, `%23`, as is any other
+        character a path segment cannot carry; the planner decodes the segment before it checks the id.
       schema:
         $ref: '#/components/schemas/IssueId'
 
@@ -1618,9 +1622,12 @@ components:
       type: string
       pattern: '^[a-z0-9][a-z0-9._-]{0,99}$'
     StoryId:
-      description: A story's identifier.
+      description: >-
+        A story's identifier in one of two forms: the Git store's, ST and a number, or a tracker reference within the
+        project, `<repository>#<number>`, the repository's name as Name takes it, without `..`, and the tracker's
+        number of one to nine digits without a leading zero. A store answers only its own form.
       type: string
-      pattern: '^ST[0-9]{1,5}$'
+      pattern: '^(ST[0-9]{1,5}|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$'
     TextFormat:
       description: >-
         The format a store writes its texts in, an open name: MARKDOWN for the Git store, PLAIN, or a store's own. A
@@ -1628,7 +1635,19 @@ components:
       type: string
       pattern: '^[A-Z][A-Z0-9_]{0,31}$'
     IssueId:
-      description: An issue's identifier, a prefix and a number, with a sub-issue's number after a dot.
+      description: >-
+        An issue's identifier in one of two forms: the Git store's, a prefix and a number, with a sub-issue's number
+        after a dot, or a tracker reference within the project, `<repository>#<number>`, the repository's name as
+        Name takes it, without `..`, and the tracker's number of one to nine digits without a leading zero. A store
+        answers only its own form.
+      type: string
+      pattern: '^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$'
+    StoryAlias:
+      description: The identifier a story a tracker keeps had in the Git store before it was carried over.
+      type: string
+      pattern: '^ST[0-9]{1,5}$'
+    IssueAlias:
+      description: The identifier an issue a tracker keeps had in the Git store before it was carried over.
       type: string
       pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$'
     RunId:
@@ -2245,6 +2264,13 @@ components:
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
+        alias:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            The id a story a tracker keeps had before it was carried over, shown beside its reference; absent for
+            any other story.
+          allOf:
+            - $ref: '#/components/schemas/StoryAlias'
         title:
           type: string
         state:
@@ -2330,6 +2356,13 @@ components:
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
+        alias:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            The id an issue a tracker keeps had before it was carried over, shown beside its reference; absent for
+            any other issue.
+          allOf:
+            - $ref: '#/components/schemas/IssueAlias'
         repository:
           $ref: '#/components/schemas/Name'
         title:
@@ -2734,6 +2767,31 @@ components:
             empty for every other role.
           items:
             $ref: '#/components/schemas/TaskLabel'
+        work:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            What Start is handed to name the tracker's issue the task works and its stage; present only on a planned
+            stage's task of a project a tracker keeps, never on a discussion's, and absent, never null, otherwise.
+          allOf:
+            - $ref: '#/components/schemas/TrackedWork'
+
+    TrackedWork:
+      type: object
+      required: [issue, phase]
+      properties:
+        issue:
+          type: string
+          maxLength: 200
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*/(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$'
+          description: >-
+            The tracker's issue with its owner, `<owner>/<repository>#<number>`: one line without white space, at
+            most 200 characters.
+        phase:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+$'
+          description: The name of the stage's phase the task works, one line, at most 64 characters.
 
     GivenFile:
       type: object

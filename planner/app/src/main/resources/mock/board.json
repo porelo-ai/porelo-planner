@@ -240,7 +240,8 @@
       "size": "L",
       "issues": [],
       "description": "The operator sees every story by state, the most important first, opens a story or an issue, and changes a story’s state by drag and drop, read from and written through a story API whose states are configured, not built in; a state change calls an action API.\n\nOpen Planning, find each story in its state’s column sorted by priority, open a story and one of its issues, drag a story to another state and save; the change is in porelo-project’s checkout. Rename a state in the configuration and the board shows it.",
-      "link": "https://example.org/stories/ST294"
+      "link": "https://example.org/stories/ST294",
+      "alias": null
     },
     {
       "id": "ST72",
@@ -259,7 +260,8 @@
         "FC13"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST72"
+      "link": "https://example.org/stories/ST72",
+      "alias": null
     },
     {
       "id": "ST21",
@@ -271,7 +273,8 @@
       "size": "M",
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST21"
+      "link": "https://example.org/stories/ST21",
+      "alias": null
     },
     {
       "id": "ST11",
@@ -283,7 +286,8 @@
       "size": "XL",
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST11"
+      "link": "https://example.org/stories/ST11",
+      "alias": null
     },
     {
       "id": "ST13",
@@ -295,7 +299,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST13"
+      "link": "https://example.org/stories/ST13",
+      "alias": null
     },
     {
       "id": "ST28",
@@ -307,7 +312,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST28"
+      "link": "https://example.org/stories/ST28",
+      "alias": null
     },
     {
       "id": "ST87",
@@ -319,7 +325,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST87"
+      "link": "https://example.org/stories/ST87",
+      "alias": null
     },
     {
       "id": "ST182",
@@ -331,7 +338,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST182"
+      "link": "https://example.org/stories/ST182",
+      "alias": null
     },
     {
       "id": "ST114",
@@ -343,7 +351,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST114"
+      "link": "https://example.org/stories/ST114",
+      "alias": null
     },
     {
       "id": "ST111",
@@ -355,7 +364,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST111"
+      "link": "https://example.org/stories/ST111",
+      "alias": null
     },
     {
       "id": "ST144",
@@ -367,7 +377,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST144"
+      "link": "https://example.org/stories/ST144",
+      "alias": null
     },
     {
       "id": "ST14",
@@ -381,7 +392,8 @@
         "PJ58"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST14"
+      "link": "https://example.org/stories/ST14",
+      "alias": null
     },
     {
       "id": "ST39",
@@ -393,7 +405,8 @@
       "size": "XS",
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST39"
+      "link": "https://example.org/stories/ST39",
+      "alias": null
     },
     {
       "id": "ST35",
@@ -405,7 +418,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST35"
+      "link": "https://example.org/stories/ST35",
+      "alias": null
     },
     {
       "id": "ST15",
@@ -419,7 +433,8 @@
         "SI05"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST15"
+      "link": "https://example.org/stories/ST15",
+      "alias": null
     },
     {
       "id": "ST106",
@@ -431,7 +446,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST106"
+      "link": "https://example.org/stories/ST106",
+      "alias": null
     },
     {
       "id": "ST198",
@@ -443,7 +459,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST198"
+      "link": "https://example.org/stories/ST198",
+      "alias": null
     },
     {
       "id": "ST291",
@@ -472,7 +489,8 @@
         "B540.1"
       ],
       "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",
-      "link": "https://example.org/stories/ST291"
+      "link": "https://example.org/stories/ST291",
+      "alias": null
     },
     {
       "id": "ST292",
@@ -493,7 +511,8 @@
         "MX91"
       ],
       "description": "The agents rehearse a whole move on a rented server before the operator’s own test, so most problems are found earlier.\n\nRent a server and let the agents run the rehearsal; the report names every scenario OK, and the window and the room agree with the host.",
-      "link": "https://example.org/stories/ST292"
+      "link": "https://example.org/stories/ST292",
+      "alias": null
     },
     {
       "id": "ST293",
@@ -505,7 +524,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST293"
+      "link": "https://example.org/stories/ST293",
+      "alias": null
     },
     {
       "id": "ST23",
@@ -523,7 +543,8 @@
         "B231"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST23"
+      "link": "https://example.org/stories/ST23",
+      "alias": null
     },
     {
       "id": "ST6",
@@ -535,7 +556,8 @@
       "size": "M",
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST6"
+      "link": "https://example.org/stories/ST6",
+      "alias": null
     },
     {
       "id": "ST27",
@@ -549,7 +571,8 @@
         "IJ14"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST27"
+      "link": "https://example.org/stories/ST27",
+      "alias": null
     },
     {
       "id": "ST12",
@@ -569,7 +592,8 @@
         "BT46"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST12"
+      "link": "https://example.org/stories/ST12",
+      "alias": null
     },
     {
       "id": "ST5",
@@ -588,7 +612,8 @@
         "CC39"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST5"
+      "link": "https://example.org/stories/ST5",
+      "alias": null
     },
     {
       "id": "ST193",
@@ -602,7 +627,8 @@
         "PJ106"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST193"
+      "link": "https://example.org/stories/ST193",
+      "alias": null
     },
     {
       "id": "ST127",
@@ -614,7 +640,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST127"
+      "link": "https://example.org/stories/ST127",
+      "alias": null
     },
     {
       "id": "ST1",
@@ -634,7 +661,8 @@
         "HO53"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST1"
+      "link": "https://example.org/stories/ST1",
+      "alias": null
     },
     {
       "id": "ST2",
@@ -648,7 +676,8 @@
         "SL35"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST2"
+      "link": "https://example.org/stories/ST2",
+      "alias": null
     },
     {
       "id": "ST3",
@@ -662,7 +691,8 @@
         "B306"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST3"
+      "link": "https://example.org/stories/ST3",
+      "alias": null
     },
     {
       "id": "ST10",
@@ -678,7 +708,8 @@
         "BT25"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST10"
+      "link": "https://example.org/stories/ST10",
+      "alias": null
     },
     {
       "id": "ST295",
@@ -693,7 +724,8 @@
         "SL38"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST295"
+      "link": "https://example.org/stories/ST295",
+      "alias": null
     },
     {
       "id": "ST264",
@@ -705,7 +737,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST264"
+      "link": "https://example.org/stories/ST264",
+      "alias": null
     },
     {
       "id": "ST268",
@@ -717,7 +750,8 @@
       "size": null,
       "issues": [],
       "description": "",
-      "link": "https://example.org/stories/ST268"
+      "link": "https://example.org/stories/ST268",
+      "alias": null
     },
     {
       "id": "ST243",
@@ -732,7 +766,8 @@
         "GH18"
       ],
       "description": "",
-      "link": "https://example.org/stories/ST243"
+      "link": "https://example.org/stories/ST243",
+      "alias": null
     }
   ],
   "issues": [
@@ -747,7 +782,8 @@
       "link": "https://example.org/issues/PJ74",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "FC03",
@@ -760,7 +796,8 @@
       "link": "https://example.org/issues/FC03",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "FC09",
@@ -773,7 +810,8 @@
       "link": "https://example.org/issues/FC09",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "FC10",
@@ -786,7 +824,8 @@
       "link": "https://example.org/issues/FC10",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "FC11",
@@ -799,7 +838,8 @@
       "link": "https://example.org/issues/FC11",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "FC13",
@@ -812,7 +852,8 @@
       "link": "https://example.org/issues/FC13",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "PJ58",
@@ -825,7 +866,8 @@
       "link": "https://example.org/issues/PJ58",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "SI05",
@@ -838,7 +880,8 @@
       "link": "https://example.org/issues/SI05",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B540",
@@ -851,7 +894,8 @@
       "link": "https://example.org/issues/B540",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B540.1",
@@ -864,7 +908,8 @@
       "link": "https://example.org/issues/B540.1",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B541",
@@ -879,7 +924,8 @@
       "link": "https://example.org/issues/B541",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B542",
@@ -892,7 +938,8 @@
       "link": "https://example.org/issues/B542",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B543",
@@ -905,7 +952,8 @@
       "link": "https://example.org/issues/B543",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B544",
@@ -918,7 +966,8 @@
       "link": "https://example.org/issues/B544",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B545",
@@ -931,7 +980,8 @@
       "link": "https://example.org/issues/B545",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B546",
@@ -944,7 +994,8 @@
       "link": "https://example.org/issues/B546",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B547",
@@ -957,7 +1008,8 @@
       "link": "https://example.org/issues/B547",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B548",
@@ -970,7 +1022,8 @@
       "link": "https://example.org/issues/B548",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B549",
@@ -983,7 +1036,8 @@
       "link": "https://example.org/issues/B549",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B550",
@@ -996,7 +1050,8 @@
       "link": "https://example.org/issues/B550",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B551",
@@ -1009,7 +1064,8 @@
       "link": "https://example.org/issues/B551",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B552",
@@ -1022,7 +1078,8 @@
       "link": "https://example.org/issues/B552",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO156",
@@ -1035,7 +1092,8 @@
       "link": "https://example.org/issues/HO156",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO157",
@@ -1048,7 +1106,8 @@
       "link": "https://example.org/issues/HO157",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B553",
@@ -1061,7 +1120,8 @@
       "link": "https://example.org/issues/B553",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B554",
@@ -1074,7 +1134,8 @@
       "link": "https://example.org/issues/B554",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "F444",
@@ -1087,7 +1148,8 @@
       "link": "https://example.org/issues/F444",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "F445",
@@ -1102,7 +1164,8 @@
       "link": "https://example.org/issues/F445",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO158",
@@ -1115,7 +1178,8 @@
       "link": "https://example.org/issues/HO158",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX89",
@@ -1128,7 +1192,8 @@
       "link": "https://example.org/issues/MX89",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX90",
@@ -1143,7 +1208,8 @@
       "link": "https://example.org/issues/MX90",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX91",
@@ -1158,7 +1224,8 @@
       "link": "https://example.org/issues/MX91",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX24",
@@ -1171,7 +1238,8 @@
       "link": "https://example.org/issues/MX24",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX36",
@@ -1184,7 +1252,8 @@
       "link": "https://example.org/issues/MX36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "MX39",
@@ -1197,7 +1266,8 @@
       "link": "https://example.org/issues/MX39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO07",
@@ -1210,7 +1280,8 @@
       "link": "https://example.org/issues/HO07",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B231",
@@ -1223,7 +1294,8 @@
       "link": "https://example.org/issues/B231",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "IJ14",
@@ -1236,7 +1308,8 @@
       "link": "https://example.org/issues/IJ14",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT35",
@@ -1249,7 +1322,8 @@
       "link": "https://example.org/issues/BT35",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT36",
@@ -1262,7 +1336,8 @@
       "link": "https://example.org/issues/BT36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT38",
@@ -1275,7 +1350,8 @@
       "link": "https://example.org/issues/BT38",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT43",
@@ -1288,7 +1364,8 @@
       "link": "https://example.org/issues/BT43",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT44",
@@ -1301,7 +1378,8 @@
       "link": "https://example.org/issues/BT44",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT45",
@@ -1314,7 +1392,8 @@
       "link": "https://example.org/issues/BT45",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT46",
@@ -1327,7 +1406,8 @@
       "link": "https://example.org/issues/BT46",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "PI43",
@@ -1340,7 +1420,8 @@
       "link": "https://example.org/issues/PI43",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "OM44",
@@ -1353,7 +1434,8 @@
       "link": "https://example.org/issues/OM44",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "CC45",
@@ -1366,7 +1448,8 @@
       "link": "https://example.org/issues/CC45",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "PI39",
@@ -1379,7 +1462,8 @@
       "link": "https://example.org/issues/PI39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "OM36",
@@ -1392,7 +1476,8 @@
       "link": "https://example.org/issues/OM36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "CC39",
@@ -1405,7 +1490,8 @@
       "link": "https://example.org/issues/CC39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "PJ106",
@@ -1418,7 +1504,8 @@
       "link": "https://example.org/issues/PJ106",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT42",
@@ -1431,7 +1518,8 @@
       "link": "https://example.org/issues/BT42",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT39",
@@ -1444,7 +1532,8 @@
       "link": "https://example.org/issues/BT39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO52",
@@ -1457,7 +1546,8 @@
       "link": "https://example.org/issues/HO52",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "SL36",
@@ -1470,7 +1560,8 @@
       "link": "https://example.org/issues/SL36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT40",
@@ -1483,7 +1574,8 @@
       "link": "https://example.org/issues/BT40",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT41",
@@ -1496,7 +1588,8 @@
       "link": "https://example.org/issues/BT41",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO53",
@@ -1509,7 +1602,8 @@
       "link": "https://example.org/issues/HO53",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "SL35",
@@ -1522,7 +1616,8 @@
       "link": "https://example.org/issues/SL35",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "SL37",
@@ -1535,7 +1630,8 @@
       "link": "https://example.org/issues/SL37",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "SL38",
@@ -1548,7 +1644,8 @@
       "link": "https://example.org/issues/SL38",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "B306",
@@ -1561,7 +1658,8 @@
       "link": "https://example.org/issues/B306",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "HO12",
@@ -1574,7 +1672,8 @@
       "link": "https://example.org/issues/HO12",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT24",
@@ -1587,7 +1686,8 @@
       "link": "https://example.org/issues/BT24",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "BT25",
@@ -1600,7 +1700,8 @@
       "link": "https://example.org/issues/BT25",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "PJ62",
@@ -1613,7 +1714,8 @@
       "link": "https://example.org/issues/PJ62",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     },
     {
       "id": "GH18",
@@ -1626,7 +1728,8 @@
       "link": "https://example.org/issues/GH18",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "alias": null
     }
   ]
 }

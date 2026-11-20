@@ -51,7 +51,8 @@ public final class WorkAnswers {
                 discussion.prompt(),
                 IdeaDiscussion.RESULT,
                 null,
-                List.of());
+                List.of(),
+                null);
     }
 
     static StoryWorkProposal proposal(final WorkProposal proposal) {
@@ -98,7 +99,9 @@ public final class WorkAnswers {
                                                                             given.name(),
                                                                             given.text()))
                                                     .toList(),
-                                    task.reads());
+                                    task.reads(),
+                                    // No store names a tracker's work for a task yet.
+                                    null);
                         })
                 .toList();
     }
@@ -247,6 +250,7 @@ public final class WorkAnswers {
         final boolean raised = !manual && progress != null && progress.needsYou();
         return new org.fuin.porelo.planner.app.answers.Issue(
                 issue.id(),
+                issue.alias(),
                 issue.repository(),
                 issue.title(),
                 issue.state(),

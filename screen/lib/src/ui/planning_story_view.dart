@@ -109,7 +109,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           Wrap(
             spacing: Space.small,
             children: [
-              Text(story.id),
+              Text(planningShown(story.shownId)),
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
               ?planningGivenMark(story, onFollow: (to) => unawaited(detail.board.followIssues(story.id, to))),
@@ -166,7 +166,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
                             TextButton(
                               key: Key('planning-issue ${issue.id}'),
                               onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
-                              child: Text(planningValue(issue.id)),
+                              child: Text(planningValue(issue.shownId)),
                             ),
                           ),
                           DataCell(Text(planningValue(issue.title))),

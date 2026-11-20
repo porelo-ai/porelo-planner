@@ -47,6 +47,27 @@ class AccessThroughServerTest {
     }
 
     @Test
+    void aPercentEncodedReferenceReachesTheIdCheckDecodedThroughTheServer() throws Exception {
+        // Harm: the server keeping or refusing the encoded '#', so no item a tracker keeps can be
+        // opened, or one that is no id passing it.
+        final RuntimeDirectories.Address address = RuntimeDirectories.read(RUNTIME);
+        final HttpResponse<String> taken =
+                Signing.sign(address, "GET", "/projects/alpha/stories/porelo-store%237", null, null)
+                        .send();
+        assertThat(taken.statusCode())
+                .as("a reference taken as an id, the project then unknown: %s", taken.body())
+                .isEqualTo(404);
+        assertThat(taken.body()).as("the refusal's type").contains("NoSuchProject");
+        final HttpResponse<String> refused =
+                Signing.sign(address, "GET", "/projects/alpha/issues/porelo-store%2307", null, null)
+                        .send();
+        assertThat(refused.statusCode())
+                .as("a reference with a leading zero refused as no id: %s", refused.body())
+                .isEqualTo(400);
+        assertThat(refused.body()).as("the refusal's type").contains("InvalidName");
+    }
+
+    @Test
     void theProofOverTheServerNamesThePortItListensOn() throws Exception {
         // Harm: a proof bound to no port could be relayed by a process on another port.
         final RuntimeDirectories.Address address = RuntimeDirectories.read(RUNTIME);

@@ -95,6 +95,7 @@ class ApiMatchesDescriptionTest {
                             "PlanningStartTask",
                             org.fuin.porelo.planner.app.answers.PlanningStartTask.class),
                     Map.entry("GivenFile", org.fuin.porelo.planner.app.answers.GivenFile.class),
+                    Map.entry("TrackedWork", org.fuin.porelo.planner.app.answers.TrackedWork.class),
                     Map.entry("TaskEnded", org.fuin.porelo.planner.app.answers.TaskEnded.class),
                     Map.entry("Landing", org.fuin.porelo.planner.app.answers.Landing.class),
                     Map.entry(
@@ -344,6 +345,50 @@ class ApiMatchesDescriptionTest {
         assertThat(health.at("/commit/pattern").asText())
                 .as("the description's commit pattern against PlannerBuild's")
                 .isEqualTo("^" + PlannerBuild.COMMIT.pattern() + "$");
+    }
+
+    @Test
+    void theIdPatternsTakeTheIdsThePlannerTakes() {
+        // Harm: the window refusing an item the planner serves, or sending one the planner refuses.
+        final java.util.regex.Pattern story =
+                java.util.regex.Pattern.compile(
+                        description.at("/components/schemas/StoryId/pattern").asText());
+        final java.util.regex.Pattern issue =
+                java.util.regex.Pattern.compile(
+                        description.at("/components/schemas/IssueId/pattern").asText());
+        for (final String id :
+                List.of(
+                        "ST1",
+                        "ST12345",
+                        "XY03", // not-a-citation: an id's shape
+                        "XY03.1", // not-a-citation: an id's shape
+                        "porelo-planner#1",
+                        "porelo-ai.github.io#123456789",
+                        "repo#0",
+                        "repo#01",
+                        "repo#1234567890",
+                        "Repo#1",
+                        "a/b#1",
+                        "a..b#1",
+                        "repo#1#2",
+                        "repo #1",
+                        "#1")) {
+            assertThat(story.matcher(id).matches())
+                    .as("the description's StoryId against Ids.story for '%s'", id)
+                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.story(id)));
+            assertThat(issue.matcher(id).matches())
+                    .as("the description's IssueId against Ids.issue for '%s'", id)
+                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.issue(id)));
+        }
+    }
+
+    private static boolean takes(final Runnable check) {
+        try {
+            check.run();
+            return true;
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Test

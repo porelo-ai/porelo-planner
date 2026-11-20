@@ -6,7 +6,11 @@ import 'models.dart';
 import 'work_reply.dart';
 
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
-final _issueName = RegExp(r'^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$');
+// An issue id in the Git store's form or a tracker's reference within the project, as the description gives them.
+final _trackedIssue = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*/(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
+final _issueName = RegExp(
+  r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
+);
 const _modes = {'SHELL', 'AGENT', 'UNATTENDED'};
 // A plain file name: the window takes it from the task's result directory, so it must not leave that directory.
 final _resultName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
@@ -261,6 +265,38 @@ class PlanningGivenFile {
   final String text;
 }
 
+/// The tracker's issue a planned stage's task works and the stage's phase, as Start is handed them.
+class PlanningWork {
+  /// The issue [issue], `<owner>/<repository>#<number>`, worked in [phase].
+  const PlanningWork(this.issue, this.phase);
+
+  /// Reads the planner's `work`, refusing anything but its exact shape.
+  factory PlanningWork.fromJson(Object? value) {
+    if (value is! Map<String, dynamic> || value.length != 2) _invalid('The task work is not an issue and a phase.');
+    final issue = _text(value, 'issue', most: 200);
+    // One line without white space, so Start names exactly one tracker issue.
+    if (!_trackedIssue.hasMatch(issue)) _invalid('The task work names no tracker issue.');
+    final phase = _text(value, 'phase', most: 64);
+    if (_unsound.hasMatch(phase)) _invalid('The task work has an invalid phase.');
+    return PlanningWork(issue, phase);
+  }
+
+  /// The tracker's issue with its owner.
+  final String issue;
+
+  /// The name of the stage's phase.
+  final String phase;
+
+  /// The planner's `work` object.
+  Map<String, dynamic> toJson() => {'issue': issue, 'phase': phase};
+
+  @override
+  bool operator ==(Object other) => other is PlanningWork && other.issue == issue && other.phase == phase;
+
+  @override
+  int get hashCode => Object.hash(issue, phase);
+}
+
 /// The planner's exact arguments for one future Start, with no runtime identity inferred.
 class PlanningTaskOrder {
   PlanningTaskOrder._(
@@ -277,6 +313,7 @@ class PlanningTaskOrder {
     this.effort,
     this.chosenBy,
     this.given = const [],
+    this.work,
   });
 
   /// Reads one served offer without inventing missing Start arguments.
@@ -315,6 +352,9 @@ class PlanningTaskOrder {
     // A reader started naming no build reads nothing; any other task given another's work could change it.
     if (reads.any((task) => !validTaskLabel(task))) _invalid('A task the reader reads has an invalid name.');
     if (role == 'READER' ? reads.isEmpty : reads.isNotEmpty) _invalid('Only a reader names the tasks it reads.');
+    // Only a planned stage names a tracker's issue; a discussion works over no issue.
+    if (map.containsKey('work') && discussion) _invalid('A discussion names no tracker issue.');
+    final work = map.containsKey('work') ? PlanningWork.fromJson(map['work']) : null;
     final offer = _text(map, 'offer');
     if (!RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$').hasMatch(offer)) {
       _invalid('The task offer is not a UUID.');
@@ -333,6 +373,7 @@ class PlanningTaskOrder {
       effort: _effort(map),
       chosenBy: _chosenBy(map),
       given: given,
+      work: work,
     );
   }
 
@@ -395,6 +436,9 @@ class PlanningTaskOrder {
 
   /// The Porelo task names whose work a reader reads, passed to Start; empty for every other role.
   final List<String> reads;
+
+  /// The tracker's issue and phase Start is handed; null for a project no tracker keeps and for a discussion.
+  final PlanningWork? work;
 
   bool _matches(PlanningTaskOrder other) =>
       repository == other.repository &&

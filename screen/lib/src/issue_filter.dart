@@ -71,7 +71,7 @@ class PlanningIssueFilter {
   }
 
   static String _words(PlanIssue issue) =>
-      [issue.id, issue.title, issue.repository, issue.state, issue.size].join(' ').toLowerCase();
+      [issue.shownId, issue.title, issue.repository, issue.state, issue.size].join(' ').toLowerCase();
 
   /// 0 for a reported value the sort knows, 1 for one it does not know, 2 for none reported.
   int _tier(PlanIssue issue, List<String> states) {

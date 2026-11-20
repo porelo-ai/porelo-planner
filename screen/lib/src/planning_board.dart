@@ -1582,7 +1582,8 @@ class PlanningBoard extends ChangeNotifier {
   static final _keys = Expando<(String, String, int?)>('story keys');
 
   static (String, String, int?) _keysOf(PlanStory story) => _keys[story] ??= (
-    story.id.toLowerCase(),
+    // The old id of a carried-over story finds it too.
+    story.shownId.toLowerCase(),
     story.title.toLowerCase(),
     int.tryParse(_trailingNumber.firstMatch(story.id)?.group(0) ?? ''),
   );
@@ -1591,7 +1592,7 @@ class PlanningBoard extends ChangeNotifier {
   static final _issueKeys = Expando<List<(String, String, String)>>('issue keys');
 
   static List<(String, String, String)> _issueKeysOf(PlanStory story) => _issueKeys[story] ??= [
-    for (final issue in story.issues) (issue.id, issue.id.toLowerCase(), issue.title.toLowerCase()),
+    for (final issue in story.issues) (issue.id, issue.shownId.toLowerCase(), issue.title.toLowerCase()),
   ];
 
   static Iterable<String> _issuesFound(PlanStory story, String query) => query.isEmpty

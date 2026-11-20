@@ -413,3 +413,5 @@ planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/IssueMap
 planner/app/src/test/java/org/fuin/porelo/planner/app/CarryOverCommandTest.java
 planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/CarryOverPlanTest.java
 planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/ReferenceRewriteTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/TrackerIdsHttpTest.java
+planner/store/api/src/test/java/org/fuin/porelo/planner/store/CarriedItemsTest.java
