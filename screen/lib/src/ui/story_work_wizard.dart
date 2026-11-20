@@ -38,6 +38,12 @@ bool _canCancel(StoryWork work) => !(work.busy && work.proposal != null);
 String _said(String text, {bool multiline = false}) =>
     text.isEmpty ? 'not reported' : planningShown(text, multiline: multiline);
 
+/// A list with its label above it; the list keeps its own key, as the window's tests find it by that.
+Widget _labeled(String label, Widget list) => InputDecorator(
+  decoration: InputDecoration(labelText: label),
+  child: DropdownButtonHideUnderline(child: list),
+);
+
 /// A wait the person sees as one: the screen's still mark beside its words.
 Widget _waiting(String words) => Row(
   spacing: Space.small,
@@ -69,7 +75,7 @@ class _StoryWorkSteps {
       words: 'The machine the work runs on and the planner’s proposal for it.',
       panel: _where,
       check: _whereProblem,
-      summary: () => ['Runs on ${_said(_machine)}', 'Working state: ${_said(work.to)}'],
+      summary: () => [if (_machineChoice) 'Runs on ${_said(_machine)}', 'Working state: ${_said(work.to)}'],
       shown: () => _machineChoice || _targets.length > 1 || _whereProblem() != null,
     ),
     PlanningWizardStep(
@@ -157,49 +163,56 @@ class _StoryWorkSteps {
     children: [
       _head(),
       if (_machineChoice)
-        DropdownButton<PlanningBoard>(
-          key: const Key('story-work-machine'),
-          value: work.board,
-          isExpanded: true,
-          hint: const Text('Machine'),
-          items: [
-            for (final source in work.machines.entries)
-              DropdownMenuItem(
-                value: source.key,
-                enabled:
-                    !source.key.isDisposed &&
-                    source.key.live &&
-                    source.key.snapshot?.complete == true &&
-                    source.key.snapshot!.revision.isNotEmpty,
-                child: Text(
-                  source.key.live && source.key.snapshot?.complete == true
-                      ? source.value
-                      : '${source.value} — planning not live',
+        _labeled(
+          'Runs on',
+          DropdownButton<PlanningBoard>(
+            key: const Key('story-work-machine'),
+            value: work.board,
+            isExpanded: true,
+            hint: const Text('Machine'),
+            items: [
+              for (final source in work.machines.entries)
+                DropdownMenuItem(
+                  value: source.key,
+                  enabled:
+                      !source.key.isDisposed &&
+                      source.key.live &&
+                      source.key.snapshot?.complete == true &&
+                      source.key.snapshot!.revision.isNotEmpty,
+                  child: Text(
+                    source.key.live && source.key.snapshot?.complete == true
+                        ? source.value
+                        : '${source.value} — planning not live',
+                  ),
                 ),
-              ),
-            for (final machine in work.unavailableMachines)
-              DropdownMenuItem<PlanningBoard>(enabled: false, child: Text('$machine — project planning not reported')),
-          ],
-          onChanged: work.starting || work.tasks.isNotEmpty
-              ? null
-              : (source) {
-                  if (source != null) work.changeMachine(source);
-                },
-        )
-      else
-        Text('Runs on ${_said(_machine)}', key: const Key('story-work-machine-name')),
+              for (final machine in work.unavailableMachines)
+                DropdownMenuItem<PlanningBoard>(
+                  enabled: false,
+                  child: Text('$machine — project planning not reported'),
+                ),
+            ],
+            onChanged: work.starting || work.tasks.isNotEmpty
+                ? null
+                : (source) {
+                    if (source != null) work.changeMachine(source);
+                  },
+          ),
+        ),
       if (_targets.length > 1 || !_targets.contains(work.to))
-        DropdownButton<String>(
-          key: const Key('story-work-target'),
-          value: _targets.contains(work.to) ? work.to : null,
-          isExpanded: true,
-          hint: const Text('Working state'),
-          items: [for (final state in _targets) DropdownMenuItem(value: state, child: Text(_said(state)))],
-          onChanged: !work.sourceCurrent || work.busy || work.tasks.isNotEmpty
-              ? null
-              : (value) {
-                  if (value != null) work.changeTarget(value);
-                },
+        _labeled(
+          'Working state',
+          DropdownButton<String>(
+            key: const Key('story-work-target'),
+            value: _targets.contains(work.to) ? work.to : null,
+            isExpanded: true,
+            hint: const Text('Working state'),
+            items: [for (final state in _targets) DropdownMenuItem(value: state, child: Text(_said(state)))],
+            onChanged: !work.sourceCurrent || work.busy || work.tasks.isNotEmpty
+                ? null
+                : (value) {
+                    if (value != null) work.changeTarget(value);
+                  },
+          ),
         )
       else
         Text('Working state: ${_said(work.to)}', key: const Key('story-work-target-name')),

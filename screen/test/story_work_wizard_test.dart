@@ -166,10 +166,51 @@ void main() {
     expect(find.byType(DropdownButton<PlanningBoard>), findsNothing, reason: 'no list of one machine');
     expect(find.byType(DropdownButton<String>), findsNothing, reason: 'no list of one working state');
     expect(find.byKey(const Key('story-work-mode UNATTENDED')), findsNothing, reason: 'no card of one mode');
-    expect(find.byKey(const Key('story-work-machine-name')), findsOneWidget, reason: 'the machine is named');
+    expect(find.textContaining('Runs on'), findsNothing, reason: 'one machine is no choice and is not shown');
     expect(find.text('Working state: Implementing'), findsOneWidget, reason: 'the working state is named');
     expect(find.byKey(const Key('story-work-mode-name')), findsOneWidget, reason: 'the mode is named');
     expect(wizards.steps[1].summary(), ['Unattended'], reason: 'the review names the mode');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // Prevents a second machine or working state from being out of the person's reach once one choice stands as text.
+  testWidgets('two machines and two working states are labeled lists the person chooses from', (tester) async {
+    final (_, board) = await _open(tester);
+    final data = _board();
+    (data['states'] as List).insert(2, {'name': 'Reviewing', 'kind': 'WORKING'});
+    ((data['phases'] as List).single as Map)['states'] = ['Backlog', 'Implementing', 'Reviewing', 'Finished'];
+    final second = MockPlanningSource()..boards['demo'] = data;
+    final other = PlanningBoard(second, 'demo');
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    addTearDown(() async {
+      other.dispose();
+      await tester.runAsync(second.end);
+    });
+    final work = planningStoryWork(
+      board,
+      board.stories.single,
+      'Implementing',
+      machines: {board: 'first machine', other: 'second machine'},
+      agents: FakeAgents(const [PlanningAgent('codex')]),
+    );
+    addTearDown(work.dispose);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
+    await _answered(tester);
+    expect(_title(tester), 'Start work — Where', reason: 'a choice of machine is a step');
+    expect(find.text('Runs on'), findsOneWidget, reason: 'the machine list is labeled');
+
+    await tester.tap(find.byKey(const Key('story-work-machine')));
+    await settle(tester);
+    await tester.tap(find.text('second machine').last);
+    await _answered(tester);
+    expect(identical(work.board, other), isTrue, reason: 'the second machine can be chosen');
+    expect(find.text('Working state'), findsOneWidget, reason: 'the list of two working states is labeled');
+
+    await tester.tap(find.byKey(const Key('story-work-target')));
+    await settle(tester);
+    await tester.tap(find.text('Reviewing').last);
+    await _answered(tester);
+    expect(work.to, 'Reviewing', reason: 'the second working state can be chosen');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -342,7 +383,7 @@ void main() {
     ]) {
       expect(find.text(line), findsOneWidget, reason: 'the review lists $line');
     }
-    expect(find.textContaining('Runs on '), findsOneWidget, reason: 'the review names the machine');
+    expect(find.textContaining('Runs on '), findsNothing, reason: 'one machine is no choice and is not shown');
     expect(find.textContaining('repo builder: keep codex'), findsOneWidget, reason: 'the review names the sub-agent');
     expect(find.byKey(const Key('story-work-change 0')), findsNothing, reason: 'nothing to change where');
 

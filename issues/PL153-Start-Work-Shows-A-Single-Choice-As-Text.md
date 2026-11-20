@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL153",
   "title": "Start Work Shows A Single Choice As Text",
-  "state": "Implementing",
+  "state": "Review",
   "size": "XS",
   "priority": "High",
   "rank": 73,
@@ -30,6 +30,11 @@ shown value is.
 - Red first, in the screen's story work dialog tests: one machine and one working state show no drop-down list and the
   state's name with its label; two of each show both lists. Harm: none beyond reading; the test guards that a second
   machine or state can still be chosen.
+- **As built.** The dialog already showed a single working state as labeled text and passed the Where step over with
+  nothing to choose; the single machine still stood as "Runs on ..." text. Now one machine is not shown, on the step
+  or on the review, and a list of machines or working states carries its label ("Runs on", "Working state") above it
+  through an `InputDecorator`, so the lists stay `DropdownButton`s under the keys `story-work-machine` and
+  `story-work-target`. The key `story-work-machine-name` is gone with the text it named.
 
 ## Acceptance
 
