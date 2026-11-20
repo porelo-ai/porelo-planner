@@ -364,16 +364,7 @@ public final class ItemsBoardReader implements BoardReader {
                                 + "/issues/"
                                 + issue.number()),
                 issue.updatedAt(),
-                archived(item));
-    }
-
-    /**
-     * Whether the item is archived in the project. The forge client does not give it yet, so an
-     * archived item reads as live: it is shown and its id stays taken. Once {@code ProjectItem}
-     * carries {@code archived()}, this answers it.
-     */
-    private static boolean archived(final GitHubGraphQl.ProjectItem item) {
-        return false;
+                item.archived());
     }
 
     /**
@@ -459,7 +450,7 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, issue.id());
             add(digest, issue.updatedAt().toString());
             add(digest, issue.state());
-            add(digest, String.valueOf(archived(item)));
+            add(digest, String.valueOf(item.archived()));
             add(digest, Objects.requireNonNullElse(issue.parentId(), ""));
             add(digest, issue.subIssues());
             add(digest, issue.blockedBy());

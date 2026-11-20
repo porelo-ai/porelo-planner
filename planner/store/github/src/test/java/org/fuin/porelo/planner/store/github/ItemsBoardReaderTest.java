@@ -227,8 +227,14 @@ class ItemsBoardReaderTest {
     }
 
     private static ProjectItem story(final String priority, final String... subNodes) {
+        return story(false, priority, subNodes);
+    }
+
+    private static ProjectItem story(
+            final boolean archived, final String priority, final String... subNodes) {
         return new ProjectItem(
                 "PVTI_story",
+                archived,
                 issue(
                         OWNER + "/example-project",
                         1,
@@ -244,6 +250,7 @@ class ItemsBoardReaderTest {
     private static ProjectItem libIssue(final int number, final String id, final IssueRefs subs) {
         return new ProjectItem(
                 "PVTI_lib_" + number,
+                false,
                 issue(
                         OWNER + "/example-lib",
                         number,
@@ -325,6 +332,20 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void anItemArchivedOnGitHubChangesTheRevision() {
+        // Harm: an item archived on GitHub is still offered for work, as the board kept looks
+        // unchanged.
+        final Snapshot live =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, story("High")).read();
+        final Snapshot archived =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, story(true, "High")).read();
+
+        assertThat(archived.board().revision())
+                .as("the same project with its story archived")
+                .isNotEqualTo(live.board().revision());
+    }
+
+    @Test
     void aDraftItemIsLeftOutWithoutAFault() {
         // Harm: a draft note on the project fails the board or shows as a fault on every read.
         final Snapshot snapshot =
@@ -333,7 +354,8 @@ class ItemsBoardReaderTest {
                         .itemsPage(
                                 null,
                                 story("High"),
-                                new ProjectItem("PVTI_draft", null, List.of(text("F_id", "ST2"))))
+                                new ProjectItem(
+                                        "PVTI_draft", false, null, List.of(text("F_id", "ST2"))))
                         .read();
 
         assertThat(snapshot.board().stories())
@@ -371,6 +393,7 @@ class ItemsBoardReaderTest {
         final ProjectItem stranger =
                 new ProjectItem(
                         "PVTI_stranger",
+                        false,
                         issue("other-org/example-lib", 3, List.of(), null, refs(false)),
                         List.of(text("F_id", "LB5"), option("F_status", "Idea")));
 
