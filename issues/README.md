@@ -71,6 +71,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl181"></a>[PL181](PL181-New-Issues-And-Ideas-Written-To-GitHub-Issues.md) | M | [PL170](README.md#pl170) | The GitHub store adds a new issue and an idea - a story with its issues - with the person's own GitHub access, each known by its tracker reference, never twice for one call |
 | <a id="pl169"></a>[PL169](PL169-A-Missing-Forge-Token-Offered-From-The-Board.md) | M | [PL164](README.md#pl164) | A GitHub board that cannot be read because the vault holds no token for the address, or GitHub refuses it for a missing right, is refused with NoForgeAccess naming the address and the right, and the planning screen offers the window's handOnForgeToken beside it and reads the board again once the token is in the vault |
 
 ## Review
