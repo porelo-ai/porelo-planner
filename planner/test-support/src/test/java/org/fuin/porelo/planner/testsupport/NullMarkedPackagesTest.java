@@ -36,6 +36,8 @@ class NullMarkedPackagesTest {
                         PLANNER.resolve("store/api/src/main/java/org/fuin/porelo/planner/store"),
                         PLANNER.resolve(
                                 "store/git/src/main/java/org/fuin/porelo/planner/store/git"),
+                        PLANNER.resolve(
+                                "store/github/src/main/java/org/fuin/porelo/planner/store/github"),
                         PLANNER.resolve("app/src/main/java/org/fuin/porelo/planner/app"),
                         CLEANUP.resolve("src/main/java/org/fuin/porelo/planner/cleanup"));
         for (final Path pkg : packages) {

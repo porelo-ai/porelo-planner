@@ -58,6 +58,16 @@ its own.
 - Owns `planner/app`: a `carry-over` command beside `WorkCommands`' `issues` and `stories`; `store/github`:
   `CarryOver` (the dry run's lines and the writes through `BoardWriter`), `ReferenceRewrite`. Test:
   `CarryOverTest`. It comes last, since it writes through [PL165](README.md#pl165) and [PL166](README.md#pl166).
+- Split in two steps, so the dry run does not wait for the store's reads and writes:
+  - **Step 1, the dry run**, needs only [PL164](README.md#pl164)'s types and mapping: `CarryOverPlan` reads the
+    board from the checkouts through the Git store as it reads today, turns each open story and issue into what
+    would be written (fields, body sections, sub-issues, dependencies, stage entries from `stats/<id>.jsonl`), each
+    prefix's `issue_floor`, and `ReferenceRewrite` with its list of numbers not carried; the command prints the dry
+    run's lines and writes nothing. Owns `store/github`'s `CarryOverPlan` and `ReferenceRewrite`, `planner/app`'s
+    `carry-over` command with `--dry-run` alone, and `CarryOverPlanTest`, `ReferenceRewriteTest`.
+  - **Step 2, the real run**, after [PL165](README.md#pl165) and [PL166](README.md#pl166): `CarryOver` writes the
+    plan through `BoardWriter`, finds an item already carried by its `Id` on the read board, writes `issue_floor`,
+    and ends non-zero on a failed item; owns `CarryOver` and `CarryOverTest`.
 
 ## Acceptance
 

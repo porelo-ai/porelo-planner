@@ -27,8 +27,8 @@ can hand the token on from the board without leaving it.
   implements for the screen.
 - **Step 1, the window's contract, published up front and blocked by nothing:** `StoreException.NoForgeAccess`
   (address, right) in `store/api`, the code `NoForgeAccess` in `planner.yaml`, its answer in `Problems`, and
-  `PlanningHost.handOnForgeToken(String address)` in the screen with a default that answers `false`, so the window
-  builds against it at once. **Step 2, the behavior**, after [PL164](README.md#pl164)'s types:
+  `PlanningForgeAccess.handOnForgeToken` in the screen, an optional interface a host may implement, so the window
+  builds against it at once and a host without it is offered nothing. **Step 2, the behavior**, after [PL164](README.md#pl164)'s types:
 - `planner.yaml`: a new refusal code `NoForgeAccess` (HTTP 403) with fields `address` and, where GitHub names it,
   `right` (such as `Issues` or `Projects`). `ForgeAccessRefusals` (implements [PL164](README.md#pl164)'s `AccessRefusals`) raises it for no token in
   the vault and for a 401 or a 403; the right comes from the forge clients' `acceptedPermissions()` of the refusal.
@@ -38,6 +38,29 @@ can hand the token on from the board without leaving it.
 - Red first: a store test where a 403 naming `Projects` gives `NoForgeAccess` with that right; a controller test
   of the answer's code and fields; a widget test that shows the offer for `NoForgeAccess`, none for another
   refusal, and a refresh after `true`.
+
+## Plan reading
+
+Read by agy `gemini-4-argon-high` before the build; every answer is taken:
+
+- `PlanningHost` is an `interface class`, which an implementer never inherits a default from, so the call stands on
+  an optional interface of its own, `PlanningForgeAccess`, which the screen finds by `host is PlanningForgeAccess`
+  as it finds `PlanningReconnect`; a host without it is offered nothing. The call names the provider whose planner
+  refused, `handOnForgeToken({required String provider, required String address})`, so the token goes into that
+  machine's vault, never the wrong one.
+- The refusal travels in the store's existing 502 answers (`StoreRefused`, `SaveRefused`), named by its title, so no
+  operation gains a new status; `address` and `right` join the Problem's parameters. Its words are fixed, the
+  address is an `https` origin without user, query or fragment, and the right matches `[A-Za-z][A-Za-z0-9 _-]{0,63}`,
+  checked where the refusal is made and again in the screen before it offers anything.
+- Step 2: a task's save refused with `NoForgeAccess` is kept and replayed as that refusal (`WorkRun`'s save failure
+  and `WorkRecord`), and a stage result refused with it is not marked refused but left to be handed in again, as
+  `Busy` and `StaleRevision` are; a 401 or 403 after an earlier call of the same save already wrote is
+  `PartlySaved`, never `NoForgeAccess`; a token that is missing when the project opens gives `NoForgeAccess` too;
+  a refresh in the background that fails with it ends the project's stream, so the window sees the refusal and the
+  offer.
+- Step 2, the screen: the board keeps the refusal of a read, a move and an action as a `PlanningRefusal`, clears it
+  when a read succeeds or the project changes, disables the offer while the call runs, and after `true` reads the
+  project again through `reloadPlanning()` only if it is still the same board.
 
 ## Order and files
 

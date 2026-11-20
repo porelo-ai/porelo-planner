@@ -15,5 +15,6 @@
     <modules>
         <module>api</module>
         <module>git</module>
+        <module>github</module>
     </modules>
 </project>
