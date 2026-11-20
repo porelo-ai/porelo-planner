@@ -8,6 +8,7 @@ import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -178,6 +179,54 @@ public class BoardEdits {
                                                 .revision()
                                                 .value();
                                 saved("the blockers of issue", issue, project, saved);
+                                return saved;
+                            });
+        } finally {
+            changes.saved(project);
+        }
+    }
+
+    /**
+     * Sets a story's or an issue's title and named parts, against the revision the caller read; a
+     * text equal to the item's writes nothing. A task at work on the issue does not refuse it.
+     *
+     * @param project the project's checked name
+     * @param id the item's checked id
+     * @param revision the revision the caller read
+     * @param edit the change
+     * @return the revision after the save, the current one when nothing changed
+     * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a change core
+     *     or the store refuses
+     */
+    public String setText(
+            final String project, final String id, final String revision, final TextEdit edit) {
+        try {
+            return projects.work(project)
+                    .alone(
+                            () -> {
+                                final PlanningStore store = projects.store(project);
+                                final Board board = store.board();
+                                final TextEdit checked = Edits.text(board, revision, id, edit);
+                                final String saved;
+                                try {
+                                    saved =
+                                            store.setText(board.revision(), id, checked)
+                                                    .revision()
+                                                    .value();
+                                } catch (final TextEdit.Refused refused) {
+                                    // The store's words are fixed and never repeat the text.
+                                    throw Edits.refused(
+                                            refused.item(),
+                                            "",
+                                            String.valueOf(refused.getMessage()));
+                                }
+                                saved(
+                                        edit.kind() == TextEdit.Kind.STORY
+                                                ? "the text of story"
+                                                : "the text of issue",
+                                        id,
+                                        project,
+                                        saved);
                                 return saved;
                             });
         } finally {

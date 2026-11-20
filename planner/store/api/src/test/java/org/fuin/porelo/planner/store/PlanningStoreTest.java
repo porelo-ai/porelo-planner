@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PlanningStoreTest {
@@ -84,6 +85,15 @@ class PlanningStoreTest {
                         () -> STORE.setFields(BOARD.revision(), "XY03", size),
                         () -> STORE.setStoryIssues(BOARD.revision(), "ST1", List.of("XY03")),
                         () -> STORE.setBlockedBy(BOARD.revision(), "XY03", List.of()),
+                        () ->
+                                STORE.setText(
+                                        BOARD.revision(),
+                                        "XY03",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "A title",
+                                                Map.of(),
+                                                Set.of())),
                         () -> STORE.comment("XY03", "A comment."))) {
             assertThatThrownBy(edit::run)
                     .as("an edit the store does not offer")

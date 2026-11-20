@@ -1,0 +1,2 @@
+title: The planner's API sets a story's or an issue's title and each named part of its text against the revision the caller read, leaving every other byte of the body as it was and refusing an edit over a change a person made on GitHub since.
+type: added

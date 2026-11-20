@@ -178,6 +178,27 @@ public interface PlanningStore {
     }
 
     /**
+     * Sets a story's or an issue's title and named parts of its text against the revision the
+     * caller read; every byte of the text outside the parts named stays as it was.
+     *
+     * @param revision the revision the caller read
+     * @param id the story's or the issue's id
+     * @param edit the title and the parts to write or remove
+     * @return the board after the save, the one read when nothing changed
+     * @throws StoreException.StaleRevision if the store moved since that revision, or the item
+     *     changed since it was read
+     * @throws StoreException.NoSuchStory if the board has no such story
+     * @throws StoreException.NoSuchIssue if the board has no such issue
+     * @throws TextEdit.Refused if the text cannot be written as asked
+     * @throws StoreException.NotSavable if the store cannot write it
+     * @throws UnsupportedOperationException if the store does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     */
+    default Board setText(final Revision revision, final String id, final TextEdit edit) {
+        throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /**
      * Writes one comment of the person's text on an issue, with the person's own access; the board
      * shows no comment, so no revision is checked.
      *

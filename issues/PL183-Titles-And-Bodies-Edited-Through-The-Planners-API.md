@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL183",
   "title": "Titles and Bodies Edited Through the Planner's API",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Highest",
   "rank": 3,
@@ -82,6 +82,25 @@ board is never overwritten unseen: the write is refused and the caller reads aga
   - *a section heading injected through the text*: a `## Plan` line, a `**Why this size.**` lead in a leading part,
     an open fence, an HTML comment or `<details>` left open, a title with a line break - each 422, nothing written;
   - `core`'s `EditsTest` of the rules, `MockStoreTest` answering and refusing, `ApiMatchesDescriptionTest`.
+
+### As built
+
+- **`TextEdit` carries its kind** (issue or story) beside the title, the parts written and the parts removed, and
+  each `TextEdit.Part` knows its kind and whether it may be removed, so `core` and the stores check one rule. A
+  body the store cannot write the edit into is `TextEdit.Refused`, which `BoardEdits` answers as `EditNotAllowed`
+  with the item and fixed words; GitHub refusing the update is answered in fixed words too, never in GitHub's own.
+- **Limits**: a title is at most 120 code points, a part at most 65536, the request at most the 131072 bytes every
+  request takes; the body written is checked against 65536.
+- **The check of the result**: every body an edit or a stage result writes is checked with `ambiguity()`, so an
+  HTML comment or `details` block left open is refused for a stage result as well. A fence opened above the first
+  section that holds a heading or a lead is refused, and a lead's first line is checked as it will stand after the
+  lead.
+- **The title in `Seen`** holds for every write of the GitHub store, not only this edit: any write is refused when
+  a person renamed the item since the board read. `updateIssue` takes the title; the carry-over passes none.
+- **What must be true is written in the form its text needs**: one paragraph as the lead, several as its section
+  above every other section, the other form taken out; both forms are read.
+- **No *Tested* part**: no body the planner writes holds one, so the edit has no member for it. `NewItems.story` and
+  the mock board's new idea write gain and test as the leads `BodySections` reads.
 
 ## Acceptance
 

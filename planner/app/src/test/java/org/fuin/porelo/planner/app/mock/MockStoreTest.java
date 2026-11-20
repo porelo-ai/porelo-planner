@@ -13,11 +13,15 @@ import java.util.concurrent.Future;
 import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
 
@@ -428,6 +432,134 @@ class MockStoreTest {
         assertThat(store.setBlockedBy(FIRST, issue.id(), issue.blockedBy()).revision())
                 .as("the blockers the issue has")
                 .isEqualTo(FIRST);
+        assertThat(
+                        store.setText(
+                                        FIRST,
+                                        issue.id(),
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                issue.title(),
+                                                Map.of(),
+                                                java.util.Set.of()))
+                                .revision())
+                .as("the title the issue has")
+                .isEqualTo(FIRST);
         assertThat(store.board()).as("the board after edits of nothing").isEqualTo(board);
+    }
+
+    @Test
+    void aStoryMadeFromAnIdeaHasItsGainReplacedByATextEdit() {
+        // A gain added beside the old one, which stays as what the story covers, would show a
+        // window's tests two gains where the real store holds one.
+        final Board board = store.board();
+        final NewIdea.Added added =
+                store.createIdea(
+                        board.revision(),
+                        new NewIdea(
+                                "A story",
+                                "An old gain.",
+                                "A test.",
+                                "High",
+                                List.of(
+                                        new NewIssue(
+                                                "porelo-project",
+                                                "An issue",
+                                                "It works.",
+                                                null,
+                                                Worker.AGENT,
+                                                null))));
+
+        final Board edited =
+                store.setText(
+                        added.board().revision(),
+                        added.story(),
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                null,
+                                Map.of(TextEdit.Part.GAIN, "A new gain."),
+                                java.util.Set.of()));
+
+        assertThat(edited.story(added.story()).orElseThrow().description())
+                .as("the gain replaced, the test as it was")
+                .isEqualTo("**What a user gains.** A new gain.\n\n**The test.** A test.\n");
+    }
+
+    @Test
+    void aPartGrownWhileAnotherIsRemovedIsTakenWhenTheBodyEndsWithinTheLimit() {
+        // The mock refusing an edit the real store takes would fail the window's tests of it.
+        final Issue issue = store.board().issue("PJ74").orElseThrow();
+        final Board grown =
+                store.setText(
+                        FIRST,
+                        issue.id(),
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                null,
+                                Map.of(TextEdit.Part.FINDINGS, "x".repeat(40_000)),
+                                java.util.Set.of()));
+
+        final Board edited =
+                store.setText(
+                        grown.revision(),
+                        issue.id(),
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                null,
+                                Map.of(TextEdit.Part.PLAN, "y".repeat(40_000)),
+                                java.util.Set.of(TextEdit.Part.FINDINGS)));
+
+        assertThat(edited.issue(issue.id()).orElseThrow().text())
+                .as("the plan grown, the findings gone")
+                .contains("y".repeat(40_000))
+                .doesNotContain("x".repeat(100));
+    }
+
+    @Test
+    void aTextEditIsHeldWithItsTitleAndTheRestOfTheTextAndAStaleOrInjectedOneChangesNothing() {
+        // A mock that answered a text edit without holding it, or took one the real store refuses,
+        // would let the window's tests of a kept text pass where the real store fails.
+        final Issue issue = store.board().issue("PJ74").orElseThrow();
+
+        final Board edited =
+                store.setText(
+                        FIRST,
+                        issue.id(),
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                "A new title",
+                                Map.of(TextEdit.Part.PLAN, "- A plan."),
+                                java.util.Set.of()));
+        final Issue after = edited.issue(issue.id()).orElseThrow();
+        assertThat(after.title()).as("the title set").isEqualTo("A new title");
+        assertThat(after.text())
+                .as("the plan added, what must be true as it was")
+                .isEqualTo(issue.text() + "\n## Plan\n\n- A plan.\n");
+        assertThat(edited.revision()).as("a new revision").isNotEqualTo(FIRST);
+
+        assertThatThrownBy(
+                        () ->
+                                store.setText(
+                                        edited.revision(),
+                                        issue.id(),
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(TextEdit.Part.PLAN, "- a\n## Findings"),
+                                                java.util.Set.of())))
+                .as("a heading injected through the plan")
+                .isInstanceOf(TextEdit.Refused.class);
+        assertThatThrownBy(
+                        () ->
+                                store.setText(
+                                        FIRST,
+                                        issue.id(),
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "Another",
+                                                Map.of(),
+                                                java.util.Set.of())))
+                .as("a text edit against the first revision")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(store.board()).as("the board after both refusals").isEqualTo(edited);
     }
 }

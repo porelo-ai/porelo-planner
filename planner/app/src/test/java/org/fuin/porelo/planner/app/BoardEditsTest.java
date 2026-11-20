@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.AfterEach;
@@ -120,6 +121,16 @@ class BoardEditsTest {
                     }
 
                     @Override
+                    public Board setText(
+                            final Revision revision, final String id, final TextEdit edit) {
+                        if (edit.written().containsValue("## Plan")) {
+                            throw new TextEdit.Refused(id, "A part holds a heading.");
+                        }
+                        written.add("text " + id + " " + edit.title());
+                        return moved();
+                    }
+
+                    @Override
                     public void comment(final String issue, final String text) {
                         written.add("comment " + issue);
                     }
@@ -172,6 +183,7 @@ class BoardEditsTest {
                         () -> edits.setFields("alpha", "AB1", "r0", size()),
                         () -> edits.setStoryIssues("alpha", "ST1", "r0", List.of("AB1")),
                         () -> edits.setBlockedBy("alpha", "AB1", "r0", List.of("AB4")),
+                        () -> edits.setText("alpha", "AB1", "r0", title(TextEdit.Kind.ISSUE)),
                         () -> edits.createStory("alpha", "r0", idea(), List.of()))) {
             assertThat(catchThrowable(edit::run))
                     .as("an edit against r0")
@@ -272,6 +284,53 @@ class BoardEditsTest {
                 .as("an idea with no story and no issue")
                 .isInstanceOf(WorkRefusal.class);
         assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aTextIsWrittenOnceWithItsTitleWithoutSpacesAndToldToEveryWindow() throws Exception {
+        // A text the windows are not told of leaves every other window showing the old one; a
+        // title written with its spaces shows on the tracker as one nobody wrote.
+        final Changes.Subscription window = changes.subscribe("alpha");
+
+        assertThat(
+                        edits.setText(
+                                "alpha",
+                                "ST1",
+                                "r1",
+                                new TextEdit(
+                                        TextEdit.Kind.STORY, " One more ", Map.of(), Set.of())))
+                .as("the revision after the save")
+                .isEqualTo("r2");
+
+        assertThat(written).as("the one write").containsExactly("text ST1 One more");
+        assertThat(window.next(Duration.ofSeconds(2)).map(board -> board.revision().value()))
+                .as("the window is told the saved board")
+                .contains("r2");
+    }
+
+    @Test
+    void aTextTheStoreRefusesIsAnEditNotAllowedNamingTheItem() {
+        // A refusal of the text answered as a server fault gives the person nothing to repair.
+        final Moves.Refused refused =
+                (Moves.Refused)
+                        catchThrowable(
+                                () ->
+                                        edits.setText(
+                                                "alpha",
+                                                "AB1",
+                                                "r1",
+                                                new TextEdit(
+                                                        TextEdit.Kind.ISSUE,
+                                                        null,
+                                                        Map.of(TextEdit.Part.PLAN, "## Plan"),
+                                                        Set.of())));
+        assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
+        assertThat(refused.parameters()).as("the item named").containsEntry("item", "AB1");
+        assertThat(written).as("nothing written").isEmpty();
+    }
+
+    private static TextEdit title(final TextEdit.Kind kind) {
+        return new TextEdit(kind, "A title", Map.of(), Set.of());
     }
 
     private static Fields size() {

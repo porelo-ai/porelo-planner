@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
@@ -182,7 +183,13 @@ public class Problems {
                             "StaleRevision",
                             HttpStatus.CONFLICT,
                             "The board moved since that revision.",
-                            Map.of("revision", stale.current()));
+                            stale.changed() == null
+                                    ? Map.of("revision", stale.current())
+                                    : Map.of(
+                                            "revision",
+                                            stale.current(),
+                                            "item",
+                                            Objects.requireNonNull(stale.changed())));
             case StoreException.NotSavable any ->
                     problem(
                             "MoveNotAllowed",

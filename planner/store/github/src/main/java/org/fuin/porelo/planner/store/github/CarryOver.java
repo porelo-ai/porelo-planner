@@ -511,7 +511,7 @@ public final class CarryOver {
             }
         }
         if (!bodyLeft && body.equals(firstBody) && !body.equals(item.body())) {
-            writes.updateIssue(token, owner, repository, number, item.body(), null);
+            writes.updateIssue(token, owner, repository, number, null, item.body(), null);
         }
         final Set<String> standing = new HashSet<>();
         for (int page = 1; ; page++) {

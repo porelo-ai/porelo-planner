@@ -233,6 +233,8 @@ class ApiMatchesDescriptionTest {
                         "PUT /projects/{project}/issues/{issue}/fields",
                         "PUT /projects/{project}/stories/{story}/issues",
                         "PUT /projects/{project}/issues/{issue}/blockedBy",
+                        "PUT /projects/{project}/issues/{issue}/text",
+                        "PUT /projects/{project}/stories/{story}/text",
                         "POST /projects/{project}/issues/{issue}/comments")
                 .isEqualTo(served);
     }
@@ -272,6 +274,32 @@ class ApiMatchesDescriptionTest {
                         .isEqualTo(required);
             }
         }
+    }
+
+    @Test
+    void theTextEditsTakeExactlyTheMembersTheirSchemasName() {
+        // A member the description names but the planner refuses, or one it takes unnamed, makes
+        // the window's edit fail or write a part nobody described.
+        final JsonNode schemas = description.get("components").get("schemas");
+        final Map<String, Set<String>> taken =
+                Map.of(
+                        "IssueTextRequest", EditRequests.ISSUE_PARTS.keySet(),
+                        "StoryTextRequest", EditRequests.STORY_PARTS.keySet());
+        taken.forEach(
+                (schema, parts) -> {
+                    final Set<String> members = new TreeSet<>(parts);
+                    members.add("title");
+                    members.add("revision");
+                    final Set<String> described = new TreeSet<>();
+                    schemas.get(schema)
+                            .get("properties")
+                            .properties()
+                            .forEach(member -> described.add(member.getKey()));
+                    assertThat(described)
+                            .as("the members of %s against those the planner reads", schema)
+                            .contains("title", "revision")
+                            .isEqualTo(members);
+                });
     }
 
     @Test

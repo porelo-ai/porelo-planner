@@ -448,6 +448,61 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/stories/{story}/text:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Story'
+    put:
+      operationId: setStoryText
+      summary: Set a story's title and text
+      description: >-
+        Writes the story's title and its parts What a user gains and The test, every other byte of its text as it
+        was. A member left out stays as it is; null removes the part with its lead, and the title is never removed.
+        Also needs (the story's issues, set through its issues), a person's own headings and the fields are not
+        written by this call; a member naming them is
+        refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
+        answers the current revision. The edit is checked against the board at the given revision, and on GitHub the
+        item is read again right before the write and the edit refused (StaleRevision, naming the item) when a person
+        changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
+        between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
+        text holds a line Markdown reads as a heading of the first or second level, a lead of another leading part, a
+        blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
+        that would grow the body past the 65536 characters GitHub takes, is refused (EditNotAllowed) before anything
+        is written; so is a body whose sections cannot be told apart for certain, with the first thing to repair. The
+        JSON body is at most 131072 bytes. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryTextRequest'
+      responses:
+        '200':
+          description: The text is saved, or held it already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/EditConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/ideas/discussion:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -821,6 +876,63 @@ paths:
           $ref: '#/components/responses/NoSuchIssue'
         '409':
           $ref: '#/components/responses/IssueConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/text:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    put:
+      operationId: setIssueText
+      summary: Set an issue's title and text
+      description: >-
+        Writes the issue's title and the named parts of its text the body names, every other byte of the text as it
+        was: what it covers, Why this size, What must be true, Plan, Acceptance, Open questions, To be checked and
+        Findings. A member left out stays as it is; null removes the part with its lead or heading, except what the
+        issue covers and What must be true, whose null is refused, and the title, which is never removed. Also
+        needs, a person's own headings, the fields and the stage comments are not written by this call; a member
+        naming them is
+        refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
+        answers the current revision. The edit is checked against the board at the given revision, and on GitHub the
+        item is read again right before the write and the edit refused (StaleRevision, naming the item) when a person
+        changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
+        between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
+        text holds a line Markdown reads as a heading of the first or second level, a lead of another leading part, a
+        blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
+        that would grow the body past the 65536 characters GitHub takes, is refused (EditNotAllowed) before anything
+        is written; so is a body whose sections cannot be told apart for certain, with the first thing to repair. The
+        JSON body is at most 131072 bytes. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueTextRequest'
+      responses:
+        '200':
+          description: The text is saved, or held it already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/EditConflict'
         '422':
           $ref: '#/components/responses/EditRefused'
         '501':
@@ -1705,7 +1817,8 @@ components:
               revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
     EditConflict:
       description: >-
-        The board moved since the given revision (StaleRevision, naming the current one), or a started task of a run
+        The board moved since the given revision (StaleRevision, naming the current one, and the item when a person
+        changed it on the tracker since the board was read), or a started task of a run
         works an issue the change takes out of its story, or a run whose story is gone still has a task at work
         (WorkRunning, naming the story and its tasks).
       content:
@@ -1783,12 +1896,14 @@ components:
                     - 'offer: The idea of this offer was saved only in part and is not saved again.'
     EditRefused:
       description: >-
-        A change of an issue's fields, a story's issues or an issue's blockers, or a comment, is refused, with fixed
-        words; what was sent is never repeated. EditNotAllowed (item, field, reason) when the body is not that change
-        - not one JSON object of its size, a member unknown, missing or of another kind, a value out of its bounds -
-        or the change breaks the board: an issue or blocker named twice, an issue of another story or a sub-issue of
-        an issue hung into a story, a story the board shows only in part given a whole list, an issue blocking itself,
-        blockers that lead back to the issue, or a comment opening with the planner's own marker `<!-- porelo:`.
+        A change of an issue's fields, a story's issues, an issue's blockers or an item's title and text, or a
+        comment, is refused, with fixed words; what was sent is never repeated. EditNotAllowed (item, field, reason)
+        when the body is not that change - not one JSON object of its size, a member unknown, missing or of another
+        kind, a value out of its bounds - or the change breaks the board: an issue or blocker named twice, an issue of
+        another story or a sub-issue of an issue hung into a story, a story the board shows only in part given a whole
+        list, an issue blocking itself, blockers that lead back to the issue, a comment opening with the planner's own
+        marker `<!-- porelo:`, a title of more than one line, a part that would open a part of its own or leave a
+        block open, a body grown past what the tracker takes, or a body whose sections cannot be told apart.
         MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
         issue a story holds only under Also needs in its body taken out, an issue that has a parent on the tracker
         hung in, or a call the tracker refused, named by its status alone.
@@ -1873,9 +1988,9 @@ components:
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
-        stories, sets no issue's fields, story's issues or issue's blockers, writes no comment or saves no stage's
-        result; the mock mode previews and saves moves, saves workers, adds ideas and stories and takes the edits by
-        hand into its in-memory board, but adds no issues and saves no priorities (NotOffered).
+        stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment
+        or saves no stage's result; the mock mode previews and saves moves, saves workers, adds ideas and stories and
+        takes the edits by hand into its in-memory board, but adds no issues and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -2584,6 +2699,92 @@ components:
           description: The person's text, as they wrote it; not blank, at most 65536 characters.
           minLength: 1
           maxLength: 65536
+    IssueTextRequest:
+      description: >-
+        An issue's title and named parts to write, against the board at a revision; a member left out stays as it is,
+        null removes a part where the issue may be without it, and no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        title:
+          type: string
+          description: >-
+            One line without control characters; the spaces around it are dropped. At most 120 characters, as an
+            issue's head holds its title.
+          minLength: 1
+          maxLength: 120
+        covers:
+          type: string
+          description: The first paragraph, which says what the issue covers; one paragraph, never removed.
+          minLength: 1
+          maxLength: 65536
+        whyThisSize:
+          type: [string, 'null']
+          description: The paragraph after the lead Why this size; one paragraph; null removes it.
+          minLength: 1
+          maxLength: 65536
+        whatMustBeTrue:
+          type: string
+          description: >-
+            What must be true, never removed: one paragraph is written after the lead What must be true, a text of
+            several paragraphs as the section What must be true.
+          minLength: 1
+          maxLength: 65536
+        plan:
+          type: [string, 'null']
+          description: The section Plan; null removes it.
+          minLength: 1
+          maxLength: 65536
+        acceptance:
+          type: [string, 'null']
+          description: The section Acceptance; null removes it.
+          minLength: 1
+          maxLength: 65536
+        openQuestions:
+          type: [string, 'null']
+          description: The section Open questions; null removes it.
+          minLength: 1
+          maxLength: 65536
+        toBeChecked:
+          type: [string, 'null']
+          description: The section To be checked; null removes it.
+          minLength: 1
+          maxLength: 65536
+        findings:
+          type: [string, 'null']
+          description: The section Findings; null removes it.
+          minLength: 1
+          maxLength: 65536
+        revision:
+          $ref: '#/components/schemas/Revision'
+    StoryTextRequest:
+      description: >-
+        A story's title and parts to write, against the board at a revision; a member left out stays as it is, null
+        removes a part, and no other member is taken.
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        title:
+          type: string
+          description: >-
+            One line without control characters; the spaces around it are dropped. At most 120 characters, as an
+            issue's head holds its title.
+          minLength: 1
+          maxLength: 120
+        gain:
+          type: [string, 'null']
+          description: The paragraph after the lead What a user gains; one paragraph; null removes it.
+          minLength: 1
+          maxLength: 65536
+        test:
+          type: [string, 'null']
+          description: The paragraph after the lead The test; one paragraph; null removes it.
+          minLength: 1
+          maxLength: 65536
+        revision:
+          $ref: '#/components/schemas/Revision'
     EditSaved:
       description: The board's revision after the save.
       type: object

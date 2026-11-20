@@ -13,6 +13,7 @@ import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 
 /**
  * Checks the edits a person keeps the board with by hand - an issue's fields, a story's issues, an
@@ -35,6 +36,19 @@ public final class Edits {
 
     /** The most code points one comment may have. */
     public static final int MOST_COMMENT = 65536;
+
+    /** The most code points a title may have. */
+    public static final int MOST_TITLE = 120;
+
+    /** The most code points one part of a text may have, as the longest body GitHub takes. */
+    public static final int MOST_PART = 65536;
+
+    /**
+     * Anything that breaks one line: a C0 or C1 control character, NEL or a line or paragraph
+     * separator.
+     */
+    private static final java.util.regex.Pattern BREAKS =
+            java.util.regex.Pattern.compile("[\\x00-\\x1F\\x7F-\\x9F\\u2028\\u2029]");
 
     private Edits() {}
 
@@ -183,6 +197,84 @@ public final class Edits {
             }
         }
         return !Set.copyOf(found.blockedBy()).equals(named);
+    }
+
+    /**
+     * Checks a change of a story's or an issue's title and named parts: the item stands on the
+     * board read at that revision, the change names anything, the title is one line of 1 to {@value
+     * #MOST_TITLE} characters without control characters, and each part written is not blank and at
+     * most {@value #MOST_PART} characters. A task at work on the issue does not refuse it: its
+     * result is checked against the revision it read, as every write is.
+     *
+     * @param board the board the store holds
+     * @param revision the revision the caller read
+     * @param id the story's or the issue's id
+     * @param edit the change
+     * @return the change with its title without the spaces around it
+     * @throws StoreException.StaleRevision when the board moved since that revision
+     * @throws Moves.Refused {@code NoSuchStory} or {@code NoSuchIssue} for an item the board lacks,
+     *     {@value #REFUSED} for a change that names nothing or a title or part out of bounds
+     */
+    public static TextEdit text(
+            final Board board, final String revision, final String id, final TextEdit edit) {
+        fresh(board, revision);
+        if (edit.kind() == TextEdit.Kind.STORY) {
+            board.story(id)
+                    .orElseThrow(
+                            () ->
+                                    new Moves.Refused(
+                                            "NoSuchStory",
+                                            "There is no story " + id + ".",
+                                            Map.of("story", id)));
+        } else {
+            known(board, id);
+        }
+        if (edit.none()) {
+            throw refused(id, "", "The body names no title and no part to write.");
+        }
+        String title = edit.title();
+        if (title != null) {
+            if (BREAKS.matcher(title).find()) {
+                throw refused(
+                        id, "title", "The title must be one line without control characters.");
+            }
+            title = title.strip();
+            if (title.isEmpty() || title.codePointCount(0, title.length()) > MOST_TITLE) {
+                throw refused(
+                        id, "title", "The title must have 1 to " + MOST_TITLE + " characters.");
+            }
+        }
+        for (final Map.Entry<TextEdit.Part, String> part : edit.written().entrySet()) {
+            final String text = part.getValue();
+            if (text.isBlank() || text.codePointCount(0, text.length()) > MOST_PART) {
+                throw refused(
+                        id,
+                        member(part.getKey()),
+                        "A part must have 1 to " + MOST_PART + " characters and not be blank.");
+            }
+        }
+        return new TextEdit(edit.kind(), title, edit.written(), edit.removed());
+    }
+
+    /**
+     * The member of a text edit's body that names a part.
+     *
+     * @param part the part
+     * @return the member's name
+     */
+    public static String member(final TextEdit.Part part) {
+        return switch (part) {
+            case COVERS -> "covers";
+            case WHY_THIS_SIZE -> "whyThisSize";
+            case WHAT_MUST_BE_TRUE -> "whatMustBeTrue";
+            case PLAN -> "plan";
+            case ACCEPTANCE -> "acceptance";
+            case OPEN_QUESTIONS -> "openQuestions";
+            case TO_BE_CHECKED -> "toBeChecked";
+            case FINDINGS -> "findings";
+            case GAIN -> "gain";
+            case TEST -> "test";
+        };
     }
 
     /**

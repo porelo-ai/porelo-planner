@@ -238,12 +238,14 @@ public interface ProjectWrites {
             String token, String owner, String repository, Instant since, int page);
 
     /**
-     * Writes an issue's body or its open state.
+     * Writes an issue's title, body or open state in one update; what is null is not sent, so
+     * GitHub leaves it, labels, assignees and milestone too.
      *
      * @param token the person's token
      * @param owner the repository's owner
      * @param repository the repository's name
      * @param number the issue's number
+     * @param title the new title, or null to leave it
      * @param body the new body, or null to leave it
      * @param opening the new open state, or null to leave it
      */
@@ -252,6 +254,7 @@ public interface ProjectWrites {
             String owner,
             String repository,
             int number,
+            @Nullable String title,
             @Nullable String body,
             @Nullable Opening opening);
 
@@ -437,6 +440,7 @@ public interface ProjectWrites {
                     final String owner,
                     final String repository,
                     final int number,
+                    final @Nullable String title,
                     final @Nullable String body,
                     final @Nullable Opening opening) {
                 rest.updateIssue(
@@ -445,7 +449,7 @@ public interface ProjectWrites {
                         repository,
                         number,
                         new IssuesUpdateRequest(
-                                null,
+                                title,
                                 body,
                                 opening == null
                                         ? null

@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,13 @@ class LoggedStoreTest {
                     }
 
                     @Override
+                    public Board setText(
+                            final Revision revision, final String id, final TextEdit edit) {
+                        reached.add("text " + id);
+                        return BOARD;
+                    }
+
+                    @Override
                     public void comment(final String issue, final String text) {
                         reached.add("comment " + issue);
                     }
@@ -80,10 +88,15 @@ class LoggedStoreTest {
                 new Fields(Set.of(Fields.Field.SIZE), "M", null, null, null));
         store.setStoryIssues(BOARD.revision(), "ST1", List.of("AB1"));
         store.setBlockedBy(BOARD.revision(), "AB1", List.of());
+        store.setText(
+                BOARD.revision(),
+                "ST1",
+                new TextEdit(TextEdit.Kind.STORY, "A title", Map.of(), Set.of()));
         store.comment("AB1", "A comment.");
 
         assertThat(reached)
                 .as("the edits the wrapped store was given")
-                .containsExactly("fields AB1", "issues ST1", "blockers AB1", "comment AB1");
+                .containsExactly(
+                        "fields AB1", "issues ST1", "blockers AB1", "text ST1", "comment AB1");
     }
 }

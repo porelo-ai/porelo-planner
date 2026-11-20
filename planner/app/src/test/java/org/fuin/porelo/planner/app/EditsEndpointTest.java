@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -116,6 +117,12 @@ class EditsEndpointTest {
                             final String story,
                             final List<String> issues) {
                         return write(issues);
+                    }
+
+                    @Override
+                    public Board setText(
+                            final Revision revision, final String id, final TextEdit edit) {
+                        return write(edit);
                     }
 
                     @Override
@@ -277,6 +284,92 @@ class EditsEndpointTest {
                 .andExpect(jsonPath("$.issues[0]").value("AB3"))
                 .andExpect(jsonPath("$.revision").value("r2"));
         assertThat(written).as("the writes").containsExactly("A note.", "A story");
+    }
+
+    @Test
+    void aTextIsReadIntoItsPartsANullRemovingOneAndAMemberLeftOutLeavingIt() throws Exception {
+        // A member read into the wrong part would overwrite a section the person did not name; a
+        // null read as a text would leave a section the person removed.
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"title\": \"A title\", \"plan\": \"- step\", \"findings\": null,"
+                                + " \"revision\": \"r1\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+        send("PUT", "/stories/ST1/text", "{\"gain\": \"More.\", \"revision\": \"r2\"}")
+                .andExpect(status().isOk());
+
+        assertThat(written)
+                .as("the texts written")
+                .containsExactly(
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                "A title",
+                                Map.of(TextEdit.Part.PLAN, "- step"),
+                                java.util.Set.of(TextEdit.Part.FINDINGS)),
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                null,
+                                Map.of(TextEdit.Part.GAIN, "More."),
+                                java.util.Set.of()));
+    }
+
+    @Test
+    void aTextNamingWhatItMayNotWriteOrRemoveIsRefusedBeforeTheStore() throws Exception {
+        // Also needs written through the text would change a story's issues unchecked; a removed
+        // goal or a title broken over lines would leave an item nobody can read.
+        for (final String[] call :
+                List.of(
+                        new String[] {
+                            "/issues/AB1/text", "{\"title\": \"A title\", \"alsoNeeds\": \"- AB2\""
+                        },
+                        new String[] {
+                            "/issues/AB1/text", "{\"title\": \"A title\", \"whatMustBeTrue\": null"
+                        },
+                        new String[] {
+                            "/issues/AB1/text", "{\"title\": \"A title\", \"covers\": null"
+                        },
+                        new String[] {"/issues/AB1/text", "{\"title\": null"},
+                        new String[] {"/issues/AB1/text", "{\"title\": \"One\\nTwo\""},
+                        new String[] {"/issues/AB1/text", "{\"title\": \"A title\", \"plan\": 3"},
+                        new String[] {
+                            "/issues/AB1/text", "{\"title\": \"A title\", \"gain\": \"More.\""
+                        },
+                        new String[] {
+                            "/stories/ST1/text", "{\"title\": \"A title\", \"plan\": \"A plan.\""
+                        },
+                        new String[] {"/issues/AB1/text", "{"})) {
+            send(
+                            "PUT",
+                            call[0],
+                            call[1] + (call[1].equals("{") ? "" : ",") + " \"revision\": \"r1\"}")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        }
+        assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aTextOnAChangedItemIsAConflictNamingItAndOneNotOfferedIsNotOffered() throws Exception {
+        // A person's change on the tracker answered as a success would be lost unseen; a missing
+        // feature told as a refused write misleads the window.
+        failure = new StoreException.StaleRevision("r1", "AB1");
+        send("PUT", "/issues/AB1/text", "{\"title\": \"A title\", \"revision\": \"r1\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("StaleRevision"))
+                .andExpect(jsonPath("$.parameters.item").value("AB1"));
+        failure = new TextEdit.Refused("AB1", "A part of the body holds a heading.");
+        send("PUT", "/issues/AB1/text", "{\"plan\": \"## Plan\", \"revision\": \"r1\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("EditNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("AB1"));
+        failure = null;
+        offered = false;
+        send("PUT", "/stories/ST1/text", "{\"title\": \"A title\", \"revision\": \"r1\"}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.title").value("NotOffered"));
+        assertThat(written).as("nothing written").isEmpty();
     }
 
     @Test

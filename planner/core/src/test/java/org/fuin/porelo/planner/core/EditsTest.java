@@ -13,6 +13,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.Test;
@@ -242,6 +243,115 @@ class EditsTest {
                 .as("a comment posing as a stage record")
                 .isEqualTo(Edits.REFUSED);
         Edits.comment(board, "AB1", "A note on <!-- porelo:stage --> in the middle.");
+    }
+
+    private static TextEdit title(final TextEdit.Kind kind, final String title) {
+        return new TextEdit(kind, title, Map.of(), Set.of());
+    }
+
+    @Test
+    void aTextEditAgainstAnotherRevisionIsStaleAndOneOfAnItemOfTheOtherKindIsNotFound() {
+        // An edit planned on an old board would write over what someone saved since; a story's
+        // text written to an issue of the same id would change the wrong item.
+        final StoreException.StaleRevision stale =
+                catchThrowableOfType(
+                        StoreException.StaleRevision.class,
+                        () ->
+                                Edits.text(
+                                        board, "r0", "AB1", title(TextEdit.Kind.ISSUE, "A title")));
+        assertThat(stale).as("a text edit against r0").isNotNull();
+        assertThat(
+                        refusal(
+                                        () ->
+                                                Edits.text(
+                                                        board,
+                                                        "r1",
+                                                        "AB1",
+                                                        title(TextEdit.Kind.STORY, "A title")))
+                                .name())
+                .as("an issue's id edited as a story")
+                .isEqualTo("NoSuchStory");
+        assertThat(
+                        refusal(
+                                        () ->
+                                                Edits.text(
+                                                        board,
+                                                        "r1",
+                                                        "ST1",
+                                                        title(TextEdit.Kind.ISSUE, "A title")))
+                                .name())
+                .as("a story's id edited as an issue")
+                .isEqualTo("NoSuchIssue");
+    }
+
+    @Test
+    void aTitleWithALineBreakOrOutOfBoundsAndABlankOrTooLongPartAreRefused() {
+        // A line break in a title breaks the tracker's one-line head; a blank part would leave a
+        // lead or a heading with nothing under it, a part past the tracker's limit is cut off.
+        for (final String title :
+                List.of("One\nTwo", "One\rTwo", "One\u2028Two", "  ", "x".repeat(121))) {
+            final Moves.Refused refused =
+                    refusal(
+                            () ->
+                                    Edits.text(
+                                            board, "r1", "AB1", title(TextEdit.Kind.ISSUE, title)));
+            assertThat(refused.name()).as("the title refused").isEqualTo(Edits.REFUSED);
+            assertThat(refused.parameters()).as("its member").containsEntry("field", "title");
+        }
+        for (final String text : List.of(" \n ", "x".repeat(Edits.MOST_PART + 1))) {
+            final Moves.Refused refused =
+                    refusal(
+                            () ->
+                                    Edits.text(
+                                            board,
+                                            "r1",
+                                            "AB1",
+                                            new TextEdit(
+                                                    TextEdit.Kind.ISSUE,
+                                                    null,
+                                                    Map.of(TextEdit.Part.PLAN, text),
+                                                    Set.of())));
+            assertThat(refused.parameters()).as("the part refused").containsEntry("field", "plan");
+        }
+        assertThat(
+                        refusal(
+                                        () ->
+                                                Edits.text(
+                                                        board,
+                                                        "r1",
+                                                        "ST1",
+                                                        new TextEdit(
+                                                                TextEdit.Kind.STORY,
+                                                                null,
+                                                                Map.of(),
+                                                                Set.of())))
+                                .parameters())
+                .as("an edit that names nothing")
+                .containsEntry("reason", "The body names no title and no part to write.");
+    }
+
+    @Test
+    void aTitleIsTakenWithoutTheSpacesAroundItAndThePartsAsGiven() {
+        // Spaces kept around a title would show on the tracker as a title nobody wrote.
+        final TextEdit checked =
+                Edits.text(
+                        board,
+                        "r1",
+                        "ST1",
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                "  A story  ",
+                                Map.of(TextEdit.Part.GAIN, "More."),
+                                Set.of(TextEdit.Part.TEST)));
+
+        assertThat(checked)
+                .as("the change as checked")
+                .isEqualTo(
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                "A story",
+                                Map.of(TextEdit.Part.GAIN, "More."),
+                                Set.of(TextEdit.Part.TEST)));
     }
 
     private static Moves.Refused refusal(final Runnable edit) {

@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
@@ -262,6 +263,16 @@ class GitHubStoreTest {
                                             }
 
                                             @Override
+                                            public boolean setText(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final String id,
+                                                    final TextEdit edit) {
+                                                written.add(edit.title());
+                                                return true;
+                                            }
+
+                                            @Override
                                             public void comment(
                                                     final Snapshot current,
                                                     final String issue,
@@ -281,6 +292,55 @@ class GitHubStoreTest {
         assertThat(store.setBlockedBy(new Revision("r1"), "AB1", List.of("AB2")).revision())
                 .as("the board after an edit that wrote")
                 .isEqualTo(new Revision("r2"));
+        assertThat(
+                        store.setText(
+                                        new Revision("r2"),
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "A title",
+                                                java.util.Map.of(),
+                                                java.util.Set.of()))
+                                .revision())
+                .as("the board after a text written")
+                .isEqualTo(new Revision("r3"));
+        assertThat(written).as("the text written").endsWith("A title");
+    }
+
+    @Test
+    void aTextTheWriterRefusesIsTheRefusalNotAnUnreachableRepository() {
+        // Harm: a text refused before any call answered as GitHub unreachable, so the caller
+        // tries the same text again and again instead of correcting it.
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(config -> snapshot("r1"), states -> null)
+                                .probe(current -> true)
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public boolean setText(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final String id,
+                                                    final TextEdit edit) {
+                                                throw new TextEdit.Refused(id, "A fixed reason.");
+                                            }
+                                        }));
+        store.board();
+
+        assertThatThrownBy(
+                        () ->
+                                store.setText(
+                                        new Revision("r1"),
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "A title",
+                                                Map.of(),
+                                                java.util.Set.of())))
+                .as("a text the writer refused")
+                .isInstanceOf(TextEdit.Refused.class)
+                .hasMessageContaining("A fixed reason.");
     }
 
     @Test

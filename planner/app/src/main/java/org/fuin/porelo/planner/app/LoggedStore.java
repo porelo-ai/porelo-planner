@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
@@ -96,6 +97,11 @@ final class LoggedStore implements PlanningStore {
     public Board setBlockedBy(
             final Revision revision, final String issue, final List<String> blockedBy) {
         return store.setBlockedBy(revision, issue, blockedBy);
+    }
+
+    @Override
+    public Board setText(final Revision revision, final String id, final TextEdit edit) {
+        return store.setText(revision, id, edit);
     }
 
     @Override

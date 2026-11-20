@@ -4,13 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.fuin.porelo.planner.store.StageResult;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An issue's body on GitHub, read as its parts: the leading paragraphs ({@code covers}, <em>Why
- * this size</em>, <em>What must be true</em>) and its second-level sections. A part is overwritten,
- * added or removed, and every other byte of the body stays as it was, its line endings too.
+ * An issue's or a story's body on GitHub, read as its parts: the leading paragraphs ({@code
+ * covers}, <em>Why this size</em>, <em>What must be true</em>, a story's <em>What a user gains</em>
+ * and <em>The test</em>) and its second-level sections. A part is overwritten, added or removed,
+ * and every other byte of the body stays as it was, its line endings too.
  */
 public final class BodySections {
 
@@ -33,6 +35,10 @@ public final class BodySections {
         WHY_THIS_SIZE("**Why this size.**"),
         /** What must be true once it is done. */
         WHAT_MUST_BE_TRUE("**What must be true.**"),
+        /** What a user gains from a story. */
+        GAIN("**What a user gains.**"),
+        /** How a story is tested. */
+        TEST("**The test.**"),
         /** The plan. */
         PLAN("Plan"),
         /** How it is judged done. */
@@ -51,7 +57,28 @@ public final class BodySections {
         }
 
         private boolean leading() {
-            return ordinal() <= WHAT_MUST_BE_TRUE.ordinal();
+            return ordinal() < PLAN.ordinal();
+        }
+
+        /**
+         * The part a text edit names.
+         *
+         * @param part the text edit's part
+         * @return the body's part of that name
+         */
+        public static Part of(final TextEdit.Part part) {
+            return switch (part) {
+                case COVERS -> COVERS;
+                case WHY_THIS_SIZE -> WHY_THIS_SIZE;
+                case WHAT_MUST_BE_TRUE -> WHAT_MUST_BE_TRUE;
+                case GAIN -> GAIN;
+                case TEST -> TEST;
+                case PLAN -> PLAN;
+                case ACCEPTANCE -> ACCEPTANCE;
+                case OPEN_QUESTIONS -> OPEN_QUESTIONS;
+                case TO_BE_CHECKED -> TO_BE_CHECKED;
+                case FINDINGS -> FINDINGS;
+            };
         }
 
         private String label() {
@@ -199,8 +226,8 @@ public final class BodySections {
      * @param text its new text, without its lead or heading
      * @return the body with the part written
      * @throws Ambiguous when the body's sections cannot be told apart for certain
-     * @throws IllegalArgumentException when the text is blank, would open a part of its own, or the
-     *     body would grow longer than GitHub takes
+     * @throws IllegalArgumentException when the text is blank, would open a part of its own, would
+     *     leave the body's sections unclear, or the body would grow longer than GitHub takes
      */
     public BodySections with(final Part part, final String text) {
         unambiguous();
@@ -298,6 +325,7 @@ public final class BodySections {
      * @param part the part
      * @return the body without it, or as it was when it has none
      * @throws Ambiguous when the body's sections cannot be told apart for certain
+     * @throws IllegalArgumentException when its removal would leave the body's sections unclear
      */
     public BodySections without(final Part part) {
         unambiguous();
@@ -307,37 +335,82 @@ public final class BodySections {
             if (span.length == 0) {
                 return this;
             }
+            int start = span[0];
             int end = span[1];
-            // The blank line that parted it from the next goes with it.
+            // The blank line that parted it from the next goes with it; a last one takes the
+            // blank line above it, and the line before keeps the ending the body had.
             if (end < out.size() && out.get(end).blank()) {
                 end++;
+            } else if (end == out.size() && start > 0 && out.get(start - 1).blank()) {
+                start--;
             }
-            out.subList(span[0], end).clear();
-        } else {
-            final int heading = heading(part.label());
-            if (heading < 0) {
-                return this;
-            }
-            final int end = sectionEnd(heading);
-            // A last section takes the blank line above it, so the body ends as the one before.
-            final int start =
-                    end == out.size() && heading > 0 && out.get(heading - 1).blank()
-                            ? heading - 1
-                            : heading;
+            final String lastEnd = out.get(end - 1).end();
             out.subList(start, end).clear();
+            if (end == lines.size() && start > 0) {
+                out.set(start - 1, new Line(out.get(start - 1).text(), lastEnd));
+            }
+        } else {
+            return withoutSection(part.label());
         }
-        return new BodySections(out);
+        return checked(out);
+    }
+
+    /** Removes a second-level section with its heading, or answers the body when it has none. */
+    private BodySections withoutSection(final String label) {
+        final List<Line> out = new ArrayList<>(lines);
+        final int heading = heading(label);
+        if (heading < 0) {
+            return this;
+        }
+        final int end = sectionEnd(heading);
+        // A last section takes the blank line above it, so the body ends as the one before.
+        final int start =
+                end == out.size() && heading > 0 && out.get(heading - 1).blank()
+                        ? heading - 1
+                        : heading;
+        out.subList(start, end).clear();
+        return checked(out);
+    }
+
+    /**
+     * Writes a part an edit names: what must be true in the form its text needs, the lead's
+     * paragraph for one paragraph the lead holds, else its section above every other section, the
+     * other form taken out; any other part as {@link #with(Part, String)} writes it.
+     *
+     * @param part the part
+     * @param text its new text
+     * @return the body with the part written
+     * @throws Ambiguous when the body's sections cannot be told apart for certain
+     * @throws IllegalArgumentException when neither form can hold the text, or the body would grow
+     *     longer than GitHub takes
+     */
+    public BodySections withEdited(final Part part, final String text) {
+        if (part != Part.WHAT_MUST_BE_TRUE) {
+            return with(part, text);
+        }
+        unambiguous();
+        try {
+            return withoutSection(WHAT_MUST_BE_TRUE_SECTION).with(part, text);
+        } catch (final Ambiguous e) {
+            throw e;
+        } catch (final IllegalArgumentException e) {
+            // A text the lead cannot hold goes into the section.
+        }
+        final BodySections body = without(part);
+        return body.withSection(
+                WHAT_MUST_BE_TRUE_SECTION, content(Part.PLAN, text), body.firstHeading());
     }
 
     /**
      * Tells whether the body splits into sections unambiguously, as a write needs: every code block
      * closes; none runs over a heading-shaped line and a fence of its own kind at least as long
      * (the sign of a fence left open by hand that pairs with a later block's); none opened under a
-     * section of the skeleton holds a line shaped as the heading of one; every HTML comment, pre
-     * and details block closes and holds no heading-shaped line; every line Markdown reads as a
-     * heading of the first or second level is written as two hashes, a space and a name; no section
-     * of the skeleton stands twice; and no leading paragraph stands twice. A read takes the body
-     * either way.
+     * section of the skeleton holds a line shaped as the heading of one; none opened above the
+     * first section holds a heading-shaped line or a lead; every HTML comment, pre and details
+     * block closes and holds no heading-shaped line; every line Markdown reads as a heading of the
+     * first or second level is written as two hashes, a space and a name; no section of the
+     * skeleton stands twice; and no leading paragraph stands twice. A read takes the body either
+     * way.
      *
      * @return the first thing a person must repair, in fixed words and line numbers, or empty when
      *     the body can be written
@@ -412,6 +485,7 @@ public final class BodySections {
         boolean heading = false;
         boolean section = false;
         boolean inner = false;
+        boolean leads = false;
         for (int at = 0; at < lines.size(); at++) {
             final String text = lines.get(at).text();
             if (opened < 0) {
@@ -420,6 +494,7 @@ public final class BodySections {
                     heading = false;
                     section = false;
                     inner = false;
+                    leads = false;
                 }
                 continue;
             }
@@ -427,6 +502,14 @@ public final class BodySections {
             fence.inside(text);
             if (!fence.open()) {
                 final String under = sectionAbove(opened);
+                if (under == null && (heading || leads)) {
+                    // Above the first section the leading paragraphs are the skeleton's too.
+                    return Optional.of(
+                            "the code block opened in "
+                                    + place(opened)
+                                    + " above the first section holds a heading-shaped line or a"
+                                    + " lead, so where it closes is unclear");
+                }
                 if (section && under != null && known(under)) {
                     return Optional.of(
                             "the code block opened in "
@@ -447,6 +530,7 @@ public final class BodySections {
                 heading |= shape != null && shape.level() <= 2;
                 section |= shape != null && shape.level() <= 2 && known(shape.name());
                 inner |= sign;
+                leads |= lead(text) != null;
             }
         }
         if (opened >= 0) {
@@ -652,9 +736,19 @@ public final class BodySections {
         }
     }
 
+    /**
+     * A body written from one that could be told apart: refused when it grew past what GitHub
+     * takes, or when what was written left a block open across its sections, since every later
+     * write would then skip it.
+     */
     private static BodySections checked(final List<Line> out) {
         final BodySections body = new BodySections(out);
         bounded(body.text());
+        final Optional<String> repair = body.ambiguity();
+        if (repair.isPresent()) {
+            throw new IllegalArgumentException(
+                    "A part of the body would leave its sections unclear: " + repair.get());
+        }
         return body;
     }
 
@@ -666,9 +760,15 @@ public final class BodySections {
         }
         final List<String> content = new ArrayList<>(List.of(lf.split("\n", -1)));
         final Fence fence = new Fence();
-        for (final String line : content) {
-            final boolean code = fence.inside(line);
-            final Shape shape = code ? null : shape(line);
+        for (int at = 0; at < content.size(); at++) {
+            final String line = content.get(at);
+            // The line as it will stand: a leading part's first one follows its lead.
+            final String standing =
+                    at == 0 && part.leading() && part != Part.COVERS
+                            ? part.label() + " " + line
+                            : line;
+            final boolean code = fence.inside(standing);
+            final Shape shape = code ? null : shape(standing);
             if (shape != null && shape.level() <= 2
                     || part.leading() && (line.isBlank() || lead(line) != null)) {
                 throw new IllegalArgumentException(
@@ -720,7 +820,7 @@ public final class BodySections {
                 return span[1];
             }
         }
-        for (int later = part.ordinal() + 1; later <= Part.WHAT_MUST_BE_TRUE.ordinal(); later++) {
+        for (int later = part.ordinal() + 1; later < Part.PLAN.ordinal(); later++) {
             final int[] span = paragraph(Part.values()[later]);
             if (span.length > 0) {
                 return span[0];
@@ -791,8 +891,8 @@ public final class BodySections {
     }
 
     private static @Nullable Part lead(final String text) {
-        for (final Part part : List.of(Part.WHAT_MUST_BE_TRUE, Part.WHY_THIS_SIZE)) {
-            if (text.startsWith(part.label())) {
+        for (final Part part : Part.values()) {
+            if (part != Part.COVERS && part.leading() && text.startsWith(part.label())) {
                 return part;
             }
         }

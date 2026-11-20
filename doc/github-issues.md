@@ -26,25 +26,26 @@ The planner adds 10 fields to the project. A GitHub project holds at most 50, 13
 
 ## The body
 
-The body holds what is true now, in the sections the Markdown issues have: the line of what the issue covers first,
-then *Why this size*, *What must be true*, *Plan*, *Acceptance*, *Open questions*, *To be checked* and *Findings*.
-*What must be true* of one paragraph stands as the paragraph its lead `**What must be true.**` opens; one of several
-paragraphs, or one the lead cannot hold, stands as a section `## What must be true` of its own, and the planner reads
-either form. A story's body also holds *Gain*, *Test* and *Tested*, and an issue's its task, role, severity and kind where it has
-them. A stage result overwrites the sections its kind writes, and leaves every other byte as it was. A heading inside
-a fenced block is no section. No times and no stage history stand in the body.
+The body holds what is true now, in the sections the Markdown issues have: the line of what the issue covers first, then
+*Why this size*, *What must be true*, *Plan*, *Acceptance*, *Open questions*, *To be checked* and *Findings*. *What must
+be true* of one paragraph stands as the paragraph its lead `**What must be true.**` opens; one of several paragraphs, or
+one the lead cannot hold, stands as a section `## What must be true` of its own, and the planner reads either form. A
+story's body opens with *What a user gains* and *The test*, each a paragraph after its lead, and an issue's body holds
+its task, role, severity and kind where it has them. A stage result overwrites the sections its kind writes, and leaves
+every other byte as it was. A heading inside a fenced block is no section. No times and no stage history stand in the
+body.
 
-A result is written into the body only when the body splits into sections unambiguously: every code block closes;
-none runs over a heading-shaped line together with a fence of its own kind at least as long (the sign of a fence left
-open by hand that pairs with a later block's); none opened under a section of the skeleton holds a line shaped as the
-heading of one; every HTML comment, `pre` and `details` block closes and holds no heading-shaped line; every line
-Markdown reads as a heading of the first or second level is written as `## ` and a name; no section of the skeleton
-stands twice; no leading paragraph stands twice; and *What must be true* does not stand both as the lead's paragraph
-and as a section. A fence indented by a tab is indented code, no fence. A person's
-own headings may repeat, and the leading paragraphs may stand in any order; a missing one is added where the skeleton
-puts it. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still saved,
-and the board names the issue by its repository and number with the first thing to repair, such as "the code block
-opened in line 12 under Plan never closes". A read takes such a body and shows the issue.
+A result is written into the body only when the body splits into sections unambiguously: every code block closes; none
+runs over a heading-shaped line together with a fence of its own kind at least as long (the sign of a fence left open by
+hand that pairs with a later block's); none opened under a section of the skeleton holds a line shaped as the heading of
+one; none opened above the first section holds a heading-shaped line or a lead; every HTML comment, `pre` and `details`
+block closes and holds no heading-shaped line; every line Markdown reads as a heading of the first or second level is
+written as `## ` and a name; no section of the skeleton stands twice; no leading paragraph stands twice; and *What must
+be true* does not stand both as the lead's paragraph and as a section. A fence indented by a tab is indented code, no
+fence. A person's own headings may repeat, and the leading paragraphs may stand in any order; a missing one is added
+where the skeleton puts it. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still
+saved, and the board names the issue by its repository and number with the first thing to repair, such as "the code
+block opened in line 12 under Plan never closes". A read takes such a body and shows the issue.
 
 ## The stage comments
 
@@ -85,8 +86,8 @@ stage records count them; a pause and a person's move are shown, not summed.
 A move, a worker, a priority and a stage's result are written with the person's own access, without a commit. Right
 before it writes, the planner reads the items it writes again and refuses the save, naming the item, when a person
 changed one of them since the board was read: a field value, `Status` included, its parent, its sub-issues, its
-blockers, its labels, its open state or its body. GitHub takes no condition on a write, so a change made in the
-moment between that read and the write is not caught.
+blockers, its labels, its open state, its title or its body. GitHub takes no condition on a write, so a change made in
+the moment between that read and the write is not caught.
 
 Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
 part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
@@ -127,19 +128,34 @@ is refused as partly saved, naming the repositories, with the references of what
 window reads the board anew and never hands the same idea in again. An issue GitHub makes only after the read that
 looked for it is not found and is made once more; that moment is the one left.
 
-An edit by hand is written the same way, with the person's own access and after the same check of every item it
-touches, the issue and each sub-issue or blocker it links included. An issue's size, estimate, priority and rank are
-field values, one mutation, and a value the issue holds is not written again. A story's issue list sets its
-sub-issues: those it no longer names are taken out first, the new ones made its sub-issues next, then they are ordered
-as the list is; an issue that has a parent on GitHub already is refused, never taken from that parent, and one the
-story holds only under `Also needs` in its body keeps its place after the sub-issues and is refused taken out, since
-the edit leaves the body as it is; a list that moves it from there, or hangs a new issue in after it, is refused too,
-since GitHub orders sub-issues only. An issue's blockers are added and removed as GitHub's "blocked by". GitHub names
-the issue linked by its REST id, which the read right before the write answers. A link GitHub refuses is refused
-naming only the status GitHub answered, since GitHub's own words may repeat what was sent; one refused after another
-was written is partly saved. A comment is written as the person's text, never one opening with the planner's own
-marker `<!-- porelo:`, and the board is not read again after it; a comment GitHub took without answering is partly
-saved, so it is not written twice.
+An edit by hand is written the same way, with the person's own access and after the same check of every item it touches,
+the issue and each sub-issue or blocker it links included. An issue's size, estimate, priority and rank are field
+values, one mutation, and a value the issue holds is not written again. A story's issue list sets its sub-issues: those
+it no longer names are taken out first, the new ones made its sub-issues next, then they are ordered as the list is; an
+issue that has a parent on GitHub already is refused, never taken from that parent, and one the story holds only under
+`Also needs` in its body keeps its place after the sub-issues and is refused taken out, since the edit leaves the body
+as it is; a list that moves it from there, or hangs a new issue in after it, is refused too, since GitHub orders
+sub-issues only. An issue's blockers are added and removed as GitHub's "blocked by". GitHub names the issue linked by
+its REST id, which the read right before the write answers. A link or an update of an issue GitHub refuses is refused
+naming only the status GitHub answered, since GitHub's own words may repeat what was sent; one refused after another was
+written is partly saved. A comment is written as the person's text, never one opening with the planner's own marker
+`<!-- porelo:`, and the board is not read again after it; a comment GitHub took without answering is partly saved, so it
+is not written twice.
+
+A story's or an issue's title and named parts are written by hand the same way. The parts an edit writes are an issue's
+line of what it covers, *Why this size*, *What must be true*, *Plan*, *Acceptance*, *Open questions*, *To be checked*
+and *Findings*, and a story's *What a user gains* and *The test*; a part may be removed with its lead or heading, but
+for what an issue covers and *What must be true*. *Also needs*, a person's own headings, the fields and the stage
+comments are never written by it. *What must be true* is written as its lead when its text is one paragraph and as its
+section above every other section otherwise, the other form taken out. The new body is built from the body the board
+read, part by part, and written only when the body splits into sections unambiguously before and after; a part whose
+text would open a part of its own, leave a code block, an HTML comment, a `pre` or a `details` block open, or grow the
+body past the 65536 characters GitHub takes is refused before anything is written. Title and body go to GitHub in one
+update, which sends neither labels, assignees nor state. The edit is checked against the board's revision, and right
+before the update the item is read again and compared, title and body included; the body sent is built from exactly the
+body that read confirms, so a section not named keeps every byte. GitHub takes no condition on an issue's update, so a
+person's edit made in the one round trip between that read and the update is overwritten; it stays in GitHub's own
+history of the body and in the title's rename event.
 
 ## The carry-over
 

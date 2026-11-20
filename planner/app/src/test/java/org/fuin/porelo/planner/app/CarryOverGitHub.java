@@ -242,8 +242,12 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
             final String owner,
             final String repository,
             final int number,
+            final @Nullable String title,
             final @Nullable String body,
             final @Nullable Opening opening) {
+        if (title != null) {
+            throw new AssertionError("the carry-over leaves the title");
+        }
         call(token, "body");
         held(repository, number).body = java.util.Objects.requireNonNull(body);
     }

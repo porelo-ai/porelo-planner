@@ -20,6 +20,7 @@ import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Writes;
@@ -251,6 +252,11 @@ public final class GitHubStore implements PlanningStore {
                 snapshot -> parts.writer().setBlockedBy(snapshot, revision, issue, blockedBy));
     }
 
+    @Override
+    public Board setText(final Revision revision, final String id, final TextEdit edit) {
+        return edited(snapshot -> parts.writer().setText(snapshot, revision, id, edit));
+    }
+
     /**
      * Writes a comment under the lock; the board shows no comment, so it is not read again and the
      * board kept stays.
@@ -474,7 +480,8 @@ public final class GitHubStore implements PlanningStore {
         try {
             refuseRetired();
             return work.get();
-        } catch (final UnsupportedOperationException e) {
+        } catch (final UnsupportedOperationException | TextEdit.Refused e) {
+            // Refused before any call, in fixed words: the caller's to correct, not GitHub's.
             throw e;
         } catch (final RuntimeException e) {
             final StoreException refusal =

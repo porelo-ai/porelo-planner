@@ -205,6 +205,7 @@ class GitHubAddsHttpTest {
                 final String owner,
                 final String repository,
                 final int number,
+                final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening) {
             throw new AssertionError("a new item changes no issue");

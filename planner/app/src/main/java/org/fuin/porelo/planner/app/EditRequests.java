@@ -2,8 +2,10 @@ package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Edits;
@@ -11,6 +13,7 @@ import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
@@ -68,6 +71,20 @@ final class EditRequests {
      * @param text the person's text
      */
     record CommentRequest(String text) {}
+
+    /**
+     * A story's or an issue's title and named parts as read.
+     *
+     * @param edit the change
+     * @param revision the revision the caller read
+     */
+    record TextRequest(TextEdit edit, String revision) {}
+
+    /** The members of an issue's text edit, each naming a part, in the description's order. */
+    static final Map<String, TextEdit.Part> ISSUE_PARTS = parts(TextEdit.Kind.ISSUE);
+
+    /** The members of a story's text edit, each naming a part, in the description's order. */
+    static final Map<String, TextEdit.Part> STORY_PARTS = parts(TextEdit.Kind.STORY);
 
     private static final String NO_STORY = "The body is no new story.";
 
@@ -188,6 +205,69 @@ final class EditRequests {
             throw Edits.refused(issue, "text", "The text must be a text.");
         }
         return new CommentRequest(text.asString());
+    }
+
+    /**
+     * Reads a story's or an issue's title and named parts: at most {@link AccessFilter#MOST_BODY}
+     * bytes, one JSON object with a revision and any of a title and the kind's parts, each a text,
+     * null removing a part that may be removed.
+     *
+     * @param request the request
+     * @param id the item's checked id, which a refusal names
+     * @param kind whether a story or an issue is changed
+     * @return the change and the revision
+     * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
+     *     no change of that kind's text
+     */
+    static TextRequest text(
+            final HttpServletRequest request, final String id, final TextEdit.Kind kind) {
+        final JsonNode body =
+                object(request, id, read -> WorkRequests.read(read, AccessFilter.MOST_BODY));
+        final Map<String, TextEdit.Part> parts =
+                kind == TextEdit.Kind.STORY ? STORY_PARTS : ISSUE_PARTS;
+        final Set<String> known = new java.util.HashSet<>(parts.keySet());
+        known.add("title");
+        known.add("revision");
+        members(body, id, known);
+        final String revision = revision(body, id);
+        @Nullable String title = null;
+        if (body.has("title")) {
+            final JsonNode value = body.get("title");
+            if (!value.isString()) {
+                throw Edits.refused(id, "title", "The title must be a text; it is never removed.");
+            }
+            title = value.asString();
+        }
+        final Map<TextEdit.Part, String> written = new EnumMap<>(TextEdit.Part.class);
+        final Set<TextEdit.Part> removed = EnumSet.noneOf(TextEdit.Part.class);
+        for (final Map.Entry<String, TextEdit.Part> part : parts.entrySet()) {
+            final String name = part.getKey();
+            if (!body.has(name)) {
+                continue;
+            }
+            final JsonNode value = body.get(name);
+            if (value.isNull()) {
+                if (!part.getValue().removable()) {
+                    throw Edits.refused(id, name, "The member " + name + " is never removed.");
+                }
+                removed.add(part.getValue());
+            } else if (value.isString()) {
+                written.put(part.getValue(), value.asString());
+            } else {
+                throw Edits.refused(id, name, "The member " + name + " must be a text or null.");
+            }
+        }
+        return new TextRequest(new TextEdit(kind, title, written, removed), revision);
+    }
+
+    private static Map<String, TextEdit.Part> parts(final TextEdit.Kind kind) {
+        final Map<String, TextEdit.Part> parts = new java.util.LinkedHashMap<>();
+        for (final TextEdit.Part part : TextEdit.Part.values()) {
+            if (part.of() == kind) {
+                parts.put(Edits.member(part), part);
+            }
+        }
+        return java.util.Collections.unmodifiableMap(parts);
     }
 
     private static JsonNode object(

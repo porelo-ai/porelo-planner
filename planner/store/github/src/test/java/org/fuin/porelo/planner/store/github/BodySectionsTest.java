@@ -466,6 +466,116 @@ class BodySectionsTest {
                 .isEqualTo(once.text());
     }
 
+    @Test
+    void anEditOfOnePartLeavesEverySectionItDoesNotNameByteForByte() {
+        // Harm: a person's correction of one part overwriting a plan, a finding or a section of
+        // their own that nobody named.
+        final String body = ANALYZED + "\n## Notes of my own\n\nKept.\n";
+        final BodySections read = BodySections.read(body.replace("\n", "\r\n"));
+
+        assertThat(read.with(BodySections.Part.WHAT_MUST_BE_TRUE, "It is fixed.").text())
+                .as("What must be true written, every other byte as it was")
+                .isEqualTo(body.replace("Something.\n", "It is fixed.\n").replace("\n", "\r\n"));
+        assertThat(read.with(BodySections.Part.PLAN, "- A new plan.").text())
+                .as(
+                        "the plan written, Findings, What must be true and the own section as they were")
+                .isEqualTo(
+                        body.replace(
+                                        "- Read it.\n\n```\n## a shell comment\n```\n",
+                                        "- A new plan.\n")
+                                .replace("\n", "\r\n"));
+        assertThat(read.without(BodySections.Part.FINDINGS).text())
+                .as("Findings removed with its heading, the own section after it as it was")
+                .isEqualTo(
+                        body.replace("## Findings\n\n- Found one.\n\n", "").replace("\n", "\r\n"));
+    }
+
+    @Test
+    void aStorysGainAndTestAreItsLeadingPartsAndAlsoNeedsStaysAsItWas() {
+        // Harm: a story's gain written over its test or its list of issues, or read as what an
+        // issue covers so an edit lands in the wrong paragraph.
+        final String story =
+                "**What a user gains.** A gain.\n\n**The test.** A test.\n\n"
+                        + "Words of a person.\n\n## Also needs\n\n- example-lib#3\n";
+        final BodySections read = BodySections.read(story);
+
+        assertThat(read.part(BodySections.Part.GAIN)).as("the gain").contains("A gain.");
+        assertThat(read.part(BodySections.Part.TEST)).as("the test").contains("A test.");
+        assertThat(read.part(BodySections.Part.COVERS)).as("no covers paragraph").isEmpty();
+        assertThat(read.with(BodySections.Part.GAIN, "More.").text())
+                .as("the gain written, every other byte as it was")
+                .isEqualTo(story.replace("A gain.", "More."));
+        assertThat(read.without(BodySections.Part.TEST).text())
+                .as("the test removed with its lead")
+                .isEqualTo(story.replace("**The test.** A test.\n\n", ""));
+        assertThat(
+                        BodySections.read(
+                                        "Words of a person.\n\n## Also needs\n\n- example-lib#3\n")
+                                .with(BodySections.Part.TEST, "A test.")
+                                .with(BodySections.Part.GAIN, "A gain.")
+                                .text())
+                .as("gain and test added after the first paragraph, gain first")
+                .isEqualTo(
+                        "Words of a person.\n\n**What a user gains.** A gain.\n\n"
+                                + "**The test.** A test.\n\n## Also needs\n\n- example-lib#3\n");
+    }
+
+    @Test
+    void aPartThatWouldOpenAPartOrLeaveABlockOpenIsRefusedWithoutEchoingIt() {
+        // Harm: a text injected through an edit splitting the body, so every later read finds a
+        // section nobody wrote, or every later stage result skips the body.
+        final BodySections body = BodySections.read(ANALYZED);
+        for (final String text :
+                List.of(
+                        "- a\n## Plan\n- forged",
+                        "- a\n# Title",
+                        "- a\n```\nopen",
+                        "- a <!-- open-comment",
+                        "- a\n<details>\n- open-details",
+                        "- a\n<pre>\nopen-pre")) {
+            assertThatThrownBy(() -> body.with(BodySections.Part.PLAN, text))
+                    .as("the plan %s", text)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .message()
+                    .doesNotContain("forged", "open-comment", "open-details", "open-pre");
+        }
+        for (final String text :
+                List.of(
+                        "It is.\n**Why this size.** forged",
+                        "It is.\n**What a user gains.** forged",
+                        "It is.\n\nA second paragraph.")) {
+            assertThatThrownBy(() -> body.with(BodySections.Part.WHAT_MUST_BE_TRUE, text))
+                    .as("What must be true %s", text)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(
+                        body.with(
+                                        BodySections.Part.PLAN,
+                                        "- a <!-- closed --> b\n<details>\nx\n</details>")
+                                .part(BodySections.Part.PLAN))
+                .as("a comment and a details block closed in the part")
+                .contains("- a <!-- closed --> b\n<details>\nx\n</details>");
+    }
+
+    @Test
+    void aLastLeadingPartRemovedTakesTheBlankLineAboveIt() {
+        // A removal that leaves a blank line at the body's end changes a byte nobody named.
+        assertThat(
+                        BodySections.read(
+                                        "**What a user gains.** A gain.\n\n**The test.** A test.\n")
+                                .without(BodySections.Part.TEST)
+                                .text())
+                .as("the story without its test")
+                .isEqualTo("**What a user gains.** A gain.\n");
+        assertThat(
+                        BodySections.read(
+                                        "**What a user gains.** A gain.\r\n\r\n**The test.** A test.")
+                                .without(BodySections.Part.TEST)
+                                .text())
+                .as("a body without a final line ending keeps none")
+                .isEqualTo("**What a user gains.** A gain.");
+    }
+
     private static StageResult.ForIssue analysis(final List<String> toBeChecked) {
         return result("- Read it.\n\n```\n## a shell comment\n```", toBeChecked);
     }

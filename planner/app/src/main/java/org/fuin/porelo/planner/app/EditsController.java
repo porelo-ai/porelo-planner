@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,9 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Serves the edits a person, or an agent acting for them, keeps the board with as {@code
  * openapi/planner.yaml} describes them: a story made with its issues, an issue's fields, a story's
- * issues, an issue's blockers and a comment. Each checks the request, reads it into its record,
- * calls {@link BoardEdits} once and answers what it answered; the core's and the store's refusals
- * are answered by {@link Problems}.
+ * issues, an issue's blockers, a story's or an issue's title and text, and a comment. Each checks
+ * the request, reads it into its record, calls {@link BoardEdits} once and answers what it
+ * answered; the core's and the store's refusals are answered by {@link Problems}.
  */
 @RestController
 public class EditsController {
@@ -141,6 +142,51 @@ public class EditsController {
                         name,
                         "This planner does not set an issue's blockers.",
                         () -> edits.setBlockedBy(name, id, body.revision(), body.blockedBy())));
+    }
+
+    /**
+     * Sets an issue's title and named parts of its text.
+     *
+     * @param project the project's name
+     * @param issue the issue's id
+     * @param request the request, whose body is the title, the parts and the revision
+     * @return the revision after the save
+     */
+    @PutMapping("/projects/{project}/issues/{issue}/text")
+    public EditSaved setIssueText(
+            @PathVariable("project") final String project,
+            @PathVariable("issue") final String issue,
+            final HttpServletRequest request) {
+        final String name = BoardController.name(project);
+        final String id = issueId(name, issue);
+        return text(name, id, EditRequests.text(request, id, TextEdit.Kind.ISSUE));
+    }
+
+    /**
+     * Sets a story's title and its parts.
+     *
+     * @param project the project's name
+     * @param story the story's id
+     * @param request the request, whose body is the title, the parts and the revision
+     * @return the revision after the save
+     */
+    @PutMapping("/projects/{project}/stories/{story}/text")
+    public EditSaved setStoryText(
+            @PathVariable("project") final String project,
+            @PathVariable("story") final String story,
+            final HttpServletRequest request) {
+        final String name = BoardController.name(project);
+        final String id = checked(name, () -> Ids.story(story), "story");
+        return text(name, id, EditRequests.text(request, id, TextEdit.Kind.STORY));
+    }
+
+    private EditSaved text(
+            final String name, final String id, final EditRequests.TextRequest body) {
+        return new EditSaved(
+                offered(
+                        name,
+                        "This planner does not set an item's title and text.",
+                        () -> edits.setText(name, id, body.revision(), body.edit())));
     }
 
     /**

@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -30,6 +31,7 @@ import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.ResultText;
+import org.fuin.porelo.planner.store.github.BodySections;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -451,6 +453,96 @@ public final class MockStore implements PlanningStore {
         return current;
     }
 
+    /**
+     * Sets a story's or an issue's title and named parts in memory, through the GitHub store's
+     * reading of a body, so every byte outside the parts named stays; an equal text keeps the
+     * revision.
+     */
+    @Override
+    public synchronized Board setText(
+            final Revision revision, final String id, final TextEdit edit) {
+        final Board board = fresh(revision);
+        final boolean story = edit.kind() == TextEdit.Kind.STORY;
+        final String title;
+        final String text;
+        if (story) {
+            final Story known =
+                    board.story(id).orElseThrow(() -> new StoreException.NoSuchStory(id));
+            title = known.title();
+            text = known.description();
+        } else {
+            final Issue known =
+                    board.issue(id).orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            title = known.title();
+            text = known.text();
+        }
+        final String newTitle = edit.title() == null ? title : edit.title();
+        final String newText = written(id, text, edit);
+        if (newTitle.equals(title) && newText.equals(text)) {
+            return board;
+        }
+        final List<Story> stories = new ArrayList<>();
+        for (final Story known : board.stories()) {
+            stories.add(
+                    story && known.id().equals(id)
+                            ? new Story(
+                                    known.id(),
+                                    newTitle,
+                                    known.state(),
+                                    known.stateGiven(),
+                                    known.priority(),
+                                    known.size(),
+                                    known.issues(),
+                                    newText,
+                                    known.link(),
+                                    known.issuesWhole())
+                            : known);
+        }
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue known : board.issues()) {
+            issues.add(
+                    !story && known.id().equals(id)
+                            ? new Issue(
+                                    known.id(),
+                                    known.repository(),
+                                    newTitle,
+                                    known.state(),
+                                    known.size(),
+                                    known.blockedBy(),
+                                    known.parent(),
+                                    known.link(),
+                                    newText,
+                                    known.worker(),
+                                    known.risk())
+                            : known);
+        }
+        current = saved(withItems(board, stories, issues), NOTHING);
+        return current;
+    }
+
+    /** The text with the edit's parts removed and written, or the refusal in fixed words. */
+    private static String written(final String id, final String text, final TextEdit edit) {
+        try {
+            BodySections body = BodySections.read(text);
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                if (edit.removed().contains(part)) {
+                    body = body.without(BodySections.Part.of(part));
+                }
+            }
+            // Removed first, as the GitHub store does, so a body that ends within the limit is
+            // taken.
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                final String given = edit.written().get(part);
+                if (given != null) {
+                    body = body.withEdited(BodySections.Part.of(part), given);
+                }
+            }
+            return body.text();
+        } catch (final IllegalArgumentException e) {
+            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
+        }
+    }
+
     /** Takes a comment and keeps nothing of it: the board shows no comment. */
     @Override
     public synchronized void comment(final String issue, final String text) {
@@ -575,7 +667,11 @@ public final class MockStore implements PlanningStore {
                         idea.priority(),
                         null,
                         ids,
-                        idea.gain() + "\n\n" + idea.test(),
+                        "**What a user gains.** "
+                                + idea.gain()
+                                + "\n\n**The test.** "
+                                + idea.test()
+                                + "\n",
                         null));
         saves++;
         current =

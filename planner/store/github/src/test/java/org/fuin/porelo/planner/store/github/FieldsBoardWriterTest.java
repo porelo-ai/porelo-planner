@@ -419,8 +419,10 @@ class FieldsBoardWriterTest {
                 final String owner,
                 final String repository,
                 final int number,
+                final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening) {
+            assertThat(title).as("only an edit of the text sends a title").isNull();
             calls.add("updateIssue");
             if (updateFailure != null) {
                 throw updateFailure;

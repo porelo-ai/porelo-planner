@@ -446,8 +446,10 @@ class CarryOverTest {
                 final String owner,
                 final String repository,
                 final int number,
+                final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening) {
+            assertThat(title).as("the carry-over leaves the title").isNull();
             write("body " + repository + "#" + number);
             held(repository, number).body = java.util.Objects.requireNonNull(body);
             after();

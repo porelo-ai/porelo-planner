@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -30,11 +31,11 @@ import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Writes moves, workers, priorities and a stage's result to the GitHub project's fields, the
- * issues' bodies and their comments, and adds new issues and ideas, with the person's own token.
- * Right before it writes, it reads the items it writes and refuses the save when a person changed
- * one of them since the board was read; GitHub takes no condition on a write, so a change in the
- * moment between that read and the write is not caught.
+ * Writes moves, workers, priorities, a stage's result and the edits by hand to the GitHub project's
+ * fields, the issues' titles and bodies and their comments, and adds new issues and ideas, with the
+ * person's own token. Right before it writes, it reads the items it writes and refuses the save
+ * when a person changed one of them since the board was read; GitHub takes no condition on a write,
+ * so a change in the moment between that read and the write is not caught.
  */
 public final class FieldsBoardWriter implements BoardWriter {
 
@@ -350,6 +351,54 @@ public final class FieldsBoardWriter implements BoardWriter {
         return true;
     }
 
+    /**
+     * Sets an item's title and named parts: the new body is built from the body the board read,
+     * which the write's check confirms GitHub still holds, so every byte outside the parts named
+     * stays; title and body go in one update.
+     */
+    @Override
+    public boolean setText(
+            final Snapshot current, final Revision revision, final String id, final TextEdit edit) {
+        fresh(current, revision);
+        final ItemView item =
+                edit.kind() == TextEdit.Kind.STORY
+                        ? storyItem(current, id)
+                        : issueItem(current, id);
+        final String body = body(id, item.body(), edit);
+        final String title = edit.title();
+        final boolean retitled = title != null && !title.equals(item.title());
+        final boolean rewritten = !body.equals(item.body());
+        if (!retitled && !rewritten) {
+            return false;
+        }
+        final Plan plan = new Plan(current);
+        plan.text(id, item, retitled ? title : null, rewritten ? body : null);
+        plan.write(tokens.token(current.config().forge()));
+        return true;
+    }
+
+    /** The body with the edit's parts removed and written, or the refusal in fixed words. */
+    private static String body(final String id, final String held, final TextEdit edit) {
+        try {
+            BodySections body = BodySections.read(held);
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                if (edit.removed().contains(part)) {
+                    body = body.without(BodySections.Part.of(part));
+                }
+            }
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                final String text = edit.written().get(part);
+                if (text != null) {
+                    body = body.withEdited(BodySections.Part.of(part), text);
+                }
+            }
+            return body.text();
+        } catch (final IllegalArgumentException e) {
+            // BodySections' words, an ambiguous body's repair too, are fixed and never repeat it.
+            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
+        }
+    }
+
     @Override
     public void comment(final Snapshot current, final String issue, final String text) {
         final ItemView item = issueItem(current, issue);
@@ -405,6 +454,8 @@ public final class FieldsBoardWriter implements BoardWriter {
         private final Map<String, ProjectWrites.Opening> openings = new LinkedHashMap<>();
 
         private final Map<String, String> bodies = new LinkedHashMap<>();
+
+        private final Map<String, String> titles = new LinkedHashMap<>();
 
         private @Nullable Stage stage;
 
@@ -526,6 +577,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             return values.isEmpty()
                     && openings.isEmpty()
                     && bodies.isEmpty()
+                    && titles.isEmpty()
                     && links.isEmpty()
                     && stage == null;
         }
@@ -542,6 +594,21 @@ public final class FieldsBoardWriter implements BoardWriter {
         void body(final String id, final ItemView item, final String body) {
             items.putIfAbsent(id, item);
             bodies.put(id, body);
+        }
+
+        /** Sets a title, a body or both, written in one update. */
+        void text(
+                final String id,
+                final ItemView item,
+                final @Nullable String title,
+                final @Nullable String body) {
+            items.putIfAbsent(id, item);
+            if (title != null) {
+                titles.put(id, title);
+            }
+            if (body != null) {
+                bodies.put(id, body);
+            }
         }
 
         /**
@@ -636,9 +703,10 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
             for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
                 final String id = entry.getKey();
+                final String title = titles.get(id);
                 final String body = bodies.get(id);
                 final ProjectWrites.Opening opening = openings.get(id);
-                if (body == null && opening == null) {
+                if (title == null && body == null && opening == null) {
                     continue;
                 }
                 final ItemView item = entry.getValue();
@@ -648,10 +716,12 @@ public final class FieldsBoardWriter implements BoardWriter {
                             current.config().project().owner(),
                             item.repository(),
                             item.number(),
+                            title,
                             body,
                             opening);
                 } catch (final RuntimeException e) {
-                    throw failed(e, item.repository(), written, token);
+                    // GitHub's words may repeat the title or body sent, so a refusal is fixed.
+                    throw refusedCall(e, id, item.repository(), written, token);
                 }
                 written.add(item.repository());
             }
@@ -949,7 +1019,7 @@ public final class FieldsBoardWriter implements BoardWriter {
     /**
      * What a person's change to an item shows in: its field values, its parent, its sub-issues, its
      * blockers, its labels, whether either list runs past the one page read, whether it is open,
-     * and its body.
+     * its title and its body.
      */
     private record Seen(
             Map<String, String> fields,
@@ -959,6 +1029,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             List<String> labels,
             boolean more,
             boolean open,
+            String title,
             String body) {
 
         static Seen of(final ItemView item) {
@@ -971,6 +1042,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     item.labels(),
                     false,
                     item.open(),
+                    item.title(),
                     item.body());
         }
 
@@ -985,6 +1057,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
                             || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage()),
                     "OPEN".equals(issue.state()),
+                    Objects.requireNonNullElse(issue.title(), ""),
                     Objects.requireNonNullElse(issue.body(), ""));
         }
 

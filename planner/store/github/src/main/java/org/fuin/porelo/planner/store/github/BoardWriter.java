@@ -9,6 +9,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
@@ -153,6 +154,20 @@ public interface BoardWriter {
             final Revision revision,
             final String issue,
             final List<String> blockedBy) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets a story's or an issue's title and named parts of its body.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param id the item's id
+     * @param edit the title and the parts to write or remove
+     * @return whether anything was written
+     */
+    default boolean setText(
+            final Snapshot current, final Revision revision, final String id, final TextEdit edit) {
         throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 

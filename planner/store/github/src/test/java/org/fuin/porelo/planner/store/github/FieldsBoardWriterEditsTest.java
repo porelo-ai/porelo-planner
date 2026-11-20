@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -188,6 +189,8 @@ class FieldsBoardWriterEditsTest {
         private final Map<String, IssueOnBoard> held = new LinkedHashMap<>();
         private final List<String> calls = new ArrayList<>();
         private final List<List<FieldValue>> mutations = new ArrayList<>();
+        private final List<Update> updates = new ArrayList<>();
+        private @Nullable RuntimeException updateFailure;
         private @Nullable RuntimeException linkFailure;
         private int linksBeforeFailure;
 
@@ -380,9 +383,16 @@ class FieldsBoardWriterEditsTest {
                 final String owner,
                 final String repository,
                 final int number,
+                final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening) {
-            throw new AssertionError("an edit wrote a body or an open state");
+            assertThat(opening).as("an edit by hand leaves the open state").isNull();
+            final RuntimeException failure = updateFailure;
+            if (failure != null) {
+                throw failure;
+            }
+            calls.add("updateIssue " + repository + "#" + number);
+            updates.add(new Update(title, body));
         }
 
         @Override
@@ -405,6 +415,36 @@ class FieldsBoardWriterEditsTest {
             assertThat(token).as("the comment written with the person's token").isEqualTo(TOKEN);
             link("createIssueComment " + repository + "#" + number + " " + body);
         }
+    }
+
+    /**
+     * One update of an issue as GitHub was sent it.
+     *
+     * @param title the title sent, or null
+     * @param body the body sent, or null
+     */
+    private record Update(@Nullable String title, @Nullable String body) {}
+
+    /** An item with another title and body, everything else as it was. */
+    private static ItemView text(final ItemView item, final String title, final String body) {
+        return new ItemView(
+                item.itemId(),
+                item.issueId(),
+                item.repository(),
+                item.number(),
+                title,
+                body,
+                item.open(),
+                item.stateReason(),
+                item.fields(),
+                item.labels(),
+                item.parentIssueId(),
+                item.subIssueIds(),
+                item.blockedByIds(),
+                item.comments(),
+                item.link(),
+                item.updatedAt(),
+                item.archived());
     }
 
     private GitHub github() {
@@ -612,6 +652,360 @@ class FieldsBoardWriterEditsTest {
         assertThat(stale).as("a link over a changed child").isNotNull();
         assertThat(stale.changed()).as("the child named").isEqualTo(THREE);
         assertThat(github.calls).as("only the read").containsExactly("issueBoard");
+    }
+
+    /** An issue's body as the skeleton writes it, with a section of a person's own at its end. */
+    private static final String BODY =
+            "What it covers.\r\n\r\n**What must be true.** It works.\r\n\r\n"
+                    + "**Why this size.** One module.\r\n\r\n## Plan\r\n\r\n- Old plan.\r\n\r\n"
+                    + "## Findings\r\n\r\n- Found one.\r\n\r\n## Notes of my own\r\n\r\nKept.";
+
+    private Snapshot texts(final ItemView issue) {
+        return snapshot(List.of(ONE, TWO), story, issue, two, three);
+    }
+
+    private static TextEdit edit(
+            final @Nullable String title, final TextEdit.Part part, final String text) {
+        return new TextEdit(TextEdit.Kind.ISSUE, title, Map.of(part, text), Set.of());
+    }
+
+    @Test
+    void aTitleOrABodyAPersonChangedOnGitHubSinceTheReadIsStaleAndNothingIsWritten() {
+        // A person's correction on GitHub overwritten unseen by an edit planned on the old item.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        for (final ItemView changed :
+                List.of(
+                        text(one, "A person's title", BODY),
+                        text(one, "Title of " + ONE, BODY.replace("Kept.", "Changed.")))) {
+            final GitHub github = github().holding(changed);
+
+            final StoreException.StaleRevision stale =
+                    catchThrowableOfType(
+                            StoreException.StaleRevision.class,
+                            () ->
+                                    github.writer()
+                                            .setText(
+                                                    texts(read),
+                                                    SHOWN,
+                                                    ONE,
+                                                    edit(
+                                                            "A new title",
+                                                            TextEdit.Part.PLAN,
+                                                            "- New plan.")));
+
+            assertThat(stale).as("an edit over a changed item").isNotNull();
+            assertThat(stale.changed()).as("the item named").isEqualTo(ONE);
+            assertThat(github.calls).as("only the read").containsExactly("issueBoard");
+        }
+    }
+
+    @Test
+    void anEditAgainstAnOldRevisionWritesNothingAndReadsNothing() {
+        // An edit planned on an old board would write over what someone saved since.
+        final GitHub github = github();
+
+        assertThat(
+                        catchThrowableOfType(
+                                StoreException.StaleRevision.class,
+                                () ->
+                                        github.writer()
+                                                .setText(
+                                                        board(),
+                                                        new Revision("older"),
+                                                        ONE,
+                                                        edit(null, TextEdit.Part.PLAN, "- New."))))
+                .as("an edit against an old revision")
+                .isNotNull();
+        assertThat(github.calls).as("the calls made").isEmpty();
+    }
+
+    @Test
+    void titleAndBodyGoInOneUpdateAndEverySectionNotNamedKeepsEveryByte() {
+        // A section the person did not name changed by their edit loses what an agent or a person
+        // wrote there; title and body in two calls are torn apart by a failure.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        final GitHub github = github().holding(read);
+
+        final boolean wrote =
+                github.writer()
+                        .setText(
+                                texts(read),
+                                SHOWN,
+                                ONE,
+                                new TextEdit(
+                                        TextEdit.Kind.ISSUE,
+                                        "A new title",
+                                        Map.of(
+                                                TextEdit.Part.WHAT_MUST_BE_TRUE,
+                                                "It works well.",
+                                                TextEdit.Part.PLAN,
+                                                "- New plan."),
+                                        Set.of()));
+
+        assertThat(wrote).as("something was written").isTrue();
+        assertThat(github.calls)
+                .as("the read, then one update")
+                .containsExactly("issueBoard", "updateIssue example-lib#1");
+        assertThat(github.updates)
+                .as("the title and the body, Findings and the own section byte for byte")
+                .containsExactly(
+                        new Update(
+                                "A new title",
+                                BODY.replace("It works.", "It works well.")
+                                        .replace("- Old plan.", "- New plan.")));
+    }
+
+    @Test
+    void aRemovedSectionGoesWithItsHeadingAndATextEqualToTheItemsWritesNothing() {
+        // A removal that leaves its heading shows an empty section; a write of nothing announces a
+        // change nobody made.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        final GitHub github = github().holding(read);
+
+        github.writer()
+                .setText(
+                        texts(read),
+                        SHOWN,
+                        ONE,
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                null,
+                                Map.of(),
+                                Set.of(TextEdit.Part.FINDINGS)));
+        assertThat(github.updates)
+                .as("the body without Findings, the title left")
+                .containsExactly(
+                        new Update(
+                                null, BODY.replace("## Findings\r\n\r\n- Found one.\r\n\r\n", "")));
+
+        final GitHub same = github().holding(read);
+        assertThat(
+                        same.writer()
+                                .setText(
+                                        texts(read),
+                                        SHOWN,
+                                        ONE,
+                                        edit("Title of " + ONE, TextEdit.Part.PLAN, "- Old plan.")))
+                .as("a title and a plan the issue holds")
+                .isFalse();
+        assertThat(same.calls).as("no call").isEmpty();
+    }
+
+    @Test
+    void aStorysGainIsWrittenAndItsTestAndAlsoNeedsStayAsTheyWere() {
+        // A story's gain written over its test or its list of issues loses what the story needs.
+        final String body =
+                "**What a user gains.** A gain.\n\n**The test.** A test.\n\n"
+                        + "## Also needs\n\n- example-lib#3\n";
+        final ItemView read = text(story, "Title of " + STORY, body);
+        final GitHub github = github().holding(read);
+
+        github.writer()
+                .setText(
+                        snapshot(List.of(ONE, TWO), read, one, two, three),
+                        SHOWN,
+                        STORY,
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                null,
+                                Map.of(TextEdit.Part.GAIN, "More."),
+                                Set.of()));
+
+        assertThat(github.updates)
+                .as("the gain written, the rest as it was")
+                .containsExactly(new Update(null, body.replace("A gain.", "More.")));
+    }
+
+    @Test
+    void aTextThatWouldSplitTheBodyOrGrowItPastGitHubsLimitIsRefusedBeforeAnyCall() {
+        // A heading or an open block injected through an edit makes every later read find a
+        // section nobody wrote or every later stage result skip the body; a body past the limit
+        // is refused by GitHub after the check.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        for (final TextEdit edit :
+                List.of(
+                        edit(null, TextEdit.Part.PLAN, "- a\n## Findings\n- forged"),
+                        edit(null, TextEdit.Part.WHY_THIS_SIZE, "One.\n**What must be true.** x"),
+                        edit(null, TextEdit.Part.PLAN, "- a\n```\nopen"),
+                        edit(null, TextEdit.Part.PLAN, "- a <!-- open"),
+                        edit(null, TextEdit.Part.ACCEPTANCE, "- a\n<details>\n- open"),
+                        edit(
+                                null,
+                                TextEdit.Part.FINDINGS,
+                                "x".repeat(BodySections.LONGEST - BODY.length() + 20)))) {
+            final GitHub github = github().holding(read);
+
+            final TextEdit.Refused refused =
+                    catchThrowableOfType(
+                            TextEdit.Refused.class,
+                            () -> github.writer().setText(texts(read), SHOWN, ONE, edit));
+
+            assertThat(refused).as("the edit %s", edit.written().keySet()).isNotNull();
+            assertThat(refused.item()).as("the item named").isEqualTo(ONE);
+            assertThat(refused.getMessage()).as("the text not repeated").doesNotContain("forged");
+            assertThat(github.calls).as("no call").isEmpty();
+        }
+    }
+
+    @Test
+    void aFenceOpenedOnALeadingPartsFirstLineCannotHideAHeadingFromTheCheck() {
+        // Harm: a fence that stops being one once the lead stands before it lets a heading in the
+        // text become a section of the body, so a story's issues or an issue's plan are forged.
+        final String storyBody = "**What a user gains.** A gain.\n\n**The test.** A test.\n";
+        final ItemView storyRead = text(story, "Title of " + STORY, storyBody);
+        final ItemView issueRead = text(one, "Title of " + ONE, BODY);
+        final String forged = "```\n## Also needs\n- example-lib#3\n```java\ncode\n```";
+        final String planned = "```\n## Plan\n- forged\n```java\ncode\n```";
+        for (final Object[] call :
+                List.of(
+                        new Object[] {
+                            storyRead,
+                            STORY,
+                            new TextEdit(
+                                    TextEdit.Kind.STORY,
+                                    null,
+                                    Map.of(TextEdit.Part.GAIN, forged),
+                                    Set.of())
+                        },
+                        new Object[] {
+                            issueRead, ONE, edit(null, TextEdit.Part.WHAT_MUST_BE_TRUE, planned)
+                        })) {
+            final ItemView read = (ItemView) call[0];
+            final GitHub github = github().holding(read);
+            final Snapshot board =
+                    read == storyRead
+                            ? snapshot(List.of(ONE, TWO), storyRead, one, two, three)
+                            : texts(read);
+
+            assertThat(
+                            catchThrowableOfType(
+                                    TextEdit.Refused.class,
+                                    () ->
+                                            github.writer()
+                                                    .setText(
+                                                            board,
+                                                            SHOWN,
+                                                            (String) call[1],
+                                                            (TextEdit) call[2])))
+                    .as("the text of %s", call[1])
+                    .isNotNull();
+            assertThat(github.calls).as("no call").isEmpty();
+        }
+    }
+
+    @Test
+    void aFenceOpenedAboveTheFirstSectionAndClosedInOneIsAmbiguousAndCoversIsNotWritten() {
+        // Harm: a fence left open in what an issue covers, paired with one closing in a section,
+        // makes the whole body read as covers, so an edit of covers overwrites every part.
+        final String body =
+                "Covers.\n```\n\n**What must be true.** Goal.\n\n## Plan\n\n- Old plan.\n```\n";
+        final ItemView read = text(one, "Title of " + ONE, body);
+        final GitHub github = github().holding(read);
+
+        assertThat(
+                        catchThrowableOfType(
+                                TextEdit.Refused.class,
+                                () ->
+                                        github.writer()
+                                                .setText(
+                                                        texts(read),
+                                                        SHOWN,
+                                                        ONE,
+                                                        edit(
+                                                                null,
+                                                                TextEdit.Part.COVERS,
+                                                                "New covers."))))
+                .as("an edit of covers over a fence that hides the body")
+                .isNotNull();
+        assertThat(github.calls).as("no call").isEmpty();
+    }
+
+    @Test
+    void anUpdateGitHubRefusesIsNotSavableInFixedWordsWithoutGitHubsOrThePersonsText() {
+        // Harm: GitHub's words, which may repeat the person's title or body, reaching the answer
+        // and the log, and a refused write answered as GitHub out of reach.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        final GitHub github = github().holding(read);
+        github.updateFailure =
+                GitHubExceptions.refused(422, "Validation failed: secret-title-words " + TOKEN);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                github.writer()
+                                        .setText(
+                                                texts(read),
+                                                SHOWN,
+                                                ONE,
+                                                edit(
+                                                        "secret-title-words",
+                                                        TextEdit.Part.PLAN,
+                                                        "- New plan.")));
+
+        assertThat(refused).as("a refused update").isNotNull();
+        assertThat(refused.getMessage())
+                .as("the fixed words")
+                .isEqualTo("GitHub refused the call with status 422");
+        assertThat(refused.subject()).as("the item named").isEqualTo(ONE);
+    }
+
+    @Test
+    void whatMustBeTrueOfSeveralParagraphsIsWrittenAsItsSectionAndOneParagraphAsItsLead() {
+        // Harm: a goal of several paragraphs refused, or written as a lead beside the section it
+        // had, so the body holds two goals and every later write refuses it.
+        final ItemView lead = text(one, "Title of " + ONE, BODY);
+        final GitHub github = github().holding(lead);
+
+        github.writer()
+                .setText(
+                        texts(lead),
+                        SHOWN,
+                        ONE,
+                        edit(null, TextEdit.Part.WHAT_MUST_BE_TRUE, "First.\n\nSecond."));
+
+        final String sectioned =
+                "What it covers.\r\n\r\n**Why this size.** One module.\r\n\r\n"
+                        + "## What must be true\r\n\r\nFirst.\r\n\r\nSecond.\r\n\r\n"
+                        + "## Plan\r\n\r\n- Old plan.\r\n\r\n"
+                        + "## Findings\r\n\r\n- Found one.\r\n\r\n## Notes of my own\r\n\r\nKept.";
+        assertThat(github.updates)
+                .as("the lead taken out, the section written above Plan, the rest as it was")
+                .containsExactly(new Update(null, sectioned));
+
+        final ItemView section = text(one, "Title of " + ONE, sectioned);
+        final GitHub again = github().holding(section);
+        again.writer()
+                .setText(
+                        texts(section),
+                        SHOWN,
+                        ONE,
+                        edit(null, TextEdit.Part.WHAT_MUST_BE_TRUE, "Third.\n\nFourth."));
+        assertThat(again.updates)
+                .as("the section written over in its place")
+                .containsExactly(
+                        new Update(
+                                null,
+                                sectioned.replace(
+                                        "First.\r\n\r\nSecond.", "Third.\r\n\r\nFourth.")));
+
+        final GitHub back = github().holding(section);
+        back.writer()
+                .setText(
+                        texts(section),
+                        SHOWN,
+                        ONE,
+                        edit(null, TextEdit.Part.WHAT_MUST_BE_TRUE, "It works."));
+        assertThat(back.updates)
+                .as("one paragraph written as the lead again, the section gone")
+                .containsExactly(
+                        new Update(
+                                null,
+                                "What it covers.\r\n\r\n**Why this size.** One module.\r\n\r\n"
+                                        + "**What must be true.** It works.\r\n\r\n"
+                                        + "## Plan\r\n\r\n- Old plan.\r\n\r\n"
+                                        + "## Findings\r\n\r\n- Found one.\r\n\r\n"
+                                        + "## Notes of my own\r\n\r\nKept."));
     }
 
     @Test
