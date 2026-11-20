@@ -346,4 +346,54 @@ class MockStoreTest {
     private static Story story(final Board board, final String id) {
         return board.story(id).orElseThrow();
     }
+
+    @Test
+    void eachEditByHandIsAnsweredWithANewRevisionHoldingItAndAStaleOneChangesNothing() {
+        // A mock that answered an edit without holding it would let the window's tests of a kept
+        // board pass, and one that took an old revision would let a lost edit pass.
+        final Board board = store.board();
+        final Story story = board.story("ST72").orElseThrow();
+        final Issue issue = board.issue("PJ74").orElseThrow();
+        final Issue other = board.issue("B542").orElseThrow();
+
+        final Board sized =
+                store.setFields(
+                        FIRST,
+                        issue.id(),
+                        new org.fuin.porelo.planner.store.Fields(
+                                java.util.Set.of(
+                                        org.fuin.porelo.planner.store.Fields.Field.SIZE,
+                                        org.fuin.porelo.planner.store.Fields.Field.RANK),
+                                "XL",
+                                null,
+                                null,
+                                7));
+        assertThat(sized.issue(issue.id()).orElseThrow().size()).as("the size set").isEqualTo("XL");
+        assertThat(store.kept(issue.id()))
+                .as("the rank kept beside the board")
+                .containsEntry(org.fuin.porelo.planner.store.Fields.Field.RANK, 7);
+
+        final Board listed =
+                store.setStoryIssues(sized.revision(), story.id(), List.of(issue.id()));
+        assertThat(listed.story(story.id()).orElseThrow().issues())
+                .as("the story's new list")
+                .containsExactly(issue.id());
+
+        final Board blocked =
+                store.setBlockedBy(listed.revision(), issue.id(), List.of(other.id()));
+        assertThat(blocked.issue(issue.id()).orElseThrow().blockedBy())
+                .as("the issue's new blockers")
+                .containsExactly(other.id());
+        assertThat(blocked.revision())
+                .as("each edit a new revision")
+                .isNotEqualTo(listed.revision());
+
+        store.comment(issue.id(), "A comment.");
+        assertThat(store.board()).as("a comment leaves the board").isEqualTo(blocked);
+
+        assertThatThrownBy(() -> store.setBlockedBy(FIRST, issue.id(), List.of()))
+                .as("an edit against the first revision")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(store.board()).as("the board after the stale edit").isEqualTo(blocked);
+    }
 }

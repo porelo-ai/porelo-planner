@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -117,6 +118,11 @@ public final class MockStore implements PlanningStore {
 
     // Guarded by this store's monitor, as every change of the board is.
     private int saves;
+
+    /** The fields of each issue the board does not show, as set; guarded by the monitor. */
+    private final Map<String, Map<Fields.Field, Object>> kept = new java.util.HashMap<>();
+
+    private static final Writes NOTHING = new Writes(Map.of(), Map.of(), List.of());
 
     private static final Pattern ID = Pattern.compile("([A-Z]+)([0-9]+)");
 
@@ -325,6 +331,151 @@ public final class MockStore implements PlanningStore {
         return current;
     }
 
+    /**
+     * Sets an issue's fields in memory: its size on the board, its estimate, priority and rank kept
+     * beside it, since the board shows none of them.
+     */
+    @Override
+    public synchronized Board setFields(
+            final Revision revision, final String issue, final Fields fields) {
+        final Board board = fresh(revision);
+        board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        if (fields.none()) {
+            return board;
+        }
+        final Map<Fields.Field, Object> values =
+                kept.computeIfAbsent(issue, id -> new java.util.EnumMap<>(Fields.Field.class));
+        keep(values, fields, Fields.Field.ESTIMATE, fields.estimateMinutes());
+        keep(values, fields, Fields.Field.PRIORITY, fields.priority());
+        keep(values, fields, Fields.Field.RANK, fields.rank());
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue known : board.issues()) {
+            issues.add(
+                    known.id().equals(issue) && fields.named().contains(Fields.Field.SIZE)
+                            ? new Issue(
+                                    known.id(),
+                                    known.repository(),
+                                    known.title(),
+                                    known.state(),
+                                    fields.size(),
+                                    known.blockedBy(),
+                                    known.parent(),
+                                    known.link(),
+                                    known.text(),
+                                    known.worker(),
+                                    known.risk())
+                            : known);
+        }
+        current = saved(withItems(board, board.stories(), issues), NOTHING);
+        return current;
+    }
+
+    /** Sets a story's issue list in memory; its state follows them again unless it is given. */
+    @Override
+    public synchronized Board setStoryIssues(
+            final Revision revision, final String story, final List<String> issues) {
+        final Board board = fresh(revision);
+        board.story(story).orElseThrow(() -> new StoreException.NoSuchStory(story));
+        final List<Story> stories = new ArrayList<>();
+        for (final Story known : board.stories()) {
+            stories.add(
+                    known.id().equals(story)
+                            ? new Story(
+                                    known.id(),
+                                    known.title(),
+                                    known.state(),
+                                    known.stateGiven(),
+                                    known.priority(),
+                                    known.size(),
+                                    issues,
+                                    known.description(),
+                                    known.link(),
+                                    known.issuesWhole())
+                            : known);
+        }
+        current = saved(withItems(board, stories, board.issues()), NOTHING);
+        return current;
+    }
+
+    /** Sets an issue's blockers in memory. */
+    @Override
+    public synchronized Board setBlockedBy(
+            final Revision revision, final String issue, final List<String> blockedBy) {
+        final Board board = fresh(revision);
+        board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue known : board.issues()) {
+            issues.add(
+                    known.id().equals(issue)
+                            ? new Issue(
+                                    known.id(),
+                                    known.repository(),
+                                    known.title(),
+                                    known.state(),
+                                    known.size(),
+                                    blockedBy,
+                                    known.parent(),
+                                    known.link(),
+                                    known.text(),
+                                    known.worker(),
+                                    known.risk())
+                            : known);
+        }
+        current = saved(withItems(board, board.stories(), issues), NOTHING);
+        return current;
+    }
+
+    /** Takes a comment and keeps nothing of it: the board shows no comment. */
+    @Override
+    public synchronized void comment(final String issue, final String text) {
+        current.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+    }
+
+    /**
+     * Answers what the mock keeps of an issue's fields the board does not show.
+     *
+     * @param issue the issue's id
+     * @return its estimate, priority and rank as set, by field
+     */
+    public synchronized Map<Fields.Field, Object> kept(final String issue) {
+        return Map.copyOf(kept.getOrDefault(issue, Map.of()));
+    }
+
+    private Board fresh(final Revision revision) {
+        final Board board = current;
+        if (!board.revision().equals(revision)) {
+            throw new StoreException.StaleRevision(board.revision().value());
+        }
+        return board;
+    }
+
+    private static void keep(
+            final Map<Fields.Field, Object> values,
+            final Fields fields,
+            final Fields.Field field,
+            final @Nullable Object value) {
+        if (!fields.named().contains(field)) {
+            return;
+        }
+        if (value == null) {
+            values.remove(field);
+        } else {
+            values.put(field, value);
+        }
+    }
+
+    private static Board withItems(
+            final Board board, final List<Story> stories, final List<Issue> issues) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                stories,
+                issues,
+                board.work(),
+                board.repositories(),
+                board.faults());
+    }
+
     /** Answers Markdown: as the Git store it stands in for. */
     @Override
     public TextFormat textFormat() {
@@ -437,6 +588,7 @@ public final class MockStore implements PlanningStore {
     public synchronized void reset() {
         current = initial;
         saves = 0;
+        kept.clear();
     }
 
     /** The repositories a save writes, in the order the Git store pushes them: the own one last. */

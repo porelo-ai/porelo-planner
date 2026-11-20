@@ -79,6 +79,9 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   service once and maps its answer and refusals to HTTP. The harms are tested on the service over a fake store,
   without HTTP; the controller's tests check only the mapping. A comment checks no revision and tells the windows
   nothing, since the board shows none. The idea object of a new story is read by the reader a hand-in uses.
+- **The mock board takes every edit by hand in memory**: a size on the issue, its estimate, priority and rank kept
+  beside the board, which shows none of them; a story's list and an issue's blockers as given; a comment kept
+  nowhere. Each answers a new revision and refuses an old one, as a save does.
 
 ## Acceptance
 
