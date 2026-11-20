@@ -7,6 +7,9 @@ package org.fuin.porelo.planner.store;
  */
 public interface PlanningStore {
 
+    /** The words of a store's refusal of an edit it does not offer. */
+    String NOT_OFFERED = "not offered by this store";
+
     /**
      * Answers the whole board.
      *
@@ -115,6 +118,74 @@ public interface PlanningStore {
      */
     default NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
         throw new UnsupportedOperationException("This store does not add ideas");
+    }
+
+    /**
+     * Sets an issue's fields a person keeps by hand against the revision the caller read.
+     *
+     * @param revision the revision the caller read
+     * @param issue the issue's id
+     * @param fields the fields to write
+     * @return the board after the save, the one read when nothing changed
+     * @throws StoreException.StaleRevision if the store moved since that revision
+     * @throws StoreException.NoSuchIssue if the board has no such issue
+     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
+     */
+    default Board setFields(final Revision revision, final String issue, final Fields fields) {
+        throw new StoreException.NotSavable(issue, NOT_OFFERED);
+    }
+
+    /**
+     * Sets a story's whole issue list, in its order, against the revision the caller read: an issue
+     * taken out is no longer the story's, one hung in becomes the story's.
+     *
+     * @param revision the revision the caller read
+     * @param story the story's id
+     * @param issues the issues' ids, in the story's order
+     * @return the board after the save, the one read when nothing changed
+     * @throws StoreException.StaleRevision if the store moved since that revision
+     * @throws StoreException.NoSuchStory if the board has no such story
+     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
+     */
+    default Board setStoryIssues(
+            final Revision revision, final String story, final java.util.List<String> issues) {
+        throw new StoreException.NotSavable(story, NOT_OFFERED);
+    }
+
+    /**
+     * Sets an issue's whole list of blockers against the revision the caller read.
+     *
+     * @param revision the revision the caller read
+     * @param issue the issue's id
+     * @param blockedBy the blockers' ids
+     * @return the board after the save, the one read when nothing changed
+     * @throws StoreException.StaleRevision if the store moved since that revision
+     * @throws StoreException.NoSuchIssue if the board has no such issue
+     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
+     */
+    default Board setBlockedBy(
+            final Revision revision, final String issue, final java.util.List<String> blockedBy) {
+        throw new StoreException.NotSavable(issue, NOT_OFFERED);
+    }
+
+    /**
+     * Writes one comment of the person's text on an issue, with the person's own access; the board
+     * shows no comment, so no revision is checked.
+     *
+     * @param issue the issue's id
+     * @param text the comment's text
+     * @throws StoreException.NoSuchIssue if the board has no such issue
+     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     */
+    default void comment(final String issue, final String text) {
+        throw new StoreException.NotSavable(issue, NOT_OFFERED);
     }
 
     /**

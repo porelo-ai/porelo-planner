@@ -73,4 +73,25 @@ class PlanningStoreTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageNotContaining("secret@");
     }
+
+    @Test
+    void anEditAStoreDoesNotOfferIsRefusedAsNotSavableNamingTheItem() {
+        // A store that does not offer an edit must say so, never answer as if it were written.
+        final Fields size = new Fields(java.util.Set.of(Fields.Field.SIZE), "M", null, null, null);
+        for (final Runnable edit :
+                List.<Runnable>of(
+                        () -> STORE.setFields(BOARD.revision(), "XY03", size),
+                        () -> STORE.setStoryIssues(BOARD.revision(), "ST1", List.of("XY03")),
+                        () -> STORE.setBlockedBy(BOARD.revision(), "XY03", List.of()),
+                        () -> STORE.comment("XY03", "A comment."))) {
+            assertThatThrownBy(edit::run)
+                    .as("an edit the store does not offer")
+                    .isInstanceOfSatisfying(
+                            StoreException.NotSavable.class,
+                            refusal ->
+                                    assertThat(refusal.subject())
+                                            .as("the item named")
+                                            .isIn("XY03", "ST1"));
+        }
+    }
 }
