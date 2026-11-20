@@ -100,8 +100,27 @@ hand; each item holding one is named as a fault, without the option's name. Opti
 not set again; values a batch failed to write back are written again from a fresh read, a value a person set since
 stands, and those still missing after the last attempt are named, each with the state it must be given, an option
 outside the workflow by its place. A refusal of the person's access or a spent rate limit is not tried again. A stage's
-result overwrites the sections of the body its kind writes and no other byte. Adding a new story or issue is not
-offered yet.
+result overwrites the sections of the body its kind writes and no other byte.
+
+A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the
+planner checks the revision the window showed, the repositories, every field and option it sets and each body, so
+what the project cannot hold is refused with nothing made. A new issue is made in its repository with *What must be
+true* as its body's paragraph and the task that proposed it below, added to the project, and given the workflow's
+first state in `Status`, its `Size` when given, `Worker`, `Priority` (Medium, or the idea's priority) and the
+`Rank` after the last issue of that priority. *What must be true* is one paragraph there, without a heading, a lead
+or an open code block. An idea's story is made first in the project's own repository, labeled `story`, its gain and
+its test in its body, given `Priority` and `Rank`, and no `Status`, so its state follows its issues; then each issue
+is made, and they become the story's sub-issues in the idea's order. GitHub drops a label in silence for an account
+without push access, so a story made or found without its label stops the write.
+
+A call that makes an issue is never sent twice blindly. When it goes without an answer, the planner reads the
+issues the person made in that repository from a minute before the call on, pull requests and the issues the board
+or the same write already holds left out: one with the same title and body is taken as made, none makes it once
+more, and more than one stops the write, naming them. A call GitHub answered with a failure on its side, or with an
+answer that cannot be read, is not sent again. Once a call that makes an issue may have reached GitHub, every stop
+is refused as partly saved, naming the repositories, with the references of what GitHub holds in its words, so the
+window reads the board anew and never hands the same idea in again. An issue GitHub makes only after the read that
+looked for it is not found and is made once more; that moment is the one left.
 
 ## Access
 

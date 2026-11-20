@@ -10,10 +10,17 @@ import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
+import org.fuin.porelo.forge.github.model.IssueLabelsInner;
+import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
+import org.fuin.porelo.forge.github.model.PrivateUser;
 import org.fuin.porelo.forge.github.model.ProjectsV2ItemWithContent;
+import org.fuin.porelo.forge.github.model.PublicUser;
+import org.fuin.porelo.forge.github.model.SimpleUser;
+import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
@@ -61,6 +68,13 @@ public class StoreConfiguration {
         IssuesUpdateRequest.class,
         IssuesUpdate200Response.class,
         Issue.class,
+        IssuesCreateRequest.class,
+        IssuesAddSubIssueRequest.class,
+        IssueLabelsInner.class,
+        SimpleUser.class,
+        PrivateUser.class,
+        PublicUser.class,
+        UsersGetAuthenticated200Response.class,
         ProjectsV2ItemWithContent.class
     })
     public GitProjects gitProjects() {

@@ -23,32 +23,57 @@ any project, and finds it on the board and on GitHub under its tracker reference
 
 ## Plan
 
-- **Today** `FieldsBoardWriter` does not override `BoardWriter.createIssue` and `createIdea`, whose defaults throw
-  "This store does not add issues yet", so the window gets `501` on a GitHub project. The Git store's writes and
+- **Before** `FieldsBoardWriter` overrode neither `BoardWriter.createIssue` nor `createIdea`, whose defaults throw
+  "This store does not add issues yet", so the window got `501` on a GitHub project. The Git store's writes and
   `GitHubStore.createIssue`/`createIdea` (which call the writer under the store's write lock and read the board
   after) stand.
-- **`createIssue(current, revision, issue)`**: refuses a stale revision as the other writes do; creates the issue in
-  the named repository by REST with the title and a body of the `What must be true` section (`BodySections`), adds it
-  to the project (`addProjectItems`) and sets `Status` to the workflow's first state (Idea), `Size` when given,
-  `Worker`, and `Rank` after the last of its priority, in one `setFieldValues` batch; answers the tracker reference
-  `<repository>#<number>`. A `task` given records which task proposed it, as the Git store records it.
-- **`createIdea(current, revision, idea)`**: the story as an issue in the project's own repository labeled `story`
-  (checked on the answer: a story without the label stops the write, naming it), with its gain, test and priority
-  in body and fields; then each issue as above in its repository, made a sub-issue of the story in the idea's order;
-  answers the story's and the issues' references.
-- **Never twice**: a call GitHub did not answer (time-out, connection lost after sending) is not retried. The writer
-  then looks in that repository for an issue created since the call by the person with that exact title and body:
-  one found is taken as made and the write goes on from it; none found makes it once more; more than one stops,
-  naming them. A write that stops midway (an idea with some issues made) answers `PartlySaved` naming what stands,
-  as the store API defines it.
-- **The forge calls**: `ProjectWrites` gains the narrow calls it needs (create an issue with labels, add a
-  sub-issue, list a repository's issues created since a time); the carry-over's real run
-  ([PL168](README.md#pl168)) uses the same ones.
-- Red first: `FieldsBoardWriterTest` against the fake GitHub - an issue made, on the project, with its fields, and
-  answered by its reference; an idea's story labeled and its issues its sub-issues in order; a stale revision
-  refused with nothing made; an unanswered create found again and not doubled, and made once when not found; a
-  story whose label GitHub dropped stopping the write; a partly saved idea naming what stands. A controller test
-  that a GitHub project's `POST .../issues` answers the reference instead of `501`.
+- **Checked before the first call**: the revision the window showed (`StaleRevision`, for an issue and an idea
+  alike), the project's id, each repository being one of the project's (and named once in an idea), every field and
+  option a value is set to, each title and line, and each body. `What must be true` is written with
+  `BodySections.with(WHAT_MUST_BE_TRUE, ...)`, so it is one paragraph on GitHub, without a heading, a lead or an open
+  code block; anything else is `NotSavable` in fixed words that never repeat the person's text, never `Unreachable`.
+  A multi-paragraph text the Git store takes is refused here, so the board reads every new body back.
+- **`createIssue(current, revision, issue)`** (`NewItems`, called by `FieldsBoardWriter`): makes the issue in the
+  named repository by REST with its title and a body of `**What must be true.** <text>`, followed by ``Proposed by
+  Porelo task `<task>`.`` as its own paragraph when a task proposed it, as the Git store writes it; adds it to the
+  project (`addProjectItems`) and sets `Status` to the workflow's first state, `Size` when given, `Worker`,
+  `Priority` Medium and `Rank` after the last issue of that priority, in `setFieldValues` batches of at most 50;
+  answers `<repository>#<number>`. No `Id` is written. A rank counts only finite ranks of 1 to 99999 and is capped
+  at 99999.
+- **`createIdea(current, revision, idea)`**: the story first, in the project's own repository, labeled `story`,
+  with `**What a user gains.** <gain>` and `**The test.** <test>` as its body, `Priority` the idea's and `Rank`
+  after the last story of that priority, and no `Status`, so its state follows its issues; then each issue as above
+  with the idea's priority; all added to the project, each issue made a sub-issue of the story (by its REST id) in
+  the idea's order; answers the story's and the issues' references. The `story` label is checked in GitHub's answer
+  and in an issue found again after an unanswered call: a story without it stops the write, naming it.
+- **Never twice**: only a call sent without an answer (`Delivery.SENT_UNANSWERED`) is looked after: the issues
+  the person (the token's login, case aside) made in that repository from 60 seconds before the call on, open or
+  closed, pull requests and the numbers the board or this write already holds left out, are read in at most 10
+  pages; one of exactly that title and body is taken as made and the write goes on from it; none makes it once more;
+  more than one stops, naming them. A call refused by GitHub (4xx) or never sent made nothing; one GitHub answered
+  with a failure on its side (5xx) or with an answer that cannot be read is never sent again and stops the write.
+- **What a stop answers**: once any call that makes an issue made one or may have, every later stop is
+  `PartlySaved`: its failed repository and `pushed` hold repository names only, in write order, as `work.json` reads
+  them, and the references GitHub holds stand in its reason. Before that, a refusal is the call's own (`NotSavable`,
+  `NoForgeAccess`, `Unreachable`), its words scrubbed with the one token taken for the write.
+- **The forge calls**: `ProjectWrites` gains `addProjectItems(token, projectId, issueIds)`, `createIssue(token,
+  owner, repository, title, body, labels)` answering the node id, the REST id, the number and the labels,
+  `addSubIssue(token, owner, repository, number, subIssueId)` and `issuesCreatedSince(token, owner, repository,
+  since, page)`, which reads the token's login and the repository's issues of state all since that moment; the
+  carry-over's real run ([PL168](README.md#pl168)) uses the same ones. `StoreConfiguration` registers the new REST
+  model classes for the native image.
+- Red first, each seen red with its guard broken: `FieldsBoardWriterTest` against the fake GitHub - an issue made,
+  on the project, with its fields and no `Id`, answered by its reference; an idea's story labeled and its issues its
+  sub-issues in order; a stale revision refused with nothing made, for an issue and an idea; an unanswered create
+  found again and not doubled; one not found made once; an issue alike that stood on the board not taken; two found
+  stopping the write naming both; a story whose label GitHub dropped, answered or found again, stopping the write; a
+  failure on GitHub's side not sent again and partly saved; a refusal after an unanswered call partly saved; a
+  partly saved idea naming what stands without the token or the person's text; a *What must be true* the body cannot
+  hold refused before any call. `GitHubAddsHttpTest`: a GitHub project's `POST .../issues` and `POST .../ideas`
+  answer the reference instead of `501`.
+- Reading the board back after a write finds the new items only once the board reads every item by its tracker
+  reference ([PL170](README.md#pl170)); until then a new item stands on GitHub and the project but the board leaves
+  it out as having no `Id`, so the tests check GitHub's calls and state, not the board read after.
 
 ## Acceptance
 

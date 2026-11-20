@@ -1,7 +1,9 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -13,6 +15,8 @@ import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
@@ -25,10 +29,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Writes moves, workers, priorities and a stage's result to the GitHub project's fields, the
- * issues' bodies and their comments, with the person's own token. Right before it writes, it reads
- * the items it writes and refuses the save when a person changed one of them since the board was
- * read; GitHub takes no condition on a write, so a change in the moment between that read and the
- * write is not caught.
+ * issues' bodies and their comments, and adds new issues and ideas, with the person's own token.
+ * Right before it writes, it reads the items it writes and refuses the save when a person changed
+ * one of them since the board was read; GitHub takes no condition on a write, so a change in the
+ * moment between that read and the write is not caught.
  */
 public final class FieldsBoardWriter implements BoardWriter {
 
@@ -41,6 +45,8 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     private final AccessRefusals refusals;
 
+    private final InstantSource clock;
+
     /**
      * Makes the writer.
      *
@@ -50,16 +56,31 @@ public final class FieldsBoardWriter implements BoardWriter {
      */
     public FieldsBoardWriter(
             final ProjectWrites github, final TokenSource tokens, final AccessRefusals refusals) {
+        this(github, tokens, refusals, InstantSource.system());
+    }
+
+    /**
+     * Makes the writer with its own clock.
+     *
+     * @param github the calls a write is made of
+     * @param tokens the person's token, asked for once a write
+     * @param refusals turns a failure into the store's refusal, scrubbed of the token
+     * @param clock tells the time a new issue's call is sent at
+     */
+    public FieldsBoardWriter(
+            final ProjectWrites github,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final InstantSource clock) {
         this.github = github;
         this.tokens = tokens;
         this.refusals = refusals;
+        this.clock = clock;
     }
 
     @Override
     public void save(final Snapshot current, final Revision revision, final Writes writes) {
-        if (!current.board().revision().equals(revision)) {
-            throw new StoreException.StaleRevision(current.board().revision().value());
-        }
+        fresh(current, revision);
         if (writes.none()) {
             return;
         }
@@ -94,6 +115,44 @@ public final class FieldsBoardWriter implements BoardWriter {
                                         id, storyItem(current, id), FieldNames.PRIORITY, priority));
         final String token = tokens.token(current.config().forge());
         plan.write(token);
+    }
+
+    /**
+     * Makes the issue in its repository, adds it to the project and sets its fields; a call GitHub
+     * took without answering is never sent again blindly.
+     */
+    @Override
+    public String createIssue(
+            final Snapshot current, final Revision revision, final NewIssue issue) {
+        fresh(current, revision);
+        final NewItems adding = new NewItems(github, refusals, clock, current);
+        // An issue carries no priority of its own, so it takes the Medium a new issue has in Git.
+        final NewItems.Planned planned = adding.issue(issue, "Medium");
+        adding.write(tokens.token(current.config().forge()), null, List.of(planned));
+        return planned.reference();
+    }
+
+    /**
+     * Makes the story labeled as one, then each issue, adds them to the project, makes the issues
+     * the story's sub-issues in the idea's order and sets their fields.
+     */
+    @Override
+    public IdeaIds createIdea(final Snapshot current, final Revision revision, final NewIdea idea) {
+        fresh(current, revision);
+        final Set<String> named = new HashSet<>();
+        for (final NewIssue issue : idea.issues()) {
+            if (!named.add(issue.repository())) {
+                throw new StoreException.NotSavable(
+                        "", "the idea names " + issue.repository() + " twice");
+            }
+        }
+        final NewItems adding = new NewItems(github, refusals, clock, current);
+        final NewItems.Planned story = adding.story(idea);
+        final List<NewItems.Planned> issues = new ArrayList<>();
+        idea.issues().forEach(issue -> issues.add(adding.issue(issue, idea.priority())));
+        adding.write(tokens.token(current.config().forge()), story, issues);
+        return new IdeaIds(
+                story.reference(), issues.stream().map(NewItems.Planned::reference).toList());
     }
 
     @Override
@@ -141,6 +200,13 @@ public final class FieldsBoardWriter implements BoardWriter {
             plan.stage(id, issueItem(current, id), stage);
         }
         plan.write(token);
+    }
+
+    /** Refuses a write planned on another board than the store holds, before any call. */
+    private static void fresh(final Snapshot current, final Revision revision) {
+        if (!current.board().revision().equals(revision)) {
+            throw new StoreException.StaleRevision(current.board().revision().value());
+        }
     }
 
     /** The item of an issue on the board, or the refusal that it has none. */
