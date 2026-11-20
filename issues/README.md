@@ -76,7 +76,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl160"></a>[PL160](PL160-A-Stage-Results-Plan-Headings-Lowered-Not-Refused.md) | S | - | A stage's order tells the agent that its plan holds no first- or second-level heading and closes every code block, and a handed-in plan's first- and second-level headings outside code blocks are lowered to third-level ones before the result is checked and saved, so an analysis is no longer lost for a heading; a code block left open is still refused. The order names every bound of the result, and a list item over its bound is split at its sentence ends and a line break in it becomes a space; only a sentence over the bound, or a list grown past its most items, is still refused |
 | <a id="pl59"></a>[PL59](PL59-The-Work-Tools-Run-From-The-Planner.md) | M | - | A repository's build indexes and checks its issues and stories with a command line of the planner, so no repository needs the build tools for its own work |
 | <a id="pl60"></a>[PL60](PL60-The-Commit-Rules-Checked-By-The-Planner.md) | L | [PL59](README.md#pl59) | The rules on commit messages and the stage records a commit carries are checked by the planner's command line, `check-commits`, with the build tools' fault lines and exit codes |
 | <a id="pl61"></a>[PL61](PL61-The-Work-Numbers-Come-From-Porelos-Own-Record-Of-Each-Task.md) | L | - | The minutes a repository's issues of one size took are computed in core from the record Porelo keeps of each task over the board's issues, whatever the backend, and the Git store's own velocity goes |
@@ -117,6 +116,7 @@ left out.
 
 | # | Title | What was built |
 |---|---|---|
+| <a id="pl160"></a>PL160 | A Stage Result's Plan Headings Lowered, Not Refused | A stage's order tells the agent that its plan holds no first- or second-level heading and closes every code block, and a handed-in plan's first- and second-level headings outside code blocks are lowered to third-level ones before the result is checked and saved, so an analysis is no longer lost for a heading; a code block left open is still refused. The order names every bound of the result, and a list item over its bound is split at its sentence ends and a line break in it becomes a space; only a sentence over the bound, or a list grown past its most items, is still refused |
 | <a id="pl37"></a>PL37 | A Story's Page With A Folding Description And A Searchable Issue List | A story's description can be folded and unfolded, and its issue list has the window's list design: a search that opens from a magnifier and a sort menu that flips |
 | <a id="pl143"></a>PL143 | A Stage Order Hands The Issue And Asks For A Result | An analysis's or estimate's task is given each issue's current text as a read-only file and told to write its result as one JSON file, pushing nothing; each task is given only the issues it owns |
 | <a id="pl142"></a>PL142 | The Git Store Writes A Stage Result | The Git store writes a stage's result into each issue's file - size, estimate, plan, what is still to be checked, findings, each replacing what stood there - and moves the issues in the same save; the mock does the same |
