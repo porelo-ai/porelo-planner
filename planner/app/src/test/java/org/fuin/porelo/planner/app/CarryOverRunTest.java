@@ -121,7 +121,7 @@ class CarryOverRunTest {
                                     github,
                                     github,
                                     origin -> CarryOverGitHub.TOKEN,
-                                    InstantSource.fixed(Instant.parse("2026-11-20T10:00:00Z")));
+                                    InstantSource.fixed(CarryOverGitHub.NOW));
                         });
         return new WorkFixture.Answer(
                 code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
@@ -225,6 +225,20 @@ class CarryOverRunTest {
         assertThat(github.issues).as("the issues after the run again").hasSize(2);
         assertThat(Project.tracker(projectFile())).as("the tracker").isPresent();
         assertThat(map()).as("the map after the run again").doesNotExist();
+    }
+
+    @Test
+    void anIssueMadeWhoseAnswerWasLostIsFoundByARunAgain() throws Exception {
+        // Harm: an issue GitHub made while its answer was lost is made a second time.
+        github.failingIssue = 2;
+        github.madeBeforeFailure = true;
+        assertThat(carry().code()).as("the stop").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(github.issues).as("the issues after the stop").hasSize(2);
+        github.failingIssue = 0;
+        final WorkFixture.Answer again = carry();
+        assertThat(again.code()).as("the run again; it said %s", again.err()).isZero();
+        assertThat(github.issues).as("the issues after the run again").hasSize(2);
+        assertThat(github.items).as("the project's items").hasSize(2);
     }
 
     /** Stops a run, then writes project.yml and records it as a run would just before its stop. */

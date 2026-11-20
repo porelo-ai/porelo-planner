@@ -25,6 +25,9 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
     /** The token the tests lend; invented. */
     static final String TOKEN = "github_pat_carry_command_test_0123456789";
 
+    /** The time the tests' clock tells, at which every issue is made. */
+    static final Instant NOW = Instant.parse("2026-11-20T10:00:00Z");
+
     private static final GraphQlCost COST = new GraphQlCost(1, 4999, Instant.EPOCH);
 
     /** One issue as GitHub holds it. */
@@ -70,6 +73,9 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
 
     /** The issue made, from 1, at which the call fails before GitHub takes it; 0 for none. */
     int failingIssue;
+
+    /** Whether the failing issue is made all the same, only GitHub's answer lost. */
+    boolean madeBeforeFailure;
 
     /** What a failing call says. */
     String failure = "GitHub is unreachable";
@@ -241,7 +247,8 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
             final String body,
             final List<String> labels) {
         call(token, "issue");
-        if (issues.size() + 1 == failingIssue) {
+        final boolean fails = issues.size() + 1 == failingIssue;
+        if (fails && !madeBeforeFailure) {
             throw new IllegalStateException(failure);
         }
         final int number =
@@ -249,6 +256,9 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                         + 1;
         final Held made = new Held(repository, number, 100 + issues.size(), title, body, labels);
         issues.add(made);
+        if (fails) {
+            throw new IllegalStateException(failure);
+        }
         return made.made();
     }
 
@@ -264,6 +274,8 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                 page == 1
                         ? issues.stream()
                                 .filter(issue -> issue.repository.equals(repository))
+                                // Every issue is made at the clock's time, as GitHub dates it.
+                                .filter(issue -> !NOW.isBefore(since))
                                 .map(issue -> new Found(issue.made(), issue.title, issue.body))
                                 .toList()
                         : List.of(),
