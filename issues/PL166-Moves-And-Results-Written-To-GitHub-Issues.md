@@ -66,5 +66,10 @@ its own.
 
 ## To be checked
 
-- Whether GitHub applies the aliases before and after a failing one (the forge clients' recorder measures it); the
-  `PartlySaved` answer names what GitHub really saved.
+- Measured by the forge clients' recorder: GitHub saves the parts before and after a refused one, and a batch that
+  fails naming no part is unknown, so the store reads the written items by `issueBoard` before it answers or retries;
+  the `PartlySaved` answer names what GitHub really saved.
+- Measured: a project's status changes list only an item's first `Status`, not a later one written through the API.
+  Whether a move written by the planner shows in GitHub's timeline later is still being measured; if it does not,
+  a move's course is not kept on GitHub, and the plan's claim that the timeline shows each move is narrowed to
+  moves a person makes on GitHub.

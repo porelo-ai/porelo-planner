@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL170",
   "title": "Tracker References as the Ids of Stories and Issues",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "M",
   "priority": "High",
   "rank": 87,
@@ -37,8 +37,10 @@ and finds a carried-over one under its old id too.
   item's reference. The window parses no id and keys its places by the encoded id, so it needs no change.
 - A task's start passes the tracker reference with its owner, `owner/repo#123`, as Porelo's `Start` takes it: the
   owner is the repository's, read from its address in `project.yml`.
-- Agreed with Agent Frontend before the build, since the window builds against it; published as a step of its own
-  like a refusal: the contract and the screen first, then the GitHub store's ids.
+- The window needs no change, read in its code: it parses no id, keys its kept places by the encoded id, and keeps
+  the ids a task was started under in its offers across restarts. What it needs is the alias taken on a report.
+- Built in this round after [PL164](README.md#pl164): the contract and the screen first, then the GitHub store's ids,
+  with which [PL166](README.md#pl166)'s `createIssue` and `createIdea` answer the new item's reference.
 - Red first: a controller test of a board answer and a move by a tracker id, percent-encoded in the path; an `Ids`
   test refusing a reference with a path, white space or a number out of range; a screen test that a tracker id is
   read and its alias shown.
