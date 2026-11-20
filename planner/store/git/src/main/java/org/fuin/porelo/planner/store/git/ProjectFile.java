@@ -199,17 +199,36 @@ public final class ProjectFile {
     }
 
     /**
+     * The ssh form {@code <user>@<host>:<owner>/<repository>}, whose host is asked over https like
+     * an https address's.
+     */
+    private static final java.util.regex.Pattern SCP_HOME =
+            java.util.regex.Pattern.compile(
+                    "[A-Za-z0-9._-]+@([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?):"
+                            + "([A-Za-z0-9][A-Za-z0-9._-]*)/[A-Za-z0-9._-]+");
+
+    /**
      * The https host and owner a repository stands under, {@code https://<host>/<owner>}: a tracker
      * is asked with the token of the own repository's host, so every repository must stand there.
      */
     private static URI home(final String own, final CloneUrl url) {
+        final java.util.regex.Matcher scp = SCP_HOME.matcher(url.value());
+        if (scp.matches()) {
+            return URI.create(
+                    "https://"
+                            + scp.group(1).toLowerCase(java.util.Locale.ROOT)
+                            + "/"
+                            + scp.group(3).toLowerCase(java.util.Locale.ROOT));
+        }
         final URI uri;
         try {
             uri = new URI(url.value());
         } catch (final java.net.URISyntaxException e) {
             throw new StoreException.Unreadable(
                     own,
-                    FILE + ": a project a tracker keeps names its repositories by https address");
+                    FILE
+                            + ": a project a tracker keeps names its repositories by https or"
+                            + " ssh address <user>@<host>:<owner>/<repository>");
         }
         final String path = uri.getPath() == null ? "" : uri.getPath();
         final String[] parts = path.split("/", -1);
@@ -223,7 +242,9 @@ public final class ProjectFile {
                 || parts[1].isEmpty()) {
             throw new StoreException.Unreadable(
                     own,
-                    FILE + ": a project a tracker keeps names its repositories by https address");
+                    FILE
+                            + ": a project a tracker keeps names its repositories by https or"
+                            + " ssh address <user>@<host>:<owner>/<repository>");
         }
         return URI.create(
                 "https://"

@@ -152,3 +152,7 @@ reviews the file, signs it with `porelo project sign` and commits it.
 The planner reads and writes with the person's own GitHub access, the token Porelo's vault lends it for the forge's
 address. The token needs Issues and Contents on the repositories and Projects on the organization. It never stands
 in a message, a fault or a log line.
+
+`project.yml` names every repository on one host and under the tracker's owner, by https address
+(`https://<host>/<owner>/<repository>`) or by ssh (`<user>@<host>:<owner>/<repository>`). The token is asked for
+`https://<host>` either way; with ssh centrals, Git reads the own repository with the person's own login.

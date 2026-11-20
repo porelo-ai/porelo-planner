@@ -250,6 +250,31 @@ class ProjectFileTest {
                 .isNull();
     }
 
+    @Test
+    void aTrackedProjectNamingItsRepositoriesBySshIsAskedOfTheirHttpsHost() throws Exception {
+        // Harm: a project whose remotes are ssh cannot be kept by a tracker, or its token is asked
+        // of another host than the one the repositories stand on.
+        final String text =
+                TRACKED.replace(
+                                "https://github.com/porelo-ai/porelo-project.git",
+                                "git@github.com:porelo-ai/porelo-project.git")
+                        .replace(
+                                "https://github.com/porelo-ai/porelo-frontend",
+                                "git@GitHub.com:Porelo-AI/porelo-frontend.git");
+        final org.fuin.porelo.planner.store.TrackedProject project =
+                ProjectFile.read(
+                                tracked(text),
+                                new CloneUrl("git@github.com:porelo-ai/porelo-project.git"),
+                                null,
+                                10)
+                        .tracked();
+
+        assertThat(project).as("a tracker named").isNotNull();
+        assertThat(List.of(project.forge().toString(), project.owner()))
+                .as("the https host and the owner the ssh addresses name")
+                .containsExactly("https://github.com", "porelo-ai");
+    }
+
     @ParameterizedTest
     @CsvSource(
             delimiter = '|',
@@ -275,7 +300,10 @@ class ProjectFileTest {
             value = {
                 "https://gitlab.example.org/porelo-ai/porelo-frontend|another host",
                 "https://github.com/other-org/porelo-frontend|another owner",
-                "git@github.com:porelo-ai/porelo-frontend.git|an address that is not https",
+                "git@gitlab.example.org:porelo-ai/porelo-frontend.git|another host by ssh",
+                "git@github.com:other-org/porelo-frontend.git|another owner by ssh",
+                "git@github.com:porelo-ai/team/porelo-frontend.git|a deeper path by ssh",
+                "ssh://git@github.com/porelo-ai/porelo-frontend|an ssh URL",
                 "https://github.com:8443/porelo-ai/porelo-frontend|a port",
             })
     void aTrackedProjectsRepositoryElsewhereThanItsOwnIsRefused(
