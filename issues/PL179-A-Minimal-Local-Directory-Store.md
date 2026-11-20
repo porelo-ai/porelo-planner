@@ -40,6 +40,14 @@ live in one directory on their computer, outside every repository, and nothing a
   default or moves items. The default directory alone is made on the first `PUT`, with mode `0700`. A directory
   moved by the person is found again only by setting the new path in the window; a `PUT` with another path opens
   the project there, as another body does today.
+- **What the window needs to offer it**: the project's answer carries `tracker.kind` (`github`, `local`) and, for
+  a local one, `items`, the directory the planner uses, the default included, so the window offers the setting
+  only where it applies and shows where the items lie. A set directory refused gets a problem type of its own,
+  `ItemsDirectoryRefused`, with `parameters.items` naming the path, so the window offers a new pick for it alone;
+  an `items` sent for a project whose tracker is not `local` is refused as `ProjectRefused`. The screen's
+  `PlannerProject` gains the optional `items`, sent by `_toJson` only when set and part of `==` and `hashCode`, so
+  a changed directory is sent again; the window's settings, the folder picker and the re-pick are Agent Frontend's,
+  against the contract as it stands when this issue is built.
 - **An item** is one file `<repository>-<number>.md`: a JSON head (`local-item-1.json`) holding the kind (story or
   issue), the title, the repository, `Status`, `Priority`, `Size`, `Risk`, `Worker`, `Rank`, the parent, a story's
   ordered sub-issues, `blockedBy`, and the number fields `Estimate`, `Minutes`, `VM minutes`, `Tokens`, `Stages`,
@@ -64,7 +72,3 @@ live in one directory on their computer, outside every repository, and nothing a
 
 - The native planner on the test VM plans a project whose `project.yml` names a tracker of kind `local`: the board, a
   move, a new issue and a stage result, each seen in the directory's files; no repository gains a commit.
-
-## To be checked
-
-- The window's part of the directory setting, with Agent Frontend.
