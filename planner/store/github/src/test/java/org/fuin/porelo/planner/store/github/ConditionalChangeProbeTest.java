@@ -17,9 +17,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -57,6 +59,8 @@ class ConditionalChangeProbeTest {
     private static final Duration FETCHED = Duration.ofMinutes(3);
 
     private static final Duration PROBED = Duration.ofSeconds(30);
+
+    private static final GraphQlCost COST = new GraphQlCost(1, 4999, Instant.EPOCH);
 
     private final AtomicReference<Instant> now =
             new AtomicReference<>(Instant.parse("2026-11-20T10:00:00Z"));
@@ -103,7 +107,7 @@ class ConditionalChangeProbeTest {
     private GitHubStore warmed(final ChangeProbe probe) {
         final GitHubStore store = store(probe);
         store.refresh();
-        store.refresh();
+        store.poll();
         return store;
     }
 
@@ -114,7 +118,7 @@ class ConditionalChangeProbeTest {
         final int before = reads.get();
         final int asksBefore = github.asks.get();
 
-        final Board board = store.refresh();
+        final Board board = store.poll();
         store.poll();
 
         assertThat(reads.get()).as("whole reads while GitHub answers 304").isEqualTo(before);
@@ -131,8 +135,8 @@ class ConditionalChangeProbeTest {
         final int before = reads.get();
 
         github.issueTags.put("example-two", "\"two-2\"");
-        final Board changed = store.refresh();
-        store.refresh();
+        final Board changed = store.poll();
+        store.poll();
 
         assertThat(reads.get())
                 .as("whole reads after one repository changed")
@@ -142,8 +146,8 @@ class ConditionalChangeProbeTest {
                 .isEqualTo("read-" + (before + 1));
 
         github.pageTags.set(1, "\"items-1b\"");
-        store.refresh();
-        store.refresh();
+        store.poll();
+        store.poll();
 
         assertThat(reads.get())
                 .as("whole reads after a later page of the project's items changed")
@@ -159,13 +163,64 @@ class ConditionalChangeProbeTest {
 
         github.issueTags.put("example-project", "\"project-2\"");
         readFailure = new StoreException.Unreachable("example-project", "timed out");
-        assertThatThrownBy(store::refresh)
+        assertThatThrownBy(store::poll)
                 .as("the read after the change")
                 .isInstanceOf(StoreException.Unreachable.class);
-        final Board after = store.refresh();
+        final Board after = store.poll();
 
         assertThat(after.revision().value())
                 .as("the board at the next look")
+                .isEqualTo("read-" + (before + 1));
+    }
+
+    @Test
+    void aPersonsReloadReadsTheWholeProjectEvenWhenGitHubAnswersUnchanged() {
+        // Harm: an option or field a person adds on GitHub changes no issue and no item, so a
+        // reload answered by the change check never clears the board's fault about it.
+        final GitHubStore store = warmed(probe(github));
+        final int before = reads.get();
+        final int asksBefore = github.asks.get();
+
+        final Board reloaded = store.refresh();
+
+        assertThat(reads.get()).as("whole reads of the reload").isEqualTo(before + 1);
+        assertThat(github.asks.get()).as("conditional asks of the reload").isEqualTo(asksBefore);
+        assertThat(reloaded.revision().value())
+                .as("the board of the reload")
+                .isEqualTo("read-" + (before + 1));
+    }
+
+    @Test
+    void aPollAfterAWriteReadsWholeRatherThanTakeTagsFromBeforeTheWrite() {
+        // Harm: tags from before the planner's write are taken for the board after it, so a
+        // person undoing the write on GitHub answers 304 and the window never shows it undone.
+        final GitHubStore store =
+                store(
+                        probe(github),
+                        new BoardWriter() {
+                            @Override
+                            public void save(
+                                    final Snapshot current,
+                                    final Revision revision,
+                                    final Writes writes) {
+                                github.issueTags.put("example-two", "\"two-3\"");
+                            }
+                        });
+        store.refresh();
+        store.poll();
+        store.poll();
+        github.issueTags.put("example-two", "\"two-2\"");
+        store.poll();
+        store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
+        // A person undoes the planner's write on GitHub.
+        github.issueTags.put("example-two", "\"two-2\"");
+        final int before = reads.get();
+
+        final Board after = store.poll();
+
+        assertThat(reads.get()).as("whole reads at the poll after the undo").isEqualTo(before + 1);
+        assertThat(after.revision().value())
+                .as("the board after the undo")
                 .isEqualTo("read-" + (before + 1));
     }
 
@@ -176,55 +231,52 @@ class ConditionalChangeProbeTest {
         final CountDownLatch all = new CountDownLatch(REPOSITORIES.size() + 1);
         final AtomicInteger inFlight = new AtomicInteger();
         final AtomicInteger most = new AtomicInteger();
-        final ConditionalReads waiting =
-                new ConditionalReads() {
-                    @Override
-                    public Answer issues(
-                            final String token,
-                            final String owner,
-                            final String repository,
-                            final @Nullable String etag) {
-                        meet();
-                        return github.issues(token, owner, repository, etag);
-                    }
-
-                    @Override
-                    public Answer projectItems(
-                            final String token,
-                            final String owner,
-                            final int number,
-                            final @Nullable String after,
-                            final @Nullable String etag) {
-                        if (after == null) {
-                            meet();
-                        }
-                        return github.projectItems(token, owner, number, after, etag);
-                    }
-
-                    private void meet() {
-                        most.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
-                        all.countDown();
-                        try {
-                            all.await(2, TimeUnit.SECONDS);
-                        } catch (final InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                        inFlight.decrementAndGet();
-                    }
-                };
         final GitHubStore store =
                 store(
                         new ConditionalChangeProbe(
-                                waiting,
+                                meeting(github, all, inFlight, most, Duration.ofSeconds(2)),
                                 origin -> TOKEN,
                                 pace,
                                 task -> Thread.ofVirtual().start(task)));
         store.refresh();
-        store.refresh();
+        store.poll();
 
         assertThat(most.get())
                 .as("asks in flight at once: three repositories and the project")
                 .isEqualTo(REPOSITORIES.size() + 1);
+    }
+
+    @Test
+    void theAsksOfOneLookRunAtMostFourAtATime() throws Exception {
+        // Harm: a project of many repositories sends GitHub a burst of asks at once, which its
+        // secondary rate limit refuses.
+        final List<String> many =
+                List.of(
+                        "example-a",
+                        "example-b",
+                        "example-c",
+                        "example-d",
+                        "example-e",
+                        "example-f");
+        final FakeGitHub wide = new FakeGitHub(many);
+        final CountDownLatch never = new CountDownLatch(many.size() + 1);
+        final AtomicInteger inFlight = new AtomicInteger();
+        final AtomicInteger most = new AtomicInteger();
+        final ConditionalChangeProbe probe =
+                new ConditionalChangeProbe(
+                        meeting(wide, never, inFlight, most, Duration.ofMillis(300)),
+                        origin -> TOKEN,
+                        pace,
+                        task -> Thread.ofVirtual().start(task));
+
+        probe.unchanged(snapshot("read-1", configOf(many)));
+
+        assertThat(most.get())
+                .as("asks in flight at once")
+                .isEqualTo(ConditionalChangeProbe.PARALLEL);
+        assertThat(wide.asks.get())
+                .as("asks of the look: six repositories and two pages of items")
+                .isEqualTo(many.size() + 2);
     }
 
     @Test
@@ -235,7 +287,7 @@ class ConditionalChangeProbeTest {
         assertThat(store.pollDelay(FETCHED, PROBED)).as("the usual wait").isEqualTo(PROBED);
 
         github.remaining = 400L;
-        final Board board = store.refresh();
+        final Board board = store.poll();
 
         assertThat(store.pollDelay(FETCHED, PROBED))
                 .as("the wait with 400 of 5000 left")
@@ -253,6 +305,7 @@ class ConditionalChangeProbeTest {
         final int asksBefore = github.asks.get();
         final String kept = store.board().revision().value();
 
+        github.issueTags.put("example-two", "\"two-2\"");
         github.failure =
                 GitHubExceptions.rateLimited(403, "rate limit exceeded", Duration.ofSeconds(120));
         final Board first = store.poll();
@@ -289,59 +342,196 @@ class ConditionalChangeProbeTest {
     }
 
     @Test
-    void aPersonsReloadWhileHeldAsksOnceAndGetsTheSameRefusal() {
-        // Harm: the person's own reload silently answered from the board kept, or asking without
-        // end; or told something other than the wait.
+    void aRateLimitAnyAskMetHoldsThoughAnEarlierAskFailedOtherwise() {
+        // Harm: a refusal of the first repository hides GitHub's spent rate limit on another,
+        // so the whole read is sent at once and GitHub is asked again at every poll.
         final GitHubStore store = warmed(probe(github));
-        github.failure =
-                GitHubExceptions.rateLimited(403, "rate limit exceeded", Duration.ofSeconds(120));
-        store.poll();
-        final int asksHeld = github.asks.get();
+        final int before = reads.get();
+        final String kept = store.board().revision().value();
 
-        assertThatThrownBy(store::refresh)
-                .as("the person's reload while held")
-                .isInstanceOf(StoreException.Unreachable.class)
-                .hasMessageContaining("GitHub's rate limit is spent; it reads again in 120 s");
-        assertThat(github.asks.get() - asksHeld)
-                .as("asks of the reload: one look, three repositories and the project")
-                .isEqualTo(REPOSITORIES.size() + 1);
+        github.failures.put("example-project", GitHubExceptions.refused(502, "Bad Gateway"));
+        github.failures.put(
+                "example-three",
+                GitHubExceptions.rateLimited(403, "rate limit exceeded", Duration.ofSeconds(120)));
+        final Board board = store.poll();
+
+        assertThat(reads.get()).as("whole reads after the look").isEqualTo(before);
+        assertThat(pace.hold()).as("the hold after the look").isNotNull();
+        assertThat(board.revision().value()).as("the board served").isEqualTo(kept);
+    }
+
+    @Test
+    void noWholeReadIsSentWhileAnotherProjectFoundTheRateLimitSpent() {
+        // Harm: a look that failed while another project of the same token met the spent limit
+        // sends the whole read GitHub refuses, spending what is left of the person's limit.
+        final GitHubStore store = warmed(probe(github));
+        final int before = reads.get();
+
+        github.during = () -> pace.spent(Duration.ofSeconds(90));
+        github.failures.put("example-two", GitHubExceptions.refused(502, "Bad Gateway"));
+        store.poll();
+
+        assertThat(reads.get()).as("whole reads after the look").isEqualTo(before);
+        assertThat(pace.hold()).as("the hold another project set").isNotNull();
+    }
+
+    @Test
+    void aLookPastItsDeadlineAsksNoMorePages() throws Exception {
+        // Harm: asks keep going out to GitHub in the background long after their look gave up.
+        final FakeGitHub slow = new FakeGitHub(REPOSITORIES);
+        for (int page = 2; page < 8; page++) {
+            slow.pageTags.add("\"items-" + page + "\"");
+        }
+        slow.pageWait = Duration.ofMillis(100);
+        final ConditionalChangeProbe probe =
+                new ConditionalChangeProbe(
+                        slow,
+                        origin -> TOKEN,
+                        pace,
+                        task -> Thread.ofVirtual().start(task),
+                        Duration.ofMillis(250));
+
+        final boolean unchanged = probe.unchanged(snapshot("read-1"));
+        final int pagesAtTheEnd = slow.pageAsks.get();
+        Thread.sleep(600);
+
+        assertThat(unchanged).as("the look past its deadline").isFalse();
+        assertThat(slow.pageAsks.get())
+                .as("pages asked after the look ended")
+                .isLessThanOrEqualTo(pagesAtTheEnd + 1);
+        assertThat(slow.pageAsks.get()).as("pages asked of eight").isLessThan(8);
+    }
+
+    @Test
+    void theBoardsFaultsAreAnsweredWhileALookWaitsOnGitHub() throws Exception {
+        // Harm: every read of the board kept, by every window, waits as long as GitHub takes to
+        // answer a background look.
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch asking = new CountDownLatch(1);
+        final ConditionalChangeProbe probe = probe(github);
+        final GitHubStore store = warmed(probe);
+        github.during =
+                () -> {
+                    asking.countDown();
+                    try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                };
+        final Thread look = Thread.ofVirtual().start(store::poll);
+        try {
+            assertThat(asking.await(5, TimeUnit.SECONDS)).as("the look asking GitHub").isTrue();
+            final java.util.concurrent.CompletableFuture<List<String>> faults =
+                    java.util.concurrent.CompletableFuture.supplyAsync(probe::faults);
+
+            assertThat(faults.get(1, TimeUnit.SECONDS))
+                    .as("the faults while the look waits")
+                    .isEmpty();
+        } finally {
+            release.countDown();
+            look.join();
+        }
+    }
+
+    @Test
+    void aNotModifiedWithoutATagKeepsTheTagSent() {
+        // Harm: an answer of 304 that names no tag makes the next look send none, so GitHub
+        // answers in full and the whole project is read for nothing.
+        final GitHubStore store = warmed(probe(github));
+        final int before = reads.get();
+
+        github.tagOnNotModified = false;
+        store.poll();
+        store.poll();
+
+        assertThat(reads.get()).as("whole reads over two unchanged looks").isEqualTo(before);
+    }
+
+    @Test
+    void aPageAfterAFullLastPageIsSeenThoughThatPageAnswersUnchanged() {
+        // Harm: an item added behind a full last page starts a page the probe never asks for, as
+        // the full page's own tag stays, so the board never shows the item.
+        github.fullPages.add(1);
+        final GitHubStore store = warmed(probe(github));
+        final int before = reads.get();
+
+        store.poll();
+        assertThat(reads.get())
+                .as("whole reads while the full last page is all there is")
+                .isEqualTo(before);
+
+        github.pageTags.add("\"items-2\"");
+        store.poll();
+
+        assertThat(reads.get())
+                .as("whole reads once a page follows the full last page")
+                .isEqualTo(before + 1);
     }
 
     @Test
     void aSpentRateLimitOfTheWholeReadHoldsTheBackgroundReads() {
         // Harm: GitHub's GraphQL refusal of a spent limit is asked again at every poll.
-        final AtomicInteger asked = new AtomicInteger();
-        final ProjectQueries watched =
-                pace.watching(
-                        new ProjectQueries() {
-                            @Override
-                            public GitHubGraphQl.ProjectFields projectFields(
-                                    final String token,
-                                    final String owner,
-                                    final int number,
-                                    final @Nullable String after) {
-                                asked.incrementAndGet();
-                                throw GitHubExceptions.rateLimited(
-                                        403, "spent", Duration.ofSeconds(90));
-                            }
+        final GitHubStore store = overGitHub();
+        store.refresh();
+        final int asked = graphQl.get();
+        final int probed = github.asks.get();
 
-                            @Override
-                            public GitHubGraphQl.ProjectItems projectItems(
-                                    final String token,
-                                    final String owner,
-                                    final int number,
-                                    final @Nullable String after) {
-                                throw new UnsupportedOperationException("not read here");
-                            }
-                        });
+        graphQlFailure = GitHubExceptions.rateLimited(403, "spent", Duration.ofSeconds(90));
+        github.issueTags.put("example-two", "\"two-2\"");
+        final Board first = store.poll();
+        final int askedAtTheRefusal = graphQl.get();
+        store.poll();
+        store.poll();
 
-        assertThatThrownBy(() -> watched.projectFields(TOKEN, "example-org", 7, null))
-                .as("the read GitHub refused")
-                .hasMessageContaining("spent");
+        assertThat(askedAtTheRefusal).as("whole read asks at the refusal").isGreaterThan(asked);
+        assertThat(graphQl.get()).as("whole read asks while held").isEqualTo(askedAtTheRefusal);
+        assertThat(github.asks.get() - probed)
+                .as("conditional asks: three repositories and two pages of items, once")
+                .isEqualTo(REPOSITORIES.size() + 2);
+        assertThat(first.faults())
+                .as("the board's faults at the refusal")
+                .anySatisfy(fault -> assertThat(fault).contains("rate limit is spent"));
 
-        assertThat(pace.hold())
-                .as("the hold after the refusal")
-                .isEqualTo("GitHub's rate limit is spent; it reads again in 90 s");
+        graphQlFailure = null;
+        now.set(now.get().plusSeconds(91));
+        store.poll();
+
+        assertThat(graphQl.get())
+                .as("whole read asks once the wait ended")
+                .isGreaterThan(askedAtTheRefusal);
+    }
+
+    @Test
+    void aPersonsReloadWhileHeldAsksOnceAndGetsTheSameRefusal() {
+        // Harm: the person's own reload silently answered from the board kept, as GitHub answers
+        // 304 to the change check even while its rate limit is spent, or asking without end.
+        final GitHubStore store = overGitHub();
+        store.refresh();
+        store.poll();
+        store.poll();
+        graphQlFailure =
+                GitHubExceptions.rateLimited(403, "rate limit exceeded", Duration.ofSeconds(120));
+        github.failure = graphQlFailure;
+        final int asked = graphQl.get();
+
+        assertThatThrownBy(store::refresh)
+                .as("the person's reload")
+                .isInstanceOf(StoreException.Unreachable.class)
+                .hasMessageContaining("GitHub's rate limit is spent");
+        final int askedAtTheRefusal = graphQl.get();
+        store.poll();
+        assertThatThrownBy(store::refresh)
+                .as("the person's reload while held")
+                .isInstanceOf(StoreException.Unreachable.class)
+                .hasMessageContaining("GitHub's rate limit is spent");
+
+        assertThat(askedAtTheRefusal - asked)
+                .as("whole read asks of the first reload")
+                .isEqualTo(1);
+        assertThat(graphQl.get() - askedAtTheRefusal)
+                .as("whole read asks of the poll and the reload while held")
+                .isEqualTo(1);
     }
 
     @Test
@@ -352,7 +542,7 @@ class ConditionalChangeProbeTest {
         final int before = reads.get();
 
         github.failure = GitHubExceptions.refused(404, "Not Found for Bearer " + TOKEN);
-        final Board board = store.refresh();
+        final Board board = store.poll();
 
         assertThat(reads.get()).as("whole reads after the refused check").isEqualTo(before + 1);
         assertThat(board.faults())
@@ -387,7 +577,154 @@ class ConditionalChangeProbeTest {
         assertThat(saved.revision().value()).as("the board after the write").isEqualTo("read-2");
     }
 
+    @Test
+    void theBoardOfAWriteTellsTheSpentRateLimit() {
+        // Harm: the board a write answers drops the spent rate limit, so the window shows no
+        // fault while GitHub holds the background reads.
+        final GitHubStore store =
+                store(
+                        probe(github),
+                        new BoardWriter() {
+                            @Override
+                            public void save(
+                                    final Snapshot current,
+                                    final Revision revision,
+                                    final Writes writes) {
+                                // Written.
+                            }
+                        });
+        store.refresh();
+        pace.spent(Duration.ofSeconds(120));
+
+        final Board saved =
+                store.save(new Revision("read-1"), new Writes(Map.of(), Map.of(), List.of()));
+
+        assertThat(saved.faults())
+                .as("the faults of the board the write answers")
+                .anySatisfy(fault -> assertThat(fault).contains("rate limit is spent"));
+    }
+
+    /** Conditional reads that count how many asks are in flight at once, each waiting a while. */
+    private static ConditionalReads meeting(
+            final ConditionalReads github,
+            final CountDownLatch all,
+            final AtomicInteger inFlight,
+            final AtomicInteger most,
+            final Duration wait) {
+        return new ConditionalReads() {
+            @Override
+            public Answer issues(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final @Nullable String etag) {
+                meet();
+                return github.issues(token, owner, repository, etag);
+            }
+
+            @Override
+            public Answer projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final @Nullable String etag) {
+                if (after == null) {
+                    meet();
+                }
+                return github.projectItems(token, owner, number, after, etag);
+            }
+
+            private void meet() {
+                most.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+                all.countDown();
+                try {
+                    all.await(wait.toMillis(), TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                inFlight.decrementAndGet();
+            }
+        };
+    }
+
+    /** GraphQL reads of an empty project, counted, refused as {@link #graphQlFailure} says. */
+    private final AtomicInteger graphQl = new AtomicInteger();
+
+    private volatile @Nullable RuntimeException graphQlFailure;
+
+    private ProjectQueries queries() {
+        return new ProjectQueries() {
+            @Override
+            public GitHubGraphQl.ProjectFields projectFields(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after) {
+                graphQl.incrementAndGet();
+                final RuntimeException refused = graphQlFailure;
+                if (refused != null) {
+                    throw refused;
+                }
+                return new GitHubGraphQl.ProjectFields(
+                        "PVT_1",
+                        "Plan",
+                        Instant.EPOCH,
+                        List.of(),
+                        new GitHubGraphQl.PageInfo(false, null),
+                        COST);
+            }
+
+            @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after) {
+                graphQl.incrementAndGet();
+                return new GitHubGraphQl.ProjectItems(
+                        List.of(), new GitHubGraphQl.PageInfo(false, null), COST);
+            }
+        };
+    }
+
+    /** A store opened as the planner opens one, over GraphQL reads and the fake's 304s. */
+    private GitHubStore overGitHub() {
+        final TrackedProject project =
+                new TrackedProject(
+                        URI.create("https://github.com"),
+                        "example-org",
+                        "github",
+                        "7",
+                        REPOSITORIES,
+                        WORKFLOW,
+                        new Work(Map.of(), List.of()),
+                        "c0ffee0",
+                        states -> null);
+        return (GitHubStore)
+                new GitHubStoreOpener(
+                                origin -> TOKEN,
+                                queries(),
+                                (ProjectWrites)
+                                        java.lang.reflect.Proxy.newProxyInstance(
+                                                ProjectWrites.class.getClassLoader(),
+                                                new Class<?>[] {ProjectWrites.class},
+                                                (proxy, method, args) -> {
+                                                    throw new AssertionError(
+                                                            "A read called " + method.getName());
+                                                }),
+                                github,
+                                Runnable::run,
+                                clock,
+                                Duration.ofMillis(500))
+                        .open(project, () -> project);
+    }
+
     private static Snapshot snapshot(final String revision) {
+        return snapshot(revision, CONFIG);
+    }
+
+    private static Snapshot snapshot(final String revision, final ProjectConfig config) {
         return new Snapshot(
                 new Board(
                         new Revision(revision),
@@ -395,14 +732,26 @@ class ConditionalChangeProbeTest {
                         List.of(),
                         List.of(),
                         new Work(Map.of(), List.of()),
-                        REPOSITORIES),
+                        config.repositories()),
                 Map.of(),
-                CONFIG);
+                config);
+    }
+
+    private static ProjectConfig configOf(final List<String> repositories) {
+        return new ProjectConfig(
+                CONFIG.forge(),
+                CONFIG.project(),
+                CONFIG.commit(),
+                WORKFLOW,
+                CONFIG.work(),
+                repositories,
+                Map.of(),
+                Map.of());
     }
 
     /**
      * GitHub's conditional answers: each repository's issues and each page of the project's items
-     * hold a tag, answered 304 when it is the one sent.
+     * hold a tag, answered 304 when it is the one sent, even while the rate limit is spent.
      */
     private static final class FakeGitHub implements ConditionalReads {
 
@@ -411,14 +760,31 @@ class ConditionalChangeProbeTest {
         private final List<String> pageTags =
                 new CopyOnWriteArrayList<>(List.of("\"items-0\"", "\"items-1\""));
 
+        /** The pages that hold as many items as a page asks for. */
+        private final java.util.Set<Integer> fullPages = ConcurrentHashMap.newKeySet();
+
+        private final Map<String, RuntimeException> failures = new ConcurrentHashMap<>();
+
         private final AtomicInteger asks = new AtomicInteger();
 
+        private final AtomicInteger pageAsks = new AtomicInteger();
+
         private volatile @Nullable RuntimeException failure;
+
+        private volatile @Nullable Runnable during;
+
+        private volatile Duration pageWait = Duration.ZERO;
+
+        private volatile boolean tagOnNotModified = true;
 
         private volatile long remaining = 4900L;
 
         FakeGitHub() {
-            REPOSITORIES.forEach(name -> issueTags.put(name, "\"" + name + "-1\""));
+            this(REPOSITORIES);
+        }
+
+        FakeGitHub(final List<String> repositories) {
+            repositories.forEach(name -> issueTags.put(name, "\"" + name + "-1\""));
         }
 
         @Override
@@ -429,7 +795,16 @@ class ConditionalChangeProbeTest {
                 final @Nullable String etag) {
             assertThat(token).as("the token sent").isEqualTo(TOKEN);
             assertThat(owner).as("the owner asked").isEqualTo("example-org");
-            return answer(issueTags.get(repository), etag, null);
+            final Runnable meanwhile = during;
+            if (meanwhile != null) {
+                meanwhile.run();
+            }
+            final RuntimeException refused = failures.get(repository);
+            if (refused != null) {
+                asks.incrementAndGet();
+                throw refused;
+            }
+            return answer(issueTags.get(repository), etag, null, false);
         }
 
         @Override
@@ -440,22 +815,38 @@ class ConditionalChangeProbeTest {
                 final @Nullable String after,
                 final @Nullable String etag) {
             assertThat(number).as("the project asked").isEqualTo(7);
+            pageAsks.incrementAndGet();
+            if (!pageWait.isZero()) {
+                try {
+                    Thread.sleep(pageWait.toMillis());
+                } catch (final InterruptedException e) {
+                    // A cancelled ask is not interrupted; the fake answers as GitHub would.
+                }
+            }
             final int page = after == null ? 0 : Integer.parseInt(after.substring(1));
             final String next = page + 1 < pageTags.size() ? "p" + (page + 1) : null;
-            return answer(pageTags.get(page), etag, next);
+            return answer(pageTags.get(page), etag, next, fullPages.contains(page));
         }
 
         private Answer answer(
                 final @Nullable String current,
                 final @Nullable String sent,
-                final @Nullable String next) {
+                final @Nullable String next,
+                final boolean full) {
             asks.incrementAndGet();
+            final boolean same = sent != null && sent.equals(current);
             final RuntimeException refused = failure;
-            if (refused != null) {
+            // GitHub answers 304 to a tag it holds even while the rate limit is spent.
+            if (refused != null
+                    && !(same
+                            && refused instanceof org.fuin.porelo.forge.github.GitHubException g
+                            && g.rateLimited())) {
                 throw refused;
             }
-            final boolean same = sent != null && sent.equals(current);
-            return new Answer(!same, current, same ? null : next, remaining, 5000L);
+            if (same) {
+                return new Answer(false, tagOnNotModified ? current : null, null, remaining, 5000L);
+            }
+            return new Answer(true, current, next, remaining, 5000L, full);
         }
     }
 }

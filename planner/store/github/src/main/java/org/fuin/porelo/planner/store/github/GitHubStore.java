@@ -147,21 +147,27 @@ public final class GitHubStore implements PlanningStore {
         return current != null ? served(current.board()) : refresh();
     }
 
+    /**
+     * Reads the whole project, never asking first whether it changed: a person's reload sees a
+     * field or option made on GitHub, which no change check asks about, and while GitHub's rate
+     * limit is spent it asks once and is told GitHub's refusal.
+     */
     @Override
     public Board refresh() {
-        return served(locked(this::read).board());
+        return served(locked(() -> readWhole(configNow())).board());
     }
 
     /**
-     * Reads again as {@link #refresh()} does, unless GitHub's rate limit is spent: then GitHub is
-     * not asked until its wait ends, and the board kept is answered with a fault saying when.
+     * Asks GitHub whether the project changed and reads it whole only when it did, unless GitHub's
+     * rate limit is spent: then GitHub is not asked until its wait ends, and the board kept is
+     * answered with a fault saying when.
      */
     @Override
     public Board poll() {
         final Pace pace = parts.probe().pace();
         if (pace.hold() == null) {
             try {
-                return refresh();
+                return served(locked(this::read).board());
             } catch (final StoreException.Unreachable e) {
                 // A rate limit this poll found spent serves the board kept, as the polls after it.
                 if (pace.hold() == null) {
@@ -185,12 +191,13 @@ public final class GitHubStore implements PlanningStore {
 
     @Override
     public Board save(final Revision revision, final Writes writes) {
-        return writing(
-                        () -> {
-                            parts.writer().save(current(), revision, writes);
-                            return readAfterWriting();
-                        })
-                .board();
+        return served(
+                writing(
+                                () -> {
+                                    parts.writer().save(current(), revision, writes);
+                                    return readAfterWriting();
+                                })
+                        .board());
     }
 
     @Override
@@ -202,7 +209,7 @@ public final class GitHubStore implements PlanningStore {
                             id[0] = parts.writer().createIssue(current(), revision, issue);
                             return readAfterWriting();
                         });
-        return new NewIssue.Added(Objects.requireNonNull(id[0]), after.board());
+        return new NewIssue.Added(Objects.requireNonNull(id[0]), served(after.board()));
     }
 
     @Override
@@ -215,32 +222,38 @@ public final class GitHubStore implements PlanningStore {
                             return readAfterWriting();
                         });
         final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
-        return new NewIdea.Added(saved.story(), saved.issues(), after.board());
+        return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
     }
 
     @Override
     public Board saveResult(final StageResult result) {
-        return writing(
-                        () -> {
-                            // A stage runs for minutes, so it is saved on the project as it stands
-                            // now.
-                            final Snapshot now = parts.reader().read(configNow());
-                            for (final StageResult.ForIssue issue : result.issues()) {
-                                now.board()
-                                        .issue(issue.id())
-                                        .orElseThrow(
-                                                () -> new StoreException.NoSuchIssue(issue.id()));
-                            }
-                            final StageEntry stage =
-                                    result.issues().size() == 1
-                                            ? parts.metrics()
-                                                    .stage(result.issues().get(0).id(), result)
-                                                    .orElse(null)
-                                            : null;
-                            parts.writer().saveResult(now, result, stage);
-                            return readAfterWriting();
-                        })
-                .board();
+        return served(
+                writing(
+                                () -> {
+                                    // A stage runs for minutes, so it is saved on the project as it
+                                    // stands
+                                    // now.
+                                    final Snapshot now = parts.reader().read(configNow());
+                                    for (final StageResult.ForIssue issue : result.issues()) {
+                                        now.board()
+                                                .issue(issue.id())
+                                                .orElseThrow(
+                                                        () ->
+                                                                new StoreException.NoSuchIssue(
+                                                                        issue.id()));
+                                    }
+                                    final StageEntry stage =
+                                            result.issues().size() == 1
+                                                    ? parts.metrics()
+                                                            .stage(
+                                                                    result.issues().get(0).id(),
+                                                                    result)
+                                                            .orElse(null)
+                                                    : null;
+                                    parts.writer().saveResult(now, result, stage);
+                                    return readAfterWriting();
+                                })
+                        .board());
     }
 
     @Override
@@ -261,21 +274,33 @@ public final class GitHubStore implements PlanningStore {
     private Snapshot read() {
         final ProjectConfig now = configNow();
         final Snapshot current = snapshot;
-        if (current != null
-                && current.config().commit().equals(now.commit())
-                && parts.probe().unchanged(current)) {
+        if (current == null || !current.config().commit().equals(now.commit())) {
+            return readWhole(now);
+        }
+        if (parts.probe().unchanged(current)) {
             return current;
         }
-        return readWhole(now);
-    }
-
-    private Snapshot readWhole(final ProjectConfig now) {
+        // The probe saw the change and keeps its tags for the board this read gives.
         final Snapshot fresh = parts.reader().read(now);
         snapshot = fresh;
         return fresh;
     }
 
-    /** The board with what the pace says of GitHub's rate limit among its faults. */
+    /**
+     * Reads the whole project outside the probe, which forgets what it learned, so its next look
+     * never takes tags from before this read for the board it gives.
+     */
+    private Snapshot readWhole(final ProjectConfig now) {
+        parts.probe().forget();
+        final Snapshot fresh = parts.reader().read(now);
+        snapshot = fresh;
+        return fresh;
+    }
+
+    /**
+     * The board with what the pace says of GitHub's rate limit among its faults; every board the
+     * store answers goes through here, so the window is told the pace with each.
+     */
     private Board served(final Board board) {
         final List<String> pace = parts.probe().pace().faults();
         if (pace.isEmpty()) {

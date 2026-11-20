@@ -26,6 +26,9 @@ public final class GitHubPace implements Pace {
     /** The wait when GitHub names none. */
     static final Duration WITHOUT_A_WORD = Duration.ofMinutes(1);
 
+    /** The longest wait taken, GitHub's rate-limit window, whatever an answer names. */
+    static final Duration MOST_WAIT = Duration.ofHours(1);
+
     private final InstantSource clock;
 
     private @Nullable Instant heldUntil;
@@ -49,11 +52,33 @@ public final class GitHubPace implements Pace {
      * @param wait the wait GitHub named, or null when it named none
      */
     public synchronized void spent(final @Nullable Duration wait) {
-        final Instant until =
-                clock.instant().plus(wait == null || wait.isNegative() ? WITHOUT_A_WORD : wait);
-        if (heldUntil == null || until.isAfter(heldUntil)) {
+        spentAt(clock.instant(), wait);
+    }
+
+    /**
+     * Holds every look until GitHub's wait ends and answers the words of the hold, read at the same
+     * instant, so a refusal is never answered without them.
+     *
+     * @param wait the wait GitHub named, or null when it named none
+     * @return the words of the hold
+     */
+    synchronized String refused(final @Nullable Duration wait) {
+        final Instant now = clock.instant();
+        return words(Duration.between(now, spentAt(now, wait)));
+    }
+
+    /** Holds until the wait from now ends, and answers when the hold ends. */
+    private Instant spentAt(final Instant now, final @Nullable Duration wait) {
+        // A wait of nothing is no wait GitHub named, and an endless one would hold for good.
+        final Duration named =
+                wait == null || wait.isNegative() || wait.isZero() ? WITHOUT_A_WORD : wait;
+        final Instant until = now.plus(named.compareTo(MOST_WAIT) > 0 ? MOST_WAIT : named);
+        final Instant before = heldUntil;
+        if (before == null || until.isAfter(before)) {
             heldUntil = until;
+            return until;
         }
+        return before;
     }
 
     /**
@@ -66,15 +91,20 @@ public final class GitHubPace implements Pace {
         if (left != null && of != null && of > 0) {
             remaining = left;
             limit = of;
+            if (left > 0) {
+                // GitHub answers again, so its wait ended, as with a fresh token.
+                heldUntil = null;
+            }
         }
     }
 
     @Override
     public synchronized @Nullable String hold() {
         final Duration left = heldFor();
-        if (left == null) {
-            return null;
-        }
+        return left == null ? null : words(left);
+    }
+
+    private static String words(final Duration left) {
         final long whole = left.toSeconds();
         return "GitHub's rate limit is spent; it reads again in "
                 + (left.toNanosPart() > 0 ? whole + 1 : whole)
@@ -91,8 +121,7 @@ public final class GitHubPace implements Pace {
                             + " GitHub is read again at "
                             + until.truncatedTo(ChronoUnit.SECONDS)
                             + " UTC");
-        }
-        if (low()) {
+        } else if (low()) {
             faults.add(
                     "GitHub's rate limit is low ("
                             + remaining

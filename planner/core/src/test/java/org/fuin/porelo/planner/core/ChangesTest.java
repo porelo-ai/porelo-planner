@@ -215,6 +215,35 @@ class ChangesTest {
         assertThat(idle).as("idle").hasValue(1);
     }
 
+    @Test
+    void aFaultThatComesOrGoesAtTheSameRevisionReachesEachSubscriber() throws Exception {
+        // Harm: GitHub's spent rate limit, or its end, never reaches the window, as the board
+        // kept keeps its revision.
+        final Changes.Subscription one = changes.subscribe();
+        final Board kept = boardAt("r1");
+        store.remote =
+                new Board(
+                        kept.revision(),
+                        kept.workflow(),
+                        kept.stories(),
+                        kept.issues(),
+                        kept.work(),
+                        kept.repositories(),
+                        List.of("GitHub's rate limit is spent"));
+        changes.poll();
+        final Optional<Board> held = one.next(NOW);
+        store.remote = kept;
+        changes.poll();
+        final Optional<Board> ended = one.next(NOW);
+
+        assertThat(held.map(Board::faults))
+                .as("the board once the limit is spent")
+                .contains(List.of("GitHub's rate limit is spent"));
+        assertThat(ended.map(Board::faults))
+                .as("the board once the wait ended")
+                .contains(List.of());
+    }
+
     private static String revision(final Optional<Board> board) {
         assertThat(board).as("a board").isPresent();
         return board.orElseThrow().revision().value();

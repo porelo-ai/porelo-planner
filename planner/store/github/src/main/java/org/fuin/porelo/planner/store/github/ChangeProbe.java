@@ -26,4 +26,12 @@ public interface ChangeProbe {
     default Pace pace() {
         return Pace.STEADY;
     }
+
+    /**
+     * Forgets what the probe learned of GitHub's answers, after the store read the project whole
+     * outside it, so the next look starts anew rather than taking tags from before that read.
+     */
+    default void forget() {
+        // A probe that keeps nothing has nothing to forget.
+    }
 }

@@ -28,13 +28,35 @@ public interface ConditionalReads {
      *     304
      * @param remaining the requests left, or null when the answer did not say
      * @param limit the requests allowed in the window, or null when the answer did not say
+     * @param full whether a changed page of items held as many items as a page asks for, so a page
+     *     after it may come without the page's own tag changing
      */
     record Answer(
             boolean changed,
             @Nullable String etag,
             @Nullable String next,
             @Nullable Long remaining,
-            @Nullable Long limit) {}
+            @Nullable Long limit,
+            boolean full) {
+
+        /**
+         * An answer that is no full page of items.
+         *
+         * @param changed whether GitHub answered with a new value rather than 304
+         * @param etag the tag to send next time, or null when GitHub gave none that can be sent
+         * @param next the cursor of the next page of a changed answer, or null
+         * @param remaining the requests left, or null when the answer did not say
+         * @param limit the requests allowed in the window, or null when the answer did not say
+         */
+        public Answer(
+                final boolean changed,
+                final @Nullable String etag,
+                final @Nullable String next,
+                final @Nullable Long remaining,
+                final @Nullable Long limit) {
+            this(changed, etag, next, remaining, limit, false);
+        }
+    }
 
     /**
      * Asks whether any issue of a repository changed: the first issue by its last update.
@@ -78,7 +100,7 @@ public interface ConditionalReads {
                 final Conditional<Page<Issue>> answer =
                         client.issuesIfChanged(
                                 token, owner, repository, "all", null, null, 1, 1, etag);
-                return answer(answer, null);
+                return answer(answer, null, false);
             }
 
             @Override
@@ -91,18 +113,23 @@ public interface ConditionalReads {
                 final Conditional<CursorPage<ProjectsV2ItemWithContent>> answer =
                         client.projectItemsIfChanged(token, owner, number, after, PAGE_SIZE, etag);
                 final CursorPage<ProjectsV2ItemWithContent> page = answer.value();
-                return answer(answer, page == null ? null : page.after());
+                return answer(
+                        answer,
+                        page == null ? null : page.after(),
+                        page != null && page.items().size() >= PAGE_SIZE);
             }
         };
     }
 
-    private static Answer answer(final Conditional<?> answer, final @Nullable String next) {
+    private static Answer answer(
+            final Conditional<?> answer, final @Nullable String next, final boolean full) {
         final RateLimit limit = answer.rateLimit();
         return new Answer(
                 answer.changed(),
                 answer.etag(),
                 next,
                 limit == null ? null : limit.remaining(),
-                limit == null ? null : limit.limit());
+                limit == null ? null : limit.limit(),
+                full);
     }
 }

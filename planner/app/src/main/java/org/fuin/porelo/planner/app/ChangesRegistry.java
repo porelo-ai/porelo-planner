@@ -22,6 +22,9 @@ public final class ChangesRegistry implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(ChangesRegistry.class);
 
+    /** The longest wait between two polls of a project, a day, whatever its store names. */
+    static final Duration LONGEST_WAIT = Duration.ofDays(1);
+
     private final Projects projects;
 
     private final Duration interval;
@@ -260,8 +263,12 @@ public final class ChangesRegistry implements AutoCloseable {
         }
 
         private void run() {
-            poll(project, changes);
-            schedule(delay());
+            try {
+                poll(project, changes);
+            } finally {
+                // Whatever the poll threw, the project stays polled while it is followed.
+                schedule(delay());
+            }
         }
 
         /** The store's wait, never shorter than the shorter interval, so no poll runs hot. */
@@ -269,11 +276,22 @@ public final class ChangesRegistry implements AutoCloseable {
             final Duration least = interval.compareTo(probed) < 0 ? interval : probed;
             try {
                 final Duration wait = changes.pollDelay(interval, probed);
-                return wait.compareTo(least) < 0 ? least : wait;
+                return clamped(wait.compareTo(least) < 0 ? least : wait);
             } catch (final RuntimeException e) {
-                return interval;
+                return clamped(interval);
             }
         }
+    }
+
+    /**
+     * A wait no longer than {@link #LONGEST_WAIT}, so its milliseconds never overflow and no store
+     * stops its project's polls for good.
+     *
+     * @param wait the wait asked for
+     * @return the wait taken
+     */
+    static Duration clamped(final Duration wait) {
+        return wait.compareTo(LONGEST_WAIT) > 0 ? LONGEST_WAIT : wait;
     }
 
     private void poll(final String project, final Changes changes) {

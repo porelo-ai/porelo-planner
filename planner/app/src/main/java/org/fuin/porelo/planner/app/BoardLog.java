@@ -8,20 +8,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Logs each board the store reads, with every fault it left out, once per revision and project, so
- * a person sees why a board was read with faults without a line per poll.
+ * Logs each board the store reads, with every fault it left out, once per revision and faults of a
+ * project, so a person sees why a board was read with faults, and a fault such as a spent rate
+ * limit coming or going, without a line per poll.
  */
 final class BoardLog {
 
     private static final Logger LOG = LoggerFactory.getLogger(BoardLog.class);
 
-    /** The revision last logged per project. */
+    /** The revision and faults last logged per project. */
     private static final Map<String, String> LOGGED = new ConcurrentHashMap<>();
 
     private BoardLog() {}
 
     /**
-     * Logs a board the store read, unless its revision of that project was logged last.
+     * Logs a board the store read, unless its revision and faults of that project were logged last.
      *
      * @param project the project's name
      * @param board the board read
@@ -29,7 +30,8 @@ final class BoardLog {
      */
     static Board read(final String project, final Board board) {
         final String revision = board.revision().value();
-        if (revision.equals(LOGGED.put(project, revision))) {
+        final String seen = revision + "\n" + String.join("\n", board.faults());
+        if (seen.equals(LOGGED.put(project, seen))) {
             return board;
         }
         LOG.info(

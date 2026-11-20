@@ -143,10 +143,11 @@ class GitHubStoreTest {
                                         states -> null)
                                 .probe(current -> true));
         store.refresh();
-        store.refresh();
+        store.poll();
+        store.poll();
 
         assertThat(reads.get())
-                .as("full reads for two refreshes of an unchanged project")
+                .as("full reads for a reload and two polls of an unchanged project")
                 .isEqualTo(1);
     }
 

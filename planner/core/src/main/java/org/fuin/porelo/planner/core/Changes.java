@@ -219,7 +219,8 @@ public final class Changes {
         }
 
         private synchronized void offer(final Frame board) {
-            // A work-only change must reach followers even when no store head changed.
+            // A work-only change or a fault alone must reach followers even when no store head
+            // changed.
             final String revision = identity(board);
             if (!closed && !revision.equals(last)) {
                 last = revision;
@@ -228,8 +229,16 @@ public final class Changes {
             }
         }
 
+        /**
+         * What makes a frame new: its revision, its work generation and its faults, since a fault
+         * such as GitHub's spent rate limit comes and goes while the revision stays.
+         */
         private static String identity(final Frame frame) {
-            return frame.board().revision().value() + "/" + frame.work().generation();
+            return frame.board().revision().value()
+                    + "/"
+                    + frame.work().generation()
+                    + "/"
+                    + String.join("\n", frame.board().faults());
         }
 
         /**
