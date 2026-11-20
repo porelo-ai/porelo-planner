@@ -491,6 +491,29 @@ class IssueMappingTest {
     }
 
     @Test
+    void anIssueWhoseBodyCannotBeSplitIntoSectionsStaysOnTheBoardNamedWithWhatToRepair() {
+        // Harm: a body whose sections a person must repair hides the issue, or no stage result
+        // reaches it and nobody is told why.
+        final Item unclear =
+                new Item("example-lib", 3, "LB5")
+                        .field(FieldNames.STATUS, "Idea")
+                        .body("Covers.\n\n## Plan\n\n```\n" + SECRET_BODY + "\n");
+
+        final IssueMapping.Mapped mapped = read(unclear);
+
+        assertThat(mapped.issues())
+                .as("the issue on the board")
+                .extracting(Issue::id)
+                .containsExactly("LB5");
+        assertThat(mapped.faults())
+                .as("the item named by its repository and number, with what to repair")
+                .containsExactly(
+                        "Item example-lib#3 has a body whose sections are unclear, so no stage"
+                                + " result is written into it; repair: the code block opened in"
+                                + " line 5 under Plan never closes");
+    }
+
+    @Test
     void aLineUnderAlsoNeedsThatNamesNoIssueOfTheProjectIsAFaultWithoutItsText() {
         // Harm: a story counted whole while a needed issue is unread, and a person's words in a
         // log.

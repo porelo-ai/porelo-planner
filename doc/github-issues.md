@@ -32,6 +32,13 @@ A story's body also holds *Gain*, *Test* and *Tested*, and an issue's its task, 
 them. A stage result overwrites the sections its kind writes, and leaves every other byte as it was. A heading inside
 a fenced block is no section. No times and no stage history stand in the body.
 
+A result is written into the body only when the body splits into sections unambiguously: every code block closes,
+none runs over a heading-shaped line together with a fence of its own (the sign of a fence left open by hand that
+pairs with a later block's), no section's heading stands twice, and the leading paragraphs stand in the skeleton's
+order, each once. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still saved,
+and the board names the issue by its repository and number with the first thing to repair, such as "the code block
+opened in line 12 under Plan never closes". A read takes such a body and shows the issue.
+
 ## The stage comments
 
 Each stage is one comment, written with the person's access, so GitHub shows the person as its author. It starts
@@ -74,7 +81,15 @@ write is not caught.
 
 Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
 part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
-in, and the board is read anew. A write sets values and never creates a field or replaces its options. A stage's
+in, and the board is read anew. A save sets values and never creates a field or replaces its options.
+
+GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
+the `Status` options follow the workflow's states only through one step of the planner's own, run at the carry-over
+or when the person confirms it after the workflow changed, never on a read: it reads every item's `Status` by name,
+sets the options, and writes every value back by its new option id, in batches of at most 50. A value whose state the
+workflow no longer has is kept as an option of its own name at the end and named as a fault. Options that already
+stand as wanted are not set again; values a batch failed to write back are written again from a fresh read, and those
+still missing after the last attempt are named, each with the state it must be given. A stage's
 result overwrites the sections of the body its kind writes and no other byte. Adding a new story or issue is not
 offered yet.
 

@@ -121,14 +121,17 @@ public final class FieldsBoardWriter implements BoardWriter {
             if (minutes != null) {
                 plan.number(id, item, FieldNames.ESTIMATE, minutes);
             }
-            final String body;
+            @Nullable String body;
             try {
                 body = BodySections.read(item.body()).withResult(result.kind(), given).text();
+            } catch (final BodySections.Ambiguous e) {
+                // Never written over a guess; the board names the body for a person to repair.
+                body = null;
             } catch (final IllegalArgumentException e) {
                 throw new StoreException.NotSavable(
                         id, "its body cannot hold the result: " + e.getMessage());
             }
-            if (!body.equals(item.body())) {
+            if (body != null && !body.equals(item.body())) {
                 plan.body(id, item, body);
             }
         }

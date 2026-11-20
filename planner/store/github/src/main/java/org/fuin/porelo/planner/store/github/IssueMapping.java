@@ -175,6 +175,11 @@ public final class IssueMapping {
             }
         }
 
+        for (final String id : issues.keySet()) {
+            final ItemView item = Objects.requireNonNull(issueItems.get(id));
+            unclearBody(item).ifPresent(repair -> faults.add(where(item) + repair));
+        }
+
         final List<Story> stories = new ArrayList<>();
         for (final Map.Entry<String, ItemView> entry : storyItems.entrySet()) {
             final Story story =
@@ -632,6 +637,24 @@ public final class IssueMapping {
 
     private static boolean isStoryId(final String id) {
         return id.matches("ST[0-9]{1,5}");
+    }
+
+    /**
+     * Why no stage result is written into an issue's body, and what a person must repair; empty
+     * when it can be written. A body too long is refused when it is written.
+     */
+    private static java.util.Optional<String> unclearBody(final ItemView item) {
+        final java.util.Optional<String> repair;
+        try {
+            repair = BodySections.read(item.body()).ambiguity();
+        } catch (final IllegalArgumentException e) {
+            return java.util.Optional.empty();
+        }
+        return repair.map(
+                what ->
+                        " has a body whose sections are unclear, so no stage result is written"
+                                + " into it; repair: "
+                                + what);
     }
 
     /** Names an item by its repository and number alone, never its title or body. */

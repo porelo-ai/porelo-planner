@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.github;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.StageResult;
@@ -150,31 +151,84 @@ class BodySectionsTest {
     }
 
     @Test
-    void aLineThatOpensNoCodeBlockHidesNoSectionAfterIt() {
+    void inlineCodeAtALinesStartOpensNoCodeBlockAndHidesNoSectionAfterIt() {
         // Harm: a person's Acceptance and every section after the plan lost on a save, when the
-        // plan holds inline code at a line's start or a code block left open by hand.
-        // Inline code is followed by a code block of its own, which a fence it opened would close.
-        final Map<String, String> notes =
-                Map.of(
-                        "```foo``` inline code", "Kept.\n\n```\nkept\n```",
-                        "```\nleft open by hand", "Kept.",
-                        "~~~\nleft open", "Kept.");
-        for (final Map.Entry<String, String> each : notes.entrySet()) {
-            final String plan = each.getKey();
-            final String tail =
-                    "\n\n## Acceptance\n\n- Measured.\n\n## Notes\n\n" + each.getValue() + "\n";
-            final String body = "Covers.\n\n## Plan\n\n" + plan + tail;
-            final BodySections read = BodySections.read(body);
-            assertThat(read.part(BodySections.Part.ACCEPTANCE))
-                    .as("the acceptance after %s", plan)
-                    .contains("- Measured.");
-            assertThat(read.with(BodySections.Part.PLAN, "- New.").text())
-                    .as("the plan written over %s", plan)
-                    .isEqualTo("Covers.\n\n## Plan\n\n- New." + tail);
-            assertThat(read.with(BodySections.Part.ACCEPTANCE, "- Judged.").text())
-                    .as("the acceptance written after %s, in its own place", plan)
-                    .isEqualTo(body.replace("- Measured.", "- Judged."));
+        // plan holds inline code at a line's start.
+        // The inline code is followed by a code block of its own, which a fence it opened would
+        // close.
+        final String plan = "```foo``` inline code";
+        final String tail =
+                "\n\n## Acceptance\n\n- Measured.\n\n## Notes\n\nKept.\n\n```\nkept\n```\n";
+        final String body = "Covers.\n\n## Plan\n\n" + plan + tail;
+        final BodySections read = BodySections.read(body);
+        assertThat(read.part(BodySections.Part.ACCEPTANCE))
+                .as("the acceptance after the inline code")
+                .contains("- Measured.");
+        assertThat(read.with(BodySections.Part.PLAN, "- New.").text())
+                .as("the plan written over the inline code")
+                .isEqualTo("Covers.\n\n## Plan\n\n- New." + tail);
+        assertThat(read.with(BodySections.Part.ACCEPTANCE, "- Judged.").text())
+                .as("the acceptance written after the inline code, in its own place")
+                .isEqualTo(body.replace("- Measured.", "- Judged."));
+    }
+
+    @Test
+    void aBodyWhoseSectionsCannotBeToldApartForCertainIsNeverWrittenAndSaysWhatToRepair() {
+        // Harm: a write deletes a person's sections that a code block left open by hand, or a
+        // repeated heading, makes the planner read as part of the section it writes.
+        final String tail = "\n\n## Acceptance\n\n- secret-acceptance\n\n## Notes\n\nKept.\n";
+        final Map<String, String> bodies = new LinkedHashMap<>();
+        bodies.put(
+                "an unclosed fence followed by a closed block",
+                "Covers.\n\n## Plan\n\n```\nsecret-left-open"
+                        + tail
+                        + "\n```java\nsecret-code\n```\n");
+        bodies.put(
+                "an unclosed fence followed by a closed bare block",
+                "Covers.\n\n## Plan\n\n```\nsecret-left-open" + tail + "\n```\nsecret-code\n```\n");
+        bodies.put(
+                "a fence left open to the end",
+                "Covers.\n\n## Plan\n\n~~~\nsecret-left-open" + tail);
+        bodies.put(
+                "a heading twice",
+                "Covers.\n\n## Plan\n\n- secret-plan" + tail + "\n## Plan\n\n- secret-second\n");
+        bodies.put(
+                "a heading of a person's own twice",
+                "Covers.\n\n## secret-heading\n\nOne." + tail + "\n## secret-heading\n\nTwo.\n");
+        bodies.put(
+                "a leading paragraph out of order",
+                "Covers.\n\n**Why this size.** secret-why\n\n**What must be true.** secret-true"
+                        + tail);
+        for (final Map.Entry<String, String> each : bodies.entrySet()) {
+            final BodySections read = BodySections.read(each.getValue());
+            assertThat(read.ambiguity()).as("what to repair in %s", each.getKey()).isPresent();
+            assertThat(read.ambiguity().orElseThrow())
+                    .as("what to repair in %s, without the body's text", each.getKey())
+                    .doesNotContain("secret");
+            assertThatThrownBy(() -> read.with(BodySections.Part.PLAN, "- New."))
+                    .as("the plan written into %s", each.getKey())
+                    .isInstanceOf(BodySections.Ambiguous.class)
+                    .message()
+                    .doesNotContain("secret");
+            assertThatThrownBy(
+                            () ->
+                                    read.withResult(
+                                            WorkRule.Result.ANALYSIS, analysis(List.of("Check."))))
+                    .as("a result written into %s", each.getKey())
+                    .isInstanceOf(BodySections.Ambiguous.class);
+            assertThatThrownBy(() -> read.without(BodySections.Part.TO_BE_CHECKED))
+                    .as("a part removed from %s", each.getKey())
+                    .isInstanceOf(BodySections.Ambiguous.class);
+            assertThat(read.text())
+                    .as("%s byte for byte", each.getKey())
+                    .isEqualTo(each.getValue());
         }
+        assertThat(BodySections.read(bodies.get("a fence left open to the end")).ambiguity())
+                .as("the repair named for a fence left open")
+                .contains("the code block opened in line 5 under Plan never closes");
+        assertThat(BodySections.read(BODY).ambiguity())
+                .as("a body whose code block holds a heading-shaped line and nothing more")
+                .isEmpty();
     }
 
     @Test
@@ -193,7 +247,7 @@ class BodySectionsTest {
         // Harm: the covers line written where it is never read, so each save adds one more copy.
         final BodySections body =
                 BodySections.read(
-                        "**Why this size.** A guess.\n\n**What must be true.** Something.\n\n"
+                        "**What must be true.** Something.\n\n**Why this size.** A guess.\n\n"
                                 + "## Plan\n\n- Old.\n");
 
         final BodySections once = body.with(BodySections.Part.COVERS, "What it covers.");
@@ -204,8 +258,8 @@ class BodySectionsTest {
         assertThat(once.text())
                 .as("the covers line first, the rest as it was")
                 .isEqualTo(
-                        "What it covers.\n\n**Why this size.** A guess.\n\n"
-                                + "**What must be true.** Something.\n\n## Plan\n\n- Old.\n");
+                        "What it covers.\n\n**What must be true.** Something.\n\n"
+                                + "**Why this size.** A guess.\n\n## Plan\n\n- Old.\n");
         assertThat(once.with(BodySections.Part.COVERS, "What it covers.").text())
                 .as("the covers line written a second time")
                 .isEqualTo(once.text());

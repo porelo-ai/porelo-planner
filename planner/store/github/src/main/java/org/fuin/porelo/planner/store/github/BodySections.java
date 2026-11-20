@@ -51,6 +51,37 @@ public final class BodySections {
         private String label() {
             return java.util.Objects.requireNonNull(label);
         }
+
+        /** The label without its emphasis and stop, as a message names it. */
+        private String named() {
+            return label().replace("*", "").replace(".", "");
+        }
+    }
+
+    /**
+     * The refusal to write a body whose sections cannot be told apart for certain. Its message says
+     * the first thing a person must repair, naming lines by their number and sections only by the
+     * skeleton's names, never by the body's own text.
+     */
+    public static final class Ambiguous extends IllegalArgumentException {
+        private static final long serialVersionUID = 1L;
+
+        /** What to repair. */
+        private final String repair;
+
+        private Ambiguous(final String repair) {
+            super("The body's sections cannot be told apart for certain: " + repair);
+            this.repair = repair;
+        }
+
+        /**
+         * Answers what a person must repair first.
+         *
+         * @return the repair, in fixed words and line numbers
+         */
+        public String repair() {
+            return repair;
+        }
     }
 
     /** One line of the body with the ending it has, empty for a last line without one. */
@@ -159,10 +190,12 @@ public final class BodySections {
      * @param part the part
      * @param text its new text, without its lead or heading
      * @return the body with the part written
+     * @throws Ambiguous when the body's sections cannot be told apart for certain
      * @throws IllegalArgumentException when the text is blank, would open a part of its own, or the
      *     body would grow longer than GitHub takes
      */
     public BodySections with(final Part part, final String text) {
+        unambiguous();
         final List<String> content = content(part, text);
         final List<Line> out = new ArrayList<>(lines);
         if (part.leading()) {
@@ -215,8 +248,10 @@ public final class BodySections {
      *
      * @param part the part
      * @return the body without it, or as it was when it has none
+     * @throws Ambiguous when the body's sections cannot be told apart for certain
      */
     public BodySections without(final Part part) {
+        unambiguous();
         final List<Line> out = new ArrayList<>(lines);
         if (part.leading()) {
             final int[] span = paragraph(part);
@@ -243,6 +278,115 @@ public final class BodySections {
             out.subList(start, end).clear();
         }
         return new BodySections(out);
+    }
+
+    /**
+     * Tells whether the body splits into sections unambiguously, as a write needs: every code block
+     * closes, none runs over a heading-shaped line and a fence of its own (the sign of a fence left
+     * open by hand that pairs with a later block's), no section's heading stands twice, and the
+     * leading paragraphs stand in the skeleton's order, each once. A read takes the body either
+     * way.
+     *
+     * @return the first thing a person must repair, in fixed words and line numbers, or empty when
+     *     the body can be written
+     */
+    public Optional<String> ambiguity() {
+        final Fence fence = new Fence();
+        int opened = -1;
+        boolean heading = false;
+        boolean inner = false;
+        for (int at = 0; at < lines.size(); at++) {
+            final String text = lines.get(at).text();
+            if (opened < 0) {
+                if (fence.inside(text)) {
+                    opened = at;
+                    heading = false;
+                    inner = false;
+                }
+                continue;
+            }
+            fence.inside(text);
+            if (!fence.open()) {
+                if (heading && inner) {
+                    return Optional.of(
+                            "the code block opened in "
+                                    + place(opened)
+                                    + " runs over a heading and a fence of its own, so where it"
+                                    + " closes is unclear");
+                }
+                opened = -1;
+            } else {
+                heading |= headingName(text) != null;
+                inner |= new Fence().inside(text);
+            }
+        }
+        if (opened >= 0) {
+            return Optional.of("the code block opened in " + place(opened) + " never closes");
+        }
+        final java.util.Map<String, Integer> headings = new java.util.HashMap<>();
+        for (int at = 0; at < lines.size(); at++) {
+            final String name = code[at] ? null : headingName(lines.get(at).text());
+            if (name == null) {
+                continue;
+            }
+            final Integer first = headings.putIfAbsent(name, at);
+            if (first != null) {
+                return Optional.of(
+                        (known(name) ? "the section " + name : "the heading")
+                                + " in line "
+                                + (at + 1)
+                                + " repeats the one in line "
+                                + (first + 1));
+            }
+        }
+        @Nullable Part before = null;
+        for (final int[] span : paragraphs()) {
+            final Part lead = lead(lines.get(span[0]).text());
+            if (lead == null) {
+                continue;
+            }
+            if (before != null && lead.ordinal() <= before.ordinal()) {
+                return Optional.of(
+                        "the paragraph "
+                                + lead.named()
+                                + " in line "
+                                + (span[0] + 1)
+                                + (lead == before
+                                        ? " stands twice"
+                                        : " stands after " + before.named() + ", not before it"));
+            }
+            before = lead;
+        }
+        return Optional.empty();
+    }
+
+    private void unambiguous() {
+        final Optional<String> repair = ambiguity();
+        if (repair.isPresent()) {
+            throw new Ambiguous(repair.get());
+        }
+    }
+
+    /** A line by its number, with the section it stands in when that is one of the skeleton's. */
+    private String place(final int at) {
+        for (int heading = at - 1; heading >= 0; heading--) {
+            final String name = code[heading] ? null : headingName(lines.get(heading).text());
+            if (name != null) {
+                // A person's own heading is their words, so it is not repeated.
+                return "line " + (at + 1) + (known(name) ? " under " + name : "");
+            }
+        }
+        return "line " + (at + 1);
+    }
+
+    /** Whether a heading's name is a section of the skeleton, safe to repeat in a message. */
+    private static boolean known(final String name) {
+        for (final Part part : Part.values()) {
+            if (!part.leading() && part.label().equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

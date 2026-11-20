@@ -246,6 +246,14 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public GitHubGraphQl.FieldOptions setFieldOptions(
+                final String token,
+                final String fieldId,
+                final List<GitHubGraphQl.NewOption> options) {
+            throw new AssertionError("a save replaced a field's options, clearing every value");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,
@@ -554,6 +562,30 @@ class FieldsBoardWriterTest {
         assertThat(github.comments.get(0))
                 .as("the comment's marker")
                 .startsWith(StageComment.MARKER);
+    }
+
+    @Test
+    void aStageResultForABodyWhoseSectionsAreUnclearSavesEverythingButTheBody() {
+        // Harm: a person's sections deleted by a write into a body the planner cannot split, or
+        // the stage's state, fields and comment lost along with the body.
+        final String unclear =
+                "Covers.\n\n## Plan\n\n```\nleft open\n\n## Acceptance\n\n- kept\n\n"
+                        + "```java\ncode\n```\n";
+        final ItemView one = item("PL1", "example-project", 1, true, unclear, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.bodies).as("the bodies written").isEmpty();
+        assertThat(github.mutations)
+                .as("the state and size saved")
+                .singleElement()
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+                .contains(
+                        FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"),
+                        FieldValue.option("PVTI_PL1", "F_Size", "O_S"),
+                        FieldValue.number("PVTI_PL1", "F_Stages", 1));
+        assertThat(github.comments).as("the stage comment written").hasSize(1);
     }
 
     @Test

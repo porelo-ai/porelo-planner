@@ -1,0 +1,2 @@
+title: A stage result is written into a GitHub issue's body only when its sections split unambiguously; otherwise the body stays as it is, the state, fields and stage comment are still saved, and the board names the issue with what to repair.
+type: changed
