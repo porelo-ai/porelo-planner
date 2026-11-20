@@ -11,6 +11,7 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
+import org.fuin.porelo.forge.github.model.IssuesAddBlockedByDependencyRequest;
 import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
@@ -70,6 +71,7 @@ public class StoreConfiguration {
         Issue.class,
         IssuesCreateRequest.class,
         IssuesAddSubIssueRequest.class,
+        IssuesAddBlockedByDependencyRequest.class,
         IssueLabelsInner.class,
         SimpleUser.class,
         PrivateUser.class,
