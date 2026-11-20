@@ -8,8 +8,8 @@ import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An issue's body on GitHub, read as its parts: the leading paragraphs ({@code covers}, <em>What
- * must be true</em>, <em>Why this size</em>) and its second-level sections. A part is overwritten,
+ * An issue's body on GitHub, read as its parts: the leading paragraphs ({@code covers}, <em>Why
+ * this size</em>, <em>What must be true</em>) and its second-level sections. A part is overwritten,
  * added or removed, and every other byte of the body stays as it was, its line endings too.
  */
 public final class BodySections {
@@ -23,10 +23,10 @@ public final class BodySections {
     public enum Part {
         /** The first paragraph, which says what the issue covers. */
         COVERS(null),
-        /** What must be true once it is done. */
-        WHAT_MUST_BE_TRUE("**What must be true.**"),
         /** One line on why it has its size. */
         WHY_THIS_SIZE("**Why this size.**"),
+        /** What must be true once it is done. */
+        WHAT_MUST_BE_TRUE("**What must be true.**"),
         /** The plan. */
         PLAN("Plan"),
         /** How it is judged done. */
@@ -45,7 +45,7 @@ public final class BodySections {
         }
 
         private boolean leading() {
-            return ordinal() <= WHY_THIS_SIZE.ordinal();
+            return ordinal() <= WHAT_MUST_BE_TRUE.ordinal();
         }
 
         private String label() {
@@ -282,18 +282,77 @@ public final class BodySections {
 
     /**
      * Tells whether the body splits into sections unambiguously, as a write needs: every code block
-     * closes, none runs over a heading-shaped line and a fence of its own (the sign of a fence left
-     * open by hand that pairs with a later block's), no section's heading stands twice, and the
-     * leading paragraphs stand in the skeleton's order, each once. A read takes the body either
-     * way.
+     * closes; none runs over a heading-shaped line and a fence of its own kind at least as long
+     * (the sign of a fence left open by hand that pairs with a later block's); none opened under a
+     * section of the skeleton holds a line shaped as the heading of one; every HTML comment, pre
+     * and details block closes and holds no heading-shaped line; every line Markdown reads as a
+     * heading of the first or second level is written as two hashes, a space and a name; no section
+     * of the skeleton stands twice; and no leading paragraph stands twice. A read takes the body
+     * either way.
      *
      * @return the first thing a person must repair, in fixed words and line numbers, or empty when
      *     the body can be written
      */
     public Optional<String> ambiguity() {
+        final Optional<String> fences = fences();
+        if (fences.isPresent()) {
+            return fences;
+        }
+        for (final Html kind : HTML) {
+            final Optional<String> html = html(kind);
+            if (html.isPresent()) {
+                return html;
+            }
+        }
+        for (int at = 0; at < lines.size(); at++) {
+            final Shape shape = code[at] ? null : shape(lines.get(at).text());
+            if (shape != null && shape.level() <= 2 && !written(lines.get(at).text(), shape)) {
+                return Optional.of(
+                        "the heading in line "
+                                + (at + 1)
+                                + " is not written as two hashes, a space and a name, so whether"
+                                + " it opens a section is unclear");
+            }
+        }
+        final java.util.Map<String, Integer> headings = new java.util.HashMap<>();
+        for (int at = 0; at < lines.size(); at++) {
+            final String name = code[at] ? null : headingName(lines.get(at).text());
+            // A person's own headings may repeat: the planner never writes under them.
+            if (name == null || !known(name)) {
+                continue;
+            }
+            final Integer first = headings.putIfAbsent(name, at);
+            if (first != null) {
+                return Optional.of(
+                        "the section "
+                                + name
+                                + " in line "
+                                + (at + 1)
+                                + " repeats the one in line "
+                                + (first + 1));
+            }
+        }
+        final java.util.Set<Part> leads = java.util.EnumSet.noneOf(Part.class);
+        for (final int[] span : paragraphs()) {
+            final Part lead = lead(lines.get(span[0]).text());
+            if (lead != null && !leads.add(lead)) {
+                return Optional.of(
+                        "the paragraph "
+                                + lead.named()
+                                + " in line "
+                                + (span[0] + 1)
+                                + " stands twice");
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The first fault of the body's code blocks, or empty. */
+    private Optional<String> fences() {
         final Fence fence = new Fence();
         int opened = -1;
         boolean heading = false;
+        boolean section = false;
         boolean inner = false;
         for (int at = 0; at < lines.size(); at++) {
             final String text = lines.get(at).text();
@@ -301,12 +360,22 @@ public final class BodySections {
                 if (fence.inside(text)) {
                     opened = at;
                     heading = false;
+                    section = false;
                     inner = false;
                 }
                 continue;
             }
+            final boolean sign = fence.ofItsKind(text);
             fence.inside(text);
             if (!fence.open()) {
+                final String under = sectionAbove(opened);
+                if (section && under != null && known(under)) {
+                    return Optional.of(
+                            "the code block opened in "
+                                    + place(opened)
+                                    + " holds a line shaped as the heading of a section, so where"
+                                    + " it closes is unclear");
+                }
                 if (heading && inner) {
                     return Optional.of(
                             "the code block opened in "
@@ -316,49 +385,134 @@ public final class BodySections {
                 }
                 opened = -1;
             } else {
-                heading |= headingName(text) != null;
-                inner |= new Fence().inside(text);
+                final Shape shape = shape(text);
+                heading |= shape != null && shape.level() <= 2;
+                section |= shape != null && shape.level() <= 2 && known(shape.name());
+                inner |= sign;
             }
         }
         if (opened >= 0) {
-            return Optional.of("the code block opened in " + place(opened) + " never closes");
-        }
-        final java.util.Map<String, Integer> headings = new java.util.HashMap<>();
-        for (int at = 0; at < lines.size(); at++) {
-            final String name = code[at] ? null : headingName(lines.get(at).text());
-            if (name == null) {
-                continue;
-            }
-            final Integer first = headings.putIfAbsent(name, at);
-            if (first != null) {
-                return Optional.of(
-                        (known(name) ? "the section " + name : "the heading")
-                                + " in line "
-                                + (at + 1)
-                                + " repeats the one in line "
-                                + (first + 1));
-            }
-        }
-        @Nullable Part before = null;
-        for (final int[] span : paragraphs()) {
-            final Part lead = lead(lines.get(span[0]).text());
-            if (lead == null) {
-                continue;
-            }
-            if (before != null && lead.ordinal() <= before.ordinal()) {
-                return Optional.of(
-                        "the paragraph "
-                                + lead.named()
-                                + " in line "
-                                + (span[0] + 1)
-                                + (lead == before
-                                        ? " stands twice"
-                                        : " stands after " + before.named() + ", not before it"));
-            }
-            before = lead;
+            return Optional.of(
+                    "the code block opened in " + place(stray(opened)) + " never closes");
         }
         return Optional.empty();
     }
+
+    /**
+     * The fence a person most likely left open: the first opening fence without which every block
+     * closes and none runs over a second-level heading, else the one that never closes.
+     */
+    private int stray(final int unclosed) {
+        final Fence fence = new Fence();
+        for (int at = 0; at < lines.size(); at++) {
+            final boolean was = fence.open();
+            fence.inside(lines.get(at).text());
+            if (!was && fence.open() && sound(at)) {
+                return at;
+            }
+        }
+        return unclosed;
+    }
+
+    /** Whether every code block closes and none holds a second-level heading, one line left out. */
+    private boolean sound(final int skip) {
+        final Fence fence = new Fence();
+        boolean open = false;
+        for (int at = 0; at < lines.size(); at++) {
+            if (at == skip) {
+                continue;
+            }
+            final String text = lines.get(at).text();
+            fence.inside(text);
+            if (open && fence.open()) {
+                final Shape shape = shape(text);
+                if (shape != null && shape.level() == 2) {
+                    return false;
+                }
+            }
+            open = fence.open();
+        }
+        return !open;
+    }
+
+    /** The first fault of one kind of HTML block, or empty. */
+    private Optional<String> html(final Html kind) {
+        int depth = 0;
+        int opened = -1;
+        for (int at = 0; at < lines.size(); at++) {
+            if (code[at]) {
+                continue;
+            }
+            final String text = lines.get(at).text();
+            final Shape shape = shape(text);
+            if (depth > 0 && shape != null && shape.level() <= 2) {
+                return Optional.of(
+                        "the "
+                                + kind.named()
+                                + " opened in "
+                                + place(opened)
+                                + " holds a heading-shaped line, so where its section ends is"
+                                + " unclear");
+            }
+            int from = 0;
+            while (true) {
+                final java.util.regex.Matcher open = kind.opener().matcher(text);
+                final java.util.regex.Matcher close = kind.closer().matcher(text);
+                final boolean opens = (depth == 0 || kind.nests()) && open.find(from);
+                final boolean closes = depth > 0 && close.find(from);
+                if (opens && (!closes || open.start() < close.start())) {
+                    if (depth == 0) {
+                        opened = at;
+                    }
+                    depth++;
+                    from = open.end();
+                } else if (closes) {
+                    depth--;
+                    from = close.end();
+                } else {
+                    break;
+                }
+            }
+        }
+        if (depth > 0) {
+            return Optional.of(
+                    "the " + kind.named() + " opened in " + place(opened) + " never closes");
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * A kind of HTML block Markdown passes through as it stands, so a heading-shaped line in it is
+     * no section for GitHub while the planner could read one.
+     *
+     * @param named how a repair names it
+     * @param opener what opens it
+     * @param closer what closes it
+     * @param nests whether one opens inside another
+     */
+    private record Html(
+            String named,
+            java.util.regex.Pattern opener,
+            java.util.regex.Pattern closer,
+            boolean nests) {}
+
+    private static final List<Html> HTML =
+            List.of(
+                    new Html(
+                            "HTML comment",
+                            java.util.regex.Pattern.compile("<!--"),
+                            java.util.regex.Pattern.compile("-->"),
+                            false),
+                    new Html(
+                            "pre block",
+                            java.util.regex.Pattern.compile("(?i)<pre(?=[\\s>]|$)"),
+                            java.util.regex.Pattern.compile("(?i)</pre\\s*>"),
+                            false),
+                    new Html(
+                            "details block",
+                            java.util.regex.Pattern.compile("(?i)<details(?=[\\s>]|$)"),
+                            java.util.regex.Pattern.compile("(?i)</details\\s*>"),
+                            true));
 
     private void unambiguous() {
         final Optional<String> repair = ambiguity();
@@ -369,14 +523,20 @@ public final class BodySections {
 
     /** A line by its number, with the section it stands in when that is one of the skeleton's. */
     private String place(final int at) {
+        final String name = sectionAbove(at);
+        // A person's own heading is their words, so it is not repeated.
+        return "line " + (at + 1) + (name != null && known(name) ? " under " + name : "");
+    }
+
+    /** The name of the section a line stands in, or null above the first. */
+    private @Nullable String sectionAbove(final int at) {
         for (int heading = at - 1; heading >= 0; heading--) {
             final String name = code[heading] ? null : headingName(lines.get(heading).text());
             if (name != null) {
-                // A person's own heading is their words, so it is not repeated.
-                return "line " + (at + 1) + (known(name) ? " under " + name : "");
+                return name;
             }
         }
-        return "line " + (at + 1);
+        return null;
     }
 
     /** Whether a heading's name is a section of the skeleton, safe to repeat in a message. */
@@ -447,7 +607,8 @@ public final class BodySections {
         final Fence fence = new Fence();
         for (final String line : content) {
             final boolean code = fence.inside(line);
-            if (!code && headingName(line) != null
+            final Shape shape = code ? null : shape(line);
+            if (shape != null && shape.level() <= 2
                     || part.leading() && (line.isBlank() || lead(line) != null)) {
                 throw new IllegalArgumentException(
                         "A part of the body holds a heading, a lead or a blank line that would"
@@ -498,7 +659,7 @@ public final class BodySections {
                 return span[1];
             }
         }
-        for (int later = part.ordinal() + 1; later <= Part.WHY_THIS_SIZE.ordinal(); later++) {
+        for (int later = part.ordinal() + 1; later <= Part.WHAT_MUST_BE_TRUE.ordinal(); later++) {
             final int[] span = paragraph(Part.values()[later]);
             if (span.length > 0) {
                 return span[0];
@@ -577,10 +738,10 @@ public final class BodySections {
         return null;
     }
 
-    /** The index of the first section's heading, or the line count. */
+    /** The index of the first heading of the first or second level, or the line count. */
     private int firstHeading() {
         for (int at = 0; at < lines.size(); at++) {
-            if (!code[at] && headingName(lines.get(at).text()) != null) {
+            if (endsSection(at)) {
                 return at;
             }
         }
@@ -597,14 +758,23 @@ public final class BodySections {
         return -1;
     }
 
-    /** The index after a section's last line: the next heading outside code blocks, or the end. */
+    /**
+     * The index after a section's last line: the next heading of the first or second level outside
+     * code blocks, or the end.
+     */
     private int sectionEnd(final int heading) {
         for (int at = heading + 1; at < lines.size(); at++) {
-            if (!code[at] && headingName(lines.get(at).text()) != null) {
+            if (endsSection(at)) {
                 return at;
             }
         }
         return lines.size();
+    }
+
+    /** Whether a line outside code blocks is a heading of the first or second level. */
+    private boolean endsSection(final int at) {
+        final Shape shape = code[at] ? null : shape(lines.get(at).text());
+        return shape != null && shape.level() <= 2;
     }
 
     /**
@@ -638,9 +808,52 @@ public final class BodySections {
         return code;
     }
 
-    /** A second-level heading's name, or null for any other line. */
+    /** A second-level heading's name as Markdown reads it, or null for any other line. */
     private static @Nullable String headingName(final String text) {
-        return text.startsWith("## ") ? text.substring(3).strip() : null;
+        final Shape shape = shape(text);
+        return shape != null && shape.level() == 2 ? shape.name() : null;
+    }
+
+    /**
+     * A heading as Markdown reads it: its level and its name.
+     *
+     * @param level the number of hashes
+     * @param name the text between the hashes and an optional closing run of hashes
+     */
+    private record Shape(int level, String name) {}
+
+    /**
+     * Reads a line as Markdown reads a heading: indented by three spaces at most, one to six
+     * hashes, then a space, a tab or the line's end, and an optional closing run of hashes; null
+     * for any other line.
+     */
+    private static @Nullable Shape shape(final String text) {
+        final int indent = Fence.indent(text);
+        if (indent > 3) {
+            return null;
+        }
+        int hashes = 0;
+        while (indent + hashes < text.length() && text.charAt(indent + hashes) == '#') {
+            hashes++;
+        }
+        final int after = indent + hashes;
+        if (hashes == 0
+                || hashes > 6
+                || after < text.length()
+                        && text.charAt(after) != ' '
+                        && text.charAt(after) != '\t') {
+            return null;
+        }
+        final String rest = text.substring(after).strip();
+        final String name = rest.matches("#*") ? "" : rest.replaceFirst("[ \t]+#+$", "").strip();
+        return new Shape(hashes, name);
+    }
+
+    /** Whether a heading is written as the planner writes one: two hashes, a space and a name. */
+    private static boolean written(final String text, final Shape shape) {
+        return shape.level() == 2
+                && !shape.name().isEmpty()
+                && text.stripTrailing().equals("## " + shape.name());
     }
 
     private String joined(final int from, final int to) {
@@ -653,8 +866,9 @@ public final class BodySections {
 
     /**
      * Tells code blocks apart as Markdown does: a fence of three or more backticks or tildes,
-     * indented by three spaces at most, closed by a bare fence of the same kind at least as long; a
-     * backtick fence whose words after it hold a backtick is inline code, no fence.
+     * indented by three spaces at most (a tab reaches the fourth column), closed by a bare fence of
+     * the same kind at least as long; a backtick fence whose words after it hold a backtick is
+     * inline code, no fence.
      */
     static final class Fence {
 
@@ -664,10 +878,11 @@ public final class BodySections {
 
         /** Whether the line opens, closes or stands inside a code block. */
         boolean inside(final String text) {
-            final String bare = text.stripLeading();
-            if (text.length() - bare.length() > 3) {
+            final int indent = indent(text);
+            if (indent > 3) {
                 return length > 0;
             }
+            final String bare = text.substring(indent);
             final int run = run(bare);
             if (length > 0) {
                 if (run >= length && bare.charAt(0) == kind && bare.substring(run).isBlank()) {
@@ -685,6 +900,28 @@ public final class BodySections {
 
         private boolean open() {
             return length > 0;
+        }
+
+        /** Whether a line is a fence of the open block's kind, at least as long as its opener. */
+        private boolean ofItsKind(final String text) {
+            final int indent = indent(text);
+            if (length == 0 || indent > 3) {
+                return false;
+            }
+            final String bare = text.substring(indent);
+            return run(bare) >= length && bare.charAt(0) == kind;
+        }
+
+        /**
+         * A line's indent in columns as Markdown counts it, counting spaces; a tab in it reaches
+         * the fourth column, so it counts as four.
+         */
+        private static int indent(final String text) {
+            int spaces = 0;
+            while (spaces < text.length() && text.charAt(spaces) == ' ') {
+                spaces++;
+            }
+            return spaces < text.length() && text.charAt(spaces) == '\t' ? 4 : spaces;
         }
 
         private static int run(final String bare) {

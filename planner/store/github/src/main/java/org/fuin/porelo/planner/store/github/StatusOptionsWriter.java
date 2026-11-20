@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TokenSource;
@@ -15,8 +16,10 @@ import org.jspecify.annotations.Nullable;
  * Makes the project's {@code Status} options the workflow's states, in order, without an item
  * losing its {@code Status}. GitHub gives every option a new id when the options are set and clears
  * every item's value, so the step reads every item's {@code Status} by name first, sets the
- * options, and writes every value back by its new option id. A value whose state the workflow no
- * longer has is kept as an option of its own name at the end and named as a fault, never dropped.
+ * options, and writes every value back by its new option id. An option the workflow does not have,
+ * held by an item or not, is kept at the end, never dropped: a value whose state the workflow no
+ * longer has keeps its option, and so does an option a person added. Each item holding one is named
+ * as a fault, without the option's name a person typed.
  *
  * <p>It runs only when called, at the carry-over or when the person confirms it after the workflow
  * changed, never on a read. It is idempotent: options that already stand as wanted are not set
@@ -43,7 +46,7 @@ public final class StatusOptionsWriter {
      *
      * @param changed whether the options were set
      * @param faults one sentence per item whose {@code Status} is no state of the workflow, naming
-     *     it by its repository and number
+     *     it by its repository and number, or a draft by its project item
      */
     public record Applied(boolean changed, List<String> faults) {
 
@@ -80,6 +83,8 @@ public final class StatusOptionsWriter {
      *     workflow
      * @throws StoreException.PartlySaved when values stay missing after the last attempt, naming
      *     each item and the state it must be given
+     * @throws StoreException.Unreadable when the project cannot be read whole, or its {@code
+     *     Status} values or options changed while the step prepared the options, which then stay
      */
     public Applied apply(final ProjectConfig config) {
         final String token = tokens.token(config.forge());
@@ -96,23 +101,24 @@ public final class StatusOptionsWriter {
         final Read before = read(config, token);
         final GitHubGraphQl.ProjectField field = before.status();
         final List<String> states = config.workflow().states();
+        final List<String> standing =
+                field.options().stream().map(GitHubGraphQl.FieldOption::name).toList();
         final Set<String> wanted = new LinkedHashSet<>(states);
+        // An option the workflow does not have stays: an item may still need it set by hand, or a
+        // person added it.
+        wanted.addAll(standing);
+        wanted.addAll(before.names().values());
         final List<String> faults = new ArrayList<>();
         before.names()
                 .forEach(
                         (itemId, name) -> {
                             if (!states.contains(name)) {
-                                wanted.add(name);
                                 faults.add(
                                         before.where().get(itemId)
-                                                + " holds the Status "
-                                                + name
-                                                + ", which is no state of the workflow; kept as"
+                                                + " holds a Status outside the workflow; kept as"
                                                 + " an option at the end");
                             }
                         });
-        final List<String> standing =
-                field.options().stream().map(GitHubGraphQl.FieldOption::name).toList();
         if (standing.equals(List.copyOf(wanted))) {
             return new Applied(false, faults);
         }
@@ -130,14 +136,24 @@ public final class StatusOptionsWriter {
                                     orElse(old.color(), NEW_COLOR),
                                     orElse(old.description(), "")));
         }
+        // A value a person set since the first read would be cleared and overwritten, so the
+        // options are set only over what stands right now.
+        final Read now = read(config, token);
+        if (!now.equals(before)) {
+            throw new StoreException.Unreadable(
+                    config.own(),
+                    "the Status values or options changed while the step read them, so its options"
+                            + " stay; run it again");
+        }
+        final List<String> order = List.copyOf(wanted);
         try {
             github.setFieldOptions(token, field.id(), options);
         } catch (final RuntimeException e) {
             // GitHub may have set them without answering, so the values are written back anyway.
-            writeBack(config, token, before);
+            writeBack(config, token, before, order);
             throw e;
         }
-        writeBack(config, token, before);
+        writeBack(config, token, before, order);
         return new Applied(true, faults);
     }
 
@@ -146,7 +162,11 @@ public final class StatusOptionsWriter {
      * spent; a value a person set since stands. Fails naming every item and the state it must be
      * given when values stay missing, or when what stands can no longer be read.
      */
-    private void writeBack(final ProjectConfig config, final String token, final Read before) {
+    private void writeBack(
+            final ProjectConfig config,
+            final String token,
+            final Read before,
+            final List<String> order) {
         final Map<String, String> names = before.names();
         try {
             for (int attempt = 1; attempt <= MOST_ATTEMPTS; attempt++) {
@@ -173,7 +193,7 @@ public final class StatusOptionsWriter {
             }
             final Map<String, String> lost = missing(names, read(config, token));
             if (!lost.isEmpty()) {
-                throw lost(config, before, lost, "GitHub did not take them");
+                throw lost(config, before, order, lost, "GitHub did not take them");
             }
         } catch (final StoreException.PartlySaved e) {
             throw e;
@@ -181,6 +201,7 @@ public final class StatusOptionsWriter {
             throw lost(
                     config,
                     before,
+                    order,
                     names,
                     "a call failed: " + refusals.refusal(config.own(), e, token).getMessage());
         }
@@ -198,16 +219,28 @@ public final class StatusOptionsWriter {
         return missing;
     }
 
-    /** The refusal that names every item still to be given its state by hand. */
+    /**
+     * The refusal that names every item still to be given its state by hand: a state of the
+     * workflow by its name, any other option by its place, so no name a person typed is repeated.
+     */
     private static StoreException.PartlySaved lost(
             final ProjectConfig config,
             final Read before,
+            final List<String> order,
             final Map<String, String> lost,
             final String why) {
+        final List<String> states = config.workflow().states();
         final List<String> named = new ArrayList<>();
         lost.forEach(
                 (itemId, name) ->
-                        named.add(before.where().get(itemId) + " must be set to " + name));
+                        named.add(
+                                before.where().get(itemId)
+                                        + " must be set to "
+                                        + (states.contains(name)
+                                                ? name
+                                                : "the option in place "
+                                                        + (order.indexOf(name) + 1)
+                                                        + " of Status")));
         return new StoreException.PartlySaved(
                 config.own(),
                 List.of(config.own()),
@@ -221,7 +254,8 @@ public final class StatusOptionsWriter {
 
     /**
      * Writes the values in batches of at most {@link GitHubGraphQl#MAX_BATCH}; a batch GitHub
-     * refused, in part or whole, or did not answer is left to the next fresh read.
+     * refused, in part or whole, or did not answer is left to the next fresh read. A refusal of the
+     * person's access or a spent rate limit goes through: another attempt cannot pass it.
      */
     private void write(
             final ProjectConfig config,
@@ -232,6 +266,11 @@ public final class StatusOptionsWriter {
                     values.subList(from, Math.min(values.size(), from + GitHubGraphQl.MAX_BATCH));
             try {
                 github.setFieldValues(token, config.projectId(), chunk);
+            } catch (final GitHubException e) {
+                if (e.rateLimited() || e.status() == 401 || e.status() == 403) {
+                    throw e;
+                }
+                // Its outcome is unknown; the next fresh read tells what stands.
             } catch (final RuntimeException e) {
                 // Its outcome is unknown; the next fresh read tells what stands.
             }
@@ -244,7 +283,8 @@ public final class StatusOptionsWriter {
      * @param status the field {@code Status}
      * @param names each item's {@code Status} by name, by its item id, for the items that hold one
      * @param present every item's id
-     * @param where how a fault names each item: its repository and number
+     * @param where how a fault names each item: its repository and number, or a draft by its
+     *     project item
      */
     private record Read(
             GitHubGraphQl.ProjectField status,
@@ -289,7 +329,7 @@ public final class StatusOptionsWriter {
                 where.put(
                         item.id(),
                         issue == null
-                                ? "A project item without an issue"
+                                ? "Project item " + item.id() + " without an issue"
                                 : "Item " + issue.repository() + "#" + issue.number());
                 for (final GitHubGraphQl.ItemValue value : item.values()) {
                     final String name = value.name();

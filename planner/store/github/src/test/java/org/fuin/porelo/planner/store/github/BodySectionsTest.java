@@ -106,8 +106,8 @@ class BodySectionsTest {
                                 .text())
                 .as("each part in its place")
                 .isEqualTo(
-                        "Covers.\n\n**What must be true.** Something.\n\n"
-                                + "**Why this size.** one module\n\n"
+                        "Covers.\n\n**Why this size.** one module\n\n"
+                                + "**What must be true.** Something.\n\n"
                                 + "## Plan\n\n- Read it.\n\n```\n## a shell comment\n```\n\n"
                                 + "## Acceptance\n\n- Measured.\n\n"
                                 + "## Findings\n\n- Found one.\n\n"
@@ -193,11 +193,43 @@ class BodySectionsTest {
                 "a heading twice",
                 "Covers.\n\n## Plan\n\n- secret-plan" + tail + "\n## Plan\n\n- secret-second\n");
         bodies.put(
-                "a heading of a person's own twice",
-                "Covers.\n\n## secret-heading\n\nOne." + tail + "\n## secret-heading\n\nTwo.\n");
+                "a leading paragraph twice",
+                "Covers.\n\n**Why this size.** secret-why\n\n**Why this size.** secret-again"
+                        + tail);
         bodies.put(
-                "a leading paragraph out of order",
-                "Covers.\n\n**Why this size.** secret-why\n\n**What must be true.** secret-true"
+                "a stray fence that pairs with a later bare block",
+                "Covers.\n\n## Plan\n\n```\nsecret-old"
+                        + tail
+                        + "\n```\nsecret-code\n\n## Findings\n\n- secret-finding\n");
+        for (final String shaped :
+                List.of(
+                        " ## secret-indented",
+                        "##\tsecret-tab",
+                        "##",
+                        "## Plan ##",
+                        "# secret-first-level",
+                        "   # secret-indented-first",
+                        "##  secret-two-spaces")) {
+            bodies.put(
+                    "a heading written as " + shaped.replace("secret", "s"),
+                    "Covers.\n\n## Plan\n\n- secret-plan\n\n" + shaped + "\n\nsecret-mine" + tail);
+        }
+        bodies.put(
+                "an HTML comment holding a heading",
+                "Covers.\n\n<!--\n## Plan\n\nsecret-old\n-->\n\n## Plan\n\n- secret-plan" + tail);
+        bodies.put(
+                "an HTML comment holding a heading of a person's own",
+                "Covers.\n\n## Plan\n\n- p\n\n<!-- secret-note\n\n## secret-mine\n\n-->" + tail);
+        bodies.put(
+                "an HTML comment never closed",
+                "Covers.\n\n## Plan\n\n- p" + tail + "\n<!-- secret-note\n");
+        bodies.put(
+                "a pre block holding a heading",
+                "Covers.\n\n## Plan\n\n<PRE>\n## secret-mine\n</pre>" + tail);
+        bodies.put(
+                "a details block holding a heading",
+                "Covers.\n\n## Plan\n\n<details><summary>secret</summary>\n\n## secret-mine\n\n"
+                        + "</details>"
                         + tail);
         for (final Map.Entry<String, String> each : bodies.entrySet()) {
             final BodySections read = BodySections.read(each.getValue());
@@ -229,6 +261,124 @@ class BodySectionsTest {
         assertThat(BodySections.read(BODY).ambiguity())
                 .as("a body whose code block holds a heading-shaped line and nothing more")
                 .isEmpty();
+        assertThat(
+                        BodySections.read(
+                                        bodies.get(
+                                                "a stray fence that pairs with a later bare block"))
+                                .ambiguity())
+                .as("the repair named for a stray fence under a section of the skeleton")
+                .hasValueSatisfying(
+                        repair ->
+                                assertThat(repair).as("the repair").contains("line 5 under Plan"));
+    }
+
+    @Test
+    void aBodyThatFollowsTheSkeletonIsWrittenAndANewLeadTakesTheSkeletonsPlace() {
+        // Harm: no result ever written into a body that follows the issue skeleton, or a lead
+        // put where the skeleton does not put it.
+        final String skeleton =
+                "Covers.\n\n**Why this size.** A guess.\n\n**What must be true.** Something.\n\n"
+                        + "## Plan\n\n- Old.\n";
+        assertThat(BodySections.read(skeleton).ambiguity())
+                .as("what to repair in a body in the skeleton's order")
+                .isEmpty();
+        assertThat(BodySections.read(skeleton).with(BodySections.Part.PLAN, "- New.").text())
+                .as("the plan written into a body in the skeleton's order")
+                .isEqualTo(skeleton.replace("- Old.", "- New."));
+        assertThat(
+                        BodySections.read(
+                                        "Covers.\n\n**What must be true.** Something.\n\n"
+                                                + "## Plan\n\n- Old.\n")
+                                .with(BodySections.Part.WHY_THIS_SIZE, "one module")
+                                .text())
+                .as("why this size added before what must be true, as the skeleton puts it")
+                .isEqualTo(
+                        "Covers.\n\n**Why this size.** one module\n\n"
+                                + "**What must be true.** Something.\n\n## Plan\n\n- Old.\n");
+    }
+
+    @Test
+    void aTabIndentedFenceOpensNoCodeBlock() {
+        // Harm: a person's section deleted on a save, after a fence indented by a tab, which
+        // Markdown reads as indented code, pairs with a later fence.
+        final String body =
+                "Covers.\n\n## Plan\n\nold\n\n\t```\n\n## Notes\n\nsecret-mine\n\n"
+                        + "```\ncode\n```\n";
+        assertThat(BodySections.read(body).with(BodySections.Part.PLAN, "- New.").text())
+                .as("the plan written over a tab-indented fence, the person's section kept")
+                .isEqualTo(body.replace("old\n\n\t```", "- New."));
+        final String lone = "Covers.\n\n## Plan\n\nold\n\n\t```\n\n## Notes\n\nsecret\n\n```\n";
+        assertThat(BodySections.read(lone).ambiguity())
+                .as("what to repair when a tab-indented fence would pair with a lone later one")
+                .hasValueSatisfying(
+                        repair ->
+                                assertThat(repair)
+                                        .as("the repair")
+                                        .contains("line 13 never closes"));
+    }
+
+    @Test
+    void headingsOfThirdLevelAndHashesWithoutASpaceAreNoHeadingsToRepair() {
+        // Harm: a body refused for a subsection or a hashtag, so no result is ever written.
+        final String body =
+                "Covers.\n\n## Plan\n\n- Old.\n\n### A step\n\n#hashtag\n\n## Acceptance\n\n- A\n";
+        assertThat(BodySections.read(body).with(BodySections.Part.PLAN, "- New.").text())
+                .as("the plan written over its subsection, the acceptance kept")
+                .isEqualTo("Covers.\n\n## Plan\n\n- New.\n\n## Acceptance\n\n- A\n");
+        assertThatThrownBy(() -> BodySections.read(body).with(BodySections.Part.PLAN, "- a\n# b"))
+                .as("a plan holding a first-level heading")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aClosedHtmlCommentWithoutAHeadingIsWrittenAround() {
+        // Harm: a body refused for a comment a template leaves, so no result is ever written.
+        final String body =
+                "Covers.\n\n<!-- one line -->\n\n## Plan\n\n- Old.\n\n<!--\nmine\n-->\n"
+                        + "<pre>\nx\n</pre>\n\n## Acceptance\n\n- A\n";
+        assertThat(BodySections.read(body).ambiguity())
+                .as("what to repair in a body whose comments close")
+                .isEmpty();
+    }
+
+    @Test
+    void aNestedFenceOfAnotherKindOrShorterIsNoSignOfAStrayFence() {
+        // Harm: a body refused for a code block that shows a code block, so no result is ever
+        // written, the planner's own plan included.
+        final String body =
+                "Covers.\n\n## Plan\n\n````\n## x\n```\ninner\n```\n````\n\n"
+                        + "~~~\n## y\n```bash\n~~~\n\n## Acceptance\n\n- A\n";
+        assertThat(BodySections.read(body).ambiguity())
+                .as("what to repair in a body with nested fences")
+                .isEmpty();
+        assertThat(
+                        BodySections.read(body)
+                                .with(BodySections.Part.PLAN, "````\n## z\n```\nin\n```\n````")
+                                .with(BodySections.Part.PLAN, "- New.")
+                                .text())
+                .as("a plan with a nested fence written and written over")
+                .isEqualTo("Covers.\n\n## Plan\n\n- New.\n\n## Acceptance\n\n- A\n");
+    }
+
+    @Test
+    void aPersonsOwnHeadingTwiceIsNoReasonToRefuse() {
+        // Harm: a body refused for headings the planner never writes under.
+        final String body =
+                "Covers.\n\n## Notes\n\nOne.\n\n## Plan\n\n- Old.\n\n## Notes\n\nTwo.\n";
+        assertThat(BodySections.read(body).with(BodySections.Part.PLAN, "- New.").text())
+                .as("the plan written beside two headings of the person's own")
+                .isEqualTo(body.replace("- Old.", "- New."));
+    }
+
+    @Test
+    void aFenceLeftOpenUnderAPersonsSectionIsNamedByItsOwnLine() {
+        // Harm: a person sent to repair a fence that is right, while the one left open stays.
+        final String body =
+                "Covers.\n\n## Plan\n\n- p\n\n## Notes\n\n```\nsecret-left-open\n\n## More\n\n"
+                        + "x\n\n```\ncode\n```\n";
+        assertThat(BodySections.read(body).ambiguity())
+                .as("the repair named for a fence left open before a closed block")
+                .contains("the code block opened in line 9 never closes");
     }
 
     @Test

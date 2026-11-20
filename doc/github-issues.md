@@ -27,15 +27,19 @@ The planner adds 11 fields to the project. A GitHub project holds at most 50, 13
 ## The body
 
 The body holds what is true now, in the sections the Markdown issues have: the line of what the issue covers first,
-then *What must be true*, *Why this size*, *Plan*, *Acceptance*, *Open questions*, *To be checked* and *Findings*.
+then *Why this size*, *What must be true*, *Plan*, *Acceptance*, *Open questions*, *To be checked* and *Findings*.
 A story's body also holds *Gain*, *Test* and *Tested*, and an issue's its task, role, severity and kind where it has
 them. A stage result overwrites the sections its kind writes, and leaves every other byte as it was. A heading inside
 a fenced block is no section. No times and no stage history stand in the body.
 
-A result is written into the body only when the body splits into sections unambiguously: every code block closes,
-none runs over a heading-shaped line together with a fence of its own (the sign of a fence left open by hand that
-pairs with a later block's), no section's heading stands twice, and the leading paragraphs stand in the skeleton's
-order, each once. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still saved,
+A result is written into the body only when the body splits into sections unambiguously: every code block closes;
+none runs over a heading-shaped line together with a fence of its own kind at least as long (the sign of a fence left
+open by hand that pairs with a later block's); none opened under a section of the skeleton holds a line shaped as the
+heading of one; every HTML comment, `pre` and `details` block closes and holds no heading-shaped line; every line
+Markdown reads as a heading of the first or second level is written as `## ` and a name; no section of the skeleton
+stands twice; and no leading paragraph stands twice. A fence indented by a tab is indented code, no fence. A person's
+own headings may repeat, and the leading paragraphs may stand in any order; a missing one is added where the skeleton
+puts it. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still saved,
 and the board names the issue by its repository and number with the first thing to repair, such as "the code block
 opened in line 12 under Plan never closes". A read takes such a body and shows the issue.
 
@@ -88,10 +92,13 @@ A save sets values and never creates a field or replaces its options.
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
 the `Status` options follow the workflow's states only through one step of the planner's own, run at the carry-over
 or when the person confirms it after the workflow changed, never on a read: it reads every item's `Status` by name,
-sets the options, and writes every value back by its new option id, in batches of at most 50. A value whose state the
-workflow no longer has is kept as an option of its own name at the end and named as a fault. Options that already
-stand as wanted are not set again; values a batch failed to write back are written again from a fresh read, and those
-still missing after the last attempt are named, each with the state it must be given. A stage's
+reads them once more right before it sets the options and stops when a value or an option changed in between, sets the
+options, and writes every value back by its new option id, in batches of at most 50. An option the workflow does not
+have, held by an item or added by a person, is kept at the end, never dropped, so an item can still be set to it by
+hand; each item holding one is named as a fault, without the option's name. Options that already stand as wanted are
+not set again; values a batch failed to write back are written again from a fresh read, a value a person set since
+stands, and those still missing after the last attempt are named, each with the state it must be given, an option
+outside the workflow by its place. A refusal of the person's access or a spent rate limit is not tried again. A stage's
 result overwrites the sections of the body its kind writes and no other byte. Adding a new story or issue is not
 offered yet.
 

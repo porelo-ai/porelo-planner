@@ -36,6 +36,13 @@ whose `Status` is no state of the workflow is shown and warned, and the person c
 - Red first: a test over a fake client whose `setFieldOptions` clears every value: after the step every item holds
   its state by name, and a removed state is kept and warned.
 
+### Plan reading
+
+- An option the workflow does not have is never dropped by the step, held or not: an item the step names to be set
+  by hand may need it, and an option a person added is theirs. The step cannot tell a person's option from a state
+  the workflow dropped, so a person removes either on GitHub.
+- The step has no caller yet; the carry-over and the person's confirmation call it: no change here.
+
 ## Acceptance
 
 - In the test organization, a workflow with a renamed state is applied to a project of ten items, and every item

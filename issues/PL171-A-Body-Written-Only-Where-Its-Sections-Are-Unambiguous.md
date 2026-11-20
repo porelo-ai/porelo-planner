@@ -36,6 +36,13 @@ sections apart for certain, it writes nothing into the body and tells the person
   twice, a leading paragraph out of order) is refused and stays byte for byte. A `GitHubStoreTest` checks that
   such a result saves its fields and comment and warns the item.
 
+### Plan reading
+
+- The leading paragraphs are found by their lead, so their order is not checked; only a lead that stands twice is
+  refused, and a missing lead is added where the issue skeleton puts it, *Why this size* before *What must be true*.
+- A body refused for its sections is not written, and the person sees why on the board's next read, not on the save
+  itself: no change, as this issue intends.
+
 ## Acceptance
 
 - The test above, seen red before the guard.

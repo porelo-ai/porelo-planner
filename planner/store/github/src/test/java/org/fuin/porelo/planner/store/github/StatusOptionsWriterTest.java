@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.forge.github.Batch;
+import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GitHubGraphQl.BoardIssue;
 import org.fuin.porelo.forge.github.GitHubGraphQl.FieldOption;
@@ -75,6 +76,23 @@ class StatusOptionsWriterTest {
 
         /** Whether every setFieldValues call fails before taking any value. */
         private boolean refusingAll;
+
+        /** What every setFieldValues call throws before taking any value, or null. */
+        private @Nullable RuntimeException refusal;
+
+        /** What a person does right after the step's first read, or null. */
+        private @Nullable Runnable afterFirstRead;
+
+        /** What happens on GitHub right after the options are set, or null. */
+        private @Nullable Runnable afterOptions;
+
+        /** Whether setFieldOptions sets the options and then fails without answering. */
+        private boolean optionsUnanswered;
+
+        /** Whether the items' pages say another follows without moving their cursor. */
+        private boolean stuckCursor;
+
+        private int reads;
 
         private GitHub options(final String... names) {
             for (final String name : names) {
@@ -172,6 +190,12 @@ class StatusOptionsWriterTest {
                 page.add(new ProjectItem(itemId, false, items.get(itemId), held));
             }
             final boolean more = to < ids.size();
+            if (stuckCursor) {
+                return new GitHubGraphQl.ProjectItems(page, new PageInfo(true, "0"), COST);
+            }
+            if (!more && reads++ == 0 && afterFirstRead != null) {
+                afterFirstRead.run();
+            }
             return new GitHubGraphQl.ProjectItems(
                     page, new PageInfo(more, more ? Integer.toString(to) : null), COST);
         }
@@ -195,6 +219,12 @@ class StatusOptionsWriterTest {
                                                             option.description()))
                                     .toList());
             values.clear();
+            if (afterOptions != null) {
+                afterOptions.run();
+            }
+            if (optionsUnanswered) {
+                throw new IllegalStateException("GitHub took the options without answering");
+            }
             return new GitHubGraphQl.FieldOptions(options, null);
         }
 
@@ -208,6 +238,9 @@ class StatusOptionsWriterTest {
         public Batch<String> setFieldValues(
                 final String token, final String projectId, final List<FieldValue> given) {
             batches.add(given.size());
+            if (refusal != null) {
+                throw refusal;
+            }
             if (refusingAll) {
                 throw new IllegalStateException("GitHub refused the mutation");
             }
@@ -315,7 +348,7 @@ class StatusOptionsWriterTest {
                                 assertThat(fault)
                                         .as("a fault")
                                         .startsWith("Item example-org/example-lib#")
-                                        .contains("Status Done"));
+                                        .contains("Status outside the workflow"));
     }
 
     @Test
@@ -357,8 +390,199 @@ class StatusOptionsWriterTest {
         assertThatThrownBy(() -> github.writer().apply(CONFIG))
                 .as("a write-back GitHub refuses each time")
                 .isInstanceOf(StoreException.PartlySaved.class)
-                .hasMessageContaining("Item example-org/example-lib#1 must be set to Done")
+                .hasMessageContaining(
+                        "Item example-org/example-lib#1 must be set to the option in place 5 of"
+                                + " Status")
                 .hasMessageContaining("Item example-org/example-lib#2 must be set to Idea")
                 .hasMessageNotContaining(TOKEN);
+    }
+
+    @Test
+    void anOptionOutsideTheWorkflowStaysWhileAnItemMustBeSetToItByHand() {
+        // Harm: a person told to set an item to an option the next run removed, so the item's
+        // state is lost for good.
+        final GitHub github = new GitHub().options("Idea", "Done").item(1, "Done").item(2, "Idea");
+        github.refusingAll = true;
+        assertThatThrownBy(() -> github.writer().apply(CONFIG))
+                .as("a write-back GitHub refuses each time")
+                .isInstanceOf(StoreException.PartlySaved.class);
+        github.refusingAll = false;
+
+        github.writer().apply(CONFIG);
+
+        assertThat(github.options)
+                .as("the options after the next run, the one to set by hand in place 5")
+                .extracting(FieldOption::name)
+                .containsExactly("Idea", "Analysis", "Backlog", "Finished", "Done");
+    }
+
+    @Test
+    void anOptionAPersonAddedThatNoItemHoldsIsKeptAtTheEnd() {
+        // Harm: an option a person made on GitHub deleted by the planner.
+        final GitHub github =
+                new GitHub().options("Blocked", "Idea", "Done").item(1, "Done").item(2, "Idea");
+
+        github.writer().apply(CONFIG);
+
+        assertThat(github.options)
+                .as("the workflow's states, then the options outside it in their order")
+                .extracting(FieldOption::name)
+                .containsExactly("Idea", "Analysis", "Backlog", "Finished", "Blocked", "Done");
+    }
+
+    @Test
+    void aValueAPersonSetsBeforeTheOptionsAreSetStopsTheStep() {
+        // Harm: a Status a person set while the step ran overwritten with the one it held before.
+        final GitHub github = project();
+        github.afterFirstRead = () -> github.values.put("PVTI_1", github.optionId("Idea"));
+
+        assertThatThrownBy(() -> github.writer().apply(CONFIG))
+                .as("the step after a person set a value")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("changed");
+        assertThat(github.optionsSet).as("the options set").isZero();
+        assertThat(github.statuses().get("PVTI_1"))
+                .as("the value the person set")
+                .isEqualTo("Idea");
+    }
+
+    @Test
+    void aValueAPersonSetsAfterTheOptionsAreSetStands() {
+        // Harm: a Status a person set right after the options changed overwritten with the old one.
+        final GitHub github = project();
+        github.afterOptions = () -> github.values.put("PVTI_1", github.optionId("Backlog"));
+
+        github.writer().apply(CONFIG);
+
+        assertThat(github.statuses().get("PVTI_1"))
+                .as("the value the person set")
+                .isEqualTo("Backlog");
+    }
+
+    @Test
+    void optionsGitHubSetWithoutAnsweringStillGetEveryValueBack() {
+        // Harm: every item's Status cleared when GitHub took the options but its answer was lost.
+        final GitHub github = project();
+        github.optionsUnanswered = true;
+        final Map<String, @Nullable String> before = github.statuses();
+
+        assertThatThrownBy(() -> github.writer().apply(CONFIG))
+                .as("the step whose options call was not answered")
+                .isInstanceOf(StoreException.class);
+        assertThat(github.statuses()).as("every item's Status by name").isEqualTo(before);
+    }
+
+    @Test
+    void aProjectThatCannotBeReadWholeKeepsItsOptions() {
+        // Harm: values written back over part of the project, the rest cleared for good.
+        final GitHub github = project();
+        github.stuckCursor = true;
+
+        assertThatThrownBy(() -> github.writer().apply(CONFIG))
+                .as("the step over a project read in part")
+                .isInstanceOf(StoreException.Unreadable.class);
+        assertThat(github.optionsSet).as("the options set").isZero();
+    }
+
+    @Test
+    void anItemRemovedAfterTheOptionsAreSetIsNotMissed() {
+        // Harm: a step that set every value it could reported as failed, sending a person to set
+        // an item that no longer stands.
+        final GitHub github = project();
+        github.afterOptions = () -> github.items.remove("PVTI_2");
+
+        final StatusOptionsWriter.Applied applied = github.writer().apply(CONFIG);
+
+        assertThat(applied.changed()).as("the options were set").isTrue();
+    }
+
+    @Test
+    void optionsInAnotherOrderAreSetInTheWorkflowsOrder() {
+        // Harm: the board's columns in an order the workflow does not have.
+        final GitHub github =
+                new GitHub()
+                        .options("Analysis", "Idea", "Backlog", "Finished")
+                        .item(1, "Idea")
+                        .item(2, "Analysis");
+        final Map<String, @Nullable String> before = github.statuses();
+
+        final StatusOptionsWriter.Applied applied = github.writer().apply(CONFIG);
+
+        assertThat(applied.changed()).as("the options were set").isTrue();
+        assertThat(github.options)
+                .as("the options in the workflow's order")
+                .extracting(FieldOption::name)
+                .containsExactly("Idea", "Analysis", "Backlog", "Finished");
+        assertThat(github.statuses()).as("every item's Status by name").isEqualTo(before);
+    }
+
+    @Test
+    void anOptionStandingTwiceBecomesOneAndItsItemsKeepIt() {
+        // Harm: an item holding the second of two options of one name losing its Status.
+        final GitHub github = new GitHub().options("Idea", "Analysis", "Backlog", "Finished");
+        github.options.add(new FieldOption("O0_Idea_twice", "Idea", "RED", ""));
+        github.item(1, "Analysis");
+        github.items.put("PVTI_2", issue(2));
+        github.values.put("PVTI_2", "O0_Idea_twice");
+        final Map<String, @Nullable String> before = github.statuses();
+
+        github.writer().apply(CONFIG);
+
+        assertThat(github.options)
+                .as("one option per name")
+                .extracting(FieldOption::name)
+                .containsExactly("Idea", "Analysis", "Backlog", "Finished");
+        assertThat(github.statuses()).as("every item's Status by name").isEqualTo(before);
+    }
+
+    @Test
+    void aDraftIsNamedByItsProjectItemAndNoOptionNameAPersonTypedIsRepeated() {
+        // Harm: a person unable to tell which draft to set, or words a person typed into an
+        // option's name repeated where the planner's own messages go.
+        final GitHub github =
+                new GitHub().options("Idea", "secret-typed").item(1, "secret-typed").draft("Idea");
+
+        final StatusOptionsWriter.Applied applied = github.writer().apply(CONFIG);
+        assertThat(applied.faults())
+                .as("the faults")
+                .singleElement()
+                .asString()
+                .doesNotContain("secret-typed")
+                .contains("Item example-org/example-lib#1");
+
+        final GitHub refusing =
+                new GitHub().options("Idea", "secret-typed").item(1, "secret-typed").draft("Idea");
+        refusing.refusingAll = true;
+        assertThatThrownBy(() -> refusing.writer().apply(CONFIG))
+                .as("a write-back GitHub refuses each time")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining(
+                        "Project item PVTI_draft without an issue must be set to Idea")
+                .hasMessageContaining(
+                        "Item example-org/example-lib#1 must be set to the option in place 5 of"
+                                + " Status")
+                .hasMessageNotContaining("secret-typed");
+    }
+
+    @Test
+    void aRefusalOfAccessOrASpentRateLimitIsNotTriedAgain() {
+        // Harm: calls spent against a rate limit or a refused token, and the person told GitHub
+        // did not take the values instead of why.
+        for (final RuntimeException refusal :
+                List.of(
+                        GitHubExceptions.rateLimited(
+                                403, "rate limit exceeded", java.time.Duration.ofMinutes(5)),
+                        GitHubExceptions.refused(401, "Bad credentials"))) {
+            final GitHub github =
+                    new GitHub().options("Idea", "Done").item(1, "Done").item(2, "Idea");
+            github.refusal = refusal;
+
+            assertThatThrownBy(() -> github.writer().apply(CONFIG))
+                    .as("a write-back GitHub refuses with %s", refusal.getMessage())
+                    .isInstanceOf(StoreException.PartlySaved.class)
+                    .hasMessageNotContaining("did not take them")
+                    .hasMessageContaining("Item example-org/example-lib#2 must be set to Idea");
+            assertThat(github.batches).as("the write-back calls").hasSize(1);
+        }
     }
 }
