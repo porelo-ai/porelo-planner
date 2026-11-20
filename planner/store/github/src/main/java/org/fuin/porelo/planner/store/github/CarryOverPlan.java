@@ -21,8 +21,8 @@ import org.jspecify.annotations.Nullable;
  * What a Markdown project's carry-over to GitHub Issues would write: one item per open story and
  * open issue, each with its old id as its alias in {@code Id}, its fields, its GitHub parent and
  * sub-issues, its dependencies, its body with its references rewritten, and its stage comments.
- * Finished and rejected issues and stories, and an issue whose file is gone, are not carried; a
- * reference to one of them is left as plain text and named.
+ * Finished and rejected issues and stories are not carried, and a reference to one of them is left
+ * as plain text and named; an open issue whose file is gone leaves no plan.
  */
 public final class CarryOverPlan {
 
@@ -30,6 +30,7 @@ public final class CarryOverPlan {
      * What the Markdown store holds of an open issue beyond the board's issue.
      *
      * @param issue the issue
+     * @param path the file it was read from in its repository, which its relative links start from
      * @param priority its priority, one of {@link Story#PRIORITIES}
      * @param rank its rank within its priority
      * @param covers the line of what it covers
@@ -40,6 +41,7 @@ public final class CarryOverPlan {
      */
     public record IssueSource(
             Issue issue,
+            String path,
             String priority,
             int rank,
             String covers,
@@ -216,20 +218,38 @@ public final class CarryOverPlan {
      * @param board the Markdown project's board, read whole
      * @param sources what the store holds of each issue {@link #carried(Board)} answers, by id
      * @param texts what a person reads of each open story, by id, without its generated part
+     * @param webs each repository's web address by its name, which a link to its index starts with
      * @param references gives the tracker reference of a carried item
      * @return the plan
-     * @throws IllegalArgumentException when the board left something out or a source is missing
+     * @throws IllegalArgumentException when the board left something out, an open issue has no
+     *     file, or a source or a story's text is missing
      */
     public static CarryOverPlan of(
             final Board board,
             final Map<String, IssueSource> sources,
             final Map<String, String> texts,
+            final Map<String, String> webs,
             final References references) {
         if (!board.faults().isEmpty()) {
             throw new IllegalArgumentException(
                     "The board left " + board.faults().size() + " thing(s) out");
         }
         final Set<String> closed = Set.copyOf(board.workflow().closed());
+        final List<String> unfiled =
+                board.issues().stream()
+                        .filter(issue -> !closed.contains(issue.state()))
+                        .filter(issue -> issue.text().isEmpty())
+                        .map(
+                                issue ->
+                                        issue.id()
+                                                + " stands in "
+                                                + issue.state()
+                                                + " but has no file")
+                        .toList();
+        if (!unfiled.isEmpty()) {
+            // An open issue only an index row names would be left out of the carry-over unseen.
+            throw new IllegalArgumentException(String.join("; ", unfiled));
+        }
         final String own = board.repositories().getFirst();
         final Map<String, Issue> issues = new LinkedHashMap<>();
         for (final Issue issue : carried(board)) {
@@ -280,10 +300,16 @@ public final class CarryOverPlan {
                 }
             }
             final int rank = ranks.merge(story.priority(), 1, Integer::sum);
+            final String written = texts.get(story.id());
+            if (written == null) {
+                throw new IllegalArgumentException(story.id() + " was not read");
+            }
             final ReferenceRewrite.Rewritten text =
-                    ReferenceRewrite.rewrite(
-                            texts.getOrDefault(story.id(), ""), own, board.repositories(), carried);
+                    ReferenceRewrite.rewrite(written, own, "stories", webs, carried);
             String body = text.text();
+            final boolean ownSection =
+                    bodyProblem(body) == null
+                            && BodySections.read(body).section(IssueMapping.ALSO_NEEDS).isPresent();
             if (!also.isEmpty()) {
                 final StringBuilder section =
                         new StringBuilder("\n\n## ").append(IssueMapping.ALSO_NEEDS).append("\n\n");
@@ -307,7 +333,11 @@ public final class CarryOverPlan {
                             text.rewritten(),
                             text.leftAsText(),
                             notCarried,
-                            bodyProblem(body)));
+                            ownSection
+                                    // Read back, the first section of that name is taken for the
+                                    // list of references.
+                                    ? "its body already has a section " + IssueMapping.ALSO_NEEDS
+                                    : bodyProblem(body)));
         }
         for (final Issue issue : issues.values()) {
             items.add(
@@ -317,7 +347,7 @@ public final class CarryOverPlan {
                             issues,
                             parentOf,
                             subIssues,
-                            board.repositories(),
+                            webs,
                             carried,
                             references));
         }
@@ -330,14 +360,17 @@ public final class CarryOverPlan {
             final Map<String, Issue> issues,
             final Map<String, String> parentOf,
             final Map<String, List<String>> subIssues,
-            final List<String> repositories,
+            final Map<String, String> webs,
             final ReferenceRewrite.Carried carried,
             final References references) {
         final IssueSource read = java.util.Objects.requireNonNull(source);
         final List<String> notCarried = new ArrayList<>();
         final String parent = issue.parent();
+        String problem = null;
         if (parent != null && !issues.containsKey(parent)) {
             notCarried.add(parent);
+            // Read back, a sub-issue's id names a parent that is not on the board.
+            problem = "its parent " + parent + " is not carried";
         }
         final List<String> blockedBy = new ArrayList<>();
         for (final String blocker : issue.blockedBy()) {
@@ -353,11 +386,14 @@ public final class CarryOverPlan {
                 ReferenceRewrite.rewrite(
                         read.covers().strip() + "\n\n" + read.below().strip() + "\n",
                         issue.repository(),
-                        repositories,
+                        folder(read.path()),
+                        webs,
                         carried);
         final Map<String, String> fields =
                 new LinkedHashMap<>(IssueMapping.fields(issue, read.priority(), read.rank()));
-        String problem = bodyProblem(text.text());
+        if (problem == null) {
+            problem = bodyProblem(text.text());
+        }
         final List<String> comments = new ArrayList<>();
         final List<CommentView> views = new ArrayList<>();
         for (final StageEntry stage : read.stages()) {
@@ -370,6 +406,10 @@ public final class CarryOverPlan {
             }
         }
         final StageComment.Sums sums = StageComment.sums(views);
+        if (problem == null && !sums.faults().isEmpty()) {
+            // Read back, the sums would be named as a fault on every read of the board.
+            problem = "its stage comments do not sum: " + sums.faults().getFirst();
+        }
         if (read.estimate() != null) {
             fields.put(FieldNames.ESTIMATE, number(read.estimate()));
         }
@@ -394,6 +434,12 @@ public final class CarryOverPlan {
                 text.leftAsText(),
                 notCarried,
                 problem);
+    }
+
+    /** The directory a file stands in, within its repository. */
+    private static String folder(final String path) {
+        final int slash = path.lastIndexOf('/');
+        return slash < 0 ? "" : path.substring(0, slash);
     }
 
     private static String ref(final References references, final @Nullable Issue issue) {

@@ -47,7 +47,25 @@ class CarryOverPlanTest {
         return new Story(id, "Title of " + id, state, true, "High", "M", issues, "", null);
     }
 
+    private static final Map<String, String> WEBS =
+            Map.of(
+                    OWN, "https://github.com/porelo-ai/porelo-project",
+                    PLANNER, "https://github.com/porelo-ai/porelo-planner");
+
+    private static List<Issue> issues() {
+        return List.of(
+                issue("PL9", "Finished", List.of(), ""),
+                issue("PL10", "Backlog", List.of("PL9", "PL11"), "# PL10"),
+                issue("PL11", "Implementing", List.of(), "# PL11"),
+                issue("PL11.1", "Backlog", List.of(), "# PL11.1"),
+                issue("PL12", "Rejected", List.of(), "# PL12"));
+    }
+
     private static Board board(final List<String> faults) {
+        return board(issues(), faults);
+    }
+
+    private static Board board(final List<Issue> issues, final List<String> faults) {
         return new Board(
                 new Revision("one"),
                 WORKFLOW,
@@ -55,12 +73,7 @@ class CarryOverPlanTest {
                         story("ST1", "Backlog", List.of("PL10", "PL11.1", "PL9")),
                         story("ST2", "Backlog", List.of("PL10")),
                         story("ST4", "Finished", List.of("PL9"))),
-                List.of(
-                        issue("PL9", "Finished", List.of(), ""),
-                        issue("PL10", "Backlog", List.of("PL9", "PL11"), "# PL10"),
-                        issue("PL11", "Implementing", List.of(), "# PL11"),
-                        issue("PL11.1", "Backlog", List.of(), "# PL11.1"),
-                        issue("PL12", "Rejected", List.of(), "# PL12")),
+                issues,
                 new Work(Map.of(), List.of()),
                 List.of(OWN, PLANNER),
                 faults);
@@ -81,12 +94,28 @@ class CarryOverPlanTest {
     }
 
     private static CarryOverPlan plan(final Board board, final String below) {
+        return plan(
+                board,
+                below,
+                List.of(
+                        stage(1, "implement", "agent", 10),
+                        stage(1, "wait", "agent", 30),
+                        stage(1, "review", "agent", 5)),
+                Map.of("ST1", "**What a user gains.** Gain.", "ST2", ""));
+    }
+
+    private static CarryOverPlan plan(
+            final Board board,
+            final String below,
+            final List<StageEntry> stages,
+            final Map<String, String> texts) {
         final Map<String, CarryOverPlan.IssueSource> sources = new LinkedHashMap<>();
         for (final Issue issue : CarryOverPlan.carried(board)) {
             sources.put(
                     issue.id(),
                     new CarryOverPlan.IssueSource(
                             issue,
+                            "issues/" + issue.id() + "-X.md",
                             "Medium",
                             3,
                             "It covers " + issue.id() + ".",
@@ -94,20 +123,11 @@ class CarryOverPlanTest {
                                     ? below
                                     : "## Plan\n\nBuilt on [PL9](README.md#pl9) and"
                                             + " [PL10](README.md#pl10).",
-                            issue.id().equals("PL11")
-                                    ? List.of(
-                                            stage(1, "implement", "agent", 10),
-                                            stage(1, "wait", "agent", 30),
-                                            stage(1, "review", "agent", 5))
-                                    : List.of(),
+                            issue.id().equals("PL11") ? stages : List.of(),
                             issue.id().equals("PL11") ? 2 : 0,
                             issue.id().equals("PL11") ? 25.0 : null));
         }
-        return CarryOverPlan.of(
-                board,
-                sources,
-                Map.of("ST1", "**What a user gains.** Gain."),
-                CarryOverPlan.References.BY_ALIAS);
+        return CarryOverPlan.of(board, sources, texts, WEBS, CarryOverPlan.References.BY_ALIAS);
     }
 
     private static CarryOverPlan.Item item(final CarryOverPlan plan, final String id) {
@@ -230,5 +250,90 @@ class CarryOverPlanTest {
                                         "Text."))
                 .as("the plan over a board with a fault")
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void anOpenIssueOnlyAnIndexRowNamesLeavesNoPlan() {
+        // Harm: an open issue whose file is gone is left out of the carry-over and nobody is told.
+        final List<Issue> issues = new java.util.ArrayList<>(issues());
+        issues.add(issue("PL13", "Backlog", List.of(), ""));
+        assertThatThrownBy(() -> plan(board(issues, List.of()), "Text."))
+                .as("the plan over an open issue without a file")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PL13 stands in Backlog but has no file");
+    }
+
+    @Test
+    void aSubIssueWhoseParentIsNotCarriedLeavesThePlanNotWhole() {
+        // Harm: a sub-issue carried without its parent is left out by the first read from GitHub.
+        final List<Issue> issues = new java.util.ArrayList<>(issues());
+        issues.set(2, issue("PL11", "Finished", List.of(), "# PL11"));
+        final CarryOverPlan plan = plan(board(issues, List.of()), "Text.");
+        assertThat(plan.whole()).as("whether the plan is whole").isFalse();
+        assertThat(item(plan, "PL11.1").problem())
+                .as("why PL11.1 cannot be carried")
+                .isEqualTo("its parent PL11 is not carried");
+    }
+
+    @Test
+    void aStoryWhoseTextWasNotReadLeavesNoPlan() {
+        // Harm: an open story is planned with an empty body, its text lost.
+        assertThatThrownBy(() -> plan(board(List.of()), "Text.", List.of(), Map.of("ST1", "Gain.")))
+                .as("the plan without ST2's text")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ST2 was not read");
+    }
+
+    @Test
+    void aStoryWhoseTextHoldsTheSectionOfItsOtherIssuesCannotBeCarried() {
+        // Harm: read back, the person's section is taken for the list of references and the
+        // carried ones are lost.
+        final CarryOverPlan plan =
+                plan(
+                        board(List.of()),
+                        "Text.",
+                        List.of(),
+                        Map.of("ST1", "Gain.\n\n## Also needs\n\nWords of a person.", "ST2", ""));
+        assertThat(item(plan, "ST1").problem())
+                .as("why ST1 cannot be carried")
+                .isEqualTo("its body already has a section Also needs");
+        assertThat(plan.whole()).as("whether the plan is whole").isFalse();
+    }
+
+    @Test
+    void stageCommentsWhoseSumsCannotBeReadBackLeaveThePlanNotWhole() {
+        // Harm: a plan said whole whose sums are named as a fault on every read after the run.
+        final Map<String, Long> most = new LinkedHashMap<>();
+        for (final String kind :
+                List.of(
+                        "claude_input_tokens",
+                        "claude_output_tokens",
+                        "claude_cache_write_tokens",
+                        "codex_input_tokens",
+                        "codex_output_tokens",
+                        "agy_input_tokens",
+                        "agy_output_tokens")) {
+            // The most a stage comment carries of one kind, as JSON numbers read back exactly.
+            most.put(kind, 9_007_199_254_740_991L);
+        }
+        final List<StageEntry> stages = new java.util.ArrayList<>();
+        for (int n = 1; n <= 150; n++) {
+            stages.add(
+                    new StageEntry(
+                            "markdown:PL11:implement:" + n,
+                            "implement",
+                            "done",
+                            "agent",
+                            "opus",
+                            "high",
+                            1,
+                            0,
+                            most));
+        }
+        final CarryOverPlan plan =
+                plan(board(List.of()), "Text.", stages, Map.of("ST1", "Gain.", "ST2", ""));
+        assertThat(item(plan, "PL11").problem())
+                .as("why PL11 cannot be carried")
+                .startsWith("its stage comments do not sum");
     }
 }

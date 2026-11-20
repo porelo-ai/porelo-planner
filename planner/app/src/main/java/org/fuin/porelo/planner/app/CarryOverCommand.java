@@ -19,7 +19,8 @@ import org.fuin.porelo.planner.store.github.ProjectRef;
 /**
  * Carries a Markdown project's open stories and issues over to a GitHub project. Only the dry run
  * is built: it reads the project from its checkouts, needs no token, writes nothing and says one
- * line per item it would write. A project or a file it cannot read stops it before any line.
+ * line per item it would write. A project or a file it cannot read stops it before any line; a
+ * fault no item's reading depends on is said after the lines. No secret is said.
  */
 final class CarryOverCommand {
 
@@ -73,14 +74,22 @@ final class CarryOverCommand {
             return WorkCommands.UNANSWERED;
         }
         final Path root = Path.of(project);
+        final CheckoutProject read;
         final CarryOverPlan plan;
         try {
-            plan = plan(CheckoutProject.read(root, environment));
+            read = CheckoutProject.read(root, environment);
+            plan = plan(read);
         } catch (final IOException | IllegalArgumentException | StoreException e) {
-            err.println("carry-over: " + root + " could not be read whole: " + e.getMessage());
+            err.println(
+                    "carry-over: "
+                            + root
+                            + " could not be read whole: "
+                            + CheckoutProject.withoutSecrets(String.valueOf(e.getMessage())));
             return WorkCommands.UNANSWERED;
         } catch (final Unread e) {
-            e.faults.forEach(fault -> err.println("carry-over: " + fault));
+            // A fault may name a link a person wrote, with a login or a token in it.
+            e.faults.forEach(
+                    fault -> err.println("carry-over: " + CheckoutProject.withoutSecrets(fault)));
             err.println(
                     "carry-over: "
                             + e.faults.size()
@@ -90,6 +99,10 @@ final class CarryOverCommand {
             return WorkCommands.UNANSWERED;
         }
         plan.items().forEach(item -> out.println(item.line(true)));
+        if (!read.asides().isEmpty()) {
+            out.println("FAULTS OF THE BOARD THAT CONCERN NO CARRIED ITEM");
+            read.asides().forEach(aside -> out.println(CheckoutProject.withoutSecrets(aside)));
+        }
         final long stories = plan.items().stream().filter(CarryOverPlan.Item::story).count();
         final long cannot = plan.items().stream().filter(item -> item.problem() != null).count();
         out.println(
@@ -126,8 +139,8 @@ final class CarryOverCommand {
 
     private static CarryOverPlan plan(final CheckoutProject project) throws IOException, Unread {
         final Board board = project.board();
-        if (!board.faults().isEmpty()) {
-            throw new Unread(board.faults());
+        if (!project.faults().isEmpty()) {
+            throw new Unread(project.faults());
         }
         final Map<String, CarryOverPlan.IssueSource> sources = new LinkedHashMap<>();
         for (final Issue issue : CarryOverPlan.carried(board)) {
@@ -137,6 +150,7 @@ final class CarryOverCommand {
                     issue.id(),
                     new CarryOverPlan.IssueSource(
                             issue,
+                            project.path(issue),
                             head.priority(),
                             head.rank(),
                             head.covers(),
@@ -149,7 +163,8 @@ final class CarryOverCommand {
         for (final Story story : board.stories()) {
             texts.put(story.id(), CheckoutProject.storyText(story));
         }
-        return CarryOverPlan.of(board, sources, texts, CarryOverPlan.References.BY_ALIAS);
+        return CarryOverPlan.of(
+                board, sources, texts, project.webs(), CarryOverPlan.References.BY_ALIAS);
     }
 
     private static int usage(final PrintStream err) {

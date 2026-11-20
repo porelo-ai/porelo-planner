@@ -656,14 +656,14 @@ public final class BodySections {
      * indented by three spaces at most, closed by a bare fence of the same kind at least as long; a
      * backtick fence whose words after it hold a backtick is inline code, no fence.
      */
-    private static final class Fence {
+    static final class Fence {
 
         private char kind;
 
         private int length;
 
         /** Whether the line opens, closes or stands inside a code block. */
-        private boolean inside(final String text) {
+        boolean inside(final String text) {
             final String bare = text.stripLeading();
             if (text.length() - bare.length() > 3) {
                 return length > 0;

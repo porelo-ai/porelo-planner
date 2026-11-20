@@ -177,6 +177,7 @@ public final class StageRecords {
         final List<StageEntry> stages = new ArrayList<>();
         int moves = 0;
         Double estimate = null;
+        final Set<String> keys = new HashSet<>();
         for (final Map<String, @Nullable Object> record :
                 read(contents, filename, true, workflow)) {
             if (moved(record)) {
@@ -195,14 +196,21 @@ public final class StageRecords {
                 }
             }
             final String stage = string(record, "stage");
+            final String key =
+                    "markdown:"
+                            + string(record, "issue")
+                            + ":"
+                            + stage
+                            + ":"
+                            + integer(record.get("n"), "n");
+            if (!keys.add(key)) {
+                // A tracker counts a stage carried twice once, so its sum would differ.
+                throw new IllegalArgumentException(
+                        filename + ": the stage " + stage + " is recorded twice with one n");
+            }
             stages.add(
                     new StageEntry(
-                            "markdown:"
-                                    + string(record, "issue")
-                                    + ":"
-                                    + stage
-                                    + ":"
-                                    + integer(record.get("n"), "n"),
+                            key,
                             stage,
                             string(record, "result"),
                             string(record, "actor"),

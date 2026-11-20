@@ -45,6 +45,49 @@ first as a dry run, and every story and issue keeps the id people know it by.
   dependency and cross links, against a fake GitHub: the dry run's lines, then the writes; a second run writes
   nothing new.
 
+### Plan reading
+
+The code reading of step 1 (the dry run), answered finding by finding; each one fixed was confirmed in the code first
+and its test seen red.
+
+- *Stage records read through a linked `stats` directory, and a linked directory listed as empty*: fixed. The stage
+  records are read through the checkouts' own reading, and a listing refuses a directory that is a link and any link
+  in it, instead of listing nothing.
+- *`stories/workflow.yml` read without the checkouts' guards; a project named through a link*: fixed. The workflow
+  is read through the checkouts, and the own checkout is taken at its real path, so the other repositories are found
+  beside it.
+- *The search for a settled issue's mentions climbs to a repository above a checkout*: fixed. Git looks for the
+  repository in the checkout alone; a checkout that is no repository stops the run when it has a settled issue to
+  search for. A `.git` file of a worktree stays allowed: Git then still searches the files of the checkout.
+- *One directory read as two repositories; an issue under a prefix its repository does not own*: fixed. Two
+  repositories at one real directory stop the run, and so does an issue of another repository whose prefix
+  `project.yml` does not give that repository.
+- *An open issue with an index row but no file left out unseen*: fixed. It leaves no plan.
+- *A file read through a directory linked into the checkout*: fixed. A path whose directories pass through any link
+  is refused.
+- *A sub-issue carried while its parent is not*: fixed. The item cannot be carried, so the plan is not whole.
+- *An open story without its text*: fixed. It leaves no plan.
+- *Another owner's repository of the same name, and relative links out of the repository or to a page that is no
+  index*: fixed. A link on the web is rewritten only when it starts with a repository's own web address and names
+  one of its indexes; a relative link only when it reaches an index of the text's own repository from the text's
+  directory.
+- *Code spans of two backticks, longer fences, code on one line between three backticks*: fixed with the fence
+  reading of `BodySections`, and code spans of any run of backticks.
+- *A story's generated list kept when written with carriage returns, and a person's later line taken out*: fixed.
+- *A story whose text already holds a section `Also needs`*: fixed. It cannot be carried.
+- *A stage recorded twice with one `n`, and stage comments whose sums cannot be read back*: fixed. The first leaves
+  no plan, the second makes the item one that cannot be carried.
+- *A secret in a link that a fault names*: fixed. Every fault and failure the dry run says is taken through the Git
+  store's removal of secrets. A fault still names the file and the link target, so the person can find what to mend;
+  it is never a body.
+- *The search and the listings untested*: fixed with tests of the listings, a linked directory, the search, and a
+  settled issue whose file was deleted.
+- *The refusal without `--dry-run` untested in its words*: fixed.
+- Beyond the reading: a fault of the board that concerns no carried item - a settled issue still named by an index
+  or by a page outside the issue files - no longer stops the dry run; it is said after the item lines under a heading
+  of its own, and the run still says how many items it would carry. A link to a deleted file inside an issue file
+  still stops it, since it is that issue's text.
+
 ## Order and files
 
 Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;

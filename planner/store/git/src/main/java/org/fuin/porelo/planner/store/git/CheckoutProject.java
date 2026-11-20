@@ -34,14 +34,32 @@ public final class CheckoutProject {
 
     private final Board board;
 
-    private final Map<String, Path> trees;
+    private final List<String> faults;
+
+    private final List<String> asides;
+
+    private final Map<String, Map<String, String>> paths;
+
+    private final Map<String, String> webs;
+
+    private final Checkouts checkouts;
 
     private final Workflow workflow;
 
     private CheckoutProject(
-            final Board board, final Map<String, Path> trees, final Workflow workflow) {
+            final Board board,
+            final List<String> faults,
+            final List<String> asides,
+            final Map<String, Map<String, String>> paths,
+            final Map<String, String> webs,
+            final Checkouts checkouts,
+            final Workflow workflow) {
         this.board = board;
-        this.trees = trees;
+        this.faults = List.copyOf(faults);
+        this.asides = List.copyOf(asides);
+        this.paths = Map.copyOf(paths);
+        this.webs = Map.copyOf(webs);
+        this.checkouts = checkouts;
         this.workflow = workflow;
     }
 
@@ -58,7 +76,8 @@ public final class CheckoutProject {
      */
     public static CheckoutProject read(final Path root, final Map<String, String> environment)
             throws IOException {
-        final Path own = root.toAbsolutePath().normalize();
+        // Each repository beside the own one is found where the own checkout really stands.
+        final Path own = root.toRealPath();
         final Path file = own.resolve(ProjectFile.FILE);
         if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException(file + ": not a plain file");
@@ -71,9 +90,11 @@ public final class CheckoutProject {
         final Project project = Project.read(text, Set.of());
         final Map<String, Path> trees = new LinkedHashMap<>();
         final List<Repository> repositories = new ArrayList<>();
+        final Map<String, String> webs = new LinkedHashMap<>();
         trees.put(project.own(), own);
         repositories.add(repository(project, project.own()));
         for (final String name : project.centrals().keySet()) {
+            webs.put(name, project.web(name));
             if (name.equals(project.own())) {
                 continue;
             }
@@ -81,27 +102,124 @@ public final class CheckoutProject {
             if (!Files.isDirectory(tree, LinkOption.NOFOLLOW_LINKS)) {
                 throw new IOException(tree + ": no checkout of " + name);
             }
-            trees.put(name, tree);
+            if (trees.containsValue(tree.toRealPath())) {
+                // One directory read as two repositories gives each the other's issues.
+                throw new IOException(tree + ": is the checkout of two repositories");
+            }
+            trees.put(name, tree.toRealPath());
             repositories.add(repository(project, name));
         }
-        final Workflow workflow = Workflow.read(own.resolve("stories/workflow.yml"));
         final Checkouts checkouts =
                 new Checkouts(
                         trees,
                         environment,
                         new GitRunner(Duration.ofSeconds(60), 16 << 20),
                         FILE_BYTES);
+        final Workflow workflow =
+                Workflow.read(
+                        read(checkouts, project.own(), "stories/workflow.yml")
+                                .orElseThrow(
+                                        () -> new IOException(own + ": no stories/workflow.yml")));
+        final List<String> asides = new ArrayList<>();
+        final StoreReader reader = new StoreReader(checkouts, FILES_PER_REPOSITORY, asides::add);
+        final Map<String, Map<String, String>> paths = new LinkedHashMap<>();
         final GitStore store =
                 new GitStore(
                         repositories,
                         checkouts,
-                        new StoreReader(checkouts, FILES_PER_REPOSITORY),
+                        (repository, commit, ownWorkflow) -> {
+                            final Part part = reader.read(repository, commit, ownWorkflow);
+                            paths.put(repository.name(), part.paths());
+                            return part;
+                        },
                         () -> () -> {},
                         Clock.systemUTC(),
                         Duration.ofDays(1),
                         1,
                         Runnable::run);
-        return new CheckoutProject(store.refresh(), Map.copyOf(trees), workflow);
+        final Board board = store.refresh();
+        final List<String> faults = new ArrayList<>(board.faults());
+        for (final Issue issue : board.issues()) {
+            final Set<String> prefixes = project.repositories().get(issue.repository());
+            final String prefix = issue.id().replaceFirst("[0-9].*$", "");
+            if (!issue.repository().equals(project.own())
+                    && prefixes != null
+                    && !prefixes.contains(prefix)) {
+                // A checkout of another repository under the expected name holds other issues.
+                faults.add(
+                        issue.repository()
+                                + ": "
+                                + issue.id()
+                                + " has a prefix project.yml does not give "
+                                + issue.repository());
+            }
+        }
+        return new CheckoutProject(board, faults, asides, paths, webs, checkouts, workflow);
+    }
+
+    /** Reads a file of a checkout, a refusal in the words of a file that cannot be read. */
+    private static java.util.Optional<String> read(
+            final Checkouts checkouts, final String repository, final String path)
+            throws IOException {
+        try {
+            return checkouts.read(repository, Checkouts.TREE, path);
+        } catch (final GitFailure e) {
+            throw new IOException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Answers every fault that leaves the project read only in part: the board's, and an issue
+     * whose prefix its repository does not own.
+     *
+     * @return the faults, none when the project was read whole
+     */
+    public List<String> faults() {
+        return faults;
+    }
+
+    /**
+     * Answers the faults no issue's or story's reading depends on: a settled issue still named by
+     * an index or a page outside the issue files.
+     *
+     * @return the faults
+     */
+    public List<String> asides() {
+        return asides;
+    }
+
+    /**
+     * Answers the file an issue was read from in its repository.
+     *
+     * @param issue an issue of the board with a file
+     * @return its path in its repository
+     * @throws IllegalArgumentException when it was read from no file
+     */
+    public String path(final Issue issue) {
+        final String path = paths.getOrDefault(issue.repository(), Map.of()).get(issue.id());
+        if (path == null) {
+            throw new IllegalArgumentException(issue.id() + " was read from no file");
+        }
+        return path;
+    }
+
+    /**
+     * Answers where each repository's pages are linked on the web, by its name.
+     *
+     * @return each repository's web address, without a trailing slash
+     */
+    public Map<String, String> webs() {
+        return webs;
+    }
+
+    /**
+     * Takes every secret form out of a text this reading gives, such as a link a fault names.
+     *
+     * @param text the text
+     * @return the text with each secret replaced by {@code ***}
+     */
+    public static String withoutSecrets(final String text) {
+        return GitRunner.withoutSecrets(text);
     }
 
     /**
@@ -149,7 +267,8 @@ public final class CheckoutProject {
      * @return its gain, its test and what a person wrote below them
      */
     public static String storyText(final org.fuin.porelo.planner.store.Story story) {
-        final List<String> lines = List.of(story.description().split("\n", -1));
+        final List<String> lines =
+                List.of(story.description().replace("\r\n", "\n").split("\n", -1));
         final List<String> kept = new ArrayList<>();
         int at = 0;
         if (!lines.isEmpty() && lines.getFirst().startsWith(PRIORITY)) {
@@ -167,7 +286,9 @@ public final class CheckoutProject {
                         at++;
                     }
                 }
-                continue;
+                // The generated part ends with its list of issues, as the stories index writes it.
+                kept.addAll(lines.subList(at, lines.size()));
+                break;
             }
             kept.add(line);
             at++;
@@ -194,23 +315,13 @@ public final class CheckoutProject {
         if (!StageRecords.recorded(issue.id())) {
             return new StageRecords.Carried(List.of(), 0, null);
         }
-        final Path tree = trees.get(issue.repository());
-        if (tree == null) {
-            throw new IOException(issue.repository() + ": no checkout");
-        }
         final String path = StageRecords.path(issue.id());
-        final Path file = tree.resolve(path);
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+        final java.util.Optional<String> text = read(checkouts, issue.repository(), path);
+        if (text.isEmpty()) {
             return new StageRecords.Carried(List.of(), 0, null);
         }
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException(issue.repository() + ": " + path + ": not a plain file");
-        }
         try {
-            return StageRecords.carried(
-                    Files.readString(file, StandardCharsets.UTF_8),
-                    issue.id() + ".jsonl",
-                    workflow);
+            return StageRecords.carried(text.get(), issue.id() + ".jsonl", workflow);
         } catch (final IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     issue.repository() + ": " + path + ": " + e.getMessage(), e);

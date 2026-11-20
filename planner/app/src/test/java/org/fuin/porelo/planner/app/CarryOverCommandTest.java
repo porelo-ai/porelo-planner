@@ -174,5 +174,148 @@ class CarryOverCommandTest {
                         "porelo-ai/7");
         assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
         assertThat(answer.out()).as("the lines").isEmpty();
+        assertThat(answer.err()).as("the refusal").contains("only the dry run is built");
+    }
+
+    /** Runs Git in a directory, without the person's configuration. */
+    private static void git(final Path where, final String... arguments)
+            throws IOException, InterruptedException {
+        final java.util.List<String> command = new java.util.ArrayList<>();
+        command.add("git");
+        command.addAll(java.util.List.of(arguments));
+        final ProcessBuilder builder =
+                new ProcessBuilder(command).directory(where.toFile()).redirectErrorStream(true);
+        builder.environment().put("GIT_CONFIG_GLOBAL", "/dev/null");
+        builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
+        final Process process = builder.start();
+        final String out =
+                new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor()).as("git %s: %s", command, out).isZero();
+    }
+
+    @Test
+    void aFaultOfTheBoardNoItemDependsOnIsSaidAfterTheLinesAndStopsNothing() throws Exception {
+        // Harm: a settled issue's row naming its deleted file stops a carry-over it does not touch.
+        final Path root = WorkFixture.copy(dir);
+        final Path alpha = root.resolve("porelo-alpha");
+        Files.delete(alpha.resolve("issues/AB03-The-Third-Step.md"));
+        git(alpha, "init", "-q");
+        git(alpha, "add", ".");
+        final WorkFixture.Answer answer = dryRun(root);
+        assertThat(answer.code()).as("the exit code; it said %s", answer.err()).isZero();
+        final java.util.List<String> lines = answer.out().lines().toList();
+        assertThat(lines.get(2))
+                .as("the heading after the item lines")
+                .isEqualTo("FAULTS OF THE BOARD THAT CONCERN NO CARRIED ITEM");
+        assertThat(lines.get(3))
+                .as("the fault")
+                .contains("issues/README.md")
+                .contains("links to the deleted file of AB03");
+        assertThat(lines.getLast()).as("the last line").startsWith("DRY RUN  2 item(s)");
+    }
+
+    @Test
+    void aSecretInALinkAFaultNamesIsNotSaid() throws IOException {
+        // Harm: a token a person pasted into a link is printed to a terminal or a log.
+        final Path root = WorkFixture.copy(dir);
+        Files.writeString(
+                root.resolve("porelo-alpha/issues/AB02-The-Second-Step.md"),
+                "\nSee [AB02](https://someone:hunter2@github.com/org/repo).\n",
+                java.nio.file.StandardOpenOption.APPEND);
+        final WorkFixture.Answer answer = dryRun(root);
+        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.err()).as("the fault").contains("AB02").doesNotContain("hunter2");
+    }
+
+    @Test
+    void stageRecordsBehindALinkedDirectoryAreNeverRead() throws IOException {
+        // Harm: a record file outside the checkout is read and carried as the issue's stages.
+        final Path root = WorkFixture.copy(dir);
+        final Path outside = Files.createDirectories(dir.resolve("outside"));
+        Files.writeString(outside.resolve("AB02.jsonl"), RECORDS);
+        Files.createSymbolicLink(root.resolve("porelo-alpha/stats"), outside);
+        final WorkFixture.Answer answer = dryRun(root);
+        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.out()).as("the lines").isEmpty();
+        assertThat(answer.err()).as("the fault").contains("stats");
+    }
+
+    @Test
+    void aLinkedWorkflowIsNeverRead() throws IOException {
+        // Harm: a file outside the checkout is read, and its words are echoed in the fault.
+        final Path root = WorkFixture.copy(dir);
+        final Path outside = Files.writeString(dir.resolve("outside.yml"), "hiddenword: 1\n");
+        final Path workflow = root.resolve("porelo-sample/stories/workflow.yml");
+        Files.delete(workflow);
+        Files.createSymbolicLink(workflow, outside);
+        final WorkFixture.Answer answer = dryRun(root);
+        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.err())
+                .as("the fault")
+                .contains("not a plain file")
+                .doesNotContain("hiddenword");
+    }
+
+    @Test
+    void aProjectNamedThroughALinkFindsItsOtherCheckoutsBesideTheRealOne() throws IOException {
+        // Harm: the other repositories are looked for beside the link, so another directory's
+        // checkouts are read as the project's.
+        final Path root = WorkFixture.copy(dir.resolve("real"));
+        final Path link = Files.createDirectories(dir.resolve("links")).resolve("porelo-sample");
+        Files.createSymbolicLink(link, root.resolve("porelo-sample"));
+        final WorkFixture.Answer answer =
+                WorkFixture.planner(
+                        "carry-over",
+                        "--project",
+                        link.toString(),
+                        "--to",
+                        "porelo-ai/7",
+                        "--dry-run");
+        assertThat(answer.code()).as("the exit code; it said %s", answer.err()).isZero();
+    }
+
+    @Test
+    void oneDirectoryIsNeverReadAsTwoRepositories() throws IOException {
+        // Harm: a checkout read as both the own repository and another gives each the other's
+        // issues.
+        final Path root = WorkFixture.copy(dir);
+        final WorkFixture.Answer answer =
+                WorkFixture.planner(
+                        "carry-over",
+                        "--project",
+                        root.resolve("porelo-alpha").toString(),
+                        "--to",
+                        "porelo-ai/7",
+                        "--dry-run");
+        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.err()).as("the fault").contains("is the checkout of two repositories");
+    }
+
+    @Test
+    void anIssueWhosePrefixItsRepositoryDoesNotOwnStopsTheRun() throws IOException {
+        // Harm: a checkout of another repository under the expected name has its issues carried
+        // as the project's.
+        final Path root = WorkFixture.copy(dir);
+        final Path issues = root.resolve("porelo-alpha/issues");
+        final Path file = issues.resolve("AB02-The-Second-Step.md");
+        Files.writeString(
+                issues.resolve("XY05-The-Second-Step.md"),
+                Files.readString(file, StandardCharsets.UTF_8)
+                        .replace("AB02", "XY05")
+                        .replace("\"AB01\"", ""));
+        Files.delete(file);
+        final Path index = issues.resolve("README.md");
+        Files.writeString(
+                index,
+                Files.readString(index, StandardCharsets.UTF_8)
+                        .replace(
+                                "[AB02](AB02-The-Second-Step.md)",
+                                "[XY05](XY05-The-Second-Step.md)")
+                        .replace("ab02", "xy05"));
+        final WorkFixture.Answer answer = dryRun(root);
+        assertThat(answer.code())
+                .as("the exit code; it said %s", answer.err())
+                .isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(answer.err()).as("the fault").contains("XY05 has a prefix");
     }
 }

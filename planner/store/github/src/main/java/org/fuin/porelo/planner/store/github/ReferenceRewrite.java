@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.github;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -12,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * Rewrites the references of a Markdown project's text for GitHub Issues: a link to an issue's or a
  * story's row in an index becomes the tracker reference of the item carried for it, and a link to
  * one that is not carried becomes its plain text, never a guess. A link in a code span or a fenced
- * block, and one to a page outside the project's repositories, stays as it is.
+ * block, and one to any page but an index of the project's repositories, stays as it is.
  */
 public final class ReferenceRewrite {
 
@@ -55,12 +56,13 @@ public final class ReferenceRewrite {
             Pattern.compile(
                     "(?<page>[^#]*)README\\.md#(?<anchor>[a-z]{1,3}[0-9]{1,5}(?:\\.[0-9]{1,3})?|st[0-9]{1,5})");
 
-    /** A page on the forge: its host, owner and repository, then a path inside it. */
-    private static final Pattern FORGE_PAGE =
-            Pattern.compile("https://[^/]+/[^/]+/(?<repository>[^/]+)/blob/[^/]+/.*");
+    /** An index of a repository, which holds the rows of its issues or of its stories. */
+    private static final Pattern INDEX =
+            Pattern.compile("issues/README\\.md|issues/[^/]+/README\\.md|stories/README\\.md");
 
-    /** A code span on one line. */
-    private static final Pattern CODE_SPAN = Pattern.compile("`[^`\\n]*`");
+    /** A code span on one line, opened and closed by one run of backticks of the same length. */
+    private static final Pattern CODE_SPAN =
+            Pattern.compile("(`++)[^`\\n]*+(?:(?!\\1)`+[^`\\n]*+)*+\\1");
 
     /** The text of a link that is the id alone, perhaps with its repository or emphasized. */
     private static final Pattern ID_TEXT =
@@ -74,36 +76,29 @@ public final class ReferenceRewrite {
      *
      * @param text the text, as its file holds it
      * @param repository the repository the text stands in, which a relative link names
-     * @param repositories the project's repositories
+     * @param folder the directory the text's file stands in, such as {@code issues}, which a
+     *     relative link starts from
+     * @param webs each repository's web address by its name, as {@code project.yml} gives it, which
+     *     a link to another repository's index starts with
      * @param carried finds the reference of each item carried
      * @return the text rewritten, with what was rewritten and what was left as text
      */
     public static Rewritten rewrite(
             final String text,
             final String repository,
-            final List<String> repositories,
+            final String folder,
+            final Map<String, String> webs,
             final Carried carried) {
         final List<String> rewritten = new ArrayList<>();
         final List<String> left = new ArrayList<>();
         final StringBuilder out = new StringBuilder(text.length());
-        boolean fenced = false;
-        String fence = "";
+        final BodySections.Fence fence = new BodySections.Fence();
         for (final String line : text.split("(?<=\n)", -1)) {
-            final String stripped = line.strip();
-            if (!fenced && (stripped.startsWith("```") || stripped.startsWith("~~~"))) {
-                fenced = true;
-                fence = stripped.substring(0, 3);
+            if (fence.inside(line.replaceFirst("\r?\n$", ""))) {
                 out.append(line);
                 continue;
             }
-            if (fenced) {
-                if (stripped.startsWith(fence)) {
-                    fenced = false;
-                }
-                out.append(line);
-                continue;
-            }
-            out.append(line(line, repository, repositories, carried, rewritten, left));
+            out.append(line(line, repository, folder, webs, carried, rewritten, left));
         }
         return new Rewritten(out.toString(), rewritten, left);
     }
@@ -111,7 +106,8 @@ public final class ReferenceRewrite {
     private static String line(
             final String line,
             final String repository,
-            final List<String> repositories,
+            final String folder,
+            final Map<String, String> webs,
             final Carried carried,
             final List<String> rewritten,
             final List<String> left) {
@@ -132,7 +128,8 @@ public final class ReferenceRewrite {
                             link.group(1),
                             link.group(2),
                             repository,
-                            repositories,
+                            folder,
+                            webs,
                             carried,
                             rewritten,
                             left);
@@ -150,7 +147,8 @@ public final class ReferenceRewrite {
             final String words,
             final String target,
             final String repository,
-            final List<String> repositories,
+            final String folder,
+            final Map<String, String> webs,
             final Carried carried,
             final List<String> rewritten,
             final List<String> left) {
@@ -158,20 +156,12 @@ public final class ReferenceRewrite {
         if (!row.matches()) {
             return null;
         }
-        final String page = row.group("page");
-        final String named;
-        if (page.contains("://")) {
-            final Matcher forge = FORGE_PAGE.matcher(target);
-            if (!forge.matches()) {
-                return null;
-            }
-            named = forge.group("repository");
-            if (!repositories.contains(named)) {
-                // A page of another project is no item of this one, so its link stays.
-                return null;
-            }
-        } else {
-            named = repository;
+        final String page = row.group("page") + "README.md";
+        final String named =
+                page.contains("://") ? forge(page, webs) : relative(page, folder, repository);
+        if (named == null) {
+            // A page of another project, or no index, holds no item of this one, so its link stays.
+            return null;
         }
         final String id = row.group("anchor").toUpperCase(Locale.ROOT);
         final Optional<String> reference = carried.reference(named, id);
@@ -184,6 +174,54 @@ public final class ReferenceRewrite {
         return idText.matches() && idText.group(1).equals(id)
                 ? reference.get()
                 : words + " (" + reference.get() + ")";
+    }
+
+    /**
+     * The repository whose index an address on the web names: one starting with a repository's web
+     * address, its host and owner included, then a revision and an index; else null.
+     */
+    private static @Nullable String forge(final String page, final Map<String, String> webs) {
+        for (final Map.Entry<String, String> web : webs.entrySet()) {
+            final String blob = web.getValue() + "/blob/";
+            if (!page.regionMatches(true, 0, blob, 0, blob.length())) {
+                continue;
+            }
+            final String rest = page.substring(blob.length());
+            final int slash = rest.indexOf('/');
+            if (slash > 0 && INDEX.matcher(rest.substring(slash + 1)).matches()) {
+                return web.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The repository a relative link names, the text's own, when the page it reaches from the
+     * text's folder is one of its indexes; else null, such as for a link out of the repository.
+     */
+    private static @Nullable String relative(
+            final String page, final String folder, final String repository) {
+        final List<String> path = new ArrayList<>();
+        // A link starting with a slash starts at the repository's root.
+        for (final String part : page.startsWith("/") ? new String[0] : folder.split("/")) {
+            if (!part.isEmpty()) {
+                path.add(part);
+            }
+        }
+        final String[] parts = page.split("/", -1);
+        for (int i = 0; i < parts.length - 1; i++) {
+            final String part = parts[i];
+            if (part.equals("..")) {
+                if (path.isEmpty()) {
+                    return null;
+                }
+                path.removeLast();
+            } else if (!part.isEmpty() && !part.equals(".")) {
+                path.add(part);
+            }
+        }
+        path.add(parts[parts.length - 1]);
+        return INDEX.matcher(String.join("/", path)).matches() ? repository : null;
     }
 
     private static boolean inSpan(final List<int[]> spans, final int at) {

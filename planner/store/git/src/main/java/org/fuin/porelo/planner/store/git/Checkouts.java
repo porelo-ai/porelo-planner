@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.store.Ids;
 import org.jspecify.annotations.Nullable;
@@ -79,7 +80,7 @@ final class Checkouts implements Remote {
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
             return Optional.empty();
         }
-        inside(repository, tree, file, path);
+        inside(repository, tree, path);
         if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
             // A link may lead out of the checkout, as Git's own reading refuses it too.
             throw new GitFailure(
@@ -132,11 +133,14 @@ final class Checkouts implements Remote {
             arguments.add(Ids.issue(word));
         }
         arguments.add("--");
+        final GitCall call = GitCall.of(environment, Duration.ofSeconds(10), arguments);
+        final Map<String, String> variables = new TreeMap<>(call.environment());
+        // Git looks for its repository in the checkout alone, never in a directory above it.
+        variables.put("GIT_CEILING_DIRECTORIES", parent(repository, tree).toString());
         // The working tree's tracked files, as a commit's tree holds them.
         final String out =
                 new String(
-                        runner.find(
-                                GitCall.of(environment, Duration.ofSeconds(10), arguments), tree),
+                        runner.find(new GitCall(call.arguments(), variables), tree),
                         StandardCharsets.UTF_8);
         final List<Found> found = new ArrayList<>();
         for (final String entry : out.split("\n")) {
@@ -157,37 +161,68 @@ final class Checkouts implements Remote {
             final String repository, final String directory, final boolean directories) {
         final Path tree = tree(repository);
         final Path dir = tree.resolve(RepoPath.checked(directory));
-        if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+        if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
             return List.of();
         }
-        inside(repository, tree, dir, directory);
+        inside(repository, tree, directory);
+        if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+            // A linked directory read as empty would leave out every file in it unseen.
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED, repository + ": " + directory + " is not a directory");
+        }
+        final List<Path> entries;
         try (Stream<Path> listed = Files.list(dir)) {
-            return listed.filter(
-                            entry ->
-                                    Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)
-                                            == directories)
-                    .map(entry -> directory + "/" + entry.getFileName())
-                    .sorted()
-                    .toList();
+            entries = listed.toList();
         } catch (final IOException e) {
             throw new GitFailure(
                     GitFailure.Kind.FAILED, repository + ": " + directory + " could not be listed");
         }
-    }
-
-    /** Refuses a file whose directories lead out of the checkout through a link. */
-    private static void inside(
-            final String repository, final Path tree, final Path file, final String path) {
-        try {
-            final Path parent = file.getParent();
-            if (parent == null || !parent.toRealPath().startsWith(tree.toRealPath())) {
+        for (final Path entry : entries) {
+            if (Files.isSymbolicLink(entry)) {
+                // Listed as neither file nor directory, a link would be left out unseen.
                 throw new GitFailure(
                         GitFailure.Kind.FAILED,
-                        repository + ": " + path + " lies outside the checkout");
+                        repository + ": " + directory + "/" + entry.getFileName() + " is a link");
+            }
+        }
+        return entries.stream()
+                .filter(entry -> Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS) == directories)
+                .map(entry -> directory + "/" + entry.getFileName())
+                .sorted()
+                .toList();
+    }
+
+    /**
+     * Refuses a path whose directories pass through a link, even one into the checkout, since a
+     * listing does not follow it and would leave out what the read reaches.
+     */
+    private static void inside(final String repository, final Path tree, final String path) {
+        try {
+            final Path parent = tree.resolve(path).getParent();
+            final Path expected = tree.toRealPath().resolve(path).getParent();
+            if (parent == null || expected == null || !parent.toRealPath().equals(expected)) {
+                throw new GitFailure(
+                        GitFailure.Kind.FAILED,
+                        repository + ": " + path + " lies outside the checkout or behind a link");
             }
         } catch (final IOException e) {
             throw new GitFailure(
                     GitFailure.Kind.FAILED, repository + ": " + path + " could not be read");
+        }
+    }
+
+    /** The directory a checkout stands in, above which Git never looks for a repository. */
+    private static Path parent(final String repository, final Path tree) {
+        try {
+            final Path parent = tree.toRealPath().getParent();
+            if (parent == null) {
+                throw new GitFailure(
+                        GitFailure.Kind.FAILED, repository + ": its checkout is the root");
+            }
+            return parent;
+        } catch (final IOException e) {
+            throw new GitFailure(
+                    GitFailure.Kind.FAILED, repository + ": its checkout could not be read");
         }
     }
 
