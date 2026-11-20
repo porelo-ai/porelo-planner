@@ -129,12 +129,13 @@ public interface PlanningStore {
      * @return the board after the save, the one read when nothing changed
      * @throws StoreException.StaleRevision if the store moved since that revision
      * @throws StoreException.NoSuchIssue if the board has no such issue
-     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.NotSavable if the store cannot write it
+     * @throws UnsupportedOperationException if the store does not offer it
      * @throws StoreException.Busy if another save or a check holds the project too long
      * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
      */
     default Board setFields(final Revision revision, final String issue, final Fields fields) {
-        throw new StoreException.NotSavable(issue, NOT_OFFERED);
+        throw new UnsupportedOperationException(NOT_OFFERED);
     }
 
     /**
@@ -147,13 +148,14 @@ public interface PlanningStore {
      * @return the board after the save, the one read when nothing changed
      * @throws StoreException.StaleRevision if the store moved since that revision
      * @throws StoreException.NoSuchStory if the board has no such story
-     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.NotSavable if the store cannot write it
+     * @throws UnsupportedOperationException if the store does not offer it
      * @throws StoreException.Busy if another save or a check holds the project too long
      * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
      */
     default Board setStoryIssues(
             final Revision revision, final String story, final java.util.List<String> issues) {
-        throw new StoreException.NotSavable(story, NOT_OFFERED);
+        throw new UnsupportedOperationException(NOT_OFFERED);
     }
 
     /**
@@ -165,13 +167,14 @@ public interface PlanningStore {
      * @return the board after the save, the one read when nothing changed
      * @throws StoreException.StaleRevision if the store moved since that revision
      * @throws StoreException.NoSuchIssue if the board has no such issue
-     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.NotSavable if the store cannot write it
+     * @throws UnsupportedOperationException if the store does not offer it
      * @throws StoreException.Busy if another save or a check holds the project too long
      * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
      */
     default Board setBlockedBy(
             final Revision revision, final String issue, final java.util.List<String> blockedBy) {
-        throw new StoreException.NotSavable(issue, NOT_OFFERED);
+        throw new UnsupportedOperationException(NOT_OFFERED);
     }
 
     /**
@@ -181,11 +184,12 @@ public interface PlanningStore {
      * @param issue the issue's id
      * @param text the comment's text
      * @throws StoreException.NoSuchIssue if the board has no such issue
-     * @throws StoreException.NotSavable if the store cannot write it, or does not offer it
+     * @throws StoreException.NotSavable if the store cannot write it
+     * @throws UnsupportedOperationException if the store does not offer it
      * @throws StoreException.Busy if another save or a check holds the project too long
      */
     default void comment(final String issue, final String text) {
-        throw new StoreException.NotSavable(issue, NOT_OFFERED);
+        throw new UnsupportedOperationException(NOT_OFFERED);
     }
 
     /**

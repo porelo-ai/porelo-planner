@@ -308,7 +308,9 @@ paths:
         the project's own repository and an issue in state Idea in each repository the idea names, in one save against
         the board at the given revision, as a discussion's hand-in is saved. The idea is checked against the idea
         format before anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a
-        part of it stands answers PartlySaved, naming the repositories that hold their part. The JSON body is at most
+        part of it stands answers PartlySaved, naming the repositories that hold their part. A run whose story is
+        gone is dropped first, so the new story never takes it over; one with a task still at work refuses the call
+        (WorkRunning). The JSON body is at most
         65536 bytes. The changes stream announces the new board as it does after any save.
       tags: [board]
       requestBody:
@@ -331,7 +333,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchProject'
         '409':
-          $ref: '#/components/responses/IssueConflict'
+          $ref: '#/components/responses/EditConflict'
         '422':
           $ref: '#/components/responses/IdeaRefused'
         '501':
@@ -407,8 +409,11 @@ paths:
         Writes the story's whole issue list, in its order, against the board at the given revision: an issue taken out
         is no longer the story's, an issue hung in becomes the story's, and the order is the one sent. Each issue is
         named once and is one of the board's; an issue that is a sub-issue of another issue, or that another story
-        holds, is refused (EditNotAllowed), since an issue belongs to one story. A list equal to the story's saves
-        nothing and answers the current revision. The JSON body is at most 65536 bytes. The changes stream announces
+        holds, is refused (EditNotAllowed), since an issue belongs to one story; so is a list for a story the board
+        shows only in part, since a list written whole would drop the issue not shown. An issue a started task works,
+        or one of its sub-issues, is not taken out (WorkRunning). On GitHub an issue becomes the story's sub-issue,
+        and one the story's body names under Also needs keeps its place after the sub-issues and is not taken out by
+        this call. A list equal to the story's saves nothing and answers the current revision. The JSON body is at most 65536 bytes. The changes stream announces
         the new board as it does after any save.
       tags: [board]
       requestBody:
@@ -431,9 +436,11 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchItem'
         '409':
-          $ref: '#/components/responses/IssueConflict'
+          $ref: '#/components/responses/EditConflict'
         '422':
           $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
         '502':
           $ref: '#/components/responses/SaveRefused'
         '503':
@@ -742,8 +749,8 @@ paths:
       summary: Set an issue's size, estimate, priority and rank
       description: >-
         Writes the members the body names against the board at the given revision: a member left out stays as it is,
-        and null clears a size, an estimate or a rank; a priority is never cleared. Values equal to the issue's save
-        nothing and answer the current revision. The JSON body is at most 65536 bytes. The changes stream announces
+        and null clears a size, an estimate or a rank; a priority is never cleared, and a body naming no field is
+        refused. Values equal to the issue's save nothing and answer the current revision. The JSON body is at most 65536 bytes. The changes stream announces
         the new board as it does after any save.
       tags: [board]
       requestBody:
@@ -769,6 +776,8 @@ paths:
           $ref: '#/components/responses/IssueConflict'
         '422':
           $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
         '502':
           $ref: '#/components/responses/SaveRefused'
         '503':
@@ -814,6 +823,8 @@ paths:
           $ref: '#/components/responses/IssueConflict'
         '422':
           $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
         '502':
           $ref: '#/components/responses/SaveRefused'
         '503':
@@ -830,8 +841,10 @@ paths:
       summary: Write a comment on an issue
       description: >-
         Writes one comment of the person's text on the issue, with the person's own access. The board shows no
-        comment, so the call carries no revision and the board's revision stays. The JSON body is at most 131072
-        bytes.
+        comment, so the call carries no revision, the board is not read again and the changes stream announces
+        nothing. A comment opening with the planner's own marker `<!-- porelo:` is refused, since the planner reads
+        its own records from such comments. The JSON body is at most 131072 bytes. A comment the tracker took without
+        answering is answered PartlySaved, so it is not written twice.
       tags: [board]
       requestBody:
         required: true
@@ -850,6 +863,8 @@ paths:
           $ref: '#/components/responses/NoSuchIssue'
         '422':
           $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
         '502':
           $ref: '#/components/responses/SaveRefused'
         '503':
@@ -1688,6 +1703,33 @@ components:
             detail: The board moved since that revision.
             parameters:
               revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+    EditConflict:
+      description: >-
+        The board moved since the given revision (StaleRevision, naming the current one), or a started task of a run
+        works an issue the change takes out of its story, or a run whose story is gone still has a task at work
+        (WorkRunning, naming the story and its tasks).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            StaleRevision:
+              value:
+                type: urn:porelo-planner:StaleRevision
+                title: StaleRevision
+                status: 409
+                detail: The board moved since that revision.
+                parameters:
+                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+            WorkRunning:
+              value:
+                type: urn:porelo-planner:WorkRunning
+                title: WorkRunning
+                status: 409
+                detail: The story already has active work.
+                parameters:
+                  story: ST7
+                  tasks: [porelo-task-1]
     IssueRefused:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 65536 bytes (field
@@ -1745,9 +1787,11 @@ components:
         words; what was sent is never repeated. EditNotAllowed (item, field, reason) when the body is not that change
         - not one JSON object of its size, a member unknown, missing or of another kind, a value out of its bounds -
         or the change breaks the board: an issue or blocker named twice, an issue of another story or a sub-issue of
-        an issue hung into a story, an issue blocking itself, or blockers that lead back to the issue. MoveNotAllowed
-        (item, from, to, reason) when the store cannot write it, among them a store that does not offer the change,
-        with the store's words.
+        an issue hung into a story, a story the board shows only in part given a whole list, an issue blocking itself,
+        blockers that lead back to the issue, or a comment opening with the planner's own marker `<!-- porelo:`.
+        MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
+        issue a story holds only under Also needs in its body taken out, an issue that has a parent on the tracker
+        hung in, or a call the tracker refused, named by its status alone.
       content:
         application/problem+json:
           schema:
@@ -1768,12 +1812,12 @@ components:
                 type: urn:porelo-planner:MoveNotAllowed
                 title: MoveNotAllowed
                 status: 422
-                detail: not offered by this store
+                detail: GitHub refused the call with status 422
                 parameters:
                   item: PL3
                   from: ''
                   to: ''
-                  reason: not offered by this store
+                  reason: GitHub refused the call with status 422
     ResultRefused:
       description: >-
         A stage's hand-in is refused (ResultRefused), with fixed words; what was sent is never repeated. The body is
@@ -1829,9 +1873,9 @@ components:
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
-        stories or saves no stage's result;
-        the mock mode previews and saves moves, saves workers and adds ideas and stories into its in-memory board, but
-        adds no issues and saves no priorities (NotOffered).
+        stories, sets no issue's fields, story's issues or issue's blockers, writes no comment or saves no stage's
+        result; the mock mode previews and saves moves, saves workers, adds ideas and stories and takes the edits by
+        hand into its in-memory board, but adds no issues and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:

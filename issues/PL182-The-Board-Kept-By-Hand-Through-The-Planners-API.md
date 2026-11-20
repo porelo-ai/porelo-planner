@@ -68,6 +68,11 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   `WorkRun.storyIssues` refuses a list that takes out an issue, or its sub-issue, a started task works
   (`WorkRunning`). A reorder or an issue hung in leaves a run's bound issues as they are, so the story itself is not
   refused while its work runs. The other edits run under `WorkRun.alone`.
+- **A store that does not offer an edit**: `PlanningStore`'s defaults throw `UnsupportedOperationException`, answered
+  501 `NotOffered` as an idea a store does not add is, so a window tells a missing feature from a refused write;
+  `MoveNotAllowed` stays for a write the store refuses. `LoggedStore`, which wraps every store, forwards each edit.
+- **A conflict over a story's issues or a new story** is answered 409 by its own description, `EditConflict`
+  (`StaleRevision` or `WorkRunning`), since `IssueConflict` names neither.
 
 ## Acceptance
 

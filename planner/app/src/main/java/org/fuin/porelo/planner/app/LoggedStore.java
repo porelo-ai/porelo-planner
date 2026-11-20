@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import java.util.List;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -78,6 +79,28 @@ final class LoggedStore implements PlanningStore {
     @Override
     public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
         return store.createIdea(revision, idea);
+    }
+
+    @Override
+    public Board setFields(final Revision revision, final String issue, final Fields fields) {
+        return store.setFields(revision, issue, fields);
+    }
+
+    @Override
+    public Board setStoryIssues(
+            final Revision revision, final String story, final List<String> issues) {
+        return store.setStoryIssues(revision, story, issues);
+    }
+
+    @Override
+    public Board setBlockedBy(
+            final Revision revision, final String issue, final List<String> blockedBy) {
+        return store.setBlockedBy(revision, issue, blockedBy);
+    }
+
+    @Override
+    public void comment(final String issue, final String text) {
+        store.comment(issue, text);
     }
 
     @Override

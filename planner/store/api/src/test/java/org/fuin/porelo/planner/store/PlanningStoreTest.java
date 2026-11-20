@@ -75,8 +75,9 @@ class PlanningStoreTest {
     }
 
     @Test
-    void anEditAStoreDoesNotOfferIsRefusedAsNotSavableNamingTheItem() {
-        // A store that does not offer an edit must say so, never answer as if it were written.
+    void anEditAStoreDoesNotOfferIsRefusedAsNotOffered() {
+        // A store that does not offer an edit must say so, as the window reads a write not offered,
+        // never answer as if it were written.
         final Fields size = new Fields(java.util.Set.of(Fields.Field.SIZE), "M", null, null, null);
         for (final Runnable edit :
                 List.<Runnable>of(
@@ -86,12 +87,8 @@ class PlanningStoreTest {
                         () -> STORE.comment("XY03", "A comment."))) {
             assertThatThrownBy(edit::run)
                     .as("an edit the store does not offer")
-                    .isInstanceOfSatisfying(
-                            StoreException.NotSavable.class,
-                            refusal ->
-                                    assertThat(refusal.subject())
-                                            .as("the item named")
-                                            .isIn("XY03", "ST1"));
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessage(PlanningStore.NOT_OFFERED);
         }
     }
 }
