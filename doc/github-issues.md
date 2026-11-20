@@ -137,7 +137,8 @@ carried items are not known yet, adds it to the project and writes its fields an
 sub-issues and dependencies, writes each body anew from the Markdown text with every carried reference rewritten
 to its tracker reference and a story's *Also needs*, and adds the stage comments, oldest first. A reference to an
 item not carried, finished, rejected or of another project, is left as plain text and listed. A body a person
-changed between the passes is left as it is and the item named.
+changed between the passes is left as it is and the item named; its sub-issues, dependencies and stage comments
+are written all the same.
 
 While it copies, the run keeps a map of old id to new reference, and how far each item came, in a file of its own
 under the planner's state directory (`carry-over/<owner>-<number>.json`, or `--state <file>`), never on GitHub. A

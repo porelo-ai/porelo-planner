@@ -841,6 +841,35 @@ class CarryOverTest {
     }
 
     @Test
+    void aBodyAPersonChangedStillGetsItsLinksAndStageComments() {
+        // Harm: a person's edit to one body leaves its sub-issues, dependencies and stage comments
+        // unwritten, so its stage numbers stand apart from its comments on every read.
+        final GitHub github = new GitHub();
+        final File file = new File();
+        final GitHub whole = new GitHub();
+        run(whole, new File());
+        github.cutAt = whole.written.indexOf("sub porelo-project#1") + 1;
+        assertThatThrownBy(() -> run(github, file)).isInstanceOf(CarryOver.Stopped.class);
+        github.cutAt = 0;
+        final Held pl11 = github.held(PLANNER, 2);
+        pl11.body = "A person's words.";
+        final CarryOver.Outcome again = run(github, file);
+        assertThat(again.failures())
+                .as("the items left")
+                .singleElement()
+                .asString()
+                .startsWith("PL11 (porelo-planner#2): its body was changed");
+        assertThat(pl11.body).as("PL11's body").isEqualTo("A person's words.");
+        assertThat(pl11.subs)
+                .as("PL11's sub-issues")
+                .containsExactly(github.held(PLANNER, 3).databaseId);
+        assertThat(pl11.comments).as("PL11's stage comments").hasSize(2);
+        assertThat(github.held(PLANNER, 1).blockers)
+                .as("the dependency on PL11")
+                .containsExactly(pl11.databaseId);
+    }
+
+    @Test
     void theTokenNeverStandsInAStop() {
         // Harm: a token shown in a refusal ends up in a terminal's scrollback or a log.
         final GitHub github =

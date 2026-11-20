@@ -477,15 +477,12 @@ public final class CarryOver {
         final String repository = entry.repository();
         final int number = entry.number();
         final String body = calls.body(token, owner, repository, number);
-        if (!body.equals(item.body()) && !body.equals(firstBody)) {
-            return Optional.of(
-                    item.id()
-                            + " ("
-                            + entry.reference()
-                            + "): its body was changed on GitHub after the first pass, so its"
-                            + " second pass was left; its references, sub-issues, dependencies"
-                            + " and stage comments are not written");
-        }
+        // Only a body the second pass changes can meet a person's edit; the links and stage
+        // comments are written whatever the body says.
+        final boolean bodyLeft =
+                !firstBody.equals(item.body())
+                        && !body.equals(item.body())
+                        && !body.equals(firstBody);
         final List<Long> subs = calls.subIssues(token, owner, repository, number);
         for (final String reference : item.subIssues()) {
             final long sub = known(byReference, reference).databaseId();
@@ -500,7 +497,7 @@ public final class CarryOver {
                 calls.addBlockedBy(token, owner, repository, number, blocker);
             }
         }
-        if (!body.equals(item.body())) {
+        if (!bodyLeft && body.equals(firstBody) && !body.equals(item.body())) {
             writes.updateIssue(token, owner, repository, number, item.body(), null);
         }
         final Set<String> standing = new HashSet<>();
@@ -519,6 +516,15 @@ public final class CarryOver {
             if (standing.add(key(comment).orElse(comment))) {
                 writes.createIssueComment(token, owner, repository, number, comment);
             }
+        }
+        if (bodyLeft) {
+            return Optional.of(
+                    item.id()
+                            + " ("
+                            + entry.reference()
+                            + "): its body was changed on GitHub after the first pass, so it was"
+                            + " left as it is and its references are not written; its sub-issues,"
+                            + " dependencies and stage comments are");
         }
         map.put(item.id(), entry.at(CarryOverMap.Progress.PASS2_DONE));
         journal.save(map);

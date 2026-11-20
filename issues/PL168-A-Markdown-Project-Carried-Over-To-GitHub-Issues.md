@@ -74,8 +74,8 @@ first as a dry run, and every reference between the carried stories and issues p
   without `## Also needs`; no old id stands in it. Its fields leave out `Id`, and a story whose state is not given
   leaves out `Status`. A story whose new issue lacks the label `story` stops the run.
 - **Second pass**: the body is written anew from the Markdown text with GitHub's references and `## Also needs`,
-  only while GitHub still holds the first pass's body; a body a person changed since is left, the item named, its
-  second pass not written, and the run ends non-zero. Sub-issues, dependencies and comments that already stand are
+  only while GitHub still holds the first pass's body; a body a person changed since is left, the item named and
+  the run ends non-zero, while its sub-issues, dependencies and stage comments are written all the same. Sub-issues, dependencies and comments that already stand are
   not added again; a stage comment is found by its key, `carry:<stage>:<n>`, which names no old id.
 - **The map**: one entry per old id with its repository, the time its making began, its progress (`pending`,
   `created`, `on_project`, `fields_set`, `pass2_done`), number, node id, database id and project item. An item is
