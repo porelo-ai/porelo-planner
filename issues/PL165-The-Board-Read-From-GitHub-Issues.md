@@ -15,7 +15,7 @@
 ```
 
 **Why this size.** L: a new store module beside `store/git`, the choice of store when a project opens, the person's
-access with a new refusal in the window's contract, the GraphQL reading with paging and bounds, native-image metadata, and calls that porelo-forge-clients's
+access with a new refusal in the window's contract and the screen's offer beside it, the GraphQL reading with paging and bounds, native-image metadata, and calls that porelo-forge-clients's
 GitHub client must offer first.
 
 **What must be true.** A person whose project keeps its planning in GitHub Issues sees the board in about a second,
@@ -39,7 +39,10 @@ however many repositories it has, with exactly what GitHub holds.
   log. That lending is switched on by [PL125](README.md#pl125). Where the vault holds no token for the address, or
   GitHub refuses it for a missing right, the board is refused with a new code `NoForgeAccess` in `planner.yaml`
   (fields `address`, and `right` where GitHub names it, such as `Issues` or `Projects`), so the window can offer
-  to put a token into the vault and read the board again; `Unreachable` as for Git, GitHub's message scrubbed of
+  to put a token into the vault and read the board again. The screen (`screen/lib/src/hooks.dart`) adds
+  `Future<bool> handOnForgeToken(String address)` to `PlanningHost`, which the window implements, offers it beside
+  that refusal, and reads the board again after `true`; a widget test shows the offer for the refusal and none for
+  another; `Unreachable` as for Git, GitHub's message scrubbed of
   the token.
 - Calls go through porelo-forge-clients's `GitHubGraphQl` with the token per call; this module only holds the query
   text and the records.
