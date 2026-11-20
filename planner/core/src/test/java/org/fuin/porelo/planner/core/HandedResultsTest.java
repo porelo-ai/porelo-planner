@@ -461,13 +461,16 @@ class HandedResultsTest {
         assertThat(f.store.state("AA1")).as("the issue stays").isEqualTo(WORKING);
     }
 
-    // Prevents a finished analysis from being refused for good because the store was busy or a
-    // check swapped its board, when the store wrote nothing and a later hand-in would save it.
+    // Prevents a finished analysis from being refused for good because the store was busy, a
+    // check swapped its board or the person's forge access was missing, when the store wrote
+    // nothing and a later hand-in would save it.
     @Test
     void aSaveTheStoreDidNotStartIsAnsweredTryLaterAndALaterHandInSavesIt() {
         for (final StoreException passing :
                 List.<StoreException>of(
-                        new StoreException.Busy("alpha"), new StoreException.StaleRevision("r2"))) {
+                        new StoreException.Busy("alpha"),
+                        new StoreException.StaleRevision("r2"),
+                        new StoreException.NoForgeAccess("https://github.com", "Projects"))) {
             final Stage f = new Stage();
             final WorkRun.Offered offer = f.started();
             f.store.failure = passing;

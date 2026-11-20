@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.git;
 
 import java.net.URI;
+import java.util.Locale;
 import java.util.Map;
 import org.fuin.porelo.planner.store.StoreException;
 
@@ -31,12 +32,36 @@ public final class ForgeTokens {
      * Asks Porelo's helper for the token of an https address.
      *
      * @param origin the https address the token is for, without a login, query or fragment
-     * @param name the repository's name a refusal reports
+     * @param name the repository's name a refusal of the address itself reports
      * @return the token, which the caller keeps no longer than its call
-     * @throws StoreException.CredentialRefused when no token can be had, naming the repository and
-     *     never the token
+     * @throws StoreException.NoForgeAccess when no token can be had for a plain https address,
+     *     naming its origin and never the token, so the window can offer to hand one on
+     * @throws StoreException.CredentialRefused when the address is not a plain https one, naming
+     *     the repository
      */
     public String token(final URI origin, final String name) {
-        return login.token(origin.toString(), name, LentLogin.LIMIT);
+        try {
+            return login.token(origin.toString(), name, LentLogin.LIMIT);
+        } catch (final StoreException.CredentialRefused refused) {
+            throw missing(origin, refused);
+        }
+    }
+
+    /** The forge's access as missing, or the refusal itself for an address that is no origin. */
+    private static StoreException missing(
+            final URI address, final StoreException.CredentialRefused refused) {
+        final String host = address.getHost();
+        if (!"https".equals(address.getScheme())
+                || host == null
+                || address.getRawUserInfo() != null
+                || address.getPort() != -1) {
+            return refused;
+        }
+        try {
+            return new StoreException.NoForgeAccess(
+                    "https://" + host.toLowerCase(Locale.ROOT), null);
+        } catch (final IllegalArgumentException noOrigin) {
+            return refused;
+        }
     }
 }

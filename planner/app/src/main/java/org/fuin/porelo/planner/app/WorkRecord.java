@@ -31,6 +31,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
@@ -728,6 +729,10 @@ public final class WorkRecord implements AutoCloseable {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }
+                                    final WorkRun.SaveFailure refusal = offer.refusal();
+                                    if (refusal != null) {
+                                        checkedRefusal(refusal);
+                                    }
                                     final NextStep.Settings rework = offer.rework();
                                     if (rework != null) {
                                         present(rework.mode(), rework.agent(), rework.model());
@@ -775,6 +780,22 @@ public final class WorkRecord implements AutoCloseable {
             } finally {
                 mutex.unlock();
             }
+        }
+    }
+
+    /**
+     * Refuses a kept refusal that could not be told again as it was made: the window offers a token
+     * for the forge and right a missing access names, so neither may be other than the store's.
+     */
+    private static void checkedRefusal(final WorkRun.SaveFailure refusal) {
+        if (refusal.name().equals("NoForgeAccess")) {
+            if (!new StoreException.NoForgeAccess(refusal.subject(), refusal.right())
+                    .subject()
+                    .equals(refusal.subject())) {
+                throw new IllegalArgumentException("a refusal fails its check");
+            }
+        } else if (refusal.right() != null) {
+            throw new IllegalArgumentException("a refusal fails its check");
         }
     }
 

@@ -164,4 +164,31 @@ class GitHubStoreTest {
                 .as("the text format GitHub keeps")
                 .isEqualTo(TextFormat.MARKDOWN);
     }
+
+    @Test
+    void aStoreWhoseAccessIsRefusedReadsAgainInsteadOfAnsweringTheBoardItKept() {
+        // Harm: the window shown the board kept while the person's access is gone, never offered
+        // a token, its changes ending again at every poll.
+        final AtomicInteger reads = new AtomicInteger();
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                config -> {
+                                    if (reads.incrementAndGet() == 1) {
+                                        return snapshot("one");
+                                    }
+                                    throw new StoreException.NoForgeAccess(
+                                            "https://github.com", null);
+                                },
+                                states -> null));
+        store.board();
+
+        assertThatThrownBy(store::refresh)
+                .as("the refresh GitHub refused")
+                .isInstanceOf(StoreException.NoForgeAccess.class);
+        assertThatThrownBy(store::board)
+                .as("the board asked for after the refusal")
+                .isInstanceOf(StoreException.NoForgeAccess.class);
+        assertThat(reads.get()).as("the board was read again").isEqualTo(3);
+    }
 }

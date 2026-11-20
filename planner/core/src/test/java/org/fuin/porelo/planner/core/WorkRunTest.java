@@ -2614,6 +2614,7 @@ class WorkRunTest {
                         new StoreException.NotSavable("AA1", "failed"),
                         new StoreException.WorkflowMissing("alpha"),
                         new StoreException.CredentialRefused("alpha"),
+                        new StoreException.NoForgeAccess("https://github.com", "Projects"),
                         new StoreException.Unreachable("alpha", "failed"),
                         new StoreException.Unreadable("alpha", "failed"),
                         new StoreException.PartlySaved("alpha", List.of("beta"), "failed"))) {
@@ -2641,6 +2642,34 @@ class WorkRunTest {
                     .as("no unstarted offer survives a refusal")
                     .noneMatch(o -> o.status().equals("OFFERED"));
         }
+    }
+
+    @Test
+    void anEndRefusedForAMissingForgeAccessIsToldAgainAsThatRefusal() {
+        // Harm: a task's end sent again answered as another refusal or a crash, so the window
+        // offers no token for the forge, or for another forge or right than the one refused.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        f.store.failure = new StoreException.NoForgeAccess("https://github.com", "Projects");
+        final WorkRun.Report end =
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built"));
+        assertThatThrownBy(() -> f.run.report("task", end))
+                .as("the save's refusal")
+                .isInstanceOf(StoreException.NoForgeAccess.class);
+        f.store.failure = null;
+
+        assertThatThrownBy(() -> f.run.report("task", end))
+                .as("the same end sent again")
+                .isInstanceOfSatisfying(
+                        StoreException.NoForgeAccess.class,
+                        again -> {
+                            assertThat(again.subject())
+                                    .as("the forge refused")
+                                    .isEqualTo("https://github.com");
+                            assertThat(again.right()).as("the right named").isEqualTo("Projects");
+                        });
     }
 
     @Test

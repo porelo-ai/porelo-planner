@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,8 @@ class ChangesRegistryTest {
     private final AtomicInteger opened = new AtomicInteger();
 
     private volatile boolean unreadable;
+
+    private volatile @Nullable RuntimeException refreshRefused;
 
     private final CountDownLatch slowRead = new CountDownLatch(1);
 
@@ -158,6 +161,39 @@ class ChangesRegistryTest {
         }
     }
 
+    @Test
+    void aFetchRefusedForAMissingForgeAccessEndsTheStreamAndAnotherFailureDoesNot()
+            throws Exception {
+        // Harm: the window keeps showing a live board while the person's access is gone, never
+        // told the refusal and never offered to hand a token on; or every passing failure ends
+        // the stream.
+        try (ChangesRegistry polled =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofMillis(20),
+                        Executors.newSingleThreadScheduledExecutor())) {
+            projects.put("alpha", "one", null);
+            final Changes.Subscription one = polled.subscribe("alpha");
+            refreshRefused = new StoreException.Unreachable("porelo-store", "timed out");
+            final int before = refreshes.get();
+            final long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (refreshes.get() < before + 3 && System.nanoTime() < end) {
+                Thread.sleep(10);
+            }
+            assertThat(refreshes.get())
+                    .as("fetches that failed")
+                    .isGreaterThanOrEqualTo(before + 3);
+            assertThat(one.open()).as("the stream after fetches that failed").isTrue();
+
+            refreshRefused = new StoreException.NoForgeAccess("https://github.com", null);
+            while (one.open() && System.nanoTime() < end + TimeUnit.SECONDS.toNanos(5)) {
+                Thread.sleep(10);
+            }
+            assertThat(one.open()).as("the stream after the forge refused the access").isFalse();
+            assertThat(polled.followedProjects()).as("nothing followed").isZero();
+        }
+    }
+
     private PlanningStore store(final String repository) {
         opened.incrementAndGet();
         return new PlanningStore() {
@@ -177,6 +213,10 @@ class ChangesRegistryTest {
             @Override
             public Board refresh() {
                 refreshes.incrementAndGet();
+                final RuntimeException refused = refreshRefused;
+                if (refused != null) {
+                    throw refused;
+                }
                 board = boardAt(remote.getOrDefault(repository, repository));
                 return board();
             }

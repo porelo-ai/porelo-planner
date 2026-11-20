@@ -62,6 +62,8 @@
         <openapi-generator.version>7.27.0</openapi-generator.version>
         <!-- The templates for null-checked records; moved to their first release when there is one. -->
         <porelo.openapi.templates.version>0.1.0-SNAPSHOT</porelo.openapi.templates.version>
+        <!-- The forge clients the GitHub store reads its refusals from; moved to their first release when there is one. -->
+        <porelo.forge-clients.version>0.1.0-SNAPSHOT</porelo.forge-clients.version>
     </properties>
 
     <modules>
@@ -85,6 +87,11 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.fuin.porelo</groupId>
+                <artifactId>porelo-forge-client-github</artifactId>
+                <version>${porelo.forge-clients.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.tngtech.archunit</groupId>

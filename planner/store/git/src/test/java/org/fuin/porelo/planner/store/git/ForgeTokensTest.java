@@ -105,9 +105,12 @@ class ForgeTokensTest {
         assertThatThrownBy(() -> ForgeTokens.of(person).token(ORIGIN, "team"))
                 .as(why)
                 .isInstanceOfSatisfying(
-                        StoreException.CredentialRefused.class,
+                        StoreException.NoForgeAccess.class,
                         e -> {
-                            assertThat(e.subject()).as("the repository named").isEqualTo("team");
+                            assertThat(e.subject())
+                                    .as("the forge's origin, for which the window offers a token")
+                                    .isEqualTo("https://forge.example.org");
+                            assertThat(e.right()).as("no right is named").isNull();
                             assertThat(e.getMessage())
                                     .as("the refusal's words")
                                     .doesNotContain(token);
@@ -140,7 +143,8 @@ class ForgeTokensTest {
 
     @Test
     void withoutTheVariableNoTokenIsLent() {
-        // Harm: an API call made with whatever login else the planner could find.
+        // Harm: an API call made with whatever login else the planner could find, or a missing
+        // token told as a refused Git login, so the window offers no token for the forge.
         final Map<String, String> person = person("answer");
         person.remove(LentLogin.VARIABLE);
         assertRefusedWithoutTheToken(person, "a token without the variable");

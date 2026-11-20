@@ -256,11 +256,48 @@ public final class WorkRun {
         }
     }
 
-    /** A save refusal kept without exception text, paths or credentials. */
-    public record SaveFailure(String name, String subject, List<String> pushed) {
+    /**
+     * A save refusal kept without exception text, paths or credentials.
+     *
+     * @param name the refusal's name
+     * @param subject what it is about: a repository, an id, or a forge's origin
+     * @param pushed the repositories already pushed
+     * @param right the right a forge named as missing, null for every other refusal
+     */
+    public record SaveFailure(
+            String name, String subject, List<String> pushed, @Nullable String right) {
         /** Keeps evidence of repositories already pushed. */
         public SaveFailure {
             pushed = List.copyOf(pushed);
+        }
+
+        /**
+         * A refusal that names no right.
+         *
+         * @param name the refusal's name
+         * @param subject what it is about
+         * @param pushed the repositories already pushed
+         */
+        public SaveFailure(final String name, final String subject, final List<String> pushed) {
+            this(name, subject, pushed, null);
+        }
+
+        /**
+         * Keeps a store's refusal as it can be told again.
+         *
+         * @param refused what the save threw
+         * @return the refusal kept
+         */
+        static SaveFailure of(final RuntimeException refused) {
+            return new SaveFailure(
+                    refused instanceof StoreException
+                            ? refused.getClass().getSimpleName()
+                            : "NotOffered",
+                    refused instanceof StoreException failure ? failure.subject() : "",
+                    refused instanceof StoreException.PartlySaved partly
+                            ? partly.pushed()
+                            : List.of(),
+                    refused instanceof StoreException.NoForgeAccess access ? access.right() : null);
         }
     }
 
@@ -1592,8 +1629,11 @@ public final class WorkRun {
             // A store that saves no result saved nothing, so the window may hand it in again.
             session.write(snapshot);
             throw notOffered;
-        } catch (final StoreException.Busy | StoreException.StaleRevision notStarted) {
-            // The store refuses these before it writes anything, so the window tries again later.
+        } catch (final StoreException.Busy
+                | StoreException.StaleRevision
+                | StoreException.NoForgeAccess notStarted) {
+            // The store refuses these before it writes anything, so the window tries again later,
+            // after a missing access once the person handed a token on.
             session.write(snapshot);
             throw notStarted;
         } catch (final RuntimeException failed) {
@@ -2044,19 +2084,7 @@ public final class WorkRun {
                                             o.fingerprint(),
                                             List.of(),
                                             List.of(),
-                                            new SaveFailure(
-                                                    refused instanceof StoreException
-                                                            ? refused.getClass().getSimpleName()
-                                                            : "NotOffered",
-                                                    refused instanceof StoreException failure
-                                                            ? failure.subject()
-                                                            : "",
-                                                    refused
-                                                                    instanceof
-                                                                    StoreException.PartlySaved
-                                                                            partly
-                                                            ? partly.pushed()
-                                                            : List.of()),
+                                            SaveFailure.of(refused),
                                             o.reviewAnyway(),
                                             o.reworkComment(),
                                             o.rework()));
@@ -2973,6 +3001,8 @@ public final class WorkRun {
                             failure.pushed(),
                             "A repository could not be saved.");
             case "CredentialRefused" -> new StoreException.CredentialRefused(failure.subject());
+            case "NoForgeAccess" ->
+                    new StoreException.NoForgeAccess(failure.subject(), failure.right());
             case "Unreachable" ->
                     new StoreException.Unreachable(
                             failure.subject(), "The repository could not be reached.");

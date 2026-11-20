@@ -177,6 +177,19 @@ class PlanningBoard extends ChangeNotifier {
   /// The refused save, including typed details needed after a partial push.
   PlanningRefusal? moveRefusal;
 
+  /// The last refusal of a read, a move or an action, kept whole so the screen can offer what it names, such as the
+  /// window's hand-on of a token beside `NoForgeAccess`; null once a board read after it is shown or the project
+  /// changes.
+  PlanningRefusal? refusal;
+
+  /// The order of the last board received when [refusal] was kept; a board received later clears it.
+  int _refusalOrder = 0;
+
+  void _keepRefusal(Object error) {
+    refusal = error is PlanningRefusal ? error : null;
+    _refusalOrder = _replyOrder;
+  }
+
   /// Confirmation or revision-change feedback from the shared save.
   String? moveNotice;
 
@@ -323,6 +336,7 @@ class PlanningBoard extends ChangeNotifier {
             final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
             void settle() {
               if (!current()) return;
+              if (order > _refusalOrder) refusal = null;
               problem = workflow.faults.isEmpty ? null : planningShown(workflow.faults.join('\n'));
               unsupported = false;
               if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
@@ -340,6 +354,7 @@ class PlanningBoard extends ChangeNotifier {
             notifyListeners();
           } catch (error) {
             if (!current()) return;
+            _keepRefusal(error);
             problem = planningFailureWords(error);
             live = false;
             notifyListeners();
@@ -353,6 +368,7 @@ class PlanningBoard extends ChangeNotifier {
           final watching = _watching;
           _watching = null;
           unsupported = planningUnsupported(error);
+          _keepRefusal(error);
           problem = unsupported ? null : planningFailureWords(error);
           live = false;
           notifyListeners();
@@ -374,6 +390,7 @@ class PlanningBoard extends ChangeNotifier {
     } catch (error) {
       _stopFollowingReconnect();
       catchingUp = false;
+      _keepRefusal(error);
       unsupported = planningUnsupported(error);
       problem = unsupported ? null : planningFailureWords(error);
       live = false;
@@ -554,6 +571,7 @@ class PlanningBoard extends ChangeNotifier {
   /// Reports an action error and redraws every consumer of this board.
   void reportActionProblem(Object error) {
     if (_disposed) return;
+    _keepRefusal(error);
     actionProblem = planningFailureWords(error);
     _changed();
   }
@@ -562,6 +580,7 @@ class PlanningBoard extends ChangeNotifier {
   /// a start in the window is no fault, as for an idea's discussion.
   void reportStartProblem(String story, Object error) {
     if (_disposed || planningRefused(error, 'NotStarted')) return;
+    _keepRefusal(error);
     actionProblem = 'Start work on ${planningShown(story, multiline: false)}: ${planningFailureWords(error)}';
     _changed();
   }
@@ -945,6 +964,7 @@ class PlanningBoard extends ChangeNotifier {
     actionBusy = false;
     discussing = false;
     problem = null;
+    refusal = null;
     unsupported = false;
     live = false;
     _listen();
@@ -965,11 +985,13 @@ class PlanningBoard extends ChangeNotifier {
     final name = project;
     _changed();
     String? refused;
+    Object? refusedError;
     try {
       await source.refreshProject(name);
     } catch (error) {
       // The watch is opened anew all the same; a fetch the planner refused is said, not taken for a fresh board.
       refused = planningFailureWords(error);
+      refusedError = error;
     }
     if (_disposed) return;
     // A project chosen meanwhile is opened by the save's end instead, which runs the queued change.
@@ -978,6 +1000,11 @@ class PlanningBoard extends ChangeNotifier {
     if (switched || !identical(backend, source) || project != name) return;
     moveProblem = refused;
     await retry();
+    // Kept past the new watch's start, so a board it reads afterwards is what clears it.
+    if (refusedError != null && !_disposed && identical(backend, source) && project == name) {
+      _keepRefusal(refusedError);
+      _changed();
+    }
   }
 
   /// The displayed destination: the move in flight's target until its answer.
@@ -1136,6 +1163,7 @@ class PlanningBoard extends ChangeNotifier {
       if (stale) await reload();
       if (!_current(generation)) return;
       moveRefusal = error is PlanningRefusal ? error : null;
+      _keepRefusal(error);
       moveProblem = stale
           ? planningShown('Planning changed while ${move.id} was moved; nothing was moved. Move it again.')
           : planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
@@ -1327,11 +1355,15 @@ class PlanningBoard extends ChangeNotifier {
       final reply = await _read();
       if (_disposed || generation != _generation) return;
       moveProblem = null;
+      refusal = null;
       _acceptNewest(reply.$1, reply.$2);
       final faults = snapshot?.faults ?? const <String>[];
       problem = faults.isEmpty ? null : planningShown(faults.join('\n'));
     } catch (error) {
-      if (!_disposed && generation == _generation) moveProblem = planningFailureWords(error);
+      if (!_disposed && generation == _generation) {
+        _keepRefusal(error);
+        moveProblem = planningFailureWords(error);
+      }
     } finally {
       _finishOperation();
     }
@@ -1464,6 +1496,7 @@ class PlanningBoard extends ChangeNotifier {
       }
       _pending.remove(key);
       moveRefusal = error;
+      _keepRefusal(error);
       moveProblem = planningShown('${move.id} was not moved: $detail');
       if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
       if (error.name == 'PartlySaved') {
@@ -1478,6 +1511,7 @@ class PlanningBoard extends ChangeNotifier {
       if (_current(generation)) {
         refused = true;
         _pending.remove(key);
+        _keepRefusal(error);
         moveProblem = planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
       }
     } finally {

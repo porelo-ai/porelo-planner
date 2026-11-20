@@ -12,8 +12,8 @@ public interface TokenSource {
      *
      * @param origin the forge's origin, checked by {@link #checkedOrigin(URI)}
      * @return the token, never blank
-     * @throws org.fuin.porelo.planner.store.StoreException.CredentialRefused if no token is lent
-     *     for it
+     * @throws org.fuin.porelo.planner.store.StoreException.NoForgeAccess if no token is lent for
+     *     it, naming the origin and no right
      */
     String token(URI origin);
 

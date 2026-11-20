@@ -7,6 +7,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.fuin.porelo.planner.core.Changes;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -169,6 +170,19 @@ public final class ChangesRegistry implements AutoCloseable {
         }
     }
 
+    private void end(final String project, final Changes changes) {
+        final Followed known;
+        synchronized (this) {
+            known = followed.get(project);
+            if (known == null || known.changes() != changes) {
+                return;
+            }
+            followed.remove(project);
+        }
+        known.polling().cancel(false);
+        known.changes().closeAll();
+    }
+
     private synchronized void idle(final String project) {
         final Followed known = followed.get(project);
         // A window that subscribed since the last one left keeps the project followed.
@@ -178,9 +192,16 @@ public final class ChangesRegistry implements AutoCloseable {
         }
     }
 
-    private static void poll(final String project, final Changes changes) {
+    private void poll(final String project, final Changes changes) {
         try {
             changes.poll();
+        } catch (final StoreException.NoForgeAccess refused) {
+            LOG.warn(
+                    "Fetching project {} was refused, its streams end: {}",
+                    LogText.of(project),
+                    LogText.of(refused.getMessage()));
+            // Its windows open their stream again, are told the refusal and offer a token.
+            end(project, changes);
         } catch (final RuntimeException e) {
             // The store's words are free of secrets and local paths; the next poll tries again.
             LOG.warn(

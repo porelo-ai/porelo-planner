@@ -250,10 +250,18 @@ public final class GitHubStore implements PlanningStore {
         try {
             refuseRetired();
             return work.get();
-        } catch (final StoreException | UnsupportedOperationException e) {
+        } catch (final UnsupportedOperationException e) {
             throw e;
         } catch (final RuntimeException e) {
-            throw parts.refusals().refusal(config.own(), e, tokenToScrub());
+            final StoreException refusal =
+                    e instanceof StoreException known
+                            ? known
+                            : parts.refusals().refusal(config.own(), e, tokenToScrub());
+            if (refusal instanceof StoreException.NoForgeAccess) {
+                // Read again next time, so the window is told the refusal, not the board kept.
+                snapshot = null;
+            }
+            throw refusal;
         } finally {
             lock.unlock();
         }

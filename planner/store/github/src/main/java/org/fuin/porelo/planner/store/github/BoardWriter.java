@@ -17,6 +17,37 @@ public interface BoardWriter {
     BoardWriter NONE = new BoardWriter() {};
 
     /**
+     * A call of a save that failed after an earlier call of the same save wrote; a writer throws it
+     * in place of the call's failure, so the refusal says a part was saved and never that nothing
+     * was.
+     */
+    final class AfterWriting extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        /** What the later call threw, kept apart from the message: its words may hold the token. */
+        private final RuntimeException failure;
+
+        /**
+         * Wraps the later call's failure.
+         *
+         * @param failure what the later call threw
+         */
+        public AfterWriting(final RuntimeException failure) {
+            super("A call of the save failed after a part of it was written");
+            this.failure = failure;
+        }
+
+        /**
+         * Answers what the later call threw.
+         *
+         * @return the failure
+         */
+        public RuntimeException failure() {
+            return failure;
+        }
+    }
+
+    /**
      * The ids an idea was saved under.
      *
      * @param story the story's id

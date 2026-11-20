@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../client.dart';
+import '../forge_access_offer.dart';
 import '../hooks.dart';
 import '../models.dart';
 import '../planning_board.dart';
@@ -173,6 +174,7 @@ class PlanningScreen extends StatelessWidget {
               pageButton: place.story == null ? pageButton : null,
               pageNote: place.story == null ? pageNote : null,
               board: board,
+              host: host,
               projects: boards.projects,
               select: (project) {
                 boards.select(project);
@@ -225,6 +227,7 @@ class _BoardView extends StatefulWidget {
     required this.pageButton,
     required this.pageNote,
     required this.board,
+    required this.host,
     required this.projects,
     required this.select,
     required this.providerProblems,
@@ -242,6 +245,7 @@ class _BoardView extends StatefulWidget {
   final Widget? pageButton;
   final Widget? pageNote;
   final PlanningBoard board;
+  final PlanningHost host;
   final List<String> projects;
   final ValueChanged<String> select;
   final List<String> providerProblems;
@@ -587,6 +591,7 @@ class _BoardViewState extends State<_BoardView> {
                       if (board.moveProblem case final problem?)
                         _failure(problem, theme, key: const Key('planning-move-error')),
                       if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
+                      ForgeAccessOffer(board: board, host: widget.host, provider: widget.machines[board] ?? ''),
                       if (board.snapshot != null || board.problem != null)
                         TextButton.icon(
                           key: const Key('planning-reload'),

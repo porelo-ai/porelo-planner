@@ -270,6 +270,72 @@ class WorkRecordTest {
         }
     }
 
+    @Test
+    void aKeptMissingForgeAccessReadsWithItsRightAndAForgedOneDoesNot() throws Exception {
+        // Harm: a refusal told again for another forge or right than the store's, so the window
+        // hands the person's token on for an address a changed record slipped in.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode refusal = offer.putObject("refusal");
+        refusal.put("name", "NoForgeAccess")
+                .put("subject", "https://github.com")
+                .put("right", "Projects")
+                .putArray("pushed");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.SaveFailure kept =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .refusal());
+            assertThat(kept).as("the kept refusal").isNotNull();
+            assertThat(List.of(kept.name(), kept.subject(), String.valueOf(kept.right())))
+                    .as("the refusal, its forge and its right")
+                    .containsExactly("NoForgeAccess", "https://github.com", "Projects");
+            for (final Map.Entry<String, String> forged :
+                    Map.of(
+                                    "subject", "https://person:secret@github.com",
+                                    "right", "Projects\nforged line")
+                            .entrySet()) {
+                final ObjectNode changed = refusal.deepCopy();
+                changed.put(forged.getKey(), forged.getValue());
+                offer.set("refusal", changed);
+                Files.writeString(file, json.writeValueAsString(document));
+                assertThatThrownBy(
+                                () ->
+                                        records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)
+                                                .locked(session -> session.read()))
+                        .as("a kept refusal whose %s is %s", forged.getKey(), forged.getValue())
+                        .isInstanceOf(WorkRefusal.class);
+            }
+            final ObjectNode other = refusal.deepCopy();
+            other.put("name", "Unreachable");
+            offer.set("refusal", other);
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("another refusal that names a right")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
     // Prevents an upgrade from making a running story's work record unreadable, and a forged
     // given file name from reaching a task's start.
     @Test

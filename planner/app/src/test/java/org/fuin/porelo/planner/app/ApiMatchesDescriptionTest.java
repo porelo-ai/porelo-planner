@@ -499,7 +499,7 @@ class ApiMatchesDescriptionTest {
         operation.path("responses").fieldNames().forEachRemaining(statuses::add);
         assertThat(statuses)
                 .as("every answer of the hand-in")
-                .isEqualTo(Set.of("200", "400", "401", "404", "422", "501", "503"));
+                .isEqualTo(Set.of("200", "400", "401", "404", "422", "501", "502", "503"));
         assertThat(operation.at("/responses/422/$ref").asText())
                 .as("a refused result's answer")
                 .isEqualTo("#/components/responses/ResultRefused");
