@@ -9,7 +9,7 @@
   "size": "M",
   "priority": "High",
   "rank": 84,
-  "blockedBy": ["PL166"],
+  "blockedBy": ["PL165", "PL166"],
   "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every issue, field, dependency and rewritten reference it would write; the real run keeps each old id, can be run again without doubling anything, and says what it could not carry"
 }
 ```
@@ -46,6 +46,18 @@ first as a dry run, and every story and issue keeps the id people know it by.
 - Red first: `CarryOverTest` over a fixture project of two repositories with a story, a Porelo sub-issue, a
   dependency and cross links, against a fake GitHub: the dry run's lines, then the writes; a second run writes
   nothing new.
+
+## Order and files
+
+Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;
+[PL169](README.md#pl169)'s contract (independent, at once); then [PL165](README.md#pl165), [PL125](README.md#pl125)
+followed by [PL166](README.md#pl166), and [PL169](README.md#pl169)'s behavior followed by [PL167](README.md#pl167),
+side by side; then [PL168](README.md#pl168). Each builds against the forge clients' published surface with fakes of
+its own.
+
+- Owns `planner/app`: a `carry-over` command beside `WorkCommands`' `issues` and `stories`; `store/github`:
+  `CarryOver` (the dry run's lines and the writes through `BoardWriter`), `ReferenceRewrite`. Test:
+  `CarryOverTest`. It comes last, since it writes through [PL165](README.md#pl165) and [PL166](README.md#pl166).
 
 ## Acceptance
 

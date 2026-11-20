@@ -73,7 +73,15 @@ how it got there, and the planner reads back exactly what it wrote.
     97fa4091), so the planner reads the ids again after setting them up.
   - Organization issue fields and issue types exist in the schema (`Organization.issueFields`,
     `Issue.issueFieldValues`, `setIssueFieldValue`), but the token got 403 even to read them; not used.
-- Code: a new module `planner/store/github` with `IssueMapping` (GitHub's answer as plain records in, `Story` and
+- Code, in two steps. **Step 1, the types (about 30 minutes, pushed first):** the module `planner/store/github`
+  (its `pom.xml`, listed in `planner/store/pom.xml`) with `package-info.java`, the records `ProjectRef`
+  (owner, number), `ItemView` (an item as the mapping takes it: node id, repository, number, title, body, state,
+  fields by name, parent, sub-issues, blocked-by, `updatedAt`), `FieldNames` (the field names and kinds),
+  `StageEntry` (one stage comment's values), and the interfaces the other issues implement: `BoardReader` (the
+  board from the project), `BoardWriter` (the five writes), `ChangeProbe` (unchanged since the last read, with a
+  default that answers changed), `TokenSource` (the token for an address), `AccessRefusals` (a forge refusal
+  turned into a store refusal, default `CredentialRefused`); and `GitHubStore`, which implements `PlanningStore`
+  by delegating to them. **Step 2, the mapping:** `IssueMapping`, `IssueMapping` (GitHub's answer as plain records in, `Story` and
   `Issue` out, and back), `BodySections` (read and overwrite the named sections, leaving the others byte for
   byte) and `StageComment` (write and read the stage comment, bounded, its end from `createdAt`). No
   HTTP here.
@@ -82,6 +90,18 @@ how it got there, and the planner reads back exactly what it wrote.
   reads `Story` and `Issue` and writes back the same fields; a number field set by hand to another sum gives the
   comments' sum and a fault; the next id of a prefix whose floor lies above its highest open `Id`; a result that
   overwrites *Plan* leaves *Acceptance* intact.
+
+## Order and files
+
+Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;
+[PL169](README.md#pl169)'s contract (independent, at once); then [PL165](README.md#pl165), [PL125](README.md#pl125)
+followed by [PL166](README.md#pl166), and [PL169](README.md#pl169)'s behavior followed by [PL167](README.md#pl167),
+side by side; then [PL168](README.md#pl168). Each builds against the forge clients' published surface with fakes of
+its own.
+
+- Step 1 owns `ProjectRef`, `ItemView`, `FieldNames`, `StageEntry`, `BoardReader`, `BoardWriter`, `ChangeProbe`,
+  `TokenSource`, `AccessRefusals` and `GitHubStore`; step 2 `IssueMapping`, `BodySections`, `StageComment` and
+  `doc/github-issues.md`. No other issue edits these files; a change they need is said in the room first.
 
 ## Acceptance
 

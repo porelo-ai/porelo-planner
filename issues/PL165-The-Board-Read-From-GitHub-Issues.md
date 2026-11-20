@@ -32,7 +32,7 @@ however many repositories it has, with exactly what GitHub holds.
   only once its Porelo accepts it. `GitProjects` reads it and hands the project to an opener of `store/github`
   (no Git there: the project's files are read by the Git store's own reader and handed in, so only `store/git`
   knows Git).
-- `GitHubStore implements PlanningStore` in `planner/store/github`: `refresh()` reads every page of the forge
+- `ItemsBoardReader`, behind [PL164](README.md#pl164)'s `GitHubStore`: `refresh()` reads every page of the forge
   clients' `projectItems(org, number, after)`, each item with its issue, sub-issues, blocked-by and field values,
   bounded like the Git store (the most items, the longest body), and `IssueMapping`
   ([PL164](README.md#pl164)) makes the `Board`. The store holds no query text and no records of its own.
@@ -50,6 +50,19 @@ however many repositories it has, with exactly what GitHub holds.
   repositories over two pages becomes the board [PL164](README.md#pl164)'s fixture names; a 401 gives
   `CredentialRefused`; a page beyond the bound gives a fault, not a cut board. Then one live check against the
   test organization, measured against the 0.8 s the story names.
+
+## Order and files
+
+Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;
+[PL169](README.md#pl169)'s contract (independent, at once); then [PL165](README.md#pl165), [PL125](README.md#pl125)
+followed by [PL166](README.md#pl166), and [PL169](README.md#pl169)'s behavior followed by [PL167](README.md#pl167),
+side by side; then [PL168](README.md#pl168). Each builds against the forge clients' published surface with fakes of
+its own.
+
+- Owns `store/github`: `ItemsBoardReader` (implements `BoardReader` over `projectItems`), `GitHubStoreOpener`;
+  `store/git`: `ProjectFile` and `GitProjects` (the `tracker` key and the choice of store); `planner/app`:
+  `StoreConfiguration` (the opener and the `TokenSource` from [PL125](README.md#pl125)'s lent login). Tests:
+  `ItemsBoardReaderTest`, `GitHubProjectsTest`.
 
 ## Acceptance
 

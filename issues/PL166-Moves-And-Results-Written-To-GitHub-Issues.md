@@ -25,7 +25,7 @@ stands on its issue under the person's name, with no fetch, commit or push.
 
 - Today `GitStore.save`, `createIssue`, `createIdea` and `saveResult` write files, index them, commit and push,
   refusing with `StaleRevision`, `NotSavable`, `Busy` and `PartlySaved` (`PlanningStore`).
-- `GitHubStore.save(revision, writes)`: re-reads the `updatedAt` of the items written; a change since `revision`
+- `FieldsBoardWriter.save(revision, writes)`: re-reads the `updatedAt` of the items written; a change since `revision`
   is `StaleRevision`. The states, workers and priorities go through the forge clients' `setFieldValues`, one aliased
   mutation of at most 50 values (the story measured ten issues in three repositories at 6.3 s); a closed state also
   closes the issue through `updateIssue`. GitHub has no transaction: the client answers each alias's result or
@@ -46,6 +46,18 @@ stands on its issue under the person's name, with no fetch, commit or push.
 - Red first: `GitHubStoreSaveTest` over recorded answers: a move of two issues in two repositories ends in one
   mutation; a board changed meanwhile is refused; the second of two calls failing gives `PartlySaved`; a stage
   result that names *Plan* leaves *Acceptance* byte for byte and adds exactly one stage comment.
+
+## Order and files
+
+Built in this order, each pushed once what it needs is published: [PL164](README.md#pl164)'s types;
+[PL169](README.md#pl169)'s contract (independent, at once); then [PL165](README.md#pl165), [PL125](README.md#pl125)
+followed by [PL166](README.md#pl166), and [PL169](README.md#pl169)'s behavior followed by [PL167](README.md#pl167),
+side by side; then [PL168](README.md#pl168). Each builds against the forge clients' published surface with fakes of
+its own.
+
+- Owns `store/github`: `FieldsBoardWriter` (implements `BoardWriter`), `NextIds` (the next id of a prefix and the
+  race between two persons). Tests: `FieldsBoardWriterTest`, `NextIdsTest`. Built against
+  [PL164](README.md#pl164)'s types and a fake reader, so it does not wait on [PL165](README.md#pl165).
 
 ## Acceptance
 
