@@ -46,7 +46,7 @@ final class WorkCommands {
 
     private static final String ISSUES = "issues index <dir> | issues check <dir>";
 
-    private static final String COMMITS = "check-commits RANGE [--outside]";
+    private static final String COMMITS = "check-commits RANGE [--outside] | check-commits --event";
 
     private static final String PUSHES = "check-pushes --since HOURS";
 
@@ -107,19 +107,31 @@ final class WorkCommands {
     }
 
     /**
-     * Checks the commits of a range in the repository the command runs in, at its root; each line
-     * said with its control characters escaped, since it quotes what a commit says of itself.
+     * Checks the commits of a range in the repository the command runs in, at its root, or those
+     * the workflow's event names; each line said with its control characters escaped, since it
+     * quotes what a commit says of itself.
      */
     private int checkCommits(final List<String> rest) {
         String range = null;
+        int positional = 0;
         boolean outside = false;
+        boolean event = false;
         for (final String arg : rest) {
             if (arg.equals("--outside")) outside = true;
-            else if (arg.startsWith("--") || range != null) return usage(COMMITS);
-            else range = arg;
+            else if (arg.equals("--event")) event = true;
+            else if (arg.startsWith("--")) return usage(COMMITS);
+            else {
+                positional++;
+                range = arg;
+            }
         }
-        if (range == null) return usage(COMMITS);
         final Path here = Path.of(".");
+        if (event) {
+            if (positional != 0 || outside) return usage(COMMITS);
+            final Map<String, String> environment = System.getenv();
+            return said((sayer, faulter) -> checkEvent(environment, here, sayer, faulter));
+        }
+        if (positional != 1 || range == null) return usage(COMMITS);
         final String checked = range;
         final boolean fromOutside = outside;
         return said(
@@ -130,6 +142,85 @@ final class WorkCommands {
                                         CommitRules.Git.in(here, Map.of()),
                                         () -> CommitRules.prefixes(here))
                                 .check(checked, fromOutside));
+    }
+
+    /**
+     * Checks the commits a workflow's event names, the range and whether they come from outside
+     * decided from the event alone: the runner's variables and the event file {@code
+     * GITHUB_EVENT_PATH}.
+     *
+     * @param environment the process's environment
+     * @param here the repository's root
+     * @param out where the result goes
+     * @param err where a refusal goes
+     * @return as a range's check; {@value #REFUSED} when the event names no range, {@value
+     *     #UNANSWERED} when it cannot be read
+     */
+    private static int checkEvent(
+            final Map<String, String> environment,
+            final Path here,
+            final PrintStream out,
+            final PrintStream err) {
+        final String path = environment.get("GITHUB_EVENT_PATH");
+        if (path == null || path.isBlank()) {
+            err.println(
+                    "GITHUB_EVENT_PATH is not set; run check-commits --event in a workflow's step");
+            return UNANSWERED;
+        }
+        final CommitRange decided;
+        try {
+            decided =
+                    CommitRange.decide(
+                            GitHubEvent.read(
+                                    environment,
+                                    Files.readString(Path.of(path), StandardCharsets.UTF_8)),
+                            hash -> holds(here, hash));
+        } catch (IOException ex) {
+            err.println("could not read the event: " + ex.getMessage());
+            return UNANSWERED;
+        } catch (IllegalArgumentException ex) {
+            err.println(ex.getMessage());
+            return REFUSED;
+        }
+        out.println(
+                "NOTE  the event's commits: "
+                        + decided.range()
+                        + (decided.outside() ? ", from outside" : ", from inside"));
+        return new CommitRules(
+                        out,
+                        err,
+                        CommitRules.Git.in(here, Map.of()),
+                        () -> CommitRules.prefixes(here))
+                .check(decided.range(), decided.outside());
+    }
+
+    /**
+     * Whether the checkout holds a commit, as git finds it; false when git cannot tell.
+     *
+     * @param here the repository's root
+     * @param hash a full commit hash, never an option
+     * @return true when git finds that commit
+     */
+    private static boolean holds(final Path here, final String hash) {
+        final ProcessBuilder builder =
+                new ProcessBuilder(
+                                "git", "-C", here.toString(), "cat-file", "-e", hash + "^{commit}")
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD);
+        builder.environment().put("LC_ALL", "C");
+        try {
+            final Process git = builder.start();
+            if (!git.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                git.destroyForcibly();
+                return false;
+            }
+            return git.exitValue() == 0;
+        } catch (IOException ex) {
+            return false;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     /**

@@ -1,0 +1,2 @@
+title: The executable's check-commits takes the workflow's event with --event, deciding the range and whether the commits come from outside as the build tools' does.
+type: added

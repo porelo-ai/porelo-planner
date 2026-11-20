@@ -7,7 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.fuin.porelo.planner.app.WorkFixture.Answer;
@@ -45,7 +47,10 @@ class CommitCommandTest {
                 "Describe the work | HEAD --all",
                 "Describe the work | --all",
                 "Describe the work | -n1",
-                "Describe the work | nothing-of-that-name"
+                "Describe the work | nothing-of-that-name",
+                "Describe the work | --event HEAD",
+                "Describe the work | --event --outside",
+                "Describe the work | --event --all"
             })
     void thePlannerAnswersAsTheBuildToolsDo(final String scenario) throws Exception {
         final String[] parts = scenario.split(" \\|", 2);
@@ -53,9 +58,111 @@ class CommitCommandTest {
         final List<String> args = new ArrayList<>(List.of("check-commits"));
         for (final String arg : parts[1].strip().split(" ")) if (!arg.isEmpty()) args.add(arg);
 
-        final Answer expected = run(BUILD_TOOLS, args, List.of());
-        final Answer answer = run(PLANNER, args, List.of());
+        same(run(BUILD_TOOLS, args, List.of(), Map.of()), run(PLANNER, args, List.of(), Map.of()));
+    }
 
+    // Prevents a repository that moves to the planner's check from taking commits from outside as
+    // from inside, or reading another range than the build tools read for the same event.
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(
+            strings = {
+                "a push on main | 0",
+                "a push on main from a start the clone lacks | 1",
+                "a push on a branch from a start the clone lacks | 0",
+                "a tag | 0",
+                "a pull request from inside | 0",
+                "a pull request from outside | 1",
+                "a schedule | 1",
+                "no event path | 2",
+                "a missing event file | 2",
+                "an event file that is no JSON | 2"
+            })
+    void thePlannerReadsTheEventAsTheBuildToolsDo(final String scenario) throws Exception {
+        final String[] parts = scenario.split(" \\| ", 2);
+        repository("Describe the work");
+        final Path root = dir.resolve("repository");
+        final String base = revision(root, "HEAD~1");
+        final String head = revision(root, "HEAD");
+        final String lacked = "e".repeat(40);
+        git(root, "update-ref", "refs/remotes/origin/main", base);
+        final Path file = dir.resolve("event.json");
+        final Map<String, String> environment = new HashMap<>();
+        environment.put("GITHUB_EVENT_PATH", file.toString());
+        environment.put("GITHUB_SHA", head);
+        environment.put("GITHUB_REPOSITORY", "example/sample");
+        environment.put("GITHUB_SERVER_URL", "https://github.com");
+        environment.put("GITHUB_EVENT_NAME", "push");
+        environment.put("GITHUB_REF", "refs/heads/main");
+        environment.put("GITHUB_REF_TYPE", "branch");
+        switch (parts[0]) {
+            case "a push on main" -> Files.writeString(file, push(base));
+            case "a push on main from a start the clone lacks" ->
+                    Files.writeString(file, push(lacked));
+            case "a push on a branch from a start the clone lacks" -> {
+                environment.put("GITHUB_REF", "refs/heads/task");
+                Files.writeString(file, push(lacked));
+            }
+            case "a tag" -> {
+                environment.put("GITHUB_REF", "refs/tags/v1");
+                environment.put("GITHUB_REF_TYPE", "tag");
+                Files.writeString(file, push("0".repeat(40)));
+            }
+            case "a pull request from inside" -> {
+                pullRequest(environment);
+                Files.writeString(file, pull(base, head, "example/sample", "MEMBER"));
+            }
+            case "a pull request from outside" -> {
+                pullRequest(environment);
+                Files.writeString(file, pull(base, head, "someone/sample", "CONTRIBUTOR"));
+            }
+            case "a schedule" -> {
+                environment.put("GITHUB_EVENT_NAME", "schedule");
+                Files.writeString(file, "{\"schedule\": \"0 3 * * *\"}");
+            }
+            case "no event path" -> {
+                environment.remove("GITHUB_EVENT_PATH");
+                Files.writeString(file, push(base));
+            }
+            case "a missing event file" -> {}
+            case "an event file that is no JSON" -> Files.writeString(file, "{\"before\": ");
+            default -> throw new IllegalArgumentException("no such scenario: " + parts[0]);
+        }
+        final List<String> args = List.of("check-commits", "--event");
+
+        final Answer expected = run(BUILD_TOOLS, args, List.of(), environment);
+        same(expected, run(PLANNER, args, List.of(), environment));
+        assertThat(expected.code())
+                .as("the build tools' exit code, which the scenario is made for: %s", expected)
+                .isEqualTo(Integer.parseInt(parts[1]));
+    }
+
+    /** A push's event file from its start. */
+    private static String push(final String before) {
+        return "{\"ref\": \"refs/heads/main\", \"before\": \"" + before + "\"}";
+    }
+
+    /** A pull request's event file, by an author of the association given. */
+    private static String pull(
+            final String base, final String head, final String repository, final String role) {
+        return "{\"pull_request\": {\"base\": {\"sha\": \""
+                + base
+                + "\"}, \"head\": {\"sha\": \""
+                + head
+                + "\", \"repo\": {\"full_name\": \""
+                + repository
+                + "\"}}, \"author_association\": \""
+                + role
+                + "\", \"user\": {\"login\": \"jane\"}}}";
+    }
+
+    /** The runner's variables of a pull request, which runs on its merge ref. */
+    private static void pullRequest(final Map<String, String> environment) {
+        environment.put("GITHUB_EVENT_NAME", "pull_request");
+        environment.put("GITHUB_REF", "refs/pull/1/merge");
+    }
+
+    /** Holds the planner's answer to the build tools'. */
+    private static void same(final Answer expected, final Answer answer) {
         assertThat(expected.code() + expected.out() + expected.err())
                 .as("the build tools answered at all")
                 .isNotBlank();
@@ -69,7 +176,7 @@ class CommitCommandTest {
     void aMessagesControlCharactersAreSaidEscaped() throws Exception {
         repository("Describe the work\n\nA prose line \u001b[2Jhidden");
 
-        final Answer answer = run(PLANNER, List.of("check-commits", "HEAD"), List.of());
+        final Answer answer = run(PLANNER, List.of("check-commits", "HEAD"), List.of(), Map.of());
 
         assertThat(answer.code()).as("refused for its prose: %s", answer.err()).isEqualTo(1);
         assertThat(answer.err())
@@ -89,7 +196,8 @@ class CommitCommandTest {
                 run(
                         PLANNER,
                         List.of("check-commits", "HEAD"),
-                        List.of("-Djava.io.tmpdir=" + temporary));
+                        List.of("-Djava.io.tmpdir=" + temporary),
+                        Map.of());
 
         assertThat(answer.code()).as(answer.err()).isZero();
         assertThat(dir.resolve("repository/target")).as("no build directory").doesNotExist();
@@ -121,6 +229,18 @@ class CommitCommandTest {
         assertThat(git.waitFor()).as(said).isZero();
     }
 
+    /** A revision's full hash. */
+    private static String revision(final Path root, final String name) throws Exception {
+        final ProcessBuilder builder =
+                new ProcessBuilder("git", "-C", root.toString(), "rev-parse", "--verify", name);
+        isolated(builder);
+        final Process git = builder.start();
+        final String said =
+                new String(git.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        assertThat(git.waitFor()).as("git rev-parse %s: %s", name, said).isZero();
+        return said;
+    }
+
     private static void isolated(final ProcessBuilder builder) {
         builder.environment().put("GIT_CONFIG_GLOBAL", "/dev/null");
         builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
@@ -130,7 +250,15 @@ class CommitCommandTest {
         builder.environment().put("GIT_COMMITTER_EMAIL", "jane@example.org");
     }
 
-    private Answer run(final String main, final List<String> args, final List<String> options)
+    /**
+     * Runs a command at the repository's root, with none of the runner's variables but those given,
+     * so a test run in a workflow reads no event of its own.
+     */
+    private Answer run(
+            final String main,
+            final List<String> args,
+            final List<String> options,
+            final Map<String, String> environment)
             throws IOException, InterruptedException {
         final List<String> command = new ArrayList<>();
         command.add(ProcessHandle.current().info().command().orElseThrow());
@@ -149,6 +277,8 @@ class CommitCommandTest {
                         .redirectOutput(out.toFile())
                         .redirectError(err.toFile());
         isolated(builder);
+        builder.environment().keySet().removeIf(variable -> variable.startsWith("GITHUB_"));
+        builder.environment().putAll(environment);
         final Process process = builder.start();
         try {
             assertThat(process.waitFor(120, TimeUnit.SECONDS))

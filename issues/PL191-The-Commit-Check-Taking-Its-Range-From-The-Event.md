@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL191",
   "title": "The Commit Check Taking Its Range From The Event",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 1,
