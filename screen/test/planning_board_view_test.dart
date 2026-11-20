@@ -709,8 +709,8 @@ void main() {
     expect(shown.top >= view.top && shown.bottom <= view.bottom, isTrue, reason: 'the card $shown is inside $view');
   });
 
-  // Harm: a carried-over story or issue shows only its reference, so the person does not recognize it by its old id.
-  testWidgets('a card, its issue rows and its narrowed tile show the old id beside the reference', (tester) async {
+  // Harm: an old id an older planner still sends is shown or found as if it named the item, though no call takes it.
+  testWidgets('a card, its issue rows and its narrowed tile show the reference alone', (tester) async {
     final (backend, boards) = await _showBoard(tester);
     final data = backend.boards['checkout']!;
     data['stories'] = [
@@ -727,15 +727,18 @@ void main() {
     ];
     backend.push('checkout', data);
     await settle(tester);
-    expect(find.text('planner#7 (ST7)'), findsOneWidget, reason: 'the card shows the story\'s old id');
+    expect(find.text('planner#7'), findsOneWidget, reason: 'the card shows the reference alone');
     await tester.enterText(find.byKey(const Key('planning-search')), 'pl9');
     await settle(tester);
-    expect(find.text('planner#9 (PL9) · planner'), findsOneWidget, reason: 'the issue row shows the issue\'s old id');
+    expect(find.byKey(const Key('planning-card planner#7')), findsNothing, reason: 'an old id finds nothing');
+    await tester.enterText(find.byKey(const Key('planning-search')), 'planner#9');
+    await settle(tester);
+    expect(find.text('planner#9 · planner'), findsOneWidget, reason: 'the issue row shows the reference alone');
     await tester.enterText(find.byKey(const Key('planning-search')), '');
     await settle(tester);
     tester.widget<IconButton>(find.byKey(const Key('planning-fold-phase Work'))).onPressed!();
     await settle(tester);
-    expect(find.text('planner#7 (ST7)'), findsOneWidget, reason: 'the narrowed tile shows the story\'s old id');
+    expect(find.text('planner#7'), findsOneWidget, reason: 'the narrowed tile shows the reference alone');
   });
 
   // Harm: an issue searched for by its number lies in a story far down its column, unseen, and is taken for missing.

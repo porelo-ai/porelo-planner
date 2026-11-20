@@ -1396,42 +1396,34 @@ void main() {
   });
 
   // Harm: an item a tracker keeps cannot be opened, or its '#' cuts the path into a fragment the planner never sees.
-  test(
-    'a story and an issue named by a tracker reference are asked by their encoded path and show their old id',
-    () async {
-      final (planner, source) = await _started();
-      final carried = {..._issue('repo#8', 'Backlog'), 'alias': 'PR8'};
-      planner.routes['GET /projects/demo/stories/repo%237'] = () => _Reply(200, {
-        'revision': 'r1',
-        'story': {
-          ..._story('repo#7', 'Backlog'),
-          'alias': 'ST7',
-          'issues': [carried],
-          'description': '',
-        },
-      });
-      planner.routes['GET /projects/demo/issues/repo%238'] = () => _Reply(200, {
-        'revision': 'r1',
-        'issue': {...carried, 'text': '', 'subIssues': <String>[]},
-      });
+  test('a story and an issue named by a tracker reference are asked by their encoded path', () async {
+    final (planner, source) = await _started();
+    final carried = _issue('repo#8', 'Backlog');
+    planner.routes['GET /projects/demo/stories/repo%237'] = () => _Reply(200, {
+      'revision': 'r1',
+      'story': {
+        ..._story('repo#7', 'Backlog'),
+        'issues': [carried],
+        'description': '',
+      },
+    });
+    planner.routes['GET /projects/demo/issues/repo%238'] = () => _Reply(200, {
+      'revision': 'r1',
+      'issue': {...carried, 'text': '', 'subIssues': <String>[]},
+    });
 
-      final story = await source.getStory('demo', 'repo#7');
-      final issue = await source.getIssue('demo', 'repo#8');
+    final story = await source.getStory('demo', 'repo#7');
+    final issue = await source.getIssue('demo', 'repo#8');
 
-      expect(
-        planner.targets,
-        containsAll(['GET /projects/demo/stories/repo%237', 'GET /projects/demo/issues/repo%238']),
-      );
-      expect(story.story?.shownId, 'repo#7 (ST7)', reason: 'the story\'s old id beside its reference');
-      expect(story.story?.issues.single.shownId, 'repo#8 (PR8)', reason: 'the issue\'s old id beside its reference');
-      expect(issue.issue?.alias, 'PR8');
-      expect(
-        () => source.getIssue('demo', 'repo#08'),
-        throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'InvalidName')),
-        reason: 'a reference with a leading zero is no id and is never sent',
-      );
-    },
-  );
+    expect(planner.targets, containsAll(['GET /projects/demo/stories/repo%237', 'GET /projects/demo/issues/repo%238']));
+    expect(story.story?.issues.single.id, 'repo#8', reason: 'the story\'s issue under its reference');
+    expect(issue.issue?.id, 'repo#8', reason: 'the issue under its reference');
+    expect(
+      () => source.getIssue('demo', 'repo#08'),
+      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'InvalidName')),
+      reason: 'a reference with a leading zero is no id and is never sent',
+    );
+  });
 
   // Harm: a story, its issues or an issue reach the screen without their text, state or criteria.
   test('a story, its issues and an issue arrive as the screen\'s records', () async {

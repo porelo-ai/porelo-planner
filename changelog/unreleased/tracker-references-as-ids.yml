@@ -1,2 +1,2 @@
-title: A story's or issue's id may be a tracker reference `<repository>#<number>`, percent-encoded as `%23` in a path, a carried-over item answers its old id as `alias`, and a task's start may name the tracker's issue and stage in `work`.
+title: A story's or issue's id may be a tracker reference `<repository>#<number>`, percent-encoded as `%23` in a path, with no old id beside it, a tracker issue's given file is named with `-` in place of `#`, and a task's start may name the tracker's issue and stage in `work`.
 type: changed

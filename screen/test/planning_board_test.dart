@@ -525,45 +525,6 @@ void main() {
     expect(board.cards('Building').map((story) => story.id), ['ST7'], reason: 'the story holding the issue stays');
     expect(board.foundIssues, {'AB10'}, reason: 'the issue whose title holds the word is found');
   });
-  // Harm: a carried-over story or issue the person knows by its old id is hidden on the board.
-  test('a search for an old id finds the carried-over story and its issue', () async {
-    final backend = _Backend();
-    final board = PlanningBoard(backend, 'project');
-    addTearDown(board.dispose);
-    backend.controllers['project']!.add(
-      PlanningSnapshot.from({
-        'states': [
-          {'name': 'Building', 'kind': 'WORKING'},
-        ],
-        'phases': [
-          {
-            'name': 'Build',
-            'states': ['Building'],
-          },
-        ],
-        'stories': [
-          {
-            'id': 'planner#7',
-            'alias': 'ST7',
-            'state': 'Building',
-            'title': 'A story',
-            'priority': 'High',
-            'issues': [
-              {'id': 'planner#9', 'alias': 'PL9', 'repository': 'planner', 'title': 'Read', 'state': 'Building'},
-            ],
-          },
-          {'id': 'ST8', 'state': 'Building', 'title': 'Another story', 'priority': 'High', 'issues': <Object>[]},
-        ],
-        'revision': 'r1',
-      }),
-    );
-    await Future<void>.delayed(Duration.zero);
-    board.search('st7');
-    expect(board.cards('Building').map((story) => story.id), ['planner#7'], reason: 'the story by its old id');
-    board.search('pl9');
-    expect(board.cards('Building').map((story) => story.id), ['planner#7'], reason: 'the story holding the issue');
-    expect(board.foundIssues, {'planner#9'}, reason: 'the issue by its old id');
-  });
   // Harm: a search matching a story's own words opens its issue lists the person did not ask for.
   test('a story found only by its own words answers no issues', () async {
     final board = await _boardWithIssues();

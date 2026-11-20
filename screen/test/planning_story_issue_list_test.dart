@@ -50,12 +50,12 @@ Map<String, dynamic> _board() => {
   'repositories': ['repo'],
 };
 
-Future<void> _show(WidgetTester tester, PlanningBoard board, {String story = 'ST1'}) async {
+Future<void> _show(WidgetTester tester, PlanningBoard board) async {
   tester.view
     ..physicalSize = const Size(1280, 2000)
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final detail = PlanningDetail(board, story, null);
+  final detail = PlanningDetail(board, 'ST1', null);
   addTearDown(detail.dispose);
   await tester.pumpWidget(
     MaterialApp(
@@ -112,32 +112,6 @@ void main() {
       findsNWidgets(3),
       reason: 'clearing the filter shows every issue again',
     );
-  });
-
-  // Harm: a carried-over story or issue shows only its reference, so the person does not recognize it by its old id.
-  testWidgets('the story\'s page shows the old ids of a carried-over story and its issue', (tester) async {
-    final data = _board();
-    data['stories'] = [
-      {
-        ...(data['stories'] as List).single as Map<String, dynamic>,
-        'id': 'repo#7',
-        'alias': 'ST7',
-        'issues': [
-          {..._issue('repo#8', 'Review'), 'alias': 'XY8'},
-        ],
-      },
-    ];
-    final source = MockPlanningSource()..boards['demo'] = data;
-    final board = PlanningBoard(source, 'demo');
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    addTearDown(() async {
-      board.dispose();
-      await tester.runAsync(source.end);
-    });
-    await _show(tester, board, story: 'repo#7');
-
-    expect(find.text('repo#7 (ST7)'), findsOneWidget, reason: 'the story\'s old id beside its reference');
-    expect(find.text('repo#8 (XY8)'), findsOneWidget, reason: 'the issue\'s old id beside its reference');
   });
 
   // Harm: the planner refuses a move of an issue the search hides, and the refusal is shown nowhere.

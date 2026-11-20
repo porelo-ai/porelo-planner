@@ -923,7 +923,7 @@ class _BoardViewState extends State<_BoardView> {
                         child: _priority(context, story.priority ?? '', mark: true),
                       ),
                     ),
-                    Expanded(child: Text(_line(story.shownId), softWrap: false, overflow: TextOverflow.fade)),
+                    Expanded(child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade)),
                     ?_size(context, story.size, key: 'planning-size ${story.id}'),
                     if (_needsYou(story))
                       Icon(
@@ -1236,7 +1236,7 @@ class _BoardViewState extends State<_BoardView> {
                 Wrap(
                   spacing: Space.small,
                   children: [
-                    Text(_line(story.shownId), style: theme.textTheme.labelMedium),
+                    Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
                     ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
                     ?_size(context, story.size, key: 'planning-size ${story.id}'),
@@ -1315,7 +1315,7 @@ class _BoardViewState extends State<_BoardView> {
                               TextButton(
                                 key: Key('planning-issue ${issue.id}'),
                                 onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
-                                child: Text(_line('${issue.shownId} · ${issue.repository}')),
+                                child: Text(_line('${issue.id} · ${issue.repository}')),
                               ),
                               if (issue.title.isNotEmpty) Text(_line(issue.title)),
                               Wrap(

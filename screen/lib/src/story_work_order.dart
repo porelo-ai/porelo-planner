@@ -255,7 +255,7 @@ class StoryWorkOrder {
 
 /// One file a task is given to read: an issue's text by its id.
 class PlanningGivenFile {
-  /// A given file of [name], `<issue>.md`, holding [text].
+  /// A given file of [name], `<issue>.md` with a tracker's `#` as `-`, holding [text].
   const PlanningGivenFile(this.name, this.text);
 
   /// The plain file name.
@@ -264,6 +264,9 @@ class PlanningGivenFile {
   /// The issue's text.
   final String text;
 }
+
+/// The plain name of an issue's given file without `.md`: its id, a tracker's `#` as `-`, so no mounted name holds one.
+String _givenName(String issue) => issue.replaceAll('#', '-');
 
 /// The tracker's issue a planned stage's task works and the stage's phase, as Start is handed them.
 class PlanningWork {
@@ -389,7 +392,7 @@ class PlanningTaskOrder {
     for (final item in _records(value)) {
       final name = _text(item, 'name');
       final text = _text(item, 'text', blank: true);
-      if (!issues.any((issue) => name == '$issue.md') || !names.add(name)) {
+      if (!issues.any((issue) => name == '${_givenName(issue)}.md') || !names.add(name)) {
         _invalid('A given file is not one of the task\'s issues, once.');
       }
       final bytes = utf8.encode(text).length;

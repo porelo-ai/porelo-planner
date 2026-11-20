@@ -119,6 +119,24 @@ void main() {
     }
   });
 
+  // Harm: a stage over a tracker's issue cannot start, or Porelo mounts a file whose name holds a '#'.
+  test('a tracker issue\'s given file is named with a dash in place of the hash', () {
+    Map<String, dynamic> stage(String name) => servedFollowUp(1, role: 'MAIN')
+      ..['issues'] = ['porelo-x#3']
+      ..['result'] = 'analysis.json'
+      ..['given'] = [
+        {'name': name, 'text': '# x\n'},
+      ];
+    expect(
+      [for (final file in PlanningTaskOrder.from(stage('porelo-x-3.md')).given) file.name],
+      ['porelo-x-3.md'],
+      reason: 'the planner names the tracker issue\'s file without a hash',
+    );
+    for (final name in ['porelo-x#3.md', 'porelo-x-4.md', 'porelo-x.md']) {
+      expect(() => PlanningTaskOrder.from(stage(name)), throwsFormatException, reason: name);
+    }
+  });
+
   // Harm: Start names another tracker issue than the planner's, or a malformed one, or a discussion names one.
   test('a stage order reads the tracker work it carries and refuses one that is not its shape', () {
     Map<String, dynamic> stage() => servedFollowUp(1, role: 'MAIN')..['issues'] = ['porelo-x#3'];
