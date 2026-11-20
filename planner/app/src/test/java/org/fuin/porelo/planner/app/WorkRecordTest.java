@@ -579,7 +579,8 @@ class WorkRecordTest {
     @Test
     void aRecordWrittenBeforeRisksOpensWithItsRepositoriesMainAndSubAgent() throws Exception {
         // An upgrade must not make a running story's work record unreadable when its run names
-        // repositories, whose main and sub-agents were written without an effort and a basis.
+        // repositories, whose main and sub-agents were written without an effort and a basis, and
+        // whose main without the offered agents.
         writeTaskRecord(
                 "box",
                 List.of(
@@ -621,6 +622,10 @@ class WorkRecordTest {
             older.remove("effort");
             older.remove("basis");
         }
+        assertThat(main.has("offered"))
+                .as("the reference record holds the main's offered agents")
+                .isTrue();
+        main.remove("offered");
         Files.writeString(file, json.writeValueAsString(document));
         try (WorkRecord records =
                 new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
@@ -633,6 +638,9 @@ class WorkRecordTest {
                     .isEqualTo("codex");
             assertThat(read.main().effort()).as("the main's absent effort stays none").isNull();
             assertThat(read.main().basis()).as("the main's absent basis stays empty").isEmpty();
+            assertThat(read.main().offered())
+                    .as("the main's absent offered agents stay none")
+                    .isEmpty();
             assertThat(read.subAgents())
                     .as("the older record keeps its sub-agent")
                     .singleElement()

@@ -463,6 +463,35 @@ class WorkProposalTest {
     }
 
     @Test
+    void theMainOffersTheRulesAgentsInTheRulesOrderWithTheProposedFirst() {
+        // The window preselects the first offered agent ready on the machine; another order would
+        // pass over the agent the rule prefers, or preselect one the rule does not offer.
+        final WorkProposal.Main plain =
+                WorkProposal.propose(board(WorkRule.Per.REPOSITORY), "ST1", "Building")
+                        .repositories()
+                        .getFirst()
+                        .main();
+        assertThat(plain.offered())
+                .as("the rule's models in its file order, not lexical order")
+                .containsExactly(
+                        new WorkProposal.Offer("zeta", "large"),
+                        new WorkProposal.Offer("alpha", "small"));
+        final Board board =
+                risked(
+                        board(WorkRule.Per.REPOSITORY),
+                        Map.of("AA1", Risk.SMALL, "AA1.1", Risk.HARM, "BB1", Risk.SMALL));
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+        assertThat(proposal.repositories().getFirst().main().offered())
+                .as("a harm issue's main offers harm's models, its proposed agent first")
+                .containsExactly(
+                        new WorkProposal.Offer("omega", "huge"),
+                        new WorkProposal.Offer("zeta", "large"));
+        assertThat(proposal.repositories().get(1).main().offered())
+                .as("a small issue's main offers small's models alone")
+                .containsExactly(new WorkProposal.Offer("alpha", "small"));
+    }
+
+    @Test
     void aStoryOfNoOpenIssueIsProposedTheOrdinaryChoice() {
         // A story's own work with no issue to weigh must still get a choice, the ordinary one.
         final Board original = risked(board(WorkRule.Per.STORY), Map.of());

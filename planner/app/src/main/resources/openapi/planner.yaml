@@ -3120,6 +3120,27 @@ components:
           description: >-
             Where the rule's choice of agent, model and effort came from, for example "Reading, risk harm"; the
             planner's words, which it never takes back from a caller. Empty when not known.
+        offered:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          description: >-
+            Every agent the rule offers this task, each with the model it offers, in the rule's order, the proposed
+            agent first, so a window can preselect the first one ready on the machine the task goes to. The
+            planner's words, which it never takes back from a caller; absent where it names none, as in a run's
+            record or from an older planner.
+          items:
+            $ref: '#/components/schemas/PlanOffer'
+    PlanOffer:
+      type: object
+      additionalProperties: false
+      required: [agent, model]
+      properties:
+        agent:
+          type: string
+          minLength: 1
+        model:
+          type: string
+          minLength: 1
     PlanAssignment:
       type: object
       additionalProperties: false

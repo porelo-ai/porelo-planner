@@ -101,6 +101,9 @@ class StoryWork extends ChangeNotifier {
   /// Installed agents reported by the chosen machine.
   List<PlanningAgent> agents = [];
 
+  /// Per repository, why the agent preselected is not the proposal's, in words shown above the choice.
+  final Map<String, String> passedOver = {};
+
   /// The current refusal or incomplete-answer explanation.
   String? problem;
 
@@ -156,6 +159,58 @@ class StoryWork extends ChangeNotifier {
   /// The agent the window listed by [name], or null when it listed none by that name.
   PlanningAgent? _listed(String name) => agents.where((each) => each.name == name).firstOrNull;
 
+  /// Why the window says [name] cannot work on the machine, or null when it does not say so.
+  String? _unready(String name) => switch (_listed(name)) {
+    null => 'the window does not list it there',
+    final listed => listed.unready,
+  };
+
+  /// Why [name] cannot work on the machine, in the window's words, or null when it can or the window cannot say. Where
+  /// the planner offered agents to choose from, an agent the window does not list cannot work there either.
+  String? unreadyWhy(String name) {
+    final offering = proposal?.repositories.any((repo) => repo.main.offered.isNotEmpty) ?? false;
+    return offering ? _unready(name) : _listed(name)?.unready;
+  }
+
+  /// Keeps the proposal's agent for [repo] where it can work on the machine, else preselects the first agent the rule
+  /// offers that can, with its offered model, or none, and says which were passed over and why.
+  void _preselect(PlanRepositoryWork repo) {
+    final main = repo.main;
+    // An older planner offers no list, so its proposal stands as it did.
+    if (main.offered.isEmpty || _unready(main.agent) == null) return;
+    final candidates = [
+      PlanOffer.from({'agent': main.agent, 'model': main.model}),
+      ...main.offered.where((offer) => offer.agent != main.agent),
+    ];
+    final passed = <String>[];
+    for (final offer in candidates) {
+      final why = _unready(offer.agent);
+      if (why == null) {
+        repositories[repo.repository] = StoryWorkMainAgent(
+          repository: repo.repository,
+          agent: offer.agent,
+          model: offer.model.trim(),
+          effort: main.effort,
+        );
+        passedOver[repo.repository] =
+            'Preselected ${planningShown(offer.agent)}, the first agent the rule offers that can work there. '
+            'Passed over: ${passed.join('; ')}.';
+        return;
+      }
+      passed.add('${planningShown(offer.agent)}, ${planningShown(why, multiline: false)}');
+    }
+    repositories[repo.repository] = StoryWorkMainAgent(repository: repo.repository, agent: '', model: '');
+    passedOver[repo.repository] =
+        'No agent the rule offers can work there, so none is preselected: ${passed.join('; ')}.';
+  }
+
+  /// The model the proposal offers [agent] in [repo], or empty when it offers none.
+  static String _offeredModel(PlanRepositoryWork? repo, String agent) {
+    if (repo == null) return '';
+    if (agent == repo.main.agent) return repo.main.model.trim();
+    return repo.main.offered.where((offer) => offer.agent == agent).firstOrNull?.model.trim() ?? '';
+  }
+
   /// The proposed effort for [agent]: kept where the agent lists it or its efforts are unknown, else none.
   String? _effortFor(String agent, String? proposed) {
     final efforts = _listed(agent)?.efforts;
@@ -165,7 +220,7 @@ class StoryWork extends ChangeNotifier {
   /// Why [what]'s agent, model or effort cannot start, or null when they can.
   String? _assignmentProblem(String what, String? agent, String? model, String? effort) {
     if (agent == null || agent.isEmpty) return 'Choose an agent for $what.';
-    if (_listed(agent)?.unready case final unready?) {
+    if (unreadyWhy(agent) case final unready?) {
       return '${planningShown(agent)} cannot work there: ${planningShown(unready)}';
     }
     if (model == null || model.trim().isEmpty) return 'Choose a model for $what.';
@@ -279,6 +334,7 @@ class StoryWork extends ChangeNotifier {
     tasks = const [];
     proposal = null;
     repositories.clear();
+    passedOver.clear();
     choices.clear();
     issueRounds.clear();
     agents = [];
@@ -286,7 +342,6 @@ class StoryWork extends ChangeNotifier {
     try {
       final answer = await source.proposeStoryWork(name, id, target, issues: issues);
       if (!valid()) return;
-      proposal = answer;
       mode = answer.modes.where((each) => ['UNATTENDED', 'AGENT'].contains(each)).firstOrNull;
       rounds = answer.readingRounds?.toString() ?? '';
       comment = answer.comment;
@@ -294,7 +349,6 @@ class StoryWork extends ChangeNotifier {
         issueRounds[override.issue] = override.rounds?.toString() ?? '';
       }
       if (answer.revision != revision) {
-        proposal = null;
         problem = 'The planning revision changed. Reopen Start work.';
         unawaited(board.reload());
         return;
@@ -317,6 +371,9 @@ class StoryWork extends ChangeNotifier {
       final listed = await agentChoices.on(source);
       if (!valid()) return;
       agents = listed.agents;
+      for (final repo in answer.repositories) {
+        _preselect(repo);
+      }
       for (final main in repositories.values.toList()) {
         final effort = _effortFor(main.agent, main.effort);
         if (effort != main.effort) {
@@ -328,6 +385,8 @@ class StoryWork extends ChangeNotifier {
           );
         }
       }
+      // Shown only once the agents are preselected, so no agent the window may pass over stands as the choice.
+      proposal = answer;
       if (listed.failures.isNotEmpty) {
         problem = listed.failures.entries
             .map((each) => planningShown('${each.key}: ${each.value}', multiline: false))
@@ -365,6 +424,7 @@ class StoryWork extends ChangeNotifier {
     if (!working.any((state) => state.name == to) && working.isNotEmpty) to = working.first.name;
     proposal = null;
     repositories.clear();
+    passedOver.clear();
     choices.clear();
     issueRounds.clear();
     agents = [];
@@ -406,7 +466,7 @@ class StoryWork extends ChangeNotifier {
     repositories[repository] = StoryWorkMainAgent(
       repository: repository,
       agent: next,
-      model: model?.trim() ?? (!changed ? previous.model : (next == proposed?.agent ? proposed!.model.trim() : '')),
+      model: model?.trim() ?? (!changed ? previous.model : _offeredModel(proposed, next)),
       effort: effort != null
           ? _chosenEffort(effort)
           : changed

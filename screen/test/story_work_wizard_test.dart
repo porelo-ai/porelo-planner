@@ -103,6 +103,35 @@ Future<(MockPlanningSource, PlanningBoard)> _open(WidgetTester tester, {List<Str
   return (source, board);
 }
 
+/// The agents a machine offers, listed only once [held] completes, as a window that is still asking.
+class _HeldAgents implements PlanningAgents {
+  _HeldAgents(this.agents);
+
+  final List<PlanningAgent> agents;
+  final held = Completer<void>();
+
+  @override
+  Future<PlanningAgentList> on(PlanningSource source) async {
+    await held.future;
+    return PlanningAgentList(agents);
+  }
+}
+
+/// Makes the proposal for ST1 offer [offered] for each repository's main, as a planner that names them does.
+void _offer(MockPlanningSource source, List<Map<String, String>> offered) {
+  final proposal = source.work.call('ProposeStoryWork', {'project': 'demo', 'story': 'ST1', 'to': 'Implementing'});
+  source.work.proposals['ST1'] = {
+    ...proposal,
+    'repositories': [
+      for (final repo in (proposal['repositories'] as List).cast<Map<String, dynamic>>())
+        {
+          ...repo,
+          'main': {...(repo['main'] as Map<String, dynamic>), 'offered': offered},
+        },
+    ],
+  };
+}
+
 StoryWork _work(PlanningBoard board, List<PlanningAgent> agents) {
   final work = planningStoryWork(board, board.stories.single, 'Implementing', agents: FakeAgents(agents));
   addTearDown(work.dispose);
@@ -242,6 +271,173 @@ void main() {
     expect(work.choices[('repo', _sub)]!.effort, isNull, reason: 'and takes the proposal\'s effort, none here');
     work.choose('repo', sub, 'CHANGE', agent: 'codex');
     expect(work.choices[('repo', _sub)]!.model, sub.model, reason: 'the proposed agent gets the proposed model');
+  });
+
+  // Prevents a task started with an agent that cannot work on that machine, preselected for the person.
+  testWidgets('an offered agent ready there is preselected with its model and the one passed over is named', (
+    tester,
+  ) async {
+    final (source, board) = await _open(tester);
+    _offer(source, const [
+      {'agent': 'codex', 'model': 'proposed-model'},
+      {'agent': 'claude', 'model': 'claude-model'},
+    ]);
+    final work = _work(board, const [PlanningAgent('codex', unready: 'Not signed in here.'), PlanningAgent('claude')]);
+    await tester.runAsync(work.load);
+    final main = work.repositories['repo']!;
+    expect((main.agent, main.model), ('claude', 'claude-model'), reason: 'the first offered agent ready there');
+    expect(
+      work.passedOver['repo'],
+      allOf(contains('codex'), contains('Not signed in here.')),
+      reason: 'codex is named as passed over, with the window\'s reason',
+    );
+    work.chooseMode('AGENT');
+    // The helper is proposed on codex too; only the main is preselected, so the helper is dropped here.
+    work.choose('repo', work.proposal!.repositories.single.subAgents.single, 'DROP');
+    work.setComment('The main builds it alone.');
+    expect(await tester.runAsync(work.start), isTrue, reason: 'the preselection starts as it stands');
+    final request = source.work.calls.where((call) => call.$1 == 'StartStoryWork').single.$2;
+    final sent = ((request['repositories'] as List).single as Map<String, dynamic>)['main'] as Map<String, dynamic>;
+    expect((sent['agent'], sent['model']), ('claude', 'claude-model'), reason: 'the start names the agent ready there');
+  });
+
+  // Prevents a task started with an agent that cannot work on that machine, preselected for the person.
+  testWidgets('with no offered agent ready there none is preselected and the words say so', (tester) async {
+    final (source, board) = await _open(tester);
+    _offer(source, const [
+      {'agent': 'codex', 'model': 'proposed-model'},
+      {'agent': 'claude', 'model': 'claude-model'},
+    ]);
+    final work = _work(board, const [
+      PlanningAgent('codex', unready: 'Not signed in here.'),
+      PlanningAgent('claude', unready: 'Not installed here.'),
+    ]);
+    await tester.runAsync(work.load);
+    expect(work.repositories['repo']!.agent, isEmpty, reason: 'no agent is preselected');
+    expect(
+      work.passedOver['repo'],
+      allOf(contains('none is preselected'), contains('Not signed in here.'), contains('Not installed here.')),
+      reason: 'the words say none is ready, and why for each',
+    );
+    expect(work.canStart, isFalse, reason: 'nothing starts until the person chooses');
+  });
+
+  // Prevents the preselection from overriding an agent the person chose themselves.
+  testWidgets('a person\'s own choice of an agent not ready there stays theirs', (tester) async {
+    final (source, board) = await _open(tester);
+    _offer(source, const [
+      {'agent': 'codex', 'model': 'proposed-model'},
+      {'agent': 'claude', 'model': 'claude-model'},
+    ]);
+    final work = _work(board, const [PlanningAgent('codex', unready: 'Not signed in here.'), PlanningAgent('claude')]);
+    await tester.runAsync(work.load);
+    work.chooseMain('repo', agent: 'codex');
+    work.chooseMode('AGENT');
+    final main = work.repositories['repo']!;
+    expect(
+      (main.agent, main.model),
+      ('codex', 'proposed-model'),
+      reason: 'the person\'s choice, with its offered model',
+    );
+    expect(work.whoProblem, contains('Not signed in here.'), reason: 'the window\'s reason still stands under it');
+    work.chooseMain('repo', agent: 'claude');
+    final back = work.repositories['repo']!;
+    expect(
+      (back.agent, back.model),
+      ('claude', 'claude-model'),
+      reason: 'another offered agent gets its offered model',
+    );
+  });
+
+  // Prevents a kept helper's task from starting on an agent the window does not list on that machine.
+  testWidgets('a kept helper on an agent the window does not list there is refused', (tester) async {
+    final (source, board) = await _open(tester);
+    _offer(source, const [
+      {'agent': 'codex', 'model': 'proposed-model'},
+      {'agent': 'claude', 'model': 'claude-model'},
+    ]);
+    final work = _work(board, const [PlanningAgent('claude')]);
+    await tester.runAsync(work.load);
+    work.chooseMode('AGENT');
+    expect(work.repositories['repo']!.agent, 'claude', reason: 'the main passes over the agent the window lacks');
+    expect(work.choices[('repo', _sub)]!.choice, 'KEEP', reason: 'the helper is kept on codex as proposed');
+    expect(work.whoProblem, contains('codex'), reason: 'the Who step names the agent that cannot work there');
+    expect(work.canStart, isFalse, reason: 'nor can it start');
+    expect(await tester.runAsync(work.start), isFalse, reason: 'a start is refused');
+    expect(
+      source.work.calls.where((call) => call.$1 == 'StartStoryWork'),
+      isEmpty,
+      reason: 'nothing reached the planner',
+    );
+  });
+
+  // Prevents the person from seeing, and going on with, an agent that cannot work there as the one preselected.
+  testWidgets('the agent picker shows the preselected agent once the window has listed its agents', (tester) async {
+    final (source, board) = await _open(tester, modes: ['UNATTENDED']);
+    _offer(source, const [
+      {'agent': 'codex', 'model': 'proposed-model'},
+      {'agent': 'claude', 'model': 'claude-model'},
+    ]);
+    final agents = _HeldAgents(const [PlanningAgent('codex', unready: 'Not signed in here.'), PlanningAgent('claude')]);
+    final work = planningStoryWork(board, board.stories.single, 'Implementing', agents: agents);
+    addTearDown(work.dispose);
+    final wizards = _Wizards();
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (each) {
+            context = each;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    unawaited(showStoryWork(context, work, wizards: wizards));
+    await _answered(tester);
+    expect(work.busy, isTrue, reason: 'the window has not listed its agents yet');
+    final who = wizards.steps[2];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: work,
+            builder: (context, _) => ListView(children: [Builder(builder: who.panel)]),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    final early = find.descendant(
+      of: find.byKey(const Key('story-work-main-agent repo')),
+      matching: find.byType(DropdownButton<String>),
+    );
+    expect(
+      early.evaluate().map((each) => (each.widget as DropdownButton<String>).value),
+      isNot(contains('codex')),
+      reason: 'while the window still lists its agents, the agent it may pass over is not shown as the choice',
+    );
+    agents.held.complete();
+    await _answered(tester);
+    expect(work.repositories['repo']!.agent, 'claude', reason: 'claude is preselected');
+    final picker = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const Key('story-work-main-agent repo')),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+    expect(picker.value, 'claude', reason: 'the picker shows the agent preselected, not the one passed over');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // Prevents an older planner's proposal, without the offered agents, from losing its agent or being refused.
+  testWidgets('a proposal without offered agents keeps its agent as before', (tester) async {
+    final (_, board) = await _open(tester);
+    final work = _work(board, const [PlanningAgent('codex', unready: 'Not signed in here.'), PlanningAgent('claude')]);
+    await tester.runAsync(work.load);
+    expect(work.problem, isNull, reason: 'the proposal is read');
+    expect(work.repositories['repo']!.agent, 'codex', reason: 'the proposal\'s agent stays preselected');
+    expect(work.passedOver, isEmpty, reason: 'nothing is said to be passed over');
   });
 
   // Prevents a kept sub-agent's task from starting on an agent that cannot work on that machine.

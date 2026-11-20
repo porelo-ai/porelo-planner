@@ -5,8 +5,8 @@
   "$schema": "issue-1.json",
   "id": "PL155",
   "title": "Start Work Preselects An Agent Signed In There",
-  "state": "Implementing",
-  "size": "S",
+  "state": "Review",
+  "size": "M",
   "priority": "High",
   "rank": 75,
   "blockedBy": ["PL156"],
@@ -14,8 +14,8 @@
 }
 ```
 
-**Why this size.** S - the screen package's story work and its agent hook, with their tests; the hook's new member is
-read by the window.
+**Why this size.** M - one contract change, additive: the core's proposal and the planner's answer carry the rule's
+offered agents, and the screen package's story work preselects from them, each with its tests.
 
 **What must be true.** A person who opens Start work finds an agent preselected that can work on the chosen machine,
 and is told why an agent the rule names first was passed over.
@@ -23,18 +23,27 @@ and is told why an agent the rule names first was passed over.
 ## Plan
 
 - Seen in a live run: the dialog preselected "Codex CLI · 0.163.0 · not signed in here" with its model, because the
-  rule's models name codex first. The planner's proposal takes the first agent of the rule's offered models (`Choice.of`,
-  `planner/core`) and keeps the others as offered; `StoryWork.load` (`screen/lib/src/story_work.dart`) takes the
-  proposal's agent as the preselection, and the window's `PlanningAgent` (`screen/lib/src/hooks.dart`) carries only a
-  name and a widget, so the screen cannot tell which agent is signed in where.
-- `PlanningAgent` gets whether the agent is ready on the machine the agents were listed for, and the window's words why
-  not. `StoryWork.load` keeps the proposal's agent when ready, else preselects the first offered agent, in the rule's
-  order, that is ready, with the offered model, and says above the choice which were passed over and why; with none
-  ready it preselects none and says so. An agent not ready stays in the list, chosen only by the person.
-- The window's part: answer the new member for each agent it lists, from what it knows of the machine the task goes to.
-- Red first, in the screen's story work tests over a fake agent list: codex listed first but not ready and claude ready
-  preselect claude with codex named as passed over; none ready preselects none; a person's own choice of codex stays.
-  Harm: a task started with an agent that cannot work there.
+  rule's models name codex first. The proposal handed on only the first agent of the rule's offered models, so the
+  screen could not choose another; the window's `PlanningAgent.unready` (`screen/lib/src/hooks.dart`) already says why
+  an agent cannot work on the machine the agents were listed for, and a start with such an agent is already refused.
+- Core: `WorkProposal.Main` carries `offered`, every agent the rule offers with its model, in the rule's order, the
+  proposed one first, taken from `Choice` (`planner/core`).
+- Contract: `PlanWorker` in `planner.yaml` gets the optional member `offered: [{agent, model}]` (`PlanOffer`), mapped
+  in `WorkAnswers` and left out where the main is no proposal's, as in a run's record. It is additive: an older window
+  ignores it, and a main sent back with it is accepted and never taken, as `chosenBy` is. A work record written before the
+  member opens with none.
+- Screen: `PlanWorker` reads `offered`, empty from an older planner. `StoryWork.load`
+  (`screen/lib/src/story_work.dart`) keeps the proposal's agent when the window says it is ready there, else preselects
+  the first offered agent, in the rule's order, that is ready, with its offered model, and says above the choice which
+  were passed over and why, in the window's `unready` words; with none ready it preselects none and says so. Where the
+  planner offered agents, one the window does not list counts as not ready, for a helper too. The proposal shows only
+  once the agents are preselected. An agent not ready stays in the list, chosen only by the person, and
+  a person's own choice stays; an agent chosen from the offered list gets its offered model. Helpers keep their
+  proposed agent.
+- Tests: core keeps the rule's order; the planner's answer carries the member and does not take one sent back; the
+  screen's story work tests over a fake agent list preselect claude with codex named as passed over, preselect none
+  when none is ready, keep a person's choice of codex, and keep an older planner's proposal as it was. Harm: a task
+  started with an agent that cannot work there.
 
 ## Acceptance
 

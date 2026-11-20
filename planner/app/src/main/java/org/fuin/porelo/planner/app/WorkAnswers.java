@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.app.answers.GivenFile;
 import org.fuin.porelo.planner.app.answers.IssueReadingRounds;
 import org.fuin.porelo.planner.app.answers.Landing;
 import org.fuin.porelo.planner.app.answers.PlanAssignment;
+import org.fuin.porelo.planner.app.answers.PlanOffer;
 import org.fuin.porelo.planner.app.answers.PlanRepositoryWork;
 import org.fuin.porelo.planner.app.answers.PlanWork;
 import org.fuin.porelo.planner.app.answers.PlanWorkIssue;
@@ -304,7 +305,13 @@ public final class WorkAnswers {
                         main.model(),
                         main.brief(),
                         main.effort(),
-                        said(main.basis())),
+                        said(main.basis()),
+                        // Left out where the main is no proposal's, as in a run's record.
+                        main.offered().isEmpty()
+                                ? null
+                                : main.offered().stream()
+                                        .map(o -> new PlanOffer(o.agent(), o.model()))
+                                        .toList()),
                 repository.subAgents().stream()
                         .map(
                                 sub ->

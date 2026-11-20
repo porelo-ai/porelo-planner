@@ -878,13 +878,19 @@ class PlanWorker {
       model = _planText(map, 'model'),
       brief = _planText(map, 'brief'),
       effort = map['effort'] is String ? map['effort'] as String : null,
-      chosenBy = map['chosenBy'] is String ? map['chosenBy'] as String : null;
+      chosenBy = map['chosenBy'] is String ? map['chosenBy'] as String : null,
+      offered = List.unmodifiable(
+        _planList(map['offered'], PlanOffer.from).where((offer) => offer.agent.isNotEmpty && offer.model.isNotEmpty),
+      );
 
   /// The effort proposed, null for none.
   final String? effort;
 
   /// Where the rule's choice of agent, model and effort came from, as the planner says it; null when unsaid.
   final String? chosenBy;
+
+  /// Every agent the rule offers with its model, in the rule's order, the proposed first; empty from an older planner.
+  final List<PlanOffer> offered;
 
   /// Its name.
   final String name;
@@ -900,6 +906,18 @@ class PlanWorker {
 
   /// Its brief.
   final String brief;
+}
+
+/// An agent the rule offers a task, with the model it offers it.
+class PlanOffer {
+  /// Reads the agent and model, empty when unsaid.
+  PlanOffer.from(Map<String, dynamic> map) : agent = _planText(map, 'agent'), model = _planText(map, 'model');
+
+  /// The agent, as a start names it.
+  final String agent;
+
+  /// The model the rule offers the agent.
+  final String model;
 }
 
 /// The standalone story and its source text.

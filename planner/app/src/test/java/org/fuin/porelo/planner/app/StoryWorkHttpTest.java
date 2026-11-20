@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -363,6 +364,72 @@ class StoryWorkHttpTest {
     }
 
     @Test
+    void theProposalOffersTheRulesAgentsInItsOrderAndAnOfferSentBackIsNotTaken() throws Exception {
+        // The window preselects from this list; without it, or in another order, it preselects an
+        // agent that cannot work on the machine or passes over the one the rule prefers.
+        final WorkRule rule = board.work().rules().get("Building");
+        final Map<String, String> models = new LinkedHashMap<>();
+        models.put("codex", "model-a");
+        models.put("claude", "model-c");
+        board =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues(),
+                        new Work(
+                                Map.of(
+                                        "Building",
+                                        new WorkRule(
+                                                rule.from(),
+                                                rule.done(),
+                                                rule.then(),
+                                                rule.blocked(),
+                                                rule.per(),
+                                                rule.modes(),
+                                                rule.order(),
+                                                models)),
+                                List.of()),
+                        board.repositories());
+        final JsonNode proposal = json(call(BASE + "/proposal", "{\"to\":\"Building\"}"), 200);
+        assertThat(proposal.at("/repositories/0/main/offered").toString())
+                .as("every offered agent with its model, in the rule's order, the proposed first")
+                .isEqualTo(
+                        "[{\"agent\":\"codex\",\"model\":\"model-a\"},"
+                                + "{\"agent\":\"claude\",\"model\":\"model-c\"}]");
+        final String forgedOffer = ",\"offered\":[{\"agent\":\"forged\",\"model\":\"x\"}]";
+        final JsonNode refused =
+                json(
+                        call(
+                                BASE + "/work",
+                                withMain(forgedOffer)
+                                        .replace(
+                                                "\"role\":\"MAIN\",\"agent\":\"codex\",\"model\":\"model-a\"",
+                                                "\"role\":\"MAIN\",\"agent\":\"forged\",\"model\":\"x\"")),
+                        400);
+        assertThat(refused.get("type").asString())
+                .as(
+                        "an agent the rule does not offer is refused, whatever offered list is sent back")
+                .isEqualTo("urn:porelo-planner:WorkNotAllowed");
+        final JsonNode order = json(call(BASE + "/work", withMain(forgedOffer)), 200);
+        assertThat(order.at("/tasks/0/agent").asString())
+                .as("an offered list sent back changes nothing that starts")
+                .isEqualTo("codex");
+        final JsonNode work =
+                JSON.readTree(
+                        mvc.perform(get(BASE + "/work").with(Signing.mvc(token.text())))
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString());
+        assertThat(work.at("/work/repositories/0/main").has("offered"))
+                .as("the run records no offered list, neither the rule's nor one sent back")
+                .isFalse();
+        assertThat(work.at("/work/repositories/0/main/agent").asString())
+                .as("the run is read back")
+                .isEqualTo("codex");
+    }
+
+    @Test
     void anEffortThatIsNoStringOrNoSoundNameIsRefusedAndStartsNothing() throws Exception {
         // A name reaching the window's Start unchecked.
         harm();
@@ -375,7 +442,8 @@ class StoryWorkHttpTest {
                         ",\"effort\":\"" + "x".repeat(WorkRule.LONGEST + 1) + "\"",
                         ",\"effort\":3",
                         ",\"effort\":[\"high\"]",
-                        ",\"chosenBy\":3")) {
+                        ",\"chosenBy\":3",
+                        ",\"offered\":3")) {
             final MockHttpServletResponse response = call(BASE + "/work", withMain(effort));
             assertThat(response.getStatus()).as("refused: %s", effort).isEqualTo(400);
             assertThat(response.getContentAsString())

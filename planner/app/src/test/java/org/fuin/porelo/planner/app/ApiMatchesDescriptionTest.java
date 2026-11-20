@@ -87,6 +87,7 @@ class ApiMatchesDescriptionTest {
                             "PlanRepositoryWork",
                             org.fuin.porelo.planner.app.answers.PlanRepositoryWork.class),
                     Map.entry("PlanWorker", org.fuin.porelo.planner.app.answers.PlanWorker.class),
+                    Map.entry("PlanOffer", org.fuin.porelo.planner.app.answers.PlanOffer.class),
                     Map.entry(
                             "PlanAssignment",
                             org.fuin.porelo.planner.app.answers.PlanAssignment.class),
@@ -138,6 +139,7 @@ class ApiMatchesDescriptionTest {
             Map.ofEntries(
                     Map.entry("PlanRepositoryWork", WorkRequests.Repository.class),
                     Map.entry("PlanWorker", WorkRequests.Main.class),
+                    Map.entry("PlanOffer", WorkRequests.Offer.class),
                     Map.entry("PlanAssignment", WorkRequests.Assignment.class),
                     Map.entry("IssueReadingRounds", WorkRequests.IssueLimit.class),
                     Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
@@ -585,6 +587,7 @@ class ApiMatchesDescriptionTest {
                         WorkRequests.StopRequest.class,
                         WorkRequests.Repository.class,
                         WorkRequests.Main.class,
+                        WorkRequests.Offer.class,
                         WorkRequests.Assignment.class,
                         WorkRequests.IssueLimit.class,
                         WorkRequests.TaskEventRequest.class,
@@ -595,7 +598,7 @@ class ApiMatchesDescriptionTest {
         described.addAll(READ_BY_HAND.values());
         assertThat(workTypes)
                 .as("every work body and nested record read by hand participates")
-                .hasSize(12)
+                .hasSize(13)
                 .isSubsetOf(described);
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");

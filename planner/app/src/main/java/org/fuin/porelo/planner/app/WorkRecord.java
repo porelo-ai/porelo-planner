@@ -377,6 +377,11 @@ public final class WorkRecord implements AutoCloseable {
             for (final JsonNode run : tree.path("runs")) {
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
+                    // A main recorded before the rule's offered agents were proposed names none.
+                    if (repository.path("main") instanceof ObjectNode main
+                            && !main.has("offered")) {
+                        main.putArray("offered");
+                    }
                     for (final JsonNode sub : repository.path("subAgents")) {
                         olderChoice(sub);
                     }

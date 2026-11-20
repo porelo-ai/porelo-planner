@@ -1,0 +1,2 @@
+title: A work proposal names every agent its rule offers, in the rule's order, and Start work preselects the first of them that can work on the chosen machine, saying which it passed over and why.
+type: changed

@@ -311,6 +311,8 @@ class _StoryWorkSteps {
           'Issues: ${repo.issues.isEmpty ? 'none' : repo.issues.join(', ')}',
           key: Key('story-work-issues ${repo.repository}'),
         ),
+        if (work.passedOver[repo.repository] case final passed?)
+          Text(passed, key: Key('story-work-passed-over ${repo.repository}')),
         ..._assignment(
           what: repo.repository,
           agent: work.repositories[repo.repository]!.agent,
@@ -408,7 +410,7 @@ class _StoryWorkSteps {
 
   Widget _agentItem(String name) {
     final shown = _agentName(name);
-    final unready = work.agents.where((agent) => agent.name == name).firstOrNull?.unready;
+    final unready = work.unreadyWhy(name);
     if (unready == null) return shown;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

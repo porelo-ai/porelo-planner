@@ -34,8 +34,19 @@ public record WorkProposal(
     }
 
     /**
-     * The proposed main participant; only its offered agent/model pair is a choice. The effort and
-     * where the choice came from are the proposal's; a decision does not choose them.
+     * The proposed main participant; only its offered agent/model pair is a choice. The effort,
+     * where the choice came from and the offered agents are the proposal's; a decision does not
+     * choose them.
+     *
+     * @param name the participant's name
+     * @param role MAIN for work that builds, READER for a reading started by hand
+     * @param agent the proposed or chosen agent
+     * @param model the agent's model
+     * @param brief the rule's order for the task
+     * @param effort the effort, or null for none
+     * @param basis where the choice came from in words, empty when not known
+     * @param offered every agent with its model the rule offers, in the rule's order, the proposed
+     *     one first; empty where the main is a decision's
      */
     public record Main(
             String name,
@@ -44,7 +55,25 @@ public record WorkProposal(
             String model,
             String brief,
             @Nullable String effort,
-            String basis) {
+            String basis,
+            List<Offer> offered) {
+
+        /** Copies the offered agents in their order. */
+        public Main {
+            offered = List.copyOf(offered);
+        }
+
+        /** A main with the proposal's effort and basis but no offered agents. */
+        public Main(
+                final String name,
+                final String role,
+                final String agent,
+                final String model,
+                final String brief,
+                final @Nullable String effort,
+                final String basis) {
+            this(name, role, agent, model, brief, effort, basis, List.of());
+        }
 
         /** A main as a decision names it, without the proposal's effort and basis. */
         public Main(
@@ -54,6 +83,22 @@ public record WorkProposal(
                 final String model,
                 final String brief) {
             this(name, role, agent, model, brief, null, "");
+        }
+    }
+
+    /**
+     * An agent the rule offers a task, with the model it offers it.
+     *
+     * @param agent the agent
+     * @param model the agent's offered model
+     */
+    public record Offer(String agent, String model) {
+
+        /** The offers of a choice, in the rule's order. */
+        static List<Offer> of(final Choice choice) {
+            return choice.offered().entrySet().stream()
+                    .map(e -> new Offer(e.getKey(), e.getValue()))
+                    .toList();
         }
     }
 
@@ -229,7 +274,8 @@ public record WorkProposal(
                             chosen.model(),
                             rule.order(),
                             chosen.effort(),
-                            chosen.basis());
+                            chosen.basis(),
+                            Offer.of(chosen));
             repositories.add(
                     new Repository(
                             group.getKey(),

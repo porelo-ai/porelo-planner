@@ -97,6 +97,7 @@ public final class WorkRequests {
      * @param brief its brief
      * @param effort the effort chosen, or null
      * @param chosenBy where the rule's choice came from, never taken from the window
+     * @param offered the agents the rule offers, never taken from the window
      */
     public record Main(
             String name,
@@ -105,7 +106,16 @@ public final class WorkRequests {
             String model,
             String brief,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String effort,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String chosenBy,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<Offer> offered) {}
+
+    /**
+     * An agent the rule offers, with its model, as a window may send it back.
+     *
+     * @param agent the agent
+     * @param model its model
+     */
+    public record Offer(String agent, String model) {}
 
     /**
      * A helper as the window sends it back, with its KEEP, CHANGE or DROP choice.
@@ -966,7 +976,9 @@ public final class WorkRequests {
             issues.add(issue.asString());
         }
         final JsonNode main = node.path("main");
-        fields(main, Set.of("name", "role", "agent", "model", "brief", "effort", "chosenBy"));
+        fields(
+                main,
+                Set.of("name", "role", "agent", "model", "brief", "effort", "chosenBy", "offered"));
         final Main worker =
                 new Main(
                         text(main, "name"),
@@ -975,7 +987,8 @@ public final class WorkRequests {
                         text(main, "model"),
                         text(main, "brief"),
                         effort(main),
-                        chosenBy(main));
+                        chosenBy(main),
+                        offered(main));
         final List<Assignment> helpers = new ArrayList<>();
         for (final JsonNode sub : array(node, "subAgents")) {
             fields(
@@ -1058,6 +1071,15 @@ public final class WorkRequests {
     private static @Nullable String chosenBy(final JsonNode node) {
         final JsonNode value = node.path("chosenBy");
         if (!value.isMissingNode() && !value.isNull() && !value.isString()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return null;
+    }
+
+    /** Checks an offered list sent back is a list; it is the planner's own and is never taken. */
+    private static @Nullable List<Offer> offered(final JsonNode node) {
+        final JsonNode value = node.path("offered");
+        if (!value.isMissingNode() && !value.isNull() && !value.isArray()) {
             throw WorkRefusal.invalidSettings();
         }
         return null;
