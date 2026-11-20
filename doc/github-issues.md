@@ -133,7 +133,8 @@ field values, one mutation, and a value the issue holds is not written again. A 
 sub-issues: those it no longer names are taken out first, the new ones made its sub-issues next, then they are ordered
 as the list is; an issue that has a parent on GitHub already is refused, never taken from that parent, and one the
 story holds only under `Also needs` in its body keeps its place after the sub-issues and is refused taken out, since
-the edit leaves the body as it is. An issue's blockers are added and removed as GitHub's "blocked by". GitHub names
+the edit leaves the body as it is; a list that moves it from there, or hangs a new issue in after it, is refused too,
+since GitHub orders sub-issues only. An issue's blockers are added and removed as GitHub's "blocked by". GitHub names
 the issue linked by its REST id, which the read right before the write answers. A link GitHub refuses is refused
 naming only the status GitHub answered, since GitHub's own words may repeat what was sent; one refused after another
 was written is partly saved. A comment is written as the person's text, never one opening with the planner's own

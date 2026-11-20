@@ -559,6 +559,43 @@ class FieldsBoardWriterEditsTest {
     }
 
     @Test
+    void aListMovingAnAlsoNeededIssueBeforeTheSubIssuesIsRefusedWithoutACall() {
+        // GitHub orders sub-issues only and the board puts the body's issues after them, so the
+        // list would be answered as saved while the story keeps its order.
+        assertThat(refusedList(List.of(THREE, ONE, TWO)))
+                .as("an Also needs issue moved before the sub-issues")
+                .isEmpty();
+    }
+
+    @Test
+    void aListHangingAnIssueInAfterAnAlsoNeededOneIsRefusedWithoutACall() {
+        // The new sub-issue would stand before the body's issue on the board read back, in
+        // another order than the one answered as saved.
+        assertThat(refusedList(List.of(ONE, TWO, THREE, "example-lib#4")))
+                .as("an issue hung in after an Also needs issue")
+                .isEmpty();
+    }
+
+    /**
+     * Sets the list of a story whose body names example-lib#3 under Also needs, expecting it
+     * refused, and answers the calls made.
+     */
+    private List<String> refusedList(final List<String> issues) {
+        final ItemView alsoNeeded = item(THREE, Map.of(), null, List.of(), List.of());
+        final ItemView four = item("example-lib#4", Map.of(), null, List.of(), List.of());
+        final GitHub github = github().holding(four);
+        final Snapshot board =
+                snapshot(List.of(ONE, TWO, THREE), story, one, two, alsoNeeded, four);
+        assertThat(
+                        catchThrowableOfType(
+                                StoreException.NotSavable.class,
+                                () -> github.writer().setStoryIssues(board, SHOWN, STORY, issues)))
+                .as("the list refused as not savable")
+                .isNotNull();
+        return github.calls;
+    }
+
+    @Test
     void aChildAPersonChangedOnGitHubMeanwhileIsRefusedNamingItWithoutALink() {
         // A child given another parent on GitHub meanwhile would be taken from it unseen.
         final GitHub github = github();

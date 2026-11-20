@@ -89,7 +89,9 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   as a save, the linked sub-issues and blockers included. The REST id GitHub names a linked issue by is taken from
   that read (`BoardIssue.databaseId`), not from the board's items, so `ItemView` is left as it is. A story's sub-issues
   are told apart from its `Also needs` issues by the story item's sub-issues: one held only under `Also needs` is
-  refused taken out, since the edit does not change the body, and keeps its place after the sub-issues. An issue that
+  refused taken out, since the edit does not change the body, and keeps its place after the sub-issues: a list
+  that moves it from there, or hangs a new issue in after it, is refused (`NotSavable`), never answered saved in an
+  order GitHub does not hold. An issue that
   has a parent on GitHub is refused hung in (`addSubIssue` with `replaceParent` false). A call GitHub refuses with a
   4xx other than an access or rate-limit refusal is `NotSavable` in fixed words naming the status, since
   `ForgeAccessRefusals` would answer it as unreachable and GitHub's words may repeat what was sent; after another call

@@ -277,6 +277,14 @@ public final class FieldsBoardWriter implements BoardWriter {
                                 + " write does not change");
             }
         }
+        final List<String> also = found.issues().stream().filter(id -> !subs.contains(id)).toList();
+        if (!issues.subList(issues.size() - also.size(), issues.size()).equals(also)) {
+            // GitHub orders sub-issues only; the board puts the body's issues after them.
+            throw new StoreException.NotSavable(
+                    story,
+                    "the issues under Also needs in the story's body stand after its sub-issues,"
+                            + " in their order, which this write does not change");
+        }
         for (final String id : issues) {
             if (found.issues().contains(id)) {
                 continue;
