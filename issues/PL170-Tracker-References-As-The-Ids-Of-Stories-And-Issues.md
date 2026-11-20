@@ -87,6 +87,14 @@ answered:
   controllers and through the real server, the description's id patterns against `Ids`, and the screen's reading
   and encoding. A GitHub sub-issue, a pre-cut-over run reported after the cut-over, a batch naming one item by
   reference and alias, and `work` in a start and in Porelo's records are tested in step 2.
+- **The code reading of step 1**: the GitHub store's `Id` field takes only the Git store's form, so a reference
+  typed into it is no valid id, as before the cut-over; `work.issue` refuses `..` in the owner too, and the screen
+  takes `work` only for one of the task's own issues; `TrackedWork` takes no other member and no blank phase. A
+  copy of an issue or a story keeps its alias, and a story's run is looked up under the story's own id. Two points
+  are kept without a test, since nothing in step 1 can show them: the alias kept on the board `WorkRun` stages for
+  its checks, which nothing there reads, and the run looked up under the story's own id rather than the id called,
+  which differ only once `Board.story` finds an item by its alias in step 2. The mock store's copies keep the alias
+  as well, though its board holds none.
 
 ## Acceptance
 

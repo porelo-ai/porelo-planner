@@ -709,6 +709,35 @@ void main() {
     expect(shown.top >= view.top && shown.bottom <= view.bottom, isTrue, reason: 'the card $shown is inside $view');
   });
 
+  // Harm: a carried-over story or issue shows only its reference, so the person does not recognize it by its old id.
+  testWidgets('a card, its issue rows and its narrowed tile show the old id beside the reference', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['stories'] = [
+      {
+        'id': 'planner#7',
+        'alias': 'ST7',
+        'title': 'A carried story',
+        'state': 'Ready',
+        'priority': 'High',
+        'issues': [
+          {'id': 'planner#9', 'alias': 'PL9', 'repository': 'planner', 'title': 'A carried issue', 'state': 'Ready'},
+        ],
+      },
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+    expect(find.text('planner#7 (ST7)'), findsOneWidget, reason: 'the card shows the story\'s old id');
+    await tester.enterText(find.byKey(const Key('planning-search')), 'pl9');
+    await settle(tester);
+    expect(find.text('planner#9 (PL9) · planner'), findsOneWidget, reason: 'the issue row shows the issue\'s old id');
+    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await settle(tester);
+    tester.widget<IconButton>(find.byKey(const Key('planning-fold-phase Work'))).onPressed!();
+    await settle(tester);
+    expect(find.text('planner#7 (ST7)'), findsOneWidget, reason: 'the narrowed tile shows the story\'s old id');
+  });
+
   // Harm: an issue searched for by its number lies in a story far down its column, unseen, and is taken for missing.
   testWidgets('a search for an issue opens its story, marks the issue and brings the card into view', (tester) async {
     final (backend, boards) = await _showBoard(tester);

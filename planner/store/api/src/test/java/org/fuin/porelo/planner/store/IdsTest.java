@@ -216,5 +216,11 @@ class IdsTest {
         assertThatThrownBy(() -> Ids.issueAlias(id))
                 .as("the alias's refusal does not repeat what it refused")
                 .hasMessageNotContaining("secret");
+        assertThatThrownBy(() -> Ids.storyAlias(id))
+                .as("the story alias's refusal does not repeat what it refused")
+                .hasMessageNotContaining("secret");
+        assertThatThrownBy(() -> Ids.repositoryOf(id))
+                .as("the reference's refusal does not repeat what it refused")
+                .hasMessageNotContaining("secret");
     }
 }

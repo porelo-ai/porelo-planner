@@ -356,6 +356,12 @@ class ApiMatchesDescriptionTest {
         final java.util.regex.Pattern issue =
                 java.util.regex.Pattern.compile(
                         description.at("/components/schemas/IssueId/pattern").asText());
+        final java.util.regex.Pattern storyAlias =
+                java.util.regex.Pattern.compile(
+                        description.at("/components/schemas/StoryAlias/pattern").asText());
+        final java.util.regex.Pattern issueAlias =
+                java.util.regex.Pattern.compile(
+                        description.at("/components/schemas/IssueAlias/pattern").asText());
         for (final String id :
                 List.of(
                         "ST1",
@@ -372,13 +378,56 @@ class ApiMatchesDescriptionTest {
                         "a..b#1",
                         "repo#1#2",
                         "repo #1",
-                        "#1")) {
+                        "#1",
+                        "a".repeat(100) + "#1",
+                        "a".repeat(101) + "#1")) {
             assertThat(story.matcher(id).matches())
                     .as("the description's StoryId against Ids.story for '%s'", id)
                     .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.story(id)));
             assertThat(issue.matcher(id).matches())
                     .as("the description's IssueId against Ids.issue for '%s'", id)
                     .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.issue(id)));
+            assertThat(storyAlias.matcher(id).matches())
+                    .as("the description's StoryAlias against Ids.storyAlias for '%s'", id)
+                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.storyAlias(id)));
+            assertThat(issueAlias.matcher(id).matches())
+                    .as("the description's IssueAlias against Ids.issueAlias for '%s'", id)
+                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.issueAlias(id)));
+        }
+    }
+
+    @Test
+    void theTrackedWorkTakesTheShapeTheWindowTakes() {
+        // Harm: the description lets through a work the window refuses, so a Start is refused
+        // where the contract promised it.
+        final JsonNode work = description.at("/components/schemas/TrackedWork");
+        final java.util.regex.Pattern issue =
+                java.util.regex.Pattern.compile(work.at("/properties/issue/pattern").asText());
+        final java.util.regex.Pattern phase =
+                java.util.regex.Pattern.compile(work.at("/properties/phase/pattern").asText());
+        assertThat(work.at("/additionalProperties").asBoolean(true))
+                .as("a work with another member is refused")
+                .isFalse();
+        assertThat(issue.matcher("porelo-ai/porelo-x#3").matches())
+                .as("an owner's reference is taken")
+                .isTrue();
+        for (final String refused :
+                List.of(
+                        "a..b/porelo-x#3",
+                        "a../porelo-x#3",
+                        "porelo-ai/a..b#3",
+                        "porelo-x#3",
+                        "porelo-ai/porelo-x #3",
+                        "porelo-ai/porelo-x#3#4")) {
+            assertThat(issue.matcher(refused).matches())
+                    .as("the work's issue '%s' is refused", refused)
+                    .isFalse();
+        }
+        assertThat(phase.matcher("Analysis").matches()).as("a phase's name is taken").isTrue();
+        for (final String refused : List.of(" ", "   ", "Analysis\nx")) {
+            assertThat(phase.matcher(refused).matches())
+                    .as("the work's phase '%s' is refused", refused)
+                    .isFalse();
         }
     }
 

@@ -32,6 +32,15 @@ void main() {
       expect(_shown(_searching('xl')), ['item-2'], reason: 'by size');
     });
 
+    // Harm: a carried-over issue the person knows by its old id is hidden from them.
+    test('finds a carried-over issue by its old id', () {
+      final carried = [
+        PlanIssue.from({'id': 'repo#8', 'alias': 'XY8', 'title': 'Carried'}),
+        _issue('repo#9', title: 'Made later'),
+      ];
+      expect(_ids(_searching('xy8').shown(carried, _states)), ['repo#8'], reason: 'by its old id');
+    });
+
     test('an issue whose fields are not reported is still found by its identifier', () {
       expect(_shown(_searching('item-4')), ['item-4'], reason: 'nothing but the identifier was reported');
     });

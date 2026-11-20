@@ -695,7 +695,7 @@ public class BoardController {
                         story.size(),
                         story.link(),
                         issues(board, story, snapshot),
-                        WorkAnswers.work(board, snapshot.runs().get(checked)),
+                        WorkAnswers.work(board, snapshot.runs().get(story.id())),
                         story.description(),
                         format));
     }
@@ -962,9 +962,10 @@ public class BoardController {
         return projects.work(name(project))
                 .view(
                         (board, snapshot) -> {
-                            found(board, checked);
+                            // A run stands under the story's own id, not under an alias.
+                            final Story found = found(board, checked);
                             return new StoryWorkReply(
-                                    WorkAnswers.work(board, snapshot.runs().get(checked)));
+                                    WorkAnswers.work(board, snapshot.runs().get(found.id())));
                         });
     }
 

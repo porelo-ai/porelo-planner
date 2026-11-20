@@ -7,7 +7,7 @@ import 'work_reply.dart';
 
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
 // An issue id in the Git store's form or a tracker's reference within the project, as the description gives them.
-final _trackedIssue = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*/(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
+final _trackedIssue = RegExp(r'^(?![^#]*\.\.)[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
 final _issueName = RegExp(
   r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
 );
@@ -355,6 +355,10 @@ class PlanningTaskOrder {
     // Only a planned stage names a tracker's issue; a discussion works over no issue.
     if (map.containsKey('work') && discussion) _invalid('A discussion names no tracker issue.');
     final work = map.containsKey('work') ? PlanningWork.fromJson(map['work']) : null;
+    // Start names the tracker's issue the planner ordered, never one beyond the task's own issues.
+    if (work != null && !issues.contains(work.issue.substring(work.issue.indexOf('/') + 1))) {
+      _invalid('The task work names an issue the task does not work.');
+    }
     final offer = _text(map, 'offer');
     if (!RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$').hasMatch(offer)) {
       _invalid('The task offer is not a UUID.');

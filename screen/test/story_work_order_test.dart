@@ -137,6 +137,11 @@ void main() {
       'no phase': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3'},
       'another member': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'A', 'more': 1},
       'a discussion': _discussion()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': 'Analysis'},
+      'two dots in the owner': stage()..['work'] = {'issue': 'a..b/porelo-x#3', 'phase': 'Analysis'},
+      'two dots ending the owner': stage()..['work'] = {'issue': 'a../porelo-x#3', 'phase': 'Analysis'},
+      'another issue than the task\'s': stage()..['work'] = {'issue': 'porelo-ai/other-repo#99', 'phase': 'Analysis'},
+      'another number than the task\'s': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#4', 'phase': 'Analysis'},
+      'a blank phase': stage()..['work'] = {'issue': 'porelo-ai/porelo-x#3', 'phase': '   '},
     };
     for (final MapEntry(key: name, value: map) in changes.entries) {
       expect(() => PlanningTaskOrder.from(map), throwsFormatException, reason: name);

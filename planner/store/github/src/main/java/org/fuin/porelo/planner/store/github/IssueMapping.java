@@ -468,7 +468,8 @@ public final class IssueMapping {
                             issue.link(),
                             issue.text(),
                             parent.worker(),
-                            Risk.highest(List.of(issue.risk(), parent.risk()))));
+                            Risk.highest(List.of(issue.risk(), parent.risk())),
+                            issue.alias()));
         }
     }
 
@@ -627,9 +628,11 @@ public final class IssueMapping {
         }
         final String stripped = id.strip();
         try {
+            // The field holds the Git store's form only: a reference typed into it would name
+            // another item, or one in another repository than the item's own.
             return stripped.startsWith("ST") && !stripped.contains(".")
-                    ? Ids.story(stripped)
-                    : Ids.issue(stripped);
+                    ? Ids.storyAlias(stripped)
+                    : Ids.issueAlias(stripped);
         } catch (final IllegalArgumentException e) {
             return null;
         }

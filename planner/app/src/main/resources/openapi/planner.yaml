@@ -2777,21 +2777,23 @@ components:
 
     TrackedWork:
       type: object
+      additionalProperties: false
       required: [issue, phase]
       properties:
         issue:
           type: string
           maxLength: 200
-          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*/(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$'
+          pattern: '^(?![^#]*\.\.)[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$'
           description: >-
-            The tracker's issue with its owner, `<owner>/<repository>#<number>`: one line without white space, at
-            most 200 characters.
+            The tracker's issue with its owner, `<owner>/<repository>#<number>`: one line without white space and
+            without `..`, at most 200 characters.
         phase:
           type: string
           minLength: 1
           maxLength: 64
-          pattern: '^[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+$'
-          description: The name of the stage's phase the task works, one line, at most 64 characters.
+          pattern: '^(?=[\s\S]*\S)[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+$'
+          description: >-
+            The name of the stage's phase the task works, one line that is not blank, at most 64 characters.
 
     GivenFile:
       type: object

@@ -280,6 +280,30 @@ class IssueMappingTest {
     }
 
     @Test
+    void aTrackerReferenceTypedIntoTheIdFieldIsNoValidIdAndTakesNoOtherItemsPlace() {
+        // Harm: a reference typed into an item's Id field takes the board down, or names the item
+        // after another one.
+        final Item story = new Item("example-project", 1, "ST7").story();
+        final Item elsewhere =
+                new Item("example-lib", 1, "example-project#99").field(FieldNames.STATUS, "Idea");
+        final Item another =
+                new Item("example-lib", 3, "example-lib#2").field(FieldNames.STATUS, "Idea");
+        final Item fine = new Item("example-lib", 2, "LB11").field(FieldNames.STATUS, "Idea");
+        story.sub(elsewhere).sub(another).sub(fine);
+
+        final IssueMapping.Mapped mapped = read(story, elsewhere, another, fine);
+
+        assertThat(mapped.issues())
+                .as("only the item whose Id field holds the Git store's form")
+                .extracting(Issue::id)
+                .containsExactly("LB11");
+        assertThat(mapped.faults())
+                .as("each item with a reference in its Id field named")
+                .filteredOn(fault -> fault.contains("has no valid Id"))
+                .hasSize(2);
+    }
+
+    @Test
     void aStatusAgainstGitHubsOpenOrClosedStaysTheTruthAndIsNamed() {
         // Harm: a finished issue reopened on GitHub silently counted as done, or as open, without a
         // word.

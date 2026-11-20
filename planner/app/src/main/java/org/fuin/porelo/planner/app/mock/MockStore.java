@@ -310,7 +310,8 @@ public final class MockStore implements PlanningStore {
                                     issue.link(),
                                     ResultText.withoutHead(issue.text(), written),
                                     issue.worker(),
-                                    issue.risk()));
+                                    issue.risk(),
+                                    issue.alias()));
         }
         final Board sized =
                 new Board(
@@ -518,7 +519,8 @@ public final class MockStore implements PlanningStore {
                             issue.link(),
                             issue.text(),
                             writes.workers().getOrDefault(issue.id(), issue.worker()),
-                            issue.risk()));
+                            issue.risk(),
+                            issue.alias()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
@@ -567,6 +569,8 @@ public final class MockStore implements PlanningStore {
                 story.size(),
                 story.issues(),
                 story.description(),
-                story.link());
+                story.link(),
+                story.issuesWhole(),
+                story.alias());
     }
 }

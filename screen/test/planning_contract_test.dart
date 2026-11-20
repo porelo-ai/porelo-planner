@@ -82,4 +82,25 @@ void main() {
     );
     expect(derived.stateGiven, isTrue, reason: 'a story without issues saved to a destination states it');
   });
+
+  // Harm: after a move, a carried-over story or issue loses its old id, so the person no longer finds it by it.
+  test('a save keeps the old id of a carried-over story and of its issues, moved or not', () {
+    final story = PlanStory.from({
+      'id': 'repo#7',
+      'alias': 'ST7',
+      'state': 'Backlog',
+      'issues': [
+        {'id': 'repo#8', 'alias': 'XY8', 'state': 'Backlog'},
+        {'id': 'repo#9', 'state': 'Backlog'},
+      ],
+    });
+    final moved = PlanStory.withMoves(story, {'repo#8': 'Review'}, 'Review');
+    expect(moved.shownId, 'repo#7 (ST7)', reason: 'the moved story keeps its old id');
+    expect(
+      [for (final issue in moved.issues) issue.shownId],
+      ['repo#8 (XY8)', 'repo#9'],
+      reason: 'the moved issue keeps its old id, and one without stays without',
+    );
+    expect(moved.issues.first.state, 'Review', reason: 'the move itself is applied');
+  });
 }
