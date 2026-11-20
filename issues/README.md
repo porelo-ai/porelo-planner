@@ -34,7 +34,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl125"></a>[PL125](PL125-Porelos-Login-Lent-Once-Porelo-Answers-Git.md) | M | - | A planner Porelo starts reads and writes a project's private https repositories with the login Porelo's vault holds, now that Porelo's credential command answers Git, without a Git configuration the person writes by hand, and hands the same token to the GitHub store's API calls through the helper alone |
 | <a id="pl153"></a>[PL153](PL153-Start-Work-Shows-A-Single-Choice-As-Text.md) | XS | [PL156](README.md#pl156) | The Start work dialog shows the machine and the working state as labeled text where there is only one to choose, and leaves the machine out where only one planner reports the project, instead of drop-down lists of one |
 | <a id="pl155"></a>[PL155](PL155-Start-Work-Preselects-An-Agent-Signed-In-There.md) | S | [PL156](README.md#pl156) | The Start work dialog preselects, for each task, the first agent of the rule's offered list that the window says is signed in on the machine the task goes to, says why it passed over the ones before it, and offers an agent not signed in there only as the person's own choice |
 | <a id="pl163"></a>[PL163](PL163-A-Discussion-Names-The-Repositories-As-The-Planner-Takes-Them.md) | S | - | The order of an idea discussion lists each repository by the name the idea's issues[].repository must carry, beside the folder the task really reads it from; the idea format allows only those names; a refused name is said with the names allowed |
@@ -57,6 +56,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl125"></a>[PL125](PL125-Porelos-Login-Lent-Once-Porelo-Answers-Git.md) | M | - | A planner Porelo starts reads and writes a project's private https repositories with the login Porelo's vault holds, now that Porelo's credential command answers Git, without a Git configuration the person writes by hand, and hands the same token to the GitHub store's API calls through the helper alone |
 | <a id="pl164"></a>[PL164](PL164-Stories-And-Issues-Mapped-Onto-GitHub-Issues.md) | M | - | Every field the planner reads or writes of a story or an issue has one place in GitHub Issues: the story an issue in the project's own repository, its issues sub-issues in their repositories, state, priority, size, risk, worker and the old id as fields of one GitHub project, blockedBy as issue dependencies, the measured sums as number fields, the body holding what is true now and one comment per stage holding the course in time, new ids continuing each prefix's numbers; written down as a page and as one mapping class tested both ways |
 | <a id="pl169"></a>[PL169](PL169-A-Missing-Forge-Token-Offered-From-The-Board.md) | M | [PL164](README.md#pl164) | A GitHub board that cannot be read because the vault holds no token for the address, or GitHub refuses it for a missing right, is refused with NoForgeAccess naming the address and the right, and the planning screen offers the window's handOnForgeToken beside it and reads the board again once the token is in the vault |
 
