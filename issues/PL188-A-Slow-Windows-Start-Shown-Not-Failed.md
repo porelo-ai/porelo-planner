@@ -5,9 +5,9 @@
   "$schema": "issue-1.json",
   "id": "PL188",
   "title": "A Slow Windows Start Shown, Not Failed",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
-  "priority": "Highest",
+  "priority": "High",
   "rank": 1,
   "blockedBy": [],
   "covers": "The native start on Windows logs how long each protection of its directories took, and the start test's bound on Windows lies above the planner's own PowerShell limit, so a slow runner shows as a slow line, not a red Build"
