@@ -253,6 +253,12 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public Batch<String> addProjectItems(
+                final String token, final String projectId, final List<String> issueIds) {
+            throw new AssertionError("a save added an item to the project");
+        }
+
+        @Override
         public Batch<String> setFieldValues(
                 final String token, final String projectId, final List<FieldValue> values) {
             calls.add("setFieldValues");

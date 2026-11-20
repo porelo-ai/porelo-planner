@@ -51,6 +51,16 @@ public interface ProjectWrites {
     GitHubGraphQl.IssueBoard issueBoard(String token, List<String> issueIds, String projectId);
 
     /**
+     * Adds issues to the project in one mutation.
+     *
+     * @param token the person's token
+     * @param projectId the project's node id
+     * @param issueIds the issues' node ids, at most {@link GitHubGraphQl#MAX_BATCH}
+     * @return each issue's outcome, in their order, a saved one holding its new item's node id
+     */
+    Batch<String> addProjectItems(String token, String projectId, List<String> issueIds);
+
+    /**
      * Sets or clears field values in one mutation.
      *
      * @param token the person's token
@@ -128,6 +138,12 @@ public interface ProjectWrites {
             public GitHubGraphQl.IssueBoard issueBoard(
                     final String token, final List<String> issueIds, final String projectId) {
                 return graphQl.issueBoard(token, issueIds, projectId);
+            }
+
+            @Override
+            public Batch<String> addProjectItems(
+                    final String token, final String projectId, final List<String> issueIds) {
+                return graphQl.addProjectItems(token, projectId, issueIds);
             }
 
             @Override
