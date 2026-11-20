@@ -20,7 +20,6 @@ import org.fuin.porelo.planner.store.Workflow;
  * @param workflow the project's workflow
  * @param work the project's work rules
  * @param repositories the project's repositories by name, its own first
- * @param issueFloor the highest number each prefix used before the cut-over, {@code ST} included
  * @param fieldIds the GitHub ids of the project's fields, by field name; empty until they are read
  * @param optionIds the GitHub ids of each single-select field's options, by field name and option
  *     name
@@ -31,11 +30,10 @@ public record ProjectConfig(
         Workflow workflow,
         Work work,
         List<String> repositories,
-        Map<String, Integer> issueFloor,
         Map<String, String> fieldIds,
         Map<String, Map<String, String>> optionIds) {
 
-    /** Checks the forge, the names and the floors, and copies the lists and maps. */
+    /** Checks the forge and the names, and copies the lists and maps. */
     public ProjectConfig {
         TokenSource.checkedOrigin(forge);
         repositories = List.copyOf(repositories);
@@ -43,14 +41,6 @@ public record ProjectConfig(
             throw new IllegalArgumentException("A project holds its own repository");
         }
         repositories.forEach(Ids::name);
-        issueFloor.forEach(
-                (prefix, floor) -> {
-                    if (!prefix.matches("[A-Z]{1,4}") || floor < 0) {
-                        throw new IllegalArgumentException(
-                                "An issue floor is a prefix of capital letters and a whole number of at least 0");
-                    }
-                });
-        issueFloor = Collections.unmodifiableMap(new LinkedHashMap<>(issueFloor));
         fieldIds = Collections.unmodifiableMap(new LinkedHashMap<>(fieldIds));
         final Map<String, Map<String, String>> options = new LinkedHashMap<>();
         optionIds.forEach(

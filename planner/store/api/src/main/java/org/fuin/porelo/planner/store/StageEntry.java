@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -17,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * @param effort the model's effort, or null
  * @param minutes its wall minutes
  * @param vmMinutes the minutes it waited on a machine
- * @param tokens the tokens it spent, by model and kind, such as {@code claude_input}
+ * @param tokens the tokens it spent, by model and kind, such as {@code claude_input_tokens}
  */
 public record StageEntry(
         String key,
@@ -32,6 +33,12 @@ public record StageEntry(
 
     /** The most minutes one stage may take, as a stage record allows. */
     public static final double MOST_MINUTES = 100_000;
+
+    /**
+     * The stages whose agent's minutes and tokens make up an issue's sums; others are shown only.
+     */
+    public static final Set<String> MEASURED =
+            Set.of("plan", "implement", "test", "review", "rework", "handover");
 
     /**
      * Refuses a blank key or kind, and a negative, non-finite or overlong number, which would spoil

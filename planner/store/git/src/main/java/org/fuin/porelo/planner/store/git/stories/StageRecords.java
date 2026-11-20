@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.StageEntry;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -40,9 +41,6 @@ public final class StageRecords {
                     "handover",
                     "wait",
                     MOVE);
-
-    private static final Set<String> MEASURED =
-            Set.of("plan", "implement", "test", "review", "rework", "handover");
 
     private static final Set<String> SIZES = Set.of("XS", "S", "M", "L", "XL");
 
@@ -277,7 +275,7 @@ public final class StageRecords {
                     continue;
                 }
                 if ("agent".equals(record.get("actor"))
-                        && MEASURED.contains(string(record, "stage"))
+                        && StageEntry.MEASURED.contains(string(record, "stage"))
                         && size.equals(record.get("size"))) {
                     total += number(record.get("wall_min"), "wall_min");
                     measured = true;

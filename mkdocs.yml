@@ -3,6 +3,7 @@ docs_dir: doc
 strict: true
 nav:
     - Overview: index.md
+    - Stories and issues in GitHub Issues: github-issues.md
     - Decisions: decisions.md
 validation:
     links:

@@ -36,7 +36,6 @@ class GitHubStoreTest {
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
                     List.of("example-project"),
-                    Map.of("ST", 3),
                     Map.of(),
                     Map.of());
 

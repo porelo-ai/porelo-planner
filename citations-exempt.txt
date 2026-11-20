@@ -409,3 +409,4 @@ screen/test/served/mock/workflow.json
 # need ids of that shape.
 tool/story-tests/st309.sh
 tool/story-tests/st315.sh
+planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/IssueMappingTest.java
