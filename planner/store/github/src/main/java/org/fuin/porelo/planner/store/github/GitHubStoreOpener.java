@@ -2,8 +2,10 @@ package org.fuin.porelo.planner.store.github;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -32,6 +34,8 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     private final Supplier<BoardWriter> writers;
 
+    private final Supplier<ChangeProbe> probes;
+
     private final Duration lockWait;
 
     /**
@@ -57,6 +61,51 @@ public final class GitHubStoreOpener implements TrackedStores {
     }
 
     /**
+     * Makes an opener that reads and writes each project's board over GitHub's API, and reads it
+     * again only once GitHub answers a conditional ask that it changed; one pace of the person's
+     * token holds every project while GitHub's rate limit is spent.
+     *
+     * @param tokens gives the person's token for the forge
+     * @param queries the GraphQL reads of a project
+     * @param writes the calls a write to a project is made of
+     * @param conditional the conditional reads that ask whether a project changed
+     * @param executor runs a project's conditional reads side by side
+     * @param clock tells the time a wait of GitHub's ends by
+     * @param lockWait how long a call waits for another on the same project
+     */
+    public GitHubStoreOpener(
+            final TokenSource tokens,
+            final ProjectQueries queries,
+            final ProjectWrites writes,
+            final ConditionalReads conditional,
+            final Executor executor,
+            final InstantSource clock,
+            final Duration lockWait) {
+        this(tokens, queries, writes, conditional, executor, new GitHubPace(clock), lockWait);
+    }
+
+    private GitHubStoreOpener(
+            final TokenSource tokens,
+            final ProjectQueries queries,
+            final ProjectWrites writes,
+            final ConditionalReads conditional,
+            final Executor executor,
+            final GitHubPace pace,
+            final Duration lockWait) {
+        this(
+                tokens,
+                states ->
+                        new ItemsBoardReader(
+                                pace.watching(queries),
+                                tokens,
+                                new ForgeAccessRefusals(GITHUB),
+                                states),
+                () -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
+                () -> new ConditionalChangeProbe(conditional, tokens, pace, executor),
+                lockWait);
+    }
+
+    /**
      * Makes an opener with its own board reader and writer per project.
      *
      * @param tokens gives the person's token for the forge
@@ -69,9 +118,28 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Function<StoryStates, BoardReader> readers,
             final Supplier<BoardWriter> writers,
             final Duration lockWait) {
+        this(tokens, readers, writers, () -> ChangeProbe.ALWAYS_CHANGED, lockWait);
+    }
+
+    /**
+     * Makes an opener with its own board reader, writer and change probe per project.
+     *
+     * @param tokens gives the person's token for the forge
+     * @param readers makes a project's reader, given how its story states follow the workflow
+     * @param writers makes a project's writer
+     * @param probes makes a project's change probe
+     * @param lockWait how long a call waits for another on the same project
+     */
+    GitHubStoreOpener(
+            final TokenSource tokens,
+            final Function<StoryStates, BoardReader> readers,
+            final Supplier<BoardWriter> writers,
+            final Supplier<ChangeProbe> probes,
+            final Duration lockWait) {
         this.tokens = tokens;
         this.readers = readers;
         this.writers = writers;
+        this.probes = probes;
         this.lockWait = lockWait;
     }
 
@@ -93,7 +161,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                 },
                 GitHubStore.Parts.reading(readers.apply(states), states)
                         .writer(writers.get())
-                        .refusals(new ForgeAccessRefusals(GITHUB)),
+                        .refusals(new ForgeAccessRefusals(GITHUB))
+                        .probe(probes.get()),
                 tokens,
                 lockWait);
     }

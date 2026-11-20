@@ -144,12 +144,43 @@ public final class GitHubStore implements PlanningStore {
     @Override
     public Board board() {
         final Snapshot current = snapshot;
-        return current != null ? current.board() : refresh();
+        return current != null ? served(current.board()) : refresh();
     }
 
     @Override
     public Board refresh() {
-        return locked(this::read).board();
+        return served(locked(this::read).board());
+    }
+
+    /**
+     * Reads again as {@link #refresh()} does, unless GitHub's rate limit is spent: then GitHub is
+     * not asked until its wait ends, and the board kept is answered with a fault saying when.
+     */
+    @Override
+    public Board poll() {
+        final Pace pace = parts.probe().pace();
+        if (pace.hold() == null) {
+            try {
+                return refresh();
+            } catch (final StoreException.Unreachable e) {
+                // A rate limit this poll found spent serves the board kept, as the polls after it.
+                if (pace.hold() == null) {
+                    throw e;
+                }
+            }
+        }
+        final Snapshot current = snapshot;
+        if (current == null) {
+            throw new StoreException.Unreachable(
+                    config.own(), Objects.requireNonNullElse(pace.hold(), "GitHub asked to wait"));
+        }
+        return served(current.board());
+    }
+
+    /** Asks GitHub as often as a project whose changes are probed, as its pace allows. */
+    @Override
+    public Duration pollDelay(final Duration fetched, final Duration probed) {
+        return parts.probe().pace().delay(probed);
     }
 
     @Override
@@ -235,18 +266,41 @@ public final class GitHubStore implements PlanningStore {
                 && parts.probe().unchanged(current)) {
             return current;
         }
+        return readWhole(now);
+    }
+
+    private Snapshot readWhole(final ProjectConfig now) {
         final Snapshot fresh = parts.reader().read(now);
         snapshot = fresh;
         return fresh;
     }
 
+    /** The board with what the pace says of GitHub's rate limit among its faults. */
+    private Board served(final Board board) {
+        final List<String> pace = parts.probe().pace().faults();
+        if (pace.isEmpty()) {
+            return board;
+        }
+        final List<String> faults = new java.util.ArrayList<>(board.faults());
+        faults.addAll(pace);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues(),
+                board.work(),
+                board.repositories(),
+                faults);
+    }
+
     /**
-     * Reads the board after a write that completed; a failure here says a part was written, so the
+     * Reads the whole board after a write that completed, never asking whether it changed: a change
+     * check may not see a field value written. A failure here says a part was written, so the
      * window is never told nothing was and a stage result is never handed in and saved twice.
      */
     private Snapshot readAfterWriting() {
         try {
-            return read();
+            return readWhole(configNow());
         } catch (final RuntimeException e) {
             throw new BoardWriter.AfterWriting(e);
         }

@@ -1,0 +1,2 @@
+title: A followed project kept in GitHub Issues is asked every 30 seconds whether anything changed, read again only when it did, and while GitHub's rate limit is spent the board read before is shown with a fault saying when GitHub is read again.
+type: added

@@ -3,12 +3,14 @@ package org.fuin.porelo.planner.app;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.fuin.porelo.planner.core.Changes;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,16 +26,18 @@ public final class ChangesRegistry implements AutoCloseable {
 
     private final Duration interval;
 
+    private final Duration probed;
+
     private final ScheduledExecutorService scheduler;
 
     private final Map<String, Followed> followed = new HashMap<>();
 
     private boolean closed;
 
-    private record Followed(Changes changes, ScheduledFuture<?> polling) {}
+    private record Followed(Changes changes, Polling polling) {}
 
     /**
-     * Makes the registry.
+     * Makes the registry, polling every project at one interval.
      *
      * @param projects the projects the window has given
      * @param interval how often a followed project's repositories are fetched
@@ -43,8 +47,26 @@ public final class ChangesRegistry implements AutoCloseable {
             final Projects projects,
             final Duration interval,
             final ScheduledExecutorService scheduler) {
+        this(projects, interval, interval, scheduler);
+    }
+
+    /**
+     * Makes the registry.
+     *
+     * @param projects the projects the window has given
+     * @param interval how often a followed project's repositories are fetched
+     * @param probed how often a followed project whose store asks cheaply whether it changed is
+     *     asked, as its store's pace allows
+     * @param scheduler runs the polls; closed with the registry
+     */
+    public ChangesRegistry(
+            final Projects projects,
+            final Duration interval,
+            final Duration probed,
+            final ScheduledExecutorService scheduler) {
         this.projects = projects;
         this.interval = interval;
+        this.probed = probed;
         this.scheduler = scheduler;
         projects.onRetired(this::drop);
     }
@@ -84,17 +106,10 @@ public final class ChangesRegistry implements AutoCloseable {
                 new Changes(projects.store(project), () -> idle(project), projects.work(project));
         // Subscribed before it is followed, so a board that cannot be read leaves no polling.
         final Changes.Subscription subscription = changes.subscribe();
-        followed.put(
-                project,
-                new Followed(
-                        changes,
-                        // At once first: the store may answer its clones as an earlier run left
-                        // them.
-                        scheduler.scheduleWithFixedDelay(
-                                () -> poll(project, changes),
-                                0,
-                                interval.toMillis(),
-                                TimeUnit.MILLISECONDS)));
+        final Polling polling = new Polling(project, changes);
+        followed.put(project, new Followed(changes, polling));
+        // At once first: the store may answer its clones as an earlier run left them.
+        polling.schedule(Duration.ZERO);
         return subscription;
     }
 
@@ -168,7 +183,7 @@ public final class ChangesRegistry implements AutoCloseable {
         all.values()
                 .forEach(
                         each -> {
-                            each.polling().cancel(false);
+                            each.polling().cancel();
                             each.changes().closeAll();
                         });
         scheduler.shutdownNow();
@@ -181,7 +196,7 @@ public final class ChangesRegistry implements AutoCloseable {
         }
         if (known != null) {
             // Its windows reconnect and read the project from its new store, or learn it is gone.
-            known.polling().cancel(false);
+            known.polling().cancel();
             known.changes().closeAll();
         }
     }
@@ -195,7 +210,7 @@ public final class ChangesRegistry implements AutoCloseable {
             }
             followed.remove(project);
         }
-        known.polling().cancel(false);
+        known.polling().cancel();
         known.changes().closeAll();
     }
 
@@ -203,14 +218,67 @@ public final class ChangesRegistry implements AutoCloseable {
         final Followed known = followed.get(project);
         // A window that subscribed since the last one left keeps the project followed.
         if (known != null && known.changes().subscribers() == 0) {
-            known.polling().cancel(false);
+            known.polling().cancel();
             followed.remove(project);
+        }
+    }
+
+    /** One project's polls, each scheduled after the one before by the wait its store names. */
+    private final class Polling {
+
+        private final String project;
+
+        private final Changes changes;
+
+        private @Nullable ScheduledFuture<?> next;
+
+        private boolean cancelled;
+
+        Polling(final String project, final Changes changes) {
+            this.project = project;
+            this.changes = changes;
+        }
+
+        synchronized void schedule(final Duration delay) {
+            if (cancelled) {
+                return;
+            }
+            try {
+                next = scheduler.schedule(this::run, delay.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (final RejectedExecutionException e) {
+                // The scheduler stops with the planner; nothing is polled after.
+                cancelled = true;
+            }
+        }
+
+        synchronized void cancel() {
+            cancelled = true;
+            final ScheduledFuture<?> pending = next;
+            if (pending != null) {
+                pending.cancel(false);
+            }
+        }
+
+        private void run() {
+            poll(project, changes);
+            schedule(delay());
+        }
+
+        /** The store's wait, never shorter than the shorter interval, so no poll runs hot. */
+        private Duration delay() {
+            final Duration least = interval.compareTo(probed) < 0 ? interval : probed;
+            try {
+                final Duration wait = changes.pollDelay(interval, probed);
+                return wait.compareTo(least) < 0 ? least : wait;
+            } catch (final RuntimeException e) {
+                return interval;
+            }
         }
     }
 
     private void poll(final String project, final Changes changes) {
         try {
-            changes.poll();
+            changes.pollOnSchedule();
         } catch (final StoreException.NoForgeAccess refused) {
             LOG.warn(
                     "Fetching project {} was refused, its streams end: {}",

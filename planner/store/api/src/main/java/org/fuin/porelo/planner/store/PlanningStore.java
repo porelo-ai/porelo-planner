@@ -47,6 +47,31 @@ public interface PlanningStore {
     Board refresh();
 
     /**
+     * Reads the store again on the planner's own schedule, while a window follows the project; a
+     * store whose source asked it to wait answers the board it holds instead, naming the wait among
+     * its faults. A person's reload is {@link #refresh()}.
+     *
+     * @return the board
+     * @throws StoreException.CredentialRefused if a repository refused the person's login
+     * @throws StoreException.Unreachable if a repository could not be reached
+     */
+    default Board poll() {
+        return refresh();
+    }
+
+    /**
+     * Answers how long to wait before the next scheduled poll.
+     *
+     * @param fetched the interval of a store that fetches its whole source
+     * @param probed the interval of a store that asks cheaply whether its source changed
+     * @return the wait; a store that fetches answers {@code fetched}
+     */
+    default java.time.Duration pollDelay(
+            final java.time.Duration fetched, final java.time.Duration probed) {
+        return fetched;
+    }
+
+    /**
      * Saves a batch of writes against the revision the window shows: all of them or none.
      *
      * @param revision the revision the writes were checked against

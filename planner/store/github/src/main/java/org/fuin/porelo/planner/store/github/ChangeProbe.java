@@ -17,4 +17,13 @@ public interface ChangeProbe {
      * @return true only when GitHub says nothing changed
      */
     boolean unchanged(Snapshot current);
+
+    /**
+     * Answers the pace GitHub asks for; a probe that knows none never holds.
+     *
+     * @return the pace
+     */
+    default Pace pace() {
+        return Pace.STEADY;
+    }
 }

@@ -55,6 +55,17 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public Board poll() {
+        return BoardLog.read(project, store.poll());
+    }
+
+    @Override
+    public java.time.Duration pollDelay(
+            final java.time.Duration fetched, final java.time.Duration probed) {
+        return store.pollDelay(fetched, probed);
+    }
+
+    @Override
     public Board save(final Revision revision, final Writes writes) {
         return store.save(revision, writes);
     }

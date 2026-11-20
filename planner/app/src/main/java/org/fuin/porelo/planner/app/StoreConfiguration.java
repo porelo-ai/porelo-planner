@@ -8,10 +8,12 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
+import org.fuin.porelo.forge.github.model.ProjectsV2ItemWithContent;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
@@ -20,6 +22,7 @@ import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
+import org.fuin.porelo.planner.store.github.ConditionalReads;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
@@ -56,7 +59,9 @@ public class StoreConfiguration {
         IssueComment.class,
         IssuesUpdateCommentRequest.class,
         IssuesUpdateRequest.class,
-        IssuesUpdate200Response.class
+        IssuesUpdate200Response.class,
+        Issue.class,
+        ProjectsV2ItemWithContent.class
     })
     public GitProjects gitProjects() {
         return gitProjects(System.getenv());
@@ -100,10 +105,14 @@ public class StoreConfiguration {
                         .connectTimeout(Duration.ofSeconds(10))
                         .build();
         final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
+        final GitHubClient rest = new GitHubClient(GITHUB_API, http);
         return new GitHubStoreOpener(
                 origin -> tokens.token(origin, origin.getHost()),
                 ProjectQueries.over(graphQl),
-                ProjectWrites.over(graphQl, new GitHubClient(GITHUB_API, http)),
+                ProjectWrites.over(graphQl, rest),
+                ConditionalReads.over(rest),
+                task -> Thread.ofVirtual().name("github-probe").start(task),
+                Clock.systemUTC(),
                 Duration.ofSeconds(30));
     }
 
@@ -112,15 +121,19 @@ public class StoreConfiguration {
      *
      * @param projects the projects the window has given
      * @param interval how often a followed project's repositories are fetched
+     * @param probed how often a followed GitHub project is asked whether it changed, which costs no
+     *     rate limit when it did not
      * @return the registry
      */
     @Bean(destroyMethod = "close")
     public ChangesRegistry changesRegistry(
             final Projects projects,
-            @Value("${planner.poll-interval:3m}") final Duration interval) {
+            @Value("${planner.poll-interval:3m}") final Duration interval,
+            @Value("${planner.github.poll-interval:30s}") final Duration probed) {
         return new ChangesRegistry(
                 projects,
                 interval,
+                probed,
                 Executors.newSingleThreadScheduledExecutor(
                         Thread.ofVirtual().name("poll-", 0).factory()));
     }

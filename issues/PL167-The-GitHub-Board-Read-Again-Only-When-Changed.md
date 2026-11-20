@@ -36,6 +36,11 @@ changed is answered from what the planner holds, without spending the person's r
 - The interval for a GitHub project may be shorter than for Git (a probe costs little): `planner.github.poll-interval`,
   30 seconds by default; the rate limit left (`X-RateLimit-Remaining`) below a tenth lengthens it and says so as a
   board fault.
+- When GitHub answers that the rate limit is spent, background reads are held off until GitHub's wait ends and the
+  board kept is served to the window, with a fault saying when GitHub is read again; a person's explicit reload
+  still asks once and gets the same refusal. One pace per person's token (`GitHubPace`) holds every project read
+  with it, since GitHub counts the limit per person; a write is always followed by a whole read, never by the
+  change check.
 - Red first: `GitHubChangesTest` with a fake GitHub: three repositories answering 304 lead to no GraphQL query and no
   event; one 200 leads to one query and one event; a low rate limit lengthens the interval.
 

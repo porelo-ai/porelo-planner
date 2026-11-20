@@ -84,9 +84,35 @@ public final class Changes {
      * @throws RuntimeException what the store's refresh threw; no subscription is told anything
      */
     public Board poll() {
+        return fetched(store::refresh);
+    }
+
+    /**
+     * Polls on the planner's own schedule as {@link #poll()} does, through the store's {@link
+     * PlanningStore#poll()}, which may answer the board it holds while its source asks it to wait.
+     *
+     * @return the board after the poll
+     * @throws RuntimeException what the store's poll threw; no subscription is told anything
+     */
+    public Board pollOnSchedule() {
+        return fetched(store::poll);
+    }
+
+    /**
+     * Answers how long to wait before the next scheduled poll.
+     *
+     * @param fetched the interval of a store that fetches its whole source
+     * @param probed the interval of a store that asks cheaply whether its source changed
+     * @return the store's wait
+     */
+    public Duration pollDelay(final Duration fetched, final Duration probed) {
+        return store.pollDelay(fetched, probed);
+    }
+
+    private Board fetched(final java.util.function.Supplier<Board> read) {
         // One fetch at a time, so a slow one never tells an older board after a newer one.
         synchronized (fetching) {
-            final Board board = store.refresh();
+            final Board board = read.get();
             tell(frame());
             return board;
         }
