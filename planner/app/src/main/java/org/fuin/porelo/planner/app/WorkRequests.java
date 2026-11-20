@@ -286,6 +286,20 @@ public final class WorkRequests {
             throw noHandIn("idea: The idea must be an object with a story and issues.");
         }
         final List<String> shape = new ArrayList<>();
+        final NewIdeas.Idea read = idea(idea, shape);
+        return new HandIn(new IdeaRequest(offer.asString(), read), shape);
+    }
+
+    /**
+     * Reads an idea object: a member of the wrong type arrives as null or an empty text, and a
+     * member the idea format does not name as a fault of its shape, so the core names every fault
+     * by its field and nothing sent is repeated.
+     *
+     * @param idea the idea object
+     * @param shape takes the faults of the idea's shape, each by its field
+     * @return the idea
+     */
+    static NewIdeas.Idea idea(final JsonNode idea, final List<String> shape) {
         known(idea, Set.of("story", "issues"), "idea", shape);
         final JsonNode story = idea.path("story");
         NewIdeas.Story readStory = null;
@@ -321,8 +335,7 @@ public final class WorkRequests {
                                 textOrNull(item, "worker")));
             }
         }
-        return new HandIn(
-                new IdeaRequest(offer.asString(), new NewIdeas.Idea(readStory, issues)), shape);
+        return new NewIdeas.Idea(readStory, issues);
     }
 
     /**

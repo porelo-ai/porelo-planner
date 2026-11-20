@@ -73,6 +73,12 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   `MoveNotAllowed` stays for a write the store refuses. `LoggedStore`, which wraps every store, forwards each edit.
 - **A conflict over a story's issues or a new story** is answered 409 by its own description, `EditConflict`
   (`StaleRevision` or `WorkRunning`), since `IssueConflict` names neither.
+- **Each edit is a use case of a service, `BoardEdits`**, which knows no HTTP: it holds the project's lock, the
+  revision's and the core's checks, the store's write and the windows told of it. `EditsController` only checks the
+  path's ids, reads the body into its record (`EditRequests`, strictly, never repeating what was sent), calls the
+  service once and maps its answer and refusals to HTTP. The harms are tested on the service over a fake store,
+  without HTTP; the controller's tests check only the mapping. A comment checks no revision and tells the windows
+  nothing, since the board shows none. The idea object of a new story is read by the reader a hand-in uses.
 
 ## Acceptance
 

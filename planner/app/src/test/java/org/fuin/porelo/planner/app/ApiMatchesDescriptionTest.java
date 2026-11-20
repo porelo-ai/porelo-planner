@@ -142,7 +142,11 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueReadingRounds", WorkRequests.IssueLimit.class),
                     Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
                     Map.entry("Landing", NextStep.Landing.class),
-                    Map.entry("Level", LogLevelController.Chosen.class));
+                    Map.entry("Level", LogLevelController.Chosen.class),
+                    Map.entry("StoryRequest", EditRequests.StoryRequest.class),
+                    Map.entry("StoryIssuesRequest", EditRequests.StoryIssuesRequest.class),
+                    Map.entry("BlockedByRequest", EditRequests.BlockedByRequest.class),
+                    Map.entry("CommentRequest", EditRequests.CommentRequest.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
