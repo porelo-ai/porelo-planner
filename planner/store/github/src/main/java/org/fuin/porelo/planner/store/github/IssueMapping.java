@@ -119,9 +119,27 @@ public final class IssueMapping {
                 faults.add(where(item) + " stands in the project twice and is left out");
                 continue;
             }
+            final boolean shown = !item.archived() && !leftOut.contains(item.itemId());
+            // Left out before it can be found as a parent or a sub-issue, so nothing hangs on it.
+            if (!config.repositories().contains(item.repository())) {
+                if (shown) {
+                    faults.add(
+                            where(item)
+                                    + " lies outside the project's repositories and is left out");
+                }
+                continue;
+            }
+            if (isStory(item) && !item.repository().equals(config.own())) {
+                if (shown) {
+                    faults.add(
+                            id
+                                    + " is a story outside the project's own repository and is left out");
+                }
+                continue;
+            }
             byIssueId.put(item.issueId(), item);
             idOf.put(item.issueId(), id);
-            if (!item.archived() && !leftOut.contains(item.itemId())) {
+            if (shown) {
                 live.add(item);
             }
         }
@@ -132,12 +150,7 @@ public final class IssueMapping {
             // Every live item was given its id above.
             final String id = Objects.requireNonNull(idOf.get(item.issueId()));
             final boolean story = isStory(item);
-            if (!config.repositories().contains(item.repository())) {
-                faults.add(
-                        where(item) + " lies outside the project's repositories and is left out");
-            } else if (story && !item.repository().equals(config.own())) {
-                faults.add(id + " is a story outside the project's own repository and is left out");
-            } else if (story) {
+            if (story) {
                 if (item.parentIssueId() != null) {
                     faults.add(id + " is a story under another issue, shown without it");
                 }

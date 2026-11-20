@@ -277,9 +277,46 @@ class IssueMappingTest {
         assertThat(mapped.faults())
                 .as("each item left out, named by its repository and number")
                 .containsExactly(
+                        "Item elsewhere#9 lies outside the project's repositories and is left out",
                         "Item Example-Lib#3 has no valid tracker reference and is left out",
+                        "example-project#1 has a sub-issue outside the project",
+                        "example-project#1 has a sub-issue outside the project");
+    }
+
+    @Test
+    void aStoryWhoseOnlySubIssueLiesOutsideTheProjectSaysSo() {
+        // Harm: a story is shown whole while one of its issues stands where the board cannot see.
+        final Item story = new Item("example-project", 1).story();
+        final Item outside = new Item("elsewhere", 9).field(FieldNames.STATUS, "Idea");
+        story.sub(outside);
+
+        final IssueMapping.Mapped mapped = read(story, outside);
+
+        assertThat(mapped.faults())
+                .as("the foreign item and the story's sub-issue outside the project")
+                .containsExactly(
                         "Item elsewhere#9 lies outside the project's repositories and is left out",
                         "example-project#1 has a sub-issue outside the project");
+    }
+
+    @Test
+    void anItemLabeledStoryOutsideTheOwnRepositoryTakesItsSubIssuesOutWithIt() {
+        // Harm: the sub-issue of a refused story is shown as an issue of no story, with its own
+        // worker and risk instead of being left out with it.
+        final Item own = new Item("example-project", 1).story();
+        final Item labeled = new Item("example-lib", 3).story();
+        final Item under = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        labeled.sub(under);
+
+        final IssueMapping.Mapped mapped = read(own, labeled, under);
+
+        assertThat(mapped.issues()).as("no issue of the refused story").isEmpty();
+        assertThat(mapped.faults())
+                .as("the story outside the own repository and its sub-issue left out")
+                .containsExactly(
+                        "example-lib#3 is a story outside the project's own repository and is"
+                                + " left out",
+                        "example-lib#4 has a parent outside the project and is left out");
     }
 
     @Test
