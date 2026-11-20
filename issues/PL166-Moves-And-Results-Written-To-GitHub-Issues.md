@@ -36,6 +36,10 @@ stands on its issue under the person's name, with no fetch, commit or push.
   closes the issue through `updateIssue`. GitHub has no transaction: the client answers each alias's result or
   error, and what failed beside what succeeded is `PartlySaved` with the ids saved. The stale check reads the
   written items by `issueBoard`. The store holds no query text and no records of its own.
+- A stage's save adds that stage's minutes, VM minutes, tokens and one stage to the number fields as read just
+  before the write, in the same `setFieldValues` batch as its state. It never recomputes them from the stage
+  comments, so a value a person set stays the base that later stages add to. A field without a value counts as 0.
+  The stage comment is written beside, as the course of the work; the board never reads it.
 - `createIssue`: `createIssues`, `addProjectItems` and `setFieldValues` (measured 4.6 s for the four calls of a
   single issue); a new issue is known by its tracker reference, GitHub's own number, and its `Id` stays empty, so
   two persons adding at once never collide. `createIdea`: the story and its issues the same way, bundled. Both

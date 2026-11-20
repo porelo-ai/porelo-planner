@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL175",
   "title": "Issues Made Outside the Project Offered for Adding",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "S",
   "priority": "Low",
   "rank": 92,

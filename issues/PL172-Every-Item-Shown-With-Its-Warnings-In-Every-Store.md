@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL172",
   "title": "Every Item Shown With Its Warnings, in Every Store",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "M",
   "priority": "High",
   "rank": 89,

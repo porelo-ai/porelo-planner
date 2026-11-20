@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL176",
   "title": "An Offer to Correct Each Warning",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "M",
   "priority": "Medium",
   "rank": 93,

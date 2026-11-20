@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL174",
   "title": "The Workflow's States Kept as Status Options Without Losing a Value",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "S",
   "priority": "High",
   "rank": 91,

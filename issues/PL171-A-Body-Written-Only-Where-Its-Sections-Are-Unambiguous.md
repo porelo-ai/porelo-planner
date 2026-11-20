@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL171",
   "title": "A Body Written Only Where Its Sections Are Unambiguous",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "S",
   "priority": "High",
   "rank": 88,

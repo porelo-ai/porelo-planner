@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL173",
   "title": "The GitHub Store Warns Instead of Leaving Out, and Its Fields Count",
-  "state": "Idea",
+  "state": "Analyzed",
   "size": "M",
   "priority": "High",
   "rank": 90,

@@ -9,10 +9,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl171"></a>[PL171](PL171-A-Body-Written-Only-Where-Its-Sections-Are-Unambiguous.md) | S | [PL164](README.md#pl164) | A stage result is written into a GitHub issue's body only when the body splits into sections unambiguously; otherwise nothing is written and the item is warned with what to repair |
-| <a id="pl172"></a>[PL172](PL172-Every-Item-Shown-With-Its-Warnings-In-Every-Store.md) | M | [PL164](README.md#pl164) | The store API never lets a store leave a story or issue out: what a store cannot read in an item is a warning on it, which the board shows by an icon, and a value the item states counts over anything derived from its text |
-| <a id="pl173"></a>[PL173](PL173-The-GitHub-Store-Warns-And-Its-Fields-Count.md) | M | [PL164](README.md#pl164), [PL172](README.md#pl172) | The GitHub store maps every hand edit it cannot hold to a warning on the item, takes an issue without Status as an Idea, and shows its fields as GitHub holds them: Status over open or closed, the number fields over the stage comments |
-| <a id="pl174"></a>[PL174](PL174-The-Workflow-States-Kept-As-Status-Options.md) | S | [PL166](README.md#pl166) | The GitHub project's Status options follow the workflow's states only through one planner step that writes every item's value back, so no item loses its Status when the options change |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
@@ -24,16 +20,20 @@ left out.
 | <a id="pl162"></a>[PL162](PL162-A-Stage-Results-Repair-Smaller-Findings.md) | - | - | The smaller findings of the reading of the repair of a handed-in stage result: a split item that starts with #, the plan's length after its headings are lowered, and the order's words on line breaks and deeper headings |
 | <a id="pl126"></a>[PL126](PL126-Another-Account-Cannot-Take-A-Live-Planners-Port-On-Windows.md) | - | - | On Windows the planner's listener binds its loopback port exclusively, so another account's process cannot bind the same port beside a live planner and take the window's calls |
 | <a id="pl145"></a>[PL145](PL145-A-Story-Finished-Over-Rejected-Issues-Or-An-Open-Stage.md) | - | - | A story moved to Finished whose issues are all Rejected, or none, and one whose carried issue has an unclosed stage record, is either saved whole or refused with one line why, never failing in the store after the preview passed it |
-| <a id="pl176"></a>[PL176](PL176-An-Offer-To-Correct-Each-Warning.md) | M | [PL172](README.md#pl172) | Each warning on an item, in every store, names the one change that corrects it, which the person confirms on the board |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
-| <a id="pl175"></a>[PL175](PL175-Issues-Outside-The-Project-Offered-For-Adding.md) | S | [PL165](README.md#pl165) | An open issue a person made by hand in one of the project's repositories without adding it to the GitHub project is found and offered for adding to the board |
 
 ## Analyzed
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl170"></a>[PL170](PL170-Tracker-References-As-The-Ids-Of-Stories-And-Issues.md) | M | [PL164](README.md#pl164) | A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference, a carried-over one showing its old id as its alias, so an item made after the cut-over needs no Porelo id |
+| <a id="pl171"></a>[PL171](PL171-A-Body-Written-Only-Where-Its-Sections-Are-Unambiguous.md) | S | [PL164](README.md#pl164) | A stage result is written into a GitHub issue's body only when the body splits into sections unambiguously; otherwise nothing is written and the item is warned with what to repair |
+| <a id="pl172"></a>[PL172](PL172-Every-Item-Shown-With-Its-Warnings-In-Every-Store.md) | M | [PL164](README.md#pl164) | The store API never lets a store leave a story or issue out: what a store cannot read in an item is a warning on it, which the board shows by an icon, and a value the item states counts over anything derived from its text |
+| <a id="pl173"></a>[PL173](PL173-The-GitHub-Store-Warns-And-Its-Fields-Count.md) | M | [PL164](README.md#pl164), [PL172](README.md#pl172) | The GitHub store maps every hand edit it cannot hold to a warning on the item, takes an issue without Status as an Idea, and shows its fields as GitHub holds them: Status over open or closed, the number fields over the stage comments |
+| <a id="pl174"></a>[PL174](PL174-The-Workflow-States-Kept-As-Status-Options.md) | S | [PL166](README.md#pl166) | The GitHub project's Status options follow the workflow's states only through one planner step that writes every item's value back, so no item loses its Status when the options change |
+| <a id="pl176"></a>[PL176](PL176-An-Offer-To-Correct-Each-Warning.md) | M | [PL172](README.md#pl172) | Each warning on an item, in every store, names the one change that corrects it, which the person confirms on the board |
+| <a id="pl175"></a>[PL175](PL175-Issues-Outside-The-Project-Offered-For-Adding.md) | S | [PL165](README.md#pl165) | An open issue a person made by hand in one of the project's repositories without adding it to the GitHub project is found and offered for adding to the board |
 
 ## Estimated
 
