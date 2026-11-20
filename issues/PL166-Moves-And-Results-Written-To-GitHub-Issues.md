@@ -15,8 +15,8 @@
 ```
 
 **Why this size.** M, though the forge clients bring the batched mutations: five write methods of `PlanningStore`,
-each with its refusals, the stale check, a partly saved batch and the id race between two persons; no contract with
-the window changes, since the window calls the same operations.
+each with its refusals, the stale check and a partly saved batch; no contract with the window changes, since the
+window calls the same operations. No id is counted: a new item is known by its GitHub number.
 
 **What must be true.** A person who moves an issue sees it moved on GitHub at once, and a finished task's result
 stands on its issue under the person's name, with no fetch, commit or push.
@@ -32,10 +32,10 @@ stands on its issue under the person's name, with no fetch, commit or push.
   error, and what failed beside what succeeded is `PartlySaved` with the ids saved. The stale check reads the
   written items by `issueBoard`. The store holds no query text and no records of its own.
 - `createIssue`: `createIssues`, `addProjectItems` and `setFieldValues` (measured 4.6 s for the four calls of a
-  single issue), its id as [PL164](README.md#pl164)'s
-  answer gives it (the next number of its prefix). Two persons adding at once may count the same number: after the
-  write the planner reads the prefix's ids again, and of two items with one `Id` the one with the higher GitHub
-  number takes the next free one. `createIdea`: the story and its issues the same way, bundled.
+  single issue); a new issue is known by its tracker reference, GitHub's own number, and its `Id` stays empty, so
+  two persons adding at once never collide. `createIdea`: the story and its issues the same way, bundled. Both
+  answer the tracker reference only once [PL170](README.md#pl170) makes it an id of the window's contract; until
+  then they are refused as not offered.
 - `saveResult(result)`: the plan, why this size and to be checked overwrite those sections of each issue's body,
   leaving the others; the new state goes into `Status`; and one stage comment, in the form the mapping gives
   (result, actor, model, effort, minutes, VM minutes, tokens from Porelo's record of the task), is written with
@@ -55,8 +55,7 @@ followed by [PL166](README.md#pl166), and [PL169](README.md#pl169)'s behavior fo
 side by side; then [PL168](README.md#pl168). Each builds against the forge clients' published surface with fakes of
 its own.
 
-- Owns `store/github`: `FieldsBoardWriter` (implements `BoardWriter`), `NextIds` (the next id of a prefix and the
-  race between two persons). Tests: `FieldsBoardWriterTest`, `NextIdsTest`. Built against
+- Owns `store/github`: `FieldsBoardWriter` (implements `BoardWriter`). Test: `FieldsBoardWriterTest`. Built against
   [PL164](README.md#pl164)'s types and a fake reader, so it does not wait on [PL165](README.md#pl165).
 
 ## Acceptance

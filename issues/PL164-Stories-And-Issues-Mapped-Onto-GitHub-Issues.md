@@ -45,17 +45,20 @@ how it got there, and the planner reads back exactly what it wrote.
     time, its actor and the state before and after.
   - **Project fields hold what is filtered and sorted**: the project's own `Status` (its options replaced by the
     workflow's states in order, so GitHub's board columns are the workflow's), `Priority` (Highest..Lowest),
-    `Size` (XS..XL), `Risk`, `Worker`, `Id` (text, the Porelo id), `Rank` (number), and the sums of the stage
+    `Size` (XS..XL), `Risk`, `Worker`, `Id` (text, a carried-over item's old Porelo id, its alias; empty for a new one), `Rank` (number), and the sums of the stage
     comments as number fields: `Estimate` (minutes, the last estimate), `Minutes`, `VM minutes`, `Tokens` (new
     tokens: input, output, cache write) and `Stages`. The velocity reads `Minutes` by `Size`.
   - The stage comments are the truth and the number fields their sums; only the planner writes both, in one save.
     A field that disagrees with its comments' sum (a hand edit on GitHub) is shown as the sum, the issue is named
     as a fault, and the next save of that issue writes the field again. `stats/` and the rule that a measured
     state needs a stage record do not carry over.
-  - An issue made after the cut-over gets the next number of its prefix: one above the highest of the `Id` of every
-    item on the GitHub project, closed ones included, and the prefix's floor in `project.yml` (`issue_floor`, per
-    prefix, the highest number ever used before the cut-over, written by the carry-over, since Finished and
-    Rejected rows are not carried). The order within a priority is `Rank`, sorted by the planner.
+  - **An item is known by its tracker reference**, `<repository>#<number>` within the project, a story as an issue.
+    No Porelo id is given after the cut-over: a new story or issue has only its GitHub number, and a carried-over
+    one keeps its old id (`STnn`, `PL12`, `PL12.1`) as a fixed alias in `Id`, never given again, so commits,
+    decisions and stats that name it still resolve. References between items and from stories use the tracker
+    reference. Until [PL170](README.md#pl170) makes the tracker reference an id of the window's contract, the board
+    takes the alias as the id and names an item without one as a fault. The order within a priority is `Rank`,
+    sorted by the planner.
   - A closed state (Finished, Rejected) also closes the GitHub issue (`completed`, `not_planned`); reopening sets
     the state back.
 - Measured in the test organization with a fine-grained token (Issues, Projects read and write), throw-away
@@ -88,7 +91,7 @@ how it got there, and the planner reads back exactly what it wrote.
 - Red first: a round-trip test over a fixture of GitHub answers (a story with sub-issues in two repositories, a
   Porelo sub-issue, a dependency across repositories, a closed one, three stage comments) that
   reads `Story` and `Issue` and writes back the same fields; a number field set by hand to another sum gives the
-  comments' sum and a fault; the next id of a prefix whose floor lies above its highest open `Id`; a result that
+  comments' sum and a fault; an alias given twice, archived items included, is a fault; a result that
   overwrites *Plan* leaves *Acceptance* intact.
 
 ## Plan reading
@@ -113,12 +116,12 @@ Read by agy `gemini-4-argon-high` before the build; every answer is taken:
   the marker line; a negative, non-finite or overflowing number or an unknown field makes it a broken comment,
   left out of the sums as a fault. `Minutes` and `Tokens` sum as `StageRecords` sums today: closed agent stages of
   the measured kinds only, `wait` and others shown but not summed.
-- Ids are counted over every item, archived ones included, and `issue_floor` holds `ST` too.
+- An alias is unique over every item, archived ones included.
 - `TokenSource` takes only an `https://` origin without user, path or query; every message and fault from
   `store/github` is scrubbed of the token, as `GitRunner` scrubs Git's.
 - Step 1 grows: `ItemView` gains the item's and the issue's node ids, `labels`, `comments` (`CommentView`: body,
   `createdAt`), `link` and `stateReason`; a `ProjectConfig` record (forge address, `ProjectRef`, workflow, work
-  rules, repositories, `issue_floor`, field and option ids); `BoardReader` answers a `Snapshot` (the board, its
+  rules, repositories, field and option ids); `BoardReader` answers a `Snapshot` (the board, its
   items by id, the config), which `GitHubStore` hands to `BoardWriter`, whose five signatures are fixed in step 1;
   a `StageMetrics` source (default: none) gives `saveResult` the stage's numbers from Porelo's record of the task;
   `GitHubStore` holds the bounded project lock (`Busy`), the `retire()` refusal, `storyState`, `textFormat()` and

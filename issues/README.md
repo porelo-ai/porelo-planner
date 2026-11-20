@@ -9,6 +9,7 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="pl170"></a>[PL170](PL170-Tracker-References-As-The-Ids-Of-Stories-And-Issues.md) | M | [PL164](README.md#pl164) | A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference, a carried-over one showing its old id as its alias, so an item made after the cut-over needs no Porelo id |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |

@@ -27,12 +27,10 @@ first as a dry run, and every story and issue keeps the id people know it by.
 - `porelo-planner carry-over --project <dir> --to <owner>/<number> [--dry-run]`: reads the board from the
   checkouts, writes through `GitHubStore` ([PL166](README.md#pl166)) with [PL164](README.md#pl164)'s mapping, the old id into `Id`. A story or issue whose
   `Id` is already on the GitHub project is updated, never made again, so a run that stopped can run again.
-- Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. The highest
-  number each prefix ever used, its rows included, is written into `project.yml` as that prefix's `issue_floor`, so a
-  new issue never takes a number already used: a top-level map from prefix to number, which Porelo refuses as an
-  unknown key until it knows it, so the real run waits until the Porelo the project runs on accepts `issue_floor`
-  (the dry run does not write it). In an organization's project the person signs the changed file afterwards with
-  `porelo project sign`, as for any change to `project.yml`; the run's last line says so.
+- Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. Each carried
+  item's old id goes into `Id` once, as its fixed alias; no Porelo id is given after the cut-over, so no number
+  floor is kept. `project.yml` gains only `tracker`; in an organization's project the person signs the changed file
+  afterwards with `porelo project sign`, as for any change to `project.yml`; the run's last line says so.
 - An open issue's stage records (`stats/<id>.jsonl`) become its stage comments, oldest first, with their result,
   actor, model, effort, minutes, VM minutes and tokens; its number fields are their sums. GitHub sets each comment's
   `createdAt` to the carry-over's time, so the old ends are not carried. Nothing the board or the velocity reads is
@@ -40,7 +38,7 @@ first as a dry run, and every story and issue keeps the id people know it by.
   when each old stage happened; it stays readable in the repository's Git history of `stats/`. Its head moves into
   fields and its sections into the body.
 - References in the texts are rewritten: `[PL12](README.md#pl12)` and a link to another repository's index row
-  become the GitHub issue's address; a reference to a number not carried (a finished or rejected one) is listed and left as plain text, not guessed.
+  become the GitHub issue's tracker reference; a reference to a number not carried (a finished or rejected one) is listed and left as plain text, not guessed.
 - The dry run prints one line per item (id, repository, state, fields, dependencies, references rewritten) and
   writes nothing; the real run prints the same lines with the GitHub address and ends non-zero if any item failed.
 - Red first: `CarryOverTest` over a fixture project of two repositories with a story, a Porelo sub-issue, a
@@ -61,19 +59,19 @@ its own.
 - Split in two steps, so the dry run does not wait for the store's reads and writes:
   - **Step 1, the dry run**, needs only [PL164](README.md#pl164)'s types and mapping: `CarryOverPlan` reads the
     board from the checkouts through the Git store as it reads today, turns each open story and issue into what
-    would be written (fields, body sections, sub-issues, dependencies, stage entries from `stats/<id>.jsonl`), each
-    prefix's `issue_floor`, and `ReferenceRewrite` with its list of numbers not carried; the command prints the dry
+    would be written (fields with the alias, body sections, sub-issues, dependencies, stage entries from
+    `stats/<id>.jsonl`), and `ReferenceRewrite` with its list of numbers not carried; the command prints the dry
     run's lines and writes nothing. Owns `store/github`'s `CarryOverPlan` and `ReferenceRewrite`, `planner/app`'s
     `carry-over` command with `--dry-run` alone, and `CarryOverPlanTest`, `ReferenceRewriteTest`.
   - **Step 2, the real run**, after [PL165](README.md#pl165) and [PL166](README.md#pl166): `CarryOver` writes the
-    plan through `BoardWriter`, finds an item already carried by its `Id` on the read board, writes `issue_floor`,
-    and ends non-zero on a failed item; owns `CarryOver` and `CarryOverTest`.
+    plan through `BoardWriter`, finds an item already carried by its alias on the read board, and ends non-zero on
+    a failed item; owns `CarryOver` and `CarryOverTest`.
 
 ## Acceptance
 
 - In the test organization a copy of a real project is carried over: the dry run's count equals the board's, and
   after the run the planner's board from GitHub equals the board from Markdown for every open issue, id for id and
-  field for field, and each prefix's `issue_floor` is its highest number used.
+  field for field, each item's old id standing as its alias.
 
 ## To be checked
 
