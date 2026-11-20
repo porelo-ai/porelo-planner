@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -1469,6 +1470,52 @@ public final class WorkRun {
      */
     public <T> T alone(final Supplier<T> save) {
         return record.locked(session -> save.get());
+    }
+
+    /**
+     * Saves a new story under the record's lock, after dropping every run whose story is gone, so a
+     * story saved under a gone story's id never takes its run over.
+     *
+     * @param save the write
+     * @param <T> what the write answers
+     * @return what the write answered
+     * @throws WorkRefusal {@code WorkRunning} while a task of a gone story's run still works
+     */
+    public <T> T newStory(final Supplier<T> save) {
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Snapshot kept = withoutGoneRuns(snapshot, store.board());
+                    if (!kept.runs().equals(snapshot.runs())) {
+                        session.preflight(kept);
+                        session.write(kept);
+                    }
+                    return save.get();
+                });
+    }
+
+    /**
+     * Saves a story's new issue list under the record's lock, refusing it while a started task
+     * works an issue it takes out, or one of its sub-issues: the task's results would no longer
+     * belong to the story.
+     *
+     * @param removed the issues the list takes out
+     * @param save the write
+     * @param <T> what the write answers
+     * @return what the write answered
+     * @throws WorkRefusal {@code WorkRunning} while a started task owns an issue taken out
+     */
+    public <T> T storyIssues(final Collection<String> removed, final Supplier<T> save) {
+        removed.forEach(Ids::issue);
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Board board = store.board();
+                    final Set<String> owned = new HashSet<>();
+                    removed.forEach(issue -> owned.addAll(withSubIssues(board, issue)));
+                    refuseOwned(snapshot, owned, Set.of());
+                    return save.get();
+                });
     }
 
     /**

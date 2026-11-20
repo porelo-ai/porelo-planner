@@ -53,6 +53,22 @@ planner's HTTP API with a signing client, and needs no window and no other way t
   (cycle, a second parent, an unknown issue), a GitHub store test against the fake (the calls made, nothing on a
   stale revision, a link's child named by its database id), and the mock store answering each.
 
+### As built
+
+- **The checks, in `core`'s `Edits`**: the revision first (`StaleRevision`), then the items (`NoSuchStory`,
+  `NoSuchIssue`), then the rule (`EditNotAllowed`, naming the item, the member and the reason). There was no cycle
+  check over `blockedBy` to reuse - `IssueMapping` checks circles of parents only - so `Edits.blockedBy` brings its
+  own: a blocker named twice, the issue itself, or one leading back to the issue through the board's blockers is
+  refused. `IssueMapping` is left as it is, since its id reading is another issue's work. A story's list is refused
+  when an issue is named twice, held by another story, a sub-issue of an issue, or when the board does not show
+  every issue of the story (`issuesWhole` false), since a list written whole would drop the one not shown. A change
+  of fields naming none is refused. A comment is refused blank, past 65536 code points, or when it opens with the
+  planner's own marker `<!-- porelo:`, since the GitHub store reads its stage records from such comments.
+- **The work record's lock**: `WorkRun.newStory` drops a gone story's run before a story is made, as a hand-in does;
+  `WorkRun.storyIssues` refuses a list that takes out an issue, or its sub-issue, a started task works
+  (`WorkRunning`). A reorder or an issue hung in leaves a run's bound issues as they are, so the story itself is not
+  refused while its work runs. The other edits run under `WorkRun.alone`.
+
 ## Acceptance
 
 - On the test organization's project, the native planner run alone and called through `tool/planner-sign.sh` makes

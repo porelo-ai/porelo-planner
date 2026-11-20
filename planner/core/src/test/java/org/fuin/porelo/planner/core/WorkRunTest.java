@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -756,6 +757,60 @@ class WorkRunTest {
         assertThat(f.run.worker("AA1", () -> f.record.held))
                 .as("the save runs while the record is held")
                 .isTrue();
+    }
+
+    @Test
+    void aStorysIssueListTakingOutAnIssueARunningTaskOwnsIsRefused() {
+        // An issue taken out of its story under a running task leaves the task's results with no
+        // story to land in.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        f.start(f.order().tasks().getFirst());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () ->
+                                f.run.storyIssues(
+                                        List.of("AA1"),
+                                        () -> {
+                                            saved.set(true);
+                                            return f.store.board();
+                                        }));
+
+        assertThat(refused).as("a running task owns AA1").isNotNull();
+        assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
+        assertThat(saved).as("a refused list never reaches the save").isFalse();
+        assertThat(f.run.storyIssues(List.of(), () -> f.record.held))
+                .as("a list taking nothing out is saved under the record's lock")
+                .isTrue();
+    }
+
+    @Test
+    void aNewStoryDropsTheRunOfAStoryThatIsGoneBeforeItIsSaved() {
+        // A new story saved under a gone story's id would take that story's run over.
+        final Fixture f = new Fixture();
+        f.order();
+        assertThat(f.record.value.runs()).as("the run of ST1").containsKey("ST1");
+        final Board source = f.store.current;
+        f.store.current =
+                new Board(
+                        source.revision(),
+                        source.workflow(),
+                        List.of(),
+                        source.issues(),
+                        source.work(),
+                        source.repositories());
+
+        final Map<String, WorkRun.Run> atSave =
+                f.run.newStory(
+                        () -> {
+                            assertThat(f.record.held).as("the record is held").isTrue();
+                            return f.record.value.runs();
+                        });
+
+        assertThat(atSave).as("the runs the record holds while the story is saved").isEmpty();
     }
 
     @Test
