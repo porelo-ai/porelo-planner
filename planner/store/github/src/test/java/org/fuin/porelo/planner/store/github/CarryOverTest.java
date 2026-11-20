@@ -80,12 +80,16 @@ class CarryOverTest {
         return "The work of " + id.toLowerCase(java.util.Locale.ROOT).replace('.', '-');
     }
 
-    private static Issue issue(final String id, final String state, final List<String> blockedBy) {
+    private static Issue issue(
+            final String id,
+            final String state,
+            final List<String> blockedBy,
+            final Function<String, String> titles) {
         final int dot = id.indexOf('.');
         return new Issue(
                 id,
                 PLANNER,
-                title(id),
+                titles.apply(id),
                 state,
                 "S",
                 blockedBy,
@@ -98,7 +102,7 @@ class CarryOverTest {
         return new Story(id, title(id), "Backlog", given, "High", "M", issues, "", null, true);
     }
 
-    private static Board board() {
+    private static Board board(final Function<String, String> titles) {
         return new Board(
                 new Revision("one"),
                 WORKFLOW,
@@ -106,10 +110,10 @@ class CarryOverTest {
                         story("ST1", true, List.of("PL10", "PL11.1", "PL9")),
                         story("ST2", false, List.of("PL10"))),
                 List.of(
-                        issue("PL9", "Finished", List.of()),
-                        issue("PL10", "Backlog", List.of("PL9", "PL11")),
-                        issue("PL11", "Implementing", List.of()),
-                        issue("PL11.1", "Backlog", List.of())),
+                        issue("PL9", "Finished", List.of(), titles),
+                        issue("PL10", "Backlog", List.of("PL9", "PL11"), titles),
+                        issue("PL11", "Implementing", List.of(), titles),
+                        issue("PL11.1", "Backlog", List.of(), titles)),
                 new Work(Map.of(), List.of()),
                 List.of(OWN, PLANNER),
                 List.of());
@@ -128,8 +132,9 @@ class CarryOverTest {
                 Map.of("claude_input_tokens", 100L));
     }
 
-    private static Function<CarryOverPlan.References, CarryOverPlan> planner() {
-        final Board board = board();
+    private static Function<CarryOverPlan.References, CarryOverPlan> planner(
+            final Function<String, String> titles) {
+        final Board board = board(titles);
         final Map<String, CarryOverPlan.IssueSource> sources = new LinkedHashMap<>();
         for (final Issue issue : CarryOverPlan.carried(board)) {
             final boolean staged = issue.id().equals("PL11");
@@ -599,8 +604,13 @@ class CarryOverTest {
     }
 
     private static CarryOver.Outcome run(final GitHub github, final File file) {
+        return run(github, file, CarryOverTest::title);
+    }
+
+    private static CarryOver.Outcome run(
+            final GitHub github, final File file, final Function<String, String> titles) {
         return new CarryOver(github, github, github, origin -> TOKEN, () -> NOW)
-                .run(CONFIG, planner(), file.map(), file);
+                .run(CONFIG, planner(titles), file.map(), file);
     }
 
     // ---- the tests ----
@@ -695,6 +705,34 @@ class CarryOverTest {
                         .isInstanceOf(CarryOver.Stopped.class);
                 github.cutAt = 0;
                 final CarryOver.Outcome again = run(github, file);
+                assertThat(again.whole()).as("the run again after write %d", cut).isTrue();
+                assertThat(github.everything())
+                        .as("GitHub after a cut at write %d (%s) and a run again", cut, taken)
+                        .isEqualTo(expected);
+            }
+        }
+    }
+
+    @Test
+    void anIssueTheMapHoldsIsNeverTakenForAnotherPendingItemOfTheSameTitleAndBody() {
+        // Harm: a run again takes one item's issue for another item with the same title and first
+        // body, so the second is never made and its second pass overwrites the first.
+        final Function<String, String> twins = id -> title(id.equals("PL11.1") ? "PL11" : id);
+        final GitHub whole = new GitHub();
+        run(whole, new File(), twins);
+        final String expected = whole.everything();
+        final int calls = whole.written.size();
+        for (final boolean taken : List.of(true, false)) {
+            for (int cut = 1; cut <= calls; cut++) {
+                final GitHub github = new GitHub();
+                github.cutAt = cut;
+                github.takenBeforeCut = taken;
+                final File file = new File();
+                assertThatThrownBy(() -> run(github, file, twins))
+                        .as("the run cut at write %d", cut)
+                        .isInstanceOf(CarryOver.Stopped.class);
+                github.cutAt = 0;
+                final CarryOver.Outcome again = run(github, file, twins);
                 assertThat(again.whole()).as("the run again after write %d", cut).isTrue();
                 assertThat(github.everything())
                         .as("GitHub after a cut at write %d (%s) and a run again", cut, taken)

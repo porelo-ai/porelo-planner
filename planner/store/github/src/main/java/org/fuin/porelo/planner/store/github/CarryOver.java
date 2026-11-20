@@ -322,7 +322,7 @@ public final class CarryOver {
                         writes.createIssue(
                                 token, owner, item.repository(), item.title(), item.text(), labels);
             } else {
-                made = madeBefore(item, entry, token, owner, labels);
+                made = madeBefore(item, entry, map, token, owner, labels);
             }
             if (item.story() && !made.labels().contains(IssueMapping.STORY_LABEL)) {
                 // Read back without its label, the story would be taken for an issue.
@@ -389,15 +389,23 @@ public final class CarryOver {
 
     /**
      * Finds the issue a run that stopped may have made for a pending item: one made since its
-     * start, with its title and first body. Made again only when there is none.
+     * start, with its title and first body, and not already another item's. Made again only when
+     * there is none.
      */
     private ProjectWrites.Created madeBefore(
             final CarryOverPlan.Item item,
             final CarryOverMap.Entry entry,
+            final CarryOverMap map,
             final String token,
             final String owner,
             final List<String> labels) {
         final Instant since = entry.since().minus(SKEW);
+        // Two items may share a title and a first body; an issue the map holds is already taken.
+        final Set<String> taken = new HashSet<>();
+        map.entries().values().stream()
+                .map(CarryOverMap.Entry::nodeId)
+                .filter(nodeId -> !nodeId.isEmpty())
+                .forEach(taken::add);
         final List<ProjectWrites.Created> found = new ArrayList<>();
         for (int page = 1; ; page++) {
             if (page > CarryOverCalls.MOST_PAGES) {
@@ -409,6 +417,7 @@ public final class CarryOver {
             issues.issues().stream()
                     .filter(made -> made.title().equals(item.title()))
                     .filter(made -> made.body().equals(item.text()))
+                    .filter(made -> !taken.contains(made.issue().nodeId()))
                     .forEach(made -> found.add(made.issue()));
             if (!issues.more()) {
                 break;
