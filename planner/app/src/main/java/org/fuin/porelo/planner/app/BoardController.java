@@ -1141,7 +1141,7 @@ public class BoardController {
     }
 
     /** A store's words cut to the bound the description sets on a fault. */
-    private static String bounded(final String words) {
+    static String bounded(final String words) {
         final int most = 1000;
         return words.codePointCount(0, words.length()) <= most
                 ? words

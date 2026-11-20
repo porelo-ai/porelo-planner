@@ -65,7 +65,7 @@ public class EditsController {
         } catch (final StoreException.NotSavable e) {
             throw WorkRefusal.ideaRefused(
                     "The store cannot write the idea.",
-                    List.of(bounded(String.valueOf(e.getMessage()))),
+                    List.of(BoardController.bounded(String.valueOf(e.getMessage()))),
                     null);
         }
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -191,9 +191,5 @@ public class EditsController {
         } catch (final IllegalArgumentException e) {
             throw Refusal.invalidName("The " + kind + " id is invalid.", Map.of("project", name));
         }
-    }
-
-    private static String bounded(final String words) {
-        return words.length() <= 1000 ? words : words.substring(0, 1000);
     }
 }
