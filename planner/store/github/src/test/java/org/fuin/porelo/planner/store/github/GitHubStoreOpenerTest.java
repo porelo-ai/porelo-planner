@@ -289,4 +289,56 @@ class GitHubStoreOpenerTest {
 
         assertThat(written).as("the writes the writer was given").containsExactly(move);
     }
+
+    @Test
+    void aReadFailingAfterAMoveWasWrittenIsPartlySaved() {
+        // Harm: a move GitHub saved answered as GitHub unreachable, so the window says nothing
+        // was saved and makes it again.
+        final int[] reads = new int[1];
+        final GitHubStoreOpener opener =
+                new GitHubStoreOpener(
+                        origin -> "a-token",
+                        states ->
+                                config -> {
+                                    if (reads[0]++ > 0) {
+                                        throw new StoreException.Unreachable(
+                                                config.own(), "read after the write in this test");
+                                    }
+                                    return new Snapshot(
+                                            new Board(
+                                                    new Revision("r1"),
+                                                    WORKFLOW,
+                                                    List.of(),
+                                                    List.of(),
+                                                    new Work(java.util.Map.of(), List.of()),
+                                                    config.repositories()),
+                                            java.util.Map.of(),
+                                            config);
+                                },
+                        () ->
+                                new BoardWriter() {
+                                    @Override
+                                    public void save(
+                                            final Snapshot current,
+                                            final Revision revision,
+                                            final Writes writes) {
+                                        // GitHub took the move.
+                                    }
+                                },
+                        Duration.ofSeconds(1));
+        final TrackedProject project = project("https://github.com", "github");
+        final var store = opener.open(project, () -> project);
+        store.board();
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        new Revision("r1"),
+                                        new Writes(
+                                                java.util.Map.of("PL1", "Idea"),
+                                                java.util.Map.of(),
+                                                List.of())))
+                .as("a move written whose following read failed")
+                .isInstanceOf(StoreException.PartlySaved.class);
+    }
 }

@@ -75,13 +75,15 @@ stage records count them; a pause and a person's move are shown, not summed.
 
 A move, a worker, a priority and a stage's result are written with the person's own access, without a commit. Right
 before it writes, the planner reads the items it writes again and refuses the save, naming the item, when a person
-changed one of them since the board was read: a field value, `Status` included, its parent, its blockers, its open
-state or its body. GitHub takes no condition on a write, so a change made in the moment between that read and the
-write is not caught.
+changed one of them since the board was read: a field value, `Status` included, its parent, its sub-issues, its
+blockers, its labels, its open state or its body. GitHub takes no condition on a write, so a change made in the
+moment between that read and the write is not caught.
 
 Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
 part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
-in, and the board is read anew. A save sets values and never creates a field or replaces its options.
+in, and the board is read anew. An issue's body and open state are written first, its field values next and a
+stage's comment last, so a body GitHub refuses leaves the issue in its state and the result can be handed in again.
+A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
 the `Status` options follow the workflow's states only through one step of the planner's own, run at the carry-over

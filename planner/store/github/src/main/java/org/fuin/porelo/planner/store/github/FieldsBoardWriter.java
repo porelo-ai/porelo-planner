@@ -189,15 +189,22 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
             option(id, item, FieldNames.STATUS, state);
             final boolean closed = workflow.closed().contains(state);
-            if (closed == item.open()) {
-                // The first closed state is done; any later one, such as Rejected, is not planned.
-                openings.put(
-                        id,
-                        new ProjectWrites.Opening(
-                                !closed, closed && workflow.closed().indexOf(state) > 0));
+            // The first closed state is done; any later one, such as Rejected, is not planned.
+            final boolean notPlanned = closed && workflow.closed().indexOf(state) > 0;
+            if (closed == item.open() || (closed && otherReason(item.stateReason(), notPlanned))) {
+                openings.put(id, new ProjectWrites.Opening(!closed, notPlanned));
             } else {
                 openings.remove(id);
             }
+        }
+
+        /**
+         * Whether GitHub closed an issue for another reason than its closed state gives; a
+         * duplicate counts as not planned, so a person's choice of it stays.
+         */
+        private static boolean otherReason(
+                final @Nullable String reason, final boolean notPlanned) {
+            return notPlanned ? "completed".equals(reason) : !"completed".equals(reason);
         }
 
         void option(final String id, final ItemView item, final String field, final String name) {
@@ -295,13 +302,22 @@ public final class FieldsBoardWriter implements BoardWriter {
             values.put(item.itemId() + "\n" + field, new Value(id, item, value));
         }
 
-        /** Checks that no item changed since the board was read, then makes every call. */
+        /**
+         * Checks that no item changed since the board was read, then makes every call: bodies and
+         * open states first, field values next, the stage's comment last, so a body GitHub refuses
+         * leaves the state and the sums unwritten and the result can be handed in again.
+         */
         void write(final String token) {
             final String own = current.config().own();
             if (current.config().projectId().isBlank()) {
                 throw new StoreException.Unreadable(own, "the GitHub project's id was not read");
             }
             final Set<String> written = new LinkedHashSet<>();
+            final @Nullable Stage planned = stage;
+            // The comments may take many calls, so they are read before the check, never between
+            // the check and the write.
+            final @Nullable Stage toComment =
+                    planned == null || stageWritten(token, planned) ? null : planned;
             try {
                 unchanged(token);
             } catch (final StoreException e) {
@@ -309,9 +325,27 @@ public final class FieldsBoardWriter implements BoardWriter {
             } catch (final RuntimeException e) {
                 throw refusals.refusal(own, e, token);
             }
-            final @Nullable Stage planned = stage;
-            final @Nullable Stage toComment =
-                    planned == null || stageWritten(token, planned) ? null : planned;
+            for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
+                final String id = entry.getKey();
+                final String body = bodies.get(id);
+                final ProjectWrites.Opening opening = openings.get(id);
+                if (body == null && opening == null) {
+                    continue;
+                }
+                final ItemView item = entry.getValue();
+                try {
+                    github.updateIssue(
+                            token,
+                            current.config().project().owner(),
+                            item.repository(),
+                            item.number(),
+                            body,
+                            opening);
+                } catch (final RuntimeException e) {
+                    throw failed(e, item.repository(), written, token);
+                }
+                written.add(item.repository());
+            }
             final List<Value> all = new ArrayList<>(values.values());
             if (planned != null && toComment == null) {
                 // The stage stands already, so its figures were added with it.
@@ -357,27 +391,6 @@ public final class FieldsBoardWriter implements BoardWriter {
                     throw new StoreException.PartlySaved(
                             refused.item().repository(), List.copyOf(written), reason);
                 }
-            }
-            for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
-                final String id = entry.getKey();
-                final String body = bodies.get(id);
-                final ProjectWrites.Opening opening = openings.get(id);
-                if (body == null && opening == null) {
-                    continue;
-                }
-                final ItemView item = entry.getValue();
-                try {
-                    github.updateIssue(
-                            token,
-                            current.config().project().owner(),
-                            item.repository(),
-                            item.number(),
-                            body,
-                            opening);
-                } catch (final RuntimeException e) {
-                    throw failed(e, item.repository(), written, token);
-                }
-                written.add(item.repository());
             }
             if (toComment != null) {
                 final ItemView item = Objects.requireNonNull(items.get(toComment.id()));
@@ -452,7 +465,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                                     item.number(),
                                     page);
                 } catch (final RuntimeException e) {
-                    throw refusals.refusal(current.config().own(), e, token);
+                    throw refusals.refusal(item.repository(), e, token);
                 }
                 for (final String body : comments.bodies()) {
                     final StageComment.Read read =
@@ -520,21 +533,29 @@ public final class FieldsBoardWriter implements BoardWriter {
     private record Stage(String id, String key, String comment) {}
 
     /**
-     * What a person's change to an item shows in: its field values, its parent, its blockers,
-     * whether it is open, and its body.
+     * What a person's change to an item shows in: its field values, its parent, its sub-issues, its
+     * blockers, its labels, whether either list runs past the one page read, whether it is open,
+     * and its body.
      */
     private record Seen(
             Map<String, String> fields,
             @Nullable String parent,
+            List<String> subIssues,
             List<String> blockers,
+            List<String> labels,
+            boolean more,
             boolean open,
             String body) {
 
         static Seen of(final ItemView item) {
+            // The board leaves out an item whose lists run past one page, so one read has none.
             return new Seen(
                     item.fields(),
                     item.parentIssueId(),
+                    item.subIssueIds(),
                     item.blockedByIds(),
+                    item.labels(),
+                    false,
                     item.open(),
                     item.body());
         }
@@ -544,9 +565,17 @@ public final class FieldsBoardWriter implements BoardWriter {
             return new Seen(
                     ItemsBoardReader.values(now.values(), fieldNames),
                     issue.parentId(),
-                    issue.blockedBy().nodes().stream().map(GitHubGraphQl.IssueRef::id).toList(),
+                    ids(issue.subIssues()),
+                    ids(issue.blockedBy()),
+                    List.copyOf(issue.labels()),
+                    Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
+                            || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage()),
                     "OPEN".equals(issue.state()),
                     Objects.requireNonNullElse(issue.body(), ""));
+        }
+
+        private static List<String> ids(final GitHubGraphQl.IssueRefs refs) {
+            return refs.nodes().stream().map(GitHubGraphQl.IssueRef::id).toList();
         }
     }
 }

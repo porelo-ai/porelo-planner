@@ -41,15 +41,19 @@ public final class ForgeAccessRefusals implements AccessRefusals {
             if (cause instanceof StoreException.PartlySaved partly) {
                 return partly;
             }
-            return new StoreException.PartlySaved(
-                    repository,
-                    List.of(),
-                    accessRefused(cause)
-                            ? "GitHub refused the person's access after a part of the save was"
-                                    + " written"
-                            : "A part of the save was written before: "
-                                    + Scrubbed.text(
-                                            String.valueOf(cause.getMessage()), List.of(token)));
+            final String words;
+            if (accessRefused(cause) || cause instanceof StoreException.NoForgeAccess) {
+                words = "GitHub refused the person's access after a part of the save was written";
+            } else if (cause instanceof StoreException known) {
+                words =
+                        "A part of the save was written before: "
+                                + Scrubbed.text(String.valueOf(known.getMessage()), List.of(token));
+            } else {
+                // Another failure's words are GitHub's or a library's, and the token to scrub them
+                // with may be missing, so none of them are shown.
+                words = "A part of the save was written before a call failed";
+            }
+            return new StoreException.PartlySaved(repository, List.of(), words);
         }
         if (failure instanceof GitHubException refused && accessRefused(refused)) {
             return new StoreException.NoForgeAccess(forge, right(refused.acceptedPermissions()));

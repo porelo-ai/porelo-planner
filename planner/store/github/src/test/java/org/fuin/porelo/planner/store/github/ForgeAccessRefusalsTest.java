@@ -102,4 +102,19 @@ class ForgeAccessRefusalsTest {
                 .as("a refusal of the store's own")
                 .isInstanceOf(StoreException.Busy.class);
     }
+
+    @Test
+    void aFailureAfterAPartWasWrittenNeverShowsItsWordsWhenNoTokenCouldBeTaken() {
+        // Harm: the token in a failure's words shown in the window or the log once the vault
+        // gives no token to scrub it with.
+        assertThat(
+                        refusals.refusal(
+                                "example-project",
+                                new BoardWriter.AfterWriting(
+                                        new IllegalStateException("reset for Bearer " + TOKEN)),
+                                ""))
+                .as("a failure after a write, scrubbed with no token")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageNotContaining(TOKEN);
+    }
 }

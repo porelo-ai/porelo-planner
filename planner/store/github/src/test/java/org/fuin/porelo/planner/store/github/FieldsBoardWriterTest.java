@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
@@ -206,6 +207,17 @@ class FieldsBoardWriterTest {
         private final List<String> standing = new ArrayList<>();
         private final List<String> calls = new ArrayList<>();
 
+        /** The empty pages of comments before the one that holds {@code standing}. */
+        private int pagesBefore;
+
+        /** Whether every page of comments says another follows. */
+        private boolean endless;
+
+        /** What happens on GitHub while the comments are read, such as a person's edit. */
+        private Runnable whileCommentsAreRead = () -> {};
+
+        private @Nullable RuntimeException updateFailure;
+
         GitHub holding(final ItemView... items) {
             for (final ItemView item : items) {
                 held.put(item.issueId(), onBoard(item));
@@ -262,6 +274,9 @@ class FieldsBoardWriterTest {
                 final @Nullable String body,
                 final @Nullable Opening opening) {
             calls.add("updateIssue");
+            if (updateFailure != null) {
+                throw updateFailure;
+            }
             updates.add(repository + "#" + number + " " + opening);
             if (body != null) {
                 bodies.put(number, body);
@@ -276,7 +291,11 @@ class FieldsBoardWriterTest {
                 final int number,
                 final int page) {
             calls.add("issueComments");
-            return new CommentsPage(page == 1 ? standing : List.of(), false);
+            whileCommentsAreRead.run();
+            if (endless || page <= pagesBefore) {
+                return new CommentsPage(List.of(), true);
+            }
+            return new CommentsPage(page == pagesBefore + 1 ? standing : List.of(), false);
         }
 
         @Override
@@ -623,7 +642,7 @@ class FieldsBoardWriterTest {
         assertThat(github.mutations.get(0))
                 .as("the values written")
                 .extracting(FieldValue::fieldId)
-                .doesNotContain("F_Minutes", "F_Stages");
+                .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
     }
 
     @Test
@@ -636,6 +655,432 @@ class FieldsBoardWriterTest {
                 .as("a result for an issue a person moved")
                 .isInstanceOf(StoreException.NotSavable.class);
         assertThat(github.calls).as("the calls made").isEmpty();
+    }
+
+    /** The issue as GitHub holds it now, after a person changed it. */
+    private static IssueOnBoard changed(final ItemView item, final UnaryOperator<BoardIssue> edit) {
+        final IssueOnBoard read = onBoard(item);
+        return new IssueOnBoard(edit.apply(read.issue()), read.itemId(), read.values());
+    }
+
+    private static BoardIssue issueWith(
+            final BoardIssue issue,
+            final String state,
+            final @Nullable String parent,
+            final List<String> labels,
+            final IssueRefs subIssues,
+            final IssueRefs blockedBy) {
+        return new BoardIssue(
+                issue.id(),
+                issue.databaseId(),
+                issue.number(),
+                issue.title(),
+                issue.body(),
+                state,
+                issue.stateReason(),
+                issue.updatedAt(),
+                issue.repository(),
+                labels,
+                parent,
+                subIssues,
+                blockedBy);
+    }
+
+    private static IssueRefs refs(final boolean more, final String... ids) {
+        final List<IssueRef> nodes = new ArrayList<>();
+        for (final String id : ids) {
+            nodes.add(new IssueRef(id, 1L, 1, OWNER + "/example-project"));
+        }
+        return new IssueRefs(nodes, new PageInfo(more, null));
+    }
+
+    private static ItemView closedAs(final ItemView item, final String reason) {
+        return new ItemView(
+                item.itemId(),
+                item.issueId(),
+                item.repository(),
+                item.number(),
+                item.title(),
+                item.body(),
+                false,
+                reason,
+                item.fields(),
+                item.labels(),
+                item.parentIssueId(),
+                item.subIssueIds(),
+                item.blockedByIds(),
+                item.comments(),
+                item.link(),
+                item.updatedAt(),
+                item.archived());
+    }
+
+    /**
+     * Moves PL1, which the board read as {@code item}, while GitHub holds {@code now} for it, and
+     * checks that the move is refused naming PL1 with nothing written.
+     */
+    private static void refusedAsChanged(
+            final ItemView item, final @Nullable IssueOnBoard now, final String change) {
+        final GitHub github = new GitHub();
+        if (now != null) {
+            github.held.put(item.issueId(), now);
+        }
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(item),
+                                                SHOWN,
+                                                new Writes(
+                                                        Map.of("PL1", "Backlog"),
+                                                        Map.of(),
+                                                        List.of())))
+                .as("a save over an item whose " + change)
+                .isInstanceOfSatisfying(
+                        StoreException.StaleRevision.class,
+                        stale -> assertThat(stale.changed()).as("the item named").isEqualTo("PL1"));
+        assertThat(github.mutations).as("the mutations sent").isEmpty();
+        assertThat(github.updates).as("the issues updated").isEmpty();
+    }
+
+    private static ItemView idea() {
+        return item("PL1", "example-project", 1, true, "", state("Idea"));
+    }
+
+    @Test
+    void anItemWhoseSubIssuesAPersonChangedMeanwhileIsRefused() {
+        // Harm: a story moved to Finished on the board as read while a person added an open
+        // sub-issue to it on GitHub.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        issue.state(),
+                                        issue.parentId(),
+                                        issue.labels(),
+                                        refs(false, "I_new"),
+                                        issue.blockedBy())),
+                "sub-issues a person changed");
+    }
+
+    @Test
+    void anItemWhoseLabelsAPersonChangedMeanwhileIsRefused() {
+        // Harm: an item a person made a story or an issue by its label written as what it was.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        issue.state(),
+                                        issue.parentId(),
+                                        List.of("story"),
+                                        issue.subIssues(),
+                                        issue.blockedBy())),
+                "labels a person changed");
+    }
+
+    @Test
+    void anItemWithMoreBlockersThanOnePageCarriesIsRefused() {
+        // Harm: a blocker a person added beyond the page read missed, as the page shows the same
+        // first blockers.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        issue.state(),
+                                        issue.parentId(),
+                                        issue.labels(),
+                                        issue.subIssues(),
+                                        refs(true))),
+                "blockers run past one page");
+    }
+
+    @Test
+    void anItemWhoseParentAPersonChangedMeanwhileIsRefused() {
+        // Harm: an issue a person put under another story moved as part of the story it left.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        issue.state(),
+                                        "I_ST9",
+                                        issue.labels(),
+                                        issue.subIssues(),
+                                        issue.blockedBy())),
+                "parent a person changed");
+    }
+
+    @Test
+    void anItemWhoseBlockersAPersonChangedMeanwhileIsRefused() {
+        // Harm: an issue a person marked blocked moved on as if nothing blocked it.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        issue.state(),
+                                        issue.parentId(),
+                                        issue.labels(),
+                                        issue.subIssues(),
+                                        refs(false, "I_PL9"))),
+                "blockers a person changed");
+    }
+
+    @Test
+    void anItemAPersonClosedMeanwhileIsRefused() {
+        // Harm: an issue a person closed on GitHub reopened by an older move from the window.
+        final ItemView item = idea();
+        refusedAsChanged(
+                item,
+                changed(
+                        item,
+                        issue ->
+                                issueWith(
+                                        issue,
+                                        "CLOSED",
+                                        issue.parentId(),
+                                        issue.labels(),
+                                        issue.subIssues(),
+                                        issue.blockedBy())),
+                "open state a person changed");
+    }
+
+    @Test
+    void anItemGitHubNoLongerKnowsIsRefused() {
+        // Harm: a move written for an issue a person deleted, or the write failing half done.
+        refusedAsChanged(idea(), null, "issue GitHub no longer knows");
+    }
+
+    @Test
+    void anItemAPersonRemovedFromTheProjectAndAddedAgainIsRefused() {
+        // Harm: values written to an item id the project no longer holds, so the save fails half
+        // done.
+        final ItemView item = idea();
+        final IssueOnBoard read = onBoard(item);
+        refusedAsChanged(
+                item,
+                new IssueOnBoard(read.issue(), "PVTI_again", read.values()),
+                "item a person removed and added again");
+    }
+
+    @Test
+    void aPersonsEditWhileTheIssuesCommentsAreReadIsRefusedWithoutWriting() {
+        // Harm: a person's edit made while the many pages of an issue's comments are read
+        // overwritten by the stage's result.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final ItemView edited =
+                item(
+                        "PL1",
+                        "example-project",
+                        1,
+                        true,
+                        BODY + "A person's line.\n",
+                        state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.whileCommentsAreRead = () -> github.holding(edited);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .as("a result over a body a person changed while the comments were read")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(github.mutations).as("the mutations sent").isEmpty();
+        assertThat(github.updates).as("the issues updated").isEmpty();
+        assertThat(github.comments).as("the comments written").isEmpty();
+    }
+
+    @Test
+    void aBodyGitHubRefusesLeavesTheStateAndTheSumsUnwritten() {
+        // Harm: an issue moved on with its sums added while the result's sections are missing,
+        // so the result can never be handed in again.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.updateFailure = GitHubExceptions.refused(502, "bad gateway");
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .as("a result whose body GitHub refused")
+                .isInstanceOf(StoreException.class)
+                .isNotInstanceOf(StoreException.PartlySaved.class);
+        assertThat(github.mutations).as("the mutations sent").isEmpty();
+        assertThat(github.comments).as("the comments written").isEmpty();
+    }
+
+    @Test
+    void aMoveBetweenTwoClosedStatesSetsTheReasonGitHubClosedTheIssueFor() {
+        // Harm: an issue Rejected on the board listed by GitHub as completed, or a Finished one
+        // as not planned.
+        final ItemView finished =
+                closedAs(
+                        item("PL1", "example-project", 1, false, "", state("Finished")),
+                        "completed");
+        final ItemView rejected =
+                closedAs(
+                        item("PL2", "example-project", 2, false, "", state("Rejected")),
+                        "not_planned");
+        final GitHub github = new GitHub().holding(finished, rejected);
+
+        github.writer()
+                .save(
+                        snapshot(finished, rejected),
+                        SHOWN,
+                        new Writes(
+                                ordered("PL1", "Rejected", "PL2", "Finished"),
+                                Map.of(),
+                                List.of()));
+
+        assertThat(github.updates)
+                .as("the reasons written")
+                .containsExactly(
+                        "example-project#1 Opening[open=false, notPlanned=true]",
+                        "example-project#2 Opening[open=false, notPlanned=false]");
+    }
+
+    @Test
+    void aFirstCallGitHubTookWithoutAnsweringIsPartlySaved() {
+        // Harm: a move GitHub may have saved answered as refused before writing, so the window
+        // shows the board kept and makes the move again over it.
+        final ItemView one = idea();
+        final GitHub github =
+                new GitHub()
+                        .holding(one)
+                        .answering(
+                                values -> {
+                                    throw GitHubExceptions.unanswered("timed out");
+                                });
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(one),
+                                                SHOWN,
+                                                new Writes(
+                                                        Map.of("PL1", "Backlog"),
+                                                        Map.of(),
+                                                        List.of())))
+                .as("a first call GitHub took without answering")
+                .isInstanceOf(StoreException.PartlySaved.class);
+    }
+
+    @Test
+    void aStageCommentOnALaterPageIsFoundAndNeitherWrittenNorAddedAgain() {
+        // Harm: a stage handed in twice on an issue with many comments counted and shown twice.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.pagesBefore = 1;
+        github.standing.add(StageComment.write(stage("task-1:2", "implement")));
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.comments).as("the stage comments written").isEmpty();
+        assertThat(github.mutations.get(0))
+                .as("the values written")
+                .extracting(FieldValue::fieldId)
+                .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
+    }
+
+    @Test
+    void anIssueWithMoreCommentsThanAreReadIsRefusedWithoutWriting() {
+        // Harm: a stage whose comment stands beyond the pages read counted twice, or an issue's
+        // comments read without end.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.endless = true;
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .as("a result for an issue with more comments than are read")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.calls)
+                .as("the pages of comments read")
+                .filteredOn("issueComments"::equals)
+                .hasSize(FieldsBoardWriter.MOST_COMMENT_PAGES);
+        assertThat(github.mutations).as("the mutations sent").isEmpty();
+        assertThat(github.updates).as("the issues updated").isEmpty();
+    }
+
+    @Test
+    void aResultForTwoIssuesWritesNoStageCommentAndAddsNoFigures() {
+        // Harm: one stage's figures added to each of several issues, or its comment shown on one
+        // of them as if the stage were its alone.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final ItemView two = item("PL2", "example-project", 2, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one, two);
+        final StageResult.ForIssue first = analysis().issues().get(0);
+        final StageResult both =
+                new StageResult(
+                        WorkRule.Result.ANALYSIS,
+                        List.of(
+                                first,
+                                new StageResult.ForIssue(
+                                        "PL2",
+                                        "Analysis",
+                                        "Backlog",
+                                        "- new step",
+                                        "S",
+                                        "small",
+                                        null,
+                                        List.of(),
+                                        List.of())));
+
+        github.writer().saveResult(snapshot(one, two), both, stage("task-1:2", "implement"));
+
+        assertThat(github.comments).as("the stage comments written").isEmpty();
+        assertThat(github.mutations)
+                .as("the values written")
+                .flatExtracting(values -> values)
+                .extracting(FieldValue::fieldId)
+                .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
+    }
+
+    @Test
+    void aStageOfAKindNotMeasuredIsCommentedButAddsNoFigures() {
+        // Harm: a pause's minutes and tokens added to the issue's sums, which count an agent's
+        // work only.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:3", "wait"));
+
+        assertThat(github.comments).as("the stage comments written").hasSize(1);
+        assertThat(github.mutations.get(0))
+                .as("the values written")
+                .extracting(FieldValue::fieldId)
+                .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
     }
 
     private static StageResult analysis() {

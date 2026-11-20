@@ -75,10 +75,26 @@ stands on its issue under the person's name, with no fetch, commit or push.
 - No revision check before a write: `save` first compares the revision the window showed with the board kept and
   refuses a difference as `StaleRevision`, before anything is read or written.
 - `updatedAt` missing a change of a project field: the edit check compares each item's field values, `Status`
-  included, its parent, its blockers, its open state and its body, read by `issueBoard` right before the write.
+  included, its parent, its sub-issues, its blockers, its labels, its open state and its body, read by `issueBoard`
+  right before the write; sub-issues or blockers running past the one page read count as a change. An issue's
+  comments are read before that check, so no long read stands between the check and the write.
 - More than 50 values, reopening, and the board kept after a partial save: values go in mutations of at most 50; a
-  move out of a closed state reopens the issue and a move into one closes it; any failure after a first part was
-  written is `PartlySaved`, and the store forgets its board on every failed write, so the next read is GitHub's.
+  move out of a closed state reopens the issue, a move into one closes it, and a move between Finished and Rejected
+  sets GitHub's reason, completed or not planned (a duplicate stays a duplicate under Rejected); any failure after
+  a first part was written is `PartlySaved`, and the store forgets its board on every failed write, so the next
+  read is GitHub's. A failure of the read after a write is `PartlySaved` in every store the opener opens, and its
+  words are fixed unless they are a refusal of the store's own, so no token can stand in them.
+- The order of a write's calls: each issue's body and open state first, then the field values, then the stage
+  comment. A body GitHub refuses leaves the state and the sums unwritten, so the result can be handed in again; a
+  field mutation failing after the body leaves the issue in its state, and the result handed in again finds its
+  body written and adds the sums once. A comment failing after the fields is `PartlySaved` with the sums added once;
+  the result handed in again is refused, as the issue left the state the stage completes, so the course lacks that
+  comment until a person adds it. Writing the comment before the fields was weighed and not taken: a field mutation
+  failing after it would make the next hand-in find the key and never add the sums.
+- A story whose `Status` is cleared to follow its issues again while its GitHub issue is closed: not changed here. A
+  story that follows its issues is never closed or reopened by the planner, as the last of its issues finishing
+  leaves it open too, and the board names no fault for it; whether such a story's open state follows its derived
+  state is a decision of its own, not part of the writes.
 - `PartlySaved` carrying item ids: it carries repository names, as the store API defines it.
 - Creating an issue or an idea twice on a retry: both stay refused as not offered until tracker references are the
   window's ids, so no issue is created yet.
@@ -92,9 +108,21 @@ stands on its issue under the person's name, with no fetch, commit or push.
 - Fields written on a read path: the reader's calls hold no write; unchanged.
 - A rate limit read as a missing access: the refusals already keep a rate-limited 403 apart from a missing access;
   unchanged.
-- Reads on every write: a write reads only the items it writes by `issueBoard` before writing, and an issue's
-  comments only for a stage; the full read after a write is kept, as it gives the window the board it answers.
-  Comments, archived items and the page bound of the board read stay with the board read.
+- A stage saved over the board read just before it rather than the board the store held: a stage runs for
+  minutes and the window's reads renew the board kept meanwhile, so that board marks no stage's start, and a
+  refusal as changed would be handed in again on a board read anew and written over the same edit. The Git store
+  saves a result on the remotes as they stand, too. A stage writes only the sections its kind names, so a person's
+  words elsewhere in the body stay; a person's edit of a section the stage writes, made while the stage ran, is
+  replaced by the stage's result.
+- Reads on every write: a move reads only the items it writes by `issueBoard` before writing; a stage's save reads
+  the whole board first, as its state check needs the board as it stands, and an issue's comments; the full read
+  after a write is kept, as it gives the window the board it answers. Comments, archived items and the page bound
+  of the board read stay with the board read.
+- A comment read failing named the project's own repository: it names the issue's repository. A page of comments
+  longer than asked for is taken as it comes: it only gives more comments to search, and the page count bounds the
+  calls.
+- A body section swallowed by a fence or heading the section reader does not see: tracked in
+  [PL171](README.md#pl171).
 - Tests that stay green without their guard: each guard named here has a test in `FieldsBoardWriterTest`,
   `GitHubStoreTest` or `GitHubStoreOpenerTest` that was seen red with its guard broken.
 
