@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 84,
   "blockedBy": ["PL165", "PL166"],
-  "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every item, field, dependency and rewritten reference it would write; the real run makes each item on GitHub, rewrites every old id to the new tracker reference, can go on after a stop without doubling anything, and writes the velocity seed per repository and size into project.yml; step 1 (the dry run) built, step 2 (the real run) next"
+  "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every item, field, dependency and rewritten reference it would write; the real run makes each item on GitHub, rewrites every old id to the new tracker reference, can go on after a stop without doubling anything, and writes the velocity seed per repository and size into project.yml; step 1 (the dry run) and step 2 (the real run) built, the acceptance in the test organization next"
 }
 ```
 
@@ -40,8 +40,8 @@ first as a dry run, and every reference between the carried stories and issues p
   nothing is doubled. The file is removed once the run ends whole, and its last line says so.
 - **Velocity seed**: `--seed <csv>` takes a file of `repository,size,minutes` rows (the current medians, which the
   person derives from the velocity records); the run writes them into `project.yml` as the starting value per
-  repository and size, in the key [PL177](README.md#pl177) agrees, and nothing into `stats/`. Reading the seed and
-  the median from the items is [PL177](README.md#pl177)'s.
+  repository and size, as `velocity.seed.<repository>.<size>`, and nothing into `stats/`. Reading the seed and the
+  median from the items is [PL177](README.md#pl177)'s.
 - `project.yml` gains `tracker` and the seed; the person signs the changed file afterwards with
   `porelo project sign`, and the run's last line says so.
 - Ends non-zero naming each item it could not carry; the dry run's lines are printed again with each item's new
@@ -51,17 +51,64 @@ first as a dry run, and every reference between the carried stories and issues p
   stopped after the first pass and run again with its map makes nothing twice; a project already holding items and
   no map is refused; the seed written into `project.yml` and nothing under `stats/`.
 
+### Step 2, built
+
+- `porelo-planner carry-over --project <dir> --to <owner>/<number> [--dry-run] [--seed <csv>] [--state <file>]`.
+  `CarryOver` in `store/github` runs the two passes; it writes through `ProjectWrites` (making an issue, finding
+  the person's issues made since a time, adding them to the project, field values, sub-issues, the body, the
+  comments), the same calls a new item's save makes, `ProjectQueries` (the project's fields and items) and
+  `CarryOverCalls`, which holds only what no other write needs: an issue's body, its sub-issues and blockers read,
+  and `addBlockedBy`. The map is `CarryOverMap`, kept by the app's `CarryOverState`.
+- **Before any call to GitHub** the command reads the checkouts, refuses a `project.yml` with changes not committed
+  (or not tracked, or in a checkout that is no repository), refuses a `project.yml` naming a tracker or, with a
+  seed, a `velocity` already, checks the seed, and checks that every repository's address is
+  `https://github.com/<target owner>/<its name>`, since the GitHub store writes to a repository by the name
+  `project.yml` gives it.
+- **Before anything is made** the run plans the whole carry-over with every reference as
+  `<repository>#999999999` and as the first pass writes it, and stops when a body, its `## Also needs` included, is
+  longer than GitHub takes; a plan that is not whole is not carried at all. It reads the project's fields and
+  refuses one that lacks a field, its kind or an option of `Priority`, `Size`, `Risk` or `Worker`; refuses a
+  project holding an item without a map, and with a map any item the map does not hold; then sets the `Status`
+  options to the workflow's states through `StatusOptionsWriter`.
+- **First pass**: an item's body is its text with every carried reference written as `<repository>#(carried)` and
+  without `## Also needs`; no old id stands in it. Its fields leave out `Id`, and a story whose state is not given
+  leaves out `Status`. A story whose new issue lacks the label `story` stops the run.
+- **Second pass**: the body is written anew from the Markdown text with GitHub's references and `## Also needs`,
+  only while GitHub still holds the first pass's body; a body a person changed since is left, the item named, its
+  second pass not written, and the run ends non-zero. Sub-issues, dependencies and comments that already stand are
+  not added again; a stage comment is found by its key, `carry:<stage>:<n>`, which names no old id.
+- **The map**: one entry per old id with its repository, the time its making began, its progress (`pending`,
+  `created`, `on_project`, `fields_set`, `pass2_done`), number, node id, database id and project item. An item is
+  written `pending` before it is made; a run again looks for an issue in its repository made since that time (less
+  ten minutes against a clock's skew) with its title and first body: one is taken, none is made again, more stop
+  the run naming them. The file is `carry-over/<owner>-<number>.json` under the planner's state directory by
+  default, the account's alone (`PrivateFiles`), replaced whole on every save, held under a lock file beside it,
+  and names the own checkout's real path and the target; a map of another checkout or target, or one open to
+  others, is refused.
+- **`project.yml`** is written only after the second pass ended whole: `tracker` and, with `--seed`, the seed are
+  added below what the person wrote, its SHA-256 recorded in the map first, so a run again after a stop between the
+  write and the map's removal takes the change as its own. Nothing is committed; the last line says to review it,
+  sign it with `porelo project sign` and commit it, and the line before says the map was removed.
+- Every line the command says on the error stream is taken through the token's removal and the Git store's removal
+  of secrets, and every failure, an unforeseen one too, ends it non-zero without a body or a comment in its words.
+- Not built: an old id written as plain text, not as a link to an index row, is left as it stands, as step 1's
+  rewrite leaves it. The measured run against GitHub's secondary rate limits stays open below.
+- Tests: `CarryOverTest` (GitHub in memory: every write cut once, with and without GitHub taking it, and run again
+  to the same end; a project with items and no map; an item outside the map; a pending item found twice; a story
+  without its label; a project lacking an option; a body a person changed; no old id and no token anywhere) and
+  `CarryOverRunTest` (the command over the fixture's two Git checkouts: `project.yml` written and not committed, a
+  stop and a run again, a written `project.yml` taken as the run's own, changes not committed, a tracker without a
+  map, the seed's shapes, a repository of another owner, a map of another checkout, a map open to others).
+
 ### Step 1, built
 
 - Today the executable's `issues` and `stories` commands read the Markdown store through `store/git` (`IssueIndex`,
   `StoriesIndex`, `IssueLinks`); the Git store's `refresh()` gives every story and issue with its text.
-- `porelo-planner carry-over --project <dir> --to <owner>/<number> [--dry-run]`: reads the board from the
-  checkouts, writes through `GitHubStore` ([PL166](README.md#pl166)) with [PL164](README.md#pl164)'s mapping, the old id into `Id`. A story or issue whose
-  `Id` is already on the GitHub project is updated, never made again, so a run that stopped can run again.
-- Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. Each carried
-  item's old id goes into `Id` once, as its fixed alias; no Porelo id is given after the cut-over, so no number
-  floor is kept. `project.yml` gains only `tracker`; in an organization's project the person signs the changed file
-  afterwards with `porelo project sign`, as for any change to `project.yml`; the run's last line says so.
+- `porelo-planner carry-over --project <dir> --to <owner>/<number> --dry-run`: reads the board from the checkouts
+  and plans each item with [PL164](README.md#pl164)'s mapping, without the field `Id`; the real run writes through
+  `CarryOver`, not `GitHubStore`.
+- Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. No old id
+  goes to GitHub, and no Porelo id is given after the cut-over, so no number floor is kept.
 - An open issue's stage records (`stats/<id>.jsonl`) become its stage comments, oldest first, with their result,
   actor, model, effort, minutes, VM minutes and tokens; its number fields are their sums. GitHub sets each comment's
   `createdAt` to the carry-over's time, so the old ends are not carried. Nothing the board or the velocity reads is

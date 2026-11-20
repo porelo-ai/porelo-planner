@@ -14,6 +14,7 @@ the work rules stay files in the project's own repository.
 | A Porelo sub-issue | A sub-issue of its issue, in the issue's repository, with its own number; never under another sub-issue |
 | `blockedBy` | GitHub's issue dependency, "blocked by", across repositories |
 | The id | The tracker reference alone, `<repository>#<number>`: the repository the issue lives in, lowercased, and GitHub's number |
+| An old id, of an item carried over from Markdown | Nothing: the carry-over rewrites it to the tracker reference |
 | The state | The project's own field `Status`, whose options are the workflow's states in order |
 | Priority, size, risk, worker | The single-select fields `Priority`, `Size`, `Risk`, `Worker` |
 | The order within a priority | The number field `Rank`, sorted by the planner |
@@ -121,6 +122,30 @@ answer that cannot be read, is not sent again. Once a call that makes an issue m
 is refused as partly saved, naming the repositories, with the references of what GitHub holds in its words, so the
 window reads the board anew and never hands the same idea in again. An issue GitHub makes only after the read that
 looked for it is not found and is made once more; that moment is the one left.
+
+## The carry-over
+
+`porelo-planner carry-over --project <dir> --to <owner>/<number>` moves a Markdown project's open stories and
+issues to a GitHub project in one run; with `--dry-run` it only says, one line per item, what it would write. The
+own checkout's `project.yml` must be committed, and every repository must stand on github.com under the GitHub
+project's owner, by the name `project.yml` gives it. Before anything is made, the run checks the project's fields
+and options, refuses a project that already holds items it did not make, and sets the `Status` options to the
+workflow's states.
+
+The first pass makes each item as an issue - a story labeled `story` - with a body whose references to other
+carried items are not known yet, adds it to the project and writes its fields and sums. The second pass adds the
+sub-issues and dependencies, writes each body anew from the Markdown text with every carried reference rewritten
+to its tracker reference and a story's *Also needs*, and adds the stage comments, oldest first. A reference to an
+item not carried, finished, rejected or of another project, is left as plain text and listed. A body a person
+changed between the passes is left as it is and the item named.
+
+While it copies, the run keeps a map of old id to new reference, and how far each item came, in a file of its own
+under the planner's state directory (`carry-over/<owner>-<number>.json`, or `--state <file>`), never on GitHub. A
+run that stopped is run again with the same command and goes on from the map without making anything twice: an
+item about to be made is recorded first, and found again on GitHub by its title and first body. Once every item is
+carried, the run adds `tracker` and, with `--seed <csv>` (rows `repository,size,minutes`), the velocity's starting
+minutes as `velocity.seed.<repository>.<size>` to `project.yml`, removes the map and commits nothing: the person
+reviews the file, signs it with `porelo project sign` and commits it.
 
 ## Access
 

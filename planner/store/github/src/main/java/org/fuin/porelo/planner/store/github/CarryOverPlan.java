@@ -19,8 +19,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What a Markdown project's carry-over to GitHub Issues would write: one item per open story and
- * open issue, each with its old id as its alias in {@code Id}, its fields, its GitHub parent and
- * sub-issues, its dependencies, its body with its references rewritten, and its stage comments.
+ * open issue, each with its fields, its GitHub parent and sub-issues, its dependencies, its body
+ * with its references rewritten, and its stage comments. No old id is written to GitHub: an item is
+ * known there by its tracker reference alone, and its old id only keys the carry-over's own map.
  * Finished and rejected issues and stories are not carried, and a reference to one of them is left
  * as plain text and named; an open issue whose file is gone leaves no plan.
  */
@@ -58,19 +59,19 @@ public final class CarryOverPlan {
 
     /**
      * Gives the tracker reference of a carried item. In a dry run GitHub's number is not known yet,
-     * so the reference names the alias the item will be found by.
+     * so the reference names the old id in its place.
      */
     @FunctionalInterface
     public interface References {
 
-        /** The reference by alias, {@code <repository>#<id>}, for a dry run. */
-        References BY_ALIAS = (repository, id) -> repository + "#" + id;
+        /** The reference by old id, {@code <repository>#<id>}, which only a dry run shows. */
+        References BY_OLD_ID = (repository, id) -> repository + "#" + id;
 
         /**
          * Answers the reference of a carried item.
          *
          * @param repository its repository
-         * @param id its old id, its alias
+         * @param id its old id
          * @return its reference
          */
         String reference(String repository, String id);
@@ -79,7 +80,7 @@ public final class CarryOverPlan {
     /**
      * One story or issue as it would be written.
      *
-     * @param id its old id, written as its alias in {@code Id}
+     * @param id its old id, which keys the carry-over's map and is never written to GitHub
      * @param repository its repository
      * @param story whether it is a story
      * @param title its title
@@ -89,6 +90,8 @@ public final class CarryOverPlan {
      * @param alsoNeeds a story's references of issues another story holds as sub-issues
      * @param blockedBy the references of the issues it is blocked by
      * @param body its body
+     * @param text its body without the section {@code Also needs}, which a story's first write
+     *     leaves out until every reference is known
      * @param comments its stage comments, oldest first
      * @param moves how many of a person's moves were left out of its comments
      * @param rewritten each reference of its text rewritten, {@code <id> -> <reference>}
@@ -107,6 +110,7 @@ public final class CarryOverPlan {
             List<String> alsoNeeds,
             List<String> blockedBy,
             String body,
+            String text,
             List<String> comments,
             int moves,
             List<String> rewritten,
@@ -130,10 +134,10 @@ public final class CarryOverPlan {
          * Answers the dry run's line: never a body, a comment or any other text a person wrote but
          * the title.
          *
-         * @param byAlias whether its references name aliases, as in a dry run
+         * @param byOldId whether its references name old ids, as in a dry run
          * @return the line
          */
-        public String line(final boolean byAlias) {
+        public String line(final boolean byOldId) {
             final StringBuilder line = new StringBuilder();
             line.append(id)
                     .append("  ")
@@ -159,7 +163,7 @@ public final class CarryOverPlan {
             }
             line.append("  | not carried: ").append(listed(notCarried));
             line.append("  | references rewritten")
-                    .append(byAlias ? " (by alias; GitHub's numbers come with the real run)" : "")
+                    .append(byOldId ? " (by old id; GitHub's numbers come with the real run)" : "")
                     .append(": ")
                     .append(listed(rewritten));
             line.append("  | left as text: ").append(listed(leftAsText));
@@ -306,7 +310,8 @@ public final class CarryOverPlan {
             }
             final ReferenceRewrite.Rewritten text =
                     ReferenceRewrite.rewrite(written, own, "stories", webs, carried);
-            String body = text.text();
+            final String first = text.text();
+            String body = first;
             final boolean ownSection =
                     bodyProblem(body) == null
                             && BodySections.read(body).section(IssueMapping.ALSO_NEEDS).isPresent();
@@ -322,12 +327,13 @@ public final class CarryOverPlan {
                             own,
                             true,
                             story.title(),
-                            IssueMapping.fields(story, rank),
+                            storyFields(story, rank),
                             null,
                             subs,
                             also,
                             List.of(),
                             body,
+                            first,
                             List.of(),
                             0,
                             text.rewritten(),
@@ -428,12 +434,25 @@ public final class CarryOverPlan {
                 List.of(),
                 blockedBy,
                 text.text(),
+                text.text(),
                 comments,
                 read.moves(),
                 text.rewritten(),
                 text.leftAsText(),
                 notCarried,
                 problem);
+    }
+
+    /**
+     * A story's field values without its old id, and without a {@code Status} when its state is not
+     * given, so it follows its issues rather than being set to nothing.
+     */
+    private static Map<String, String> storyFields(final Story story, final int rank) {
+        final Map<String, String> fields = new LinkedHashMap<>(IssueMapping.fields(story, rank));
+        if (fields.getOrDefault(FieldNames.STATUS, "").isEmpty()) {
+            fields.remove(FieldNames.STATUS);
+        }
+        return fields;
     }
 
     /** The directory a file stands in, within its repository. */

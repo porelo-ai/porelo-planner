@@ -164,7 +164,7 @@ public final class StageRecords {
 
     /**
      * Reads a stage record file, every record closed, as the stages a tracker keeps: each keyed by
-     * its issue, its kind and its ordinal, so a stage carried twice counts once.
+     * its kind and its ordinal within the issue, so a stage carried twice counts once.
      *
      * @param contents the file's text
      * @param filename the file's name, {@code <issue>.jsonl}
@@ -196,13 +196,8 @@ public final class StageRecords {
                 }
             }
             final String stage = string(record, "stage");
-            final String key =
-                    "markdown:"
-                            + string(record, "issue")
-                            + ":"
-                            + stage
-                            + ":"
-                            + integer(record.get("n"), "n");
+            // The key names no issue: an old id stays off the tracker, and one file is one issue.
+            final String key = "carry:" + stage + ":" + integer(record.get("n"), "n");
             if (!keys.add(key)) {
                 // A tracker counts a stage carried twice once, so its sum would differ.
                 throw new IllegalArgumentException(

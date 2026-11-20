@@ -46,6 +46,8 @@ public final class CheckoutProject {
 
     private final Workflow workflow;
 
+    private final String own;
+
     private CheckoutProject(
             final Board board,
             final List<String> faults,
@@ -53,7 +55,8 @@ public final class CheckoutProject {
             final Map<String, Map<String, String>> paths,
             final Map<String, String> webs,
             final Checkouts checkouts,
-            final Workflow workflow) {
+            final Workflow workflow,
+            final String own) {
         this.board = board;
         this.faults = List.copyOf(faults);
         this.asides = List.copyOf(asides);
@@ -61,6 +64,7 @@ public final class CheckoutProject {
         this.webs = Map.copyOf(webs);
         this.checkouts = checkouts;
         this.workflow = workflow;
+        this.own = own;
     }
 
     /**
@@ -76,6 +80,25 @@ public final class CheckoutProject {
      */
     public static CheckoutProject read(final Path root, final Map<String, String> environment)
             throws IOException {
+        return read(root, environment, false);
+    }
+
+    /**
+     * Reads a project from its checkouts, perhaps one whose {@code project.yml} names a tracker
+     * already: one a carry-over wrote and stopped before it ended.
+     *
+     * @param root the own repository's checkout, which holds {@code project.yml}
+     * @param environment the environment Git runs with to search the checkouts
+     * @param trackerTaken whether a tracker named in {@code project.yml} is taken rather than
+     *     refused
+     * @return the project, its board holding the faults of what it left out
+     * @throws IOException naming the file or checkout that cannot be read
+     * @throws IllegalArgumentException when {@code project.yml} is no Markdown project
+     * @throws org.fuin.porelo.planner.store.StoreException when a repository holds no store
+     */
+    public static CheckoutProject read(
+            final Path root, final Map<String, String> environment, final boolean trackerTaken)
+            throws IOException {
         // Each repository beside the own one is found where the own checkout really stands.
         final Path own = root.toRealPath();
         final Path file = own.resolve(ProjectFile.FILE);
@@ -83,7 +106,7 @@ public final class CheckoutProject {
             throw new IOException(file + ": not a plain file");
         }
         final String text = Files.readString(file, StandardCharsets.UTF_8);
-        if (Project.tracker(text).isPresent()) {
+        if (Project.tracker(text).isPresent() && !trackerTaken) {
             throw new IllegalArgumentException(
                     file + ": names a tracker already, so its project is kept there");
         }
@@ -154,7 +177,8 @@ public final class CheckoutProject {
                                 + issue.repository());
             }
         }
-        return new CheckoutProject(board, faults, asides, paths, webs, checkouts, workflow);
+        return new CheckoutProject(
+                board, faults, asides, paths, webs, checkouts, workflow, project.own());
     }
 
     /** Reads a file of a checkout, a refusal in the words of a file that cannot be read. */
@@ -176,6 +200,33 @@ public final class CheckoutProject {
      */
     public List<String> faults() {
         return faults;
+    }
+
+    /**
+     * Answers whether the own checkout's {@code project.yml} has changes not committed, or is not
+     * tracked.
+     *
+     * @return whether it differs from the head commit
+     * @throws IOException when the checkout is no repository or Git fails
+     */
+    public boolean projectFileChanged() throws IOException {
+        try {
+            return checkouts.changed(own, ProjectFile.FILE);
+        } catch (final GitFailure e) {
+            throw new IOException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Answers whether a {@code project.yml} names a key at its top.
+     *
+     * @param text the file's text
+     * @param key the key
+     * @return whether it stands there
+     * @throws IllegalArgumentException when the text is no YAML mapping
+     */
+    public static boolean names(final String text, final String key) {
+        return Project.names(text, key);
     }
 
     /**

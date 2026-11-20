@@ -227,6 +227,18 @@ public record Project(
                 new Tracker(kind, reference.substring(0, slash), reference.substring(slash + 1)));
     }
 
+    /**
+     * Answers whether a {@code project.yml} names a key at its top.
+     *
+     * @param text the file's text
+     * @param key the key
+     * @return whether it stands there
+     * @throws IllegalArgumentException when the text is no YAML mapping
+     */
+    public static boolean names(String text, String key) {
+        return yaml(text, FILE).has(key);
+    }
+
     private static Repository own(JsonNode project) {
         return repository(required(project, "project", FILE), FILE + " project");
     }

@@ -127,7 +127,7 @@ class CarryOverPlanTest {
                             issue.id().equals("PL11") ? 2 : 0,
                             issue.id().equals("PL11") ? 25.0 : null));
         }
-        return CarryOverPlan.of(board, sources, texts, WEBS, CarryOverPlan.References.BY_ALIAS);
+        return CarryOverPlan.of(board, sources, texts, WEBS, CarryOverPlan.References.BY_OLD_ID);
     }
 
     private static CarryOverPlan.Item item(final CarryOverPlan plan, final String id) {
@@ -146,16 +146,48 @@ class CarryOverPlanTest {
     }
 
     @Test
-    void noCarriedItemIsWrittenAnIdField() {
-        // Harm: a carried item's old id written into a field the project no longer has, so the
-        // save is refused, or the old id read as a second name of the item.
+    void noCarriedItemWritesItsOldIdIntoAField() {
+        // Harm: an old id kept on GitHub as an alias, which nothing may name after the cut-over.
         final CarryOverPlan plan = plan(board(List.of()), "Text.");
         plan.items()
                 .forEach(
-                        item ->
-                                assertThat(item.fields())
-                                        .as("the fields of %s", item.id())
-                                        .doesNotContainKey("Id"));
+                        item -> {
+                            assertThat(item.fields())
+                                    .as("the fields of %s", item.id())
+                                    .doesNotContainKey("Id");
+                            assertThat(item.fields().values())
+                                    .as("the field values of %s", item.id())
+                                    .doesNotContain(item.id());
+                        });
+    }
+
+    @Test
+    void aStoryWhoseStateIsNotGivenWritesNoStatus() {
+        // Harm: an empty Status sent to GitHub is refused, or sets a story that follows its issues.
+        final Board given = board(List.of());
+        final Board board =
+                new Board(
+                        given.revision(),
+                        WORKFLOW,
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Title of ST1",
+                                        "Backlog",
+                                        false,
+                                        "High",
+                                        "M",
+                                        List.of("PL10"),
+                                        "",
+                                        null)),
+                        given.issues(),
+                        given.work(),
+                        given.repositories(),
+                        List.of());
+        assertThat(item(plan(board, "Text."), "ST1").fields())
+                .as("the fields of a story that follows its issues")
+                .doesNotContainKey(FieldNames.STATUS)
+                .containsEntry(FieldNames.PRIORITY, "High");
     }
 
     @Test
@@ -227,7 +259,7 @@ class CarryOverPlanTest {
         final CarryOverPlan.Item item =
                 item(plan(board(List.of()), "Words of the body only."), "PL10");
         final String line = item.line(true);
-        assertThat(line).as("the line").contains("\"Title of PL10\"").contains("by alias");
+        assertThat(line).as("the line").contains("\"Title of PL10\"").contains("by old id");
         assertThat(line)
                 .as("the line")
                 .doesNotContain("Words of the body")

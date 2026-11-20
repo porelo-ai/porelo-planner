@@ -180,8 +180,8 @@ final class WorkCommands {
     }
 
     /**
-     * Plans a Markdown project's carry-over to GitHub Issues from its checkouts, each line said
-     * escaped, since a line holds an item's title.
+     * Plans a Markdown project's carry-over to GitHub Issues from its checkouts, or carries it,
+     * each line said escaped, since a line holds an item's title.
      */
     private int carryOver(final List<String> rest) {
         return said(

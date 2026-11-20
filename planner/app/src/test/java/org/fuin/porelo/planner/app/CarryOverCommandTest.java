@@ -18,7 +18,7 @@ class CarryOverCommandTest {
     @TempDir Path dir;
 
     /** One closed stage of an agent and one move of a person, as the stage command writes them. */
-    private static final String RECORDS =
+    static final String RECORDS =
             "{\"issue\":\"AB02\",\"stage\":\"implement\",\"n\":1,\"actor\":\"agent\",\"model\":\"opus\","
                     + "\"effort\":\"high\",\"size\":\"S\",\"status_before\":\"Backlog\","
                     + "\"status_after\":\"Backlog\",\"start\":\"2026-11-01T10:00:00Z\","
@@ -83,12 +83,14 @@ class CarryOverCommandTest {
                 .anySatisfy(
                         line ->
                                 assertThat(line)
-                                        .startsWith("ST2  porelo-sample  story  Status=")
+                                        .startsWith("ST2  porelo-sample  story  ")
+                                        .doesNotContain("Id=")
                                         .contains("sub-issues: porelo-alpha#AB02"))
                 .anySatisfy(
                         line ->
                                 assertThat(line)
-                                        .startsWith("AB02  porelo-alpha  issue  Status=")
+                                        .startsWith("AB02  porelo-alpha  issue  ")
+                                        .doesNotContain("Id=")
                                         .contains("Minutes=12")
                                         .contains("stage comments: 1, moves left out: 1")
                                         .contains("not carried: AB01"));
@@ -160,21 +162,6 @@ class CarryOverCommandTest {
         assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
         assertThat(answer.out()).as("the lines").isEmpty();
         assertThat(answer.err()).as("the fault").contains("names a tracker already");
-    }
-
-    @Test
-    void withoutDryRunNothingRunsSinceOnlyTheDryRunIsBuilt() throws IOException {
-        final Path root = WorkFixture.copy(dir);
-        final WorkFixture.Answer answer =
-                WorkFixture.planner(
-                        "carry-over",
-                        "--project",
-                        root.resolve("porelo-sample").toString(),
-                        "--to",
-                        "porelo-ai/7");
-        assertThat(answer.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
-        assertThat(answer.out()).as("the lines").isEmpty();
-        assertThat(answer.err()).as("the refusal").contains("only the dry run is built");
     }
 
     /** Runs Git in a directory, without the person's configuration. */

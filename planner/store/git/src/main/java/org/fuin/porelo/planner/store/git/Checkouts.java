@@ -157,6 +157,35 @@ final class Checkouts implements Remote {
         return List.copyOf(found);
     }
 
+    /**
+     * Answers whether a file of a checkout differs from what its head commit holds, or is not
+     * tracked at all; Git looks for the repository in the checkout alone and changes no file.
+     *
+     * @param repository the repository
+     * @param path the file's path in it
+     * @return whether it has changes not committed
+     * @throws GitFailure when the checkout is no repository or Git fails
+     */
+    public boolean changed(final String repository, final String path) {
+        final Path tree = tree(repository);
+        final GitCall call =
+                GitCall.of(
+                        environment,
+                        Duration.ofSeconds(10),
+                        List.of(
+                                "status",
+                                "--porcelain=v1",
+                                "-z",
+                                "--untracked-files=all",
+                                "--",
+                                RepoPath.checked(path)));
+        final Map<String, String> variables = new TreeMap<>(call.environment());
+        variables.put("GIT_CEILING_DIRECTORIES", parent(repository, tree).toString());
+        // A status that refreshes the index would write in the person's checkout.
+        variables.put("GIT_OPTIONAL_LOCKS", "0");
+        return runner.run(new GitCall(call.arguments(), variables), tree).length > 0;
+    }
+
     private List<String> entries(
             final String repository, final String directory, final boolean directories) {
         final Path tree = tree(repository);

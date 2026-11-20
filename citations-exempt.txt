@@ -416,3 +416,5 @@ planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/Referenc
 planner/app/src/test/java/org/fuin/porelo/planner/app/TrackerIdsHttpTest.java
 planner/store/api/src/test/java/org/fuin/porelo/planner/store/TrackedItemsTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/CheckoutsTest.java
+planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/CarryOverTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/CarryOverRunTest.java
