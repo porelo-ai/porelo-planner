@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A project's whole board, read at one revision: every answer about a story or an issue at that
@@ -17,6 +19,8 @@ import java.util.Optional;
  * @param work the work rules and what could not be read of them
  * @param repositories the project's repositories, its own first
  * @param faults each file or reference left out because it could not be read, naming it and why
+ * @param owner the owner of the tracker that keeps the stories and issues, as the store verified it
+ *     for the project; null for a board the project's own files hold
  */
 public record Board(
         Revision revision,
@@ -25,7 +29,32 @@ public record Board(
         List<Issue> issues,
         Work work,
         List<String> repositories,
-        List<String> faults) {
+        List<String> faults,
+        @Nullable String owner) {
+
+    private static final Pattern OWNER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
+
+    /**
+     * A board the project's own files hold, which no tracker keeps.
+     *
+     * @param revision the commits it was read from
+     * @param workflow the states and phases
+     * @param stories every story
+     * @param issues every issue of every repository
+     * @param work the work rules and what could not be read of them
+     * @param repositories the project's repositories, its own first
+     * @param faults each file or reference left out because it could not be read
+     */
+    public Board(
+            final Revision revision,
+            final Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final Work work,
+            final List<String> repositories,
+            final List<String> faults) {
+        this(revision, workflow, stories, issues, work, repositories, faults, null);
+    }
 
     /**
      * A board with nothing left out.
@@ -63,8 +92,16 @@ public record Board(
                 issues.stream().map(Issue::repository).distinct().toList());
     }
 
-    /** Copies the lists and refuses an id twice or a state the workflow does not know. */
+    /**
+     * Copies the lists and refuses an id twice, a state the workflow does not know or an owner that
+     * could name more than one.
+     */
     public Board {
+        // The owner reaches Porelo's Start as part of an issue's reference.
+        if (owner != null && (!OWNER.matcher(owner).matches() || owner.contains(".."))) {
+            throw new IllegalArgumentException(
+                    "Not a tracker's owner, " + owner.length() + " characters");
+        }
         stories = List.copyOf(stories);
         issues = List.copyOf(issues);
         repositories = List.copyOf(repositories);

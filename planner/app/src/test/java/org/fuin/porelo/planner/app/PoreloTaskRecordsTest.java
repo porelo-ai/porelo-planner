@@ -208,9 +208,12 @@ class PoreloTaskRecordsTest {
                 Arguments.of("work", NODES.textNode("EX12")),
                 Arguments.of("work.issue", NODES.textNode("pl61")),
                 Arguments.of("work.issue", NODES.nullNode()),
-                Arguments.of("work.phase", NODES.textNode("build")),
-                Arguments.of("work.phase", NODES.textNode(" :implement")),
-                Arguments.of("work.phase", NODES.textNode("build: ")),
+                Arguments.of("work.issue", NODES.textNode("porelo-x#3")),
+                Arguments.of("work.issue", NODES.textNode("example-org/Porelo-X#3")),
+                Arguments.of("work.issue", NODES.textNode("a..b/porelo-x#3")),
+                Arguments.of("work.issue", NODES.textNode("example-org/porelo-x#0")),
+                Arguments.of("work.phase", NODES.textNode(" ")),
+                Arguments.of("work.phase", NODES.textNode("build\nimplement")),
                 Arguments.of("work.phase", NODES.textNode("build:" + "x".repeat(59))),
                 Arguments.of("agent", NODES.booleanNode(true)),
                 Arguments.of("model", NODES.numberNode(7)),
@@ -242,7 +245,8 @@ class PoreloTaskRecordsTest {
                 Arguments.of("toolCalls[0].endFrom", NODES.textNode("guess")),
                 Arguments.of("toolCalls[0].command", NODES.numberNode(7)),
                 Arguments.of("toolCalls[0].background", NODES.textNode("true")),
-                Arguments.of("toolCalls[0].issue", NODES.textNode("EX-12")));
+                Arguments.of("toolCalls[0].issue", NODES.textNode("EX-12")),
+                Arguments.of("toolCalls[0].issue", NODES.textNode("example-org/x/porelo-x#3")));
     }
 
     // Prevents a value of the wrong type or shape from being read as a time, an end or an issue.
@@ -375,6 +379,26 @@ class PoreloTaskRecordsTest {
                 .doesNotContain("ghp_SECRET123")
                 .doesNotContain("\u001b")
                 .doesNotContain("second line");
+    }
+
+    // Prevents a task started for a tracker's issue, which Porelo records with its owner and the
+    // stage's phase, from failing every answer, or from being counted for no issue of the board.
+    @Test
+    void aTrackersIssueWithItsOwnerAndAPhaseWithoutAColonIsReadAsTheBoardNamesIt()
+            throws Exception {
+        final ObjectNode record = record();
+        record.putObject("work").put("issue", "Example-Org/porelo-x#12").put("phase", "build");
+        ((ObjectNode) record.get("toolCalls").get(1)).put("issue", "Example-Org/porelo-x#13");
+        answer(JSON.createArrayNode().add(record));
+
+        final TaskRecord read = records().since("porelo-planner", SINCE).getFirst();
+        assertThat(read.issue())
+                .as("the task's issue as the board names it")
+                .isEqualTo("porelo-x#12");
+        assertThat(read.calls())
+                .as("the sub-agent's issue as the board names it")
+                .extracting(TaskRecord.Call::issue)
+                .containsExactly(null, "porelo-x#13");
     }
 
     // Prevents Porelo's naming an effort from failing every answer and so the velocity.

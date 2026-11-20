@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 87,
   "blockedBy": ["PL164"],
-  "covers": "A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference alone, with no Id field and no alias, so an item made after the cut-over needs no Porelo id; step 1 (contract, Ids, screen) built, step 2 (the GitHub store's ids, the alias taken out) next"
+  "covers": "A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference alone, with no Id field and no alias, so an item made after the cut-over needs no Porelo id; steps 1 and 2 built, the window's hand-over of work to Start next"
 }
 ```
 
@@ -52,6 +52,13 @@ and every item, carried over or new, is known by its tracker reference alone.
   name it in capitals; an item whose name `Ids.name` refuses, of a repository outside `project.yml`, standing twice,
   or a sub-issue under a sub-issue - whichever order the items come in - is left out as a fault naming repository and
   number. A story under another issue keeps its place on the board, shown without the parent, with a fault saying so.
+- `work` built so: the board carries the owner its store verified, and `StageOrder.staged`, which every planned
+  task passes, names the first issue the task owns with that owner, and the phase whose states hold the stage's
+  working state, the state's own name where no phase names it; none for a discussion, a task owning no issue or a
+  project no tracker keeps. `PoreloTaskRecords` takes `<owner>/<repository>#<number>` for the task's and each call's
+  issue and counts it for `<repository>#<number>`, the issue as the board names it, and takes any phase of one line
+  and at most 64 characters, as the window hands it to `Start`. A stage's instructions name an issue by its id as
+  the order names it, not by a number the planner links.
 
 ### Step 1, built
 

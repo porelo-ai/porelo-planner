@@ -315,7 +315,8 @@ public final class GitHubStore implements PlanningStore {
                 board.issues(),
                 board.work(),
                 board.repositories(),
-                faults);
+                faults,
+                board.owner());
     }
 
     /**

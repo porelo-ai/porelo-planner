@@ -12,10 +12,12 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -123,6 +125,105 @@ class WorkOrderTest {
                                     .as("no stage instructions")
                                     .doesNotContain("push nothing");
                         });
+    }
+
+    // Prevents Porelo's Start from being handed no tracker's issue, or one the task does not own
+    // first, for a stage of a project a tracker keeps, and from being handed one for any other.
+    @Test
+    void aStageOfATrackedProjectNamesItsFirstOwnedIssueWithTheOwnerAndTheStagesPhase() {
+        for (final WorkRule.Result result :
+                java.util.Arrays.asList(null, WorkRule.Result.ANALYSIS)) {
+            final List<WorkOrder.Task> tasks =
+                    WorkOrder.accept(
+                                    tracked("Example-Org", result, true),
+                                    "project#1",
+                                    "Building",
+                                    decision(null, null, null, null))
+                            .tasks();
+            assertThat(tasks)
+                    .as("the main over three issues and the builder of the sub-issue, " + result)
+                    .extracting(task -> task.role() + " " + task.issues() + " " + task.work())
+                    .containsExactly(
+                            "MAIN [alpha#2, alpha#3, alpha#4] "
+                                    + new WorkOrder.Tracked("Example-Org/alpha#2", "build"),
+                            "BUILDER [alpha#3] "
+                                    + new WorkOrder.Tracked("Example-Org/alpha#3", "build"));
+        }
+        assertThat(
+                        WorkOrder.accept(
+                                        tracked("Example-Org", null, false),
+                                        "project#1",
+                                        "Building",
+                                        decision(null, null, null, null))
+                                .tasks()
+                                .getFirst()
+                                .work())
+                .as("a state no phase names stands for the phase itself")
+                .isEqualTo(new WorkOrder.Tracked("Example-Org/alpha#2", "Building"));
+        assertThat(
+                        WorkOrder.accept(
+                                        tracked(null, null, true),
+                                        "project#1",
+                                        "Building",
+                                        decision(null, null, null, null))
+                                .tasks())
+                .as("a project no tracker keeps names no tracker's work")
+                .extracting(WorkOrder.Task::work)
+                .containsOnlyNulls();
+    }
+
+    /** A board a tracker of the owner given keeps, or none when it is null. */
+    private static Board tracked(
+            final @Nullable String owner,
+            final WorkRule.@Nullable Result result,
+            final boolean phased) {
+        final WorkRule rule =
+                WorkProposalTest.board(WorkRule.Per.REPOSITORY).work().rules().get("Building");
+        return new Board(
+                new Revision("board@1"),
+                new Workflow(
+                        List.of("Backlog", "Building", "Review", "Finished"),
+                        phased
+                                ? List.of(
+                                        new Workflow.Phase("build", List.of("Building", "Review")))
+                                : List.of(),
+                        List.of("Finished")),
+                List.of(
+                        new Story(
+                                "project#1",
+                                "Story",
+                                "Backlog",
+                                true,
+                                "High",
+                                null,
+                                List.of("alpha#2", "alpha#3", "alpha#4"),
+                                "",
+                                null)),
+                List.of(
+                        WorkProposalTest.issue(
+                                "alpha#2", "alpha", "Parent", "Backlog", null, "Parent holds."),
+                        WorkProposalTest.issue(
+                                "alpha#3", "alpha", "Child", "Backlog", "alpha#2", "Keep it."),
+                        WorkProposalTest.issue(
+                                "alpha#4", "alpha", "Other", "Backlog", null, "Other holds.")),
+                new Work(
+                        Map.of(
+                                "Building",
+                                new WorkRule(
+                                        rule.from(),
+                                        rule.done(),
+                                        rule.then(),
+                                        rule.blocked(),
+                                        rule.per(),
+                                        rule.modes(),
+                                        rule.order(),
+                                        rule.models(),
+                                        rule.risks(),
+                                        result)),
+                        List.of()),
+                List.of("project", "alpha"),
+                List.of(),
+                owner);
     }
 
     // Prevents a task that reads half an issue: a text over the bound refuses the start.

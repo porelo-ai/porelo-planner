@@ -54,6 +54,8 @@ public record WorkOrder(
      *     null for work that pushes
      * @param given the files the task is given to read, each issue's text as the store holds it;
      *     empty for work that pushes
+     * @param work the tracker's issue and the stage's phase Start is handed, for a planned stage's
+     *     task of a project a tracker keeps; null for any other
      */
     public record Task(
             String repository,
@@ -68,12 +70,44 @@ public record WorkOrder(
             String basis,
             @Nullable String used,
             @Nullable String result,
-            List<Given> given) {
-        /** Copies issue identities to preserve the accepted scope. */
+            List<Given> given,
+            @Nullable Tracked work) {
+        /**
+         * Copies issue identities to preserve the accepted scope, and refuses a tracker's issue the
+         * task does not work.
+         */
         public Task {
             issues = List.copyOf(issues);
             reads = List.copyOf(reads);
             given = List.copyOf(given);
+            // Start names the tracker's issue the planner ordered, never one beyond the task's own.
+            if (work != null && !issues.contains(work.reference())) {
+                throw new IllegalArgumentException("A task's work names an issue it does not work");
+            }
+        }
+
+        /**
+         * Answers the task handing Start the tracker's issue and phase given.
+         *
+         * @param tracked the tracker's issue and phase, or null for none
+         * @return the task
+         */
+        public Task working(final @Nullable Tracked tracked) {
+            return new Task(
+                    repository,
+                    issues,
+                    role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    reads,
+                    basis,
+                    used,
+                    result,
+                    given,
+                    tracked);
         }
 
         /** A task that pushes its work, given no file and handing back none. */
@@ -102,7 +136,8 @@ public record WorkOrder(
                     basis,
                     used,
                     null,
-                    List.of());
+                    List.of(),
+                    null);
         }
 
         /** A task whose choice's origin is unknown and whose effort nobody confirmed. */
@@ -140,6 +175,47 @@ public record WorkOrder(
      * @param text its text
      */
     public record Given(String name, String text) {}
+
+    /**
+     * The tracker's issue a planned stage's task works and the stage's phase, as Porelo's Start is
+     * handed them.
+     *
+     * @param issue the issue with its owner, {@code <owner>/<repository>#<number>}
+     * @param phase the name of the stage's phase
+     */
+    public record Tracked(String issue, String phase) {
+
+        private static final Pattern ISSUE =
+                Pattern.compile(
+                        "(?![^#]*\\.\\.)[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9._-]{0,99}"
+                                + "#[1-9][0-9]{0,8}");
+
+        private static final Pattern UNSOUND =
+                Pattern.compile("[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]");
+
+        /** Refuses an issue or a phase Start would not take; neither is repeated, both reach it. */
+        public Tracked {
+            if (issue.length() > 200 || !ISSUE.matcher(issue).matches()) {
+                throw new IllegalArgumentException(
+                        "Not a tracker's issue with its owner, " + issue.length() + " characters");
+            }
+            if (phase.isBlank() || phase.length() > 64 || UNSOUND.matcher(phase).find()) {
+                throw new IllegalArgumentException(
+                        "Not a phase's name of one line and at most 64 characters, "
+                                + phase.length()
+                                + " characters");
+            }
+        }
+
+        /**
+         * Answers the issue's reference within the project, its owner left off.
+         *
+         * @return {@code <repository>#<number>}
+         */
+        public String reference() {
+            return issue.substring(issue.indexOf('/') + 1);
+        }
+    }
 
     /** An issue's chosen reading limit before validation. */
     public record Limit(String issue, Number rounds) {}

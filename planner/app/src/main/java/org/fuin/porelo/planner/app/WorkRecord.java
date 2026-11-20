@@ -436,6 +436,10 @@ public final class WorkRecord implements AutoCloseable {
                         if (!arguments.has("given")) {
                             arguments.putArray("given");
                         }
+                        // A task recorded before a tracker's work was handed to Start names none.
+                        if (!arguments.has("work")) {
+                            arguments.putNull("work");
+                        }
                     }
                 }
             }
@@ -730,7 +734,11 @@ public final class WorkRecord implements AutoCloseable {
                                     if (effort != null && !WorkRule.sound(effort)
                                             || used != null && !WorkRule.sound(used)
                                             || offer.arguments().basis().length() > 4000
-                                            || !givenFits(offer.arguments())) {
+                                            || !givenFits(offer.arguments())
+                                            || offer.arguments().work() != null
+                                                    && offer.arguments()
+                                                            .role()
+                                                            .equals("DISCUSSION")) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }

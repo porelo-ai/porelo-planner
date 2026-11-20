@@ -527,6 +527,56 @@ class WorkRecordTest {
     }
 
     @Test
+    void aTaskRecordedWithoutTheTrackersWorkReadsAsNoneAndAForgedOneIsRefused() throws Exception {
+        // Harm: an upgrade makes a running story's record unreadable because its tasks were
+        // recorded before a start named the tracker's issue, or an edited record hands Porelo's
+        // Start an issue the task does not work.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        arguments.remove("work");
+        arguments.putArray("issues").add("porelo-x#3");
+        ((ObjectNode) offer.get("binding")).putArray("issues").add("porelo-x#3");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(work(records)).as("an older record's task names no tracker's work").isNull();
+            arguments
+                    .putObject("work")
+                    .put("issue", "example-org/porelo-x#3")
+                    .put("phase", "build");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThat(work(records))
+                    .as("the tracker's work read back as recorded")
+                    .isEqualTo(new WorkOrder.Tracked("example-org/porelo-x#3", "build"));
+            arguments
+                    .putObject("work")
+                    .put("issue", "example-org/porelo-x#4")
+                    .put("phase", "build");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("work naming an issue the task does not work is refused")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    private static WorkOrder.@Nullable Tracked work(final WorkRecord records) {
+        return records.open("project", "https://example.org/store.git", null)
+                .locked(session -> session.read().runs().values().iterator().next())
+                .offers()
+                .getFirst()
+                .arguments()
+                .work();
+    }
+
+    @Test
     void aRecordWrittenBeforeRisksOpensWithItsRepositoriesMainAndSubAgent() throws Exception {
         // An upgrade must not make a running story's work record unreadable when its run names
         // repositories, whose main and sub-agents were written without an effort and a basis.

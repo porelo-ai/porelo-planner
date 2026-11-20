@@ -4,9 +4,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Workflow;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a task of a stage that hands back its result is given and told besides its order: each
@@ -41,9 +44,10 @@ public final class StageOrder {
     }
 
     /**
-     * Answers the task as its stage starts it: unchanged for work that pushes and for a reader,
-     * else with the rule's result file, each owned issue's text as a given file and the stage's
-     * instructions closing its prompt.
+     * Answers the task as its stage starts it: naming the tracker's issue and the stage's phase for
+     * a project a tracker keeps; else unchanged for work that pushes and for a reader, and with the
+     * rule's result file, each owned issue's text as a given file and the stage's instructions
+     * closing its prompt for a stage that hands back its result.
      *
      * @param board the board the order was read at
      * @param rule the rule of the working state the task works in
@@ -58,7 +62,8 @@ public final class StageOrder {
     }
 
     /**
-     * Answers the task as its stage starts it, given the texts of the issues it owns alone.
+     * Answers the task as its stage starts it, given the texts of the issues it owns alone, the
+     * first of which it names to Start as the tracker's issue.
      *
      * @param board the board the order was read at
      * @param rule the rule of the working state the task works in
@@ -74,9 +79,10 @@ public final class StageOrder {
             final String to,
             final WorkOrder.Task task,
             final List<String> owned) {
+        final WorkOrder.Task working = task.working(tracked(board, to, task.role(), owned));
         final WorkRule.Result result = rule.result();
         if (result == null || task.role().equals("READER")) {
-            return task;
+            return working;
         }
         final List<WorkOrder.Given> given = new ArrayList<>();
         int all = 0;
@@ -122,7 +128,36 @@ public final class StageOrder {
                 task.basis(),
                 task.used(),
                 result.file(),
-                given);
+                given,
+                working.work());
+    }
+
+    /**
+     * The tracker's issue a task names to Start, the first it owns with the tracker's owner, and
+     * the phase its working state stands in, the state itself where no phase names it; null for a
+     * project no tracker keeps, for a discussion and for a task that owns no issue.
+     */
+    private static WorkOrder.@Nullable Tracked tracked(
+            final Board board, final String to, final String role, final List<String> owned) {
+        final String owner = board.owner();
+        if (owner == null
+                || role.equals("DISCUSSION")
+                || owned.isEmpty()
+                || !Ids.isReference(owned.getFirst())) {
+            return null;
+        }
+        final String phase =
+                board.workflow().phases().stream()
+                        .filter(candidate -> candidate.states().contains(to))
+                        .map(Workflow.Phase::name)
+                        .findFirst()
+                        .orElse(to);
+        try {
+            return new WorkOrder.Tracked(owner + "/" + owned.getFirst(), phase);
+        } catch (final IllegalArgumentException e) {
+            throw WorkRefusal.notAllowed(
+                    "", to, "The stage's phase name is not one line of at most 64 characters.");
+        }
     }
 
     /** Closes the prompt, after every quoted text, so no issue's text can reword it. */
@@ -166,8 +201,8 @@ public final class StageOrder {
                 + "\", and issues, one object per issue the order names with its id, "
                 + fields
                 + bounds
-                + ". In the result, name an issue of this repository by its number, which the"
-                + " planner links to its row, and name no other repository's issue."
+                + ". In the result, name an issue of this repository by its id as the order"
+                + " names it, and name no other repository's issue."
                 + " Edit nothing under issues/, commit nothing and push nothing.";
     }
 }

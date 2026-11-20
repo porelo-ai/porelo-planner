@@ -2457,7 +2457,8 @@ public final class WorkRun {
                                     arguments.basis(),
                                     arguments.used(),
                                     arguments.result(),
-                                    arguments.given())));
+                                    arguments.given(),
+                                    arguments.work())));
         }
         return changed ? draft.freeze() : run;
     }
@@ -2835,7 +2836,9 @@ public final class WorkRun {
                                                 i.risk()))
                         .toList(),
                 board.work(),
-                board.repositories());
+                board.repositories(),
+                board.faults(),
+                board.owner());
     }
 
     /** Checks opaque and display labels before they can occur in any refusal. */
@@ -3125,7 +3128,8 @@ public final class WorkRun {
                                         arguments.basis(),
                                         arguments.used(),
                                         arguments.result(),
-                                        List.of()),
+                                        List.of(),
+                                        arguments.work()),
                                 o.binding(),
                                 o.status(),
                                 o.task(),

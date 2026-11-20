@@ -46,7 +46,22 @@ public final class PoreloTaskRecords implements TaskRecords {
 
     private static final Duration LIMIT = Duration.ofSeconds(60);
 
-    private static final Pattern ISSUE = Pattern.compile("[A-Z]{1,4}[0-9]{1,6}");
+    /**
+     * Answers a tracker's issue as the board names it, its owner left off; an issue of the Git
+     * store as it is.
+     */
+    private static String withinProject(final String issue) {
+        return issue.substring(issue.indexOf('/') + 1);
+    }
+
+    /** An issue of the Git store, or a tracker's issue with its owner, as Start is handed it. */
+    private static final Pattern ISSUE =
+            Pattern.compile(
+                    "[A-Z]{1,4}[0-9]{1,6}|(?![^#]*\\.\\.)[A-Za-z0-9][A-Za-z0-9._-]{0,99}"
+                            + "/[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}");
+
+    private static final Pattern UNSOUND =
+            Pattern.compile("[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]");
 
     private static final Set<String> ENDS = Set.of("done", "failed", "stopped", "removed");
 
@@ -250,16 +265,12 @@ public final class PoreloTaskRecords implements TaskRecords {
                 throw refused("work.issue", "is no issue id (" + ISSUE.pattern() + ")");
             }
             final String phase = text(work, "phase", "work.phase");
-            final int colon = phase.indexOf(':');
-            if (phase.length() > 64
-                    || colon < 0
-                    || phase.substring(0, colon).isBlank()
-                    || phase.substring(colon + 1).isBlank()) {
+            if (phase.isBlank() || phase.length() > 64 || UNSOUND.matcher(phase).find()) {
                 throw refused(
                         "work.phase",
-                        "is no phase (two non-blank halves around a colon, at most 64 characters)");
+                        "is no phase (one line that is not blank, at most 64 characters)");
             }
-            return issue;
+            return withinProject(issue);
         }
 
         private void totals() {
@@ -321,7 +332,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                 throw refused(path + ".issue", "is no issue id (" + ISSUE.pattern() + ")");
             }
             try {
-                return new TaskRecord.Call(issue, start, end);
+                return new TaskRecord.Call(issue == null ? null : withinProject(issue), start, end);
             } catch (final IllegalArgumentException ex) {
                 throw refused(path, "cannot be a call: " + ex.getMessage());
             }

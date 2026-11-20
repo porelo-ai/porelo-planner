@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.StoryWorkOrder;
 import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.TaskEnded;
+import org.fuin.porelo.planner.app.answers.TrackedWork;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -78,6 +79,7 @@ public final class WorkAnswers {
                 .map(
                         offer -> {
                             final WorkOrder.Task task = offer.task();
+                            final WorkOrder.Tracked work = task.work();
                             return new PlanningStartTask(
                                     offer.offer(),
                                     task.repository(),
@@ -100,8 +102,9 @@ public final class WorkAnswers {
                                                                             given.text()))
                                                     .toList(),
                                     task.reads(),
-                                    // No store names a tracker's work for a task yet.
-                                    null);
+                                    work == null
+                                            ? null
+                                            : new TrackedWork(work.issue(), work.phase()));
                         })
                 .toList();
     }

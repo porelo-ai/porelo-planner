@@ -20,6 +20,37 @@ import org.junit.jupiter.api.Test;
 
 class WorkAnswersTest {
 
+    // Harm: the window starts a tracked project's stage without the tracker's issue and phase, so
+    // Porelo's Start records the task for no issue.
+    @Test
+    void aStartHandsTheWindowTheTrackersIssueAndPhaseItsTaskNames() {
+        final org.fuin.porelo.planner.core.WorkOrder.Task task =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                                "alpha",
+                                List.of("alpha#2", "alpha#4"),
+                                "MAIN",
+                                "codex",
+                                "model",
+                                null,
+                                "AGENT",
+                                "Build.")
+                        .working(
+                                new org.fuin.porelo.planner.core.WorkOrder.Tracked(
+                                        "Example-Org/alpha#2", "build"));
+        final List<org.fuin.porelo.planner.app.answers.PlanningStartTask> starts =
+                WorkAnswers.starts(
+                        List.of(
+                                new WorkRun.Offered("o-1", task),
+                                new WorkRun.Offered("o-2", task.working(null))));
+        assertThat(starts)
+                .as("the tracker's work, or none")
+                .extracting(org.fuin.porelo.planner.app.answers.PlanningStartTask::work)
+                .containsExactly(
+                        new org.fuin.porelo.planner.app.answers.TrackedWork(
+                                "Example-Org/alpha#2", "build"),
+                        null);
+    }
+
     // Harm: a value the core can give that the answer's enum lacks fails every board read with a
     // 500.
     @Test
