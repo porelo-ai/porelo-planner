@@ -10,7 +10,6 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl183"></a>[PL183](PL183-Titles-And-Bodies-Edited-Through-The-Planners-API.md) | - | [PL182](README.md#pl182) | A story's or an issue's title and named body sections are changed through the planner's API against the revision the caller read, without losing a person's edit made on the tracker meanwhile; built right after the cut-over |
-| <a id="pl184"></a>[PL184](PL184-Board-Controllers-Only-Map-To-Services.md) | L | [PL182](README.md#pl182) | The planner's REST controllers only check a request, map it to a record, call one service method and map its answer and refusals back; the board's and the runs' use cases live in services tested without HTTP |
 | <a id="pl68"></a>[PL68](PL68-A-Projects-Repositories-Under-Any-Name.md) | - | - | A project whose repositories are not named porelo-something is read and indexed like any other, and the smaller findings left beside a project on any host |
 | <a id="pl75"></a>[PL75](PL75-The-Work-Records-Smaller-Findings.md) | - | - | A refusal of the local work record names no account by its SID and no path glued to a word, and a lock whose release fails still closes its file |
 | <a id="pl76"></a>[PL76](PL76-The-Planners-Logs-Smaller-Findings.md) | - | - | A log file Logback opens again after a fault is the account's alone too, a state directory with a pattern character rolls the log over by its real name, and a store with many faults keeps the log's history |
@@ -24,6 +23,12 @@ left out.
 | <a id="pl145"></a>[PL145](PL145-A-Story-Finished-Over-Rejected-Issues-Or-An-Open-Stage.md) | - | - | A story moved to Finished whose issues are all Rejected, or none, and one whose carried issue has an unclosed stage record, is either saved whole or refused with one line why, never failing in the store after the preview passed it |
 | <a id="pl13"></a>[PL13](PL13-One-Planner-Shared-By-A-Hosts-Users.md) | - | - | One planner serving every user of a host as a service, each user signed in, seeing only what their own Git rights let them read, with clones shared where the rights allow |
 | <a id="pl79"></a>[PL79](PL79-The-Work-Commands-Smaller-Findings.md) | - | - | The executable's issues and stories commands find project.yml only in the repository checked, quote no parse message of a linked file, encode the directory in a cut's links and refuse an empty issues directory |
+
+## Accepted
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="pl184"></a>[PL184](PL184-Board-Controllers-Only-Map-To-Services.md) | L | [PL182](README.md#pl182) | The planner's REST controllers only check a request, map it to a record, call one service method and map its answer and refusals back; the board's and the runs' use cases live in services tested without HTTP |
 
 ## Analyzed
 

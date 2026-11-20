@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL184",
   "title": "Board Controllers Only Map to Services",
-  "state": "Idea",
+  "state": "Accepted",
   "size": "L",
   "priority": "High",
   "rank": 1,
