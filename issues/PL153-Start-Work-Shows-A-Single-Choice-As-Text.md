@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL153",
   "title": "Start Work Shows A Single Choice As Text",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "XS",
   "priority": "High",
   "rank": 73,

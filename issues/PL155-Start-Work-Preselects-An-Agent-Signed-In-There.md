@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL155",
   "title": "Start Work Preselects An Agent Signed In There",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 75,
