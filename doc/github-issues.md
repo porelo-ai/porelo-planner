@@ -80,6 +80,9 @@ stage records count them; a pause and a person's move are shown, not summed.
   repository than its parent or under another sub-issue - is left out and named as a fault, and the story it belongs
   to says that an issue of it is missing. A fault names the item by its repository and number, never by its title or
   body.
+- A story's sub-issue the project's item list lacks is looked up once, by its own project items: when they name the
+  project, GitHub's list is taken to lag an add, and the list is read again up to three times a second apart before
+  the sub-issue is named as outside the project; when they do not, it is named at once.
 
 ## Writes
 

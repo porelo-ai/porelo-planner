@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL189",
   "title": "An Item Just Added Not Read As Outside The Project",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 2,
@@ -30,14 +30,24 @@ not a fault naming the story; an issue really outside the project is still named
   (`GitHubGraphQl.projectItems`), and a story's sub-issues from the issue's own `subIssues`. `IssueMapping.story`
   names the fault for a sub-issue whose node id the item list does not hold. The read is right on what it reads: the
   two GitHub lists disagreed for a moment, which is inferred to be GitHub's item list lagging an add, not measured.
-- The reader, for each sub-issue the item list does not hold, reads that issue's `projectItems` once: when it stands
-  on the tracked project, the board is read again after a short wait, at most a bounded number of times, and only
-  then is the fault named; when it does not, the fault is named at once, as today.
-- The joint run's setup waits until the project's item list holds every item it added, before the planner starts.
+- Built: `IssueMapping` answers, beside its faults, the node ids of the sub-issues it named outside the project.
+  `ItemsBoardReader` keeps those the item list does not hold at all (a listed sub-issue of a repository the project
+  does not plan is no lag) and reads their own project items in one `issueBoard` query per hundred, through
+  `ProjectQueries`, which `GitHubPace` watches as it watches the other reads. When one of them names the project, the
+  item list is read again after a pause of 1 s, at most 3 times, while it still lacks one of those; the fault is then
+  named as before if it still does. A sub-issue whose project items name no project is named at once, with no read
+  again. A board whose stories' sub-issues are all listed makes no extra call. One INFO line says how many sub-issues
+  lagged and how often the list was read, with no issue text and no token.
+- The query and its answer records are the forge client's existing `issueBoard`, which builds its records from the
+  JSON tree without reflection, so no native-image registration is added.
+- The joint run's setup waits until the project's item list holds every item it added, before the planner starts;
+  that change lies in the acceptance scripts outside this repository.
 - Red first, `ItemsBoardReaderTest` over the fake: a sub-issue missing from the first item list and present in the
-  second, with its `projectItems` naming the project, reads without a fault; one whose `projectItems` names no
-  project still reads with the fault and no second read. Harm: a board shown with a story missing an issue, or a
-  fault the person cannot act on, after their own add.
+  second, with its project items naming the project, reads without a fault after one more read; one whose project
+  items name no project reads with the fault and no second read; one still missing after the bound reads with the
+  fault; a board with every sub-issue listed, and one whose sub-issue is listed in a repository the project does not
+  plan, make no `issueBoard` call. Harm: a board shown with a story missing an issue, or a fault the person cannot act
+  on, after their own add; and the person's rate limit spent on extra reads.
 
 ## Acceptance
 

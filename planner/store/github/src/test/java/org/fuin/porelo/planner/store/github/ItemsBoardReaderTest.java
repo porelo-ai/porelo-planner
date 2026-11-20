@@ -21,6 +21,8 @@ import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl.BoardIssue;
 import org.fuin.porelo.forge.github.GitHubGraphQl.FieldOption;
+import org.fuin.porelo.forge.github.GitHubGraphQl.IssueBoard;
+import org.fuin.porelo.forge.github.GitHubGraphQl.IssueOnBoard;
 import org.fuin.porelo.forge.github.GitHubGraphQl.IssueRef;
 import org.fuin.porelo.forge.github.GitHubGraphQl.IssueRefs;
 import org.fuin.porelo.forge.github.GitHubGraphQl.ItemValue;
@@ -88,7 +90,9 @@ class ItemsBoardReaderTest {
     private static final class GitHub {
         private final Deque<Supplier<ProjectFields>> fields = new ArrayDeque<>();
         private final Deque<Supplier<ProjectItems>> items = new ArrayDeque<>();
+        private final Deque<Supplier<IssueBoard>> boards = new ArrayDeque<>();
         private final List<String> calls = new ArrayList<>();
+        private final List<Duration> pauses = new ArrayList<>();
         private final AtomicInteger tokenAsks = new AtomicInteger();
 
         private GitHub fieldsPage(final List<ProjectField> page, final @Nullable String next) {
@@ -101,6 +105,31 @@ class ItemsBoardReaderTest {
 
         private GitHub itemsPage(final @Nullable String next, final ProjectItem... page) {
             items.add(() -> new ProjectItems(List.of(page), info(next), COST));
+            return this;
+        }
+
+        /**
+         * The issues' own project items as GitHub answers them, each on the project or not, in the
+         * order asked.
+         */
+        private GitHub issuesOnProject(final boolean... onProject) {
+            boards.add(
+                    () -> {
+                        final List<@Nullable IssueOnBoard> issues = new ArrayList<>();
+                        for (final boolean on : onProject) {
+                            issues.add(
+                                    new IssueOnBoard(
+                                            issue(
+                                                    OWNER + "/example-lib",
+                                                    3,
+                                                    List.of(),
+                                                    null,
+                                                    refs(false)),
+                                            on ? "PVTI_lib_3" : null,
+                                            List.of()));
+                        }
+                        return new IssueBoard(issues, COST);
+                    });
             return this;
         }
 
@@ -122,13 +151,18 @@ class ItemsBoardReaderTest {
                             ProjectQueries.class.getClassLoader(),
                             new Class<?>[] {ProjectQueries.class},
                             (proxy, method, args) -> {
-                                calls.add(method.getName() + " after " + args[3]);
+                                if (method.getName().equals("issueBoard")) {
+                                    calls.add("issueBoard of " + args[1] + " in " + args[2]);
+                                } else {
+                                    calls.add(method.getName() + " after " + args[3]);
+                                }
                                 assertThat(args[0])
                                         .as("the token the read asked for")
                                         .isEqualTo(TOKEN);
                                 return switch (method.getName()) {
                                     case "projectFields" -> next(fields).get();
                                     case "projectItems" -> next(items).get();
+                                    case "issueBoard" -> next(boards).get();
                                     default ->
                                             throw new AssertionError(
                                                     "A board read called " + method.getName());
@@ -152,7 +186,10 @@ class ItemsBoardReaderTest {
                         return TOKEN;
                     },
                     refusals,
-                    FIRST_OPEN);
+                    FIRST_OPEN,
+                    InstantSource.system(),
+                    ItemsBoardReader.DEADLINE,
+                    pauses::add);
         }
 
         private Snapshot read() {
@@ -895,7 +932,7 @@ class ItemsBoardReaderTest {
                         .toList();
         assertThat(reads)
                 .as("all a board read can call")
-                .containsExactly("projectFields", "projectItems");
+                .containsExactly("issueBoard", "projectFields", "projectItems");
 
         final GitHub github =
                 new GitHub()
@@ -903,10 +940,173 @@ class ItemsBoardReaderTest {
                         .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
         github.read();
         assertThat(github.calls)
-                .as("only the two reads were sent")
+                .as("only the reads were sent")
                 .allMatch(
                         call ->
                                 call.startsWith("projectFields")
-                                        || call.startsWith("projectItems"));
+                                        || call.startsWith("projectItems")
+                                        || call.startsWith("issueBoard"));
+    }
+
+    @Test
+    void aReadStoppedWhileItWaitsForTheItemListIsUnreachableAndKeepsTheThreadStopped() {
+        // Harm: a stopped read that is swallowed keeps the thread working after its owner asked
+        // it to stop, or answers a board as whole that it never finished reading.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3))
+                        .issuesOnProject(true);
+        final ItemsBoardReader reader =
+                new ItemsBoardReader(
+                        github.queries(),
+                        origin -> TOKEN,
+                        AccessRefusals.DEFAULT,
+                        FIRST_OPEN,
+                        InstantSource.system(),
+                        ItemsBoardReader.DEADLINE,
+                        length -> {
+                            throw new InterruptedException("stopped");
+                        });
+        try {
+            assertThatThrownBy(() -> reader.read(CONFIG))
+                    .as("the read stopped while it waited")
+                    .isInstanceOf(StoreException.Unreachable.class);
+            assertThat(Thread.currentThread().isInterrupted())
+                    .as("the thread still told to stop")
+                    .isTrue();
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void aSubIssueTheItemListLacksButThatNamesTheProjectIsReadOnceTheListHoldsIt() {
+        // Harm: a person who adds an issue to the project and opens the board at once sees a
+        // fault they cannot act on, and the story without the issue.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3))
+                        .issuesOnProject(true)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
+
+        final Board board = github.read().board();
+
+        assertThat(board.faults()).as("no fault once the list holds the issue").isEmpty();
+        assertThat(board.stories().get(0).issues())
+                .as("the story with its issue")
+                .containsExactly("example-lib#3");
+        assertThat(github.calls)
+                .as("the issue's own projects asked once, then the list read again")
+                .containsExactly(
+                        "projectFields after null",
+                        "projectItems after null",
+                        "issueBoard of [" + LIB_3 + "] in PVT_1",
+                        "projectItems after null");
+        assertThat(github.pauses)
+                .as("one pause before the read again")
+                .containsExactly(ItemsBoardReader.REREAD_PAUSE);
+    }
+
+    @Test
+    void aSubIssueWhoseOwnProjectItemsNameNoProjectIsAFaultWithoutAReadAgain() {
+        // Harm: an issue really outside the project hides from the person, or holds every board
+        // read for seconds and spends the person's rate limit on reads again.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3))
+                        .issuesOnProject(false);
+
+        final Board board = github.read().board();
+
+        assertThat(board.faults())
+                .as("the sub-issue outside the project named")
+                .containsExactly("example-project#1 has a sub-issue outside the project");
+        assertThat(github.calls)
+                .as("no read again of the list")
+                .containsExactly(
+                        "projectFields after null",
+                        "projectItems after null",
+                        "issueBoard of [" + LIB_3 + "] in PVT_1");
+        assertThat(github.pauses).as("no pause").isEmpty();
+    }
+
+    @Test
+    void aSubIssueTheItemListStillLacksAfterTheLastReadAgainIsAFault() {
+        // Harm: a board read that waits on GitHub's list without end, or shows a story as whole
+        // while an issue of it is missing.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3))
+                        .issuesOnProject(true);
+        for (int again = 0; again < ItemsBoardReader.MOST_REREADS; again++) {
+            github.itemsPage(null, story("High", LIB_3));
+        }
+
+        final Board board = github.read().board();
+
+        assertThat(board.faults())
+                .as("the sub-issue still missing named")
+                .containsExactly("example-project#1 has a sub-issue outside the project");
+        assertThat(github.calls.stream().filter(call -> call.startsWith("projectItems")))
+                .as("the list read once and then as often as the bound allows")
+                .hasSize(1 + ItemsBoardReader.MOST_REREADS);
+        assertThat(github.calls.stream().filter(call -> call.startsWith("issueBoard")))
+                .as("the issue's own projects asked once")
+                .hasSize(1);
+        assertThat(github.pauses)
+                .as("a pause before each read again")
+                .hasSize(ItemsBoardReader.MOST_REREADS);
+    }
+
+    @Test
+    void aBoardWhoseStoriesHaveEverySubIssueListedAsksForNoIssuesProjects() {
+        // Harm: every board read spends the person's rate limit on a read only a missing
+        // sub-issue needs.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
+
+        github.read();
+
+        assertThat(github.calls)
+                .as("only the fields and the items")
+                .containsExactly("projectFields after null", "projectItems after null");
+        assertThat(github.pauses).as("no pause").isEmpty();
+    }
+
+    @Test
+    void aListedSubIssueOfARepositoryTheProjectDoesNotPlanAsksForNoIssuesProjects() {
+        // Harm: a sub-issue in a repository outside the project, which the list holds, holds
+        // every board read for seconds and spends the person's rate limit on reads again.
+        final String other = node(OWNER + "/example-other", 5);
+        final ProjectItem otherIssue =
+                new ProjectItem(
+                        "PVTI_other_5",
+                        false,
+                        issue(
+                                OWNER + "/example-other",
+                                5,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false)),
+                        List.of(option("F_status", "Backlog")));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", other), otherIssue);
+
+        final Board board = github.read().board();
+
+        assertThat(board.faults())
+                .as("the sub-issue named outside the project")
+                .contains("example-project#1 has a sub-issue outside the project");
+        assertThat(github.calls)
+                .as("only the fields and the items")
+                .containsExactly("projectFields after null", "projectItems after null");
     }
 }

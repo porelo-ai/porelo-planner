@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,12 +31,26 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Reads the whole GitHub project through its fields and every page of its items, and maps them to a
  * board. It only reads: nothing it holds can change the person's project.
  */
 public final class ItemsBoardReader implements BoardReader {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ItemsBoardReader.class);
+
+    /**
+     * How often, a second apart, the item list is read again while it lacks an issue whose own
+     * project items name the project: GitHub's list lags an add for a moment, and a person opening
+     * the board waits a few seconds at most for it.
+     */
+    static final int MOST_REREADS = 3;
+
+    /** The pause before each read again of the item list. */
+    static final Duration REREAD_PAUSE = Duration.ofSeconds(1);
 
     /** The most pages of items or fields one read takes; a project beyond them is not read. */
     static final int MOST_PAGES = 50;
@@ -66,6 +81,21 @@ public final class ItemsBoardReader implements BoardReader {
     private final InstantSource clock;
 
     private final Duration deadline;
+
+    private final Pause pause;
+
+    /** Waits between two reads of the item list. */
+    @FunctionalInterface
+    interface Pause {
+
+        /**
+         * Waits.
+         *
+         * @param length how long
+         * @throws InterruptedException if the thread is stopped while it waits
+         */
+        void take(Duration length) throws InterruptedException;
+    }
 
     /**
      * Makes the reader.
@@ -100,12 +130,35 @@ public final class ItemsBoardReader implements BoardReader {
             final StoryStates states,
             final InstantSource clock,
             final Duration deadline) {
+        this(queries, tokens, refusals, states, clock, deadline, Thread::sleep);
+    }
+
+    /**
+     * Makes the reader with its own clock, deadline and pause.
+     *
+     * @param queries the project's reads
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param clock tells the time the deadline is measured by
+     * @param deadline how long one read may take
+     * @param pause waits before the item list is read again
+     */
+    ItemsBoardReader(
+            final ProjectQueries queries,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final InstantSource clock,
+            final Duration deadline,
+            final Pause pause) {
         this.queries = queries;
         this.tokens = tokens;
         this.refusals = refusals;
         this.states = states;
         this.clock = clock;
         this.deadline = deadline;
+        this.pause = pause;
     }
 
     @Override
@@ -154,9 +207,87 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
         checkFields(config, dataTypes, optionIds, faults);
+        final ProjectConfig read =
+                new ProjectConfig(
+                        config.forge(),
+                        config.project(),
+                        config.commit(),
+                        config.workflow(),
+                        config.work(),
+                        config.repositories(),
+                        fieldIds,
+                        optionIds,
+                        projectId);
 
+        ItemsRead current = items(call, read, fieldNames);
+        final Set<String> lagging = onProject(call, read, current.missing());
+        int reads = 1;
+        while (current.lacksAny(lagging) && reads <= MOST_REREADS) {
+            pause(config);
+            current = items(call, read, fieldNames);
+            reads++;
+        }
+        if (!lagging.isEmpty()) {
+            LOG.info(
+                    "GitHub's item list of the project lacked {} sub-issues that name the project;"
+                            + " it was read {} times and {}",
+                    lagging.size(),
+                    reads,
+                    current.lacksAny(lagging) ? "still lacked them" : "then held them");
+        }
+
+        final List<String> allFaults = new ArrayList<>(faults);
+        allFaults.addAll(current.faults());
+        final IssueMapping.Mapped mapped = current.mapped();
+        final Board board =
+                new Board(
+                        revision(config.commit(), current.items().values(), fieldNames, allFaults),
+                        read.workflow(),
+                        mapped.stories(),
+                        mapped.issues(),
+                        read.work(),
+                        read.repositories(),
+                        allFaults,
+                        read.project().owner());
+        final Map<String, ItemView> byId = new LinkedHashMap<>();
+        for (final ItemView view : current.views()) {
+            final String id = IssueMapping.idOf(view);
+            if (id != null) {
+                byId.putIfAbsent(id, view);
+            }
+        }
+        return new Snapshot(board, byId, read);
+    }
+
+    /**
+     * One read of the project's item list and what it maps to.
+     *
+     * @param items the items by their ids, in GitHub's order
+     * @param views the items the board maps
+     * @param faults the faults of the items and their mapping, in that order
+     * @param mapped the stories and issues
+     * @param missing the node ids of sub-issues named outside the project that no item of the list
+     *     holds
+     */
+    private record ItemsRead(
+            Map<String, GitHubGraphQl.ProjectItem> items,
+            List<ItemView> views,
+            List<String> faults,
+            IssueMapping.Mapped mapped,
+            Set<String> missing) {
+
+        /** Whether the list still lacks one of the issues given. */
+        boolean lacksAny(final Set<String> issueIds) {
+            return issueIds.stream().anyMatch(missing::contains);
+        }
+    }
+
+    /** Reads every page of the project's items and maps them. */
+    private ItemsRead items(
+            final Call call, final ProjectConfig read, final Map<String, String> fieldNames) {
+        final String token = call.token;
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>();
-        after = null;
+        @Nullable String after = null;
         for (int page = 1; ; page++) {
             final @Nullable String cursor = after;
             final GitHubGraphQl.ProjectItems answer =
@@ -164,12 +295,12 @@ public final class ItemsBoardReader implements BoardReader {
                             () ->
                                     queries.projectItems(
                                             token,
-                                            config.project().owner(),
-                                            config.project().number(),
+                                            read.project().owner(),
+                                            read.project().number(),
                                             cursor));
             if (answer.items().size() > PAGE_SIZE) {
                 throw new StoreException.Unreadable(
-                        config.own(), "GitHub answered a page with more items than asked for");
+                        read.own(), "GitHub answered a page with more items than asked for");
             }
             for (final GitHubGraphQl.ProjectItem item : answer.items()) {
                 // An item seen again on a later page, as GitHub's order shifts while it is read,
@@ -184,46 +315,60 @@ public final class ItemsBoardReader implements BoardReader {
         // The last answer may come after the deadline as well.
         call.inTime();
 
-        final ProjectConfig read =
-                new ProjectConfig(
-                        config.forge(),
-                        config.project(),
-                        config.commit(),
-                        config.workflow(),
-                        config.work(),
-                        config.repositories(),
-                        fieldIds,
-                        optionIds,
-                        projectId);
+        final List<String> faults = new ArrayList<>();
         final List<ItemView> views = new ArrayList<>();
         final Set<String> overflowing = new HashSet<>();
+        final Set<String> listed = new HashSet<>();
         for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue != null) {
+                listed.add(issue.id());
+            }
             final ItemView view = view(item, read, fieldNames, faults, overflowing);
             if (view != null) {
                 views.add(view);
             }
         }
         final IssueMapping.Mapped mapped = IssueMapping.read(views, overflowing, read, states);
-        final List<String> allFaults = new ArrayList<>(faults);
-        allFaults.addAll(mapped.faults());
-        final Board board =
-                new Board(
-                        revision(config.commit(), items.values(), fieldNames, allFaults),
-                        read.workflow(),
-                        mapped.stories(),
-                        mapped.issues(),
-                        read.work(),
-                        read.repositories(),
-                        allFaults,
-                        read.project().owner());
-        final Map<String, ItemView> byId = new LinkedHashMap<>();
-        for (final ItemView view : views) {
-            final String id = IssueMapping.idOf(view);
-            if (id != null) {
-                byId.putIfAbsent(id, view);
+        faults.addAll(mapped.faults());
+        // A sub-issue the list holds lies in a repository the project does not plan: no lag.
+        final Set<String> missing = new LinkedHashSet<>(mapped.outside());
+        missing.removeAll(listed);
+        return new ItemsRead(items, views, faults, mapped, missing);
+    }
+
+    /**
+     * Answers those of the issues given whose own project items name the project, in one read of
+     * each hundred; none is read when none is given.
+     */
+    private Set<String> onProject(
+            final Call call, final ProjectConfig read, final Set<String> issueIds) {
+        final Set<String> onProject = new LinkedHashSet<>();
+        final List<String> all = List.copyOf(issueIds);
+        for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
+            final List<String> chunk =
+                    all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
+            final GitHubGraphQl.IssueBoard answer =
+                    call.of(() -> queries.issueBoard(call.token, chunk, read.projectId()));
+            for (int at = 0; at < chunk.size() && at < answer.issues().size(); at++) {
+                final GitHubGraphQl.IssueOnBoard issue = answer.issues().get(at);
+                if (issue != null && issue.itemId() != null) {
+                    onProject.add(chunk.get(at));
+                }
             }
         }
-        return new Snapshot(board, byId, read);
+        return onProject;
+    }
+
+    /** Waits before the item list is read again; a read stopped while it waits is refused. */
+    private void pause(final ProjectConfig config) {
+        try {
+            pause.take(REREAD_PAUSE);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new StoreException.Unreachable(
+                    config.own(), "the read was stopped while it waited for GitHub's item list");
+        }
     }
 
     /** One read's calls: its token, its deadline, and how a failure is answered. */

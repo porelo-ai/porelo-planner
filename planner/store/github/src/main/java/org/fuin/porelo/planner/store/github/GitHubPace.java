@@ -174,6 +174,16 @@ public final class GitHubPace implements Pace {
                     throw noted(e);
                 }
             }
+
+            @Override
+            public GitHubGraphQl.IssueBoard issueBoard(
+                    final String token, final List<String> issueIds, final String projectId) {
+                try {
+                    return queries.issueBoard(token, issueIds, projectId);
+                } catch (final GitHubException e) {
+                    throw noted(e);
+                }
+            }
         };
     }
 

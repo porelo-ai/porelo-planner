@@ -685,6 +685,12 @@ class ConditionalChangeProbeTest {
                 return new GitHubGraphQl.ProjectItems(
                         List.of(), new GitHubGraphQl.PageInfo(false, null), COST);
             }
+
+            @Override
+            public GitHubGraphQl.IssueBoard issueBoard(
+                    final String token, final List<String> issueIds, final String projectId) {
+                throw new AssertionError("An empty project has no sub-issue to look up");
+            }
         };
     }
 

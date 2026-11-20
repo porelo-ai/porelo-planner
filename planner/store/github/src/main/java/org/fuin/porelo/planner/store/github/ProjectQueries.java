@@ -1,11 +1,12 @@
 package org.fuin.porelo.planner.store.github;
 
+import java.util.List;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The two reads of a GitHub project the board is made from, and nothing that writes: a board read
- * holds no way to change the person's project.
+ * The reads of a GitHub project the board is made from, and nothing that writes: a board read holds
+ * no way to change the person's project.
  */
 public interface ProjectQueries {
 
@@ -34,10 +35,20 @@ public interface ProjectQueries {
             String token, String owner, int number, @Nullable String after);
 
     /**
+     * Reads issues by their node ids, each with its item and field values in the project.
+     *
+     * @param token the person's token
+     * @param issueIds the issues' node ids, distinct, at most {@link GitHubGraphQl#MAX_ISSUES}
+     * @param projectId the project's node id
+     * @return the issues, null where GitHub knows none
+     */
+    GitHubGraphQl.IssueBoard issueBoard(String token, List<String> issueIds, String projectId);
+
+    /**
      * Reads through the forge client's GraphQL calls.
      *
      * @param client the client
-     * @return its two reads
+     * @return its reads
      */
     static ProjectQueries over(final GitHubGraphQl client) {
         return new ProjectQueries() {
@@ -57,6 +68,12 @@ public interface ProjectQueries {
                     final int number,
                     final @Nullable String after) {
                 return client.projectItems(token, owner, number, after);
+            }
+
+            @Override
+            public GitHubGraphQl.IssueBoard issueBoard(
+                    final String token, final List<String> issueIds, final String projectId) {
+                return client.issueBoard(token, issueIds, projectId);
             }
         };
     }

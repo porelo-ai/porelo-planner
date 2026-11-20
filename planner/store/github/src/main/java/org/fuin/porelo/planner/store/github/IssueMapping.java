@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,13 +48,16 @@ public final class IssueMapping {
      *     number fields; an issue whose comments were not read has none
      * @param rewrite the issues whose number fields disagree with their sums, which the next save
      *     of each writes again
+     * @param outside the node ids of the sub-issues a story was named to have outside the project,
+     *     each once
      */
     public record Mapped(
             List<Story> stories,
             List<Issue> issues,
             List<String> faults,
             Map<String, StageComment.Sums> sums,
-            List<String> rewrite) {
+            List<String> rewrite,
+            List<String> outside) {
 
         /** Copies the lists and the map. */
         public Mapped {
@@ -62,6 +66,7 @@ public final class IssueMapping {
             faults = List.copyOf(faults);
             sums = Collections.unmodifiableMap(new LinkedHashMap<>(sums));
             rewrite = List.copyOf(rewrite);
+            outside = List.copyOf(outside);
         }
     }
 
@@ -196,6 +201,7 @@ public final class IssueMapping {
         }
 
         final List<Story> stories = new ArrayList<>();
+        final Set<String> outside = new LinkedHashSet<>();
         for (final Map.Entry<String, ItemView> entry : storyItems.entrySet()) {
             final Story story =
                     story(
@@ -206,7 +212,8 @@ public final class IssueMapping {
                             config.repositories(),
                             states,
                             workflow,
-                            faults);
+                            faults,
+                            outside);
             if (story != null) {
                 stories.add(story);
             }
@@ -221,7 +228,7 @@ public final class IssueMapping {
                 issues.values().stream()
                         .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
                         .toList();
-        return new Mapped(sortedStories, sortedIssues, faults, sums, rewrite);
+        return new Mapped(sortedStories, sortedIssues, faults, sums, rewrite, List.copyOf(outside));
     }
 
     /**
@@ -337,7 +344,8 @@ public final class IssueMapping {
             final List<String> repositories,
             final StoryStates states,
             final Workflow workflow,
-            final List<String> faults) {
+            final List<String> faults,
+            final Set<String> outside) {
         final List<String> own = new ArrayList<>();
         boolean whole = true;
         for (final String subIssueId : item.subIssueIds()) {
@@ -347,6 +355,7 @@ public final class IssueMapping {
             } else {
                 if (subId == null) {
                     faults.add(id + " has a sub-issue outside the project");
+                    outside.add(subIssueId);
                 }
                 whole = false;
             }

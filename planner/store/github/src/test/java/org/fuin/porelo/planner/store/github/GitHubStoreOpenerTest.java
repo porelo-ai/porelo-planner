@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.fuin.porelo.forge.github.GitHubExceptions;
+import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GitHubGraphQl.PageInfo;
 import org.fuin.porelo.forge.github.GitHubGraphQl.ProjectFields;
 import org.fuin.porelo.forge.github.GitHubGraphQl.ProjectItems;
@@ -93,6 +94,12 @@ class GitHubStoreOpenerTest {
                     final @Nullable String after) {
                 calls.add("projectItems");
                 return new ProjectItems(List.of(), new PageInfo(false, null), COST);
+            }
+
+            @Override
+            public GitHubGraphQl.IssueBoard issueBoard(
+                    final String token, final List<String> issueIds, final String projectId) {
+                throw new AssertionError("An empty project has no sub-issue to look up");
             }
         };
     }
