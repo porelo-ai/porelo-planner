@@ -370,6 +370,17 @@ final class CarryOverCommand {
         } else {
             seed = Map.of();
         }
+        // The project.yml an earlier run wrote ends in what it added; this run would add the same.
+        if (written && !before.endsWith(changed("", target, seed))) {
+            say(
+                    err,
+                    secrets,
+                    projectFile
+                            + " was written by an earlier run of this carry-over with another seed"
+                            + " than this run names; run it again as before, with the same --seed"
+                            + " or none, and change the velocity in project.yml afterwards");
+            return WorkCommands.UNANSWERED;
+        }
         if (!onTarget(read.project(), arguments, err, secrets)) {
             return WorkCommands.UNANSWERED;
         }

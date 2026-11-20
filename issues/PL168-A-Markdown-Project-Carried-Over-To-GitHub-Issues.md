@@ -89,7 +89,8 @@ first as a dry run, and every reference between the carried stories and issues p
   others, is refused.
 - **`project.yml`** is written only after the second pass ended whole: `tracker` and, with `--seed`, the seed are
   added below what the person wrote, its SHA-256 recorded in the map first, so a run again after a stop between the
-  write and the map's removal takes the change as its own. Nothing is committed; the last line says to review it,
+  write and the map's removal takes the change as its own; such a run again naming another seed than the one
+  written is refused, project.yml left as it is. Nothing is committed; the last line says to review it,
   sign it with `porelo project sign` and commit it, and the line before says the map was removed.
 - Every line the command says on the error stream is taken through the token's removal and the Git store's removal
   of secrets, and every failure, an unforeseen one too, ends it non-zero without a body or a comment in its words.

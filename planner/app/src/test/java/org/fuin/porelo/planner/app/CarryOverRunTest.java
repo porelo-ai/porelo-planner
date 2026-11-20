@@ -227,15 +227,16 @@ class CarryOverRunTest {
         assertThat(map()).as("the map after the run again").doesNotExist();
     }
 
-    @Test
-    void aRunAgainAfterProjectYmlWasWrittenTakesItAsItsOwn() throws Exception {
-        // Harm: a run that stopped after writing project.yml can never end, since it refuses
-        // the tracker it wrote itself.
+    /** Stops a run, then writes project.yml and records it as a run would just before its stop. */
+    private String stoppedAfterProjectYml(final String block) throws Exception {
         github.failingIssue = 2;
         assertThat(carry().code()).as("the stop").isEqualTo(WorkCommands.UNANSWERED);
         github.failingIssue = 0;
         final String written =
-                projectFile() + "\ntracker:\n    kind: \"github\"\n    project: \"porelo-ai/7\"\n";
+                projectFile()
+                        + "\n# The tracker that keeps the stories and issues since the carry-over.\n"
+                        + "tracker:\n    kind: \"github\"\n    project: \"porelo-ai/7\"\n"
+                        + block;
         Files.writeString(root.resolve("porelo-sample/project.yml"), written);
         final CarryOverMap kept = CarryOverMap.read(Files.readAllBytes(map()));
         kept.projectFile(
@@ -244,6 +245,31 @@ class CarryOverRunTest {
                                 MessageDigest.getInstance("SHA-256")
                                         .digest(written.getBytes(StandardCharsets.UTF_8))));
         Files.write(map(), kept.json(), StandardOpenOption.TRUNCATE_EXISTING);
+        return written;
+    }
+
+    @Test
+    void aRunAgainWithAnotherSeedThanProjectYmlWasWrittenWithIsRefused() throws Exception {
+        // Harm: a seed given or changed for the run again is dropped while the run says
+        // project.yml names it.
+        final String written = stoppedAfterProjectYml("");
+        final WorkFixture.Answer again =
+                carry("--seed", seed("repository,size,minutes\nporelo-alpha,S,42\n").toString());
+        assertThat(again.code()).as("the exit code").isEqualTo(WorkCommands.UNANSWERED);
+        assertThat(again.err()).as("the refusal").contains("another seed");
+        assertThat(again.out()).as("what the run said").doesNotContain("now names");
+        assertThat(projectFile()).as("project.yml").isEqualTo(written);
+        assertThat(map()).as("the map").exists();
+        final WorkFixture.Answer same = carry();
+        assertThat(same.code()).as("the run again as before; it said %s", same.err()).isZero();
+        assertThat(projectFile()).as("project.yml after it").isEqualTo(written);
+    }
+
+    @Test
+    void aRunAgainAfterProjectYmlWasWrittenTakesItAsItsOwn() throws Exception {
+        // Harm: a run that stopped after writing project.yml can never end, since it refuses
+        // the tracker it wrote itself.
+        final String written = stoppedAfterProjectYml("");
         final WorkFixture.Answer again = carry();
         assertThat(again.code()).as("the run again; it said %s", again.err()).isZero();
         assertThat(projectFile()).as("project.yml, not written twice").isEqualTo(written);
