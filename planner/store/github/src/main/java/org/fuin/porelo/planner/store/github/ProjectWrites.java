@@ -320,7 +320,7 @@ public interface ProjectWrites {
                     final OffsetDateTime made = issue.createdAt();
                     if (issue.pullRequest() == null
                             && author != null
-                            && login.equals(author.login())
+                            && login.equalsIgnoreCase(author.login())
                             && made != null
                             && !made.toInstant().isBefore(since)) {
                         found.add(
