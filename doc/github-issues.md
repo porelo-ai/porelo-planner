@@ -119,8 +119,8 @@ is made, and they become the story's sub-issues in the idea's order. GitHub drop
 without push access, so a story made or found without its label stops the write.
 
 A call that makes an issue is never sent twice blindly. When it goes without an answer, the planner reads the
-issues the person made in that repository from a minute before the call on, pull requests and the issues the board
-or the same write already holds left out: one with the same title and body is taken as made, none makes it once
+open issues the person made in that repository from a minute before the call on, pull requests, closed issues and
+the issues the board or the same write already holds left out, so a duplicate the person closed is never found again: one with the same title and body is taken as made, none makes it once
 more, and more than one stops the write, naming them. A call GitHub answered with a failure on its side, or with an
 answer that cannot be read, is not sent again. Once a call that makes an issue may have reached GitHub, every stop
 is refused as partly saved, naming the repositories, with the references of what GitHub holds in its words, so the

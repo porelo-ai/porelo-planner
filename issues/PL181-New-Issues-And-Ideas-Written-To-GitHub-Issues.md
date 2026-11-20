@@ -63,7 +63,7 @@ any project, and finds it on the board and on GitHub under its tracker reference
 - **The forge calls**: `ProjectWrites` gains `addProjectItems(token, projectId, issueIds)`, `createIssue(token,
   owner, repository, title, body, labels)` answering the node id, the REST id, the number and the labels,
   `addSubIssue(token, owner, repository, number, subIssueId)` and `issuesCreatedSince(token, owner, repository,
-  since, page)`, which reads the token's login and the repository's issues of state all since that moment; the
+  since, page)`, which reads the token's login and the repository's open issues since that moment, so a duplicate the person closed is never taken for one made; the
   carry-over's real run ([PL168](README.md#pl168)) uses the same ones. `StoreConfiguration` registers the new REST
   model classes for the native image.
 - Red first, each seen red with its guard broken: `FieldsBoardWriterTest` against the fake GitHub - an issue made,

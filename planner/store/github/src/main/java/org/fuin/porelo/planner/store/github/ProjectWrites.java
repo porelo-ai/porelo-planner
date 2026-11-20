@@ -170,8 +170,8 @@ public interface ProjectWrites {
     void addSubIssue(String token, String owner, String repository, int number, long subIssueId);
 
     /**
-     * Reads a page of the issues the token's owner made in a repository at or after a moment, open
-     * or closed, pull requests left out.
+     * Reads a page of the open issues the token's owner made in a repository at or after a moment,
+     * pull requests left out; an issue the person closed is never taken for one made.
      *
      * @param token the person's token
      * @param owner the repository's owner
@@ -309,7 +309,8 @@ public interface ProjectWrites {
                                 token,
                                 owner,
                                 repository,
-                                "all",
+                                // A duplicate the person closed is no longer the one made.
+                                "open",
                                 null,
                                 since,
                                 page,
