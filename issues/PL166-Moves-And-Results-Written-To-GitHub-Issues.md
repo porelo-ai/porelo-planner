@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 82,
   "blockedBy": ["PL165"],
-  "covers": "The GitHub store saves a move, a worker, a priority, a new issue, an idea and a task's stage result with the person's own GitHub access, without a commit: field changes bundled into one GraphQL mutation, a stale board refused, a partly saved batch named, and a stage result written into the issue's fixed block and as a comment under the person's name"
+  "covers": "The GitHub store saves a move, a worker, a priority, a new issue, an idea and a task's stage result with the person's own GitHub access, without a commit: field changes bundled into one GraphQL mutation, a stale board refused, a partly saved batch named, and a stage result and its footprint written into the issue's fixed block and as a comment under the person's name"
 }
 ```
 
@@ -29,11 +29,14 @@ stands on its issue under the person's name, with no fetch, commit or push.
   mutation (the story measured ten issues in three repositories at 6.3 s); a closed state also closes the issue.
   GitHub has no transaction: what failed after what succeeded is `PartlySaved` with the ids saved.
 - `createIssue`: issue, sub-issue link, project item and fields (four calls, measured 4.6 s), its id as [PL164](README.md#pl164)'s
-  answer gives it. `createIdea`: the story and its issues the same way, bundled.
-- `saveResult(result)`: the plan, why this size, to be checked into the fixed block of each issue's body, the new
+  answer gives it (the next number of its prefix). Two persons adding at once may count the same number: after the
+  write the planner reads the prefix's ids again, and of two items with one `Id` the one with the higher GitHub
+  number takes the next free one. `createIdea`: the story and its issues the same way, bundled.
+- `saveResult(result)`: the plan, why this size, to be checked and the stage's footprint into the fixed block of each issue's body, the new
   state into `State`, and one comment with the result, written with the person's token so GitHub shows the person
   as its author; findings become new issues as today.
-- The stage rule of measured states (a stage record needed) is checked before the write as the Git store checks it.
+- No stage record is written and no measured-state rule is checked: the stage's footprint is added to the fixed
+  block beside its analysis result, in the same body edit.
 - Red first: `GitHubStoreSaveTest` over recorded answers: a move of two issues in two repositories ends in one
   mutation; a board changed meanwhile is refused; the second of two calls failing gives `PartlySaved`; a stage
   result leaves the person's text above the fixed block byte for byte.

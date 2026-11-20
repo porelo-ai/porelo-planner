@@ -33,7 +33,8 @@ however many repositories it has, with exactly what GitHub holds.
   dependencies and bodies in one GraphQL query, paged by 100, bounded like the Git store (the most items, the
   longest body); `IssueMapping` ([PL164](README.md#pl164)) makes the `Board`. `Revision` is a digest of the items' `updatedAt` and
   the project files' commit. `textFormat()` is MARKDOWN; `storyState` uses the workflow as the Git store does.
-- Access: the person's GitHub token is taken as the Git store's lent login takes it, from Porelo's credential
+- Access: one fine-grained token, the person's existing Git token in Porelo's vault, which gains Issues and
+  organization Projects rights beside Contents; there is no separate planning token. It is taken as the Git store's lent login takes it, from Porelo's credential
   helper, `<porelo> vault credential --for <https address>` through `PORELO_EXECUTABLE` (`LentLogin`), so the
   window sends no token and no task holds one; it passes only through the helper's pipe, never a command line or a
   log. That lending is switched on by [PL125](README.md#pl125). Where the vault holds no token for the address, or
@@ -57,12 +58,6 @@ however many repositories it has, with exactly what GitHub holds.
   per page, measured, with the time.
 - A project without `tracker` opens as a Git store unchanged (the existing store tests stay green).
 - The native executable reads the test project (reflection metadata for the GraphQL records).
-
-## Open questions
-
-- Which GitHub access the person gives: a fine-grained token kept in Porelo's vault (repository issues read and
-  write, organization projects read and write), or GitHub's own sign-in of the person through a GitHub App the
-  project registers.
 
 ## To be checked
 

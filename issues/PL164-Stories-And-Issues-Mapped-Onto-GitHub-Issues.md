@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 80,
   "blockedBy": [],
-  "covers": "Every field the planner reads or writes of a story or an issue has one place in GitHub Issues: the story an issue in the project's own repository, its issues sub-issues in their repositories, state, priority, size, risk, worker and the old id as fields of one GitHub project, blockedBy as issue dependencies, plan and stage records in a fixed block of the body; written down as a page and as one mapping class tested both ways"
+  "covers": "Every field the planner reads or writes of a story or an issue has one place in GitHub Issues: the story an issue in the project's own repository, its issues sub-issues in their repositories, state, priority, size, risk, worker and the old id as fields of one GitHub project, blockedBy as issue dependencies, analysis result and footprint in a fixed block of the body, new ids continuing each prefix's numbers; written down as a page and as one mapping class tested both ways"
 }
 ```
 
@@ -35,9 +35,15 @@ with the same state, priority, size, risk, worker and waits, and the planner rea
     (agent, manual), `Id` (text, the Porelo id), `Rank` (number). The title is the GitHub title without the id;
     `covers` is the first paragraph of the body.
   - `blockedBy` is GitHub's issue dependency ("blocked by"), across repositories.
-  - What has no field - the plan, why this size, to be checked, the stage records of a measured state - stands in
-    one fixed block at the end of the body, between `<!-- porelo:begin -->` and `<!-- porelo:end -->`, as JSON in a
-    fenced block; the person's own text above it is never touched.
+  - What has no field stands in one fixed block at the end of the body: the analysis result (plan, why this size,
+    to be checked) and the footprint, one entry per stage (actor, model, effort, start, end, minutes, tokens, as a
+    stage record holds them today); the minutes a size took are its footprints' median. The block sits between
+    `<!-- porelo:begin -->` and `<!-- porelo:end -->`, as JSON in a fenced block; the person's own text above it is never touched. `stats/` and the rule that a measured state needs
+    a stage record do not carry over.
+  - An issue made after the cut-over gets the next number of its prefix: one above the highest of the `Id` of every
+    item on the GitHub project, closed ones included, and the prefix's floor in `project.yml` (`issueFloor`, per
+    prefix, the highest number ever used before the cut-over, written by the carry-over, since Finished and
+    Rejected rows are not carried). The order within a priority is the number field `Rank`, written by the planner.
   - A closed state (Finished, Rejected) also closes the GitHub issue (`completed`, `not_planned`); reopening sets
     the state back.
 - Code: a new module `planner/store/github` with `IssueMapping` (GitHub's answer as plain records in, `Story` and
@@ -45,7 +51,8 @@ with the same state, priority, size, risk, worker and waits, and the planner rea
   No HTTP here.
 - Red first: a round-trip test over a fixture of GitHub answers (a story with sub-issues in two repositories, a
   Porelo sub-issue, a dependency across repositories, a closed one) that reads `Story` and `Issue` and writes back
-  the same fields; a body whose person-written text holds `<!-- porelo:begin -->` in a code span stays intact.
+  the same fields; the next id of a prefix whose floor lies above its highest open `Id`; a body whose person-written
+  text holds `<!-- porelo:begin -->` in a code span stays intact.
 
 ## Acceptance
 
@@ -53,18 +60,11 @@ with the same state, priority, size, risk, worker and waits, and the planner rea
   dropped from the mapping.
 - A fixed block that is broken or present twice gives a board fault naming the issue, never a crash or a lost text.
 
-## Open questions
-
-- The id of an issue made after the cut-over: the next number of its prefix (the planner counts above the highest
-  `Id` on the board, so ids stay continuous with the carried-over ones), or the prefix with GitHub's own issue
-  number (never collides between two persons, but jumps and can clash with a carried-over id).
-- The order within a priority: a `Rank` number field the planner writes, or the GitHub project view's manual order
-  (a person can drag it, but the planner reads it only through the view).
-
 ## To be checked
 
 - That GitHub allows a sub-issue in another repository of the same owner, and its limits (sub-issues per parent,
   nesting depth), in the test organization.
 - That issue dependencies are readable and writable through GraphQL with a fine-grained token, and across
   repositories.
-- The longest stage record the body can carry (GitHub's body limit, 65536 characters) against today's longest plan.
+- The longest analysis result and footprint the body can carry (GitHub's body limit, 65536 characters) against
+  today's longest plan and `stats/` file.

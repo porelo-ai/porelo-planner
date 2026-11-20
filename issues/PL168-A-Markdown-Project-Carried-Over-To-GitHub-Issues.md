@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 84,
   "blockedBy": ["PL166"],
-  "covers": "A command of the planner's executable carries a project's Markdown stories and issues over to GitHub Issues: a dry run lists every issue, field, dependency and rewritten reference it would write; the real run keeps each old id, can be run again without doubling anything, and says what it could not carry"
+  "covers": "A command of the planner's executable carries a project's Markdown stories and open issues over to GitHub Issues: a dry run lists every issue, field, dependency and rewritten reference it would write; the real run keeps each old id, can be run again without doubling anything, and says what it could not carry"
 }
 ```
 
@@ -27,8 +27,11 @@ first as a dry run, and every story and issue keeps the id people know it by.
 - `porelo-planner carry-over --project <dir> --to <owner>/<number> [--dry-run]`: reads the board from the
   checkouts, writes through `GitHubStore` ([PL166](README.md#pl166)) with [PL164](README.md#pl164)'s mapping, the old id into `Id`. A story or issue whose
   `Id` is already on the GitHub project is updated, never made again, so a run that stopped can run again.
+- Only open issues, those with a file, are carried; Finished and Rejected rows of the indexes are not. The highest
+  number each prefix ever used, its rows included, is written into `project.yml` as that prefix's `issueFloor`, so a
+  new issue never takes a number already used.
 - References in the texts are rewritten: `[PL12](README.md#pl12)` and a link to another repository's index row
-  become the GitHub issue's address; a reference to a number not carried is listed, not guessed.
+  become the GitHub issue's address; a reference to a number not carried (a finished or rejected one) is listed and left as plain text, not guessed.
 - The dry run prints one line per item (id, repository, state, fields, dependencies, references rewritten) and
   writes nothing; the real run prints the same lines with the GitHub address and ends non-zero if any item failed.
 - Red first: `CarryOverTest` over a fixture project of two repositories with a story, a Porelo sub-issue, a
@@ -38,12 +41,8 @@ first as a dry run, and every story and issue keeps the id people know it by.
 ## Acceptance
 
 - In the test organization a copy of a real project is carried over: the dry run's count equals the board's, and
-  after the run the planner's board from GitHub equals the board from Markdown, id for id and field for field.
-
-## Open questions
-
-- Whether Finished and Rejected rows that have no file left (their one sentence in the index) are carried as closed
-  GitHub issues, so their numbers stay findable, or are left behind in the old indexes' history.
+  after the run the planner's board from GitHub equals the board from Markdown for every open issue, id for id and
+  field for field, and each prefix's `issueFloor` is its highest number used.
 
 ## To be checked
 
