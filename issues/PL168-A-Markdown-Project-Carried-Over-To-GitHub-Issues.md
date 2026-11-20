@@ -61,9 +61,11 @@ first as a dry run, and every reference between the carried stories and issues p
   and `addBlockedBy`. The map is `CarryOverMap`, kept by the app's `CarryOverState`.
 - **Before any call to GitHub** the command reads the checkouts, refuses a `project.yml` with changes not committed
   (or not tracked, or in a checkout that is no repository), refuses a `project.yml` naming a tracker or, with a
-  seed, a `velocity` already, checks the seed, and checks that every repository's address is
-  `https://github.com/<target owner>/<its name>`, since the GitHub store writes to a repository by the name
-  `project.yml` gives it.
+  seed, a `velocity` already, checks the seed, and checks that every repository stands at
+  `github.com/<target owner>/<its name>`, since the GitHub store writes to a repository by the name
+  `project.yml` gives it, named by an address a tracked project opens with: the tracked project's own rule
+  (`ProjectFile.home`), so `https://` or `<user>@github.com:<owner>/<name>`, never `ssh://`. A dry run checks the
+  addresses too.
 - **Before anything is made** the run plans the whole carry-over with every reference as
   `<repository>#999999999` and as the first pass writes it, and stops when a body, its `## Also needs` included, is
   longer than GitHub takes; a plan that is not whole is not carried at all. It reads the project's fields and

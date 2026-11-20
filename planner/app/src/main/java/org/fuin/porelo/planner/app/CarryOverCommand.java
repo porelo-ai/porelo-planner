@@ -31,8 +31,10 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.git.CheckoutProject;
+import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
+import org.fuin.porelo.planner.store.git.ProjectFile;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.github.CarryOver;
@@ -265,6 +267,9 @@ final class CarryOverCommand {
         if (arguments.seed() != null && seed(arguments, read, err, secrets) == null) {
             return WorkCommands.UNANSWERED;
         }
+        if (!onTarget(read.project(), arguments, err, secrets)) {
+            return WorkCommands.UNANSWERED;
+        }
         final CarryOverPlan plan = read.planner().apply(CarryOverPlan.References.BY_OLD_ID);
         plan.items().forEach(item -> out.println(item.line(true)));
         asides(read.project(), out);
@@ -365,26 +370,7 @@ final class CarryOverCommand {
         } else {
             seed = Map.of();
         }
-        final List<String> elsewhere = new ArrayList<>();
-        final String home = GITHUB + arguments.target().owner().toLowerCase(Locale.ROOT) + "/";
-        read.project()
-                .webs()
-                .forEach(
-                        (name, web) -> {
-                            if (!web.toLowerCase(Locale.ROOT)
-                                    .equals(home + name.toLowerCase(Locale.ROOT))) {
-                                elsewhere.add(name);
-                            }
-                        });
-        if (!elsewhere.isEmpty()) {
-            say(
-                    err,
-                    secrets,
-                    "repositories not on github.com under "
-                            + arguments.target().owner()
-                            + ": "
-                            + String.join(", ", elsewhere)
-                            + "; nothing was written");
+        if (!onTarget(read.project(), arguments, err, secrets)) {
             return WorkCommands.UNANSWERED;
         }
 
@@ -491,6 +477,58 @@ final class CarryOverCommand {
                         + " and is not committed: review it, sign it with `porelo project sign`"
                         + " and commit it");
         return 0;
+    }
+
+    /**
+     * Checks that every repository stands under the target's owner on github.com, by its own name,
+     * and is named by an address the tracked project accepts, since the GitHub store writes to a
+     * repository by the name {@code project.yml} gives it and the tracked project opens only by the
+     * tracked project's own rule.
+     */
+    private static boolean onTarget(
+            final CheckoutProject project,
+            final Arguments arguments,
+            final PrintStream err,
+            final List<String> secrets) {
+        final String owner = arguments.target().owner().toLowerCase(Locale.ROOT);
+        final URI home = URI.create(GITHUB + owner);
+        final List<String> elsewhere = new ArrayList<>();
+        project.centrals()
+                .forEach(
+                        (name, central) -> {
+                            final String web = project.webs().get(name);
+                            if (!home.equals(trackedHome(name, central))
+                                    || web == null
+                                    || !web.toLowerCase(Locale.ROOT)
+                                            .equals(
+                                                    GITHUB
+                                                            + owner
+                                                            + "/"
+                                                            + name.toLowerCase(Locale.ROOT))) {
+                                elsewhere.add(name);
+                            }
+                        });
+        if (elsewhere.isEmpty()) {
+            return true;
+        }
+        say(
+                err,
+                secrets,
+                "repositories not on github.com under "
+                        + arguments.target().owner()
+                        + " by an https or ssh address <user>@github.com:<owner>/<repository>: "
+                        + String.join(", ", elsewhere.stream().sorted().toList())
+                        + "; nothing was written");
+        return false;
+    }
+
+    /** The host and owner a tracked project takes a central for, or null when it refuses it. */
+    private static @Nullable URI trackedHome(final String name, final String central) {
+        try {
+            return ProjectFile.home(name, new CloneUrl(central));
+        } catch (final StoreException | IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** What the checkouts hold and how to plan their carry-over. */

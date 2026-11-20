@@ -210,8 +210,15 @@ public final class ProjectFile {
     /**
      * The https host and owner a repository stands under, {@code https://<host>/<owner>}: a tracker
      * is asked with the token of the own repository's host, so every repository must stand there.
+     * The one rule for an address a tracked project may name, also for whatever makes a project
+     * tracked.
+     *
+     * @param own the own repository's name, for a refusal
+     * @param url a repository's clone URL
+     * @return its host and owner, in lower case
+     * @throws StoreException.Unreadable when a tracked project may not name it
      */
-    private static URI home(final String own, final CloneUrl url) {
+    public static URI home(final String own, final CloneUrl url) {
         final java.util.regex.Matcher scp = SCP_HOME.matcher(url.value());
         if (scp.matches()) {
             return URI.create(

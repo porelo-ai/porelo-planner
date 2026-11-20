@@ -344,6 +344,45 @@ class CarryOverRunTest {
     }
 
     @Test
+    void aCentralATrackedProjectMayNotNameIsRefusedBeforeAnyCall() throws Exception {
+        // Harm: a project carried over whose project.yml names a repository by an address the
+        // tracked project refuses, so it never opens again once the tracker is written.
+        assertThat(projectFile())
+                .as("the fixture's ssh address")
+                .contains("git@github.com:porelo-ai/porelo-alpha.git");
+        assertThat(carry("--dry-run").code()).as("a dry run with ssh addresses").isZero();
+        final Path file = root.resolve("porelo-sample/project.yml");
+        Files.writeString(
+                file,
+                projectFile()
+                        .replace(
+                                "git@github.com:porelo-ai/porelo-alpha.git",
+                                "ssh://git@github.com/porelo-ai/porelo-alpha.git"));
+        git(
+                root.resolve("porelo-sample"),
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@example.org",
+                "commit",
+                "-qam",
+                "y");
+        for (final List<String> more : List.of(List.of("--dry-run"), List.<String>of())) {
+            final WorkFixture.Answer answer = carry(more.toArray(String[]::new));
+            assertThat(answer.code())
+                    .as("the exit code of %s", more)
+                    .isEqualTo(WorkCommands.UNANSWERED);
+            assertThat(answer.err())
+                    .as("the refusal of %s", more)
+                    .contains("not on github.com under porelo-ai")
+                    .contains("alpha");
+        }
+        assertThat(remotes).as("the GitHub clients made").isZero();
+        assertThat(github.calls).as("the calls").isEmpty();
+        assertThat(map()).as("the map").doesNotExist();
+    }
+
+    @Test
     void aMapMadeForAnotherCheckoutIsRefused() throws Exception {
         // Harm: a map of another project's run is taken, and its items are taken as this one's.
         for (final Path step : List.of(map().getParent().getParent(), map().getParent())) {

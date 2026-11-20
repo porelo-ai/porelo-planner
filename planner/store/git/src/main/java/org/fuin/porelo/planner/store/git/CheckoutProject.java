@@ -42,6 +42,8 @@ public final class CheckoutProject {
 
     private final Map<String, String> webs;
 
+    private final Map<String, String> centrals;
+
     private final Checkouts checkouts;
 
     private final Workflow workflow;
@@ -54,6 +56,7 @@ public final class CheckoutProject {
             final List<String> asides,
             final Map<String, Map<String, String>> paths,
             final Map<String, String> webs,
+            final Map<String, String> centrals,
             final Checkouts checkouts,
             final Workflow workflow,
             final String own) {
@@ -62,6 +65,7 @@ public final class CheckoutProject {
         this.asides = List.copyOf(asides);
         this.paths = Map.copyOf(paths);
         this.webs = Map.copyOf(webs);
+        this.centrals = Map.copyOf(centrals);
         this.checkouts = checkouts;
         this.workflow = workflow;
         this.own = own;
@@ -178,7 +182,15 @@ public final class CheckoutProject {
             }
         }
         return new CheckoutProject(
-                board, faults, asides, paths, webs, checkouts, workflow, project.own());
+                board,
+                faults,
+                asides,
+                paths,
+                webs,
+                project.centrals(),
+                checkouts,
+                workflow,
+                project.own());
     }
 
     /** Reads a file of a checkout, a refusal in the words of a file that cannot be read. */
@@ -261,6 +273,15 @@ public final class CheckoutProject {
      */
     public Map<String, String> webs() {
         return webs;
+    }
+
+    /**
+     * Answers each repository's central as {@code project.yml} names it, by its name.
+     *
+     * @return each repository's clone URL
+     */
+    public Map<String, String> centrals() {
+        return centrals;
     }
 
     /**
