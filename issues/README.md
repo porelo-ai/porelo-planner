@@ -45,7 +45,6 @@ left out.
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="pl183"></a>[PL183](PL183-Titles-And-Bodies-Edited-Through-The-Planners-API.md) | M | [PL182](README.md#pl182) | A story's or an issue's title and named body sections are changed through the planner's API against the revision the caller read, without losing a person's edit made on the tracker meanwhile; built right after the cut-over |
 | <a id="pl44"></a>[PL44](PL44-An-Estimate-Learns-From-The-Tokens-Spent.md) | L | [PL61](README.md#pl61) | A statistic per size and repository of the minutes and new tokens finished issues spent per phase is computed from Porelo's task records, and a task started for an estimate is handed it with the finished issue most like the new one |
 | <a id="pl56"></a>[PL56](PL56-The-Board-Builds-Only-What-Is-Seen.md) | L | - | The board builds only the cards in sight, so unfolding a column of hundreds of stories and every keystroke in the search answer within a frame; its speed is measured headless by the agent in profile mode, not by hand |
 
@@ -54,6 +53,7 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl180"></a>[PL180](PL180-The-Native-Mock-Start-On-Windows-Takes-Half-A-Minute.md) | S | - | The native planner started with --mock on GitHub's Windows runner writes its address file only after about 30 to 60 s, against well under a second on Linux, so NativeStartIT's 60 s bound fails the Windows Build now and then |
+| <a id="pl183"></a>[PL183](PL183-Titles-And-Bodies-Edited-Through-The-Planners-API.md) | M | [PL182](README.md#pl182) | A story's or an issue's title and named body sections are changed through the planner's API against the revision the caller read, without losing a person's edit made on the tracker meanwhile; built right after the cut-over |
 | <a id="pl153"></a>[PL153](PL153-Start-Work-Shows-A-Single-Choice-As-Text.md) | XS | [PL156](README.md#pl156) | The Start work dialog shows the machine and the working state as labeled text where there is only one to choose, and leaves the machine out where only one planner reports the project, instead of drop-down lists of one |
 | <a id="pl155"></a>[PL155](PL155-Start-Work-Preselects-An-Agent-Signed-In-There.md) | S | [PL156](README.md#pl156) | The Start work dialog preselects, for each task, the first agent of the rule's offered list that the window says is signed in on the machine the task goes to, says why it passed over the ones before it, and offers an agent not signed in there only as the person's own choice |
 | <a id="pl163"></a>[PL163](PL163-A-Discussion-Names-The-Repositories-As-The-Planner-Takes-Them.md) | S | - | The order of an idea discussion lists each repository by the name the idea's issues[].repository must carry, beside the folder the task really reads it from; the idea format allows only those names; a refused name is said with the names allowed |
