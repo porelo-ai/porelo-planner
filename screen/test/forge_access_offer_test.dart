@@ -25,6 +25,9 @@ class _Source extends Fake implements PlanningSource {
 
   @override
   Future<PlanningSnapshot> planningWorkflow(String project) async => _board();
+
+  @override
+  Future<PlanningSnapshot> stories(String project) async => _board();
 }
 
 /// A window that hands a token on when the test answers.
@@ -133,10 +136,69 @@ void main() {
     expect(source.fetches, hasLength(1), reason: 'the planner fetches the project anew');
     source.fetches.single.complete('r2');
     await tester.pump();
+    expect(board.refusal, isNotNull, reason: 'kept until a board read shows the access back');
     source.watches.last.add(_board());
     await tester.pump();
     expect(board.refusal, isNull, reason: 'the board read anew clears the refusal');
     expect(find.byKey(_offer), findsNothing, reason: 'the offer goes with it');
+  });
+
+  // Harm: the board stays refused after the token is in the vault, because its watch failed again meanwhile.
+  testWidgets('a token handed on while the watch failed meanwhile reads the board again', (tester) async {
+    final source = _Source();
+    final board = PlanningBoard(source, 'demo');
+    addTearDown(board.dispose);
+    source.watches.single.add(_board());
+    board.reportActionProblem(_missing);
+    final window = _Window();
+    await _show(tester, board, window);
+    await tester.tap(find.byKey(_offer));
+    await tester.pump();
+    source.watches.single.addError(_missing);
+    window.answers.single.complete(true);
+    await tester.pump();
+    expect(source.fetches, hasLength(1), reason: 'the same project is fetched anew');
+  });
+
+  // Harm: an offer held disabled, or a failure told, beside another project's refusal by a call made for the first.
+  testWidgets('a call for one project neither holds nor speaks beside the next project\'s offer', (tester) async {
+    final (_, board) = _refused(_missing);
+    final window = _Window();
+    await _show(tester, board, window);
+    await tester.tap(find.byKey(_offer));
+    await tester.pump();
+    final other = _Source();
+    await board.changeProject(other, 'other');
+    other.watches.single.addError(_missing);
+    await tester.pump();
+    expect(
+      tester.widget<ButtonStyleButton>(find.byKey(_offer)).onPressed,
+      isNotNull,
+      reason: 'the other project is offered while the first call runs',
+    );
+    window.answers.single.completeError(StateError('the vault is shut'));
+    await tester.pump();
+    expect(find.byKey(const Key('forge-access-failed')), findsNothing, reason: 'no failure of the first project told');
+  });
+
+  // Harm: the action's refusal words left above a board read anew, saying a refusal the token already mended.
+  testWidgets('a token handed on after an action was refused clears the action\'s words', (tester) async {
+    final source = _Source();
+    final board = PlanningBoard(source, 'demo');
+    addTearDown(board.dispose);
+    source.watches.single.add(_board());
+    await tester.pump();
+    board.reportActionProblem(_missing);
+    final window = _Window();
+    await _show(tester, board, window);
+    await tester.tap(find.byKey(_offer));
+    await tester.pump();
+    window.answers.single.complete(true);
+    await tester.pump();
+    source.fetches.single.complete('r2');
+    await tester.pump();
+    expect(board.refusal, isNull, reason: 'the board read anew clears the refusal');
+    expect(board.actionProblem, isNull, reason: 'the action\'s words go with it');
   });
 
   // Harm: a board read again for nothing, hiding why the person's token is still missing.

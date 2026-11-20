@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.fuin.porelo.forge.github.GitHubRefusals;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
@@ -190,5 +191,88 @@ class GitHubStoreTest {
                 .as("the board asked for after the refusal")
                 .isInstanceOf(StoreException.NoForgeAccess.class);
         assertThat(reads.get()).as("the board was read again").isEqualTo(3);
+    }
+
+    @Test
+    void aSaveRefusedAfterAPartWasWrittenReadsTheBoardAgainInsteadOfAnsweringTheBoardItKept() {
+        // Harm: the window shown the board from before the save, as if nothing of it was written.
+        final AtomicInteger reads = new AtomicInteger();
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        config -> snapshot("r" + reads.incrementAndGet()),
+                                        states -> null)
+                                .refusals(new ForgeAccessRefusals(URI.create("https://github.com")))
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public void save(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final Writes writes) {
+                                                throw new BoardWriter.AfterWriting(
+                                                        GitHubRefusals.answered(
+                                                                403,
+                                                                "refused",
+                                                                false,
+                                                                "issues=write"));
+                                            }
+                                        }));
+        store.board();
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        new Revision("r1"),
+                                        new Writes(Map.of(), Map.of(), List.of())))
+                .as("a save refused after its first part was written")
+                .isInstanceOf(StoreException.PartlySaved.class);
+        assertThat(store.board().revision())
+                .as("the board asked for after the partly saved write")
+                .isEqualTo(new Revision("r2"));
+    }
+
+    @Test
+    void aReadRefusedAfterAWriteIsPartlySavedNeverAMissingAccess() {
+        // Harm: a write that reached GitHub answered as refused before writing, so the window or
+        // a stage's hand-in makes it again once a token is handed on, writing it twice.
+        final AtomicInteger reads = new AtomicInteger();
+        final AtomicInteger writes = new AtomicInteger();
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        config -> {
+                                            if (reads.incrementAndGet() == 1) {
+                                                return snapshot("r1");
+                                            }
+                                            throw GitHubRefusals.answered(
+                                                    403,
+                                                    "refused",
+                                                    false,
+                                                    "organization_projects=read");
+                                        },
+                                        states -> null)
+                                .refusals(new ForgeAccessRefusals(URI.create("https://github.com")))
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public void save(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final Writes what) {
+                                                writes.incrementAndGet();
+                                            }
+                                        }));
+        store.board();
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        new Revision("r1"),
+                                        new Writes(Map.of(), Map.of(), List.of())))
+                .as("a save written whose following read GitHub refused")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .isNotInstanceOf(StoreException.NoForgeAccess.class);
+        assertThat(writes.get()).as("the writes made").isEqualTo(1);
     }
 }

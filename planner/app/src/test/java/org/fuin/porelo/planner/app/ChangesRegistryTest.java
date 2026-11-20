@@ -32,6 +32,8 @@ class ChangesRegistryTest {
 
     private volatile @Nullable RuntimeException refreshRefused;
 
+    private volatile @Nullable RuntimeException boardRefused;
+
     private final CountDownLatch slowRead = new CountDownLatch(1);
 
     private final Map<String, String> remote = new ConcurrentHashMap<>();
@@ -194,6 +196,22 @@ class ChangesRegistryTest {
         }
     }
 
+    @Test
+    void aReadAfterASaveThatFailsNeverReplacesTheSavesAnswer() throws Exception {
+        // Harm: a save answered with the read's failure instead of its own refusal or board, so
+        // the window is offered no token, or told a written save failed and makes it again.
+        projects.put("alpha", "one", null);
+        final Changes.Subscription one = registry.subscribe("alpha");
+        boardRefused = new StoreException.Unreachable("porelo-store", "timed out");
+        registry.saved("alpha");
+        assertThat(one.open()).as("the stream after a read that failed").isTrue();
+
+        boardRefused = new StoreException.NoForgeAccess("https://github.com", "Issues");
+        registry.saved("alpha");
+        assertThat(one.open()).as("the stream after the forge refused the read").isFalse();
+        assertThat(registry.followedProjects()).as("nothing followed").isZero();
+    }
+
     private PlanningStore store(final String repository) {
         opened.incrementAndGet();
         return new PlanningStore() {
@@ -203,6 +221,10 @@ class ChangesRegistryTest {
             public Board board() {
                 if (unreadable) {
                     throw new StoreException.Unreadable("porelo-store", "no JSON head");
+                }
+                final RuntimeException refused = boardRefused;
+                if (refused != null) {
+                    throw refused;
                 }
                 if (repository.equals("slow")) {
                     awaitSlowRead();

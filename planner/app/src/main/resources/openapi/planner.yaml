@@ -924,9 +924,10 @@ paths:
         one missing, saves nothing and its issues stay where they stand, under Needs you once the task ended. One
         offer has one outcome: the first hand-in's - saved, missing, or the refusal with its faults - is recorded,
         and a second hand-in of the same offer answers it again and writes nothing, whatever it holds; a save that
-        failed or did not end is recorded as a refusal, but for a store that refuses before it writes anything: busy,
-        moved, or without the person's access to the forge (NoForgeAccess), which records nothing, so the same result
-        is handed in again later, once a token is handed on. A stage task's ENDED never moves its issues; an ENDED of an
+        failed or did not end is recorded as a refusal, but for a store that refuses before it writes anything: busy
+        or moved, which records nothing, so the same result is handed in again later; or without the person's access
+        to the forge (NoForgeAccess), which keeps the result waiting, so the same result is handed in again once a
+        token is handed on, even after the task's ENDED. A stage task's ENDED never moves its issues; an ENDED of an
         offer with no hand-in records its result as missing. The JSON body is at most 266240 bytes. The changes stream
         announces the new board after a save.
       tags: [work]

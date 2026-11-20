@@ -36,6 +36,12 @@ public final class HandedResults {
     /** An offer whose save began and has not ended. */
     public static final String PENDING = "PENDING";
 
+    /**
+     * An offer whose result the forge refused for the person's access before anything was written;
+     * a later hand-in saves it, even after its task ended.
+     */
+    public static final String WAITING = "WAITING";
+
     /** The most outcomes kept; a new one drops the oldest. */
     public static final int MOST_KEPT = 500;
 
@@ -61,7 +67,8 @@ public final class HandedResults {
     /**
      * What the record keeps of an offer's hand-in: no plan text, only what a replay answers.
      *
-     * @param status {@value #SAVED}, {@value #MISSING}, {@value #REFUSED} or {@value #PENDING}
+     * @param status {@value #SAVED}, {@value #MISSING}, {@value #REFUSED}, {@value #PENDING} or
+     *     {@value #WAITING}
      * @param task the task the offer was bound to
      * @param issues the offer's issues
      * @param faults the refusal's faults, empty unless refused
@@ -558,6 +565,7 @@ public final class HandedResults {
                     "its result was refused: "
                             + (handed.faults().isEmpty() ? "" : handed.faults().getFirst());
             case PENDING -> "the save of its result did not end";
+            case WAITING -> "the save of its result waits for the person's access to the forge";
             default -> "its result is saved";
         };
     }
@@ -572,7 +580,7 @@ public final class HandedResults {
     public static void validate(final String offer, final Handed handed) {
         if (!UUID.fromString(offer).toString().equals(offer)
                 || handed.order() < 0
-                || !Set.of(SAVED, MISSING, REFUSED, PENDING).contains(handed.status())
+                || !Set.of(SAVED, MISSING, REFUSED, PENDING, WAITING).contains(handed.status())
                 || handed.issues().isEmpty()
                 || handed.faults().size() > MOST_FAULTS
                 || REFUSED.equals(handed.status()) == handed.faults().isEmpty()

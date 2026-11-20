@@ -126,8 +126,24 @@ public final class ChangesRegistry implements AutoCloseable {
         synchronized (this) {
             known = followed.get(project);
         }
-        if (known != null) {
+        if (known == null) {
+            return;
+        }
+        try {
             known.changes().saved();
+        } catch (final StoreException.NoForgeAccess refused) {
+            LOG.warn(
+                    "Reading project {} after a save was refused, its streams end: {}",
+                    LogText.of(project),
+                    LogText.of(refused.getMessage()));
+            // Its windows open their stream again, are told the refusal and offer a token.
+            end(project, known.changes());
+        } catch (final RuntimeException e) {
+            // The save's own answer, a refusal or the board, is what the window must get.
+            LOG.warn(
+                    "Reading project {} after a save failed: {}",
+                    LogText.of(project),
+                    LogText.of(e.getMessage()));
         }
     }
 

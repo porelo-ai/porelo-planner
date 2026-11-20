@@ -1003,7 +1003,10 @@ public final class WorkRun {
     private static Snapshot endedStage(
             final Snapshot snapshot, final Draft draft, final Offer known, final String task) {
         final HandedResults.Handed handed = snapshot.results().get(known.id());
-        if (handed != null && HandedResults.SAVED.equals(handed.status())) {
+        if (handed != null
+                && (HandedResults.SAVED.equals(handed.status())
+                        || HandedResults.WAITING.equals(handed.status()))) {
+            // A result waiting for the forge access is handed in again, its issues where they are.
             return snapshot;
         }
         final String why = HandedResults.why(handed);
@@ -1509,10 +1512,12 @@ public final class WorkRun {
                 session -> {
                     final Snapshot snapshot = read(session);
                     final HandedResults.Handed known = snapshot.results().get(offer);
-                    if (known != null) {
-                        if (!known.task().equals(task)) {
-                            throw WorkRefusal.taskNotAnswered(task, offer);
-                        }
+                    if (known != null && !known.task().equals(task)) {
+                        throw WorkRefusal.taskNotAnswered(task, offer);
+                    }
+                    final boolean waiting =
+                            known != null && HandedResults.WAITING.equals(known.status());
+                    if (known != null && !waiting) {
                         return replayed(session, snapshot, offer, known);
                     }
                     final Run run =
@@ -1538,7 +1543,11 @@ public final class WorkRun {
                         throw HandedResults.refused(
                                 "offer: The offer's task hands back no result.");
                     }
-                    if (!bound.status().equals("STARTED") || run.stopped() || run.halted()) {
+                    // A result the forge refused for access stays to be handed in after the end.
+                    if (!(bound.status().equals("STARTED")
+                                    || waiting && bound.status().equals("ENDED"))
+                            || run.stopped()
+                            || run.halted()) {
                         throw HandedResults.refused("offer: The offer's task is not at work.");
                     }
                     final List<String> faults = HandedResults.check(kind, binding.issues(), handIn);
@@ -1629,11 +1638,21 @@ public final class WorkRun {
             // A store that saves no result saved nothing, so the window may hand it in again.
             session.write(snapshot);
             throw notOffered;
-        } catch (final StoreException.Busy
-                | StoreException.StaleRevision
-                | StoreException.NoForgeAccess notStarted) {
-            // The store refuses these before it writes anything, so the window tries again later,
-            // after a missing access once the person handed a token on.
+        } catch (final StoreException.NoForgeAccess noAccess) {
+            // Nothing was written; kept as waiting, so the task's end loses no result handed in
+            // again once the person handed a token on.
+            session.write(
+                    HandedResults.with(
+                            snapshot,
+                            offer,
+                            HandedResults.WAITING,
+                            task,
+                            binding.issues(),
+                            List.of(),
+                            ""));
+            throw noAccess;
+        } catch (final StoreException.Busy | StoreException.StaleRevision notStarted) {
+            // The store refuses these before it writes anything, so the window tries again later.
             session.write(snapshot);
             throw notStarted;
         } catch (final RuntimeException failed) {

@@ -336,6 +336,44 @@ class WorkRecordTest {
         }
     }
 
+    @Test
+    void aRefusalKeptBeforeRightsWereToldStillReads() throws Exception {
+        // Harm: an upgrade makes a work record with a kept save refusal unreadable, so the story's
+        // work stops until the record is removed by hand.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        offer.putObject("refusal")
+                .put("name", "PartlySaved")
+                .put("subject", "alpha")
+                .putArray("pushed")
+                .add("beta");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.SaveFailure kept =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .refusal());
+            assertThat(kept).as("the refusal kept by an older planner").isNotNull();
+            assertThat(List.of(kept.name(), kept.subject(), String.valueOf(kept.right())))
+                    .as("the refusal, its subject and its right")
+                    .containsExactly("PartlySaved", "alpha", "null");
+            assertThat(kept.pushed()).as("the repositories pushed").containsExactly("beta");
+        }
+    }
+
     // Prevents an upgrade from making a running story's work record unreadable, and a forged
     // given file name from reaching a task's start.
     @Test

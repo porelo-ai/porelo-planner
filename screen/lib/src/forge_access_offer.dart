@@ -57,23 +57,70 @@ class _ForgeAccessOfferState extends State<ForgeAccessOffer> {
   bool _calling = false;
   String? _failed;
 
+  /// The source and project the call or its failure is for; another one shown drops both.
+  (PlanningSource, String)? _for;
+
+  /// Counts the calls, so an answer to one left behind changes nothing.
+  int _call = 0;
+
+  VoidCallback? _unfollow;
+
+  @override
+  void initState() {
+    super.initState();
+    _unfollow = widget.board.follow(_boardChanged);
+  }
+
+  @override
+  void didUpdateWidget(ForgeAccessOffer old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.board, widget.board)) {
+      _unfollow?.call();
+      _unfollow = widget.board.follow(_boardChanged);
+      _forget();
+    }
+  }
+
+  @override
+  void dispose() {
+    _unfollow?.call();
+    super.dispose();
+  }
+
+  static bool _shows(PlanningBoard board, (PlanningSource, String)? on) =>
+      on != null && identical(on.$1, board.backend) && on.$2 == board.project;
+
+  void _forget() {
+    _call++;
+    _calling = false;
+    _failed = null;
+    _for = null;
+  }
+
+  void _boardChanged() {
+    // A call or failure for a project no longer shown must neither disable nor speak beside another's refusal.
+    if (_for != null && !_shows(widget.board, _for) && mounted) setState(_forget);
+  }
+
   Future<void> _handOn(PlanningForgeAccess access, String address) async {
     final board = widget.board;
-    final generation = board.generation;
+    final on = (board.backend, board.project);
+    final call = ++_call;
     setState(() {
       _calling = true;
       _failed = null;
+      _for = on;
     });
     var handed = false;
     try {
       handed = await access.handOnForgeToken(provider: widget.provider, address: address);
     } catch (error) {
-      if (mounted) setState(() => _failed = planningFailureWords(error));
+      if (mounted && call == _call) setState(() => _failed = planningFailureWords(error));
     } finally {
-      if (mounted) setState(() => _calling = false);
+      if (mounted && call == _call) setState(() => _calling = false);
     }
-    // A board switched or closed meanwhile is not read again for a token handed on for another.
-    if (handed && !board.disposed && board.generation == generation) await board.reloadPlanning();
+    // Still the same board by its source and project, not by a generation a failed watch also moves.
+    if (handed && !board.disposed && _shows(board, on)) await board.reloadPlanning();
   }
 
   @override

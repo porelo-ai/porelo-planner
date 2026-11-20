@@ -147,10 +147,10 @@ public final class GitHubStore implements PlanningStore {
 
     @Override
     public Board save(final Revision revision, final Writes writes) {
-        return locked(
+        return writing(
                         () -> {
                             parts.writer().save(current(), revision, writes);
-                            return read();
+                            return readAfterWriting();
                         })
                 .board();
     }
@@ -159,10 +159,10 @@ public final class GitHubStore implements PlanningStore {
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         final String[] id = new String[1];
         final Snapshot after =
-                locked(
+                writing(
                         () -> {
                             id[0] = parts.writer().createIssue(current(), revision, issue);
-                            return read();
+                            return readAfterWriting();
                         });
         return new NewIssue.Added(Objects.requireNonNull(id[0]), after.board());
     }
@@ -171,10 +171,10 @@ public final class GitHubStore implements PlanningStore {
     public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
         final BoardWriter.IdeaIds[] ids = new BoardWriter.IdeaIds[1];
         final Snapshot after =
-                locked(
+                writing(
                         () -> {
                             ids[0] = parts.writer().createIdea(current(), revision, idea);
-                            return read();
+                            return readAfterWriting();
                         });
         final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
         return new NewIdea.Added(saved.story(), saved.issues(), after.board());
@@ -182,7 +182,7 @@ public final class GitHubStore implements PlanningStore {
 
     @Override
     public Board saveResult(final StageResult result) {
-        return locked(
+        return writing(
                         () -> {
                             // A stage runs for minutes, so it is saved on the project as it stands
                             // now.
@@ -200,7 +200,7 @@ public final class GitHubStore implements PlanningStore {
                                                     .orElse(null)
                                             : null;
                             parts.writer().saveResult(now, result, stage);
-                            return read();
+                            return readAfterWriting();
                         })
                 .board();
     }
@@ -228,6 +228,34 @@ public final class GitHubStore implements PlanningStore {
         final Snapshot fresh = parts.reader().read(config);
         snapshot = fresh;
         return fresh;
+    }
+
+    /**
+     * Reads the board after a write that completed; a failure here says a part was written, so the
+     * window is never told nothing was and a stage result is never handed in and saved twice.
+     */
+    private Snapshot readAfterWriting() {
+        try {
+            return read();
+        } catch (final RuntimeException e) {
+            throw new BoardWriter.AfterWriting(e);
+        }
+    }
+
+    /**
+     * Runs a write under the lock; any failure forgets the board kept, as a part may be written.
+     */
+    private Snapshot writing(final java.util.function.Supplier<Snapshot> work) {
+        return locked(
+                () -> {
+                    try {
+                        return work.get();
+                    } catch (final RuntimeException e) {
+                        // The next board is read from GitHub, never the one from before the save.
+                        snapshot = null;
+                        throw e;
+                    }
+                });
     }
 
     private Snapshot current() {

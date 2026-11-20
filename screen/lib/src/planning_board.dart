@@ -185,9 +185,19 @@ class PlanningBoard extends ChangeNotifier {
   /// The order of the last board received when [refusal] was kept; a board received later clears it.
   int _refusalOrder = 0;
 
+  /// The [actionProblem] that told [refusal], so the words go when the refusal does.
+  String? _refusalWords;
+
   void _keepRefusal(Object error) {
     refusal = error is PlanningRefusal ? error : null;
     _refusalOrder = _replyOrder;
+  }
+
+  void _clearRefusal() {
+    // An action's words left above a board read anew would say a refusal that no longer holds.
+    if (_refusalWords != null && actionProblem == _refusalWords) actionProblem = null;
+    _refusalWords = null;
+    refusal = null;
   }
 
   /// Confirmation or revision-change feedback from the shared save.
@@ -336,7 +346,7 @@ class PlanningBoard extends ChangeNotifier {
             final combined = _checked(PlanningSnapshot.fromParts(workflow, reply));
             void settle() {
               if (!current()) return;
-              if (order > _refusalOrder) refusal = null;
+              if (order > _refusalOrder) _clearRefusal();
               problem = workflow.faults.isEmpty ? null : planningShown(workflow.faults.join('\n'));
               unsupported = false;
               if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
@@ -573,6 +583,7 @@ class PlanningBoard extends ChangeNotifier {
     if (_disposed) return;
     _keepRefusal(error);
     actionProblem = planningFailureWords(error);
+    if (refusal != null) _refusalWords = actionProblem;
     _changed();
   }
 
@@ -582,6 +593,7 @@ class PlanningBoard extends ChangeNotifier {
     if (_disposed || planningRefused(error, 'NotStarted')) return;
     _keepRefusal(error);
     actionProblem = 'Start work on ${planningShown(story, multiline: false)}: ${planningFailureWords(error)}';
+    if (refusal != null) _refusalWords = actionProblem;
     _changed();
   }
 
@@ -960,11 +972,11 @@ class PlanningBoard extends ChangeNotifier {
       _workSnapshots.clear();
       workUnsupported.clear();
       unavailableActions.clear();
+      _clearRefusal();
     }
     actionBusy = false;
     discussing = false;
     problem = null;
-    refusal = null;
     unsupported = false;
     live = false;
     _listen();
@@ -1355,7 +1367,7 @@ class PlanningBoard extends ChangeNotifier {
       final reply = await _read();
       if (_disposed || generation != _generation) return;
       moveProblem = null;
-      refusal = null;
+      _clearRefusal();
       _acceptNewest(reply.$1, reply.$2);
       final faults = snapshot?.faults ?? const <String>[];
       problem = faults.isEmpty ? null : planningShown(faults.join('\n'));

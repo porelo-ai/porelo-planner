@@ -54,6 +54,8 @@ public final class ForgeTokens {
         if (!"https".equals(address.getScheme())
                 || host == null
                 || address.getRawUserInfo() != null
+                || address.getRawQuery() != null
+                || address.getRawFragment() != null
                 || address.getPort() != -1) {
             return refused;
         }

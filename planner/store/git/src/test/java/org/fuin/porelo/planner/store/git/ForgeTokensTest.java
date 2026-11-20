@@ -190,6 +190,23 @@ class ForgeTokensTest {
     }
 
     @Test
+    void anAddressWithAQueryOrFragmentIsRefusedNeverOfferedAToken() {
+        // Harm: the window offers to hand on a token for an address the helper never takes.
+        for (final String address :
+                new String[] {
+                    "https://forge.example.org/team?x=1", "https://forge.example.org/team#x"
+                }) {
+            assertThatThrownBy(
+                            () ->
+                                    ForgeTokens.of(person("answer"))
+                                            .token(URI.create(address), "team"))
+                    .as("a token for %s", address)
+                    .isInstanceOf(StoreException.CredentialRefused.class);
+        }
+        assertThat(beside("arguments")).as("the helper was not run").doesNotExist();
+    }
+
+    @Test
     void aHelperThatDoesNotAnswerInTimeIsRefused() {
         // Harm: a hanging helper hangs the board.
         final long start = System.nanoTime();

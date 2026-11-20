@@ -487,6 +487,30 @@ class HandedResultsTest {
     }
 
     @Test
+    void aResultRefusedForTheForgeAccessIsSavedByAHandInAfterItsTaskEnded() {
+        // Harm: a finished analysis lost as missing because its task ended before the person
+        // handed a token on, though the store wrote nothing and the result could still be saved.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final StoreException refused = new StoreException.NoForgeAccess("https://github.com", null);
+        f.store.failure = refused;
+        assertThat(catchThrowableOfType(StoreException.class, () -> f.handIn(offer, valid())))
+                .as("the forge's refusal, which the window answers with the offer of a token")
+                .isSameAs(refused);
+        f.end(offer);
+        f.store.failure = null;
+
+        final HandedResults.Answer answer = f.handIn(offer, valid());
+
+        assertThat(answer.outcome())
+                .as("the outcome of the hand-in after the end")
+                .isEqualTo(HandedResults.SAVED);
+        assertThat(f.store.results).as("saved once, by the later hand-in").hasSize(1);
+        assertThat(f.store.state("AA1")).as("the issue in its done state").isEqualTo(DONE);
+        assertThat(f.told).as("no line says the result is missing").isEmpty();
+    }
+
+    @Test
     void aSaveLeftPendingByARestartIsRefusedWithoutAskingTheStore() {
         // Prevents a result saved twice after the planner stopped during its save.
         final Stage f = new Stage();

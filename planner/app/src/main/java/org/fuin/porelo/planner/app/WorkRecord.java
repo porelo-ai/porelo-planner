@@ -424,6 +424,11 @@ public final class WorkRecord implements AutoCloseable {
                             && !rule.has("result")) {
                         rule.putNull("result");
                     }
+                    // A refusal kept before a forge's missing right was told names no right.
+                    if (offer.path("refusal") instanceof ObjectNode refusal
+                            && !refusal.has("right")) {
+                        refusal.putNull("right");
+                    }
                     if (offer.path("arguments") instanceof ObjectNode arguments) {
                         if (!arguments.has("result")) {
                             arguments.putNull("result");
