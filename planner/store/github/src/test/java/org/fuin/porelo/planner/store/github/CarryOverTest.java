@@ -762,7 +762,9 @@ class CarryOverTest {
         final GitHub github = new GitHub();
         final File file = new File();
         github.cutAt = 3;
-        assertThatThrownBy(() -> run(github, file)).isInstanceOf(CarryOver.Stopped.class);
+        assertThatThrownBy(() -> run(github, file))
+                .as("the first run, stopped")
+                .isInstanceOf(CarryOver.Stopped.class);
         github.cutAt = 0;
         github.issues.add(new Held("I_other", 9999, PLANNER, 99, "Other", "", List.of()));
         github.items.put("PVTI_other", "I_other");
@@ -781,7 +783,9 @@ class CarryOverTest {
         final File file = new File();
         github.cutAt = 2;
         github.takenBeforeCut = true;
-        assertThatThrownBy(() -> run(github, file)).isInstanceOf(CarryOver.Stopped.class);
+        assertThatThrownBy(() -> run(github, file))
+                .as("the first run, stopped")
+                .isInstanceOf(CarryOver.Stopped.class);
         github.cutAt = 0;
         final Held made = github.issues.getFirst();
         github.issues.add(
@@ -826,7 +830,9 @@ class CarryOverTest {
         final GitHub whole = new GitHub();
         run(whole, new File());
         github.cutAt = whole.written.indexOf("sub porelo-project#1") + 1;
-        assertThatThrownBy(() -> run(github, file)).isInstanceOf(CarryOver.Stopped.class);
+        assertThatThrownBy(() -> run(github, file))
+                .as("the first run, stopped")
+                .isInstanceOf(CarryOver.Stopped.class);
         github.cutAt = 0;
         github.held(OWN, 1).body = "A person's words.";
         final CarryOver.Outcome again = run(github, file);
@@ -849,7 +855,9 @@ class CarryOverTest {
         final GitHub whole = new GitHub();
         run(whole, new File());
         github.cutAt = whole.written.indexOf("sub porelo-project#1") + 1;
-        assertThatThrownBy(() -> run(github, file)).isInstanceOf(CarryOver.Stopped.class);
+        assertThatThrownBy(() -> run(github, file))
+                .as("the first run, stopped")
+                .isInstanceOf(CarryOver.Stopped.class);
         github.cutAt = 0;
         final Held pl11 = github.held(PLANNER, 2);
         pl11.body = "A person's words.";
@@ -886,6 +894,7 @@ class CarryOverTest {
                     }
                 };
         assertThatThrownBy(() -> run(github, new File()))
+                .as("a run whose call to GitHub fails naming the token")
                 .isInstanceOf(CarryOver.Stopped.class)
                 .message()
                 .doesNotContain(TOKEN)

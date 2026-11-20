@@ -83,12 +83,14 @@ class CarryOverCommandTest {
                 .anySatisfy(
                         line ->
                                 assertThat(line)
+                                        .as("ST2's line")
                                         .startsWith("ST2  porelo-sample  story  ")
                                         .doesNotContain("Id=")
                                         .contains("sub-issues: porelo-alpha#AB02"))
                 .anySatisfy(
                         line ->
                                 assertThat(line)
+                                        .as("AB02's line")
                                         .startsWith("AB02  porelo-alpha  issue  ")
                                         .doesNotContain("Id=")
                                         .contains("Minutes=12")

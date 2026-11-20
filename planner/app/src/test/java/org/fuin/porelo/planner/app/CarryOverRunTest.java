@@ -166,8 +166,9 @@ class CarryOverRunTest {
                 .as("the tracker project.yml names")
                 .hasValueSatisfying(
                         tracker -> {
-                            assertThat(tracker.kind()).isEqualTo("github");
+                            assertThat(tracker.kind()).as("its kind").isEqualTo("github");
                             assertThat(tracker.owner() + "/" + tracker.project())
+                                    .as("its project")
                                     .isEqualTo("porelo-ai/7");
                         });
         assertThat(after)
