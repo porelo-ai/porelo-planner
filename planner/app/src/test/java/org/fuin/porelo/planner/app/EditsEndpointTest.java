@@ -111,7 +111,16 @@ class EditsEndpointTest {
                     }
 
                     @Override
+                    public Board setStoryIssues(
+                            final Revision revision,
+                            final String story,
+                            final List<String> issues) {
+                        return write(issues);
+                    }
+
+                    @Override
                     public void comment(final String issue, final String text) {
+                        refuse();
                         // The board shows no comment, so its revision stays.
                         written.add(text);
                     }
@@ -140,13 +149,17 @@ class EditsEndpointTest {
         changes.close();
     }
 
-    private Board write(final Object what) {
+    private void refuse() {
         if (!offered) {
             throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
         }
         if (failure != null) {
             throw failure;
         }
+    }
+
+    private Board write(final Object what) {
+        refuse();
         written.add(what);
         current =
                 new Board(
@@ -191,6 +204,17 @@ class EditsEndpointTest {
     }
 
     @Test
+    void aStorysListIsAnsweredWithTheNewRevision() throws Exception {
+        // A list the store saved answered as refused or without its revision leaves the window
+        // offering the edit again.
+        send("PUT", "/stories/ST1/issues", "{\"issues\": [\"AB1\", \"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(written).as("the list written").containsExactly(List.of("AB1", "AB2"));
+    }
+
+    @Test
     void aMalformedBodyOrAnInvalidIdIsRefusedBeforeTheStore() throws Exception {
         // A body read loosely, or a path id taken as it came, would write what nobody meant.
         send("PUT", "/issues/AB1/fields", "{\"size\": 3, \"revision\": \"r1\"}")
@@ -226,6 +250,9 @@ class EditsEndpointTest {
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         send("PUT", "/stories/ST1/issues", "{\"issues\": [\"AB1\", \"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.title").value("NotOffered"));
+        send("POST", "/issues/AB1/comments", "{\"text\": \"A note.\"}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         assertThat(written).as("nothing written").isEmpty();
