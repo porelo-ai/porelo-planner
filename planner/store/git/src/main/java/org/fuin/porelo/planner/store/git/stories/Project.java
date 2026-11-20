@@ -180,7 +180,8 @@ public record Project(
         private static final java.util.regex.Pattern KIND =
                 java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,19}");
         private static final java.util.regex.Pattern REFERENCE =
-                java.util.regex.Pattern.compile("([A-Za-z0-9][A-Za-z0-9-]{0,38})/([0-9]{1,9})");
+                java.util.regex.Pattern.compile(
+                        "([A-Za-z0-9][A-Za-z0-9-]{0,38})/([1-9][0-9]{0,8})");
 
         /** Checks the kind's and the project's form. */
         public Tracker {
@@ -190,7 +191,7 @@ public record Project(
             }
             if (!REFERENCE.matcher(owner + "/" + project).matches()) {
                 throw new IllegalArgumentException(
-                        "project.yml tracker: project must be <owner>/<number>");
+                        "project.yml tracker: project must be <owner>/<number>, the number from 1");
             }
         }
     }

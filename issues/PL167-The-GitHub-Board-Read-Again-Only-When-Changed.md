@@ -31,6 +31,8 @@ changed is answered from what the planner holds, without spending the person's r
   `projectItemsIfChanged` for the project, with the ETags of the last read, in parallel; when all answer unchanged
   (304) the board and its revision stay, and only a change runs [PL165](README.md#pl165)'s full read. GitHub counts
   no 304 against the rate limit.
+- A read GitHub refuses as rate limited is `Unreachable` and names the wait ([PL165](README.md#pl165)). Until
+  the wait ends, background reads are held off and the board kept is served.
 - The interval for a GitHub project may be shorter than for Git (a probe costs little): `planner.github.poll-interval`,
   30 seconds by default; the rate limit left (`X-RateLimit-Remaining`) below a tenth lengthens it and says so as a
   board fault.

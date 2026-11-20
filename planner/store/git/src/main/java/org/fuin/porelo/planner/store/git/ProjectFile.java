@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store.git;
 
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.Set;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
+import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.git.stories.Project;
 import org.jspecify.annotations.Nullable;
@@ -121,7 +123,19 @@ public final class ProjectFile {
         if (tracker == null) {
             return new Opened(repositories, null);
         }
-        return new Opened(repositories, tracked(remote, name, commit, repositories, tracker));
+        return new Opened(
+                repositories,
+                tracked(
+                        remote,
+                        name,
+                        commit,
+                        repositories,
+                        // The file names its own repository, so its centrals hold it.
+                        repository(
+                                name,
+                                name,
+                                java.util.Objects.requireNonNull(project.centrals().get(name))),
+                        tracker));
     }
 
     private static TrackedProject tracked(
@@ -129,8 +143,17 @@ public final class ProjectFile {
             final String name,
             final String commit,
             final List<Repository> repositories,
+            final Repository central,
             final Project.Tracker tracker) {
         final URI home = home(name, repositories.get(0).url());
+        // The file's own central names where the stories live for every other reader of it.
+        if (!home.equals(home(name, central.url()))) {
+            throw new StoreException.Unreadable(
+                    name,
+                    FILE
+                            + ": the own repository's central stands elsewhere than the own"
+                            + " repository, which a tracker needs");
+        }
         for (final Repository repository : repositories) {
             if (!home.equals(home(name, repository.url()))) {
                 throw new StoreException.Unreadable(
@@ -207,6 +230,77 @@ public final class ProjectFile {
                         + uri.getHost().toLowerCase(java.util.Locale.ROOT)
                         + "/"
                         + parts[1].toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /**
+     * Gives a tracked project again at each read of its board: the own repository's head is asked
+     * for, and its files are read anew only when it moved.
+     */
+    static final class Again implements TrackedStores.Source {
+
+        private final Remote remote;
+
+        private final ProjectLock lock;
+
+        private final CloneUrl own;
+
+        private final @Nullable String branch;
+
+        private final int most;
+
+        private TrackedProject kept;
+
+        /**
+         * Makes the source.
+         *
+         * @param remote reaches the repositories
+         * @param lock holds the project's clones while its files are fetched
+         * @param own the own repository's clone URL, as the window names it
+         * @param branch the own repository's branch, or null for the remote's default
+         * @param most the most repositories a project may have, its own included
+         * @param first the project as it was read at opening
+         */
+        Again(
+                final Remote remote,
+                final ProjectLock lock,
+                final CloneUrl own,
+                final @Nullable String branch,
+                final int most,
+                final TrackedProject first) {
+            this.remote = remote;
+            this.lock = lock;
+            this.own = own;
+            this.branch = branch;
+            this.most = most;
+            this.kept = first;
+        }
+
+        @Override
+        public synchronized TrackedProject current() {
+            final String name = checkedName(own);
+            try (ProjectLock.Held held = lock.acquire()) {
+                final String head;
+                try {
+                    head = remote.head(name, own, branch);
+                } catch (final GitFailure | IllegalArgumentException e) {
+                    throw GitStore.refusal(name, e);
+                }
+                if (head.equals(kept.filesCommit())) {
+                    return kept;
+                }
+                final TrackedProject read = read(remote, own, branch, most).tracked();
+                if (read == null) {
+                    throw new StoreException.Unreadable(
+                            name, FILE + " names no tracker any more; open the project again");
+                }
+                kept = read;
+                return read;
+            } catch (final UncheckedIOException | IllegalStateException e) {
+                // The cache directory or its lock refused: told as the store's fault, free of
+                // paths.
+                throw new StoreException.Unreadable(name, GitRunner.scrubbed(e.getMessage()));
+            }
+        }
     }
 
     private static Repository repository(

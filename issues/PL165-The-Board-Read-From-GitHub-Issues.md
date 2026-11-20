@@ -58,18 +58,26 @@ What agy's reading of this plan found, and how the build answers it:
 - **Where it reads and with whose token.** The forge origin is `https://<host>` of the own repository's clone
   address, which the window gave. `kind: github` is taken for `github.com` alone. Its API base is
   `https://api.github.com/`, and its token is asked for `https://github.com`, through `TokenSource.checkedOrigin`.
-  A `project.yml` whose `tracker.project` names another owner than the own repository's, or whose repositories
-  stand on another host or under another owner, is `Unreadable`. So are a `tracker` with another `kind` or with
-  keys the planner does not know.
+  A `project.yml` whose `tracker.project` names another owner than the own repository's, or whose repositories,
+  its own repository's `central` among them, stand on another host or under another owner, is `Unreadable`. So
+  are a `tracker` with another `kind`, a kind that is no lower-case name, a project number below 1, or keys the
+  planner does not know.
 - **Read only.** Opening, `board()` and `refresh()` send no mutation: no `setFieldOptions`, no `setFieldValues`,
   no rewrite of a sum. A missing field or option, or one of the wrong type, is a fault on the board; the writes
   come only from [PL166](README.md#pl166). The `HttpClient` follows no redirect and has a connect timeout.
-- **What one read reads.** `projectFields` and every page of `projectItems`, 100 items to a page and at most 50
-  pages. Beyond that the read is `Unreadable`, never a cut board, and one read has a deadline of 60 s. An item
-  without an issue (a draft or a pull request) is left out. An item whose issue's repository belongs to another
-  owner is left out as a fault. An item whose sub-issues or blockers run to a second page is left out as a fault,
-  and its story is not whole. An item seen twice across pages counts once by its node id. A cursor that does not
-  advance is refused.
+- **What one read reads.** `projectFields` and every page of `projectItems`, 100 items or fields to a page and at
+  most 50 pages. Beyond that, or a page with more than asked for, the read is `Unreadable`, never a cut board, and
+  one read has a deadline of 60 s, which its last answer must meet as well. An item without an issue (a draft or
+  a pull request) is left out. An item whose issue's repository belongs to another owner is left out as a fault;
+  one of the owner whose repository name the planner does not take lies outside the project's repositories, and
+  GitHub's words reach a fault only in the form of an address. An item whose sub-issues or blockers run to a second
+  page is left out as a fault, and its story is not whole; the mapping still knows its id, so an issue blocked by
+  it or under it is left out as depending on it, never as outside the project. An item seen twice across pages
+  counts once by its node id. A cursor that does not advance, or is blank, is refused. A body longer than GitHub
+  takes keeps its item on the board without the body, with a fault naming the item.
+- **Fields.** Every field the store uses is checked for its kind, and each single-select field (Status, Priority,
+  Size, Worker, Risk) for the options the store writes; a field of another kind is named once, not again for
+  each option. A later field of the same name stands for the name, and no option of an earlier one is kept.
 - **Stage comments are not read on the board.** The client's board answer carries no comments, and reading them
   per issue would cost one call per issue. The board shows the number fields as GitHub holds them. The check of
   the fields against their comments ([PL164](README.md#pl164)) runs when an issue is saved, over that issue's
@@ -77,14 +85,18 @@ What agy's reading of this plan found, and how the build answers it:
 - **`archived` and the owner come from the client.** `ProjectItem` gains `isArchived`, and `BoardIssue` gains its
   repository's owner, asked of Agent Gorge. Until they are in, an archived item reads as live, which shows it and
   keeps its alias taken.
-- **The revision.** It is a digest of every item's node id, `updatedAt`, open and archived state, parent,
-  sub-issues, blockers and field values, in a fixed order, with the project files' commit. A change of a field
-  alone changes it.
+- **The revision.** It is a digest of the project files' commit, the board's faults, and every item's node id,
+  repository, number, title, body, labels, `updatedAt`, open and archived state and its reason, parent, sub-issues,
+  blockers and field values, in a fixed order, each list with its count and a missing value tagged apart from any
+  text. A change of a field alone, or of a fault alone, changes it.
 - **The project's files** are read again on `refresh()` from the own repository's head, as the Git store reads
-  them, so a changed workflow or work rule is seen without reopening.
-- **Refusals.** A 401 or 403 that GitHub marks as rate limited is `Unreachable` and names the wait. Until the wait
-  ends, background reads are held off and the board kept is served. Every other refusal follows
-  [PL169](README.md#pl169)'s `ForgeAccessRefusals`. The token a call used is the one scrubbed from its failure:
+  them, so a changed workflow or work rule is seen without reopening. `TrackedStores.open` takes the project read
+  at opening and a source that gives it again: the Git store's source asks for the own repository's head and reads
+  `project.yml`, the workflow and the work rules again only when it moved. A read that fails is the store's
+  refusal, never the project read before shown as the head's.
+- **Refusals.** A 401 or 403 that GitHub marks as rate limited is `Unreachable` and names the wait. Holding off
+  background reads until the wait ends belongs to [PL167](README.md#pl167), which owns them. Every other refusal,
+  the store's own included, follows [PL169](README.md#pl169)'s `ForgeAccessRefusals`. The token a call used is the one scrubbed from its failure:
   the reader passes it on, and no second ask is made.
 - **Ids** stay [PL164](README.md#pl164)'s aliases until [PL170](README.md#pl170) makes the tracker reference the
   id.

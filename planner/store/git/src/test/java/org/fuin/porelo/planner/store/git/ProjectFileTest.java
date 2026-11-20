@@ -38,17 +38,22 @@ class ProjectFileTest {
 
         private final Map<String, String> fetched = new HashMap<>();
 
+        private String commit = "c1";
+
+        private int fetches;
+
         @Override
         public String head(
                 final String repository, final CloneUrl url, final @Nullable String branch) {
-            return "c1";
+            return commit;
         }
 
         @Override
         public String fetch(
                 final String repository, final CloneUrl url, final @Nullable String branch) {
             fetched.put(repository, url.value() + "@" + branch);
-            return "c1";
+            fetches++;
+            return commit;
         }
 
         @Override
@@ -252,6 +257,7 @@ class ProjectFileTest {
                 "project: other-org/7|another owner's project",
                 "project: porelo-ai/7\\n    extra: 1|a key the planner does not know",
                 "project: porelo-ai|no number",
+                "project: porelo-ai/0|a project number GitHub never gives",
             })
     void aTrackerTheFileShapesWronglyOrPointsElsewhereIsRefused(
             final String tracker, final String why) throws Exception {
@@ -280,5 +286,80 @@ class ProjectFileTest {
         assertThatThrownBy(() -> ProjectFile.read(tracked(text), HTTPS_OWN, null, 10))
                 .as(why)
                 .isInstanceOf(StoreException.Unreadable.class);
+    }
+
+    @Test
+    void aTrackerOfAKindThatIsNoLowerCaseNameIsRefused() throws Exception {
+        // Harm: a kind no store keeps read on as if the file were well formed.
+        final String text = TRACKED.replace("kind: github", "kind: UPPER");
+        assertThatThrownBy(() -> ProjectFile.read(tracked(text), HTTPS_OWN, null, 10))
+                .as("a kind in capitals")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("kind");
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "https://gitlab.example.org/porelo-ai/porelo-project.git|another host",
+                "https://github.com/other-org/porelo-project.git|another owner",
+            })
+    void aTrackedProjectWhoseOwnCentralStandsElsewhereIsRefused(
+            final String central, final String why) throws Exception {
+        // Harm: the file tells every other reader the stories live elsewhere than the tracker the
+        // person's token is used on.
+        final String text =
+                TRACKED.replace("https://github.com/porelo-ai/porelo-project.git", central);
+        assertThatThrownBy(() -> ProjectFile.read(tracked(text), HTTPS_OWN, null, 10))
+                .as(why)
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("own repository's central");
+    }
+
+    private static final String SHORT_WORKFLOW =
+            """
+            states:
+              - {name: Idea, closed: false}
+              - {name: Finished, closed: true}
+            phases:
+              - {name: All, states: [Idea, Finished]}
+            """;
+
+    @Test
+    void aTrackedProjectsFilesAreReadAgainOnlyWhenTheOwnHeadMoved() throws Exception {
+        // Harm: a workflow changed in the own repository never seen until the project is opened
+        // anew, or the files fetched on every look at the board.
+        final Files remote = tracked(TRACKED);
+        final ProjectLock lock = () -> () -> {};
+        final org.fuin.porelo.planner.store.TrackedProject first =
+                java.util.Objects.requireNonNull(
+                        ProjectFile.read(remote, HTTPS_OWN, null, 10).tracked());
+        final ProjectFile.Again again =
+                new ProjectFile.Again(remote, lock, HTTPS_OWN, null, 10, first);
+        final int fetchesAtOpening = remote.fetches;
+
+        assertThat(again.current()).as("the head where it was").isSameAs(first);
+        assertThat(remote.fetches).as("nothing fetched again").isEqualTo(fetchesAtOpening);
+
+        remote.commit = "c2";
+        remote.files.put("porelo-project@c2:project.yml", TRACKED);
+        remote.files.put("porelo-project@c2:stories/workflow.yml", SHORT_WORKFLOW);
+        final org.fuin.porelo.planner.store.TrackedProject moved = again.current();
+
+        assertThat(moved.filesCommit()).as("the commit the files are read at").isEqualTo("c2");
+        assertThat(moved.workflow().states())
+                .as("the workflow of the moved head")
+                .containsExactly("Idea", "Finished");
+        assertThat(again.current()).as("kept while the head stays").isSameAs(moved);
+
+        remote.commit = "c3";
+        remote.files.put("porelo-project@c3:project.yml", TRACKED);
+        assertThatThrownBy(again::current)
+                .as("files that cannot be read at the moved head")
+                .isInstanceOf(StoreException.class);
+        assertThatThrownBy(again::current)
+                .as("never the project read before, shown as the head's")
+                .isInstanceOf(StoreException.class);
     }
 }

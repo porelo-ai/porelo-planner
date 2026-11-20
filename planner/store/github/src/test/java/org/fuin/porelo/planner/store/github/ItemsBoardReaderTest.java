@@ -75,7 +75,7 @@ class ItemsBoardReaderTest {
                             FieldNames.PRIORITY,
                             Story.PRIORITIES.toArray(String[]::new)),
                     select("F_size", FieldNames.SIZE, IssueMapping.SIZES.toArray(String[]::new)),
-                    select("F_risk", FieldNames.RISK, "Ordinary"),
+                    select("F_risk", FieldNames.RISK, "harm", "ordinary", "small"),
                     select("F_worker", FieldNames.WORKER, "Agent", "Manual"),
                     field("F_id", FieldNames.ID, "TEXT"),
                     field("F_rank", FieldNames.RANK, "NUMBER"),
@@ -206,6 +206,16 @@ class ItemsBoardReaderTest {
             final List<String> labels,
             final @Nullable String parent,
             final IssueRefs subs) {
+        return issue(nameWithOwner, number, labels, parent, subs, refs(false));
+    }
+
+    private static BoardIssue issue(
+            final String nameWithOwner,
+            final int number,
+            final List<String> labels,
+            final @Nullable String parent,
+            final IssueRefs subs,
+            final IssueRefs blockers) {
         return new BoardIssue(
                 node(nameWithOwner, number),
                 number,
@@ -219,7 +229,7 @@ class ItemsBoardReaderTest {
                 labels,
                 parent,
                 subs,
-                refs(false));
+                blockers);
     }
 
     private static String node(final String nameWithOwner, final int number) {
@@ -343,6 +353,8 @@ class ItemsBoardReaderTest {
         assertThat(archived.board().revision())
                 .as("the same project with its story archived")
                 .isNotEqualTo(live.board().revision());
+        assertThat(live.board().stories()).as("the live story on the board").hasSize(1);
+        assertThat(archived.board().stories()).as("the archived story off the board").isEmpty();
     }
 
     @Test
@@ -380,11 +392,338 @@ class ItemsBoardReaderTest {
 
         assertThat(snapshot.board().issue("LB5")).as("the issue left out").isEmpty();
         assertThat(snapshot.board().faults())
-                .as("the fault naming it")
-                .contains(
+                .as("the one fault naming it, never one calling it outside the project")
+                .containsExactly(
                         "Item example-org/example-lib#3 has more sub-issues or blockers than one"
                                 + " page carries and is left out; its story is not whole");
         assertThat(snapshot.board().stories().get(0).issuesWhole()).as("its story").isFalse();
+    }
+
+    @Test
+    void anIssueBlockedByAnItemLeftOutForItsPagesIsLeftOutAsDependingOnIt() {
+        // Harm: an issue offered for work while its blocker is unknown, or told as blocked by
+        // something outside the project and sent looking for it there.
+        final ProjectItem blocked =
+                new ProjectItem(
+                        "PVTI_lib_4",
+                        false,
+                        issue(
+                                OWNER + "/example-lib",
+                                4,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false),
+                                refs(false, LIB_3)),
+                        List.of(text("F_id", "LB6"), option("F_status", "Backlog")));
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                null,
+                                story("High", LIB_3),
+                                libIssue(3, "LB5", refs(true, "I_part")),
+                                blocked)
+                        .read();
+
+        assertThat(snapshot.board().issues()).as("neither issue on the board").isEmpty();
+        assertThat(snapshot.board().faults())
+                .as("the item left out, and the issue that depends on it")
+                .containsExactly(
+                        "Item example-org/example-lib#3 has more sub-issues or blockers than one"
+                                + " page carries and is left out; its story is not whole",
+                        "LB6 depends on an issue left out and is left out too");
+    }
+
+    @Test
+    void anItemOfTheOwnersRepositoryWithANameThePlannerDoesNotTakeIsOutsideItsRepositories() {
+        // Harm: a person told the item belongs to another owner and sent to look for it there.
+        final ProjectItem odd =
+                new ProjectItem(
+                        "PVTI_odd",
+                        false,
+                        issue(OWNER + "/MyRepo", 3, List.of(), null, refs(false)),
+                        List.of(text("F_id", "LB5"), option("F_status", "Idea")));
+
+        final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
+
+        assertThat(snapshot.board().faults())
+                .as("the fault naming where it is")
+                .containsExactly(
+                        "Item example-org/MyRepo#3 lies outside the project's repositories and is"
+                                + " left out");
+    }
+
+    @Test
+    void aRepositoryGitHubNamesInNoFormOfAnAddressIsNotRepeatedInTheFault() {
+        // Harm: words from GitHub's answer, a line break among them, written into a fault the
+        // window shows and the log keeps.
+        final ProjectItem odd =
+                new ProjectItem(
+                        "PVTI_odd",
+                        false,
+                        issue(OWNER + "/lib\nInjected line", 3, List.of(), null, refs(false)),
+                        List.of(text("F_id", "LB5"), option("F_status", "Idea")));
+
+        final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
+
+        assertThat(snapshot.board().faults())
+                .as("the fault without GitHub's words")
+                .containsExactly("An item lies outside the project's owner and is left out");
+    }
+
+    private static List<ProjectField> fieldsWhere(
+            final java.util.function.Function<ProjectField, @Nullable ProjectField> change) {
+        final List<ProjectField> fields = new ArrayList<>();
+        for (final ProjectField field : FIELDS) {
+            final ProjectField changed = change.apply(field);
+            if (changed != null) {
+                fields.add(changed);
+            }
+        }
+        return fields;
+    }
+
+    @Test
+    void aFieldTheProjectLacksOrHoldsOfAnotherKindIsAFaultNamedOnce() {
+        // Harm: a save writes to a field the project lacks, or one field of another kind named as
+        // lacking every option besides.
+        final List<ProjectField> fields =
+                fieldsWhere(
+                        field ->
+                                switch (field.name()) {
+                                    case FieldNames.ESTIMATE -> null;
+                                    case FieldNames.WORKER ->
+                                            field("F_worker", FieldNames.WORKER, "TEXT");
+                                    default -> field;
+                                });
+
+        final Snapshot snapshot =
+                new GitHub().fieldsPage(fields, null).itemsPage(null, story("High")).read();
+
+        assertThat(snapshot.board().faults())
+                .as("one fault for each field")
+                .containsExactly(
+                        "The project has no field Estimate",
+                        "The project's field Worker is not of the kind used");
+    }
+
+    @Test
+    void anOptionTheStoreWritesThatAFieldLacksIsAFault() {
+        // Harm: a save of a state or a risk the project's field cannot hold, found only when it
+        // fails halfway.
+        final List<ProjectField> fields =
+                fieldsWhere(
+                        field ->
+                                switch (field.name()) {
+                                    case FieldNames.STATUS ->
+                                            select(
+                                                    "F_status",
+                                                    FieldNames.STATUS,
+                                                    "Idea",
+                                                    "Finished");
+                                    case FieldNames.RISK ->
+                                            select("F_risk", FieldNames.RISK, "harm", "ordinary");
+                                    default -> field;
+                                });
+
+        final Snapshot snapshot =
+                new GitHub().fieldsPage(fields, null).itemsPage(null, story("High")).read();
+
+        assertThat(snapshot.board().faults())
+                .as("each option missing")
+                .containsExactly(
+                        "The project's field Status has no option Backlog",
+                        "The project's field Risk has no option small");
+    }
+
+    @Test
+    void aSecondFieldOfOneNameWithoutOptionsKeepsNoOptionOfTheFirst() {
+        // Harm: a save writes an option's id of one field to another field of the same name.
+        final List<ProjectField> fields = new ArrayList<>(FIELDS);
+        fields.add(field("F_status_text", FieldNames.STATUS, "TEXT"));
+
+        final Snapshot snapshot =
+                new GitHub().fieldsPage(fields, null).itemsPage(null, story("High")).read();
+
+        assertThat(snapshot.config().fieldIds())
+                .as("the field the name stands for")
+                .containsEntry(FieldNames.STATUS, "F_status_text");
+        assertThat(snapshot.config().optionIds())
+                .as("no options of the field before")
+                .doesNotContainKey(FieldNames.STATUS);
+    }
+
+    @Test
+    void aPageWithMoreItemsOrFieldsThanAskedForIsUnreadable() {
+        // Harm: an answer of any size held and mapped, the board's bound passed by one page.
+        final ProjectItem[] items = new ProjectItem[ItemsBoardReader.PAGE_SIZE + 1];
+        for (int i = 0; i < items.length; i++) {
+            items[i] = libIssue(i + 1, "LB" + (i + 1), refs(false));
+        }
+        assertThatThrownBy(
+                        () -> new GitHub().fieldsPage(FIELDS, null).itemsPage(null, items).read())
+                .as("a page of items beyond the size asked for")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("more items than asked for");
+
+        final List<ProjectField> fields = new ArrayList<>();
+        for (int i = 0; i <= ItemsBoardReader.PAGE_SIZE; i++) {
+            fields.add(field("F_extra_" + i, "Extra " + i, "TEXT"));
+        }
+        assertThatThrownBy(() -> new GitHub().fieldsPage(fields, null).read())
+                .as("a page of fields beyond the size asked for")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("more fields than asked for");
+    }
+
+    @Test
+    void aBlankCursorIsRefused() {
+        // Harm: a read that asks GitHub again and again for a page named by nothing.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage("   ", libIssue(3, "LB5", refs(false)))
+                        .itemsPage(null, libIssue(4, "LB6", refs(false)));
+
+        assertThatThrownBy(github::read)
+                .as("a cursor of blanks")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("without a new place to read on");
+        assertThat(github.calls).as("no page asked after it").hasSize(2);
+    }
+
+    @Test
+    void aReadWhoseLastAnswerCameAfterTheDeadlineIsUnreachable() {
+        // Harm: a board answered as current although GitHub took longer than the window waits.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, libIssue(3, "LB5", refs(false)));
+        final Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        final AtomicInteger ticks = new AtomicInteger();
+        final InstantSource slow = () -> start.plusSeconds(25L * ticks.getAndIncrement());
+        final ItemsBoardReader reader =
+                new ItemsBoardReader(
+                        github.queries(),
+                        origin -> TOKEN,
+                        AccessRefusals.DEFAULT,
+                        FIRST_OPEN,
+                        slow,
+                        Duration.ofSeconds(60));
+
+        assertThatThrownBy(() -> reader.read(CONFIG))
+                .as("the read whose last page came late")
+                .isInstanceOf(StoreException.Unreachable.class)
+                .hasMessageContaining("within 60 s");
+        assertThat(github.calls).as("every page was asked for").hasSize(2);
+    }
+
+    @Test
+    void aFaultOfTheProjectAloneChangesTheRevision() {
+        // Harm: a field added on GitHub to mend a fault never reaches the window, as the board
+        // kept with the fault looks unchanged.
+        final Snapshot lacking =
+                new GitHub()
+                        .fieldsPage(
+                                fieldsWhere(
+                                        field ->
+                                                field.name().equals(FieldNames.ESTIMATE)
+                                                        ? null
+                                                        : field),
+                                null)
+                        .itemsPage(null, story("High"))
+                        .read();
+        final Snapshot mended =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, story("High")).read();
+
+        assertThat(lacking.board().faults()).as("the fault before").isNotEmpty();
+        assertThat(mended.board().revision())
+                .as("the same items once the field is there")
+                .isNotEqualTo(lacking.board().revision());
+    }
+
+    private static ProjectItem withIssue(
+            final ProjectItem item, final java.util.function.UnaryOperator<BoardIssue> change) {
+        return new ProjectItem(
+                item.id(),
+                item.archived(),
+                change.apply(java.util.Objects.requireNonNull(item.issue())),
+                item.values());
+    }
+
+    private static BoardIssue changed(
+            final BoardIssue issue,
+            final String title,
+            final @Nullable String body,
+            final @Nullable String stateReason,
+            final List<String> labels) {
+        return new BoardIssue(
+                issue.id(),
+                issue.databaseId(),
+                issue.number(),
+                title,
+                body,
+                issue.state(),
+                stateReason,
+                issue.updatedAt(),
+                issue.repository(),
+                labels,
+                issue.parentId(),
+                issue.subIssues(),
+                issue.blockedBy());
+    }
+
+    @Test
+    void anEditOfAnIssuesWordsWithinOneSecondChangesTheRevision() {
+        // Harm: a title, body, label or reason edited twice within one second on GitHub never
+        // reaches the window, as GitHub's change time stayed the same.
+        final ProjectItem base = story("High");
+        final BoardIssue issue = java.util.Objects.requireNonNull(base.issue());
+        final List<String> labels = new ArrayList<>(issue.labels());
+        labels.add("bug");
+        final Map<String, ProjectItem> edits =
+                Map.of(
+                        "the title",
+                        withIssue(
+                                base,
+                                i ->
+                                        changed(
+                                                i,
+                                                "Another title",
+                                                i.body(),
+                                                i.stateReason(),
+                                                i.labels())),
+                        "the body",
+                        withIssue(
+                                base,
+                                i ->
+                                        changed(
+                                                i,
+                                                i.title(),
+                                                "Another body",
+                                                i.stateReason(),
+                                                i.labels())),
+                        "the reason",
+                        withIssue(
+                                base,
+                                i -> changed(i, i.title(), i.body(), "NOT_PLANNED", i.labels())),
+                        "the labels",
+                        withIssue(
+                                base,
+                                i -> changed(i, i.title(), i.body(), i.stateReason(), labels)));
+        final Snapshot before = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, base).read();
+
+        edits.forEach(
+                (what, edited) ->
+                        assertThat(
+                                        new GitHub()
+                                                .fieldsPage(FIELDS, null)
+                                                .itemsPage(null, edited)
+                                                .read()
+                                                .board()
+                                                .revision())
+                                .as(what + " edited")
+                                .isNotEqualTo(before.board().revision()));
     }
 
     @Test

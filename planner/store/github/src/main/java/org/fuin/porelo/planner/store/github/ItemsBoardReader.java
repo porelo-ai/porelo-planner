@@ -8,19 +8,24 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
@@ -38,8 +43,17 @@ public final class ItemsBoardReader implements BoardReader {
     /** The most items a page carries, as the forge client asks for them. */
     static final int PAGE_SIZE = 100;
 
+    /** An owner's or a repository's name as GitHub allows it in an address. */
+    private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
+
     /** How long one read of the whole project may take. */
     static final Duration DEADLINE = Duration.ofSeconds(60);
+
+    /** The tag of a value that is missing; a length-prefixed text begins with a digit. */
+    private static final byte NONE = 0;
+
+    /** The tag of a value that is there. */
+    private static final byte SOME = 1;
 
     private final ProjectQueries queries;
 
@@ -116,11 +130,18 @@ public final class ItemsBoardReader implements BoardReader {
                                             config.project().owner(),
                                             config.project().number(),
                                             cursor));
+            if (fields.fields().size() > PAGE_SIZE) {
+                throw new StoreException.Unreadable(
+                        config.own(), "GitHub answered a page with more fields than asked for");
+            }
             projectId = fields.id();
             for (final GitHubGraphQl.ProjectField field : fields.fields()) {
                 fieldIds.put(field.name(), field.id());
                 fieldNames.put(field.id(), field.name());
                 dataTypes.put(field.name(), field.dataType());
+                // A later field of the same name stands for it, so no option of an earlier one
+                // is written to it.
+                optionIds.remove(field.name());
                 if (!field.options().isEmpty()) {
                     final Map<String, String> byName = new LinkedHashMap<>();
                     field.options().forEach(option -> byName.put(option.name(), option.id()));
@@ -160,6 +181,8 @@ public final class ItemsBoardReader implements BoardReader {
                 break;
             }
         }
+        // The last answer may come after the deadline as well.
+        call.inTime();
 
         final ProjectConfig read =
                 new ProjectConfig(
@@ -173,18 +196,19 @@ public final class ItemsBoardReader implements BoardReader {
                         optionIds,
                         projectId);
         final List<ItemView> views = new ArrayList<>();
+        final Set<String> overflowing = new HashSet<>();
         for (final GitHubGraphQl.ProjectItem item : items.values()) {
-            final ItemView view = view(item, read, fieldNames, faults);
+            final ItemView view = view(item, read, fieldNames, faults, overflowing);
             if (view != null) {
                 views.add(view);
             }
         }
-        final IssueMapping.Mapped mapped = IssueMapping.read(views, read, states);
+        final IssueMapping.Mapped mapped = IssueMapping.read(views, overflowing, read, states);
         final List<String> allFaults = new ArrayList<>(faults);
         allFaults.addAll(mapped.faults());
         final Board board =
                 new Board(
-                        revision(config.commit(), items.values(), fieldNames),
+                        revision(config.commit(), items.values(), fieldNames, allFaults),
                         read.workflow(),
                         mapped.stories(),
                         mapped.issues(),
@@ -216,7 +240,8 @@ public final class ItemsBoardReader implements BoardReader {
             this.until = until;
         }
 
-        <T> T of(final Supplier<T> read) {
+        /** Refuses the read once its deadline has passed. */
+        void inTime() {
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(
                         config.own(),
@@ -224,6 +249,10 @@ public final class ItemsBoardReader implements BoardReader {
                                 + deadline.toSeconds()
                                 + " s");
             }
+        }
+
+        <T> T of(final Supplier<T> read) {
+            inTime();
             try {
                 return read.get();
             } catch (final StoreException | UnsupportedOperationException e) {
@@ -262,7 +291,7 @@ public final class ItemsBoardReader implements BoardReader {
                                 + " pages carry; nothing of it is shown rather than a part");
             }
             final String end = info.endCursor();
-            if (end == null || end.isEmpty() || end.equals(cursor)) {
+            if (end == null || end.isBlank() || end.equals(cursor)) {
                 throw new StoreException.Unreadable(
                         config.own(),
                         "GitHub named a next page of " + what + " without a new place to read on");
@@ -300,8 +329,11 @@ public final class ItemsBoardReader implements BoardReader {
         options.put(FieldNames.PRIORITY, Story.PRIORITIES);
         options.put(FieldNames.SIZE, IssueMapping.SIZES);
         options.put(FieldNames.WORKER, List.of("Agent", "Manual"));
+        options.put(
+                FieldNames.RISK, Arrays.stream(Risk.values()).map(Risk::spelled).sorted().toList());
         for (final Map.Entry<String, List<String>> field : options.entrySet()) {
-            if (!dataTypes.containsKey(field.getKey())) {
+            // A field of another kind is named once above; its options would only repeat it.
+            if (!FieldNames.Kind.SINGLE_SELECT.name().equals(dataTypes.get(field.getKey()))) {
                 continue;
             }
             final Map<String, String> held = optionIds.getOrDefault(field.getKey(), Map.of());
@@ -315,23 +347,40 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     /**
-     * Maps one item, or answers null for an item the board leaves out: one without an issue
-     * silently, any other with a fault.
+     * Maps one item, or answers null for an item the board leaves out unseen: one without an issue
+     * silently, one outside the project's owner with a fault. An item whose sub-issues or blockers
+     * run past one page is mapped and named among the overflowing, so the board leaves it out but
+     * knows it.
      */
     private static @Nullable ItemView view(
             final GitHubGraphQl.ProjectItem item,
             final ProjectConfig config,
             final Map<String, String> fieldNames,
-            final List<String> faults) {
+            final List<String> faults,
+            final Set<String> overflowing) {
         final GitHubGraphQl.BoardIssue issue = item.issue();
         if (issue == null) {
             // A draft or a pull request is no planning item.
             return null;
         }
-        final String where = "Item " + issue.repository() + "#" + issue.number();
-        final String repository = ownName(issue.repository(), config.project().owner());
-        if (repository == null) {
+        final String nameWithOwner = issue.repository();
+        final int slash = nameWithOwner.indexOf('/');
+        // GitHub's words reach a fault only in a form a repository's address can have.
+        final boolean shaped =
+                slash > 0
+                        && REPOSITORY_PART.matcher(nameWithOwner.substring(0, slash)).matches()
+                        && REPOSITORY_PART.matcher(nameWithOwner.substring(slash + 1)).matches();
+        final String where = shaped ? "Item " + nameWithOwner + "#" + issue.number() : "An item";
+        if (!shaped
+                || !nameWithOwner.substring(0, slash).equalsIgnoreCase(config.project().owner())) {
             faults.add(where + " lies outside the project's owner and is left out");
+            return null;
+        }
+        final String repository;
+        try {
+            repository = Ids.name(nameWithOwner.substring(slash + 1));
+        } catch (final IllegalArgumentException e) {
+            faults.add(where + " lies outside the project's repositories and is left out");
             return null;
         }
         if (Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
@@ -340,7 +389,7 @@ public final class ItemsBoardReader implements BoardReader {
                     where
                             + " has more sub-issues or blockers than one page carries and is left"
                             + " out; its story is not whole");
-            return null;
+            overflowing.add(item.id());
         }
         final String reason = issue.stateReason();
         return new ItemView(
@@ -368,26 +417,6 @@ public final class ItemsBoardReader implements BoardReader {
                                 + issue.number()),
                 issue.updatedAt(),
                 item.archived());
-    }
-
-    /**
-     * Answers a repository's short name from GitHub's {@code owner/name}, or null when it names no
-     * owner or another than the project's; GitHub compares owners without case.
-     */
-    private static @Nullable String ownName(final String nameWithOwner, final String owner) {
-        final int slash = nameWithOwner.indexOf('/');
-        if (slash < 1 || slash != nameWithOwner.lastIndexOf('/')) {
-            return null;
-        }
-        if (!nameWithOwner.substring(0, slash).equalsIgnoreCase(owner)) {
-            return null;
-        }
-        final String name = nameWithOwner.substring(slash + 1);
-        try {
-            return Ids.name(name);
-        } catch (final IllegalArgumentException e) {
-            return null;
-        }
     }
 
     /**
@@ -438,14 +467,16 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     /**
-     * Digests, in a fixed order, every item's node id, change time, open and archived state,
-     * parent, sub-issues, blockers and field values, with the commit of the project's files, so a
-     * change of any of them, a field's alone included, gives another revision.
+     * Digests, in a fixed order, the commit of the project's files, the board's faults, and every
+     * item's node id, issue, repository, number, title, body, labels, change time, open and
+     * archived state and its reason, parent, sub-issues, blockers and field values, so a change of
+     * any of them, a field's alone or a fault's included, gives another revision.
      */
     private static Revision revision(
             final String commit,
             final Iterable<GitHubGraphQl.ProjectItem> items,
-            final Map<String, String> fieldNames) {
+            final Map<String, String> fieldNames,
+            final List<String> faults) {
         final MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -453,28 +484,39 @@ public final class ItemsBoardReader implements BoardReader {
             throw new IllegalStateException("Every Java runtime has SHA-256", e);
         }
         add(digest, commit);
+        // The faults follow GitHub's order of the items, which may shift between two reads.
+        add(digest, faults.stream().sorted().toList());
         final Map<String, GitHubGraphQl.ProjectItem> sorted = new TreeMap<>();
         items.forEach(item -> sorted.put(item.id(), item));
+        add(digest, Integer.toString(sorted.size()));
         for (final GitHubGraphQl.ProjectItem item : sorted.values()) {
             final GitHubGraphQl.BoardIssue issue = item.issue();
             add(digest, item.id());
             if (issue == null) {
-                add(digest, "no issue");
+                // A tag no length-prefixed text begins with, so no id stands for it.
+                digest.update(NONE);
                 continue;
             }
+            digest.update(SOME);
             add(digest, issue.id());
+            add(digest, issue.repository());
+            add(digest, Integer.toString(issue.number()));
+            add(digest, issue.title());
+            addNullable(digest, issue.body());
+            add(digest, issue.labels());
             add(digest, issue.updatedAt().toString());
             add(digest, issue.state());
+            addNullable(digest, issue.stateReason());
             add(digest, String.valueOf(item.archived()));
-            add(digest, Objects.requireNonNullElse(issue.parentId(), ""));
+            addNullable(digest, issue.parentId());
             add(digest, issue.subIssues());
             add(digest, issue.blockedBy());
-            for (final Map.Entry<String, String> value :
-                    new TreeMap<>(values(item, fieldNames)).entrySet()) {
+            final Map<String, String> values = new TreeMap<>(values(item, fieldNames));
+            add(digest, Integer.toString(values.size()));
+            for (final Map.Entry<String, String> value : values.entrySet()) {
                 add(digest, value.getKey());
                 add(digest, value.getValue());
             }
-            add(digest, "end of item");
         }
         return new Revision(HexFormat.of().formatHex(digest.digest()));
     }
@@ -485,6 +527,22 @@ public final class ItemsBoardReader implements BoardReader {
                 refs.nodes().size()
                         + (Boolean.TRUE.equals(refs.pageInfo().hasNextPage()) ? "+" : ""));
         refs.nodes().forEach(ref -> add(digest, ref.id()));
+    }
+
+    /** Adds a list of texts with their count before them. */
+    private static void add(final MessageDigest digest, final List<String> texts) {
+        add(digest, Integer.toString(texts.size()));
+        texts.forEach(text -> add(digest, text));
+    }
+
+    /** Adds a text that may be missing, told apart from an empty one by a tag. */
+    private static void addNullable(final MessageDigest digest, final @Nullable String text) {
+        if (text == null) {
+            digest.update(NONE);
+        } else {
+            digest.update(SOME);
+            add(digest, text);
+        }
     }
 
     /** Adds a text with its length before it, so two texts never run into one another. */

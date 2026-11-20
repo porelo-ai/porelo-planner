@@ -464,7 +464,30 @@ class IssueMappingTest {
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("ST7", false));
         assertThat(mapped.faults())
                 .as("the body is named, not shown")
-                .containsExactly("ST7 has a body too long to read its Also needs");
+                .containsExactly(
+                        "ST7 has a body too long to read its Also needs, shown without it");
+        assertThat(mapped.stories().get(0).description())
+                .as("the board holds no body beyond GitHub's bound")
+                .isEmpty();
+    }
+
+    @Test
+    void anIssueBodyBeyondGitHubsBoundStaysOnTheBoardWithoutItsBody() {
+        // Harm: a body of megabytes held and sent to the window on every look at the board.
+        final Item issue =
+                new Item("example-lib", 3, "LB5")
+                        .field(FieldNames.STATUS, "Idea")
+                        .body(SECRET_BODY + "x".repeat(BodySections.LONGEST));
+
+        final IssueMapping.Mapped mapped = read(issue);
+
+        assertThat(mapped.issues())
+                .as("the issue stays, without its body")
+                .extracting(Issue::id, Issue::text)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("LB5", ""));
+        assertThat(mapped.faults())
+                .as("the issue named, never its body's text")
+                .containsExactly("LB5 has a body longer than GitHub takes, shown without it");
     }
 
     @Test

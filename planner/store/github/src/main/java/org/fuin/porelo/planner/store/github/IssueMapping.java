@@ -84,6 +84,24 @@ public final class IssueMapping {
             final Collection<ItemView> items,
             final ProjectConfig config,
             final StoryStates states) {
+        return read(items, Set.of(), config, states);
+    }
+
+    /**
+     * Maps the items. Archived items and those named left out are not on the board, but their ids
+     * stay taken, and a story or issue that needs one of those left out is told so.
+     *
+     * @param items every item of the project
+     * @param leftOut the item ids of items the board leaves out, already named in a fault
+     * @param config the project's repositories and workflow
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @return the stories, the issues and the faults
+     */
+    public static Mapped read(
+            final Collection<ItemView> items,
+            final Set<String> leftOut,
+            final ProjectConfig config,
+            final StoryStates states) {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
         final Map<String, ItemView> byIssueId = new HashMap<>();
@@ -104,7 +122,7 @@ public final class IssueMapping {
                 continue;
             }
             idOf.put(item.issueId(), id);
-            if (!item.archived()) {
+            if (!item.archived() && !leftOut.contains(item.itemId())) {
                 live.add(item);
             }
         }
@@ -277,6 +295,12 @@ public final class IssueMapping {
         final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
         final Worker worker = workerOf(id, item, faults);
         final Risk risk = riskOf(id, item, faults);
+        String body = item.body();
+        if (body.length() > BodySections.LONGEST) {
+            // The board holds what GitHub takes; the text itself is a person's and not repeated.
+            faults.add(id + " has a body longer than GitHub takes, shown without it");
+            body = "";
+        }
         return new Issue(
                 id,
                 item.repository(),
@@ -286,7 +310,7 @@ public final class IssueMapping {
                 blockedBy,
                 parent,
                 item.link(),
-                item.body(),
+                body,
                 worker,
                 risk);
     }
@@ -315,11 +339,13 @@ public final class IssueMapping {
             }
         }
         String also;
+        String body = item.body();
         try {
-            also = BodySections.read(item.body()).section(ALSO_NEEDS).orElse("");
+            also = BodySections.read(body).section(ALSO_NEEDS).orElse("");
         } catch (final IllegalArgumentException e) {
-            faults.add(id + " has a body too long to read its Also needs");
+            faults.add(id + " has a body too long to read its Also needs, shown without it");
             also = "";
+            body = "";
             whole = false;
         }
         for (final String line : also.lines().map(String::strip).toList()) {
@@ -374,16 +400,7 @@ public final class IssueMapping {
         }
         final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
         return new Story(
-                id,
-                item.title(),
-                state,
-                given,
-                priority,
-                size,
-                own,
-                item.body(),
-                item.link(),
-                whole);
+                id, item.title(), state, given, priority, size, own, body, item.link(), whole);
     }
 
     /**

@@ -3,7 +3,10 @@ package org.fuin.porelo.planner.store.github;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TokenSource;
@@ -25,9 +28,9 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     private final TokenSource tokens;
 
-    private final Function<TrackedProject, BoardReader> readers;
+    private final Function<StoryStates, BoardReader> readers;
 
-    private final Function<TrackedProject, BoardWriter> writers;
+    private final Supplier<BoardWriter> writers;
 
     private final Duration lockWait;
 
@@ -46,21 +49,25 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Duration lockWait) {
         this(
                 tokens,
-                project ->
+                states ->
                         new ItemsBoardReader(
-                                queries,
-                                tokens,
-                                new ForgeAccessRefusals(GITHUB),
-                                project.storyStates()::storyState),
-                project -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
+                                queries, tokens, new ForgeAccessRefusals(GITHUB), states),
+                () -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
                 lockWait);
     }
 
-    /** Makes an opener with its own board reader and writer per project. */
+    /**
+     * Makes an opener with its own board reader and writer per project.
+     *
+     * @param tokens gives the person's token for the forge
+     * @param readers makes a project's reader, given how its story states follow the workflow
+     * @param writers makes a project's writer
+     * @param lockWait how long a call waits for another on the same project
+     */
     GitHubStoreOpener(
             final TokenSource tokens,
-            final Function<TrackedProject, BoardReader> readers,
-            final Function<TrackedProject, BoardWriter> writers,
+            final Function<StoryStates, BoardReader> readers,
+            final Supplier<BoardWriter> writers,
             final Duration lockWait) {
         this.tokens = tokens;
         this.readers = readers;
@@ -69,7 +76,30 @@ public final class GitHubStoreOpener implements TrackedStores {
     }
 
     @Override
-    public PlanningStore open(final TrackedProject project) {
+    public PlanningStore open(final TrackedProject project, final Source again) {
+        final ProjectConfig first = config(project);
+        // The workflow read last decides a story's state, so a changed one counts at once.
+        final AtomicReference<TrackedProject> latest = new AtomicReference<>(project);
+        final StoryStates states =
+                issueStates ->
+                        Objects.requireNonNull(latest.get()).storyStates().storyState(issueStates);
+        return new GitHubStore(
+                first,
+                () -> {
+                    final TrackedProject now = again.current();
+                    final ProjectConfig config = config(now);
+                    latest.set(now);
+                    return config;
+                },
+                GitHubStore.Parts.reading(readers.apply(states), states)
+                        .writer(writers.get())
+                        .refusals(new ForgeAccessRefusals(GITHUB)),
+                tokens,
+                lockWait);
+    }
+
+    /** Checks the tracker the project's files name, and answers what its board is read with. */
+    private static ProjectConfig config(final TrackedProject project) {
         final String own = project.repositories().get(0);
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
@@ -85,21 +115,14 @@ public final class GitHubStoreOpener implements TrackedStores {
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(own, "project.yml names no GitHub project");
         }
-        final ProjectConfig config =
-                new ProjectConfig(
-                        project.forge(),
-                        ref,
-                        project.filesCommit(),
-                        project.workflow(),
-                        project.work(),
-                        project.repositories(),
-                        Map.of(),
-                        Map.of());
-        return new GitHubStore(
-                config,
-                GitHubStore.Parts.reading(readers.apply(project), project.storyStates()::storyState)
-                        .writer(writers.apply(project)),
-                tokens,
-                lockWait);
+        return new ProjectConfig(
+                project.forge(),
+                ref,
+                project.filesCommit(),
+                project.workflow(),
+                project.work(),
+                project.repositories(),
+                Map.of(),
+                Map.of());
     }
 }

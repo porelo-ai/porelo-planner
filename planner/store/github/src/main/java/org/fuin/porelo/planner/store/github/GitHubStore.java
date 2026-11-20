@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -101,7 +102,7 @@ public final class GitHubStore implements PlanningStore {
         }
     }
 
-    private final ProjectConfig config;
+    private final Supplier<ProjectConfig> again;
 
     private final Parts parts;
 
@@ -111,6 +112,8 @@ public final class GitHubStore implements PlanningStore {
 
     private final ReentrantLock lock = new ReentrantLock();
 
+    private volatile ProjectConfig config;
+
     private volatile @Nullable Snapshot snapshot;
 
     private volatile boolean retired;
@@ -118,17 +121,21 @@ public final class GitHubStore implements PlanningStore {
     /**
      * Makes the store; nothing is read until the board is asked for.
      *
-     * @param config what the project is read with
+     * @param config what the project is read with, as its files named it at opening
+     * @param again gives what the project is read with as its files name it now, asked before each
+     *     read of the board
      * @param parts its parts
      * @param tokens the person's token, asked for only to scrub it from a refusal's words
      * @param lockWait how long a call waits for another save or read before it is refused as busy
      */
     public GitHubStore(
             final ProjectConfig config,
+            final Supplier<ProjectConfig> again,
             final Parts parts,
             final TokenSource tokens,
             final Duration lockWait) {
         this.config = config;
+        this.again = again;
         this.parts = parts;
         this.tokens = tokens;
         this.lockWait = lockWait;
@@ -186,7 +193,7 @@ public final class GitHubStore implements PlanningStore {
                         () -> {
                             // A stage runs for minutes, so it is saved on the project as it stands
                             // now.
-                            final Snapshot now = parts.reader().read(config);
+                            final Snapshot now = parts.reader().read(configNow());
                             for (final StageResult.ForIssue issue : result.issues()) {
                                 now.board()
                                         .issue(issue.id())
@@ -221,11 +228,14 @@ public final class GitHubStore implements PlanningStore {
     }
 
     private Snapshot read() {
+        final ProjectConfig now = configNow();
         final Snapshot current = snapshot;
-        if (current != null && parts.probe().unchanged(current)) {
+        if (current != null
+                && current.config().commit().equals(now.commit())
+                && parts.probe().unchanged(current)) {
             return current;
         }
-        final Snapshot fresh = parts.reader().read(config);
+        final Snapshot fresh = parts.reader().read(now);
         snapshot = fresh;
         return fresh;
     }
@@ -245,7 +255,7 @@ public final class GitHubStore implements PlanningStore {
     /**
      * Runs a write under the lock; any failure forgets the board kept, as a part may be written.
      */
-    private Snapshot writing(final java.util.function.Supplier<Snapshot> work) {
+    private Snapshot writing(final Supplier<Snapshot> work) {
         return locked(
                 () -> {
                     try {
@@ -279,12 +289,19 @@ public final class GitHubStore implements PlanningStore {
         }
     }
 
+    /** Asks for the project's files as they stand now; a failure is the read's refusal. */
+    private ProjectConfig configNow() {
+        final ProjectConfig now = again.get();
+        config = now;
+        return now;
+    }
+
     private Snapshot current() {
         final Snapshot current = snapshot;
         return current != null ? current : read();
     }
 
-    private Snapshot locked(final java.util.function.Supplier<Snapshot> work) {
+    private Snapshot locked(final Supplier<Snapshot> work) {
         refuseRetired();
         final boolean held;
         try {

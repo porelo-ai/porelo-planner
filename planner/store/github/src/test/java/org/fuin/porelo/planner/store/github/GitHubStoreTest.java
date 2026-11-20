@@ -55,7 +55,8 @@ class GitHubStoreTest {
     }
 
     private static GitHubStore store(final GitHubStore.Parts parts) {
-        return new GitHubStore(CONFIG, parts, origin -> TOKEN, Duration.ofMillis(200));
+        return new GitHubStore(
+                CONFIG, () -> CONFIG, parts, origin -> TOKEN, Duration.ofMillis(200));
     }
 
     @Test
@@ -312,5 +313,49 @@ class GitHubStoreTest {
                             assertThat(stale.current()).as("the revision named").isEqualTo("r2");
                             assertThat(stale.changed()).as("the item named").isEqualTo("PL1");
                         });
+    }
+
+    @Test
+    void projectFilesChangedAtTheOwnHeadAreReadThoughGitHubSawNoChange() {
+        // Harm: a workflow or work rule changed in the own repository never reaches the board,
+        // as GitHub's items stayed as they were.
+        final ProjectConfig moved =
+                new ProjectConfig(
+                        CONFIG.forge(),
+                        CONFIG.project(),
+                        "d00d1e5",
+                        new Workflow(
+                                List.of("Idea", "Doing", "Finished"),
+                                List.of(),
+                                List.of("Finished")),
+                        CONFIG.work(),
+                        CONFIG.repositories(),
+                        Map.of(),
+                        Map.of());
+        final java.util.concurrent.atomic.AtomicReference<ProjectConfig> files =
+                new java.util.concurrent.atomic.AtomicReference<>(CONFIG);
+        final List<ProjectConfig> read = new java.util.ArrayList<>();
+        final GitHubStore store =
+                new GitHubStore(
+                        CONFIG,
+                        files::get,
+                        GitHubStore.Parts.reading(
+                                        config -> {
+                                            read.add(config);
+                                            return new Snapshot(
+                                                    snapshot("one").board(), Map.of(), config);
+                                        },
+                                        states -> null)
+                                .probe(current -> true),
+                        origin -> TOKEN,
+                        Duration.ofMillis(200));
+        store.refresh();
+        files.set(moved);
+        store.refresh();
+
+        assertThat(read)
+                .as("the project read with the files of each head")
+                .extracting(ProjectConfig::commit)
+                .containsExactly("c0ffee0", "d00d1e5");
     }
 }

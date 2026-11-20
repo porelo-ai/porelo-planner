@@ -125,7 +125,15 @@ public final class GitProjects {
         }
         final TrackedProject trackedProject = opened.tracked();
         if (trackedProject != null) {
-            return tracked.open(trackedProject);
+            return tracked.open(
+                    trackedProject,
+                    new ProjectFile.Again(
+                            remote,
+                            lock,
+                            own,
+                            branch,
+                            settings.mostRepositories(),
+                            trackedProject));
         }
         final List<Repository> repositories = opened.repositories();
         return new GitStore(
