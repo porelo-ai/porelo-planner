@@ -124,6 +124,17 @@ public interface ProjectWrites {
             List<String> labels);
 
     /**
+     * Makes an issue a sub-issue of another, after the sub-issues it has.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the parent's repository
+     * @param number the parent's number
+     * @param subIssueId the sub-issue's id in REST, {@link Created#databaseId}
+     */
+    void addSubIssue(String token, String owner, String repository, int number, long subIssueId);
+
+    /**
      * Writes an issue's body or its open state.
      *
      * @param token the person's token
@@ -223,6 +234,16 @@ public interface ProjectWrites {
                                         null,
                                         null,
                                         null)));
+            }
+
+            @Override
+            public void addSubIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long subIssueId) {
+                rest.addSubIssue(token, owner, repository, number, subIssueId, false);
             }
 
             @Override

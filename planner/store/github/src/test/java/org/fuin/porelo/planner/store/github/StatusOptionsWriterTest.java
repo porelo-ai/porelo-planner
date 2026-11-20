@@ -275,6 +275,16 @@ class StatusOptionsWriterTest {
         }
 
         @Override
+        public void addSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            throw new AssertionError("the step adds no sub-issue");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,

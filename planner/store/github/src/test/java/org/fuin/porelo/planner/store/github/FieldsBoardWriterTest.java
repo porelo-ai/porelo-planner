@@ -287,6 +287,16 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public void addSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            throw new AssertionError("a save added a sub-issue");
+        }
+
+        @Override
         public void updateIssue(
                 final String token,
                 final String owner,
