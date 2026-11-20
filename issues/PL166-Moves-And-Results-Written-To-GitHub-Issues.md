@@ -10,7 +10,7 @@
   "priority": "High",
   "rank": 82,
   "blockedBy": ["PL165"],
-  "covers": "The GitHub store saves a move, a worker, a priority, a new issue, an idea and a task's stage result with the person's own GitHub access, without a commit: field changes bundled into one GraphQL mutation, a stale board refused, a partly saved batch named, and a stage result and its footprint written into the issue's fixed block and as a comment under the person's name"
+  "covers": "The GitHub store saves a move, a worker, a priority, a new issue, an idea and a task's stage result with the person's own GitHub access, without a commit: field changes bundled into one GraphQL mutation, a stale board refused, a partly saved batch named, and a stage result written into the sections of the issue's body it names and as one stage comment under the person's name"
 }
 ```
 
@@ -32,15 +32,18 @@ stands on its issue under the person's name, with no fetch, commit or push.
   answer gives it (the next number of its prefix). Two persons adding at once may count the same number: after the
   write the planner reads the prefix's ids again, and of two items with one `Id` the one with the higher GitHub
   number takes the next free one. `createIdea`: the story and its issues the same way, bundled.
-- `saveResult(result)`: the plan, why this size, to be checked and the stage's footprint into the fixed block of each issue's body, the new
-  state into `Status`, and one comment with the result, written with the person's token so GitHub shows the person
-  as its author; findings become new issues as today.
-- No stage record is written and no measured-state rule is checked: the stage's footprint is added to the fixed
-  block beside its analysis result, in the same body edit, and the number fields `Estimate`, `Minutes`,
-  `VM minutes`, `Tokens` and `Stages` are set to the block's new sums in the same field mutation as `Status`.
+- `saveResult(result)`: the plan, why this size and to be checked overwrite those sections of each issue's body,
+  leaving the others; the new state goes into `Status`; and one stage comment, in the form the mapping gives
+  (result, actor, model, effort, minutes, VM minutes, tokens from Porelo's record of the task), is written with
+  the person's token so GitHub shows the person as its author. Its `createdAt` is the stage's end; a result saved
+  more than one minute after the task ended carries the end as `"ended"`. Findings become new issues as today.
+- No stage record is written and no measured-state rule is checked. The number fields `Estimate`, `Minutes`,
+  `VM minutes`, `Tokens` and `Stages` are set to the new sums of the stage comments in the same field mutation as
+  `Status`; the sums come from the board's fields plus the new stage, so no comment is read back to save.
 - Red first: `GitHubStoreSaveTest` over recorded answers: a move of two issues in two repositories ends in one
   mutation; a board changed meanwhile is refused; the second of two calls failing gives `PartlySaved`; a stage
-  result leaves the person's text above the fixed block byte for byte.
+  result that names *Plan* leaves *Acceptance* byte for byte and adds exactly one stage comment; a result saved
+  late carries `"ended"`.
 
 ## Acceptance
 
