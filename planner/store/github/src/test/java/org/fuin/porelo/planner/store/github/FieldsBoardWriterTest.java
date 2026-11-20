@@ -1565,6 +1565,36 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void whatMustBeTrueOfSeveralParagraphsIsMadeWholeAsItsOwnSection() {
+        // Harm: a text the window takes refused on a GitHub project, or cut to its first
+        // paragraph.
+        final GitHub github = new GitHub();
+
+        github.writer()
+                .createIssue(
+                        snapshot(),
+                        SHOWN,
+                        new NewIssue(
+                                "example-lib",
+                                "A new thing",
+                                "One.\n\nTwo.",
+                                "S",
+                                Worker.AGENT,
+                                "task-1"));
+
+        final String body = github.made.get("example-lib").get(0).body();
+        assertThat(BodySections.read(body).part(BodySections.Part.WHAT_MUST_BE_TRUE))
+                .as("what must be true, read back whole")
+                .contains("One.\n\nTwo.");
+        assertThat(BodySections.read(body).ambiguity())
+                .as("whether its sections are clear")
+                .isEmpty();
+        assertThat(body)
+                .as("the task that proposed it")
+                .contains("Proposed by Porelo task `task-1`.");
+    }
+
+    @Test
     void whatMustBeTrueTheBodyCannotHoldIsRefusedBeforeAnyCall() {
         // Harm: an issue made on GitHub before the refusal of its own text, or the refusal
         // answered as GitHub unreachable.

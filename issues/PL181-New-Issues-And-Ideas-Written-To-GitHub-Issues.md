@@ -29,13 +29,17 @@ any project, and finds it on the board and on GitHub under its tracker reference
   after) stand.
 - **Checked before the first call**: the revision the window showed (`StaleRevision`, for an issue and an idea
   alike), the project's id, each repository being one of the project's (and named once in an idea), every field and
-  option a value is set to, each title and line, and each body. `What must be true` is written with
-  `BodySections.with(WHAT_MUST_BE_TRUE, ...)`, so it is one paragraph on GitHub, without a heading, a lead or an open
-  code block; anything else is `NotSavable` in fixed words that never repeat the person's text, never `Unreachable`.
-  A multi-paragraph text the Git store takes is refused here, so the board reads every new body back.
+  option a value is set to, each title and line, and each body. `What must be true` of one paragraph the lead
+  holds is written as the lead `**What must be true.** <text>`; one of several paragraphs, or one the lead cannot
+  hold, as a section `## What must be true` of its own (`BodySections.withWhatMustBeTrue`). A text even a section
+  cannot hold, with a heading of the first or second level or a code block left open, is `NotSavable` in fixed words
+  that never repeat the person's text, never `Unreachable`. `BodySections.part(WHAT_MUST_BE_TRUE)` and the issue
+  detail's `whatMustBeTrue` read either form; a body holding both is ambiguous, named as a fault of the item as other
+  ambiguities are, and no stage result is written into it.
 - **`createIssue(current, revision, issue)`** (`NewItems`, called by `FieldsBoardWriter`): makes the issue in the
   named repository by REST with its title and a body of `**What must be true.** <text>`, followed by ``Proposed by
-  Porelo task `<task>`.`` as its own paragraph when a task proposed it, as the Git store writes it; adds it to the
+  Porelo task `<task>`.`` as its own paragraph when a task proposed it, as the Git store writes it; in the section
+  form the task's paragraph stands above the section, so the section holds the person's text alone; adds it to the
   project (`addProjectItems`) and sets `Status` to the workflow's first state, `Size` when given, `Worker`,
   `Priority` Medium and `Rank` after the last issue of that priority, in `setFieldValues` batches of at most 50;
   answers `<repository>#<number>`. No `Id` is written. A rank counts only finite ranks of 1 to 99999 and is capped
@@ -69,7 +73,10 @@ any project, and finds it on the board and on GitHub under its tracker reference
   stopping the write naming both; a story whose label GitHub dropped, answered or found again, stopping the write; a
   failure on GitHub's side not sent again and partly saved; a refusal after an unanswered call partly saved; a
   partly saved idea naming what stands without the token or the person's text; a *What must be true* the body cannot
-  hold refused before any call. `GitHubAddsHttpTest`: a GitHub project's `POST .../issues` and `POST .../ideas`
+  hold refused before any call; a *What must be true* of several paragraphs made whole as its own section.
+  `BodySectionsTest`: the section form read whole, written for several paragraphs and the lead kept for one, and a
+  body holding both forms named as unclear. `TrackerIdsHttpTest`: the section form answered whole as
+  `whatMustBeTrue`. `GitHubAddsHttpTest`: a GitHub project's `POST .../issues` and `POST .../ideas`
   answer the reference instead of `501`.
 - Reading the board back after a write finds the new items only once the board reads every item by its tracker
   reference ([PL170](README.md#pl170)); until then a new item stands on GitHub and the project but the board leaves

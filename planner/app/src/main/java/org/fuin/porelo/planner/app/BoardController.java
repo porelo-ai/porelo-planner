@@ -57,6 +57,7 @@ import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.planner.store.github.BodySections;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -735,6 +736,25 @@ public class BoardController {
                 .view((board, snapshot) -> issueDetail(board, snapshot, checked, format));
     }
 
+    /**
+     * What must be true as an issue's text holds it: the paragraph its lead opens, or, in a
+     * tracker's body, a section of its own for a text of several paragraphs.
+     */
+    private static @Nullable String whatMustBeTrue(final String text) {
+        final Matcher lead = WHAT_MUST_BE_TRUE.matcher(text);
+        if (lead.find()) {
+            return lead.group(1).strip();
+        }
+        try {
+            return BodySections.read(text)
+                    .section(BodySections.WHAT_MUST_BE_TRUE_SECTION)
+                    .orElse(null);
+        } catch (final IllegalArgumentException e) {
+            // A text longer than any body a tracker holds has no section to read.
+            return null;
+        }
+    }
+
     private static IssueReply issueDetail(
             final Board board,
             final WorkRun.Snapshot snapshot,
@@ -742,7 +762,6 @@ public class BoardController {
             final String format) {
         final Issue issue =
                 board.issue(checked).orElseThrow(() -> new StoreException.NoSuchIssue(checked));
-        final Matcher what = WHAT_MUST_BE_TRUE.matcher(issue.text());
         final org.fuin.porelo.planner.app.answers.Issue view = issue(board, issue, snapshot);
         return new IssueReply(
                 board.revision().value(),
@@ -770,7 +789,7 @@ public class BoardController {
                                 .filter(other -> issue.id().equals(other.parent()))
                                 .map(Issue::id)
                                 .toList(),
-                        what.find() ? what.group(1).strip() : null));
+                        whatMustBeTrue(issue.text())));
     }
 
     /**

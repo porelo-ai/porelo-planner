@@ -81,7 +81,17 @@ class TrackerIdsHttpTest {
                                 List.of(),
                                 null,
                                 null,
-                                "")),
+                                ""),
+                        new Issue(
+                                "porelo-store#10",
+                                "porelo-store",
+                                "An issue whose text runs over paragraphs",
+                                "Backlog",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "Proposed by Porelo task `t1`.\n\n## What must be true\n\nOne.\n\nTwo.\n")),
                 new Work(Map.of(), List.of()));
     }
 
@@ -150,6 +160,15 @@ class TrackerIdsHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stories[0].id").value("porelo-store#7"))
                 .andExpect(jsonPath("$.stories[0].alias").doesNotExist());
+    }
+
+    @Test
+    void whatMustBeTrueWrittenAsASectionIsAnsweredWhole() throws Exception {
+        // Harm: the window shows no What must be true, or only its first paragraph, for an issue
+        // whose text runs over paragraphs.
+        mvc.perform(get(URI.create("/projects/alpha/issues/porelo-store%2310")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issue.whatMustBeTrue").value("One.\n\nTwo."));
     }
 
     @Test

@@ -483,28 +483,31 @@ final class NewItems {
     }
 
     /**
-     * A new issue's body: what must be true as its lead's paragraph, then the task that proposed
-     * it, refused in fixed words when the board could not read it back as its sections.
+     * A new issue's body: what must be true as its lead's paragraph followed by the task that
+     * proposed it, or, for a text the lead cannot hold, the task's paragraph followed by a section
+     * of its own; refused in fixed words when even a section cannot hold the text.
      */
     private static String issueBody(final NewIssue issue) {
-        final String body;
+        final String what;
         try {
-            final String what =
-                    BodySections.read("")
-                            .with(BodySections.Part.WHAT_MUST_BE_TRUE, issue.mustBeTrue())
-                            .text();
-            body =
-                    issue.task() == null
-                            ? what
-                            : what.strip()
-                                    + "\n\nProposed by Porelo task `"
-                                    + issue.task()
-                                    + "`.\n";
+            what = BodySections.read("").withWhatMustBeTrue(issue.mustBeTrue()).text();
         } catch (final IllegalArgumentException e) {
             throw new StoreException.NotSavable(
                     "",
-                    "what must be true is one paragraph on GitHub, without a heading, a lead or an"
-                            + " open code block");
+                    "what must be true holds a heading of the first or second level or leaves a"
+                            + " code block open");
+        }
+        final String task = issue.task();
+        final String proposed = "Proposed by Porelo task `" + task + "`.";
+        final String body;
+        if (task == null) {
+            body = what;
+        } else if (BodySections.read(what)
+                .section(BodySections.WHAT_MUST_BE_TRUE_SECTION)
+                .isPresent()) {
+            body = proposed + "\n\n" + what;
+        } else {
+            body = what.strip() + "\n\n" + proposed + "\n";
         }
         if (BodySections.read(body).ambiguity().isPresent()) {
             throw new StoreException.NotSavable(

@@ -28,7 +28,9 @@ The planner adds 10 fields to the project. A GitHub project holds at most 50, 13
 
 The body holds what is true now, in the sections the Markdown issues have: the line of what the issue covers first,
 then *Why this size*, *What must be true*, *Plan*, *Acceptance*, *Open questions*, *To be checked* and *Findings*.
-A story's body also holds *Gain*, *Test* and *Tested*, and an issue's its task, role, severity and kind where it has
+*What must be true* of one paragraph stands as the paragraph its lead `**What must be true.**` opens; one of several
+paragraphs, or one the lead cannot hold, stands as a section `## What must be true` of its own, and the planner reads
+either form. A story's body also holds *Gain*, *Test* and *Tested*, and an issue's its task, role, severity and kind where it has
 them. A stage result overwrites the sections its kind writes, and leaves every other byte as it was. A heading inside
 a fenced block is no section. No times and no stage history stand in the body.
 
@@ -37,7 +39,8 @@ none runs over a heading-shaped line together with a fence of its own kind at le
 open by hand that pairs with a later block's); none opened under a section of the skeleton holds a line shaped as the
 heading of one; every HTML comment, `pre` and `details` block closes and holds no heading-shaped line; every line
 Markdown reads as a heading of the first or second level is written as `## ` and a name; no section of the skeleton
-stands twice; and no leading paragraph stands twice. A fence indented by a tab is indented code, no fence. A person's
+stands twice; no leading paragraph stands twice; and *What must be true* does not stand both as the lead's paragraph
+and as a section. A fence indented by a tab is indented code, no fence. A person's
 own headings may repeat, and the leading paragraphs may stand in any order; a missing one is added where the skeleton
 puts it. Otherwise the body stays as it is, the result's `Status`, fields and stage comment are still saved,
 and the board names the issue by its repository and number with the first thing to repair, such as "the code block
@@ -106,10 +109,11 @@ result overwrites the sections of the body its kind writes and no other byte.
 A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the
 planner checks the revision the window showed, the repositories, every field and option it sets and each body, so
 what the project cannot hold is refused with nothing made. A new issue is made in its repository with *What must be
-true* as its body's paragraph and the task that proposed it below, added to the project, and given the workflow's
+true* as the lead's paragraph followed by the task that proposed it, or, for a text of several paragraphs, as a
+section of its own below the task's paragraph; it is added to the project, and given the workflow's
 first state in `Status`, its `Size` when given, `Worker`, `Priority` (Medium, or the idea's priority) and the
-`Rank` after the last issue of that priority. *What must be true* is one paragraph there, without a heading, a lead
-or an open code block. An idea's story is made first in the project's own repository, labeled `story`, its gain and
+`Rank` after the last issue of that priority. A *What must be true* holding a heading of the first or second
+level or leaving a code block open is refused. An idea's story is made first in the project's own repository, labeled `story`, its gain and
 its test in its body, given `Priority` and `Rank`, and no `Status`, so its state follows its issues; then each issue
 is made, and they become the story's sub-issues in the idea's order. GitHub drops a label in silence for an account
 without push access, so a story made or found without its label stops the write.

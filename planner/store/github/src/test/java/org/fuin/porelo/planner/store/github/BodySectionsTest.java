@@ -58,6 +58,57 @@ class BodySectionsTest {
     }
 
     @Test
+    void whatMustBeTrueWrittenAsASectionIsReadWhole() {
+        // Harm: a text of several paragraphs read back as nothing or cut to its first one.
+        final BodySections body =
+                BodySections.read(
+                        "Covers.\n\n## What must be true\n\nOne.\n\nTwo.\n\n## Plan\n\n- Do.\n");
+
+        assertThat(body.part(BodySections.Part.WHAT_MUST_BE_TRUE))
+                .as("what must be true, read from its section")
+                .contains("One.\n\nTwo.");
+        assertThat(body.ambiguity()).as("whether the body splits unclearly").isEmpty();
+    }
+
+    @Test
+    void whatMustBeTrueStandingAsBothLeadAndSectionIsUnclear() {
+        // Harm: one of two differing texts read silently as what must be true, and a result
+        // written over a body whose meaning nobody settled.
+        final BodySections body =
+                BodySections.read(
+                        "**What must be true.** One.\n\n## What must be true\n\nAnother.\n");
+
+        assertThat(body.ambiguity())
+                .as("the body named for a person to repair")
+                .hasValueSatisfying(
+                        repair ->
+                                assertThat(repair).as("the repair").contains("What must be true"));
+    }
+
+    @Test
+    void whatMustBeTrueOfSeveralParagraphsIsWrittenAsItsOwnSectionAndOneParagraphAsTheLead() {
+        // Harm: a text of several paragraphs refused or cut to its first one when an issue is
+        // made.
+        final BodySections several =
+                BodySections.read("").withWhatMustBeTrue("One.\n\n- Two.\n- Three.");
+        final BodySections one = BodySections.read("").withWhatMustBeTrue("Only one.");
+
+        assertThat(several.text())
+                .as("several paragraphs, as a section")
+                .isEqualTo("## What must be true\n\nOne.\n\n- Two.\n- Three.\n");
+        assertThat(several.part(BodySections.Part.WHAT_MUST_BE_TRUE))
+                .as("read back whole")
+                .contains("One.\n\n- Two.\n- Three.");
+        assertThat(one.text())
+                .as("one paragraph, as the lead")
+                .isEqualTo("**What must be true.** Only one.\n");
+        assertThatThrownBy(
+                        () -> BodySections.read("").withWhatMustBeTrue("One.\n\n## Plan\n\nTwo."))
+                .as("a text that even a section cannot hold")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void aHeadingInsideACodeBlockIsNoSection() {
         // Harm: a result written into a code block, or a code block read as the plan.
         final BodySections body = BodySections.read(BODY);

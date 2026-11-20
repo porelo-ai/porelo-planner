@@ -18,6 +18,12 @@ public final class BodySections {
     public static final int LONGEST = 65_536;
 
     /**
+     * The heading of what must be true written as a section, for a text of more than one paragraph
+     * that the lead cannot hold.
+     */
+    public static final String WHAT_MUST_BE_TRUE_SECTION = "What must be true";
+
+    /**
      * The parts a stage result or the mapping writes, in the order the issue skeleton puts them.
      */
     public enum Part {
@@ -158,7 +164,9 @@ public final class BodySections {
         if (part.leading()) {
             final int[] span = paragraph(part);
             if (span.length == 0) {
-                return Optional.empty();
+                return part == Part.WHAT_MUST_BE_TRUE
+                        ? section(WHAT_MUST_BE_TRUE_SECTION)
+                        : Optional.empty();
             }
             String text = joined(span[0], span[1]);
             if (part != Part.COVERS) {
@@ -212,35 +220,76 @@ public final class BodySections {
                 out.subList(span[0], span[1]).clear();
                 out.addAll(span[0], paragraph);
             }
+            return checked(out);
+        }
+        return withSection(part.label(), content, sectionPlace(part));
+    }
+
+    /**
+     * Writes a second-level section: replaces its text, or adds it at a place.
+     *
+     * @param label its heading's name
+     * @param content its lines, checked
+     * @param place where it goes when the body has none
+     */
+    private BodySections withSection(
+            final String label, final List<String> content, final int place) {
+        final List<Line> out = new ArrayList<>(lines);
+        final int heading = heading(label);
+        if (heading < 0) {
+            final List<String> section = new ArrayList<>();
+            section.add("## " + label);
+            section.add("");
+            section.addAll(content);
+            insert(out, place, section);
         } else {
-            final int heading = heading(part.label());
-            if (heading < 0) {
-                final List<String> section = new ArrayList<>();
-                section.add("## " + part.label());
-                section.add("");
-                section.addAll(content);
-                insert(out, sectionPlace(part), section);
-            } else {
-                final int end = sectionEnd(heading);
-                final boolean last = end == out.size();
-                // The body's last line keeps its ending, a missing one too.
-                final String lastEnd = out.get(end - 1).end();
-                final List<String> body = new ArrayList<>();
+            final int end = sectionEnd(heading);
+            final boolean last = end == out.size();
+            // The body's last line keeps its ending, a missing one too.
+            final String lastEnd = out.get(end - 1).end();
+            final List<String> body = new ArrayList<>();
+            body.add("");
+            body.addAll(content);
+            if (end < out.size()) {
                 body.add("");
-                body.addAll(content);
-                if (end < out.size()) {
-                    body.add("");
-                }
-                out.set(heading, new Line(out.get(heading).text(), eol));
-                out.subList(heading + 1, end).clear();
-                final List<Line> written = new ArrayList<>(numbered(body, eol));
-                if (last) {
-                    written.set(written.size() - 1, new Line(written.getLast().text(), lastEnd));
-                }
-                out.addAll(heading + 1, written);
             }
+            out.set(heading, new Line(out.get(heading).text(), eol));
+            out.subList(heading + 1, end).clear();
+            final List<Line> written = new ArrayList<>(numbered(body, eol));
+            if (last) {
+                written.set(written.size() - 1, new Line(written.getLast().text(), lastEnd));
+            }
+            out.addAll(heading + 1, written);
         }
         return checked(out);
+    }
+
+    /**
+     * Writes what must be true: as the lead's paragraph when it is one paragraph the lead holds,
+     * else as a section of its own above every other section, where a body that has that section
+     * keeps it.
+     *
+     * @param text its text
+     * @return the body with it written
+     * @throws Ambiguous when the body's sections cannot be told apart for certain
+     * @throws IllegalArgumentException when even a section cannot hold the text, or the body would
+     *     grow longer than GitHub takes
+     */
+    public BodySections withWhatMustBeTrue(final String text) {
+        unambiguous();
+        if (heading(WHAT_MUST_BE_TRUE_SECTION) < 0) {
+            try {
+                return with(Part.WHAT_MUST_BE_TRUE, text);
+            } catch (final Ambiguous e) {
+                throw e;
+            } catch (final IllegalArgumentException e) {
+                // A text the lead cannot hold goes into a section, unless a lead stands already.
+                if (paragraph(Part.WHAT_MUST_BE_TRUE).length > 0) {
+                    throw e;
+                }
+            }
+        }
+        return withSection(WHAT_MUST_BE_TRUE_SECTION, content(Part.PLAN, text), firstHeading());
     }
 
     /**
@@ -343,6 +392,15 @@ public final class BodySections {
                                 + (span[0] + 1)
                                 + " stands twice");
             }
+        }
+        final int[] lead = paragraph(Part.WHAT_MUST_BE_TRUE);
+        final int section = heading(WHAT_MUST_BE_TRUE_SECTION);
+        if (lead.length > 0 && section >= 0) {
+            return Optional.of(
+                    "What must be true stands as the paragraph in line "
+                            + (lead[0] + 1)
+                            + " and as the section in line "
+                            + (section + 1));
         }
         return Optional.empty();
     }
@@ -541,6 +599,9 @@ public final class BodySections {
 
     /** Whether a heading's name is a section of the skeleton, safe to repeat in a message. */
     private static boolean known(final String name) {
+        if (WHAT_MUST_BE_TRUE_SECTION.equals(name)) {
+            return true;
+        }
         for (final Part part : Part.values()) {
             if (!part.leading() && part.label().equals(name)) {
                 return true;
