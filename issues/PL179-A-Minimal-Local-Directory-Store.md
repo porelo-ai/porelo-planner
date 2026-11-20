@@ -14,9 +14,9 @@
 }
 ```
 
-**Why this size.** L, not M: a third implementation of the store API - board, moves, writes, new issues and ideas,
-stage results, change detection - with its own ids and its tracker kind in `project.yml`, a contract Porelo checks;
-not XL, since it takes the GitHub store's item shape (fields, body sections, stage entries) and the core's flow as
+**Why this size.** L, not M: a contract change the window builds against (the directory per project), a third
+implementation of the store API - board, moves, writes, new issues and ideas, stage results, change detection -
+with its own ids, and its tracker kind in `project.yml`, a contract Porelo checks; not XL, since it takes the GitHub store's item shape (fields, body sections, stage entries) and the core's flow as
 they are, and leaves out what only a forge has.
 
 **What must be true.** A person who keeps no project in a tracker still plans with the window: stories and issues
@@ -24,10 +24,22 @@ live in one directory on their computer, outside every repository, and nothing a
 
 ## Plan
 
-- **Where**: `project.yml` names the tracker `local`, with no address; the items of a project lie in
+- **Where**: `project.yml` names the tracker `tracker: { kind: local }`, with no other setting, a form Porelo
+  already takes, so it names no path of one machine; the items of a project lie in
   `$XDG_DATA_HOME/porelo-planner/items/<project>/` (`%LOCALAPPDATA%` on Windows, through `PrivateFiles`), private to
-  the account. The directory may be a Git repository; the planner neither needs nor uses one. How `project.yml`
-  names it is agreed with Agent Core.
+  the account. The directory may be a Git repository; the planner neither needs nor uses one.
+- **The directory is a default only**: the person may keep a project's items elsewhere, set per project in the
+  window's own configuration, never in the signed `project.yml`. The window sends it with the project, as an
+  optional member `items` of `planner.yaml`'s `ProjectSource` in `PUT /projects/{project}`: an absolute path, one
+  line, at most 4096 characters. The planner keeps no setting of its own; it takes the path the window sent for
+  as long as the project is open, and the default when none is sent. The window's part - where it keeps the setting
+  per project and how the person picks the directory - is agreed with Agent Frontend.
+- **A missing or moved directory**: the planner checks the directory at the `PUT` and at every read - absolute,
+  a directory of the account alone, no link in its path; a set directory that is missing, or no longer the
+  account's, refuses the project with `400` naming the path, and the planner never makes it, falls back to the
+  default or moves items. The default directory alone is made on the first `PUT`, with mode `0700`. A directory
+  moved by the person is found again only by setting the new path in the window; a `PUT` with another path opens
+  the project there, as another body does today.
 - **An item** is one file `<repository>-<number>.md`: a JSON head (`local-item-1.json`) holding the kind (story or
   issue), the title, the repository, `Status`, `Priority`, `Size`, `Risk`, `Worker`, `Rank`, the parent, a story's
   ordered sub-issues, `blockedBy`, and the number fields `Estimate`, `Minutes`, `VM minutes`, `Tokens`, `Stages`,
@@ -45,13 +57,14 @@ live in one directory on their computer, outside every repository, and nothing a
   them the same way; no `stats/`.
 - Red first: `LocalDirectoryStoreTest` over a temporary directory - a board read, a move written and read back, two
   writers taking numbers at once getting two, a stage saved twice counting once, a linked or foreign file refused, a
-  change by hand seen by `poll()`; a `project.yml` test of the tracker `local`.
+  change by hand seen by `poll()`; a set directory that is missing, a link or another account's refused and never
+  made, the default made once with mode `0700`; a `project.yml` test of the tracker of kind `local`.
 
 ## Acceptance
 
-- The native planner on the test VM plans a project whose `project.yml` names the tracker `local`: the board, a
+- The native planner on the test VM plans a project whose `project.yml` names a tracker of kind `local`: the board, a
   move, a new issue and a stage result, each seen in the directory's files; no repository gains a commit.
 
 ## To be checked
 
-- How `project.yml` names the tracker `local`, with Agent Core.
+- The window's part of the directory setting, with Agent Frontend.
