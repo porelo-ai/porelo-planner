@@ -410,3 +410,6 @@ screen/test/served/mock/workflow.json
 tool/story-tests/st309.sh
 tool/story-tests/st315.sh
 planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/IssueMappingTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/CarryOverCommandTest.java
+planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/CarryOverPlanTest.java
+planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/ReferenceRewriteTest.java
