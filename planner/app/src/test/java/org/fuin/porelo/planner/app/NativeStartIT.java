@@ -25,9 +25,16 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class NativeStartIT {
 
-    // A start on Windows checks its directories through PowerShell: four took 28 s together on the
-    // runner, and one of them passed 10 s.
-    private static final Duration START = Duration.ofSeconds(RuntimeDirectories.WINDOWS ? 60 : 10);
+    private static final Duration START = Duration.ofSeconds(10);
+
+    /** How long the planner lets one PowerShell call take before it refuses to start. */
+    private static final Duration POWERSHELL_LIMIT = Duration.ofSeconds(60);
+
+    /** The PowerShell calls of a start: the runtime, log and state directories. */
+    private static final int PLANNER_CALLS = 3;
+
+    /** The PowerShell calls of a start with --mock: the runtime directory alone. */
+    private static final int MOCK_CALLS = 1;
 
     private static final Duration STOP = Duration.ofSeconds(5);
 
@@ -63,7 +70,8 @@ class NativeStartIT {
             builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
             final Process planner = builder.start();
             try {
-                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final RuntimeDirectories.Address address =
+                        addressWithin(runtime, planner, output, PLANNER_CALLS);
                 final String log = "; the planner wrote:%n" + Files.readString(output);
                 assertThat(call(address, "PUT", "/projects/alpha", project.source()))
                         .as("the project given" + log)
@@ -125,7 +133,8 @@ class NativeStartIT {
             builder.environment().put("GIT_COMMITTER_EMAIL", "person@example.org");
             final Process planner = builder.start();
             try {
-                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final RuntimeDirectories.Address address =
+                        addressWithin(runtime, planner, output, PLANNER_CALLS);
                 assertThat(call(address, "PUT", "/projects/alpha", project.source()))
                         .as("the test's own planning store")
                         .startsWith("204 ");
@@ -279,7 +288,7 @@ class NativeStartIT {
             builder.environment().putAll(RuntimeDirectories.environment(runtime));
             final Process planner = builder.start();
             try {
-                addressWithin(runtime, planner, output);
+                addressWithin(runtime, planner, output, PLANNER_CALLS);
                 planner.getOutputStream().close();
                 final boolean ended = planner.waitFor(END.toSeconds(), TimeUnit.SECONDS);
                 if (ended) {
@@ -317,12 +326,21 @@ class NativeStartIT {
             builder.environment().clear();
             builder.environment().putAll(RuntimeDirectories.system());
             if (own != null) {
+                // An account's start always has these; PowerShell without them is the one start
+                // seen to miss its bound, so the start is tested as an account makes it.
+                for (final String name : List.of("TEMP", "TMP", "USERPROFILE", "APPDATA")) {
+                    final String value = System.getenv(name);
+                    if (value != null && !value.isBlank()) {
+                        builder.environment().put(name, value);
+                    }
+                }
                 builder.environment().put("LOCALAPPDATA", own.toString());
             }
             builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
             final Process planner = builder.start();
             try {
-                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final RuntimeDirectories.Address address =
+                        addressWithin(runtime, planner, output, MOCK_CALLS);
                 final String log = "; the planner wrote:%n" + Files.readString(output);
                 assertThat(
                                 call(
@@ -370,7 +388,8 @@ class NativeStartIT {
             builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
             final Process planner = builder.start();
             try {
-                final RuntimeDirectories.Address address = addressWithin(runtime, planner, output);
+                final RuntimeDirectories.Address address =
+                        addressWithin(runtime, planner, output, PLANNER_CALLS);
                 final String log = "; the planner wrote:%n" + Files.readString(output);
                 assertThat(call(address, "PUT", "/projects/alpha", project.source()))
                         .as("the project given" + log)
@@ -517,7 +536,7 @@ class NativeStartIT {
             final Process planner = builder.start();
             final RuntimeDirectories.Address address;
             try {
-                address = addressWithin(runtime, planner, output);
+                address = addressWithin(runtime, planner, output, PLANNER_CALLS);
                 // An executable without its build resource fails to start or names another build.
                 assertThat(health(address.port(), address.token()))
                         .as(
@@ -559,23 +578,45 @@ class NativeStartIT {
         assertThat(stopped).as("the planner stopped within %s of being asked", STOP).isTrue();
     }
 
-    /** The address the planner wrote once it listens, or a failure saying why there is none. */
+    /**
+     * The address the planner wrote once it listens, or a failure saying why there is none.
+     *
+     * @param calls the PowerShell calls the start makes on Windows
+     */
     private static RuntimeDirectories.Address addressWithin(
-            final Path runtime, final Process planner, final Path output) throws Exception {
+            final Path runtime, final Process planner, final Path output, final int calls)
+            throws Exception {
         final Path file = runtime.resolve(AddressFile.DIRECTORY).resolve(AddressFile.FILE);
-        final long end = System.nanoTime() + START.toNanos();
+        // On Windows each call may take its whole limit before the planner refuses to start itself,
+        // so the planner's own verdict, not this bound, ends a slow start.
+        final Duration bound =
+                RuntimeDirectories.WINDOWS
+                        ? POWERSHELL_LIMIT.multipliedBy(calls).plus(Duration.ofSeconds(30))
+                        : START;
+        final long end = System.nanoTime() + bound.toNanos();
         while (System.nanoTime() < end && planner.isAlive()) {
             if (Files.exists(file)) {
                 return RuntimeDirectories.read(runtime);
             }
             Thread.sleep(100);
         }
+        final String wrote = Files.readString(output);
         throw new AssertionError(
                 (planner.isAlive()
-                                ? "no address file within " + START
+                                ? "no address file within " + bound
                                 : "the planner ended with exit code " + planner.exitValue())
+                        + "; its last PowerShell line: "
+                        + lastPowerShellLine(wrote)
                         + "; it wrote:\n"
-                        + Files.readString(output));
+                        + wrote);
+    }
+
+    /** The last line the planner logged of a PowerShell call, or that it logged none. */
+    private static String lastPowerShellLine(final String wrote) {
+        return wrote.lines()
+                .filter(line -> line.contains("PowerShell "))
+                .reduce((first, second) -> second)
+                .orElse("none");
     }
 
     /** The health answer of this build, from the version and commit the build computed. */

@@ -14,12 +14,16 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The planner's private files on Windows, under {@code %LOCALAPPDATA%\porelo-planner}: each
@@ -38,6 +42,8 @@ final class WindowsPrivateFiles implements PrivateFiles {
     private static final Pattern DRIVE_PATH = Pattern.compile("[A-Za-z]:\\\\[^\\x00-\\x1f]*");
 
     private static final Duration LIMIT = Duration.ofSeconds(60);
+
+    private static final Logger LOG = LoggerFactory.getLogger(WindowsPrivateFiles.class);
 
     /**
      * Protects each directory named in {@code PORELO_PROTECT}, then prints the account and each
@@ -167,7 +173,11 @@ final class WindowsPrivateFiles implements PrivateFiles {
             final List<Path> asked = new ArrayList<>(above);
             asked.addAll(own);
             final WindowsAccess access =
-                    WindowsAccess.parse(shell.run(lines(made), lines(asked)), asked.size());
+                    WindowsAccess.parse(
+                            timed(
+                                    "the " + kind.name().toLowerCase(Locale.ROOT) + " directories",
+                                    () -> shell.run(lines(made), lines(asked))),
+                            asked.size());
             for (int i = 0; i < above.size(); i++) {
                 access.requireSafeAncestor(above.get(i), i);
             }
@@ -250,6 +260,31 @@ final class WindowsPrivateFiles implements PrivateFiles {
             text.append(path).append('\n');
         }
         return text.toString();
+    }
+
+    /**
+     * Runs one PowerShell call and logs when it starts and how long it took, so a start that waits
+     * on a slow PowerShell shows which call it waits on.
+     *
+     * @param what what the call checks, in words, never a path
+     * @param call the call
+     * @return what it printed
+     */
+    static String timed(final String what, final Supplier<String> call) {
+        LOG.info("PowerShell checks {}", what);
+        final long start = System.nanoTime();
+        try {
+            final String printed = call.get();
+            LOG.info("PowerShell checked {} in {} ms", what, millisSince(start));
+            return printed;
+        } catch (final RuntimeException e) {
+            LOG.info("PowerShell failed on {} after {} ms", what, millisSince(start));
+            throw e;
+        }
+    }
+
+    private static long millisSince(final long start) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
     }
 
     private static String powershell(

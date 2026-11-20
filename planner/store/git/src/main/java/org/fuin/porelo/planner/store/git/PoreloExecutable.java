@@ -349,7 +349,10 @@ interface PoreloExecutable {
             }
             asked.append(value).append('\n');
             final WindowsAccess access =
-                    WindowsAccess.parse(shell.run("", asked.toString()), above.size() + 1);
+                    WindowsAccess.parse(
+                            WindowsPrivateFiles.timed(
+                                    "Porelo's executable", () -> shell.run("", asked.toString())),
+                            above.size() + 1);
             for (int i = 0; i < above.size(); i++) {
                 access.requireSafeAncestor(above.get(i), i);
             }

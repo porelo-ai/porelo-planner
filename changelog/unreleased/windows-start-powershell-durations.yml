@@ -1,0 +1,2 @@
+title: On Windows the planner logs when each PowerShell check of its directories starts and how long it took, so a slow start shows which check it waits on.
+type: changed
