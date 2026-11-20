@@ -42,10 +42,13 @@ themselves.
   over every repository's samples on the project's board, and the counts. A forecast for an item takes, in order:
   the repository's median when the repository has at least 5 samples of that size; else the project's median when
   the project has at least 5; else the repository's seed for that size; else the median of the seeds of that size
-  over the project's repositories; else none, said as such. Each answer names which one it took.
+  over the project's repositories; else none, said as such. Each answer names which one it took. The threshold of
+  5 measured items of a size is the operator's.
 - **The answer**: `GET /projects/{project}/velocity` in `planner.yaml`, per size the repository medians, the
-  project median, the counts and the seeds; an estimate stage of a GitHub-tracked item writes the forecast into
-  `Estimate` as the Markdown store writes `estimate_min`. The Markdown store keeps `stats/` and its command.
+  project median, the counts and the seeds; `porelo-planner velocity median|p80 <size> --project <dir>` answers the
+  same on the command line, in place of the Markdown store's `stories stage median|p80`; an estimate stage writes
+  the forecast into `Estimate`. There is no Markdown branch: the Markdown store goes
+  ([PL178](README.md#pl178)).
 - Red first: `VelocityFromItemsTest` - the fallback order at 4 and 5 samples, a repository with none taking the
   project's, a project with none taking the seed, an open item and one of `Minutes` 0 left out, a `Ready` that is no
   instant a fault; a GitHub store test that `Started` and `Ready` are written once and in the state's call; a
@@ -56,10 +59,6 @@ themselves.
 - On the test organization's project, after two items of one size are carried and finished, the velocity answer
   shows their median per repository and over the project, and a third item's estimate stage writes the figure the
   rule picks; no file under `stats/` is written.
-
-## Open questions
-
-- The least number of samples before a measured median replaces the seed: the plan takes 5.
 
 ## To be checked
 

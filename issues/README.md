@@ -28,6 +28,8 @@ left out.
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="pl177"></a>[PL177](PL177-Velocity-Kept-In-The-GitHub-Items.md) | L | - | A project kept in GitHub Issues stores a task's measurements in its items' fields and nothing in Git; the planner computes each size's median per repository and over the whole project from the finished items, starting from a seed per repository and size in project.yml |
+| <a id="pl178"></a>[PL178](PL178-The-Markdown-Store-Removed.md) | L | [PL168](README.md#pl168), [PL179](README.md#pl179) | No stories or issues stay in a project's repositories: the planner's repository-bound Markdown store, its work format commands, stage records and fixtures go once the cut-over's copy is done, the local directory store taking its place |
+| <a id="pl179"></a>[PL179](PL179-A-Minimal-Local-Directory-Store.md) | L | [PL168](README.md#pl168) | A person without a tracker, with only a local forge, keeps a project's stories and issues in a plain local directory of Markdown items outside the repositories, chosen in project.yml as the tracker, with the same fields, stage entries and velocity as a GitHub item |
 | <a id="pl170"></a>[PL170](PL170-Tracker-References-As-The-Ids-Of-Stories-And-Issues.md) | M | [PL164](README.md#pl164) | A story or issue kept in a tracker is known on the board, in the window's calls and in a task's start by its tracker reference alone, with no Id field and no alias, so an item made after the cut-over needs no Porelo id; step 1 (contract, Ids, screen) built, step 2 (the GitHub store's ids, the alias taken out) next |
 
 ## Estimated
