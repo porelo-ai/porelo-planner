@@ -33,9 +33,12 @@ first as a dry run, and every story and issue keeps the id people know it by.
   unknown key until it knows it, so the real run waits until the Porelo the project runs on accepts `issue_floor`
   (the dry run does not write it). In an organization's project the person signs the changed file afterwards with
   `porelo project sign`, as for any change to `project.yml`; the run's last line says so.
-- An open issue's stage records (`stats/<id>.jsonl`) become its stage comments, oldest first, each carrying its old
-  end as `"ended"`, since GitHub sets a comment's `createdAt` to the moment of writing; its number fields are their
-  sums. Its head moves into fields and its sections into the body.
+- An open issue's stage records (`stats/<id>.jsonl`) become its stage comments, oldest first, with their result,
+  actor, model, effort, minutes, VM minutes and tokens; its number fields are their sums. GitHub sets each comment's
+  `createdAt` to the carry-over's time, so the old ends are not carried. Nothing the board or the velocity reads is
+  lost by it: the board reads no time, and the velocity reads `Minutes` by `Size`, both carried. What is lost is
+  when each old stage happened; it stays readable in the repository's Git history of `stats/`. Its head moves into
+  fields and its sections into the body.
 - References in the texts are rewritten: `[PL12](README.md#pl12)` and a link to another repository's index row
   become the GitHub issue's address; a reference to a number not carried (a finished or rejected one) is listed and left as plain text, not guessed.
 - The dry run prints one line per item (id, repository, state, fields, dependencies, references rewritten) and

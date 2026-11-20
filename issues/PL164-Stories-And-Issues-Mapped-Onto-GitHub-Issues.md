@@ -41,9 +41,7 @@ how it got there, and the planner reads back exactly what it wrote.
     access, so GitHub shows the person as its author. It starts with the line `<!-- porelo:stage -->` and holds
     the stage's result and a fenced JSON block: stage, result, actor, model, effort, minutes, VM minutes, tokens
     by model and kind. Its end is the comment's `createdAt`, its start that end minus its minutes; neither is
-    stored. Only a stage written more than one minute after it ended (the planner was down, or the carry-over
-    writes old stages) carries `"ended"` in its block, which then counts instead of `createdAt`, since GitHub
-    sets `createdAt` itself. A person's move is no comment: GitHub's timeline gives each `Status` change with its
+    stored; GitHub sets `createdAt` to the second of writing, which is precise enough. A person's move is no comment: GitHub's timeline gives each `Status` change with its
     time, its actor and the state before and after.
   - **Project fields hold what is filtered and sorted**: the project's own `Status` (its options replaced by the
     workflow's states in order, so GitHub's board columns are the workflow's), `Priority` (Highest..Lowest),
@@ -77,10 +75,10 @@ how it got there, and the planner reads back exactly what it wrote.
     `Issue.issueFieldValues`, `setIssueFieldValue`), but the token got 403 even to read them; not used.
 - Code: a new module `planner/store/github` with `IssueMapping` (GitHub's answer as plain records in, `Story` and
   `Issue` out, and back), `BodySections` (read and overwrite the named sections, leaving the others byte for
-  byte) and `StageComment` (write and read the stage comment, bounded, its end from `createdAt` or `ended`). No
+  byte) and `StageComment` (write and read the stage comment, bounded, its end from `createdAt`). No
   HTTP here.
 - Red first: a round-trip test over a fixture of GitHub answers (a story with sub-issues in two repositories, a
-  Porelo sub-issue, a dependency across repositories, a closed one, three stage comments, one with `ended`) that
+  Porelo sub-issue, a dependency across repositories, a closed one, three stage comments) that
   reads `Story` and `Issue` and writes back the same fields; a number field set by hand to another sum gives the
   comments' sum and a fault; the next id of a prefix whose floor lies above its highest open `Id`; a result that
   overwrites *Plan* leaves *Acceptance* intact.

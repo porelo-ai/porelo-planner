@@ -6,7 +6,7 @@
   "id": "PL167",
   "title": "The GitHub Board Read Again Only When Changed",
   "state": "Analyzed",
-  "size": "M",
+  "size": "S",
   "priority": "High",
   "rank": 83,
   "blockedBy": ["PL165"],
@@ -14,8 +14,9 @@
 }
 ```
 
-**Why this size.** M: a change probe in `store/github`, its use in the existing polling (`ChangesRegistry`,
-`Changes`), the interval setting, and tests with a fake clock; the window's events contract stays as it is.
+**Why this size.** S, not M: the forge clients bring the conditional calls with their ETags and rate limits, so
+what is left is a change probe in `store/github` before the full read, one interval setting in `planner/app`, and
+tests with a fake clock; the window's events contract stays as it is.
 
 **What must be true.** The board shows what changed on GitHub within the poll interval, and a board where nothing
 changed is answered from what the planner holds, without spending the person's rate limit.
@@ -26,9 +27,10 @@ changed is answered from what the planner holds, without spending the person's r
   `Changes.poll()` (`planner/core`), which calls the store's `refresh()` and sends a changed revision as an event.
 - Webhooks are left out: they need an address GitHub can reach, and the planner listens only on the person's
   loopback. Polling stays.
-- `GitHubStore.refresh()` first asks each repository's issue events and the project's items with
-  `If-None-Match` (the ETags of the last read), in parallel; all 304 answers keep the board and its revision, and
-  only a 200 runs [PL165](README.md#pl165)'s full query. GitHub counts no 304 against the rate limit.
+- `GitHubStore.refresh()` first asks the forge clients' `issuesIfChanged` for each repository and
+  `projectItemsIfChanged` for the project, with the ETags of the last read, in parallel; when all answer unchanged
+  (304) the board and its revision stay, and only a change runs [PL165](README.md#pl165)'s full read. GitHub counts
+  no 304 against the rate limit.
 - The interval for a GitHub project may be shorter than for Git (a probe costs little): `planner.github.poll-interval`,
   30 seconds by default; the rate limit left (`X-RateLimit-Remaining`) below a tenth lengthens it and says so as a
   board fault.
@@ -42,7 +44,5 @@ changed is answered from what the planner holds, without spending the person's r
 
 ## To be checked
 
-- Which conditional request sees every change the board shows: a field change in a GitHub project may not touch the
-  repository's issue events, so the project's own items endpoint or `updatedAt` may be needed.
-- With Agent Gorge: conditional requests (`If-None-Match`, a 304 answer, the ETag kept by the caller) in
-  `GitHubClient`.
+- Whether the project items' ETag changes when only a field value changes (the forge clients' recorder measures
+  it); if not, the probe compares `projectFields`' `updatedAt` instead.
