@@ -5,12 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 class GitCallTest {
 
@@ -182,12 +187,31 @@ class GitCallTest {
     }
 
     @Test
-    void aPlannerPoreloStartsReadsWithThePersonsOwnLoginWhilePoreloLendsNone() {
-        // Harm: every repository read refused, while Porelo has no command that answers Git for a
-        // login.
-        assertThat(LentLogin.of(lending(PORELO)))
-                .as("the variable alone lends nothing, so the person's own helpers stay")
-                .isSameAs(LentLogin.NONE);
+    @EnabledOnOs(OS.LINUX)
+    void aPlannerPoreloStartsLendsPorelosLoginThroughItsCheckedExecutable() throws IOException {
+        // Harm: a person whose project is private sees no board without writing a Git
+        // configuration by hand, though Porelo's vault holds the login.
+        // The executable lies in a directory only this account may change, as the check demands.
+        final Path bin = Files.createTempDirectory(Path.of("target").toAbsolutePath(), "lent-");
+        Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwx------"));
+        final Path porelo = Files.writeString(bin.resolve("porelo"), "#!/bin/sh\nexit 1\n");
+        Files.setPosixFilePermissions(porelo, PosixFilePermissions.fromString("rwx------"));
+        final String executable = porelo.toRealPath().toString();
+        final Map<String, String> person = lending(executable);
+        assertThat(
+                        GitCall.reaching(
+                                        person,
+                                        Duration.ofSeconds(15),
+                                        LentLogin.of(person),
+                                        HTTPS,
+                                        FETCH)
+                                .arguments())
+                .as("the production entry names Porelo's helper for the https central")
+                .contains(
+                        "credential."
+                                + HTTPS.value()
+                                + ".helper="
+                                + LentLogin.helper(executable, HTTPS.value()));
     }
 
     @Test

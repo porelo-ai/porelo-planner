@@ -70,6 +70,8 @@ its own.
   the time and the number of calls.
 - A project without `tracker` opens as a Git store unchanged (the existing store tests stay green).
 - The native executable reads the test project.
+- On the VM, the board is read with the token `ForgeTokens` takes from Porelo's vault, the same token Git gets
+  through Porelo's helper; the log and the process list show no token.
 
 ## To be checked
 

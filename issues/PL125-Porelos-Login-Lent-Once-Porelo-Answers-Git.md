@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL125",
   "title": "Porelo's Login Lent Once Porelo Answers Git",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "High",
   "rank": 1,
@@ -51,7 +51,6 @@ the person's. The contract it builds against is under [A lent login is Porelo's 
 - On a local VM, a planner started with `PORELO_EXECUTABLE` set reads and writes a private https project with no
   Git configuration of the person's, the token in Porelo's vault alone; the run's log and the process list show no
   token.
-- `ForgeTokens` answers the same token for the organization's address that Git gets through the helper.
 
 ## Order and files
 
@@ -64,6 +63,3 @@ its own.
 - Owns `store/git`'s `LentLogin` and a new `ForgeTokens`, with `LentLoginTest`, `GitCallTest` and
   `ForgeTokensTest`. [PL165](README.md#pl165) wires `ForgeTokens` into `StoreConfiguration`.
 
-## To be checked
-
-- Which VM slot the acceptance run takes, asked of the coordinator before it.

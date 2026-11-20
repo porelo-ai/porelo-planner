@@ -175,7 +175,7 @@ class LentLoginTest {
                 Duration.ofSeconds(5),
                 new GitRunner(Duration.ofSeconds(20), 1 << 20),
                 1 << 16,
-                // The production entry lends nothing yet; the lending itself is proven here.
+                // Linux's own check, as the production entry takes it on this test's platform.
                 LentLogin.of(person, PoreloExecutable.of(person, false)));
     }
 
