@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL183",
   "title": "Titles and Bodies Edited Through the Planner's API",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "Highest",
   "rank": 3,
