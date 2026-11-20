@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL190",
   "title": "A Build That Reads Maven Central Only For What Changed",
-  "state": "Implementing",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 3,
