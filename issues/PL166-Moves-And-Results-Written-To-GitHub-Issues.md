@@ -25,8 +25,13 @@ stands on its issue under the person's name, with no fetch, commit or push.
 
 - Today `GitStore.save`, `createIssue`, `createIdea` and `saveResult` write files, index them, commit and push,
   refusing with `StaleRevision`, `NotSavable`, `Busy` and `PartlySaved` (`PlanningStore`).
-- `FieldsBoardWriter.save(revision, writes)`: re-reads the `updatedAt` of the items written; a change since `revision`
-  is `StaleRevision`. The states, workers and priorities go through the forge clients' `setFieldValues`, one aliased
+- `FieldsBoardWriter.save(revision, writes)`: right before the write it reads the items to be written by
+  `issueBoard` and compares each one's digest with the snapshot the request was based on. The digest covers its
+  field values, `Status` included, its parent, blockers, open state and body. A change by a person in between is
+  `StaleRevision` naming the item, and nothing is written. The issue's `updatedAt` alone is not enough, since a
+  project field changed by hand leaves it as it was. GitHub takes no condition on a write (no `If-Match` on the
+  issue update or the field mutation), so a change in the second between this read and the write is not caught.
+  That window is the one left, and it is named in the user page. The states, workers and priorities go through the forge clients' `setFieldValues`, one aliased
   mutation of at most 50 values (the story measured ten issues in three repositories at 6.3 s); a closed state also
   closes the issue through `updateIssue`. GitHub has no transaction: the client answers each alias's result or
   error, and what failed beside what succeeded is `PartlySaved` with the ids saved. The stale check reads the
