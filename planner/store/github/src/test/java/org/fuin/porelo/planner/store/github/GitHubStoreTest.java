@@ -12,10 +12,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.fuin.porelo.forge.github.GitHubRefusals;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
@@ -277,6 +280,92 @@ class GitHubStoreTest {
                 .isInstanceOf(StoreException.PartlySaved.class)
                 .isNotInstanceOf(StoreException.NoForgeAccess.class);
         assertThat(writes.get()).as("the writes made").isEqualTo(1);
+    }
+
+    /** A store that makes the given items, then fails to read the board after the first read. */
+    private static GitHubStore failingReadAfterMaking(
+            final String issue, final BoardWriter.IdeaIds idea) {
+        final AtomicInteger reads = new AtomicInteger();
+        return store(
+                GitHubStore.Parts.reading(
+                                config -> {
+                                    if (reads.incrementAndGet() == 1) {
+                                        return snapshot("r1");
+                                    }
+                                    throw new IllegalStateException("GitHub went away");
+                                },
+                                states -> null)
+                        .writer(
+                                new BoardWriter() {
+                                    @Override
+                                    public String createIssue(
+                                            final Snapshot current,
+                                            final Revision revision,
+                                            final NewIssue added) {
+                                        return issue;
+                                    }
+
+                                    @Override
+                                    public BoardWriter.IdeaIds createIdea(
+                                            final Snapshot current,
+                                            final Revision revision,
+                                            final NewIdea added) {
+                                        return idea;
+                                    }
+                                }));
+    }
+
+    @Test
+    void aBoardReadFailingAfterAWholeCreateIsPartlySavedNamingWhatWasMade() {
+        // Harm: an issue or an idea GitHub holds answered as if nothing was made, so the window
+        // records nothing pushed and the same idea is handed in and made again.
+        final NewIssue issue =
+                new NewIssue("example-lib", "A new thing", "It works.", "S", Worker.AGENT, null);
+        final BoardWriter.IdeaIds made =
+                new BoardWriter.IdeaIds(
+                        "example-project#5", List.of("example-lib#6", "example-other#7"));
+        final GitHubStore issues = failingReadAfterMaking("example-lib#100", made);
+        issues.board();
+        final GitHubStore ideas = failingReadAfterMaking("example-lib#100", made);
+        ideas.board();
+
+        assertThatThrownBy(() -> issues.createIssue(new Revision("r1"), issue))
+                .as("an issue made whose following read failed")
+                .isInstanceOfSatisfying(
+                        StoreException.PartlySaved.class,
+                        partly -> {
+                            assertThat(partly.pushed())
+                                    .as("the repositories written")
+                                    .containsExactly("example-lib");
+                            assertThat(partly.getMessage())
+                                    .as("the refusal's words")
+                                    .contains("example-lib#100");
+                        });
+        assertThatThrownBy(
+                        () ->
+                                ideas.createIdea(
+                                        new Revision("r1"),
+                                        new NewIdea(
+                                                "A story",
+                                                "A gain",
+                                                "A test",
+                                                "High",
+                                                List.of(issue))))
+                .as("an idea made whose following read failed")
+                .isInstanceOfSatisfying(
+                        StoreException.PartlySaved.class,
+                        partly -> {
+                            assertThat(partly.pushed())
+                                    .as("the repositories written")
+                                    .containsExactly(
+                                            "example-project", "example-lib", "example-other");
+                            assertThat(partly.getMessage())
+                                    .as("the refusal's words")
+                                    .contains(
+                                            "example-project#5",
+                                            "example-lib#6",
+                                            "example-other#7");
+                        });
     }
 
     @Test

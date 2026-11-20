@@ -1,8 +1,11 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -207,7 +210,7 @@ public final class GitHubStore implements PlanningStore {
                 writing(
                         () -> {
                             id[0] = parts.writer().createIssue(current(), revision, issue);
-                            return readAfterWriting();
+                            return readAfterMaking(List.of(id[0]));
                         });
         return new NewIssue.Added(Objects.requireNonNull(id[0]), served(after.board()));
     }
@@ -219,7 +222,10 @@ public final class GitHubStore implements PlanningStore {
                 writing(
                         () -> {
                             ids[0] = parts.writer().createIdea(current(), revision, idea);
-                            return readAfterWriting();
+                            final List<String> made = new ArrayList<>();
+                            made.add(ids[0].story());
+                            made.addAll(ids[0].issues());
+                            return readAfterMaking(made);
                         });
         final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
         return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
@@ -329,6 +335,33 @@ public final class GitHubStore implements PlanningStore {
             return readWhole(configNow());
         } catch (final RuntimeException e) {
             throw new BoardWriter.AfterWriting(e);
+        }
+    }
+
+    /**
+     * Reads the whole board after new issues were made; a failure is refused as partly saved,
+     * naming each repository written and, in its words, each reference made, so the window never
+     * takes the items for unmade and hands them in again.
+     *
+     * @param made the references of the issues made, in order
+     */
+    private Snapshot readAfterMaking(final List<String> made) {
+        try {
+            return readAfterWriting();
+        } catch (final BoardWriter.AfterWriting after) {
+            final StoreException refusal =
+                    parts.refusals().refusal(config.own(), after, tokenToScrub());
+            final Set<String> repositories = new LinkedHashSet<>();
+            for (final String reference : made) {
+                repositories.add(reference.substring(0, reference.lastIndexOf('#')));
+            }
+            throw new StoreException.PartlySaved(
+                    config.own(),
+                    List.copyOf(repositories),
+                    refusal.getMessage()
+                            + "; GitHub holds "
+                            + String.join(", ", made)
+                            + " from this save");
         }
     }
 

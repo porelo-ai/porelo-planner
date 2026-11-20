@@ -8,17 +8,26 @@ import org.fuin.porelo.planner.store.StoreException;
 public interface AccessRefusals {
 
     /**
-     * Keeps a store refusal as it is and answers any other failure as GitHub unreachable, in words
-     * free of the token.
+     * Keeps a store refusal as it is, answers a failure after a part of a save was written as
+     * partly saved, and any other failure as GitHub unreachable, in words free of the token.
      */
     AccessRefusals DEFAULT =
-            (repository, failure, token) ->
-                    failure instanceof StoreException refusal
-                            ? refusal
-                            : new StoreException.Unreachable(
+            (repository, failure, token) -> {
+                if (failure instanceof BoardWriter.AfterWriting after) {
+                    return after.failure() instanceof StoreException.PartlySaved partly
+                            ? partly
+                            : new StoreException.PartlySaved(
                                     repository,
-                                    Scrubbed.text(
-                                            String.valueOf(failure.getMessage()), List.of(token)));
+                                    List.of(),
+                                    "A part of the save was written before a call failed");
+                }
+                return failure instanceof StoreException refusal
+                        ? refusal
+                        : new StoreException.Unreachable(
+                                repository,
+                                Scrubbed.text(
+                                        String.valueOf(failure.getMessage()), List.of(token)));
+            };
 
     /**
      * Answers the refusal for a failure.
