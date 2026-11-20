@@ -1,0 +1,54 @@
+package org.fuin.porelo.planner.store;
+
+import java.net.URI;
+import java.util.List;
+
+/**
+ * A project whose stories and issues a tracker keeps, as its own repository's files name it: the
+ * workflow and the work rules stay files there, read by the store that knows Git and handed in.
+ *
+ * @param forge the forge's origin, {@code https://<host>}, taken from the own repository's address
+ *     the window gave, never from the project's files
+ * @param owner the owner both the own repository and the tracker's project belong to
+ * @param kind the tracker's kind, as {@code project.yml} names it
+ * @param project the tracker's project within the owner, as {@code project.yml} names it
+ * @param repositories the project's repositories by name, its own first
+ * @param workflow the project's workflow
+ * @param work the project's work rules
+ * @param filesCommit the own repository's commit the files were read from
+ * @param storyStates derives a story's state from its issues' under the workflow
+ */
+public record TrackedProject(
+        URI forge,
+        String owner,
+        String kind,
+        String project,
+        List<String> repositories,
+        Workflow workflow,
+        Work work,
+        String filesCommit,
+        StoryStates storyStates) {
+
+    /** Derives a story's state from its issues' states, as the project's workflow says. */
+    @FunctionalInterface
+    public interface StoryStates {
+
+        /**
+         * Derives the state.
+         *
+         * @param issueStates the states of the story's issues
+         * @return the story's state, or null when none follows
+         */
+        @org.jspecify.annotations.Nullable
+        String storyState(List<String> issueStates);
+    }
+
+    /** Checks the origin and copies the list. */
+    public TrackedProject {
+        TokenSource.checkedOrigin(forge);
+        repositories = List.copyOf(repositories);
+        if (repositories.isEmpty()) {
+            throw new IllegalArgumentException("A project holds its own repository");
+        }
+    }
+}

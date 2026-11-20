@@ -167,6 +167,65 @@ public record Project(
         return of(project, own, ownPrefixes);
     }
 
+    /**
+     * The tracker a project names under {@code tracker}, which keeps its stories and issues instead
+     * of files.
+     *
+     * @param kind the tracker's kind, such as {@code github}
+     * @param owner the owner the tracker's project belongs to
+     * @param project the tracker's project within the owner
+     */
+    public record Tracker(String kind, String owner, String project) {
+
+        private static final java.util.regex.Pattern KIND =
+                java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,19}");
+        private static final java.util.regex.Pattern REFERENCE =
+                java.util.regex.Pattern.compile("([A-Za-z0-9][A-Za-z0-9-]{0,38})/([0-9]{1,9})");
+
+        /** Checks the kind's and the project's form. */
+        public Tracker {
+            if (!KIND.matcher(kind).matches()) {
+                throw new IllegalArgumentException(
+                        "project.yml tracker: kind must be a lower-case name");
+            }
+            if (!REFERENCE.matcher(owner + "/" + project).matches()) {
+                throw new IllegalArgumentException(
+                        "project.yml tracker: project must be <owner>/<number>");
+            }
+        }
+    }
+
+    /**
+     * Reads the tracker a {@code project.yml} names: a mapping of exactly {@code kind} and {@code
+     * project}, the latter {@code <owner>/<number>}.
+     *
+     * @param text the file's text
+     * @return the tracker, or empty when the file names none
+     * @throws IllegalArgumentException when the text is no YAML, or its tracker has another shape
+     */
+    public static java.util.Optional<Tracker> tracker(String text) {
+        final JsonNode tracker = yaml(text, FILE).get("tracker");
+        if (tracker == null) {
+            return java.util.Optional.empty();
+        }
+        if (!tracker.isObject()
+                || tracker.size() != 2
+                || !tracker.has("kind")
+                || !tracker.has("project")) {
+            throw new IllegalArgumentException(
+                    "project.yml tracker: expected a mapping of kind and project");
+        }
+        final String kind = string(tracker, "kind", "project.yml tracker");
+        final String reference = string(tracker, "project", "project.yml tracker");
+        final int slash = reference.indexOf('/');
+        if (slash < 0) {
+            throw new IllegalArgumentException(
+                    "project.yml tracker: project must be <owner>/<number>");
+        }
+        return java.util.Optional.of(
+                new Tracker(kind, reference.substring(0, slash), reference.substring(slash + 1)));
+    }
+
     private static Repository own(JsonNode project) {
         return repository(required(project, "project", FILE), FILE + " project");
     }

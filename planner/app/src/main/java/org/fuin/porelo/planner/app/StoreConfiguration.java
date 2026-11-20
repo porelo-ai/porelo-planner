@@ -8,8 +8,13 @@ import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.app.mock.MockStore;
+import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.git.CloneUrl;
+import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
+import org.fuin.porelo.planner.store.github.BoardReader;
+import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -60,7 +65,22 @@ public class StoreConfiguration {
                         Duration.ofSeconds(30),
                         4),
                 Clock.systemUTC(),
-                Executors.newVirtualThreadPerTaskExecutor());
+                Executors.newVirtualThreadPerTaskExecutor(),
+                tracked(environment));
+    }
+
+    /**
+     * Opens a project a GitHub project keeps, with the token Porelo's vault lends for its forge.
+     */
+    private static TrackedStores tracked(final Map<String, String> environment) {
+        final ForgeTokens tokens = ForgeTokens.of(environment);
+        final BoardReader reader =
+                config -> {
+                    throw new StoreException.Unreadable(
+                            config.own(), "reading a project from GitHub is not built yet");
+                };
+        return new GitHubStoreOpener(
+                origin -> tokens.token(origin, origin.getHost()), reader, Duration.ofSeconds(30));
     }
 
     /**

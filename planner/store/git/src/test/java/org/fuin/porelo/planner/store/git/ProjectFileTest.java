@@ -192,4 +192,93 @@ class ProjectFileTest {
                 .hasMessageContaining("no repository name");
         assertThat(remote.fetched).as("nothing fetched").isEmpty();
     }
+
+    private static final CloneUrl HTTPS_OWN =
+            new CloneUrl("https://github.com/porelo-ai/porelo-project.git");
+
+    private static final String TRACKED =
+            """
+            project:
+                name: "porelo"
+                central: "https://github.com/porelo-ai/porelo-project.git"
+            repositories:
+                frontend:
+                    central: "https://github.com/porelo-ai/porelo-frontend"
+                    issues: ["F"]
+            tracker:
+                kind: github
+                project: porelo-ai/7
+            """;
+
+    private static Files tracked(final String project) throws java.io.IOException {
+        final Files remote = with(project);
+        remote.files.put(
+                "porelo-project@c1:stories/workflow.yml",
+                java.nio.file.Files.readString(
+                        java.nio.file.Path.of("src/test/resources/workflow.yml")));
+        return remote;
+    }
+
+    @Test
+    void aTrackedProjectIsHandedOnWithItsForgeOwnerAndFiles() throws Exception {
+        // Harm: a project a tracker keeps opened as files, or asked of another forge than its own.
+        final ProjectFile.Opened opened = ProjectFile.read(tracked(TRACKED), HTTPS_OWN, "main", 10);
+
+        final org.fuin.porelo.planner.store.TrackedProject project = opened.tracked();
+        assertThat(project).as("a tracker named").isNotNull();
+        assertThat(project.forge())
+                .as("the own repository's host")
+                .isEqualTo(java.net.URI.create("https://github.com"));
+        assertThat(
+                        List.of(
+                                project.owner(),
+                                project.kind(),
+                                project.project(),
+                                project.filesCommit()))
+                .as("the tracker as the file names it, and the commit its files were read at")
+                .containsExactly("porelo-ai", "github", "7", "c1");
+        assertThat(project.repositories())
+                .as("the repositories, the own first")
+                .containsExactly("porelo-project", "porelo-frontend");
+        assertThat(ProjectFile.read(with(PROJECT), OWN, null, 10).tracked())
+                .as("a project without a tracker stays the Git store's")
+                .isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "project: other-org/7|another owner's project",
+                "project: porelo-ai/7\\n    extra: 1|a key the planner does not know",
+                "project: porelo-ai|no number",
+            })
+    void aTrackerTheFileShapesWronglyOrPointsElsewhereIsRefused(
+            final String tracker, final String why) throws Exception {
+        // Harm: the person's token used on a project of another owner, or a tracker read halfway.
+        final String text = TRACKED.replace("project: porelo-ai/7", tracker.replace("\\n", "\n"));
+        assertThatThrownBy(() -> ProjectFile.read(tracked(text), HTTPS_OWN, null, 10))
+                .as(why)
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageNotContaining("other-org");
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "https://gitlab.example.org/porelo-ai/porelo-frontend|another host",
+                "https://github.com/other-org/porelo-frontend|another owner",
+                "git@github.com:porelo-ai/porelo-frontend.git|an address that is not https",
+                "https://github.com:8443/porelo-ai/porelo-frontend|a port",
+            })
+    void aTrackedProjectsRepositoryElsewhereThanItsOwnIsRefused(
+            final String central, final String why) throws Exception {
+        // Harm: the token of the own repository's forge sent along for a repository elsewhere.
+        final String text =
+                TRACKED.replace("https://github.com/porelo-ai/porelo-frontend", central);
+        assertThatThrownBy(() -> ProjectFile.read(tracked(text), HTTPS_OWN, null, 10))
+                .as(why)
+                .isInstanceOf(StoreException.Unreadable.class);
+    }
 }

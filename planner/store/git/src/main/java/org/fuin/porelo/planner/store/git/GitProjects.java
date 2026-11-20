@@ -15,7 +15,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TrackedProject;
+import org.fuin.porelo.planner.store.TrackedStores;
 import org.jspecify.annotations.Nullable;
 
 /** Opens a project's store from its own repository, over the project's cache directory. */
@@ -56,6 +59,8 @@ public final class GitProjects {
 
     private final Executor background;
 
+    private final TrackedStores tracked;
+
     /**
      * Makes an opener.
      *
@@ -63,16 +68,19 @@ public final class GitProjects {
      * @param settings the bounds of each store
      * @param clock tells when a board was checked
      * @param background runs the checks requests start
+     * @param tracked opens a project whose {@code project.yml} names a tracker
      */
     public GitProjects(
             final Map<String, String> environment,
             final Settings settings,
             final Clock clock,
-            final Executor background) {
+            final Executor background,
+            final TrackedStores tracked) {
         this.environment = Map.copyOf(environment);
         this.settings = settings;
         this.clock = clock;
         this.background = background;
+        this.tracked = tracked;
     }
 
     /**
@@ -85,7 +93,8 @@ public final class GitProjects {
      * @return the project's store
      * @throws IllegalArgumentException if the URL's last part is no repository name
      */
-    public GitStore open(final String project, final CloneUrl own, final @Nullable String branch) {
+    public PlanningStore open(
+            final String project, final CloneUrl own, final @Nullable String branch) {
         final String name = ProjectFile.checkedName(own);
         try {
             return opened(project, own, branch);
@@ -95,7 +104,7 @@ public final class GitProjects {
         }
     }
 
-    private GitStore opened(
+    private PlanningStore opened(
             final String project, final CloneUrl own, final @Nullable String branch) {
         final Path directory = CacheDirectory.of(environment, project);
         final FileProjectLock lock = new FileProjectLock(directory);
@@ -109,12 +118,16 @@ public final class GitProjects {
                         runner,
                         settings.fileBytes(),
                         login);
-        final List<Repository> repositories;
+        final ProjectFile.Opened opened;
         try (ProjectLock.Held held = lock.acquire()) {
             keepOnlyFor(directory, source(own, branch));
-            repositories =
-                    ProjectFile.repositories(remote, own, branch, settings.mostRepositories());
+            opened = ProjectFile.read(remote, own, branch, settings.mostRepositories());
         }
+        final TrackedProject trackedProject = opened.tracked();
+        if (trackedProject != null) {
+            return tracked.open(trackedProject);
+        }
+        final List<Repository> repositories = opened.repositories();
         return new GitStore(
                 repositories,
                 remote,
