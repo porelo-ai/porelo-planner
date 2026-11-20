@@ -32,6 +32,7 @@ jobs:
                   persist-credentials: false
 
             - name: The pinned GraalVM
+              id: pinned-jdk
               uses: ./.github/actions/pinned-jdk
 
             - name: The clean-up's choice, built
@@ -114,3 +115,9 @@ jobs:
                       deleted=$((deleted + 1))
                   done < "$RUNNER_TEMP/cleanup/chosen.txt"
                   echo "deleted $deleted snapshot build(s)"
+
+            # Even after a failure, so what the job fetched is not asked of Central again.
+            - if: always()
+              uses: ./.github/actions/maven-cache-save
+              with:
+                  key: ${{ steps.pinned-jdk.outputs.maven-cache-key }}

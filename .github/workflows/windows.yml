@@ -29,11 +29,19 @@ jobs:
                   persist-credentials: false
 
             # Cached as in pinned-jdk on Linux, so a trial run does not depend on Maven Central staying up.
-            - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+            # Keyed by the run and its attempt, so each one can save what it fetched: an existing key is never saved over.
+            - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              id: maven-cache
               with:
                   path: ~/.m2/repository
-                  key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
-                  restore-keys: maven-${{ runner.os }}-
+                  key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-
+                      maven-${{ runner.os }}-
+
+            # What is newer than this the job fetched itself, so maven-cache-save saves only a cache that grew.
+            - shell: bash
+              run: touch "$RUNNER_TEMP/maven-cache-restored"
 
             - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
@@ -50,3 +58,9 @@ jobs:
                   export JAVA_HOME="$JAVA_HOME_25_X64"
                   ./mvnw -B -s settings.xml -pl planner/store/git,planner/app -am test -Dgroups=windows \
                       -Dsurefire.failIfNoSpecifiedTests=false -Dspotless.check.skip=true
+
+            # Even after a failure, so what the job fetched is not asked of Central again.
+            - if: always()
+              uses: ./.github/actions/maven-cache-save
+              with:
+                  key: ${{ steps.maven-cache.outputs.cache-primary-key }}

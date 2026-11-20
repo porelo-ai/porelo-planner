@@ -22,25 +22,31 @@ that asks it again for what an earlier Build already fetched.
 
 ## Plan
 
-- Seen on main's Build of 68b226a, job *Build, packages and publish*: the Maven cache was restored by its exact key
-  (`maven-Linux-<hashFiles('**/pom.xml')>`), yet the Git store's dependencies were resolved from Maven Central, which
-  answered 429 for six poms (Jackson 2.21.7, ArchUnit 1.4.2, commons-codec 1.21.0, slf4j-nop 2.0.20) and for the
-  `maven-metadata.xml` of two Bouncy Castle artifacts; the module failed after four 30 s timeouts.
-- Read in the log and the workflows, the causes:
-  - **The key misses what changes the dependencies.** The versions of those six are named in no pom of this
-    repository; they come from `porelo-parent` 0.2.2-SNAPSHOT and the BOMs it and this repository import, which a
-    Build downloads fresh. `hashFiles('**/pom.xml')` stays the same when they move, and `actions/cache` never saves
-    over an exact hit, so every Build after such a move downloads them again until a pom here changes.
-  - **A version range resolves online every Build.** The `maven-metadata.xml` of `bcutil-jdk18on` and
-    `bcprov-jdk18on` was asked of Central although the cache was there: a dependency names them by a range, which the
-    resolver checks remotely each time. Where the range enters, through a Porelo snapshot (inferred), is to be read
-    with `dependency:tree -Dverbose` before the fix.
-- The fix: the cache's key gains the run's identity with the current prefix as its restore key
-  (`maven-<os>-<hashFiles>-<run id>`, restoring `maven-<os>-<hashFiles>-` then `maven-<os>-`), so each Build saves
-  what it fetched and the next one finds it; old entries are evicted by GitHub's own limit. In `build.yml` and
-  `windows.yml` alike. The range is replaced by a fixed version in the repository that declares it, asked of its
-  owner when that is not this one, and pinned here in `dependencyManagement` until then.
-- No harm test: a workflow's cache and a dependency's version; the measure is the Build's log.
+- Seen on main's Builds: with the Maven cache restored by its exact key (`maven-Linux-<hashFiles('**/pom.xml')>`),
+  the Git store's dependencies were still asked of Maven Central, which answered 429 for six poms and for the
+  `maven-metadata.xml` of `bcutil-jdk18on` and `bcprov-jdk18on`; one Build failed in the store, another in the step
+  *The pinned GraalVM*, where `exec:exec@machines` found no version of `bcutil-jdk18on` in `[1.80,1.81)`.
+- **The range came from porelo-machines and is fixed at its source there.** The exec plugin's dependency
+  `porelo-machines` 0.5.2-SNAPSHOT named `sshj` 0.40.0, whose `bcpkix-jdk18on` 1.80 names `bcutil-jdk18on`
+  `[1.80,1.81)`, whose pom names `bcprov-jdk18on` `[1.80,1.81)`; the resolver asks Central for their metadata each
+  time it meets the range, even though porelo-machines' own 1.85 and 1.85.2 win. Pinning `bcprov` and `bcutil` beside
+  it in this pom was measured not to help, since the collector still walks `sshj`'s path; porelo-machines
+  0.5.3-SNAPSHOT, which porelo-parent now names, excludes Bouncy Castle from `sshj` and names fixed versions, so this
+  repository pins nothing.
+- **The cache key misses what changes the dependencies, and a cache is never saved over.** The versions Central was
+  asked for come from porelo-parent's snapshot and the BOMs, which `hashFiles('**/pom.xml')` does not see, and
+  `actions/cache` saves nothing after an exact hit and nothing at all when the job fails. Built: wherever the local
+  Maven repository is cached - the `pinned-jdk` action and the Windows jobs of `build.yml` and `windows.yml` - the
+  step is `actions/cache/restore` keyed `maven-<os>-<hashFiles>-<run id>-<attempt>`, restoring
+  `maven-<os>-<hashFiles>-` and then `maven-<os>-`, and leaves a marker file right after the restore. Each job ends
+  with the `maven-cache-save` action under `if: always()`, which saves under that key only when a jar or pom newer
+  than the marker lies in the repository: a job that fetched something keeps it even when it fails, and one that
+  fetched nothing saves no copy that would crowd the other caches out of GitHub's limit. The `pinned-jdk` action
+  gives its key as `maven-cache-key`, since a composite action has no step at the job's end; each job that uses it
+  saves itself. The screen job only restores: the build job of the same run saves under the same key, and only the
+  first save of a key is kept.
+- No harm test: a workflow's cache and a dependency's version; the measure is a fresh local repository's online
+  `validate`, which asks Central for no release's `maven-metadata.xml`, then the same offline, and the Build's log.
 
 ## Acceptance
 
