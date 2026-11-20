@@ -248,7 +248,8 @@ class FieldsBoardWriterTest {
             final Created created =
                     new Created("I_" + repository + "_" + number, 9000L + number, number, labels);
             made.computeIfAbsent(repository, r -> new ArrayList<>())
-                    .add(new Found(created, title, body));
+                    // GitHub keeps a title without the spaces around it.
+                    .add(new Found(created, title.strip(), body));
             return created;
         }
 
@@ -1365,6 +1366,17 @@ class FieldsBoardWriterTest {
         assertThat(github.added)
                 .as("the issue found added to the project")
                 .containsExactly("I_example-lib_101");
+    }
+
+    @Test
+    void anIssueWhoseTitleEndsInASpaceIsFoundAgainAfterAnUnansweredCall() {
+        // Harm: a title GitHub kept without its trailing space never matched, so the issue it
+        // made without answering is made a second time.
+        final GitHub github = new GitHub().creating("unanswered");
+
+        github.writer().createIssue(snapshot(), SHOWN, newIssue("example-lib", "A new thing "));
+
+        assertThat(held(github)).as("the issues GitHub holds").containsExactly("example-lib#100");
     }
 
     @Test

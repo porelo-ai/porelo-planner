@@ -146,7 +146,7 @@ final class NewItems {
         values.add(option(FieldNames.WORKER, issue.worker() == Worker.MANUAL ? "Manual" : "Agent"));
         values.add(option(FieldNames.PRIORITY, priority(priority)));
         values.add(number(FieldNames.RANK, rank(false, priority)));
-        return planned(repository, issue.title(), body, List.of(), values);
+        return planned(repository, issue.title().strip(), body, List.of(), values);
     }
 
     /**
@@ -174,7 +174,7 @@ final class NewItems {
         values.add(number(FieldNames.RANK, rank(true, idea.priority())));
         return planned(
                 current.config().own(),
-                idea.title(),
+                idea.title().strip(),
                 body,
                 List.of(IssueMapping.STORY_LABEL),
                 values);
