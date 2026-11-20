@@ -9,8 +9,6 @@ public final class FieldNames {
     public enum Kind {
         /** One option of a fixed list. */
         SINGLE_SELECT,
-        /** A line of text. */
-        TEXT,
         /** A number. */
         NUMBER
     }
@@ -29,9 +27,6 @@ public final class FieldNames {
 
     /** Who works it, an agent or a person. */
     public static final String WORKER = "Worker";
-
-    /** The Porelo id. */
-    public static final String ID = "Id";
 
     /** The order within a priority. */
     public static final String RANK = "Rank";
@@ -59,7 +54,6 @@ public final class FieldNames {
                     Map.entry(SIZE, Kind.SINGLE_SELECT),
                     Map.entry(RISK, Kind.SINGLE_SELECT),
                     Map.entry(WORKER, Kind.SINGLE_SELECT),
-                    Map.entry(ID, Kind.TEXT),
                     Map.entry(RANK, Kind.NUMBER),
                     Map.entry(ESTIMATE, Kind.NUMBER),
                     Map.entry(MINUTES, Kind.NUMBER),

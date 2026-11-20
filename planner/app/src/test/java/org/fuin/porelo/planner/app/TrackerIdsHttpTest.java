@@ -58,8 +58,7 @@ class TrackerIdsHttpTest {
                                 List.of("porelo-store#8", "porelo-store#9"),
                                 "",
                                 null,
-                                true,
-                                "ST7")),
+                                true)),
                 List.of(
                         new Issue(
                                 "porelo-store#8",
@@ -72,8 +71,7 @@ class TrackerIdsHttpTest {
                                 null,
                                 "",
                                 Worker.AGENT,
-                                Risk.ORDINARY,
-                                "AB08"),
+                                Risk.ORDINARY),
                         new Issue(
                                 "porelo-store#9",
                                 "porelo-store",
@@ -132,25 +130,26 @@ class TrackerIdsHttpTest {
     }
 
     @Test
-    void aStoryAndAnIssueAreReadByTheirPercentEncodedReferenceWithTheirAlias() throws Exception {
-        // Harm: a board the tracker keeps could not be opened item by item in the window.
+    void aStoryAndAnIssueAreReadByTheirPercentEncodedReferenceAloneWithNoOldId() throws Exception {
+        // Harm: a board the tracker keeps could not be opened item by item in the window, or an
+        // answer names an old id, which no call takes any more.
         mvc.perform(get(URI.create("/projects/alpha/stories/porelo-store%237")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.story.id").value("porelo-store#7"))
-                .andExpect(jsonPath("$.story.alias").value("ST7"))
-                .andExpect(jsonPath("$.story.issues[0].alias").value("AB08"))
+                .andExpect(jsonPath("$.story.alias").doesNotExist())
+                .andExpect(jsonPath("$.story.issues[0].alias").doesNotExist())
                 .andExpect(jsonPath("$.story.issues[1].alias").doesNotExist());
         mvc.perform(get(URI.create("/projects/alpha/issues/porelo-store%238")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.issue.id").value("porelo-store#8"))
-                .andExpect(jsonPath("$.issue.alias").value("AB08"));
+                .andExpect(jsonPath("$.issue.alias").doesNotExist());
         mvc.perform(get(URI.create("/projects/alpha/stories/porelo-store%237/issues")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.issues[1].id").value("porelo-store#9"));
         mvc.perform(get("/projects/alpha/stories"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stories[0].id").value("porelo-store#7"))
-                .andExpect(jsonPath("$.stories[0].alias").value("ST7"));
+                .andExpect(jsonPath("$.stories[0].alias").doesNotExist());
     }
 
     @Test

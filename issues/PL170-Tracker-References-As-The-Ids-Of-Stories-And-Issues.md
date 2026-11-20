@@ -48,6 +48,10 @@ and every item, carried over or new, is known by its tracker reference alone.
   item of a repository outside `project.yml` left out as a fault, a sub-issue of a sub-issue refused; a controller
   test that a board answer carries no `alias`; `WorkOrder`/`WorkRecord` tests of `work` in a start and an older
   record; the screen's tests without the alias.
+- Built so: `IssueMapping` names each item by its repository and number, the repository lowercased as GitHub may
+  name it in capitals; an item whose name `Ids.name` refuses, of a repository outside `project.yml`, standing twice,
+  or a sub-issue under a sub-issue - whichever order the items come in - is left out as a fault naming repository and
+  number. A story under another issue keeps its place on the board, shown without the parent, with a fault saying so.
 
 ### Step 1, built
 
@@ -76,6 +80,9 @@ What step 1 built of the alias is taken out by step 2; the rest stands.
   read and its alias shown.
 
 ### Plan reading
+
+Where this reading and "Step 2, as decided for the cut-over" differ, step 2 holds: there is no alias and no `Id`
+field, so every point below about finding an item by its alias is void.
 
 Read by another model before the build. Step 1 builds the contract, `Ids`, the records and the screen; step 2, the
 GitHub store's ids, builds what only a store that keeps references and aliases can answer. How each point is

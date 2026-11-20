@@ -41,28 +41,6 @@ public final class Ids {
     }
 
     /**
-     * Refuses a story's alias, the id a story carried over into a tracker had in the Git store:
-     * {@code ST} and a number, never a tracker reference.
-     *
-     * @param alias the alias to check
-     * @return the alias
-     */
-    public static String storyAlias(final String alias) {
-        return shaped(STORY.matcher(alias).matches(), STORY.pattern(), alias, "story alias");
-    }
-
-    /**
-     * Refuses an issue's alias, the id an issue carried over into a tracker had in the Git store,
-     * never a tracker reference.
-     *
-     * @param alias the alias to check
-     * @return the alias
-     */
-    public static String issueAlias(final String alias) {
-        return shaped(ISSUE.matcher(alias).matches(), ISSUE.pattern(), alias, "issue alias");
-    }
-
-    /**
      * Whether an id is a tracker reference within the project, {@code <repository>#<number>}: a
      * repository's name as {@link #name} takes it and a number of one to nine digits without a
      * leading zero.

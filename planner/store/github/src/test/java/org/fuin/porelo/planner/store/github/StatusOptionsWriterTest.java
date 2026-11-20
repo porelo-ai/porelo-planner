@@ -160,7 +160,7 @@ class StatusOptionsWriterTest {
                     List.of(
                             new ProjectField(
                                     "F_status", FieldNames.STATUS, "SINGLE_SELECT", options),
-                            new ProjectField("F_id", FieldNames.ID, "TEXT", List.of())),
+                            new ProjectField("F_rank", FieldNames.RANK, "NUMBER", List.of())),
                     new PageInfo(false, null),
                     COST);
         }

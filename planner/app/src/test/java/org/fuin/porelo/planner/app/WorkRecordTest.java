@@ -483,6 +483,50 @@ class WorkRecordTest {
     }
 
     @Test
+    void aStageOverATrackersIssueReadsWithItsFileNamedWithADashAndNotWithAHash() throws Exception {
+        // Harm: a stage started over a tracker's issue leaves a record the planner cannot reload,
+        // so the run is lost on restart, or a name holding a '#' reaches what Porelo mounts.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        arguments.putArray("issues").add("porelo-x#3");
+        ((ObjectNode) offer.get("binding")).putArray("issues").add("porelo-x#3");
+        given(arguments, "analysis.json", "porelo-x-3.md");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(
+                            records.open("project", "https://example.org/store.git", null)
+                                    .locked(
+                                            session ->
+                                                    session.read()
+                                                            .runs()
+                                                            .values()
+                                                            .iterator()
+                                                            .next())
+                                    .offers()
+                                    .getFirst()
+                                    .arguments()
+                                    .given())
+                    .as("the tracker issue's file, named with a dash")
+                    .extracting(WorkOrder.Given::name)
+                    .containsExactly("porelo-x-3.md");
+            given(arguments, "analysis.json", "porelo-x#3.md");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a name holding a '#' is refused")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
     void aRecordWrittenBeforeRisksOpensWithItsRepositoriesMainAndSubAgent() throws Exception {
         // An upgrade must not make a running story's work record unreadable when its run names
         // repositories, whose main and sub-agents were written without an effort and a basis.

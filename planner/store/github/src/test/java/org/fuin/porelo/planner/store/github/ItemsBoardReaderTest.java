@@ -77,7 +77,6 @@ class ItemsBoardReaderTest {
                     select("F_size", FieldNames.SIZE, IssueMapping.SIZES.toArray(String[]::new)),
                     select("F_risk", FieldNames.RISK, "harm", "ordinary", "small"),
                     select("F_worker", FieldNames.WORKER, "Agent", "Manual"),
-                    field("F_id", FieldNames.ID, "TEXT"),
                     field("F_rank", FieldNames.RANK, "NUMBER"),
                     field("F_estimate", FieldNames.ESTIMATE, "NUMBER"),
                     field("F_minutes", FieldNames.MINUTES, "NUMBER"),
@@ -251,13 +250,10 @@ class ItemsBoardReaderTest {
                         List.of(IssueMapping.STORY_LABEL),
                         null,
                         refs(false, subNodes)),
-                List.of(
-                        text("F_id", "ST1"),
-                        option("F_status", "Idea"),
-                        option("F_priority", priority)));
+                List.of(option("F_status", "Idea"), option("F_priority", priority)));
     }
 
-    private static ProjectItem libIssue(final int number, final String id, final IssueRefs subs) {
+    private static ProjectItem libIssue(final int number, final IssueRefs subs) {
         return new ProjectItem(
                 "PVTI_lib_" + number,
                 false,
@@ -268,7 +264,6 @@ class ItemsBoardReaderTest {
                         node(OWNER + "/example-project", 1),
                         subs),
                 List.of(
-                        text("F_id", id),
                         option("F_status", "Backlog"),
                         option("F_size", "M"),
                         number("F_rank", 3),
@@ -286,7 +281,7 @@ class ItemsBoardReaderTest {
                         .fieldsPage(FIELDS.subList(0, 5), "f1")
                         .fieldsPage(FIELDS.subList(5, FIELDS.size()), null)
                         .itemsPage("i1", story("High", LIB_3))
-                        .itemsPage(null, libIssue(3, "LB5", refs(false)));
+                        .itemsPage(null, libIssue(3, refs(false)));
 
         final Snapshot snapshot = github.read();
 
@@ -295,15 +290,17 @@ class ItemsBoardReaderTest {
         assertThat(board.stories()).as("the story of the first page").hasSize(1);
         final Story story = board.stories().get(0);
         assertThat(story.priority()).as("the story's Priority field").isEqualTo("High");
-        assertThat(story.issues()).as("its issue from the second page").containsExactly("LB5");
-        final Issue issue = board.issue("LB5").orElseThrow();
+        assertThat(story.issues())
+                .as("its issue from the second page")
+                .containsExactly("example-lib#3");
+        final Issue issue = board.issue("example-lib#3").orElseThrow();
         assertThat(issue.state()).as("the issue's Status field").isEqualTo("Backlog");
         assertThat(issue.repository()).as("the repository's short name").isEqualTo("example-lib");
-        assertThat(snapshot.items().get("LB5").fields())
+        assertThat(snapshot.items().get("example-lib#3").fields())
                 .as("the number fields as text")
                 .containsEntry(FieldNames.RANK, "3")
                 .containsEntry(FieldNames.MINUTES, "12.5");
-        assertThat(snapshot.items().get("LB5").comments())
+        assertThat(snapshot.items().get("example-lib#3").comments())
                 .as("comments are not read on the board")
                 .isNull();
         assertThat(snapshot.config().fieldIds())
@@ -367,13 +364,16 @@ class ItemsBoardReaderTest {
                                 null,
                                 story("High"),
                                 new ProjectItem(
-                                        "PVTI_draft", false, null, List.of(text("F_id", "ST2"))))
+                                        "PVTI_draft",
+                                        false,
+                                        null,
+                                        List.of(option("F_status", "Idea"))))
                         .read();
 
         assertThat(snapshot.board().stories())
                 .as("only the issue's item")
                 .extracting(Story::id)
-                .containsExactly("ST1");
+                .containsExactly("example-project#1");
         assertThat(snapshot.board().faults()).as("a draft is no fault").isEmpty();
     }
 
@@ -384,13 +384,10 @@ class ItemsBoardReaderTest {
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage(
-                                null,
-                                story("High", LIB_3),
-                                libIssue(3, "LB5", refs(true, "I_part")))
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(true, "I_part")))
                         .read();
 
-        assertThat(snapshot.board().issue("LB5")).as("the issue left out").isEmpty();
+        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
         assertThat(snapshot.board().faults())
                 .as("the one fault naming it, never one calling it outside the project")
                 .containsExactly(
@@ -414,14 +411,14 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false),
                                 refs(false, LIB_3)),
-                        List.of(text("F_id", "LB6"), option("F_status", "Backlog")));
+                        List.of(option("F_status", "Backlog")));
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
                         .itemsPage(
                                 null,
                                 story("High", LIB_3),
-                                libIssue(3, "LB5", refs(true, "I_part")),
+                                libIssue(3, refs(true, "I_part")),
                                 blocked)
                         .read();
 
@@ -431,7 +428,7 @@ class ItemsBoardReaderTest {
                 .containsExactly(
                         "Item example-org/example-lib#3 has more sub-issues or blockers than one"
                                 + " page carries and is left out; its story is not whole",
-                        "LB6 depends on an issue left out and is left out too");
+                        "example-lib#4 depends on an issue left out and is left out too");
     }
 
     @Test
@@ -441,16 +438,39 @@ class ItemsBoardReaderTest {
                 new ProjectItem(
                         "PVTI_odd",
                         false,
-                        issue(OWNER + "/MyRepo", 3, List.of(), null, refs(false)),
-                        List.of(text("F_id", "LB5"), option("F_status", "Idea")));
+                        issue(OWNER + "/_repo", 3, List.of(), null, refs(false)),
+                        List.of(option("F_status", "Idea")));
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
         assertThat(snapshot.board().faults())
                 .as("the fault naming where it is")
                 .containsExactly(
-                        "Item example-org/MyRepo#3 lies outside the project's repositories and is"
+                        "Item example-org/_repo#3 lies outside the project's repositories and is"
                                 + " left out");
+    }
+
+    @Test
+    void anItemOfARepositoryGitHubNamesInCapitalsIsKnownByItsLowercasedReference() {
+        // Harm: an issue of a repository made with capitals is left out of the board, or known by
+        // a reference no call can name.
+        final ProjectItem capitals =
+                new ProjectItem(
+                        "PVTI_capitals",
+                        false,
+                        issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
+                        List.of(option("F_status", "Idea")));
+
+        final Snapshot snapshot =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, capitals).read();
+
+        assertThat(snapshot.board().faults()).as("no fault").isEmpty();
+        assertThat(snapshot.board().issues())
+                .as("the issue by its lowercased reference")
+                .extracting(Issue::id, Issue::repository)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("example-lib#3", "example-lib"));
+        assertThat(snapshot.items()).as("its item by that reference").containsKey("example-lib#3");
     }
 
     @Test
@@ -462,7 +482,7 @@ class ItemsBoardReaderTest {
                         "PVTI_odd",
                         false,
                         issue(OWNER + "/lib\nInjected line", 3, List.of(), null, refs(false)),
-                        List.of(text("F_id", "LB5"), option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")));
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
@@ -558,7 +578,7 @@ class ItemsBoardReaderTest {
         // Harm: an answer of any size held and mapped, the board's bound passed by one page.
         final ProjectItem[] items = new ProjectItem[ItemsBoardReader.PAGE_SIZE + 1];
         for (int i = 0; i < items.length; i++) {
-            items[i] = libIssue(i + 1, "LB" + (i + 1), refs(false));
+            items[i] = libIssue(i + 1, refs(false));
         }
         assertThatThrownBy(
                         () -> new GitHub().fieldsPage(FIELDS, null).itemsPage(null, items).read())
@@ -582,8 +602,8 @@ class ItemsBoardReaderTest {
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage("   ", libIssue(3, "LB5", refs(false)))
-                        .itemsPage(null, libIssue(4, "LB6", refs(false)));
+                        .itemsPage("   ", libIssue(3, refs(false)))
+                        .itemsPage(null, libIssue(4, refs(false)));
 
         assertThatThrownBy(github::read)
                 .as("a cursor of blanks")
@@ -596,9 +616,7 @@ class ItemsBoardReaderTest {
     void aReadWhoseLastAnswerCameAfterTheDeadlineIsUnreachable() {
         // Harm: a board answered as current although GitHub took longer than the window waits.
         final GitHub github =
-                new GitHub()
-                        .fieldsPage(FIELDS, null)
-                        .itemsPage(null, libIssue(3, "LB5", refs(false)));
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, libIssue(3, refs(false)));
         final Instant start = Instant.parse("2026-01-01T00:00:00Z");
         final AtomicInteger ticks = new AtomicInteger();
         final InstantSource slow = () -> start.plusSeconds(25L * ticks.getAndIncrement());
@@ -734,7 +752,7 @@ class ItemsBoardReaderTest {
                         "PVTI_stranger",
                         false,
                         issue("other-org/example-lib", 3, List.of(), null, refs(false)),
-                        List.of(text("F_id", "LB5"), option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")));
 
         final Snapshot snapshot =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, stranger).read();
@@ -754,14 +772,14 @@ class ItemsBoardReaderTest {
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage("i1", story("High", LIB_3), libIssue(3, "LB5", refs(false)))
-                        .itemsPage(null, libIssue(3, "LB5", refs(false)))
+                        .itemsPage("i1", story("High", LIB_3), libIssue(3, refs(false)))
+                        .itemsPage(null, libIssue(3, refs(false)))
                         .read();
 
         assertThat(snapshot.board().issues())
                 .extracting(Issue::id)
                 .as("one issue")
-                .containsExactly("LB5");
+                .containsExactly("example-lib#3");
         assertThat(snapshot.board().faults()).as("no repeated id").isEmpty();
     }
 
@@ -771,7 +789,7 @@ class ItemsBoardReaderTest {
         // gone.
         final GitHub github = new GitHub().fieldsPage(FIELDS, null);
         for (int page = 1; page <= ItemsBoardReader.MOST_PAGES; page++) {
-            github.itemsPage("i" + page, libIssue(page, "LB" + page, refs(false)));
+            github.itemsPage("i" + page, libIssue(page, refs(false)));
         }
 
         assertThatThrownBy(github::read)
@@ -790,8 +808,8 @@ class ItemsBoardReaderTest {
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage("i1", libIssue(3, "LB5", refs(false)))
-                        .itemsPage("i1", libIssue(4, "LB6", refs(false)));
+                        .itemsPage("i1", libIssue(3, refs(false)))
+                        .itemsPage("i1", libIssue(4, refs(false)));
 
         assertThatThrownBy(github::read)
                 .as("the cursor given again")
@@ -845,8 +863,8 @@ class ItemsBoardReaderTest {
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage("i1", libIssue(3, "LB5", refs(false)))
-                        .itemsPage(null, libIssue(4, "LB6", refs(false)));
+                        .itemsPage("i1", libIssue(3, refs(false)))
+                        .itemsPage(null, libIssue(4, refs(false)));
         final Instant start = Instant.parse("2026-01-01T00:00:00Z");
         final AtomicInteger ticks = new AtomicInteger();
         final InstantSource slow = () -> start.plusSeconds(25L * ticks.getAndIncrement());
@@ -882,7 +900,7 @@ class ItemsBoardReaderTest {
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
-                        .itemsPage(null, story("High", LIB_3), libIssue(3, "LB5", refs(false)));
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
         github.read();
         assertThat(github.calls)
                 .as("only the two reads were sent")

@@ -685,7 +685,6 @@ public class BoardController {
                 board.revision().value(),
                 new StoryDetail(
                         story.id(),
-                        story.alias(),
                         story.title(),
                         story.state(),
                         story.stateGiven(),
@@ -749,7 +748,6 @@ public class BoardController {
                 board.revision().value(),
                 new IssueDetail(
                         issue.id(),
-                        issue.alias(),
                         issue.repository(),
                         issue.title(),
                         issue.state(),
@@ -962,7 +960,6 @@ public class BoardController {
         return projects.work(name(project))
                 .view(
                         (board, snapshot) -> {
-                            // A run stands under the story's own id, not under an alias.
                             final Story found = found(board, checked);
                             return new StoryWorkReply(
                                     WorkAnswers.work(board, snapshot.runs().get(found.id())));
@@ -1098,7 +1095,6 @@ public class BoardController {
             final Moves.StoryState derive) {
         return new org.fuin.porelo.planner.app.answers.Story(
                 story.id(),
-                story.alias(),
                 story.title(),
                 story.state(),
                 story.stateGiven(),

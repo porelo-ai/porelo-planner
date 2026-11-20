@@ -102,7 +102,6 @@ class FieldsBoardWriterTest {
             final String body,
             final Map<String, String> extra) {
         final Map<String, String> fields = new LinkedHashMap<>();
-        fields.put(FieldNames.ID, id);
         fields.putAll(extra);
         return new ItemView(
                 "PVTI_" + id,
@@ -124,9 +123,14 @@ class FieldsBoardWriterTest {
                 false);
     }
 
+    /** The id a test's item was made with, which its item id carries. */
+    private static String idOf(final ItemView item) {
+        return item.itemId().substring("PVTI_".length());
+    }
+
     private static Issue issue(final ItemView item) {
         return new Issue(
-                item.fields().get(FieldNames.ID),
+                idOf(item),
                 item.repository(),
                 item.title(),
                 item.fields().get(FieldNames.STATUS),
@@ -141,7 +145,7 @@ class FieldsBoardWriterTest {
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         final List<Issue> issues = new ArrayList<>();
         for (final ItemView item : items) {
-            byId.put(item.fields().get(FieldNames.ID), item);
+            byId.put(idOf(item), item);
             issues.add(issue(item));
         }
         return new Snapshot(

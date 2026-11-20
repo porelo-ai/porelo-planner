@@ -2832,8 +2832,7 @@ public final class WorkRun {
                                                 i.link(),
                                                 i.text(),
                                                 i.worker(),
-                                                i.risk(),
-                                                i.alias()))
+                                                i.risk()))
                         .toList(),
                 board.work(),
                 board.repositories());

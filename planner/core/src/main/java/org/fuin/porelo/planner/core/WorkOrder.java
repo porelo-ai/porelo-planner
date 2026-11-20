@@ -136,7 +136,7 @@ public record WorkOrder(
     /**
      * A file a task is given to read, read only, beside its checkout.
      *
-     * @param name the file's plain name, an issue's id with {@code .md}
+     * @param name the file's plain name, as {@link StageOrder#given} names an issue's
      * @param text its text
      */
     public record Given(String name, String text) {}

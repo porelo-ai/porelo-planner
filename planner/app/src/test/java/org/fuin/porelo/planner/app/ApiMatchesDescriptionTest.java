@@ -356,12 +356,6 @@ class ApiMatchesDescriptionTest {
         final java.util.regex.Pattern issue =
                 java.util.regex.Pattern.compile(
                         description.at("/components/schemas/IssueId/pattern").asText());
-        final java.util.regex.Pattern storyAlias =
-                java.util.regex.Pattern.compile(
-                        description.at("/components/schemas/StoryAlias/pattern").asText());
-        final java.util.regex.Pattern issueAlias =
-                java.util.regex.Pattern.compile(
-                        description.at("/components/schemas/IssueAlias/pattern").asText());
         for (final String id :
                 List.of(
                         "ST1",
@@ -387,12 +381,57 @@ class ApiMatchesDescriptionTest {
             assertThat(issue.matcher(id).matches())
                     .as("the description's IssueId against Ids.issue for '%s'", id)
                     .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.issue(id)));
-            assertThat(storyAlias.matcher(id).matches())
-                    .as("the description's StoryAlias against Ids.storyAlias for '%s'", id)
-                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.storyAlias(id)));
-            assertThat(issueAlias.matcher(id).matches())
-                    .as("the description's IssueAlias against Ids.issueAlias for '%s'", id)
-                    .isEqualTo(takes(() -> org.fuin.porelo.planner.store.Ids.issueAlias(id)));
+        }
+    }
+
+    @Test
+    void noStoryOrIssueIsDescribedWithAnOldIdBesideItsReference() {
+        // Harm: the window shows or sends an old id that names no item, since old ids are matched
+        // to nothing.
+        final List<String> named = new ArrayList<>();
+        description
+                .at("/components/schemas")
+                .properties()
+                .forEach(
+                        schema -> {
+                            if (schema.getValue().at("/properties").has("alias")) {
+                                named.add(schema.getKey());
+                            }
+                        });
+        assertThat(named).as("the schemas describing an alias").isEmpty();
+        assertThat(description.at("/components/schemas").has("StoryAlias"))
+                .as("a story alias described")
+                .isFalse();
+    }
+
+    @Test
+    void aGivenFilesNameIsTheNameThePlannerGivesAnIssuesText() {
+        // Harm: the window refuses a stage's start over a tracker's issue, or takes a name with a
+        // '#' or a path for a file Porelo mounts.
+        final java.util.regex.Pattern name =
+                java.util.regex.Pattern.compile(
+                        description
+                                .at("/components/schemas/GivenFile/properties/name/pattern")
+                                .asText());
+        for (final String issue :
+                List.of(
+                        "XY12", // not-a-citation: an id's shape
+                        "XY12.1", // not-a-citation: an id's shape
+                        "porelo-planner#12",
+                        "a.b_c-d#1")) {
+            assertThat(name.matcher(org.fuin.porelo.planner.core.StageOrder.given(issue)).matches())
+                    .as("the given file of %s", issue)
+                    .isTrue();
+        }
+        for (final String refused :
+                List.of(
+                        "porelo-planner#12.md",
+                        "porelo-planner-012.md",
+                        "a..b-1.md",
+                        "../x-1.md",
+                        "x/y-1.md",
+                        "porelo-planner.md")) {
+            assertThat(name.matcher(refused).matches()).as("the name '%s'", refused).isFalse();
         }
     }
 

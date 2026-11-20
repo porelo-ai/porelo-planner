@@ -1642,14 +1642,6 @@ components:
         answers only its own form.
       type: string
       pattern: '^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$'
-    StoryAlias:
-      description: The identifier a story a tracker keeps had in the Git store before it was carried over.
-      type: string
-      pattern: '^ST[0-9]{1,5}$'
-    IssueAlias:
-      description: The identifier an issue a tracker keeps had in the Git store before it was carried over.
-      type: string
-      pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$'
     RunId:
       description: >-
         A story's run, drawn by the planner when the run starts and kept while it stands; opaque to the window, which
@@ -2264,13 +2256,6 @@ components:
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
-        alias:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          description: >-
-            The id a story a tracker keeps had before it was carried over, shown beside its reference; absent for
-            any other story.
-          allOf:
-            - $ref: '#/components/schemas/StoryAlias'
         title:
           type: string
         state:
@@ -2356,13 +2341,6 @@ components:
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
-        alias:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          description: >-
-            The id an issue a tracker keeps had before it was carried over, shown beside its reference; absent for
-            any other issue.
-          allOf:
-            - $ref: '#/components/schemas/IssueAlias'
         repository:
           $ref: '#/components/schemas/Name'
         title:
@@ -2801,8 +2779,10 @@ components:
       properties:
         name:
           type: string
-          pattern: '^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?\.md$'
-          description: The plain file name, an issue's id the task owns with .md.
+          pattern: '^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?!.*\.\.)[a-z0-9][a-z0-9._-]{0,99}-[1-9][0-9]{0,8})\.md$'
+          description: >-
+            The plain file name, an issue's id the task owns with .md; a tracker reference's `#` is written as `-`
+            (`porelo-planner-12.md` for `porelo-planner#12`), so no file name Porelo mounts holds a `#`.
         text:
           type: string
           description: The issue's text, at most 65536 UTF-8 bytes.

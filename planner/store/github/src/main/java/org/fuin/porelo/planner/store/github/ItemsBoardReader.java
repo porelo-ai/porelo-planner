@@ -378,7 +378,9 @@ public final class ItemsBoardReader implements BoardReader {
         }
         final String repository;
         try {
-            repository = Ids.name(nameWithOwner.substring(slash + 1));
+            // GitHub keeps a repository's name in the case it was made with; an id takes it
+            // lowercased.
+            repository = Ids.name(nameWithOwner.substring(slash + 1).toLowerCase(Locale.ROOT));
         } catch (final IllegalArgumentException e) {
             faults.add(where + " lies outside the project's repositories and is left out");
             return null;

@@ -832,7 +832,8 @@ public final class WorkRecord implements AutoCloseable {
             all += bytes;
             if (bytes > StageOrder.MOST_TEXT
                     || !names.add(given.name())
-                    || task.issues().stream().noneMatch(id -> given.name().equals(id + ".md"))) {
+                    || task.issues().stream()
+                            .noneMatch(id -> given.name().equals(StageOrder.given(id)))) {
                 return false;
             }
         }

@@ -30,6 +30,17 @@ public final class StageOrder {
     private StageOrder() {}
 
     /**
+     * Answers the plain name of the file an issue's text is given in: its id with {@code .md}, a
+     * tracker reference's {@code #} written as {@code -}, so no file name Porelo mounts holds one.
+     *
+     * @param issue the issue's id
+     * @return the file's name
+     */
+    public static String given(final String issue) {
+        return issue.replace('#', '-') + ".md";
+    }
+
+    /**
      * Answers the task as its stage starts it: unchanged for work that pushes and for a reader,
      * else with the rule's result file, each owned issue's text as a given file and the stage's
      * instructions closing its prompt.
@@ -82,7 +93,7 @@ public final class StageOrder {
                                 + " UTF-8 bytes, more than a task is given.");
             }
             all += bytes;
-            given.add(new WorkOrder.Given(id + ".md", issue.text()));
+            given.add(new WorkOrder.Given(given(id), issue.text()));
         }
         if (given.size() > MOST_FILES || all > MOST_ALL) {
             throw WorkRefusal.notAllowed(

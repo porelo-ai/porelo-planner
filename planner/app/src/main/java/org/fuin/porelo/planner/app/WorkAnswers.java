@@ -250,7 +250,6 @@ public final class WorkAnswers {
         final boolean raised = !manual && progress != null && progress.needsYou();
         return new org.fuin.porelo.planner.app.answers.Issue(
                 issue.id(),
-                issue.alias(),
                 issue.repository(),
                 issue.title(),
                 issue.state(),

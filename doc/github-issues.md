@@ -11,10 +11,9 @@ the work rules stay files in the project's own repository.
 | A story | An issue in the project's own repository, labeled `story` |
 | A story's issues | Its sub-issues, in their own repositories, in the story's order |
 | An issue in a second story | Listed under *Also needs* in that story's body; GitHub allows one parent |
-| A Porelo sub-issue, numbered after its issue's id and a dot | A sub-issue of its issue, with its own number |
+| A Porelo sub-issue | A sub-issue of its issue, in the issue's repository, with its own number; never under another sub-issue |
 | `blockedBy` | GitHub's issue dependency, "blocked by", across repositories |
-| The id | The tracker reference, `<repository>#<number>` |
-| An old id, of an item carried over from Markdown | The project's text field `Id`, its alias |
+| The id | The tracker reference alone, `<repository>#<number>`: the repository the issue lives in, lowercased, and GitHub's number |
 | The state | The project's own field `Status`, whose options are the workflow's states in order |
 | Priority, size, risk, worker | The single-select fields `Priority`, `Size`, `Risk`, `Worker` |
 | The order within a priority | The number field `Rank`, sorted by the planner |
@@ -22,7 +21,7 @@ the work rules stay files in the project's own repository.
 | The course in time | One comment per stage |
 | The sums of the stages | The number fields `Estimate`, `Minutes`, `VM minutes`, `Tokens`, `Stages` |
 
-The planner adds 11 fields to the project. A GitHub project holds at most 50, 13 of them GitHub's own.
+The planner adds 10 fields to the project. A GitHub project holds at most 50, 13 of them GitHub's own.
 
 ## The body
 
@@ -67,13 +66,15 @@ stage records count them; a pause and a person's move are shown, not summed.
   planned, and reopening sets the state back; an issue whose open or closed state disagrees with its `Status` is
   shown with its `Status` and named as a fault.
 - A story whose `Status` is empty follows its issues; a set `Status` is given.
-- An item is known by its tracker reference, its repository and GitHub's number. A new story or issue gets no
-  other id. One carried over from Markdown keeps its old id in `Id` as an alias, never given again, so commits and
-  decisions that name it still find it.
-- An item a person edited into something the board cannot hold - an alias twice, a `Status` outside the
-  workflow, a parent or a blocker outside the project, a sub-issue under another issue than its id names - is left
-  out and named as a fault, and the story it belongs to says that an issue of it is missing. A fault names the item
-  by its repository and number, never by its title or body.
+- An item is known by its tracker reference alone, its repository and GitHub's number, and no field holds another
+  id. An old id, of an item carried over from Markdown, is matched to nothing: old commits, velocity rows and task
+  records stay under it.
+- An issue labeled `story` is a story; every other issue of the project is an issue.
+- An item a person edited into something the board cannot hold - an item of a repository `project.yml` does not
+  name, a `Status` outside the workflow, a parent or a blocker outside the project, a sub-issue in another
+  repository than its parent or under another sub-issue - is left out and named as a fault, and the story it belongs
+  to says that an issue of it is missing. A fault names the item by its repository and number, never by its title or
+  body.
 
 ## Writes
 

@@ -146,14 +146,16 @@ class CarryOverPlanTest {
     }
 
     @Test
-    void eachCarriedItemKeepsItsOldIdAsItsAliasAndNoOtherId() {
+    void noCarriedItemIsWrittenAnIdField() {
+        // Harm: a carried item's old id written into a field the project no longer has, so the
+        // save is refused, or the old id read as a second name of the item.
         final CarryOverPlan plan = plan(board(List.of()), "Text.");
         plan.items()
                 .forEach(
                         item ->
-                                assertThat(item.fields().get(FieldNames.ID))
-                                        .as("the Id of %s", item.id())
-                                        .isEqualTo(item.id()));
+                                assertThat(item.fields())
+                                        .as("the fields of %s", item.id())
+                                        .doesNotContainKey("Id"));
     }
 
     @Test

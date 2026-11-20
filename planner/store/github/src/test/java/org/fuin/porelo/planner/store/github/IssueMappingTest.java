@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.assertj.core.groups.Tuple;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
@@ -66,12 +67,9 @@ class IssueMappingTest {
         private final List<CommentView> comments = new ArrayList<>();
         private boolean commentsRead = true;
 
-        private Item(final String repository, final int number, final @Nullable String id) {
+        private Item(final String repository, final int number) {
             this.repository = repository;
             this.number = number;
-            if (id != null) {
-                fields.put(FieldNames.ID, id);
-            }
         }
 
         private Item field(final String name, final String value) {
@@ -182,20 +180,19 @@ class IssueMappingTest {
     void aStoryWithIssuesAcrossRepositoriesIsReadAsTheBoardHoldsIt() {
         // Harm: the board shows another plan than the one kept on GitHub.
         final Item story =
-                new Item("example-project", 1, "ST7").story().field(FieldNames.PRIORITY, "High");
+                new Item("example-project", 1).story().field(FieldNames.PRIORITY, "High");
         final Item first =
-                new Item("example-project", 2, "PL41")
+                new Item("example-project", 2)
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.SIZE, "M")
                         .field(FieldNames.RISK, "harm")
                         .field(FieldNames.WORKER, "Manual");
         final Item second =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Implementing")
                         .blockedBy(first);
-        final Item part = new Item("example-lib", 4, "LB5.1").field(FieldNames.STATUS, "Idea");
-        final Item done =
-                new Item("example-lib", 5, "LB6").field(FieldNames.STATUS, "Finished").closed();
+        final Item part = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        final Item done = new Item("example-lib", 5).field(FieldNames.STATUS, "Finished").closed();
         story.sub(first).sub(second).sub(done);
         second.sub(part);
 
@@ -207,10 +204,11 @@ class IssueMappingTest {
                 .singleElement()
                 .satisfies(
                         s -> {
-                            assertThat(s.id()).as("its id").isEqualTo("ST7");
+                            assertThat(s.id()).as("its id").isEqualTo("example-project#1");
                             assertThat(s.issues())
                                     .as("its issues, in GitHub's order")
-                                    .containsExactly("PL41", "LB5", "LB6");
+                                    .containsExactly(
+                                            "example-project#2", "example-lib#3", "example-lib#5");
                             assertThat(s.stateGiven())
                                     .as("an empty Status follows the issues")
                                     .isFalse();
@@ -222,93 +220,139 @@ class IssueMappingTest {
                         });
         final Map<String, Issue> issues = new LinkedHashMap<>();
         mapped.issues().forEach(i -> issues.put(i.id(), i));
-        assertThat(issues.get("PL41"))
+        assertThat(issues.get("example-project#2"))
                 .as("an issue with its fields")
                 .extracting(Issue::state, Issue::size, Issue::risk, Issue::worker, Issue::parent)
                 .containsExactly("Backlog", "M", Risk.HARM, Worker.MANUAL, null);
-        assertThat(issues.get("LB5").blockedBy())
+        assertThat(issues.get("example-lib#3").blockedBy())
                 .as("a dependency across repositories")
-                .containsExactly("PL41");
-        assertThat(issues.get("LB5.1").parent()).as("a Porelo sub-issue's parent").isEqualTo("LB5");
-        assertThat(issues.get("LB6").state()).as("a closed issue").isEqualTo("Finished");
+                .containsExactly("example-project#2");
+        assertThat(issues.get("example-lib#4").parent())
+                .as("a Porelo sub-issue's parent")
+                .isEqualTo("example-lib#3");
+        assertThat(issues.get("example-lib#5").state()).as("a closed issue").isEqualTo("Finished");
     }
 
     @Test
-    void anItemEditedByHandIntoWhatTheBoardCannotHoldIsLeftOutAsAFault() {
-        // Harm: one hand edit on GitHub takes the whole board down, or shows a broken plan as
-        // whole.
-        final Item story = new Item("example-project", 1, "ST7").story();
-        final Item noId = new Item("example-project", 2, null).field(FieldNames.STATUS, "Idea");
-        final Item badId =
-                new Item("example-project", 3, "not an id").field(FieldNames.STATUS, "Idea");
-        final Item twice = new Item("example-lib", 4, "LB5").field(FieldNames.STATUS, "Idea");
-        final Item again = new Item("example-lib", 5, "LB5").field(FieldNames.STATUS, "Idea");
-        final Item badState =
-                new Item("example-lib", 6, "LB6").field(FieldNames.STATUS, "Somewhere");
-        final Item blocked =
-                new Item("example-lib", 7, "LB7")
-                        .field(FieldNames.STATUS, "Idea")
-                        .blockedBy(badState);
-        final Item wrongParent =
-                new Item("example-lib", 8, "LB9.1").field(FieldNames.STATUS, "Idea");
-        final Item outside = new Item("elsewhere", 9, "LB10").field(FieldNames.STATUS, "Idea");
-        final Item fine = new Item("example-lib", 10, "LB11").field(FieldNames.STATUS, "Idea");
-        story.sub(twice).sub(blocked).sub(fine);
-        twice.sub(wrongParent);
+    void anItemIsNamedByItsRepositoryAndNumberWithNoIdFieldOnTheProject() {
+        // Harm: an item made on GitHub after the cut-over, which has no Id, is not on the board,
+        // or an old id left in a field names an item in the reference's place.
+        final Item story = new Item("example-project", 4).story();
+        final Item made = new Item("example-lib", 12).field(FieldNames.STATUS, "Idea");
+        final Item carried =
+                new Item("example-lib", 13).field(FieldNames.STATUS, "Idea").field("Id", "LB5");
+        story.sub(made).sub(carried);
 
-        final IssueMapping.Mapped mapped =
-                read(
-                        story,
-                        noId,
-                        badId,
-                        twice,
-                        again,
-                        badState,
-                        blocked,
-                        wrongParent,
-                        outside,
-                        fine);
+        final IssueMapping.Mapped mapped = read(story, made, carried);
+
+        assertThat(mapped.faults()).as("faults").isEmpty();
+        assertThat(mapped.stories())
+                .as("the story by its reference, its issues by theirs")
+                .extracting(Story::id, Story::issues)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-project#4", List.of("example-lib#12", "example-lib#13")));
+        assertThat(mapped.issues())
+                .as("each issue by its reference alone")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("example-lib#12", "example-lib#13");
+    }
+
+    @Test
+    void anItemOfARepositoryOutsideTheProjectIsLeftOutAsAFaultNamingRepositoryAndNumber() {
+        // Harm: an item of a repository project.yml does not name is read or written as part of
+        // the project, or a hand edit there takes the board down.
+        final Item story = new Item("example-project", 1).story();
+        final Item outside = new Item("elsewhere", 9).field(FieldNames.STATUS, "Idea");
+        final Item unnamed = new Item("Example-Lib", 3).field(FieldNames.STATUS, "Idea");
+        final Item fine = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
+        story.sub(outside).sub(unnamed).sub(fine);
+
+        final IssueMapping.Mapped mapped = read(story, outside, unnamed, fine);
 
         assertThat(mapped.issues())
-                .as("only the issues the board can hold")
+                .as("only the issue of the project's repositories")
                 .extracting(Issue::id)
-                .containsExactlyInAnyOrder("LB5", "LB11");
-        assertThat(mapped.faults()).as("one fault per item left out").hasSize(7);
+                .containsExactly("example-lib#2");
+        assertThat(mapped.faults())
+                .as("each item left out, named by its repository and number")
+                .containsExactly(
+                        "Item Example-Lib#3 has no valid tracker reference and is left out",
+                        "Item elsewhere#9 lies outside the project's repositories and is left out",
+                        "example-project#1 has a sub-issue outside the project");
+    }
+
+    @Test
+    void aSubIssueOfASubIssueIsRefusedWhicheverOrderItsItemsCome() {
+        // Harm: a tree deeper than the board holds is shown as a plan, or an item depending on a
+        // refused one takes the board down.
+        final Item story = new Item("example-project", 1).story();
+        final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
+        final Item part = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
+        final Item deep = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        final Item deeper = new Item("example-lib", 5).field(FieldNames.STATUS, "Idea");
+        final Item waiting =
+                new Item("example-lib", 6).field(FieldNames.STATUS, "Idea").blockedBy(deep);
+        story.sub(issue).sub(waiting);
+        issue.sub(part);
+        part.sub(deep);
+        deep.sub(deeper);
+
+        final IssueMapping.Mapped mapped = read(deeper, deep, waiting, part, story, issue);
+
+        assertThat(mapped.issues())
+                .as("the story's issue and its sub-issue stay")
+                .extracting(Issue::id, Issue::parent)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#2", null),
+                        Tuple.tuple("example-lib#3", "example-lib#2"));
+        assertThat(mapped.faults())
+                .as("each item below a sub-issue refused, and the one waiting on it")
+                .containsExactlyInAnyOrder(
+                        "example-lib#4 is a sub-issue of a sub-issue and is left out",
+                        "example-lib#5 is a sub-issue of a sub-issue and is left out",
+                        "example-lib#6 depends on an issue left out and is left out too");
         assertThat(mapped.stories().get(0).issuesWhole())
                 .as("the story says an issue of it is missing")
                 .isFalse();
     }
 
     @Test
-    void aTrackerReferenceTypedIntoTheIdFieldIsNoValidIdAndTakesNoOtherItemsPlace() {
-        // Harm: a reference typed into an item's Id field takes the board down, or names the item
-        // after another one.
-        final Item story = new Item("example-project", 1, "ST7").story();
-        final Item elsewhere =
-                new Item("example-lib", 1, "example-project#99").field(FieldNames.STATUS, "Idea");
-        final Item another =
-                new Item("example-lib", 3, "example-lib#2").field(FieldNames.STATUS, "Idea");
-        final Item fine = new Item("example-lib", 2, "LB11").field(FieldNames.STATUS, "Idea");
-        story.sub(elsewhere).sub(another).sub(fine);
+    void anItemEditedByHandIntoWhatTheBoardCannotHoldIsLeftOutAsAFault() {
+        // Harm: one hand edit on GitHub takes the whole board down, or shows a broken plan as
+        // whole.
+        final Item story = new Item("example-project", 1).story();
+        final Item parent = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        final Item badState = new Item("example-lib", 6).field(FieldNames.STATUS, "Somewhere");
+        final Item blocked =
+                new Item("example-lib", 7).field(FieldNames.STATUS, "Idea").blockedBy(badState);
+        final Item wrongRepository =
+                new Item("example-project", 8).field(FieldNames.STATUS, "Idea");
+        final Item fine = new Item("example-lib", 10).field(FieldNames.STATUS, "Idea");
+        final Item again = new Item("example-lib", 10).field(FieldNames.STATUS, "Backlog");
+        story.sub(parent).sub(blocked).sub(fine);
+        parent.sub(wrongRepository);
 
-        final IssueMapping.Mapped mapped = read(story, elsewhere, another, fine);
+        final IssueMapping.Mapped mapped =
+                read(story, parent, badState, blocked, wrongRepository, fine, again);
 
         assertThat(mapped.issues())
-                .as("only the item whose Id field holds the Git store's form")
-                .extracting(Issue::id)
-                .containsExactly("LB11");
-        assertThat(mapped.faults())
-                .as("each item with a reference in its Id field named")
-                .filteredOn(fault -> fault.contains("has no valid Id"))
-                .hasSize(2);
+                .as("only the issues the board can hold")
+                .extracting(Issue::id, Issue::state)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#4", "Idea"),
+                        Tuple.tuple("example-lib#10", "Idea"));
+        assertThat(mapped.faults()).as("one fault per item left out").hasSize(4);
+        assertThat(mapped.stories().get(0).issuesWhole())
+                .as("the story says an issue of it is missing")
+                .isFalse();
     }
 
     @Test
     void aStatusAgainstGitHubsOpenOrClosedStaysTheTruthAndIsNamed() {
         // Harm: a finished issue reopened on GitHub silently counted as done, or as open, without a
         // word.
-        final Item reopened =
-                new Item("example-lib", 1, "LB5").field(FieldNames.STATUS, "Finished");
+        final Item reopened = new Item("example-lib", 1).field(FieldNames.STATUS, "Finished");
 
         final IssueMapping.Mapped mapped = read(reopened);
 
@@ -317,15 +361,15 @@ class IssueMappingTest {
                 .as("the disagreement named")
                 .singleElement()
                 .asString()
-                .contains("LB5");
+                .contains("example-lib#1");
     }
 
     @Test
     void anIssueUnderAStoryHasNoIssueAsItsParent() {
         // Harm: a story read as an issue's parent, which the board would take for a Porelo
         // sub-issue.
-        final Item story = new Item("example-project", 1, "ST7").story();
-        final Item issue = new Item("example-lib", 2, "LB5").field(FieldNames.STATUS, "Idea");
+        final Item story = new Item("example-project", 1).story();
+        final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
         story.sub(issue);
 
         assertThat(read(story, issue).issues().get(0).parent())
@@ -339,7 +383,7 @@ class IssueMappingTest {
         // way.
         final Issue issue =
                 new Issue(
-                        "LB5",
+                        "example-lib#1",
                         "example-lib",
                         SECRET_TITLE,
                         "Backlog",
@@ -350,7 +394,7 @@ class IssueMappingTest {
                         SECRET_BODY,
                         Worker.MANUAL,
                         Risk.SMALL);
-        final Item item = new Item("example-lib", 1, null);
+        final Item item = new Item("example-lib", 1);
         IssueMapping.fields(issue, "Low", 4).forEach(item::field);
 
         assertThat(read(item).issues()).as("the issue read back").containsExactly(issue);
@@ -361,7 +405,7 @@ class IssueMappingTest {
         // Harm: a story's given state or priority lost on a save.
         final Story story =
                 new Story(
-                        "ST4",
+                        "example-project#1",
                         SECRET_TITLE,
                         "Implementing",
                         true,
@@ -370,7 +414,7 @@ class IssueMappingTest {
                         List.of(),
                         SECRET_BODY,
                         URI.create("https://github.com/example-org/example-project/issues/1"));
-        final Item item = new Item("example-project", 1, null).story();
+        final Item item = new Item("example-project", 1).story();
         IssueMapping.fields(story, 2).forEach(item::field);
 
         assertThat(read(item).stories()).as("the story read back").containsExactly(story);
@@ -379,10 +423,13 @@ class IssueMappingTest {
     @Test
     void aFaultNeverRepeatsWhatAPersonWroteOnGitHub() {
         // Harm: a private title or body shown in the log or to whoever reads the board's faults.
-        final Item bad = new Item("example-lib", 1, "LB5").field(FieldNames.STATUS, SECRET_TITLE);
-        final Item noId = new Item("example-lib", 2, SECRET_BODY);
+        final Item bad = new Item("example-lib", 1).field(FieldNames.STATUS, SECRET_TITLE);
+        final Item badSize =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.SIZE, SECRET_BODY);
 
-        assertThat(String.join("\n", read(bad, noId).faults()))
+        assertThat(String.join("\n", read(bad, badSize).faults()))
                 .as("the faults' words")
                 .doesNotContain(SECRET_TITLE)
                 .doesNotContain(SECRET_BODY);
@@ -392,14 +439,14 @@ class IssueMappingTest {
     void anIssueListedUnderAlsoNeedsBelongsToTheSecondStoryToo() {
         // Harm: a story counted done, or started, while an issue it needs from another story is
         // not.
-        final Item shared = new Item("example-lib", 3, "LB5").field(FieldNames.STATUS, "Idea");
-        final Item first = new Item("example-project", 1, "ST7").story().sub(shared);
+        final Item shared = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
+        final Item first = new Item("example-project", 1).story().sub(shared);
         final Item second =
-                new Item("example-project", 2, "ST8")
+                new Item("example-project", 2)
                         .story()
-                        .body("Covers it.\n\n## Also needs\n\n- example-lib#3\n");
+                        .body("Covers it.\n\n## Also needs\n\n- Example-Lib#3\n");
         final Item gone =
-                new Item("example-project", 4, "ST9")
+                new Item("example-project", 4)
                         .story()
                         .body("## Also needs\n\n- example-lib#3\n- example-lib#99\n");
 
@@ -409,27 +456,28 @@ class IssueMappingTest {
                 .as("each story with the issues it holds and those it also needs")
                 .extracting(Story::id, Story::issues, Story::issuesWhole)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("ST7", List.of("LB5"), true),
-                        org.assertj.core.groups.Tuple.tuple("ST8", List.of("LB5"), true),
-                        org.assertj.core.groups.Tuple.tuple("ST9", List.of("LB5"), false));
+                        Tuple.tuple("example-project#1", List.of("example-lib#3"), true),
+                        Tuple.tuple("example-project#2", List.of("example-lib#3"), true),
+                        Tuple.tuple("example-project#4", List.of("example-lib#3"), false));
         assertThat(mapped.faults())
                 .as("an issue also needed that the board does not hold is named")
                 .containsExactly(
-                        "ST9 has a line under Also needs that names no issue of the project");
+                        "example-project#4 has a line under Also needs that names no issue of the"
+                                + " project");
     }
 
     @Test
     void aSumFieldEditedByHandIsShownAsItsCommentsSumAndWrittenAgain() {
         // Harm: the velocity and the board read a hand edit instead of what the stages measured.
         final Item edited =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.MINUTES, "99")
                         .field(FieldNames.STAGES, "2")
                         .stage("t1/implement", 10)
                         .stage("t2/implement", 5);
         final Item kept =
-                new Item("example-lib", 4, "LB6")
+                new Item("example-lib", 4)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.MINUTES, "7")
                         .field(FieldNames.VM_MINUTES, "1")
@@ -439,18 +487,21 @@ class IssueMappingTest {
 
         final IssueMapping.Mapped mapped = read(edited, kept);
 
-        assertThat(mapped.sums().get("LB5").minutes())
+        assertThat(mapped.sums().get("example-lib#3").minutes())
                 .as("the comments' sum, not the field")
                 .isEqualTo(15.0);
         assertThat(mapped.rewrite())
                 .as("only the issue whose fields disagree is written again")
-                .containsExactly("LB5");
+                .containsExactly("example-lib#3");
         assertThat(mapped.faults())
                 .as("the disagreeing field is named")
                 .containsExactly(
-                        "LB5 has a Minutes apart from its stage comments' sum, shown as the sum",
-                        "LB5 has a VM minutes apart from its stage comments' sum, shown as the sum",
-                        "LB5 has a Tokens apart from its stage comments' sum, shown as the sum");
+                        "example-lib#3 has a Minutes apart from its stage comments' sum, shown as"
+                                + " the sum",
+                        "example-lib#3 has a VM minutes apart from its stage comments' sum, shown"
+                                + " as the sum",
+                        "example-lib#3 has a Tokens apart from its stage comments' sum, shown as"
+                                + " the sum");
     }
 
     @Test
@@ -458,7 +509,7 @@ class IssueMappingTest {
         // Harm: a board read that reads no comments takes every issue's fields for disagreeing
         // with an empty sum, names a fault for each and writes them all to zero at the next save.
         final Item unread =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.MINUTES, "99")
                         .field(FieldNames.STAGES, "2")
@@ -476,7 +527,7 @@ class IssueMappingTest {
     void aStoryBodyTooLongToReadIsAFaultNotABoardThatFailsToLoad() {
         // Harm: one story edited by hand on GitHub keeps every person from seeing the board.
         final Item story =
-                new Item("example-project", 1, "ST7")
+                new Item("example-project", 1)
                         .story()
                         .body("## Also needs\n\n" + "x".repeat(BodySections.LONGEST));
 
@@ -485,11 +536,12 @@ class IssueMappingTest {
         assertThat(mapped.stories())
                 .as("the story stays, its issues not known whole")
                 .extracting(Story::id, Story::issuesWhole)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("ST7", false));
+                .containsExactly(Tuple.tuple("example-project#1", false));
         assertThat(mapped.faults())
                 .as("the body is named, not shown")
                 .containsExactly(
-                        "ST7 has a body too long to read its Also needs, shown without it");
+                        "example-project#1 has a body too long to read its Also needs, shown"
+                                + " without it");
         assertThat(mapped.stories().get(0).description())
                 .as("the board holds no body beyond GitHub's bound")
                 .isEmpty();
@@ -499,7 +551,7 @@ class IssueMappingTest {
     void anIssueBodyBeyondGitHubsBoundStaysOnTheBoardWithoutItsBody() {
         // Harm: a body of megabytes held and sent to the window on every look at the board.
         final Item issue =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .body(SECRET_BODY + "x".repeat(BodySections.LONGEST));
 
@@ -508,10 +560,11 @@ class IssueMappingTest {
         assertThat(mapped.issues())
                 .as("the issue stays, without its body")
                 .extracting(Issue::id, Issue::text)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("LB5", ""));
+                .containsExactly(Tuple.tuple("example-lib#3", ""));
         assertThat(mapped.faults())
                 .as("the issue named, never its body's text")
-                .containsExactly("LB5 has a body longer than GitHub takes, shown without it");
+                .containsExactly(
+                        "example-lib#3 has a body longer than GitHub takes, shown without it");
     }
 
     @Test
@@ -519,7 +572,7 @@ class IssueMappingTest {
         // Harm: a body whose sections a person must repair hides the issue, or no stage result
         // reaches it and nobody is told why.
         final Item unclear =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .body("Covers.\n\n## Plan\n\n```\n" + SECRET_BODY + "\n");
 
@@ -528,7 +581,7 @@ class IssueMappingTest {
         assertThat(mapped.issues())
                 .as("the issue on the board")
                 .extracting(Issue::id)
-                .containsExactly("LB5");
+                .containsExactly("example-lib#3");
         assertThat(mapped.faults())
                 .as("the item named by its repository and number, with what to repair")
                 .containsExactly(
@@ -541,9 +594,9 @@ class IssueMappingTest {
     void aLineUnderAlsoNeedsThatNamesNoIssueOfTheProjectIsAFaultWithoutItsText() {
         // Harm: a story counted whole while a needed issue is unread, and a person's words in a
         // log.
-        final Item shared = new Item("example-lib", 3, "LB5").field(FieldNames.STATUS, "Idea");
+        final Item shared = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
         final Item story =
-                new Item("example-project", 1, "ST7")
+                new Item("example-project", 1)
                         .story()
                         .body("## Also needs\n\n- LB5\n- secret_words#1\n- example-lib#3\n");
 
@@ -552,29 +605,30 @@ class IssueMappingTest {
         assertThat(mapped.stories())
                 .as("the issue named rightly is read, the story not whole")
                 .extracting(Story::issues, Story::issuesWhole)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple(List.of("LB5"), false));
+                .containsExactly(Tuple.tuple(List.of("example-lib#3"), false));
         assertThat(mapped.faults())
                 .as("one fault per line, none repeating it")
                 .containsExactly(
-                        "ST7 has a line under Also needs that names no issue of the project",
-                        "ST7 has a line under Also needs that names no issue of the project");
+                        "example-project#1 has a line under Also needs that names no issue of the"
+                                + " project",
+                        "example-project#1 has a line under Also needs that names no issue of the"
+                                + " project");
     }
 
     @Test
     void aSubIssueIsWorkedAsItsParentAndStandsInItsParentsRepository() {
         // Harm: an agent sent to a manual issue's part, at a lower risk than the issue it belongs
         // to.
-        final Item part = new Item("example-lib", 4, "LB5.1").field(FieldNames.STATUS, "Idea");
+        final Item part = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
         final Item parent =
-                new Item("example-lib", 3, "LB5")
+                new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.WORKER, "Manual")
                         .field(FieldNames.RISK, "harm")
                         .sub(part);
-        final Item elsewhere =
-                new Item("example-project", 6, "LB6.1").field(FieldNames.STATUS, "Idea");
+        final Item elsewhere = new Item("example-project", 6).field(FieldNames.STATUS, "Idea");
         final Item other =
-                new Item("example-lib", 5, "LB6").field(FieldNames.STATUS, "Idea").sub(elsewhere);
+                new Item("example-lib", 5).field(FieldNames.STATUS, "Idea").sub(elsewhere);
 
         final IssueMapping.Mapped mapped = read(parent, part, other, elsewhere);
 
@@ -582,20 +636,21 @@ class IssueMappingTest {
                 .as("the part worked as its parent, the one in another repository left out")
                 .extracting(Issue::id, Issue::worker, Issue::risk)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("LB5", Worker.MANUAL, Risk.HARM),
-                        org.assertj.core.groups.Tuple.tuple("LB5.1", Worker.MANUAL, Risk.HARM),
-                        org.assertj.core.groups.Tuple.tuple("LB6", Worker.AGENT, Risk.ORDINARY));
+                        Tuple.tuple("example-lib#3", Worker.MANUAL, Risk.HARM),
+                        Tuple.tuple("example-lib#4", Worker.MANUAL, Risk.HARM),
+                        Tuple.tuple("example-lib#5", Worker.AGENT, Risk.ORDINARY));
         assertThat(mapped.faults())
                 .as("the misplaced part is named")
                 .containsExactly(
-                        "LB6.1 stands in another repository than its parent and is left out");
+                        "example-project#6 stands in another repository than its parent and is"
+                                + " left out");
     }
 
     @Test
     void aStoryWithASubIssueOutsideTheProjectOrNoPriorityIsNamed() {
         // Harm: a story shown whole and in its place while GitHub holds it otherwise.
         final Item story =
-                new Item("example-project", 1, "ST7")
+                new Item("example-project", 1)
                         .story()
                         .field(FieldNames.PRIORITY, "")
                         .subNode("I_elsewhere_9");
@@ -605,12 +660,12 @@ class IssueMappingTest {
         assertThat(mapped.stories())
                 .as("shown as Medium and not whole")
                 .extracting(Story::priority, Story::issuesWhole)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("Medium", false));
+                .containsExactly(Tuple.tuple("Medium", false));
         assertThat(mapped.faults())
                 .as("both are named")
                 .containsExactly(
-                        "ST7 has a sub-issue outside the project",
-                        "ST7 has no Priority, shown as Medium");
+                        "example-project#1 has a sub-issue outside the project",
+                        "example-project#1 has no Priority, shown as Medium");
     }
 
     @Test
@@ -621,13 +676,13 @@ class IssueMappingTest {
         int number = 1;
         for (final String[] given :
                 List.of(
-                        new String[] {"LB1", "Low", "1"},
-                        new String[] {"LB2", "High", "7"},
-                        new String[] {"LB3", "High", "2"},
-                        new String[] {"LB4", "Medium", "1"})) {
+                        new String[] {"Low", "1"},
+                        new String[] {"High", "7"},
+                        new String[] {"High", "2"},
+                        new String[] {"Medium", "1"})) {
             final Issue issue =
                     new Issue(
-                            given[0],
+                            "example-lib#" + number,
                             "example-lib",
                             SECRET_TITLE,
                             "Idea",
@@ -638,41 +693,44 @@ class IssueMappingTest {
                             SECRET_BODY,
                             Worker.AGENT,
                             Risk.ORDINARY);
-            final Item item = new Item("example-lib", number++, null);
-            IssueMapping.fields(issue, given[1], Integer.parseInt(given[2])).forEach(item::field);
+            final Item item = new Item("example-lib", number++);
+            IssueMapping.fields(issue, given[0], Integer.parseInt(given[1])).forEach(item::field);
             items.add(item);
         }
 
         assertThat(read(items.toArray(Item[]::new)).issues())
                 .as("by priority, then by rank")
                 .extracting(Issue::id)
-                .containsExactly("LB3", "LB2", "LB4", "LB1");
+                .containsExactly(
+                        "example-lib#3", "example-lib#2", "example-lib#4", "example-lib#1");
     }
 
     @Test
-    void anArchivedItemIsNotOnTheBoardButKeepsItsIdTaken() {
-        // Harm: an archived issue's id given to a second item, so its alias finds two.
+    void anArchivedItemIsNotOnTheBoardAndItsSubIssueIsLeftOutWithIt() {
+        // Harm: an archived issue shown as open work, or its part shown under a parent the board
+        // does not hold.
         final Item archived =
-                new Item("example-lib", 1, "LB5").field(FieldNames.STATUS, "Idea").archived();
-        final Item again = new Item("example-lib", 2, "LB5").field(FieldNames.STATUS, "Idea");
-        final Item live = new Item("example-lib", 3, "LB6").field(FieldNames.STATUS, "Idea");
+                new Item("example-lib", 1).field(FieldNames.STATUS, "Idea").archived();
+        final Item part = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
+        archived.sub(part);
+        final Item live = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
 
-        final IssueMapping.Mapped mapped = read(archived, again, live);
+        final IssueMapping.Mapped mapped = read(archived, part, live);
 
         assertThat(mapped.issues())
                 .as("only the live item")
                 .extracting(Issue::id)
-                .containsExactly("LB6");
+                .containsExactly("example-lib#3");
         assertThat(mapped.faults())
-                .as("the second item under an archived id is named")
-                .containsExactly("Item example-lib#2 repeats the Id LB5 and is left out");
+                .as("the part of the archived issue is named")
+                .containsExactly("example-lib#2 depends on an issue left out and is left out too");
     }
 
     @Test
     void anIssueBlockedByAnItemOutsideTheProjectIsLeftOut() {
         // Harm: work started while an issue it waits on, which the board cannot see, is open.
         final Item blocked =
-                new Item("example-lib", 1, "LB5")
+                new Item("example-lib", 1)
                         .field(FieldNames.STATUS, "Idea")
                         .blockedByNode("I_elsewhere_9");
 
@@ -681,6 +739,7 @@ class IssueMappingTest {
         assertThat(mapped.issues()).as("left out").isEmpty();
         assertThat(mapped.faults())
                 .as("named")
-                .containsExactly("LB5 is blocked by an issue outside the project and is left out");
+                .containsExactly(
+                        "example-lib#1 is blocked by an issue outside the project and is left out");
     }
 }

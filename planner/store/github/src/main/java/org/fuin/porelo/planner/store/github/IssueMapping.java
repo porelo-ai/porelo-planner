@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -73,7 +74,7 @@ public final class IssueMapping {
     private IssueMapping() {}
 
     /**
-     * Maps the items. Archived items are not on the board, but their ids stay taken.
+     * Maps the items, each known by its tracker reference. Archived items are not on the board.
      *
      * @param items every item of the project
      * @param config the project's repositories and workflow
@@ -88,8 +89,8 @@ public final class IssueMapping {
     }
 
     /**
-     * Maps the items. Archived items and those named left out are not on the board, but their ids
-     * stay taken, and a story or issue that needs one of those left out is told so.
+     * Maps the items, each known by its tracker reference. Archived items and those named left out
+     * are not on the board, and a story or issue that needs one of those left out is told so.
      *
      * @param items every item of the project
      * @param leftOut the item ids of items the board leaves out, already named in a fault
@@ -105,22 +106,20 @@ public final class IssueMapping {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
         final Map<String, ItemView> byIssueId = new HashMap<>();
-        final Map<String, ItemView> byReference = new HashMap<>();
         final Map<String, String> idOf = new HashMap<>();
         final Set<String> taken = new HashSet<>();
         final List<ItemView> live = new ArrayList<>();
         for (final ItemView item : items) {
-            byIssueId.put(item.issueId(), item);
-            byReference.put(item.repository() + "#" + item.number(), item);
             final String id = idOf(item);
             if (id == null) {
-                faults.add(where(item) + " has no valid Id and is left out");
+                faults.add(where(item) + " has no valid tracker reference and is left out");
                 continue;
             }
             if (!taken.add(id)) {
-                faults.add(where(item) + " repeats the Id " + id + " and is left out");
+                faults.add(where(item) + " stands in the project twice and is left out");
                 continue;
             }
+            byIssueId.put(item.issueId(), item);
             idOf.put(item.issueId(), id);
             if (!item.archived() && !leftOut.contains(item.itemId())) {
                 live.add(item);
@@ -132,14 +131,16 @@ public final class IssueMapping {
         for (final ItemView item : live) {
             // Every live item was given its id above.
             final String id = Objects.requireNonNull(idOf.get(item.issueId()));
-            final boolean story = item.labels().contains(STORY_LABEL);
-            if (story != isStoryId(id)) {
-                faults.add(id + " is labeled against its Id and is left out");
-            } else if (!config.repositories().contains(item.repository())) {
-                faults.add(id + " lies outside the project's repositories and is left out");
+            final boolean story = isStory(item);
+            if (!config.repositories().contains(item.repository())) {
+                faults.add(
+                        where(item) + " lies outside the project's repositories and is left out");
             } else if (story && !item.repository().equals(config.own())) {
                 faults.add(id + " is a story outside the project's own repository and is left out");
             } else if (story) {
+                if (item.parentIssueId() != null) {
+                    faults.add(id + " is a story under another issue, shown without it");
+                }
                 storyItems.put(id, item);
             } else {
                 issueItems.put(id, item);
@@ -155,6 +156,7 @@ public final class IssueMapping {
             }
         }
         leaveOutCycles(issues, faults);
+        leaveOutSubSubIssues(issues, faults);
         leaveOutDangling(issues, faults);
         workedAsParents(issues);
         final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
@@ -188,7 +190,6 @@ public final class IssueMapping {
                             entry.getValue(),
                             issues,
                             idOf,
-                            byReference,
                             config.repositories(),
                             states,
                             workflow,
@@ -221,7 +222,6 @@ public final class IssueMapping {
     public static Map<String, String> fields(
             final Issue issue, final String priority, final int rank) {
         final Map<String, String> fields = new LinkedHashMap<>();
-        fields.put(FieldNames.ID, issue.id());
         fields.put(FieldNames.STATUS, issue.state());
         fields.put(FieldNames.PRIORITY, priority);
         fields.put(FieldNames.RANK, Integer.toString(rank));
@@ -243,7 +243,6 @@ public final class IssueMapping {
      */
     public static Map<String, String> fields(final Story story, final int rank) {
         final Map<String, String> fields = new LinkedHashMap<>();
-        fields.put(FieldNames.ID, story.id());
         fields.put(FieldNames.STATUS, story.stateGiven() ? story.state() : "");
         fields.put(FieldNames.PRIORITY, story.priority());
         fields.put(FieldNames.RANK, Integer.toString(rank));
@@ -269,29 +268,26 @@ public final class IssueMapping {
         String parent = null;
         if (item.parentIssueId() != null) {
             final ItemView parentItem = byIssueId.get(item.parentIssueId());
-            final String parentId = parentItem == null ? null : idOf.get(parentItem.issueId());
-            if (parentId == null) {
+            if (parentItem == null) {
                 faults.add(id + " has a parent outside the project and is left out");
                 return null;
             }
-            if (!isStoryId(parentId)) {
-                if (!Objects.requireNonNull(parentItem).repository().equals(item.repository())) {
+            // Under a story it is the story's issue; under an issue, a Porelo sub-issue, whose
+            // parent left out leaves it out too.
+            if (!isStory(parentItem)) {
+                if (!parentItem.repository().equals(item.repository())) {
                     faults.add(
                             id + " stands in another repository than its parent and is left out");
                     return null;
                 }
-                parent = parentId;
+                parent = Objects.requireNonNull(idOf.get(parentItem.issueId()));
             }
-        }
-        final boolean sub = id.contains(".");
-        if (sub != (parent != null) || (sub && !id.startsWith(parent + "."))) {
-            faults.add(id + " does not stand under the issue its Id names and is left out");
-            return null;
         }
         final List<String> blockedBy = new ArrayList<>();
         for (final String blocker : item.blockedByIds()) {
-            final String blockerId = idOf.get(blocker);
-            if (blockerId == null || isStoryId(blockerId)) {
+            final ItemView blocking = byIssueId.get(blocker);
+            final String blockerId = blocking == null ? null : idOf.get(blocking.issueId());
+            if (blockerId == null || isStory(blocking)) {
                 faults.add(id + " is blocked by an issue outside the project and is left out");
                 return null;
             }
@@ -325,7 +321,6 @@ public final class IssueMapping {
             final ItemView item,
             final Map<String, Issue> issues,
             final Map<String, String> idOf,
-            final Map<String, ItemView> byReference,
             final List<String> repositories,
             final StoryStates states,
             final Workflow workflow,
@@ -358,11 +353,11 @@ public final class IssueMapping {
                 continue;
             }
             final Matcher matcher = REFERENCE.matcher(line);
-            final ItemView needed =
-                    matcher.matches() && repositories.contains(matcher.group(1))
-                            ? byReference.get(matcher.group(1) + "#" + matcher.group(2))
-                            : null;
-            final String neededId = needed == null ? null : idOf.get(needed.issueId());
+            final String repository =
+                    matcher.matches() ? matcher.group(1).toLowerCase(Locale.ROOT) : "";
+            final String named = repository + "#" + (matcher.matches() ? matcher.group(2) : "");
+            final String neededId =
+                    repositories.contains(repository) && idOf.containsValue(named) ? named : null;
             if (neededId == null) {
                 // The line is a person's words, so the fault does not repeat it.
                 faults.add(id + " has a line under Also needs that names no issue of the project");
@@ -468,8 +463,7 @@ public final class IssueMapping {
                             issue.link(),
                             issue.text(),
                             parent.worker(),
-                            Risk.highest(List.of(issue.risk(), parent.risk())),
-                            issue.alias()));
+                            Risk.highest(List.of(issue.risk(), parent.risk()))));
         }
     }
 
@@ -493,6 +487,25 @@ public final class IssueMapping {
         for (final String id : cyclic) {
             issues.remove(id);
             faults.add(id + " stands in a circle of parents and is left out");
+        }
+    }
+
+    /**
+     * Leaves out every sub-issue of a sub-issue, which the board cannot hold: a Porelo sub-issue's
+     * parent stands under a story, never under another issue.
+     */
+    private static void leaveOutSubSubIssues(
+            final Map<String, Issue> issues, final List<String> faults) {
+        final List<String> deep = new ArrayList<>();
+        for (final Issue issue : issues.values()) {
+            final Issue parent = issue.parent() == null ? null : issues.get(issue.parent());
+            if (parent != null && parent.parent() != null) {
+                deep.add(issue.id());
+            }
+        }
+        for (final String id : deep) {
+            issues.remove(id);
+            faults.add(id + " is a sub-issue of a sub-issue and is left out");
         }
     }
 
@@ -616,30 +629,20 @@ public final class IssueMapping {
     }
 
     /**
-     * Answers the Porelo id an item's {@code Id} field holds.
+     * Answers an item's id, its tracker reference: its repository, as the reader took it
+     * lowercased, and GitHub's number.
      *
      * @param item the item
-     * @return the id, or null when the field is missing or holds no valid id
+     * @return the reference, or null when the repository or the number cannot make one
      */
     static @Nullable String idOf(final ItemView item) {
-        final String id = item.fields().get(FieldNames.ID);
-        if (id == null) {
-            return null;
-        }
-        final String stripped = id.strip();
-        try {
-            // The field holds the Git store's form only: a reference typed into it would name
-            // another item, or one in another repository than the item's own.
-            return stripped.startsWith("ST") && !stripped.contains(".")
-                    ? Ids.storyAlias(stripped)
-                    : Ids.issueAlias(stripped);
-        } catch (final IllegalArgumentException e) {
-            return null;
-        }
+        final String id = item.repository() + "#" + item.number();
+        return Ids.isReference(id) ? id : null;
     }
 
-    private static boolean isStoryId(final String id) {
-        return id.matches("ST[0-9]{1,5}");
+    /** Whether an item is a story: an issue labeled {@code story}. */
+    private static boolean isStory(final @Nullable ItemView item) {
+        return item != null && item.labels().contains(STORY_LABEL);
     }
 
     /**

@@ -185,22 +185,6 @@ class IdsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"repo#1", "ST1.1", "xy1", "XY01#2", ""})
-    void anAliasIsOnlyAGitStoreId(final String alias) {
-        // Harm: an alias that is a reference names a second tracker item under the first one's id.
-        assertThatThrownBy(() -> Ids.storyAlias(alias))
-                .as("'%s' is no story alias", alias)
-                .isInstanceOf(IllegalArgumentException.class);
-        if (!"ST1.1".equals(alias)) {
-            assertThatThrownBy(() -> Ids.issueAlias(alias))
-                    .as("'%s' is no issue alias", alias)
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-        assertThat(Ids.storyAlias("ST12")).as("a story's old id").isEqualTo("ST12");
-        assertThat(Ids.issueAlias("XY03.1")).as("an issue's old id").isEqualTo("XY03.1");
-    }
-
-    @ParameterizedTest
     @ValueSource(
             strings = {"ghp_secret0123456789", "https://user:secret@host/r#1", "XY\u001b[2Jsecret"})
     void aRefusedIdIsNeverShown(final String id) {
@@ -212,12 +196,6 @@ class IdsTest {
                 .hasMessageNotContaining("\u001b");
         assertThatThrownBy(() -> Ids.story(id))
                 .as("the story id's refusal does not repeat what it refused")
-                .hasMessageNotContaining("secret");
-        assertThatThrownBy(() -> Ids.issueAlias(id))
-                .as("the alias's refusal does not repeat what it refused")
-                .hasMessageNotContaining("secret");
-        assertThatThrownBy(() -> Ids.storyAlias(id))
-                .as("the story alias's refusal does not repeat what it refused")
                 .hasMessageNotContaining("secret");
         assertThatThrownBy(() -> Ids.repositoryOf(id))
                 .as("the reference's refusal does not repeat what it refused")
