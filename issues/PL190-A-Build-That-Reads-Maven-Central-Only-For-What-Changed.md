@@ -39,9 +39,11 @@ that asks it again for what an earlier Build already fetched.
   Maven repository is cached - the `pinned-jdk` action and the Windows jobs of `build.yml` and `windows.yml` - the
   step is `actions/cache/restore` keyed `maven-<os>-<hashFiles>-<run id>-<attempt>`, restoring
   `maven-<os>-<hashFiles>-` and then `maven-<os>-`, and leaves a marker file right after the restore. Each job ends
-  with the `maven-cache-save` action under `if: always()`, which saves under that key only when a jar or pom newer
-  than the marker lies in the repository: a job that fetched something keeps it even when it fails, and one that
-  fetched nothing saves no copy that would crowd the other caches out of GitHub's limit. The `pinned-jdk` action
+  with the `maven-cache-save` action under `if: always()`, which saves under that key only when its `fetched.sh`
+  finds a jar or pom whose status changed after the marker: a job that fetched something keeps it even when it fails,
+  and one that fetched nothing saves no copy that would crowd the other caches out of GitHub's limit. By the status
+  change, not the modification time: Maven dates a fetched file by the server's Last-Modified, so the first form,
+  `find -newer`, found nothing and never saved; `MavenCacheSaveTest` holds a fetched jar dated long before the marker. The `pinned-jdk` action
   gives its key as `maven-cache-key`, since a composite action has no step at the job's end; each job that uses it
   saves itself. The screen job only restores: the build job of the same run saves under the same key, and only the
   first save of a key is kept.
