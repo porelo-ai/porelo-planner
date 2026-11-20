@@ -7,10 +7,13 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
 
 class GitHubStoreOpenerTest {
@@ -33,6 +36,7 @@ class GitHubStoreOpenerTest {
                             read.add(config);
                             throw new StoreException.Unreachable(config.own(), "read in this test");
                         },
+                project -> BoardWriter.NONE,
                 Duration.ofSeconds(1));
     }
 
@@ -80,5 +84,45 @@ class GitHubStoreOpenerTest {
                 .as("another forge")
                 .isInstanceOf(StoreException.Unreadable.class);
         assertThat(asked).as("no token asked").isEmpty();
+    }
+
+    @Test
+    void anOpenedGitHubProjectWritesAMoveThroughItsWriter() {
+        // Harm: a move on a GitHub project refused as not offered, or answered as saved while
+        // nothing reached GitHub.
+        final List<Writes> written = new ArrayList<>();
+        final GitHubStoreOpener opener =
+                new GitHubStoreOpener(
+                        origin -> "a-token",
+                        project ->
+                                config ->
+                                        new Snapshot(
+                                                new Board(
+                                                        new Revision("r1"),
+                                                        WORKFLOW,
+                                                        List.of(),
+                                                        List.of(),
+                                                        new Work(java.util.Map.of(), List.of()),
+                                                        config.repositories()),
+                                                java.util.Map.of(),
+                                                config),
+                        project ->
+                                new BoardWriter() {
+                                    @Override
+                                    public void save(
+                                            final Snapshot current,
+                                            final Revision revision,
+                                            final Writes writes) {
+                                        written.add(writes);
+                                    }
+                                },
+                        Duration.ofSeconds(1));
+        final var store = opener.open(project("https://github.com", "github"));
+        final Writes move =
+                new Writes(java.util.Map.of("PL1", "Idea"), java.util.Map.of(), List.of());
+
+        store.save(new Revision("r1"), move);
+
+        assertThat(written).as("the writes the writer was given").containsExactly(move);
     }
 }

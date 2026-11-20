@@ -43,11 +43,12 @@ A stage ends at the comment's `createdAt`, the second GitHub wrote it, and start
 is stored. A person's move is no comment: GitHub's timeline shows each `Status` change with its time, its actor and
 the states before and after.
 
-The comments are the truth and the number fields their sums; the planner writes both in one save. The sums count
-the closed agent stages of the measured kinds, as the Markdown store's stage records do; a pause and a person's move
-are shown, not summed. A field that disagrees with its comments' sum, after a hand edit on GitHub, is shown as the
-sum and named as a fault, and the next save of that issue writes it again. A comment with the marker that cannot be
-read is named as a fault and left out of the sums.
+The comments are the course of the work and the number fields its sums. A stage's save adds its minutes, VM minutes,
+new tokens and one stage to the fields as they stand right before the write, in the same call as its state, and
+writes its comment beside. A field without a value counts as 0, and a value a person set stays the base later stages
+add to; the planner never sums the comments again. A stage whose comment, found by its key, already stands is
+neither written nor added again. Only an agent's stages of the measured kinds are added, as the Markdown store's
+stage records count them; a pause and a person's move are shown, not summed.
 
 ## States and ids
 
@@ -62,6 +63,20 @@ read is named as a fault and left out of the sums.
   workflow, a parent or a blocker outside the project, a sub-issue under another issue than its id names - is left
   out and named as a fault, and the story it belongs to says that an issue of it is missing. A fault names the item
   by its repository and number, never by its title or body.
+
+## Writes
+
+A move, a worker, a priority and a stage's result are written with the person's own access, without a commit. Right
+before it writes, the planner reads the items it writes again and refuses the save, naming the item, when a person
+changed one of them since the board was read: a field value, `Status` included, its parent, its blockers, its open
+state or its body. GitHub takes no condition on a write, so a change made in the moment between that read and the
+write is not caught.
+
+Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
+part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
+in, and the board is read anew. A write sets values and never creates a field or replaces its options. A stage's
+result overwrites the sections of the body its kind writes and no other byte. Adding a new story or issue is not
+offered yet.
 
 ## Access
 

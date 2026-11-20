@@ -266,11 +266,12 @@ public final class StageComment {
     }
 
     /** Whether a stage counts: an agent's, of a measured kind; every stage comment is closed. */
-    private static boolean summed(final StageEntry entry) {
+    static boolean summed(final StageEntry entry) {
         return AGENT.equals(entry.actor()) && StageEntry.MEASURED.contains(entry.stage());
     }
 
-    private static long newTokens(final StageEntry entry) {
+    /** The new tokens a stage spent: input, output and cache write. */
+    static long newTokens(final StageEntry entry) {
         long sum = 0;
         for (final Map.Entry<String, Long> kind : entry.tokens().entrySet()) {
             if (NEW_TOKENS.contains(kind.getKey())) {

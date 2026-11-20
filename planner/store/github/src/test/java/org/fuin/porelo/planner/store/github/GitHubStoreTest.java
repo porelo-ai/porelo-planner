@@ -276,4 +276,41 @@ class GitHubStoreTest {
                 .isNotInstanceOf(StoreException.NoForgeAccess.class);
         assertThat(writes.get()).as("the writes made").isEqualTo(1);
     }
+
+    @Test
+    void aChangeByAPersonIsRefusedNamingTheRevisionGitHubHoldsNow() {
+        // Harm: the window told the revision it showed is still current, so it saves against it
+        // again and is refused again without end.
+        final AtomicInteger reads = new AtomicInteger();
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        config -> snapshot("r" + reads.incrementAndGet()),
+                                        states -> null)
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public void save(
+                                                    final Snapshot current,
+                                                    final Revision revision,
+                                                    final Writes writes) {
+                                                throw new StoreException.StaleRevision(
+                                                        current.board().revision().value(), "PL1");
+                                            }
+                                        }));
+        store.board();
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        new Revision("r1"),
+                                        new Writes(Map.of(), Map.of(), List.of())))
+                .as("a save over an item a person changed")
+                .isInstanceOfSatisfying(
+                        StoreException.StaleRevision.class,
+                        stale -> {
+                            assertThat(stale.current()).as("the revision named").isEqualTo("r2");
+                            assertThat(stale.changed()).as("the item named").isEqualTo("PL1");
+                        });
+    }
 }

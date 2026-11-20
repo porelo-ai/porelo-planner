@@ -105,6 +105,7 @@ public final class ItemsBoardReader implements BoardReader {
         final Map<String, String> fieldNames = new LinkedHashMap<>();
         final Map<String, String> dataTypes = new LinkedHashMap<>();
         @Nullable String after = null;
+        String projectId = "";
         for (int page = 1; ; page++) {
             final @Nullable String cursor = after;
             final GitHubGraphQl.ProjectFields fields =
@@ -115,6 +116,7 @@ public final class ItemsBoardReader implements BoardReader {
                                             config.project().owner(),
                                             config.project().number(),
                                             cursor));
+            projectId = fields.id();
             for (final GitHubGraphQl.ProjectField field : fields.fields()) {
                 fieldIds.put(field.name(), field.id());
                 fieldNames.put(field.id(), field.name());
@@ -168,7 +170,8 @@ public final class ItemsBoardReader implements BoardReader {
                         config.work(),
                         config.repositories(),
                         fieldIds,
-                        optionIds);
+                        optionIds,
+                        projectId);
         final List<ItemView> views = new ArrayList<>();
         for (final GitHubGraphQl.ProjectItem item : items.values()) {
             final ItemView view = view(item, read, fieldNames, faults);
@@ -392,8 +395,20 @@ public final class ItemsBoardReader implements BoardReader {
      */
     private static Map<String, String> values(
             final GitHubGraphQl.ProjectItem item, final Map<String, String> fieldNames) {
+        return values(item.values(), fieldNames);
+    }
+
+    /**
+     * Field values by field name, each as text as the board reads it; a field not named is skipped.
+     *
+     * @param given the values as GitHub gives them
+     * @param fieldNames the fields' names by their ids
+     * @return the values
+     */
+    static Map<String, String> values(
+            final List<GitHubGraphQl.ItemValue> given, final Map<String, String> fieldNames) {
         final Map<String, String> values = new LinkedHashMap<>();
-        for (final GitHubGraphQl.ItemValue value : item.values()) {
+        for (final GitHubGraphQl.ItemValue value : given) {
             final String field = fieldNames.get(value.fieldId());
             final String text = text(value);
             if (field != null && text != null) {

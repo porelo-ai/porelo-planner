@@ -25,6 +25,8 @@ import org.fuin.porelo.planner.store.Workflow;
  * @param fieldIds the GitHub ids of the project's fields, by field name; empty until they are read
  * @param optionIds the GitHub ids of each single-select field's options, by field name and option
  *     name
+ * @param projectId the GitHub project's node id, which a field value is written to; empty until it
+ *     is read
  */
 public record ProjectConfig(
         URI forge,
@@ -34,7 +36,32 @@ public record ProjectConfig(
         Work work,
         List<String> repositories,
         Map<String, String> fieldIds,
-        Map<String, Map<String, String>> optionIds) {
+        Map<String, Map<String, String>> optionIds,
+        String projectId) {
+
+    /**
+     * Makes the configuration before the project's node id is read.
+     *
+     * @param forge the forge's origin
+     * @param project the GitHub project
+     * @param commit the commit the project's files were read from
+     * @param workflow the project's workflow
+     * @param work the project's work rules
+     * @param repositories the project's repositories by name, its own first
+     * @param fieldIds the GitHub ids of the project's fields, by field name
+     * @param optionIds the GitHub ids of each single-select field's options
+     */
+    public ProjectConfig(
+            final URI forge,
+            final ProjectRef project,
+            final String commit,
+            final Workflow workflow,
+            final Work work,
+            final List<String> repositories,
+            final Map<String, String> fieldIds,
+            final Map<String, Map<String, String>> optionIds) {
+        this(forge, project, commit, workflow, work, repositories, fieldIds, optionIds, "");
+    }
 
     /** Checks the forge and the names, and copies the lists and maps. */
     public ProjectConfig {

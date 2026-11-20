@@ -250,12 +250,33 @@ public final class GitHubStore implements PlanningStore {
                 () -> {
                     try {
                         return work.get();
+                    } catch (final StoreException.StaleRevision e) {
+                        snapshot = null;
+                        throw staleNamingTheBoardNow(e);
                     } catch (final RuntimeException e) {
                         // The next board is read from GitHub, never the one from before the save.
                         snapshot = null;
                         throw e;
                     }
                 });
+    }
+
+    /**
+     * Answers a refusal for an item a person changed with the revision GitHub holds now, read anew,
+     * so the window is never told the revision it showed is current.
+     */
+    private StoreException.StaleRevision staleNamingTheBoardNow(
+            final StoreException.StaleRevision stale) {
+        final String changed = stale.changed();
+        if (changed == null) {
+            return stale;
+        }
+        try {
+            return new StoreException.StaleRevision(read().board().revision().value(), changed);
+        } catch (final RuntimeException e) {
+            // The board read next tells the window; the refusal stands as it is.
+            return stale;
+        }
     }
 
     private Snapshot current() {

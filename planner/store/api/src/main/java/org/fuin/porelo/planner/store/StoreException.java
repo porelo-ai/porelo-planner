@@ -201,6 +201,8 @@ public abstract sealed class StoreException extends RuntimeException
 
         private final String current;
 
+        private final @Nullable String changed;
+
         /**
          * Names the revision the store holds now.
          *
@@ -209,6 +211,28 @@ public abstract sealed class StoreException extends RuntimeException
         public StaleRevision(final String current) {
             super(current, "The planning changed since it was shown");
             this.current = current;
+            this.changed = null;
+        }
+
+        /**
+         * Names the revision the store holds now and the item found changed.
+         *
+         * @param current the current revision
+         * @param changed the story or issue found changed, by its id
+         */
+        public StaleRevision(final String current, final String changed) {
+            super(current, "The planning changed since it was shown: " + changed + " changed");
+            this.current = current;
+            this.changed = changed;
+        }
+
+        /**
+         * Answers the item found changed.
+         *
+         * @return its id, or null when the revision alone differed
+         */
+        public @Nullable String changed() {
+            return changed;
         }
 
         /**

@@ -48,13 +48,55 @@ stands on its issue under the person's name, with no fetch, commit or push.
 - `saveResult(result)`: the plan, why this size and to be checked overwrite those sections of each issue's body,
   leaving the others; the new state goes into `Status`; and one stage comment, in the form the mapping gives
   (result, actor, model, effort, minutes, VM minutes, tokens from Porelo's record of the task), is written with
-  the person's token so GitHub shows the person as its author. Its `createdAt` is the stage's end. Findings become new issues as today.
-- No stage record is written and no measured-state rule is checked. The number fields `Estimate`, `Minutes`,
-  `VM minutes`, `Tokens` and `Stages` are set to the new sums of the stage comments in the same field mutation as
-  `Status`; the sums come from the board's fields plus the new stage, so no comment is read back to save.
-- Red first: `GitHubStoreSaveTest` over recorded answers: a move of two issues in two repositories ends in one
+  the person's token so GitHub shows the person as its author. Its `createdAt` is the stage's end. Findings go into
+  the body's *Findings* section.
+- No stage record is written and no measured-state rule is checked. `Size` and `Estimate` are set and `Minutes`,
+  `VM minutes`, `Tokens` and `Stages` added to in the same field mutation as `Status`; the sums come from the
+  fields plus the new stage. The issue's comments are read only to find whether a comment of the stage's key stands
+  already, in which case neither the comment nor its figures are written again.
+- Red first: `FieldsBoardWriterTest` over fakes: a move of two issues in two repositories ends in one
   mutation; a board changed meanwhile is refused; the second of two calls failing gives `PartlySaved`; a stage
   result that names *Plan* leaves *Acceptance* byte for byte and adds exactly one stage comment.
+
+### Plan reading
+
+- A `project.yml` pointing the tracker at another owner or host: the opener keeps a GitHub tracker on github.com
+  only, and an item outside the project's owner or repositories is left out of the board, so the writer, which
+  writes only items on the board, never reaches it. Tying the owner to the window's own clone URL changes how a
+  project is opened and stays out of this issue.
+- The token asked for by a bare origin rather than the repository's address: unchanged here; how the vault is asked
+  belongs to the token source, not to the writes.
+- The token asked for again to scrub a failure: the writer takes the token once per write and turns every failure
+  into the store's refusal with that same token, so a write's refusal never depends on a second vault call. The
+  store's own scrubbing of a read failure is unchanged.
+- A `StoreException` passed on unscrubbed and a short token not scrubbed: every refusal the writer builds carries
+  fixed words, and GitHub's words only after scrubbing with the token used; the length bound of the scrubber is
+  unchanged.
+- No revision check before a write: `save` first compares the revision the window showed with the board kept and
+  refuses a difference as `StaleRevision`, before anything is read or written.
+- `updatedAt` missing a change of a project field: the edit check compares each item's field values, `Status`
+  included, its parent, its blockers, its open state and its body, read by `issueBoard` right before the write.
+- More than 50 values, reopening, and the board kept after a partial save: values go in mutations of at most 50; a
+  move out of a closed state reopens the issue and a move into one closes it; any failure after a first part was
+  written is `PartlySaved`, and the store forgets its board on every failed write, so the next read is GitHub's.
+- `PartlySaved` carrying item ids: it carries repository names, as the store API defines it.
+- Creating an issue or an idea twice on a retry: both stay refused as not offered until tracker references are the
+  window's ids, so no issue is created yet.
+- `saveResult` over a person's move, sums counted twice, several issues: each issue must still stand in the state
+  the stage completes and move to an open state, or nothing is written; the edit check runs over the fresh read too.
+  A stage whose key stands among the issue's comments is neither commented nor added again. A result for several
+  issues writes their states, sizes and bodies and no stage comment, as no one stage's figures belong to one issue.
+  Findings go into the body's *Findings* section. The worker is not checked, as the Git store does not check it.
+- `setFieldOptions` on a write: the writer's calls hold no way to set options, and a field or option the project
+  lacks is `NotSavable` before any call.
+- Fields written on a read path: the reader's calls hold no write; unchanged.
+- A rate limit read as a missing access: the refusals already keep a rate-limited 403 apart from a missing access;
+  unchanged.
+- Reads on every write: a write reads only the items it writes by `issueBoard` before writing, and an issue's
+  comments only for a stage; the full read after a write is kept, as it gives the window the board it answers.
+  Comments, archived items and the page bound of the board read stay with the board read.
+- Tests that stay green without their guard: each guard named here has a test in `FieldsBoardWriterTest`,
+  `GitHubStoreTest` or `GitHubStoreOpenerTest` that was seen red with its guard broken.
 
 ## Order and files
 

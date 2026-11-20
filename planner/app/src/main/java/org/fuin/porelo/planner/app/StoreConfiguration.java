@@ -6,7 +6,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueComment;
+import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
+import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
@@ -17,6 +22,7 @@ import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
+import org.fuin.porelo.planner.store.github.ProjectWrites;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -44,6 +50,14 @@ public class StoreConfiguration {
      */
     @Bean
     @Lazy
+    // The forge client binds GitHub's REST answers to these by reflection, which a native image
+    // keeps only for the types named.
+    @RegisterReflectionForBinding({
+        IssueComment.class,
+        IssuesUpdateCommentRequest.class,
+        IssuesUpdateRequest.class,
+        IssuesUpdate200Response.class
+    })
     public GitProjects gitProjects() {
         return gitProjects(System.getenv());
     }
@@ -85,9 +99,11 @@ public class StoreConfiguration {
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .connectTimeout(Duration.ofSeconds(10))
                         .build();
+        final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
         return new GitHubStoreOpener(
                 origin -> tokens.token(origin, origin.getHost()),
-                ProjectQueries.over(new GitHubGraphQl(GITHUB_API, http)),
+                ProjectQueries.over(graphQl),
+                ProjectWrites.over(graphQl, new GitHubClient(GITHUB_API, http)),
                 Duration.ofSeconds(30));
     }
 

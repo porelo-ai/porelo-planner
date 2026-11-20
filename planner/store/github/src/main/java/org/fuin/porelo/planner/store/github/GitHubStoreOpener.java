@@ -11,8 +11,9 @@ import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
 
 /**
- * Opens a project whose stories and issues a GitHub project keeps, reading only: opening sends
- * GitHub nothing, and a field the project lacks is a fault of the board, never made here.
+ * Opens a project whose stories and issues a GitHub project keeps: opening sends GitHub nothing,
+ * and a field the project lacks is a fault of the board, never made here; a write sets values and
+ * never a field or its options.
  */
 public final class GitHubStoreOpener implements TrackedStores {
 
@@ -26,17 +27,23 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     private final Function<TrackedProject, BoardReader> readers;
 
+    private final Function<TrackedProject, BoardWriter> writers;
+
     private final Duration lockWait;
 
     /**
-     * Makes an opener that reads each project's board over GitHub's GraphQL API.
+     * Makes an opener that reads and writes each project's board over GitHub's API.
      *
      * @param tokens gives the person's token for the forge
      * @param queries the GraphQL reads of a project
+     * @param writes the calls a write to a project is made of
      * @param lockWait how long a call waits for another on the same project
      */
     public GitHubStoreOpener(
-            final TokenSource tokens, final ProjectQueries queries, final Duration lockWait) {
+            final TokenSource tokens,
+            final ProjectQueries queries,
+            final ProjectWrites writes,
+            final Duration lockWait) {
         this(
                 tokens,
                 project ->
@@ -45,16 +52,19 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 project.storyStates()::storyState),
+                project -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
                 lockWait);
     }
 
-    /** Makes an opener with its own board reader per project. */
+    /** Makes an opener with its own board reader and writer per project. */
     GitHubStoreOpener(
             final TokenSource tokens,
             final Function<TrackedProject, BoardReader> readers,
+            final Function<TrackedProject, BoardWriter> writers,
             final Duration lockWait) {
         this.tokens = tokens;
         this.readers = readers;
+        this.writers = writers;
         this.lockWait = lockWait;
     }
 
@@ -87,8 +97,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                         Map.of());
         return new GitHubStore(
                 config,
-                GitHubStore.Parts.reading(
-                        readers.apply(project), project.storyStates()::storyState),
+                GitHubStore.Parts.reading(readers.apply(project), project.storyStates()::storyState)
+                        .writer(writers.apply(project)),
                 tokens,
                 lockWait);
     }
