@@ -17,6 +17,8 @@ import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.IssuesAddBlockedByDependencyRequest;
 import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
+import org.fuin.porelo.forge.github.model.IssuesRemoveSubIssueRequest;
+import org.fuin.porelo.forge.github.model.IssuesReprioritizeSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
@@ -78,6 +80,8 @@ public class StoreConfiguration {
         IssuesCreateRequest.class,
         IssuesAddSubIssueRequest.class,
         IssuesAddBlockedByDependencyRequest.class,
+        IssuesRemoveSubIssueRequest.class,
+        IssuesReprioritizeSubIssueRequest.class,
         IssueLabelsInner.class,
         SimpleUser.class,
         PrivateUser.class,
