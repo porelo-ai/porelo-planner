@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store.git;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -20,6 +21,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -343,14 +345,21 @@ final class WindowsPrivateFiles implements PrivateFiles {
             throw new UncheckedIOException(program + " cannot be run: " + e.getMessage(), e);
         }
         try {
-            // Each output on a thread of its own: a reader queued behind busy work leaves the
-            // program blocked on a full pipe.
-            final FutureTask<String> out = read(process.getInputStream());
-            final FutureTask<String> err = read(process.getErrorStream());
+            // Each output on a platform thread of its own: a reader queued behind busy work, or a
+            // virtual thread waiting for a carrier a blocking pipe read holds, leaves the program
+            // blocked on a full pipe.
+            final Output out = new Output(process.getInputStream(), "output");
+            final Output err = new Output(process.getErrorStream(), "errors");
             final long deadline = System.nanoTime() + limit.toNanos();
             if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
                 throw new IllegalStateException(
-                        program + " did not answer within " + limit.toSeconds() + " s");
+                        program
+                                + " did not answer within "
+                                + limit.toSeconds()
+                                + " s; "
+                                + out.sofar()
+                                + ", "
+                                + err.sofar());
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(
@@ -358,9 +367,9 @@ final class WindowsPrivateFiles implements PrivateFiles {
                                 + " exited "
                                 + process.exitValue()
                                 + ": "
-                                + rest(err, deadline, program).strip());
+                                + rest(err.task, deadline, program).strip());
             }
-            return rest(out, deadline, program);
+            return rest(out.task, deadline, program);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(program + " was interrupted", e);
@@ -382,15 +391,40 @@ final class WindowsPrivateFiles implements PrivateFiles {
         }
     }
 
-    private static FutureTask<String> read(final InputStream stream) {
-        final FutureTask<String> task =
-                new FutureTask<>(
-                        () -> {
-                            try (stream) {
-                                return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-                            }
-                        });
-        Thread.ofVirtual().start(task);
-        return task;
+    /**
+     * One output of a program, read to its end on a platform thread of its own, with what it read
+     * so far counted for a refusal that names how far the program got.
+     */
+    private static final class Output {
+
+        private final FutureTask<String> task;
+        private final AtomicLong bytes = new AtomicLong(-1);
+        private final String name;
+
+        Output(final InputStream stream, final String name) {
+            this.name = name;
+            this.task =
+                    new FutureTask<>(
+                            () -> {
+                                bytes.set(0);
+                                final ByteArrayOutputStream read = new ByteArrayOutputStream();
+                                try (stream) {
+                                    final byte[] buffer = new byte[8192];
+                                    int count;
+                                    while ((count = stream.read(buffer)) != -1) {
+                                        read.write(buffer, 0, count);
+                                        bytes.addAndGet(count);
+                                    }
+                                }
+                                return read.toString(StandardCharsets.UTF_8);
+                            });
+            Thread.ofPlatform().daemon().name("powershell-" + name).start(task);
+        }
+
+        /** How much was read so far, in words: never what was read, which may name a path. */
+        String sofar() {
+            final long read = bytes.get();
+            return read < 0 ? "its " + name + " not yet read" : read + " bytes of its " + name;
+        }
     }
 }

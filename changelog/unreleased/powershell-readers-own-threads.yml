@@ -1,0 +1,2 @@
+title: On Windows the planner reads PowerShell's answers on threads of their own, so a start no longer waits its whole bound on a PowerShell blocked on a full pipe, and a late PowerShell is refused with how much it wrote.
+type: fixed

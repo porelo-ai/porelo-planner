@@ -146,6 +146,69 @@ class WindowsPrivateFilesTest {
 
     @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
+    void aProgramThatWritesMuchToItsErrorsAnswersWhileEveryCarrierIsBusy() throws Exception {
+        // Harm: a start that waits its whole bound on PowerShell, blocked on a full pipe, because
+        // the virtual threads meant to read it find no carrier free.
+        final int carriers = Runtime.getRuntime().availableProcessors();
+        final java.util.concurrent.atomic.AtomicBoolean stop =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicInteger spinning =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.List<Thread> busy = new java.util.ArrayList<>();
+        for (int i = 0; i < carriers; i++) {
+            busy.add(
+                    Thread.ofVirtual()
+                            .start(
+                                    () -> {
+                                        spinning.incrementAndGet();
+                                        while (!stop.get()) {
+                                            Thread.onSpinWait();
+                                        }
+                                    }));
+        }
+        try {
+            final long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (spinning.get() < carriers && System.nanoTime() < until) {
+                Thread.onSpinWait();
+            }
+            assertThat(spinning.get()).as("every carrier is busy").isEqualTo(carriers);
+            final ProcessBuilder builder =
+                    new ProcessBuilder("sh", "-c", "head -c 300000 /dev/zero >&2; echo done");
+
+            final String answered =
+                    assertTimeoutPreemptively(
+                            Duration.ofSeconds(20),
+                            () -> WindowsPrivateFiles.answer(builder, "sh", Duration.ofSeconds(10)),
+                            "a reader waiting for a carrier leaves the planner waiting its bound");
+            assertThat(answered)
+                    .as("both of the program's outputs are read while every carrier is busy")
+                    .isEqualTo("done\n");
+        } finally {
+            stop.set(true);
+            for (final Thread thread : busy) {
+                thread.join();
+            }
+        }
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void aProgramLateToAnswerIsRefusedWithHowMuchItWrote() {
+        // Harm: a start refused for a slow PowerShell with nothing to tell a blocked pipe from a
+        // slow program.
+        final ProcessBuilder builder =
+                new ProcessBuilder("sh", "-c", "head -c 1000 /dev/zero >&2; sleep 30");
+
+        assertThatThrownBy(() -> WindowsPrivateFiles.answer(builder, "sh", Duration.ofSeconds(2)))
+                .as("a late answer")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("did not answer within 2 s")
+                .hasMessageContaining("0 bytes of its output")
+                .hasMessageContaining("1000 bytes of its errors");
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     void anInterruptedCallLeavesNoProgramRunning() throws Exception {
         final Set<Long> before = children();
         final AtomicReference<Throwable> thrown = new AtomicReference<>();
