@@ -481,6 +481,37 @@ class PlanStory {
       : null;
 }
 
+/// An issue the board left out because the Status its tracker holds is none of the workflow's states; it may be
+/// moved into one, which repairs it.
+class PlanOutsideIssue {
+  /// Reads the fields the planner reports.
+  PlanOutsideIssue.from(Map<String, dynamic> map)
+    : id = _planText(map, 'id'),
+      repository = _planText(map, 'repository'),
+      title = _planText(map, 'title'),
+      status = _planText(map, 'status'),
+      story = _planText(map, 'story'),
+      link = _planText(map, 'link');
+
+  /// Its tracker reference, `<repository>#<number>`.
+  final String id;
+
+  /// Its repository.
+  final String repository;
+
+  /// Its title.
+  final String title;
+
+  /// The Status its tracker holds, as it holds it; empty when it holds none.
+  final String status;
+
+  /// The story it stands under, where the board holds that story; empty otherwise.
+  final String story;
+
+  /// Its web link; empty when none was reported.
+  final String link;
+}
+
 /// A workflow or a whole board reply; absent fields stay empty.
 class PlanningSnapshot {
   /// Applies destinations explicitly confirmed by the save answer.
@@ -494,6 +525,11 @@ class PlanningSnapshot {
        phases = source.phases,
        work = source.work,
        faults = source.faults,
+       // An issue moved in leaves the list at once; the next board places it under its story.
+       outside = [
+         for (final issue in source.outside)
+           if (!moves.containsKey(issue.id)) issue,
+       ],
        repositories = source.repositories,
        repositoriesReported = source.repositoriesReported,
        statesReported = source.statesReported,
@@ -508,6 +544,7 @@ class PlanningSnapshot {
   PlanningSnapshot.from(Map<String, dynamic> map)
     : work = _planList(map['work'], PlanWorkRule.from),
       faults = _planStrings(map['faults']),
+      outside = _planList(map['outside'], PlanOutsideIssue.from),
       repositories = _planStrings(map['repositories']),
       repositoriesReported = _planStringsReported(map['repositories']),
       states = _planList(map['states'], PlanState.from),
@@ -522,6 +559,8 @@ class PlanningSnapshot {
   PlanningSnapshot.fromParts(PlanningSnapshot workflow, PlanningSnapshot board)
     : work = workflow.work,
       faults = workflow.faults,
+      // A whole board names them; a story list leaves the last whole board's standing.
+      outside = board.statesReported ? board.outside : workflow.outside,
       repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
       repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
       states = workflow.states,
@@ -537,6 +576,10 @@ class PlanningSnapshot {
 
   /// The faults reported by the daemon.
   final List<String> faults;
+
+  /// The issues left out of the board because their Status is none of the workflow's states; empty when none were
+  /// reported.
+  final List<PlanOutsideIssue> outside;
 
   /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
   final List<String> repositories;

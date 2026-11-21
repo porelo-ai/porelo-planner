@@ -236,8 +236,12 @@ Future<(_Planner, HttpPlanningSource)> _started({
 
 /// One `board` event as the planner sends it: the workflow's and the stories' fields and the repositories in one
 /// object.
-List<int> _event(String revision, {Object? repositories = const ['porelo-project', 'porelo-other']}) => utf8.encode(
-  'event:board\nid:$revision\ndata:${jsonEncode({..._workflow(revision), 'stories': _stories(revision)['stories'], 'repositories': ?repositories})}\n\n',
+List<int> _event(
+  String revision, {
+  Object? repositories = const ['porelo-project', 'porelo-other'],
+  Map<String, Object?> more = const {},
+}) => utf8.encode(
+  'event:board\nid:$revision\ndata:${jsonEncode({..._workflow(revision), 'stories': _stories(revision)['stories'], 'repositories': ?repositories, ...more})}\n\n',
 );
 
 /// The planner's event streams, one per connection the source opened, each fed by the test.
@@ -1480,6 +1484,38 @@ void main() {
     streams.opened.last.add(_event('r1'));
     expect((await read).repositories, ['porelo-project', 'porelo-other'], reason: 'read in the planner\'s order');
   });
+
+  // Harm: an issue outside the workflow is dropped unseen, or one named as no issue is moved by that name.
+  test(
+    'a streamed board\'s issues outside the workflow are read, and one that is no issue id ends the watch',
+    () async {
+      final (planner, source) = await _started();
+      final streams = _Streams(planner, first: false);
+      Map<String, Object?> outside(String id) => {
+        'outside': [
+          {
+            'id': id,
+            'repository': 'porelo-project',
+            'title': 'Lost',
+            'status': 'Accepted',
+            'story': 'porelo-project#1',
+          },
+        ],
+      };
+      final bad = source.watchStories('demo').first;
+      await _until(() => streams.opened.isNotEmpty, 'the stream');
+      streams.opened.last.add(_event('r1', more: outside('../x#1')));
+      expect((await _refusal(bad)).name, 'BadAnswer');
+
+      final read = source.watchStories('demo').first;
+      await _until(() => streams.opened.length > 1, 'the second stream');
+      streams.opened.last.add(_event('r1', more: outside('porelo-project#7')));
+      final board = await read;
+      expect(board.outside.single.id, 'porelo-project#7');
+      expect(board.outside.single.status, 'Accepted');
+      expect(board.outside.single.story, 'porelo-project#1');
+    },
+  );
 
   // Harm: an id past its bound would go back to the planner as an endless header.
   test('an event id longer than 200 characters ends the watch', () async {

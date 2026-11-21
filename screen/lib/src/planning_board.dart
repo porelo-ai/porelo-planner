@@ -1176,6 +1176,28 @@ class PlanningBoard extends ChangeNotifier {
     );
   }
 
+  /// The issues the board left out because their Status is none of the workflow's states, by id.
+  List<PlanOutsideIssue> get outside => snapshot?.outside ?? const [];
+
+  /// Moves an issue outside the workflow into its state [to], which repairs it; the planner judges it as any issue's
+  /// move. [revision] is the board's when the choice was offered.
+  Future<void> moveOutside(String id, String to, {String? revision}) async {
+    if (_disposed || _oneAtATime(id)) return;
+    if (snapshot?.complete != true || !live || snapshot!.revision.isEmpty) {
+      return refuseMove(id, 'the board is not live and complete.');
+    }
+    if (!outside.any((issue) => issue.id == id)) return refuseMove(id, 'it is no longer outside the workflow.');
+    if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state(to)?.kind)) {
+      return refuseMove(id, '$to is not a state of the board.');
+    }
+    await _moveNow(
+      'issue $id',
+      PlanningIssueMove(id, to),
+      PendingPlanningMove('', to, isIssue: true),
+      revision: revision,
+    );
+  }
+
   /// Says why a move of [id] was not made, where the board and the story's page show it.
   void refuseMove(String id, String why) {
     moveProblem = '$id was not moved: $why';

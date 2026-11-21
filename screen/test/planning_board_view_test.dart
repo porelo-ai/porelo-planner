@@ -319,6 +319,35 @@ void main() {
     );
   });
 
+  // Harm: an issue whose Status the workflow does not hold is not seen, or can be repaired only on GitHub's own board.
+  testWidgets('an issue outside the workflow is listed beside the board and moved into a state of it', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['outside'] = [
+      {'id': 'own#7', 'repository': 'own', 'title': 'A lost issue', 'status': 'Accepted', 'story': 'StoryOne'},
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+
+    expect(find.byKey(const Key('planning-outside own#7')), findsOneWidget);
+    expect(find.text('Status: Accepted'), findsOneWidget);
+    expect(find.text('Story: StoryOne'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('planning-outside-move own#7')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('planning-outside-to own#7 Ready')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+
+    expect(backend.moveCalls.single['moves'], [
+      {'issue': 'own#7', 'to': 'Ready'},
+    ]);
+    expect(find.byKey(const Key('planning-outside')), findsNothing, reason: 'it left the list once saved');
+    final story = boards.selected!.stories.single;
+    expect(story.issues.single.id, 'own#7');
+    expect(story.issues.single.state, 'Ready', reason: 'it stands under its story again');
+  });
+
   // Harm: a confirmed move is saved twice, or under another preview than the one the person confirmed.
   testWidgets('a drop confirmed over its warning is saved once with the digest of what was shown', (tester) async {
     final (backend, boards) = await _showBoard(tester);

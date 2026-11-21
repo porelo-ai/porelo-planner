@@ -13,6 +13,29 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   if (batch is! List) {
     refuse('MoveNotAllowed', {'item': '', 'from': '', 'to': '', 'reason': 'Moves must be a list.'});
   }
+  // An issue outside the workflow moved into it stands under its story again, from no state, as the planner puts it.
+  final outside = (board['outside'] as List? ?? const []).cast<Map<String, dynamic>>();
+  for (final move in batch.whereType<Map<String, dynamic>>()) {
+    final left = outside.where((issue) => issue['id'] == move['issue']).firstOrNull;
+    if (left == null) continue;
+    final story = stories.where((story) => story['id'] == left['story']).firstOrNull;
+    if (story == null) {
+      refuse('MoveNotAllowed', {
+        'item': left['id'],
+        'from': '',
+        'to': move['to'] ?? '',
+        'reason': 'The board holds no story it stands under.',
+      });
+    }
+    outside.remove(left);
+    (story.putIfAbsent('issues', () => <dynamic>[]) as List).add({
+      'id': left['id'],
+      'repository': left['repository'],
+      'title': left['title'],
+      'state': '',
+      if (left['link'] case final String link) 'link': link,
+    });
+  }
   final seen = <String>{};
   final moved = <String>[];
   // Every move is resolved on the shown board; story moves are written before explicit issue moves.

@@ -1668,6 +1668,19 @@ class _Watch {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner streamed a board that cannot be read: $error');
       }
       if (!snapshot.complete) throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed an incomplete board');
+      if (snapshot.outside.any(
+        (issue) =>
+            !HttpPlanningSource._issueId.hasMatch(issue.id) ||
+            !HttpPlanningSource._name.hasMatch(issue.repository) ||
+            (issue.story.isNotEmpty && !HttpPlanningSource._storyId.hasMatch(issue.story)) ||
+            snapshot.stories.any((story) => story.issues.any((each) => each.id == issue.id)),
+      )) {
+        throw const PlanningRefusal(
+          'BadAnswer',
+          {},
+          'the planner streamed an issue outside the workflow it cannot name',
+        );
+      }
       HttpPlanningSource._workersNamed(snapshot.stories.expand((story) => story.issues));
       if (!snapshot.repositoriesReported ||
           snapshot.repositories.any((name) => !HttpPlanningSource._name.hasMatch(name))) {
