@@ -367,7 +367,8 @@ class CarryOverTest {
                                                         List.of(), new PageInfo(false, null))),
                                         held));
                     });
-            return new GitHubGraphQl.ProjectItems(page, new PageInfo(false, null), COST);
+            return new GitHubGraphQl.ProjectItems(
+                    page, new PageInfo(false, null), COST, page.size());
         }
 
         @Override

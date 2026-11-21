@@ -40,6 +40,9 @@ import org.slf4j.LoggerFactory;
  */
 public final class ItemsBoardReader implements BoardReader {
 
+    /** The place a read tells it reads, named for a person. */
+    private static final String FROM = "GitHub";
+
     private static final Logger LOG = LoggerFactory.getLogger(ItemsBoardReader.class);
 
     /**
@@ -57,6 +60,33 @@ public final class ItemsBoardReader implements BoardReader {
 
     /** The most items a page carries, as the forge client asks for them. */
     static final int PAGE_SIZE = 100;
+
+    /** The smallest page asked for after GitHub found pages too costly. */
+    static final int SMALLEST_PAGE = 12;
+
+    /** The page size the last read ended with, where the next one starts. */
+    private volatile int lastSize = PAGE_SIZE;
+
+    /** GitHub's words for a query that cost more than it answers. */
+    private static final String TOO_COSTLY = "Resource limits for this query exceeded";
+
+    /** Whether a failure, or one it was caused by, is GitHub's refusal of a too costly query. */
+    static boolean tooCostly(final Throwable failure) {
+        for (Throwable e = failure; e != null; e = e.getCause()) {
+            if (e instanceof org.fuin.porelo.forge.github.GitHubException refused
+                    && refused.resourceLimited()) {
+                return true;
+            }
+            final String words = e.getMessage();
+            if (words != null && words.contains(TOO_COSTLY)) {
+                return true;
+            }
+            if (e.getCause() == e) {
+                break;
+            }
+        }
+        return false;
+    }
 
     /** An owner's or a repository's name as GitHub allows it in an address. */
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
@@ -83,6 +113,12 @@ public final class ItemsBoardReader implements BoardReader {
     private final Duration deadline;
 
     private final Pause pause;
+
+    /** How far the whole read under way has come, or null while none runs. */
+    private volatile org.fuin.porelo.planner.store.@Nullable ReadProgress progress;
+
+    /** The items the last whole read held, or null before the first. */
+    private volatile @Nullable Integer lastTotal;
 
     /** Waits between two reads of the item list. */
     @FunctionalInterface
@@ -162,7 +198,25 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     @Override
+    public java.util.Optional<org.fuin.porelo.planner.store.ReadProgress> progress() {
+        return java.util.Optional.ofNullable(progress);
+    }
+
+    @Override
     public Snapshot read(final ProjectConfig config) {
+        progress =
+                new org.fuin.porelo.planner.store.ReadProgress(
+                        clock.instant(), 0, lastTotal, null, FROM);
+        try {
+            final Snapshot read = readWhole(config);
+            lastTotal = read.raw().size();
+            return read;
+        } finally {
+            progress = null;
+        }
+    }
+
+    private Snapshot readWhole(final ProjectConfig config) {
         final String token = tokens.token(config.forge());
         final Call call = new Call(config, token, clock.instant().plus(deadline));
         final List<String> faults = new ArrayList<>();
@@ -177,6 +231,7 @@ public final class ItemsBoardReader implements BoardReader {
             final @Nullable String cursor = after;
             final GitHubGraphQl.ProjectFields fields =
                     call.of(
+                            "the project fields",
                             () ->
                                     queries.projectFields(
                                             token,
@@ -235,13 +290,96 @@ public final class ItemsBoardReader implements BoardReader {
                     reads,
                     current.lacksAny(lagging) ? "still lacked them" : "then held them");
         }
+        return snapshot(read, faults, current, fieldNames);
+    }
 
+    /**
+     * Reads again only the issues a save touched, by their node ids, puts them in place of what the
+     * snapshot held, and maps the whole board anew from the items in memory; a snapshot without
+     * GitHub's items, or one read with other project files, is read whole.
+     */
+    @Override
+    public Snapshot reread(
+            final ProjectConfig config, final Snapshot held, final Touched.Ids touched) {
+        final ProjectConfig read = held.config();
+        if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
+            return read(config);
+        }
+        final Set<String> nodes = new LinkedHashSet<>(touched.issues());
+        for (final GitHubGraphQl.ProjectItem item : held.raw().values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue == null) {
+                continue;
+            }
+            final String name = issue.repository();
+            final String repository =
+                    name.substring(name.indexOf('/') + 1).toLowerCase(Locale.ROOT);
+            if (touched.items().contains(item.id())
+                    || touched.numbered().contains(repository + "#" + issue.number())
+                    || touched.databaseIds().contains(issue.databaseId())) {
+                nodes.add(issue.id());
+            }
+        }
+        final String token = tokens.token(config.forge());
+        final Call call = new Call(config, token, clock.instant().plus(deadline));
+        final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>(held.raw());
+        final List<String> all = List.copyOf(nodes);
+        for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
+            final List<String> chunk =
+                    all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
+            final GitHubGraphQl.IssueBoard answer =
+                    call.of(
+                            "the issues a save touched",
+                            () -> queries.issueBoard(token, chunk, read.projectId()));
+            for (int at = 0; at < chunk.size(); at++) {
+                final String issueId = chunk.get(at);
+                final GitHubGraphQl.IssueOnBoard on =
+                        at < answer.issues().size() ? answer.issues().get(at) : null;
+                GitHubGraphQl.@Nullable ProjectItem kept = null;
+                for (final GitHubGraphQl.ProjectItem item : items.values()) {
+                    final GitHubGraphQl.BoardIssue issue = item.issue();
+                    if (issue != null && issue.id().equals(issueId)) {
+                        kept = item;
+                        break;
+                    }
+                }
+                final String itemId = on == null ? null : on.itemId();
+                if (on == null || on.issue() == null || itemId == null) {
+                    // No longer an item of the project.
+                    if (kept != null) {
+                        items.remove(kept.id());
+                    }
+                    continue;
+                }
+                final boolean archived = kept != null && kept.archived();
+                if (kept != null && !kept.id().equals(itemId)) {
+                    items.remove(kept.id());
+                }
+                items.put(
+                        itemId,
+                        new GitHubGraphQl.ProjectItem(itemId, archived, on.issue(), on.values()));
+            }
+        }
+        LOG.info("Read {} issues again after a save, in place of the whole project", all.size());
+        return snapshot(
+                read,
+                held.fieldFaults(),
+                mapped(items, read, held.fieldNames()),
+                held.fieldNames());
+    }
+
+    /** Maps the items read to the board and the snapshot that holds it. */
+    private Snapshot snapshot(
+            final ProjectConfig read,
+            final List<String> faults,
+            final ItemsRead current,
+            final Map<String, String> fieldNames) {
         final List<String> allFaults = new ArrayList<>(faults);
         allFaults.addAll(current.faults());
         final IssueMapping.Mapped mapped = current.mapped();
         final Board board =
                 new Board(
-                        revision(config.commit(), current.items().values(), fieldNames, allFaults),
+                        revision(read.commit(), current.items().values(), fieldNames, allFaults),
                         read.workflow(),
                         mapped.stories(),
                         mapped.issues(),
@@ -256,7 +394,7 @@ public final class ItemsBoardReader implements BoardReader {
                 byId.putIfAbsent(id, view);
             }
         }
-        return new Snapshot(board, byId, read);
+        return new Snapshot(board, byId, read, current.items(), faults, fieldNames);
     }
 
     /**
@@ -288,24 +426,71 @@ public final class ItemsBoardReader implements BoardReader {
         final String token = call.token;
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>();
         @Nullable String after = null;
+        int size = lastSize;
         for (int page = 1; ; page++) {
             final @Nullable String cursor = after;
-            final GitHubGraphQl.ProjectItems answer =
-                    call.of(
-                            () ->
-                                    queries.projectItems(
-                                            token,
-                                            read.project().owner(),
-                                            read.project().number(),
-                                            cursor));
-            if (answer.items().size() > PAGE_SIZE) {
+            final int first = size;
+            final GitHubGraphQl.ProjectItems answer;
+            try {
+                answer =
+                        call.of(
+                                "the project items",
+                                () ->
+                                        first == PAGE_SIZE
+                                                ? queries.projectItems(
+                                                        token,
+                                                        read.project().owner(),
+                                                        read.project().number(),
+                                                        cursor)
+                                                : queries.projectItems(
+                                                        token,
+                                                        read.project().owner(),
+                                                        read.project().number(),
+                                                        cursor,
+                                                        first));
+            } catch (final RuntimeException e) {
+                // GitHub refuses a page whose items cost too much to answer; a smaller page of
+                // the same items fits, read from the same cursor.
+                if (first > SMALLEST_PAGE && tooCostly(e)) {
+                    size = Math.max(SMALLEST_PAGE, first / 2);
+                    lastSize = size;
+                    LOG.info(
+                            "GitHub found a page of {} items too costly; it is asked for {}",
+                            first,
+                            size);
+                    page--;
+                    continue;
+                }
+                throw e;
+            }
+            if (answer.items().size() > first) {
                 throw new StoreException.Unreadable(
                         read.own(), "GitHub answered a page with more items than asked for");
             }
+            @Nullable String last = null;
             for (final GitHubGraphQl.ProjectItem item : answer.items()) {
                 // An item seen again on a later page, as GitHub's order shifts while it is read,
                 // counts once.
                 items.putIfAbsent(item.id(), item);
+                final GitHubGraphQl.BoardIssue issue = item.issue();
+                if (issue != null) {
+                    final String name = issue.repository();
+                    last =
+                            name.substring(name.indexOf('/') + 1).toLowerCase(Locale.ROOT)
+                                    + "#"
+                                    + issue.number();
+                }
+            }
+            final org.fuin.porelo.planner.store.ReadProgress now = progress;
+            if (now != null) {
+                progress =
+                        new org.fuin.porelo.planner.store.ReadProgress(
+                                now.since(),
+                                items.size(),
+                                // GitHub's count of the project's items, told on every page.
+                                answer.totalCount(),
+                                last != null ? last : now.lastRead(),
+                                FROM);
             }
             after = call.next(answer.pageInfo(), cursor, page, "items");
             if (after == null) {
@@ -314,7 +499,14 @@ public final class ItemsBoardReader implements BoardReader {
         }
         // The last answer may come after the deadline as well.
         call.inTime();
+        return mapped(items, read, fieldNames);
+    }
 
+    /** Maps the project's items, as read or as held, to the board's stories and issues. */
+    private ItemsRead mapped(
+            final Map<String, GitHubGraphQl.ProjectItem> items,
+            final ProjectConfig read,
+            final Map<String, String> fieldNames) {
         final List<String> faults = new ArrayList<>();
         final List<ItemView> views = new ArrayList<>();
         final Set<String> overflowing = new HashSet<>();
@@ -349,7 +541,9 @@ public final class ItemsBoardReader implements BoardReader {
             final List<String> chunk =
                     all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
             final GitHubGraphQl.IssueBoard answer =
-                    call.of(() -> queries.issueBoard(call.token, chunk, read.projectId()));
+                    call.of(
+                            "the issues named outside the project",
+                            () -> queries.issueBoard(call.token, chunk, read.projectId()));
             for (int at = 0; at < chunk.size() && at < answer.issues().size(); at++) {
                 final GitHubGraphQl.IssueOnBoard issue = answer.issues().get(at);
                 if (issue != null && issue.itemId() != null) {
@@ -397,20 +591,52 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
 
-        <T> T of(final Supplier<T> read) {
+        <T> T of(final String what, final Supplier<T> read) {
             inTime();
             try {
-                return read.get();
+                try {
+                    return read.get();
+                } catch (final GitHubException e) {
+                    if (e.rateLimited() || (e.status() != 0 && e.status() < 500)) {
+                        throw e;
+                    }
+                    // A read changes nothing on GitHub, so one that failed on GitHub's side or on
+                    // the way is sent once more before it is answered as unreachable.
+                    LOG.warn(
+                            "GitHub's read of {} failed (HTTP {}, {}); it is sent once more",
+                            what,
+                            e.status(),
+                            e.delivery());
+                    pauseBeforeRetry();
+                    inTime();
+                    return read.get();
+                }
             } catch (final StoreException | UnsupportedOperationException e) {
                 throw e;
             } catch (final GitHubException e) {
+                LOG.warn(
+                        "GitHub's read of {} failed (HTTP {}, {}, rate limited {})",
+                        what,
+                        e.status(),
+                        e.delivery(),
+                        e.rateLimited());
                 if (e.rateLimited()) {
                     throw new StoreException.Unreachable(
                             config.own(), "GitHub's rate limit is spent; " + rereadIn(e.delay()));
                 }
                 throw refusals.refusal(config.own(), e, token);
             } catch (final RuntimeException e) {
+                LOG.warn("The read of {} failed: {}", what, e.getClass().getName());
                 throw refusals.refusal(config.own(), e, token);
+            }
+        }
+
+        /** Waits a second before a read is sent once more; a stopped wait sends it at once. */
+        private void pauseBeforeRetry() {
+            try {
+                pause.take(REREAD_PAUSE);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
 

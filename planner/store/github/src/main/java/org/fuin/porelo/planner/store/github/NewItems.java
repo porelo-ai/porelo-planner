@@ -114,6 +114,15 @@ final class NewItems {
             return repository + "#" + Objects.requireNonNull(created).number();
         }
 
+        /**
+         * Answers its database id, once GitHub made it.
+         *
+         * @return the id
+         */
+        long databaseId() {
+            return Objects.requireNonNull(created).databaseId();
+        }
+
         private ProjectWrites.Created made() {
             return Objects.requireNonNull(created);
         }

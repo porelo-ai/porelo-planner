@@ -93,7 +93,7 @@ class GitHubStoreOpenerTest {
                     final int number,
                     final @Nullable String after) {
                 calls.add("projectItems");
-                return new ProjectItems(List.of(), new PageInfo(false, null), COST);
+                return new ProjectItems(List.of(), new PageInfo(false, null), COST, 0);
             }
 
             @Override

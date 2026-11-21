@@ -54,6 +54,14 @@ public final class AddressFile implements AutoCloseable {
 
     private final PrivateFiles files;
 
+    /** Deletes the file at the process's end, before Spring waits for the calls in flight. */
+    private final Thread atEnd;
+
+    /**
+     * Set once {@link #close()} began, so the end's deletion never takes a later planner's file.
+     */
+    private boolean closed;
+
     private AddressFile(
             final Path directory,
             final Path lockFile,
@@ -65,6 +73,25 @@ public final class AddressFile implements AutoCloseable {
         this.lockFile = lockFile;
         this.lockChannel = lockChannel;
         this.lock = lock;
+        // A window gives its planner a few seconds after SIGTERM, then kills it; the file goes
+        // first, so a killed planner leaves none. Spring's own hook runs beside this one.
+        this.atEnd = Thread.ofPlatform().name("planner-address-end").unstarted(this::deleteAtEnd);
+        try {
+            Runtime.getRuntime().addShutdownHook(atEnd);
+        } catch (final IllegalStateException ending) {
+            // The process ends already; close deletes the file.
+        }
+    }
+
+    private synchronized void deleteAtEnd() {
+        if (closed) {
+            return;
+        }
+        try {
+            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+        } catch (final IOException | RuntimeException e) {
+            // Close tries again, if Spring gets to it.
+        }
     }
 
     /**
@@ -210,6 +237,10 @@ public final class AddressFile implements AutoCloseable {
         final Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("port", port);
         fields.put("token", token.text());
+        // The window tells a dead planner's file by these: the process and when it started.
+        final ProcessHandle self = ProcessHandle.current();
+        fields.put("pid", self.pid());
+        self.info().startInstant().ifPresent(started -> fields.put("started", started.toString()));
         if (log != null) {
             fields.put("log", log.toAbsolutePath().toString());
         }
@@ -256,6 +287,16 @@ public final class AddressFile implements AutoCloseable {
     /** Deletes the address file while the lock is still held, then lets the lock go. */
     @Override
     public void close() {
+        synchronized (this) {
+            closed = true;
+        }
+        try {
+            Runtime.getRuntime().removeShutdownHook(atEnd);
+        } catch (final IllegalStateException ending) {
+            // The process ends; the hook runs or ran, and found the file closed or deleted it.
+        }
+        org.slf4j.LoggerFactory.getLogger(AddressFile.class)
+                .info("The planner ends; its address file {} is removed", directory.resolve(FILE));
         try {
             SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
         } catch (IOException e) {

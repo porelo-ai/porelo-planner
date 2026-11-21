@@ -8,6 +8,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.fuin.porelo.planner.core.Changes;
+import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.jspecify.annotations.Nullable;
@@ -38,6 +39,36 @@ public final class ChangesRegistry implements AutoCloseable {
     private boolean closed;
 
     private record Followed(Changes changes, Polling polling) {}
+
+    /**
+     * A read of a followed project that failed, which its streams tell as the read's problem.
+     *
+     * @param at when it failed
+     * @param cause what the read threw
+     */
+    public record ReadFailure(java.time.Instant at, RuntimeException cause) {}
+
+    /** The last read of each followed project that failed, until a read succeeds. */
+    private final Map<String, ReadFailure> failures =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Answers the last failed read of a project, if no read succeeded since.
+     *
+     * @param project the project's checked name
+     * @return the failure, or empty
+     */
+    public java.util.Optional<ReadFailure> lastFailure(final String project) {
+        return java.util.Optional.ofNullable(failures.get(project));
+    }
+
+    private void readEnded(final String project, final @Nullable RuntimeException failure) {
+        if (failure == null) {
+            failures.remove(project);
+        } else {
+            failures.put(project, new ReadFailure(java.time.Instant.now(), failure));
+        }
+    }
 
     /**
      * Makes the registry, polling every project at one interval.
@@ -131,7 +162,29 @@ public final class ChangesRegistry implements AutoCloseable {
         if (known == null) {
             return projects.store(project).refresh().revision().value();
         }
-        return known.changes().poll().revision().value();
+        final PlanningStore store = projects.store(project);
+        if (!store.reloadsAlone()) {
+            return known.changes().poll().revision().value();
+        }
+        // A whole read of a large project outlasts the window's wait, so the board kept is
+        // answered at once and the read goes on alone; its stream tells the window what it finds.
+        final String kept = store.board().revision().value();
+        Thread.ofVirtual()
+                .name("planner-refresh")
+                .start(
+                        () -> {
+                            try {
+                                known.changes().poll();
+                                readEnded(project, null);
+                            } catch (final RuntimeException e) {
+                                readEnded(project, e);
+                                LOG.warn(
+                                        "Refreshing project {} failed: {}",
+                                        LogText.of(project),
+                                        LogText.of(String.valueOf(e.getMessage())));
+                            }
+                        });
+        return kept;
     }
 
     /**
@@ -297,7 +350,9 @@ public final class ChangesRegistry implements AutoCloseable {
     private void poll(final String project, final Changes changes) {
         try {
             changes.pollOnSchedule();
+            readEnded(project, null);
         } catch (final StoreException.NoForgeAccess refused) {
+            readEnded(project, refused);
             LOG.warn(
                     "Fetching project {} was refused, its streams end: {}",
                     LogText.of(project),
@@ -305,6 +360,7 @@ public final class ChangesRegistry implements AutoCloseable {
             // Its windows open their stream again, are told the refusal and offer a token.
             end(project, changes);
         } catch (final RuntimeException e) {
+            readEnded(project, e);
             // The store's words are free of secrets and local paths; the next poll tries again.
             LOG.warn(
                     "Fetching project {} failed: {}",

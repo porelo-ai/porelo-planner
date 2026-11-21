@@ -191,13 +191,17 @@ class StatusOptionsWriterTest {
             }
             final boolean more = to < ids.size();
             if (stuckCursor) {
-                return new GitHubGraphQl.ProjectItems(page, new PageInfo(true, "0"), COST);
+                return new GitHubGraphQl.ProjectItems(
+                        page, new PageInfo(true, "0"), COST, page.size());
             }
             if (!more && reads++ == 0 && afterFirstRead != null) {
                 afterFirstRead.run();
             }
             return new GitHubGraphQl.ProjectItems(
-                    page, new PageInfo(more, more ? Integer.toString(to) : null), COST);
+                    page,
+                    new PageInfo(more, more ? Integer.toString(to) : null),
+                    COST,
+                    page.size());
         }
 
         @Override

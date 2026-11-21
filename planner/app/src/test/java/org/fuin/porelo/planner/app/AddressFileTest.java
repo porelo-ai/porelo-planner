@@ -295,7 +295,13 @@ class AddressFileTest {
                                 runtime.toString())
                         .redirectErrorStream(true)
                         .start();
-        final String output = new String(process.getInputStream().readAllBytes()).strip();
+        // The probe answers on its first line; what the planner logs as it ends follows it.
+        final String output =
+                new String(process.getInputStream().readAllBytes())
+                        .strip()
+                        .lines()
+                        .findFirst()
+                        .orElse("");
         if (!process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
             process.destroyForcibly();
         }

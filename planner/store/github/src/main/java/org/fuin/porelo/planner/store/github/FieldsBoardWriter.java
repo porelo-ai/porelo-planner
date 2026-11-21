@@ -128,10 +128,35 @@ public final class FieldsBoardWriter implements BoardWriter {
     public String createIssue(
             final Snapshot current, final Revision revision, final NewIssue issue) {
         fresh(current, revision);
+        final String storyId = issue.story();
+        final @Nullable ItemView story = storyId == null ? null : storyItem(current, storyId);
         final NewItems adding = new NewItems(github, refusals, clock, current);
-        // An issue carries no priority of its own, so it takes the Medium a new issue has in Git.
-        final NewItems.Planned planned = adding.issue(issue, "Medium");
-        adding.write(tokens.token(current.config().forge()), null, List.of(planned));
+        // Without a priority of its own an issue takes the Medium a new issue has in Git.
+        final NewItems.Planned planned =
+                adding.issue(issue, Objects.requireNonNullElse(issue.priority(), "Medium"));
+        final String token = tokens.token(current.config().forge());
+        adding.write(token, null, List.of(planned));
+        if (story != null) {
+            try {
+                // GitHub hangs a new sub-issue last, so the story's list ends with it.
+                github.addSubIssue(
+                        token,
+                        current.config().project().owner(),
+                        story.repository(),
+                        story.number(),
+                        planned.databaseId());
+            } catch (final RuntimeException e) {
+                throw new StoreException.PartlySaved(
+                        issue.repository(),
+                        List.of(issue.repository()),
+                        "GitHub made "
+                                + planned.reference()
+                                + " but did not hang it into "
+                                + storyId
+                                + "; "
+                                + refusals.refusal(current.config().own(), e, token).getMessage());
+            }
+        }
         return planned.reference();
     }
 

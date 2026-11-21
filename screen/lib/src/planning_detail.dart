@@ -67,7 +67,7 @@ class PlanningDetail extends ChangeNotifier {
       board.states.where((state) => state.name.isNotEmpty && PlanningBoard.issueMayEnter(issue, state)).toList();
 
   /// Why an issue cannot be moved now.
-  String? get moveUnavailable => saving || board.pending.isNotEmpty
+  String? get moveUnavailable => saving || board.holdsMoves
       ? 'Saving…'
       : loading
       ? 'Waiting for the latest issue details.'

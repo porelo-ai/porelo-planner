@@ -202,7 +202,11 @@ paths:
         changes retain the revision, including a cancellation or Needs you. Saves, polls and `refresh` publish the
         current board and work snapshot. A comment line `: keep-alive` comes every 15 s while nothing changes; a
         reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
-        current board first. An unknown project is refused before the stream starts.
+        current board first. An unknown project is refused before the stream starts. While the store reads the whole
+        board, event `load` tells the read's progress at least every 5 s, its `data` `{"state": "reading", "since",
+        "read", "total", "lastRead", "from"}`. A read ends with its `board`, with `load` `{"state": "done"}` when it
+        changed nothing, or with `load` `{"state": "failed", "problem", "failure", "parameters"}`: before the first
+        board this ends the stream, after it the stream stays and the board held stands.
       tags: [board]
       parameters:
         - name: Last-Event-ID
@@ -238,13 +242,17 @@ paths:
       operationId: refreshProject
       summary: Read the repositories now
       description: >-
-        Fetches the project's repositories at once instead of waiting for the next poll; a new revision reaches every
-        stream of the project before this call answers. A repository whose save is still pending is not fetched: it
-        stands as the planner's own clone holds it until the save is pushed.
+        Reads the project at once instead of waiting for the next poll. For a project kept in Git, the repositories
+        are fetched and a new revision reaches every stream of the project before this call answers; a repository
+        whose save is still pending is not fetched: it stands as the planner's own clone holds it until the save is
+        pushed. For a tracked project, it answers at once and the read's board follows on the stream, with `load`
+        events while the read runs and a failed `load` when it fails.
       tags: [board]
       responses:
         '200':
-          description: The revision after the fetch.
+          description: >-
+            The revision after the fetch for a project kept in Git; the revision held when the read began for a
+            tracked project.
           content:
             application/json:
               schema:
@@ -2253,9 +2261,11 @@ components:
             $ref: '#/components/schemas/Story'
 
     Moves:
-      description: A batch of moves against the board at a revision, with the digest of its preview.
+      description: >-
+        A batch of moves against the board at a revision, with the digest of its preview; a batch that confirms its
+        warnings may leave the digest out, and the planner's preview of the same moves stands for it.
       type: object
-      required: [revision, moves, digest]
+      required: [revision, moves]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2524,6 +2534,25 @@ components:
             when no task did. An empty or malformed name is refused, never taken as none.
           allOf:
             - $ref: '#/components/schemas/TaskLabel'
+        priority:
+          description: The new issue's priority; Medium when it is left out.
+          allOf:
+            - $ref: '#/components/schemas/Priority'
+        story:
+          description: The story the new issue is hung into, last in its list; none when it is left out.
+          allOf:
+            - $ref: '#/components/schemas/StoryId'
+        state:
+          description: >-
+            The state the new issue is moved to in the same save, as a move of it is checked; the workflow's first
+            state when it is left out. A move refused after the issue was made is answered as partly saved.
+          type: string
+          minLength: 1
+          maxLength: 100
+        confirm:
+          type: boolean
+          default: false
+          description: Whether the warnings of the move to state are confirmed, as a batch of moves confirms them.
     IssueAdded:
       description: The new issue's id and the board's revision after the save.
       type: object

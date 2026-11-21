@@ -35,6 +35,29 @@ public interface ProjectQueries {
             String token, String owner, int number, @Nullable String after);
 
     /**
+     * Reads one page of the project's items of the size given, for a page GitHub refused as too
+     * costly at the full size.
+     *
+     * @param token the person's token
+     * @param owner the organization that owns the project
+     * @param number the project's number
+     * @param after the cursor of the page before, or null for the first
+     * @param first the items asked for, 1 to 100
+     * @return the page
+     */
+    default GitHubGraphQl.ProjectItems projectItems(
+            final String token,
+            final String owner,
+            final int number,
+            final @Nullable String after,
+            final int first) {
+        if (first != 100) {
+            throw new UnsupportedOperationException("This source reads only pages of 100 items");
+        }
+        return projectItems(token, owner, number, after);
+    }
+
+    /**
      * Reads issues by their node ids, each with its item and field values in the project.
      *
      * @param token the person's token
@@ -68,6 +91,16 @@ public interface ProjectQueries {
                     final int number,
                     final @Nullable String after) {
                 return client.projectItems(token, owner, number, after);
+            }
+
+            @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final int first) {
+                return client.projectItems(token, owner, number, after, first);
             }
 
             @Override

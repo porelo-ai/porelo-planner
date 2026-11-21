@@ -22,7 +22,7 @@ class ChangesTest {
     private static final Duration NOW = Duration.ZERO;
 
     /** A store whose remote another person can push to. */
-    private static final class FakeStore implements PlanningStore {
+    private static class FakeStore implements PlanningStore {
 
         private Board board = boardAt("r1");
 
@@ -83,6 +83,47 @@ class ChangesTest {
         assertThat(revision(one.next(NOW))).as("the save").isEqualTo("r2");
         changes.poll();
         assertThat(one.next(NOW)).as("the poll after it finds nothing new").isEmpty();
+    }
+
+    @Test
+    void aSaveIsToldAtOnceWhileAFetchStillReads() throws Exception {
+        // Harm: a move's answer waits for a whole read of a large tracked project, minutes, so
+        // the card stays "Saving..." though the tracker took the move at once.
+        final java.util.concurrent.CountDownLatch reading =
+                new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        final FakeStore slow =
+                new FakeStore() {
+                    @Override
+                    public Board poll() {
+                        reading.countDown();
+                        try {
+                            release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return board();
+                    }
+                };
+        final Changes held = new Changes(slow, idle::incrementAndGet);
+        final Changes.Subscription one = held.subscribe();
+        final Thread fetch = Thread.ofVirtual().start(held::pollOnSchedule);
+        try {
+            assertThat(reading.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the fetch reading")
+                    .isTrue();
+            slow.board = boardAt("r2");
+            final Thread save = Thread.ofVirtual().start(held::saved);
+
+            assertThat(save.join(Duration.ofSeconds(2)))
+                    .as("the save told while the fetch reads")
+                    .isTrue();
+            assertThat(revision(one.next(NOW))).as("the save's board").isEqualTo("r2");
+        } finally {
+            release.countDown();
+            fetch.join();
+        }
     }
 
     @Test

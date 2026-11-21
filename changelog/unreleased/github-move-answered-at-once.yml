@@ -1,0 +1,2 @@
+title: A move on a GitHub-tracked board is answered as soon as GitHub accepts it, and only the issues it touched are read again, never the whole board.
+type: changed

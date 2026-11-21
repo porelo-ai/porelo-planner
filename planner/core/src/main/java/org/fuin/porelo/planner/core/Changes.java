@@ -110,20 +110,29 @@ public final class Changes {
     }
 
     private Board fetched(final java.util.function.Supplier<Board> read) {
-        // One fetch at a time, so a slow one never tells an older board after a newer one.
+        // One fetch at a time.
         synchronized (fetching) {
             final Board board = read.get();
-            tell(frame());
+            tellCurrent();
             return board;
         }
     }
 
     /**
      * Tells the store's board after the planner's own save to every subscription; read from the
-     * store, never handed in, so a save told late never tells a board a poll has replaced.
+     * store, never handed in, so a save told late never tells a board a poll has replaced. It never
+     * waits for a fetch under way, which on a large tracked project reads for minutes.
      */
     public void saved() {
-        synchronized (fetching) {
+        tellCurrent();
+    }
+
+    /**
+     * Tells the board the store holds now; read and told under one lock, so the tell made last
+     * always carries the newest board, whichever of a save and a fetch ends first.
+     */
+    private void tellCurrent() {
+        synchronized (this) {
             tell(frame());
         }
     }

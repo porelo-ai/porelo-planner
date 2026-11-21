@@ -586,6 +586,8 @@ class _BoardViewState extends State<_BoardView> {
                           padding: const EdgeInsets.symmetric(vertical: Space.small),
                           child: _problem(problem, theme),
                         ),
+                      if (board.readProblem case final problem?)
+                        _failure(problem, theme, key: const Key('planning-read-error')),
                       if (board.snapshot != null && !board.snapshot!.complete)
                         const Text('The planner did not report the complete planning workflow and story list.'),
                       if (board.moveProblem case final problem?)
@@ -595,20 +597,29 @@ class _BoardViewState extends State<_BoardView> {
                       if (board.snapshot != null || board.problem != null)
                         TextButton.icon(
                           key: const Key('planning-reload'),
-                          onPressed: board.saving ? null : () => unawaited(board.reloadPlanning()),
+                          onPressed: board.saving || board.fetching || board.loading != null
+                              ? null
+                              : () => unawaited(board.reloadPlanning()),
                           icon: const Icon(Icons.refresh),
                           label: const Text('Reload planning'),
                         ),
+                      // A Reload's read of the whole board, over the board already shown, which stays open to changes.
+                      if ((board.snapshot != null || board.problem != null) &&
+                          (board.fetching || board.loading != null))
+                        _loadProgress(board.loading),
                       PlanningMoveWarningPanel(key: _panel, board: board, buttons: false),
                       if (board.snapshot == null && board.problem == null)
-                        const Row(
-                          spacing: Space.small,
-                          children: [
-                            // A still mark: an endless animation would keep a waiting page from ever settling.
-                            Icon(Icons.hourglass_empty, key: Key('planning-loading'), size: PlanningStyle.mark),
-                            Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
-                          ],
-                        ),
+                        switch (board.loading) {
+                          final load? => _loadProgress(load),
+                          null => const Row(
+                            spacing: Space.small,
+                            children: [
+                              // A still mark: an endless animation would keep a waiting page from ever settling.
+                              Icon(Icons.hourglass_empty, key: Key('planning-loading'), size: PlanningStyle.mark),
+                              Flexible(child: Text('Waiting for the planner’s answer.', key: Key('planning-waiting'))),
+                            ],
+                          ),
+                        },
                     ],
                   ),
                 ),
@@ -654,6 +665,17 @@ class _BoardViewState extends State<_BoardView> {
   );
 
   /// A failure above the board reads as one, in the theme's error colour behind an error icon.
+  /// The planner's read of the board: a bar with the share done, moving without one until it knows how many entries
+  /// there are, and one sentence how far it is.
+  Widget _loadProgress(PlanningLoad? load) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: Space.small,
+    children: [
+      LinearProgressIndicator(key: const Key('planning-load-bar'), value: load?.done),
+      Text(load?.words ?? 'Loading the planning…', key: const Key('planning-waiting')),
+    ],
+  );
+
   Widget _failure(String words, ThemeData theme, {Key? key}) {
     final colour = theme.colorScheme.error;
     return Row(
@@ -771,8 +793,8 @@ class _BoardViewState extends State<_BoardView> {
   final _hovered = ValueNotifier<String?>(null);
 
   bool _accepts(PlanState state, _CardDrag drag) =>
-      !board.saving &&
-      board.pending.isEmpty &&
+      !board.holdsMoves &&
+      !board.waitsOnItsSave(drag.story) &&
       {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
       board.live &&
       board.stories.any((story) => story.id == drag.story && board.displayedState(story) != state.name);
@@ -949,7 +971,7 @@ class _BoardViewState extends State<_BoardView> {
     data: (story: story.id, revision: board.snapshot?.revision ?? ''),
     // A card under the pointer may leave the view while it is dragged, and its target then says nothing.
     onDragEnd: (_) => _hovered.value = null,
-    maxSimultaneousDrags: board.saving || board.pending.isNotEmpty || !board.live ? 0 : 1,
+    maxSimultaneousDrags: board.holdsMoves || board.waitsOnItsSave(story.id) || !board.live ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
       child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
@@ -1185,7 +1207,7 @@ class _BoardViewState extends State<_BoardView> {
       _work(story),
       _needsYou(story),
       board.pending[story.id],
-      board.pending.isNotEmpty,
+      board.holdsMoves,
       board.snapshot?.revision,
       board.pendingPriorities[story.id],
       board.priorityUnavailable(story.id),
@@ -1507,7 +1529,9 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           if (widget.board.problem != null || !widget.board.live)
             TextButton.icon(
               key: const Key('planning-reload'),
-              onPressed: widget.board.saving ? null : () => unawaited(widget.board.reloadPlanning()),
+              onPressed: widget.board.saving || widget.board.fetching || widget.board.loading != null
+                  ? null
+                  : () => unawaited(widget.board.reloadPlanning()),
               icon: const Icon(Icons.refresh),
               label: const Text('Reload planning'),
             ),

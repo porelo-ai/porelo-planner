@@ -159,6 +159,34 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Whether the watch is recovering, until its next board is accepted.
   bool catchingUp = false;
+
+  /// How far the planner's read of the board is while it reads, as its watch tells it; null otherwise.
+  PlanningLoad? loading;
+
+  /// Why the planner's last read of the whole board failed, in words, while the board it had stands; null once a
+  /// board came.
+  String? readProblem;
+
+  /// Whether a Reload's read of the whole board runs at the planner; a change made meanwhile is saved at once.
+  bool fetching = false;
+
+  /// How long a Reload's bar stands after the planner answered, until its watch tells the read behind the answer.
+  @visibleForTesting
+  static Duration fetchTold = const Duration(seconds: 10);
+  Timer? _fetchWait;
+
+  /// Whether the watch tells a Reload's read, which then runs behind the refresh's answer.
+  bool _tellsReads = false;
+
+  /// Ends a Reload's own bar: the watch told the read, or a board, or it told nothing in time.
+  void _endFetch() {
+    _fetchWait?.cancel();
+    _fetchWait = null;
+    if (!fetching) return;
+    fetching = false;
+    if (!_disposed) notifyListeners();
+  }
+
   VoidCallback? _unfollowReconnect;
   final Map<String, PendingPlanningMove> _pending = {};
 
@@ -321,12 +349,40 @@ class PlanningBoard extends ChangeNotifier {
         notifyListeners();
       }
 
-      if (follows != null) {
-        follows.addListener(changed);
-        _unfollowReconnect = () => follows.removeListener(changed);
+      // The planner's read of the board, said while it reads, so a long first read shows how far it is.
+      final progress = watch is PlanningWatch ? watch.loading : null;
+      _tellsReads = watch is PlanningWatch && watch.tellsReads;
+      void read() {
+        if (!current() || loading == progress?.value) return;
+        loading = progress?.value;
+        // The read behind a Reload is told now: its bar is the watch's from here.
+        _endFetch();
+        notifyListeners();
       }
+
+      // A read that failed after the first board: said over the board, which stands, until the next one.
+      final failed = watch is PlanningWatch ? watch.readFailed : null;
+      void readFailed() {
+        if (!current()) return;
+        final refusal = failed?.value;
+        readProblem = refusal == null
+            ? null
+            : planningShown('The planner could not read the board again: ${planningFailureWords(refusal)}');
+        if (refusal != null) _endFetch();
+        notifyListeners();
+      }
+
+      progress?.addListener(read);
+      failed?.addListener(readFailed);
+      if (follows != null) follows.addListener(changed);
+      _unfollowReconnect = () {
+        progress?.removeListener(read);
+        failed?.removeListener(readFailed);
+        follows?.removeListener(changed);
+      };
       _watching = watch.listen(
         (reply) async {
+          _endFetch();
           final receivedVersion = reconnectVersion;
           final recovering = reconnecting();
           final order = ++_replyOrder;
@@ -989,7 +1045,7 @@ class PlanningBoard extends ChangeNotifier {
   /// Brings the board to what the repositories hold now, whatever its state: the planner fetches them, and a stream
   /// that is down or a board with a problem has its watch re-opened, whose first answer is the board read anew.
   Future<void> reloadPlanning() async {
-    if (_disposed || saving) return;
+    if (_disposed || saving || fetching) return;
     if (live && problem == null) return reload(fetch: true);
     // Held like a save, so no second press and no move runs on the board the new watch replaces.
     saving = true;
@@ -998,12 +1054,16 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
     String? refused;
     Object? refusedError;
+    fetching = true;
+    _changed();
     try {
       await source.refreshProject(name);
     } catch (error) {
       // The watch is opened anew all the same; a fetch the planner refused is said, not taken for a fresh board.
       refused = planningFailureWords(error);
       refusedError = error;
+    } finally {
+      fetching = false;
     }
     if (_disposed) return;
     // A project chosen meanwhile is opened by the save's end instead, which runs the queued change.
@@ -1125,10 +1185,25 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Refuses a move while another is previewed, asked about, saved or unanswered; nothing is queued.
   bool _oneAtATime(String id) {
-    if (!saving && _pending.isEmpty) return false;
+    if (_pending[id]?.unanswered == true || _pending['issue $id']?.unanswered == true) {
+      refuseMove(
+        id,
+        'Saving… its save may still land; move it again once the board shows it, or it is told as not saved.',
+      );
+      return true;
+    }
+    if (!holdsMoves) return false;
     refuseMove(id, 'Saving… another move is still being saved; move it again once it is saved.');
     return true;
   }
+
+  /// Whether a save runs and holds every move until its answer. A move whose answer came too late holds only its own
+  /// card: every save is bound to the revision it was previewed against, so another move made meanwhile is refused
+  /// as stale and asked about anew where that save lands first, never written over it.
+  bool get holdsMoves => saving || _pending.values.any((move) => !move.unanswered);
+
+  /// Whether [id]'s card waits for its own save, a late one included, and cannot be moved now.
+  bool waitsOnItsSave(String id) => _pending.containsKey(id);
 
   String? _reportedState(PlanningSnapshot reply, String key, PendingPlanningMove move) => move.isIssue
       ? reply.stories.expand((story) => story.issues).where((issue) => 'issue ${issue.id}' == key).firstOrNull?.state
@@ -1357,12 +1432,38 @@ class PlanningBoard extends ChangeNotifier {
   /// Reloads and reconciles pending destinations while retaining their individual refusals; with [fetch], the
   /// provider first fetches the repositories, so the board read is what they hold now, not what it last polled.
   Future<void> reload({bool fetch = false}) async {
-    if (_disposed || saving) return;
-    saving = true;
+    if (_disposed || saving || fetching) return;
     final generation = _generation;
+    if (fetch) {
+      // The planner's read of the whole board holds nothing: a change made meanwhile is saved at once, and the watch
+      // brings the board the read ends with.
+      fetching = true;
+      _changed();
+      try {
+        await backend.refreshProject(project);
+      } catch (error) {
+        if (!_disposed && generation == _generation) {
+          _keepRefusal(error);
+          moveProblem = planningFailureWords(error);
+        }
+        _endFetch();
+        return;
+      }
+      if (_disposed) return;
+      if (_tellsReads) {
+        // The planner answers at once and reads behind its answer: the bar stands until the watch tells that read.
+        _fetchWait?.cancel();
+        _fetchWait = Timer(fetchTold, _endFetch);
+      } else {
+        // A provider that tells no read on its watch has read the board when it answers.
+        _endFetch();
+      }
+      // A change saved meanwhile reads the board at its own end.
+      if (_disposed || generation != _generation || saving) return;
+    }
+    saving = true;
     _changed();
     try {
-      if (fetch) await backend.refreshProject(project);
       if (_disposed || generation != _generation) return;
       final reply = await _read();
       if (_disposed || generation != _generation) return;
@@ -1708,6 +1809,7 @@ class PlanningBoard extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _unansweredDeadline?.cancel();
+    _fetchWait?.cancel();
     live = false;
     catchingUp = false;
     _stopFollowingReconnect();

@@ -245,10 +245,25 @@ public final class WorkRequests {
             @Nullable String size,
             @Nullable String worker,
             @Nullable String revision,
-            @Nullable String task) {}
+            @Nullable String task,
+            @Nullable String priority,
+            @Nullable String story,
+            @Nullable String state,
+            boolean confirm) {}
 
     private static final Set<String> ISSUE_MEMBERS =
-            Set.of("repository", "title", "mustBeTrue", "size", "worker", "revision", "task");
+            Set.of(
+                    "repository",
+                    "title",
+                    "mustBeTrue",
+                    "size",
+                    "worker",
+                    "revision",
+                    "task",
+                    "priority",
+                    "story",
+                    "state",
+                    "confirm");
 
     /**
      * The idea a discussion wrote, as the window hands it in.
@@ -558,7 +573,13 @@ public final class WorkRequests {
                 member(body, "size"),
                 member(body, "worker"),
                 member(body, "revision"),
-                member(body, "task"));
+                member(body, "task"),
+                member(body, "priority"),
+                member(body, "story"),
+                member(body, "state"),
+                body.has("confirm")
+                        && body.get("confirm").isBoolean()
+                        && body.get("confirm").asBoolean());
     }
 
     /**

@@ -207,6 +207,8 @@ class _Planner {
 
 Future<(_Planner, HttpPlanningSource)> _started({
   Duration timeout = const Duration(seconds: 30),
+  Duration? writeTimeout,
+  Duration loadStale = const Duration(seconds: 20),
   int? maxBody,
   PlannerProjects? projects,
   Duration silence = const Duration(seconds: 45),
@@ -221,6 +223,8 @@ Future<(_Planner, HttpPlanningSource)> _started({
     _token,
     projects ?? (project) => PlannerProject('https://example.org/$project.git', 'main'),
     timeout: timeout,
+    writeTimeout: writeTimeout ?? timeout,
+    loadStale: loadStale,
     maxBody: maxBody ?? 16 * 1024 * 1024,
     silence: silence,
     backoff: backoff,
@@ -237,6 +241,9 @@ List<int> _event(String revision, {Object? repositories = const ['porelo-project
 );
 
 /// The planner's event streams, one per connection the source opened, each fed by the test.
+/// One `load` event as the planner sends it while it reads a board.
+List<int> _load(Map<String, Object?> data) => utf8.encode('event: load\ndata: ${jsonEncode(data)}\n\n');
+
 class _Streams {
   _Streams(this.planner, {this.first = true}) {
     planner.routes['GET /projects/demo/events'] = () {
@@ -859,6 +866,40 @@ void main() {
     }
   });
 
+  // Harm: a save that takes the planner longer than a read may is given up on, so the planner's own answer, a partly
+  // saved move among them, never reaches the card, which then waits on the board for a save that will not show.
+  test('a save is waited for past the wait of a read, and the planner\'s refusal reaches the screen', () async {
+    final (planner, source) = await _started(
+      timeout: const Duration(milliseconds: 200),
+      writeTimeout: const Duration(seconds: 5),
+    );
+    planner.routes['POST /projects/demo/moves'] = () async {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      return _Reply.problem('PartlySaved', {'pushed': 'repo', 'failed': 'other'}, 'Part of the save was written.', 502);
+    };
+
+    final refusal = await _refusal(
+      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest),
+    );
+
+    expect(refusal.name, 'PartlySaved', reason: 'the planner\'s answer, not a wait that ran out');
+  });
+
+  // Harm: a read that ended without a word holds its bar, and Reload planning stays off until the window restarts.
+  test('a read the planner tells no more ends after a while', () async {
+    final (planner, source) = await _started(backoff: Duration.zero, loadStale: const Duration(milliseconds: 300));
+    final streams = _Streams(planner);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    final revisions = <String>[];
+    final watching = watch.listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
+    await _until(() => revisions.isNotEmpty, 'the first board');
+
+    streams.opened.last.add(_load({'state': 'reading', 'since': '2026-11-21T15:00:00Z', 'read': 100, 'total': 1384}));
+    await _until(() => watch.loading.value != null, 'the read told');
+    await _until(() => watch.loading.value == null, 'the untold read ended');
+  });
+
   // Harm: an incomplete or disguised refusal is accepted as a successful save.
   test('a move save refuses every malformed success envelope', () async {
     final (planner, source) = await _started();
@@ -1261,6 +1302,146 @@ void main() {
     addTearDown(trickle.cancel);
 
     await _until(() => streams.opened.length == 2, 'a second connection');
+  });
+
+  // Harm: a first read of a large board takes longer than a call may, and the window says the planner did not answer
+  // while it reads, with nothing to tell how far it is.
+  test('a planner that tells its read is waited for past the wait for a first board, and says how far it is', () async {
+    final (planner, source) = await _started(
+      timeout: const Duration(milliseconds: 200),
+      silence: const Duration(seconds: 2),
+      backoff: Duration.zero,
+    );
+    final streams = _Streams(planner, first: false);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    final revisions = <String>[];
+    final errors = <Object>[];
+    final watching = watch.listen((reply) => revisions.add(reply.revision), onError: errors.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    for (var page = 1; page <= 6; page++) {
+      streams.opened.last.add(
+        _load({
+          'state': 'reading',
+          'since': '2026-11-21T15:00:00Z',
+          'read': page * 100,
+          'total': 1384,
+          'from': 'GitHub',
+          'lastRead': 'porelo-project#200',
+        }),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    final told = watch.loading.value;
+    streams.send('r1');
+    await _until(() => revisions.isNotEmpty, 'the board after the read');
+
+    expect(errors, isEmpty, reason: 'a planner telling its read is not one that did not answer');
+    expect(told?.read, 600);
+    expect(told?.total, 1384);
+    expect(told?.words, 'Loading the planning from GitHub: 600 of 1,384 entries');
+    expect(told?.done, closeTo(600 / 1384, 1e-9));
+    expect(watch.loading.value, isNull, reason: 'the board ends the read');
+  });
+
+  // Harm: a background read that changed nothing leaves its bar running, since no board ends it.
+  test('a read the planner says is done ends its progress without a board', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    final revisions = <String>[];
+    final watching = watch.listen((reply) => revisions.add(reply.revision));
+    addTearDown(watching.cancel);
+    await _until(() => revisions.isNotEmpty, 'the first board');
+
+    streams.opened.last.add(_load({'state': 'reading', 'since': '2026-11-21T15:00:00Z', 'read': 100, 'total': 1384}));
+    await _until(() => watch.loading.value != null, 'the read told');
+    streams.opened.last.add(_load({'state': 'done'}));
+    await _until(() => watch.loading.value == null, 'the read ended');
+
+    expect(revisions, hasLength(1), reason: 'no board came with it');
+  });
+
+  // Harm: a background read that failed drops the live board and ends the watch, or is not said at all.
+  test('a read that failed after the first board is said, and the watch and its board stay', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    final revisions = <String>[];
+    final errors = <Object>[];
+    var done = false;
+    final watching = watch.listen(
+      (reply) => revisions.add(reply.revision),
+      onError: errors.add,
+      onDone: () => done = true,
+    );
+    addTearDown(watching.cancel);
+    await _until(() => revisions.isNotEmpty, 'the first board');
+
+    streams.opened.last.add(
+      _load({
+        'state': 'failed',
+        'problem': 'Unreachable',
+        'failure': 'Repository porelo-frontend could not be reached: GitHub answered 502.',
+        'parameters': {'repository': 'porelo-frontend'},
+      }),
+    );
+    await _until(() => watch.readFailed.value != null, 'the failed read told');
+
+    expect(watch.readFailed.value!.name, 'Unreachable');
+    expect(watch.readFailed.value!.parameters['repository'], 'porelo-frontend');
+    expect(errors, isEmpty, reason: 'the watch is not ended');
+    expect(done, isFalse);
+    streams.send('r2');
+    await _until(() => revisions.length == 2, 'the next board');
+    expect(watch.readFailed.value, isNull, reason: 'the next board ends it');
+  });
+
+  // Harm: a read that failed at the forge leaves the window waiting, or says only that the planner did not answer.
+  test('a read the planner says failed ends the watch with its words', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner, first: false);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    streams.opened.last.add(_load({'state': 'failed', 'failure': 'GitHub refused the token'}));
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    final refusal = errors.single as PlanningRefusal;
+    expect(refusal.name, 'LoadFailed');
+    expect(refusal.description, contains('GitHub refused the token'));
+  });
+
+  // Harm: a missing token found during a long first read is said only in words, and the board offers no token.
+  test('a failed read the planner names is the refusal of that name, with its parameters', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner, first: false);
+    final errors = <Object>[];
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: errors.add, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+
+    streams.opened.last.add(
+      _load({
+        'state': 'failed',
+        'problem': 'NoForgeAccess',
+        'parameters': {'address': 'https://github.com', 'right': 'read', 'nested': <String, Object>{}},
+        'failure': 'no token for github.com',
+      }),
+    );
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    final refusal = errors.single as PlanningRefusal;
+    expect(refusal.name, 'NoForgeAccess');
+    expect(refusal.parameters, {
+      'address': 'https://github.com',
+      'right': 'read',
+      'failure': 'no token for github.com',
+    });
+    expect(ForgeAccessOffer.addressOf(refusal), 'https://github.com', reason: 'the board offers the token as before');
   });
 
   // Harm: a planner that answers the stream and ends it at once is called again for ever, the board looking live.

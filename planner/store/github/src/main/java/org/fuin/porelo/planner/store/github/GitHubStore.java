@@ -6,7 +6,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -25,12 +29,16 @@ import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A project's planning store in GitHub Issues: one lock, the snapshot every answer comes from, and
  * its parts, each behind its own interface, so they are built and tested apart.
  */
 public final class GitHubStore implements PlanningStore {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GitHubStore.class);
 
     /**
      * The parts the store is made of; each one left out does nothing or refuses.
@@ -118,11 +126,24 @@ public final class GitHubStore implements PlanningStore {
 
     private final ReentrantLock lock = new ReentrantLock();
 
+    private final Touched touched;
+
+    private final Executor looks;
+
     private volatile ProjectConfig config;
 
     private volatile @Nullable Snapshot snapshot;
 
     private volatile boolean retired;
+
+    /** Guards the whole read under way and what saves touched while it ran. */
+    private final Object fold = new Object();
+
+    /** The whole read under way outside the save lock; null while none runs. */
+    private @Nullable CompletableFuture<Snapshot> inFlight;
+
+    /** What the saves since the whole read under way began touched, read again on its result. */
+    private final List<Touched.Ids> pending = new ArrayList<>();
 
     /**
      * Makes the store; nothing is read until the board is asked for.
@@ -140,11 +161,56 @@ public final class GitHubStore implements PlanningStore {
             final Parts parts,
             final TokenSource tokens,
             final Duration lockWait) {
+        this(config, again, parts, tokens, lockWait, new Touched());
+    }
+
+    /**
+     * Makes the store, told what its writer's calls touch, so a save reads again only that.
+     *
+     * @param config what the project is read with, as its files named it at opening
+     * @param again gives what the project is read with as its files name it now
+     * @param parts its parts
+     * @param tokens the person's token, asked for only to scrub it from a refusal's words
+     * @param lockWait how long a call waits for another save or read before it is refused as busy
+     * @param touched what the writer's calls record they touched
+     */
+    public GitHubStore(
+            final ProjectConfig config,
+            final Supplier<ProjectConfig> again,
+            final Parts parts,
+            final TokenSource tokens,
+            final Duration lockWait,
+            final Touched touched) {
+        this(config, again, parts, tokens, lockWait, touched, Runnable::run);
+    }
+
+    /**
+     * Makes the store, told what its writer's calls touch and where the change probe's look after a
+     * read or save runs.
+     *
+     * @param config what the project is read with, as its files named it at opening
+     * @param again gives what the project is read with as its files name it now
+     * @param parts its parts
+     * @param tokens the person's token, asked for only to scrub it from a refusal's words
+     * @param lockWait how long a call waits for another save or read before it is refused as busy
+     * @param touched what the writer's calls record they touched
+     * @param looks runs the change probe's look right after a read or save
+     */
+    public GitHubStore(
+            final ProjectConfig config,
+            final Supplier<ProjectConfig> again,
+            final Parts parts,
+            final TokenSource tokens,
+            final Duration lockWait,
+            final Touched touched,
+            final Executor looks) {
+        this.looks = looks;
         this.config = config;
         this.again = again;
         this.parts = parts;
         this.tokens = tokens;
         this.lockWait = lockWait;
+        this.touched = touched;
     }
 
     @Override
@@ -160,7 +226,14 @@ public final class GitHubStore implements PlanningStore {
      */
     @Override
     public Board refresh() {
-        return served(locked(() -> readWhole(configNow())).board());
+        refuseRetired();
+        final ProjectConfig now;
+        try {
+            now = configNow();
+        } catch (final RuntimeException e) {
+            throw refused(e);
+        }
+        return served(wholeBesideSaves(now, true).board());
     }
 
     /**
@@ -173,7 +246,7 @@ public final class GitHubStore implements PlanningStore {
         final Pace pace = parts.probe().pace();
         if (pace.hold() == null) {
             try {
-                return served(locked(this::read).board());
+                return served(pollBesideSaves().board());
             } catch (final StoreException.Unreachable e) {
                 // A rate limit this poll found spent serves the board kept, as the polls after it.
                 if (pace.hold() == null) {
@@ -190,6 +263,12 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /** Asks GitHub as often as a project whose changes are probed, as its pace allows. */
+    /** A whole read of a large board takes minutes, longer than the window waits for a reload. */
+    @Override
+    public boolean reloadsAlone() {
+        return true;
+    }
+
     @Override
     public Duration pollDelay(final Duration fetched, final Duration probed) {
         return parts.probe().pace().delay(probed);
@@ -287,10 +366,9 @@ public final class GitHubStore implements PlanningStore {
         return served(
                 writing(
                                 () -> {
-                                    // A stage runs for minutes, so it is saved on the project as it
-                                    // stands
-                                    // now.
-                                    final Snapshot now = parts.reader().read(configNow());
+                                    // A stage runs for minutes, so its issues are read as they
+                                    // stand now before the result is written into them.
+                                    final Snapshot now = withResultsIssues(result);
                                     for (final StageResult.ForIssue issue : result.issues()) {
                                         now.board()
                                                 .issue(issue.id())
@@ -328,6 +406,135 @@ public final class GitHubStore implements PlanningStore {
         retired = true;
     }
 
+    @Override
+    public java.util.Optional<org.fuin.porelo.planner.store.ReadProgress> reading() {
+        return parts.reader().progress();
+    }
+
+    /**
+     * A poll: asks whether the project changed and reads it whole only when it did, beside the
+     * saves, never holding them for the whole read.
+     */
+    private Snapshot pollBesideSaves() {
+        refuseRetired();
+        final ProjectConfig now;
+        final Snapshot current = snapshot;
+        final boolean same;
+        try {
+            now = configNow();
+            if (current == null || !current.config().commit().equals(now.commit())) {
+                return wholeBesideSaves(now, true);
+            }
+            same = parts.probe().unchanged(current);
+        } catch (final RuntimeException e) {
+            throw refused(e);
+        }
+        // The probe saw the change and keeps its tags for the board this read gives.
+        return same ? current : wholeBesideSaves(now, false);
+    }
+
+    /**
+     * Reads the whole project outside the save lock, so a save goes to GitHub at once against the
+     * board held; what the saves meanwhile touched is read again on top of the result before it
+     * becomes the board. A second whole read asked for meanwhile waits for this one.
+     *
+     * @param now what the project is read with
+     * @param whole whether the probe forgets what it learned and takes this read's board after it,
+     *     as a whole read outside the probe does
+     */
+    private Snapshot wholeBesideSaves(final ProjectConfig now, final boolean whole) {
+        final CompletableFuture<Snapshot> mine;
+        final boolean began;
+        synchronized (fold) {
+            final CompletableFuture<Snapshot> running = inFlight;
+            began = running == null;
+            if (running != null) {
+                mine = running;
+            } else {
+                mine = new CompletableFuture<>();
+                inFlight = mine;
+                pending.clear();
+            }
+        }
+        if (!began) {
+            return awaitRead(mine);
+        }
+        try {
+            if (whole) {
+                parts.probe().forget();
+            }
+            final Snapshot read = parts.reader().read(now);
+            final Snapshot fresh =
+                    locked(
+                            () -> {
+                                final List<Touched.Ids> saved;
+                                synchronized (fold) {
+                                    saved = List.copyOf(pending);
+                                    pending.clear();
+                                }
+                                Snapshot result = read;
+                                if (!saved.isEmpty()) {
+                                    result =
+                                            parts.reader().reread(configNow(), read, merged(saved));
+                                    LOG.info(
+                                            "Took {} saves made during the whole read into its"
+                                                    + " board",
+                                            saved.size());
+                                }
+                                snapshot = result;
+                                synchronized (fold) {
+                                    inFlight = null;
+                                }
+                                if (whole) {
+                                    settle(result, false);
+                                }
+                                return result;
+                            });
+            mine.complete(fresh);
+            return fresh;
+        } catch (final RuntimeException e) {
+            synchronized (fold) {
+                if (inFlight == mine) {
+                    inFlight = null;
+                }
+            }
+            final RuntimeException refusal = refused(e);
+            mine.completeExceptionally(refusal);
+            throw refusal;
+        }
+    }
+
+    /** Waits for the whole read under way, as long as a save waits for the lock. */
+    private Snapshot awaitRead(final CompletableFuture<Snapshot> read) {
+        try {
+            return read.get(lockWait.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (final TimeoutException e) {
+            throw new StoreException.Busy(config.own());
+        } catch (final ExecutionException e) {
+            if (e.getCause() instanceof RuntimeException refused) {
+                throw refused;
+            }
+            throw new IllegalStateException(e.getCause());
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new StoreException.Busy(config.own());
+        }
+    }
+
+    private static Touched.Ids merged(final List<Touched.Ids> all) {
+        final Set<String> issues = new LinkedHashSet<>();
+        final Set<String> items = new LinkedHashSet<>();
+        final Set<String> numbered = new LinkedHashSet<>();
+        final Set<Long> databaseIds = new LinkedHashSet<>();
+        for (final Touched.Ids one : all) {
+            issues.addAll(one.issues());
+            items.addAll(one.items());
+            numbered.addAll(one.numbered());
+            databaseIds.addAll(one.databaseIds());
+        }
+        return new Touched.Ids(issues, items, numbered, databaseIds);
+    }
+
     private Snapshot read() {
         final ProjectConfig now = configNow();
         final Snapshot current = snapshot;
@@ -351,7 +558,43 @@ public final class GitHubStore implements PlanningStore {
         parts.probe().forget();
         final Snapshot fresh = parts.reader().read(now);
         snapshot = fresh;
+        settle(fresh, false);
         return fresh;
+    }
+
+    /**
+     * Has the change probe look at once and take what it sees as the board just read or saved: the
+     * probe holds no tags after a whole read, and a save's own change is in the board already, so
+     * its next look would otherwise read the whole project for them. Taken at once, a change
+     * another makes after it is seen at the next look.
+     */
+    private void settle(final Snapshot fresh, final boolean saved) {
+        if (saved) {
+            parts.probe().adoptSave();
+        } else {
+            parts.probe().adoptNext();
+        }
+        if (parts.probe().pace().hold() != null) {
+            // GitHub asked to wait; the look waits too, and the next poll's look takes this board.
+            return;
+        }
+        try {
+            looks.execute(
+                    () -> {
+                        try {
+                            parts.probe().unchanged(fresh);
+                        } catch (final RuntimeException e) {
+                            // The next look then sees the change and reads whole, as before.
+                            LOG.info(
+                                    "The change check after a read failed: {}",
+                                    e.getClass().getSimpleName());
+                        }
+                    });
+        } catch (final RuntimeException e) {
+            LOG.info(
+                    "The change check after a read was not started: {}",
+                    e.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -377,13 +620,49 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
+     * Reads again the issues a stage result names onto the board held, so the result is written
+     * into each as it stands now; a store that holds no board, or one without such an issue, reads
+     * the board whole.
+     */
+    private Snapshot withResultsIssues(final StageResult result) {
+        final Snapshot held = snapshot;
+        if (held == null) {
+            return readWhole(configNow());
+        }
+        final Set<String> issues = new LinkedHashSet<>();
+        for (final StageResult.ForIssue issue : result.issues()) {
+            final ItemView item = held.items().get(issue.id());
+            if (item == null) {
+                // An issue the board held does not know may be new on GitHub: read it all.
+                return readWhole(configNow());
+            }
+            issues.add(item.issueId());
+        }
+        final Snapshot fresh =
+                parts.reader()
+                        .reread(
+                                configNow(),
+                                held,
+                                new Touched.Ids(issues, Set.of(), Set.of(), Set.of()));
+        snapshot = fresh;
+        return fresh;
+    }
+
+    /**
      * Reads the whole board after a write that completed, never asking whether it changed: a change
      * check may not see a field value written. A failure here says a part was written, so the
      * window is never told nothing was and a stage result is never handed in and saved twice.
      */
     private Snapshot readAfterWriting() {
         try {
-            return readWhole(configNow());
+            final Snapshot held = snapshot;
+            if (held == null) {
+                return readWhole(configNow());
+            }
+            final Snapshot fresh = parts.reader().reread(configNow(), held, touched.ids());
+            snapshot = fresh;
+            settle(fresh, true);
+            return fresh;
         } catch (final RuntimeException e) {
             throw new BoardWriter.AfterWriting(e);
         }
@@ -420,8 +699,17 @@ public final class GitHubStore implements PlanningStore {
      * Runs a write under the lock; any failure forgets the board kept, as a part may be written.
      */
     private Snapshot writing(final Supplier<Snapshot> work) {
+        final CompletableFuture<Snapshot> running;
+        synchronized (fold) {
+            running = inFlight;
+        }
+        if (snapshot == null && running != null) {
+            // No board to save against yet: the whole read under way gives it, not a second one.
+            awaitRead(running);
+        }
         return locked(
                 () -> {
+                    touched.clear();
                     try {
                         return work.get();
                     } catch (final StoreException.StaleRevision e) {
@@ -431,6 +719,12 @@ public final class GitHubStore implements PlanningStore {
                         // The next board is read from GitHub, never the one from before the save.
                         snapshot = null;
                         throw e;
+                    } finally {
+                        synchronized (fold) {
+                            if (inFlight != null) {
+                                pending.add(touched.ids());
+                            }
+                        }
                     }
                 });
     }
@@ -480,22 +774,28 @@ public final class GitHubStore implements PlanningStore {
         try {
             refuseRetired();
             return work.get();
-        } catch (final UnsupportedOperationException | TextEdit.Refused e) {
-            // Refused before any call, in fixed words: the caller's to correct, not GitHub's.
-            throw e;
         } catch (final RuntimeException e) {
-            final StoreException refusal =
-                    e instanceof StoreException known
-                            ? known
-                            : parts.refusals().refusal(config.own(), e, tokenToScrub());
-            if (refusal instanceof StoreException.NoForgeAccess) {
-                // Read again next time, so the window is told the refusal, not the board kept.
-                snapshot = null;
-            }
-            throw refusal;
+            throw refused(e);
         } finally {
             lock.unlock();
         }
+    }
+
+    /** A failure as the store refuses it, GitHub's words scrubbed of the token. */
+    private RuntimeException refused(final RuntimeException e) {
+        if (e instanceof UnsupportedOperationException || e instanceof TextEdit.Refused) {
+            // Refused before any call, in fixed words: the caller's to correct, not GitHub's.
+            return e;
+        }
+        final StoreException refusal =
+                e instanceof StoreException known
+                        ? known
+                        : parts.refusals().refusal(config.own(), e, tokenToScrub());
+        if (refusal instanceof StoreException.NoForgeAccess) {
+            // Read again next time, so the window is told the refusal, not the board kept.
+            snapshot = null;
+        }
+        return refusal;
     }
 
     private String tokenToScrub() {

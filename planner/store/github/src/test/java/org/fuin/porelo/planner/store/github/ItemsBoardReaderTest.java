@@ -104,7 +104,7 @@ class ItemsBoardReaderTest {
         }
 
         private GitHub itemsPage(final @Nullable String next, final ProjectItem... page) {
-            items.add(() -> new ProjectItems(List.of(page), info(next), COST));
+            items.add(() -> new ProjectItems(List.of(page), info(next), COST, 1));
             return this;
         }
 
@@ -153,6 +153,13 @@ class ItemsBoardReaderTest {
                             (proxy, method, args) -> {
                                 if (method.getName().equals("issueBoard")) {
                                     calls.add("issueBoard of " + args[1] + " in " + args[2]);
+                                } else if (args.length > 4) {
+                                    calls.add(
+                                            method.getName()
+                                                    + " after "
+                                                    + args[3]
+                                                    + " of "
+                                                    + args[4]);
                                 } else {
                                     calls.add(method.getName() + " after " + args[3]);
                                 }
@@ -884,6 +891,9 @@ class ItemsBoardReaderTest {
                 new GitHub()
                         .fieldsPage(FIELDS, null)
                         .itemsFailure(
+                                GitHubExceptions.refused(502, "Bad gateway for Bearer " + TOKEN))
+                        // A failure of the gateway is asked once more.
+                        .itemsFailure(
                                 GitHubExceptions.refused(502, "Bad gateway for Bearer " + TOKEN));
 
         assertThatThrownBy(github::read)
@@ -922,12 +932,58 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void aPageGitHubFindsTooCostlyIsAskedAgainHalvedFromTheSameCursor() {
+        // Harm: a board whose items cost GitHub too much to answer in pages of 100 is never read
+        // again, and the window shows only GitHub's refusal.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                new IllegalStateException(
+                                        "Resource limits for this query exceeded."))
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
+
+        final Snapshot read = github.read();
+
+        assertThat(read.items()).as("the items read at the smaller page").hasSize(2);
+        assertThat(github.calls)
+                .as("the same cursor asked again for half the page")
+                .containsSubsequence("projectItems after null", "projectItems after null of 50");
+    }
+
+    @Test
+    void aPageStillTooCostlyAtTheSmallestSizeFailsTheRead() {
+        // Harm: a read that halves without end, or one that quietly answers a part of the board.
+        final RuntimeException tooCostly =
+                new IllegalStateException("Resource limits for this query exceeded.");
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(tooCostly)
+                        .itemsFailure(tooCostly)
+                        .itemsFailure(tooCostly)
+                        .itemsFailure(tooCostly);
+
+        assertThatThrownBy(github::read)
+                .as("the read refused at 12 items a page")
+                .isInstanceOf(StoreException.class);
+        assertThat(github.calls)
+                .as("the page sizes asked")
+                .containsSubsequence(
+                        "projectItems after null",
+                        "projectItems after null of 50",
+                        "projectItems after null of 25",
+                        "projectItems after null of 12");
+    }
+
+    @Test
     void aBoardReadSendsNoMutation() {
         // Harm: reading the board changes the person's project, its fields, options or sums.
         final List<String> reads =
                 Arrays.stream(ProjectQueries.class.getMethods())
                         .filter(method -> !Modifier.isStatic(method.getModifiers()))
                         .map(Method::getName)
+                        .distinct()
                         .sorted()
                         .toList();
         assertThat(reads)

@@ -381,8 +381,25 @@ class ProjectFileTest {
                 .containsExactly("Idea", "Finished");
         assertThat(again.current()).as("kept while the head stays").isSameAs(moved);
 
+        // Harm: a tracked project's own repository that dropped its stories/ stops every read and
+        // every save of a board whose stories and issues live in the tracker.
         remote.commit = "c3";
         remote.files.put("porelo-project@c3:project.yml", TRACKED);
+        assertThat(again.current().workflow().states())
+                .as("the workflow the planner carries, at a head without stories/workflow.yml")
+                .startsWith("Idea", "Accepted")
+                .endsWith("Finished", "Rejected")
+                .hasSize(14);
+        assertThat(again.current().work().faults())
+                .as("the work rules the planner carries, at a head without stories/work.yml")
+                .isEmpty();
+        assertThat(again.current().work().rules())
+                .as("the working states the carried rules start")
+                .containsKeys(
+                        "In analysis", "Under estimation", "Implementing", "Reading", "Reworking");
+
+        remote.commit = "c4";
+        remote.files.put("porelo-project@c4:project.yml", "project: [");
         assertThatThrownBy(again::current)
                 .as("files that cannot be read at the moved head")
                 .isInstanceOf(StoreException.class);

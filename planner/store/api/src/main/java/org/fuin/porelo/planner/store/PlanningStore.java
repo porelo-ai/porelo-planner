@@ -63,6 +63,17 @@ public interface PlanningStore {
     }
 
     /**
+     * Whether a person's reload is answered at once with the board held, while the whole read goes
+     * on alone and its board reaches the project's streams when it ends: a store whose whole read
+     * may outlast the window's wait for an answer.
+     *
+     * @return true for such a store; a store that fetches its source answers after the fetch
+     */
+    default boolean reloadsAlone() {
+        return false;
+    }
+
+    /**
      * Answers how long to wait before the next scheduled poll.
      *
      * @param fetched the interval of a store that fetches its whole source
@@ -255,4 +266,13 @@ public interface PlanningStore {
      * that waited for it is refused.
      */
     default void retire() {}
+
+    /**
+     * Answers how far a whole read of the board under way has come, at once and without a lock.
+     *
+     * @return the read's progress, or empty while none runs or the store tells none
+     */
+    default java.util.Optional<ReadProgress> reading() {
+        return java.util.Optional.empty();
+    }
 }

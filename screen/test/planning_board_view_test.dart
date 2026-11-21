@@ -289,6 +289,36 @@ void main() {
     );
   });
 
+  // Harm: one card's save that went unanswered keeps every column from taking another card, so the board is stuck.
+  testWidgets('while one card\'s save is unanswered, another card dropped on a column is moved', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['stories'] = [
+      for (final id in ['StoryOne', 'StoryTwo'])
+        {'id': id, 'title': 'A story', 'state': 'Building', 'issues': <Map<String, dynamic>>[]},
+    ];
+    backend.push('checkout', data);
+    tester.view.physicalSize = const Size(1280, 2400);
+    await settle(tester);
+    backend.moveFailure = const PlanningRefusal('TimedOut', {}, 'the planner did not answer within 120 s');
+    await _drop(tester, 'StoryOne', 'Ready');
+    expect(boards.selected!.waitsOnItsSave('StoryOne'), isTrue, reason: 'its save went unanswered');
+    backend.moveFailure = null;
+
+    await _drop(tester, 'StoryTwo', 'Ready');
+
+    expect(backend.moveCalls.map((call) => (call['moves'] as List<dynamic>).single['story']), [
+      'StoryOne',
+      'StoryTwo',
+    ], reason: 'the column took the second card');
+    await tester.pump(const Duration(minutes: 5));
+    expect(
+      boards.selected!.waitsOnItsSave('StoryOne'),
+      isFalse,
+      reason: 'the unanswered save is given up after its wait',
+    );
+  });
+
   // Harm: a confirmed move is saved twice, or under another preview than the one the person confirmed.
   testWidgets('a drop confirmed over its warning is saved once with the digest of what was shown', (tester) async {
     final (backend, boards) = await _showBoard(tester);

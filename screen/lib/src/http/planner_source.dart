@@ -451,6 +451,8 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     this.projects, {
     this.label = 'planner',
     this.timeout = const Duration(seconds: 30),
+    this.writeTimeout = const Duration(minutes: 2),
+    this.loadStale = const Duration(seconds: 20),
     this.maxBody = 16 * 1024 * 1024,
     this.silence = const Duration(seconds: 45),
     this.backoff = const Duration(seconds: 1),
@@ -513,6 +515,14 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   /// several requests, such as a snapshot or a retry after `NoSuchProject`, may take several times as long.
   final Duration timeout;
 
+  /// How long a write may take in place of [timeout]: a move of a story with many issues writes each of them at the
+  /// forge, and a planner's own answer, its refusal included, must reach the card rather than a wait that ran out.
+  final Duration writeTimeout;
+
+  /// How long a read the planner told may go untold before it counts as ended: it tells one every few seconds, and a
+  /// read that ended without a word must not hold its bar.
+  final Duration loadStale;
+
   /// The most bytes one answer may have, and one event of the stream.
   final int maxBody;
 
@@ -567,7 +577,13 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   @override
   Stream<PlanningSnapshot> watchStories(String project) {
     final watch = _Watch(this, project);
-    return PlanningWatch(watch.replies.stream, watch.reconnecting);
+    return PlanningWatch(
+      watch.replies.stream,
+      watch.reconnecting,
+      loading: watch.loading,
+      tellsReads: true,
+      readFailed: watch.readFailed,
+    );
   }
 
   @override
@@ -1041,14 +1057,14 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     final uri = _uri(project, path);
     final Map<String, dynamic> answer;
     try {
-      answer = await _call(method, uri, body, revision: revision, most: most, answers: true);
+      answer = await _call(method, uri, body, revision: revision, most: most, answers: true, wait: writeTimeout);
     } on PlanningRefusal catch (refusal) {
       // Only this explicit refusal proves the planner did not execute the write.
       if (refusal.name != 'NoSuchProject') rethrow;
       await _stillBound(project, given);
       await _retell(project, given);
       await _stillBound(project, given);
-      final retried = await _call(method, uri, body, revision: revision, most: most, answers: true);
+      final retried = await _call(method, uri, body, revision: revision, most: most, answers: true, wait: writeTimeout);
       await _stillBound(project, given);
       return retried;
     }
@@ -1103,7 +1119,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     bool revision = true,
     int? most,
     bool answers = false,
+    Duration? wait,
   }) async {
+    final waited = wait ?? timeout;
     final bytes = body == null ? null : utf8.encode(jsonEncode(body));
     for (var sent = 0; ; sent++) {
       final proven = await _link.proven();
@@ -1120,7 +1138,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
           );
           final response = await signed!.request.close();
           return (response, await _bytes(response, most: most));
-        }().timeout(timeout);
+        }().timeout(waited);
         if (response.statusCode == HttpStatus.unauthorized) {
           // Refused before anything ran, so it is sent again once to a planner that started anew.
           if (sent == 0 && await _link.refused(proven)) continue;
@@ -1136,11 +1154,11 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
           throw PlanningRefusal(
             'PlannerUnreachable',
             const {},
-            'the planner cannot be reached: no connection within ${timeout.inSeconds} s',
+            'the planner cannot be reached: no connection within ${waited.inSeconds} s',
           );
         }
         opened.request.abort();
-        throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${timeout.inSeconds} s');
+        throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${waited.inSeconds} s');
       } on SocketException catch (error) {
         _link.forget(proven);
         throw PlanningRefusal(
@@ -1284,6 +1302,9 @@ class _Watch {
   // A revision travels back in the Last-Event-ID header, so it must be a short header value.
   static final _revision = RegExp(r'^[\x21-\x7e]{1,200}$');
   static const _idMost = 200;
+
+  // A problem's name as the planner names a refusal: a plain name, never words.
+  static final _problemName = RegExp(r'^[A-Z][A-Za-z0-9]{0,63}$');
   static const _newline = 10;
   static const _cancelled = PlanningRefusal('Cancelled', {}, 'the watch was cancelled');
 
@@ -1293,6 +1314,21 @@ class _Watch {
   final ValueNotifier<bool> reconnecting = ValueNotifier(false);
 
   bool get _reconnecting => reconnecting.value;
+
+  /// How far the planner's read of the board is, as its last `load` event told; null once a board came.
+  final ValueNotifier<PlanningLoad?> loading = ValueNotifier(null);
+
+  /// Why the planner's last read after the first board failed, until the next board; the board shown stands.
+  final ValueNotifier<PlanningRefusal?> readFailed = ValueNotifier(null);
+  Timer? _loadEnds;
+
+  /// Tells the read as the planner last told it; one not told again within the source's `loadStale` counts as ended,
+  /// so a read that ended without a word holds no bar.
+  void _setLoad(PlanningLoad? load) {
+    _loadEnds?.cancel();
+    _loadEnds = load == null ? null : Timer(source.loadStale, () => loading.value = null);
+    loading.value = load;
+  }
 
   void _reconnect(bool value) {
     reconnecting.value = value;
@@ -1314,6 +1350,7 @@ class _Watch {
   void _cancel() {
     _ended = true;
     _reconnect(false);
+    _setLoad(null);
     _request?.abort();
     unawaited(_reading?.cancel());
     _stop?.call();
@@ -1357,6 +1394,7 @@ class _Watch {
     if (_ended) return;
     _ended = true;
     _reconnect(false);
+    _setLoad(null);
     replies.addError(failure, stack);
     unawaited(replies.close());
   }
@@ -1561,6 +1599,48 @@ class _Watch {
       );
     }
 
+    // The planner's word on its read of the board. While it reads, the wait for the first board is no longer counted:
+    // the stream's silence alone ends a planner that stopped telling. A read that failed ends the watch with its words.
+    void told(String text) {
+      final Object? json;
+      try {
+        json = jsonDecode(text);
+      } on FormatException {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner told its read in a load event that is not JSON');
+      }
+      if (json is Map<String, dynamic> && json['state'] == 'failed') {
+        final failure = json['failure'] is String ? (json['failure'] as String).trim() : '';
+        // Named as the planner names it where that is a plain name, so a refusal the board answers, such as
+        // NoForgeAccess with its forge's address, is answered there as when it came before the stream began.
+        final problem = json['problem'];
+        final named = problem is String && _problemName.hasMatch(problem) ? problem : 'LoadFailed';
+        final given = json['parameters'];
+        final refusal = PlanningRefusal(named, {
+          if (given is Map<String, dynamic>)
+            for (final entry in given.entries.take(16))
+              if (entry.key.length <= 64 && (entry.value is String || entry.value is num || entry.value is bool))
+                entry.key: entry.value,
+          'failure': failure,
+        }, failure.isEmpty ? 'the planner could not read the board' : 'the planner could not read the board: $failure');
+        // A read after the first board that failed leaves the board it had, and the watch on: the next board ends it.
+        if (boards > 0) {
+          _setLoad(null);
+          readFailed.value = refusal;
+          return;
+        }
+        throw refusal;
+      }
+      // A read that changed nothing ends without a board.
+      if (json is Map<String, dynamic> && json['state'] == 'done') {
+        _setLoad(null);
+        return;
+      }
+      final load = PlanningLoad.from(json);
+      if (load == null) return;
+      first?.cancel();
+      _setLoad(load);
+    }
+
     void dispatch() {
       eventBytes = 0;
       final kind = event ?? 'message';
@@ -1568,6 +1648,7 @@ class _Watch {
       if (data.isEmpty) return;
       final text = data.join('\n');
       data.clear();
+      if (kind == 'load') return told(text);
       if (kind != 'board') return;
       final Object? json;
       try {
@@ -1594,6 +1675,8 @@ class _Watch {
       }
       boards++;
       first?.cancel();
+      _setLoad(null);
+      readFailed.value = null;
       final revision = json['revision'] as String;
       final boardText = jsonEncode(json);
       final restored = _reconnecting;

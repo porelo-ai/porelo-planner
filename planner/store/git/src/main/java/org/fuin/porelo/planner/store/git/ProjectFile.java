@@ -176,8 +176,8 @@ public final class ProjectFile {
             workflow =
                     org.fuin.porelo.planner.store.git.stories.Workflow.read(
                             remote.read(name, commit, "stories/workflow.yml")
-                                    .orElseThrow(() -> new StoreException.WorkflowMissing(name)));
-            work = remote.read(name, commit, WorkReader.FILE).orElse(null);
+                                    .orElse(TRACKED_WORKFLOW));
+            work = remote.read(name, commit, WorkReader.FILE).orElse(TRACKED_WORK);
         } catch (final GitFailure | IllegalArgumentException e) {
             throw GitStore.refusal(name, e);
         }
@@ -197,6 +197,96 @@ public final class ProjectFile {
                 commit,
                 issueStates -> workflow.storyState(null, issueStates));
     }
+
+    /**
+     * The workflow of a tracked project whose own repository keeps no {@code stories/workflow.yml}:
+     * its stories and issues live in the tracker, and the tracker's Status options are checked
+     * against these states at every read, so a state the tracker lacks is named as a fault.
+     */
+    static final String TRACKED_WORKFLOW =
+            """
+            states:
+              - {name: Idea, closed: false}
+              - {name: Accepted, closed: false}
+              - {name: In analysis, closed: false}
+              - {name: Analyzed, closed: false}
+              - {name: Under estimation, closed: false}
+              - {name: Estimated, closed: false}
+              - {name: Backlog, closed: false}
+              - {name: Implementing, closed: false, measured: true}
+              - {name: Reading, closed: false, measured: true}
+              - {name: Reworking, closed: false, measured: true}
+              - {name: Review, closed: false, measured: true}
+              - {name: Rework, closed: false}
+              - {name: Finished, closed: true, measured: true}
+              - {name: Rejected, closed: true}
+            phases:
+              - {name: Ideas, states: [Idea, Accepted]}
+              - {name: Analysis, states: [In analysis, Analyzed]}
+              - {name: Estimation, states: [Under estimation, Estimated]}
+              - {name: Backlog, states: [Backlog]}
+              - {name: Build, states: [Implementing, Reading, Reworking, Review, Rework]}
+              - {name: Done, states: [Finished, Rejected]}
+            """;
+
+    /**
+     * The work rules of a tracked project whose own repository keeps no {@code stories/work.yml}:
+     * which states work starts from, where it leads, its modes, orders and models.
+     */
+    static final String TRACKED_WORK =
+            """
+            work:
+              In analysis:
+                from: [Idea, Accepted]
+                done: Analyzed
+                per: repository
+                modes: [UNATTENDED, AGENT]
+                result: ANALYSIS
+                order: >-
+                  Analyze the issue of {story} given below: read the code it names and give its plan, its size and what only the
+                  operator can decide; then end with your outcome.
+                models: {claude: claude-opus-5-5, codex: gpt-6.1-sol}
+              Under estimation:
+                from: [Analyzed]
+                done: Estimated
+                per: repository
+                modes: [UNATTENDED, AGENT]
+                result: ESTIMATE
+                order: >-
+                  Estimate the issue of {story} given below: read its plan and the code it names, give its size (XS to XL) against
+                  the measured velocity, name what makes it uncertain; then end with your outcome.
+                models: {claude: claude-opus-5-5, codex: gpt-6.1-sol}
+              Implementing:
+                from: [Backlog, Rework]
+                done: Review
+                then: Reading
+                per: repository
+                modes: [UNATTENDED, AGENT]
+                order: >-
+                  Build {issues} of {story}, each issue in a sub-agent of its own named by its id, as the issue's plan says: each
+                  test red first, then green; review each, commit, and end with your outcome.
+                models: {codex: gpt-6.1-sol, claude: claude-opus-5-5}
+              Reading:
+                from: [Implementing, Reworking, Review]
+                done: Review
+                blocked: Reworking
+                per: repository
+                modes: [UNATTENDED]
+                order: >-
+                  Read the changes {tasks} made for {issues} of {story}, change nothing, and end with one Findings: block, one
+                  finding a line: <n>. <blocking|note> | <file or -> | <line or -> | <text>.
+                models: {agy: gemini-4-argon-high}
+              Reworking:
+                from: [Reading]
+                done: Review
+                then: Reading
+                per: repository
+                modes: [UNATTENDED, AGENT]
+                order: >-
+                  Fix the blocking findings the reading of {issues} of {story} gave, each issue's in a sub-agent of its own named by
+                  its id, each with a test seen to fail first; commit, and end with your outcome.
+                models: {codex: gpt-6.1-sol, claude: claude-opus-5-5}
+            """;
 
     /**
      * The ssh form {@code <user>@<host>:<owner>/<repository>}, whose host is asked over https like

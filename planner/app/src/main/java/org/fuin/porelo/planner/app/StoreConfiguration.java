@@ -139,7 +139,8 @@ public class StoreConfiguration {
                 ConditionalReads.over(rest),
                 task -> Thread.ofVirtual().name("github-probe").start(task),
                 Clock.systemUTC(),
-                Duration.ofSeconds(30));
+                // A save waits for a whole read under way rather than being refused as busy.
+                Duration.ofMinutes(2));
     }
 
     /**

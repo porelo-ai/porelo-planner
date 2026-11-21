@@ -129,11 +129,93 @@ abstract interface class PlanningReconnect implements Listenable {
 /// [PlanningSource.watchStories] may answer one; a board follows [reconnecting] rather than
 /// [PlanningReconnect.isReconnecting], which is true while any watch of the project reconnects.
 class PlanningWatch extends StreamView<PlanningSnapshot> {
-  /// Takes the watch's boards and whether this watch is recovering from a lost connection.
-  PlanningWatch(super.stream, this.reconnecting);
+  /// Takes the watch's boards, whether this watch is recovering from a lost connection, and how far the planner's
+  /// read of the board is where it tells it.
+  PlanningWatch(
+    super.stream,
+    this.reconnecting, {
+    ValueListenable<PlanningLoad?>? loading,
+    this.tellsReads = false,
+    ValueListenable<PlanningRefusal?>? readFailed,
+  }) : loading = loading ?? ValueNotifier<PlanningLoad?>(null),
+       readFailed = readFailed ?? ValueNotifier<PlanningRefusal?>(null);
+
+  /// Why the provider's last read after the first board failed, while the board shown stands; null once a board came.
+  final ValueListenable<PlanningRefusal?> readFailed;
+
+  /// Whether the provider tells every whole read of the board on this watch, to its end, a Reload's included: its
+  /// refresh then answers before the read, and the read's progress and end come only here.
+  final bool tellsReads;
 
   /// Whether this watch is recovering from a lost connection and has not yet received its next board.
   final ValueListenable<bool> reconnecting;
+
+  /// How far the planner's read of the board is while it reads, as it last told it; null once a board came, or where
+  /// the planner tells nothing of its read.
+  final ValueListenable<PlanningLoad?> loading;
+}
+
+/// How far the planner's read of a board is, as its stream tells it while it reads.
+class PlanningLoad {
+  /// Takes what the planner told; [since] and [readAt] are instants, [read] and [total] counts of items.
+  const PlanningLoad({required this.since, this.lastRead = '', this.read, this.total, this.readAt, this.place});
+
+  /// Reads one `load` event's data; null where it is not a read under way.
+  static PlanningLoad? from(Object? json) {
+    if (json is! Map<String, dynamic> || json['state'] != 'reading') return null;
+    final since = json['since'] is String ? DateTime.tryParse(json['since'] as String) : null;
+    if (since == null) return null;
+    int? count(Object? value) => value is int && value >= 0 ? value : null;
+    final lastRead = json['lastRead'] is String ? (json['lastRead'] as String).trim() : '';
+    return PlanningLoad(
+      since: since,
+      lastRead: lastRead.length > 200 ? '${lastRead.substring(0, 200)}…' : lastRead,
+      read: count(json['read']),
+      total: count(json['total']),
+      readAt: json['readAt'] is String ? DateTime.tryParse(json['readAt'] as String) : null,
+      place: switch (json['from']) {
+        final String from when _placeName.hasMatch(from) => from,
+        _ => null,
+      },
+    );
+  }
+
+  /// A place's name as the planner gives it: a word or a few, never a path or an address.
+  static final _placeName = RegExp(r'^[A-Za-z][A-Za-z0-9 .-]{0,39}$');
+
+  /// When the read began.
+  final DateTime since;
+
+  /// What the planner read last, in its words; empty where it named nothing.
+  final String lastRead;
+
+  /// How many items it read so far, and how many it expects, where it said so.
+  final int? read;
+  final int? total;
+
+  /// When it read the last item, where it said so.
+  final DateTime? readAt;
+
+  /// Where the planner reads from, in its words ("GitHub"), where it said so.
+  final String? place;
+
+  /// The share of the read done, from 0 to 1, where the planner told how many items it expects; null where not yet.
+  double? get done => switch ((read, total)) {
+    (final read?, final total?) when total > 0 => (read / total).clamp(0, 1).toDouble(),
+    _ => null,
+  };
+
+  /// The read in one sentence for a person: how many entries of how many, once the planner told the total.
+  String get words {
+    final head = place == null ? 'Loading the planning' : 'Loading the planning from $place';
+    return switch ((read, total)) {
+      (final read?, final total?) when total > 0 => '$head: ${_grouped(read)} of ${_grouped(total)} entries',
+      _ => '$head…',
+    };
+  }
+
+  /// [value] with a comma between each three digits, as "1,384".
+  static String _grouped(int value) => value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
 }
 
 /// One provider's planning calls, each answering with the provider's own records.

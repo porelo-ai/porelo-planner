@@ -12,13 +12,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.fuin.porelo.forge.github.GitHubRefusals;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.StageEntry;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -131,6 +135,109 @@ class GitHubStoreTest {
                 .as("a refresh after the store was retired")
                 .isInstanceOf(StoreException.Unreadable.class);
         assertThat(reads.get()).as("GitHub reads after the retirement").isZero();
+    }
+
+    @Test
+    void aStageResultReadsOnlyItsIssuesAgainNotTheWholeBoard() {
+        // Harm: every stage result a task hands in reads the whole board, minutes on a large
+        // project, while the person's moves wait behind it.
+        final AtomicInteger wholeReads = new AtomicInteger();
+        final List<Touched.Ids> rereads = new java.util.ArrayList<>();
+        final Snapshot board = withIssue("PL1", "I_one");
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        new BoardReader() {
+                                            @Override
+                                            public Snapshot read(final ProjectConfig config) {
+                                                wholeReads.incrementAndGet();
+                                                return board;
+                                            }
+
+                                            @Override
+                                            public Snapshot reread(
+                                                    final ProjectConfig config,
+                                                    final Snapshot held,
+                                                    final Touched.Ids touched) {
+                                                rereads.add(touched);
+                                                return held;
+                                            }
+                                        },
+                                        states -> null)
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public void saveResult(
+                                                    final Snapshot current,
+                                                    final StageResult result,
+                                                    final @org.jspecify.annotations.Nullable
+                                                            StageEntry stage) {
+                                                // Written; what GitHub holds is read after it.
+                                            }
+                                        }));
+        store.refresh();
+
+        store.saveResult(
+                new StageResult(
+                        WorkRule.Result.ANALYSIS,
+                        List.of(
+                                new StageResult.ForIssue(
+                                        "PL1",
+                                        "Analysis",
+                                        "Backlog",
+                                        "- a step",
+                                        "S",
+                                        "small",
+                                        null,
+                                        List.of(),
+                                        List.of()))));
+
+        assertThat(wholeReads.get()).as("whole reads after the board was read").isEqualTo(1);
+        assertThat(rereads)
+                .as("the issues read again before the result is written")
+                .first()
+                .satisfies(ids -> assertThat(ids.issues()).containsExactly("I_one"));
+    }
+
+    private static Snapshot withIssue(final String id, final String node) {
+        final Board board =
+                new Board(
+                        new Revision("one"),
+                        WORKFLOW,
+                        List.of(),
+                        List.of(
+                                new Issue(
+                                        id,
+                                        "example-project",
+                                        "One",
+                                        "Idea",
+                                        "S",
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "# One")),
+                        new Work(Map.of(), List.of()),
+                        List.of("example-project"));
+        final ItemView item =
+                new ItemView(
+                        "PVTI_one",
+                        node,
+                        "example-org/example-project",
+                        1,
+                        "One",
+                        "# One",
+                        true,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of(),
+                        null,
+                        URI.create("https://github.com/example-org/example-project/issues/1"),
+                        java.time.Instant.EPOCH,
+                        false);
+        return new Snapshot(board, Map.of(id, item), CONFIG);
     }
 
     @Test

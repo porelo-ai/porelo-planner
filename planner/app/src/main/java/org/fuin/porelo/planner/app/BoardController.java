@@ -227,11 +227,25 @@ public class BoardController {
         if (revision == null) {
             throw notAllowed("", "", "The body names no revision.");
         }
-        final String digest = body.digest();
-        if (digest == null || !DIGEST.matcher(digest).matches()) {
-            throw notAllowed("", "", "The body names no preview's digest.");
-        }
         final Projects.Given given = projects.given(name);
+        final String named = body.digest();
+        final String digest;
+        if (named == null && Boolean.TRUE.equals(body.confirm())) {
+            // A caller that confirms every warning needs no preview of its own; the planner's
+            // preview of the same moves stands for it.
+            try {
+                digest =
+                        given.work()
+                                .preview(moves, revision)
+                                .digest(given.repository(), given.branch());
+            } catch (final UnsupportedOperationException e) {
+                throw movesNotOffered(name);
+            }
+        } else if (named == null || !DIGEST.matcher(named).matches()) {
+            throw notAllowed("", "", "The body names no preview's digest.");
+        } else {
+            digest = named;
+        }
         try {
             final WorkRun.MoveSaved<Moved> saved =
                     given.work()
@@ -378,13 +392,70 @@ public class BoardController {
                         body.size(),
                         body.worker(),
                         body.task());
-        final NewIssue.Added added = store.createIssue(board.revision(), issue);
+        final String priority = body.priority();
+        if (priority != null && !Story.PRIORITIES.contains(priority)) {
+            throw NewIssues.refused("priority", "The priority must be Highest to Lowest.");
+        }
+        final String story = body.story();
+        if (story != null && board.story(story).isEmpty()) {
+            throw NewIssues.refused("story", "The story is no story of the project.");
+        }
+        final NewIssue.Added added =
+                store.createIssue(
+                        board.revision(),
+                        new NewIssue(
+                                issue.repository(),
+                                issue.title(),
+                                issue.mustBeTrue(),
+                                issue.size(),
+                                issue.worker(),
+                                issue.task(),
+                                priority,
+                                story));
         LOG.info(
                 "Added issue {} to project {} as revision {}",
                 LogText.of(added.id()),
                 LogText.of(name),
                 LogText.of(added.board().revision().value()));
-        return added;
+        final String state = body.state();
+        final Board made = added.board();
+        if (state == null
+                || made.issue(added.id()).map(Issue::state).filter(state::equals).isPresent()) {
+            return added;
+        }
+        // A new issue has no task at work, so its move is saved as the window's move without
+        // a preview.
+        final Board moved;
+        try {
+            final Moves.Planned planned =
+                    Moves.check(
+                            made,
+                            List.of(new Moves.Move(false, added.id(), state, false)),
+                            body.confirm(),
+                            store::storyState);
+            moved =
+                    store.save(
+                            made.revision(),
+                            new Writes(planned.issues(), planned.stories(), planned.unstated()));
+        } catch (final RuntimeException e) {
+            throw new StoreException.PartlySaved(
+                    issue.repository(),
+                    List.of(issue.repository()),
+                    added.id()
+                            + " was added in state "
+                            + made.issue(added.id()).map(Issue::state).orElse("")
+                            + "; its move to "
+                            + state
+                            + " was not saved: "
+                            + e.getMessage());
+        }
+        LOG.info(
+                "Moved new issue {} of project {} to {} as revision {}",
+                LogText.of(added.id()),
+                LogText.of(name),
+                LogText.of(state),
+                LogText.of(moved.revision().value()));
+        return new NewIssue.Added(added.id(), moved);
     }
 
     /**

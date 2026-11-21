@@ -14,6 +14,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.planner.store.StoreException;
@@ -76,6 +77,22 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
 
     private volatile @Nullable String failed;
 
+    /** The monotonic clock the time a save's change is taken as its own is measured on. */
+    private final LongSupplier nanos;
+
+    /**
+     * Until when, on the probe's monotonic clock, a change a look sees is the store's own save:
+     * GitHub's lists show a save a moment after it, so a look right after it may not see it yet and
+     * the next one would.
+     */
+    private long adoptUntil;
+
+    /** Whether the next look takes a change it sees as the store's own whole read. */
+    private boolean adopt;
+
+    /** How long after the store's own save a change seen is taken as its own. */
+    static final Duration ADOPT_FOR = Duration.ofSeconds(20);
+
     /**
      * Makes the probe of one project.
      *
@@ -99,17 +116,31 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             final GitHubPace pace,
             final Executor executor,
             final Duration deadline) {
+        this(reads, tokens, pace, executor, deadline, System::nanoTime);
+    }
+
+    /** Makes the probe with its own deadline and its own monotonic clock, in nanoseconds. */
+    ConditionalChangeProbe(
+            final ConditionalReads reads,
+            final TokenSource tokens,
+            final GitHubPace pace,
+            final Executor executor,
+            final Duration deadline,
+            final LongSupplier nanos) {
         this.reads = reads;
         this.tokens = tokens;
         this.pace = pace;
         this.executor = executor;
         this.deadline = deadline;
+        this.nanos = nanos;
+        this.adoptUntil = nanos.getAsLong();
     }
 
     @Override
     public boolean unchanged(final Snapshot current) {
         final Tags known;
         final long began;
+        final boolean adopting;
         synchronized (this) {
             final Tags waiting = pending;
             if (waiting != null && pendingFor != current) {
@@ -120,6 +151,8 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             pendingFor = null;
             known = confirmed;
             began = era;
+            adopting = adopt || nanos.getAsLong() - adoptUntil < 0;
+            adopt = false;
         }
         final ProjectConfig config = current.config();
         final String token = tokens.token(config.forge());
@@ -155,6 +188,15 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             }
             return true;
         }
+        if (adopting) {
+            // The change seen is the store's own save, already in the board it holds.
+            synchronized (this) {
+                if (era == began) {
+                    confirmed = look.tags();
+                }
+            }
+            return true;
+        }
         changedUnlessHeld(config);
         synchronized (this) {
             if (era == began) {
@@ -163,6 +205,17 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             }
         }
         return false;
+    }
+
+    @Override
+    public synchronized void adoptNext() {
+        adopt = true;
+    }
+
+    @Override
+    public synchronized void adoptSave() {
+        adopt = true;
+        adoptUntil = nanos.getAsLong() + ADOPT_FOR.toNanos();
     }
 
     @Override

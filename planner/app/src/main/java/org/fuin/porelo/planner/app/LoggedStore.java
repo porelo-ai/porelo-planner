@@ -62,6 +62,11 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public boolean reloadsAlone() {
+        return store.reloadsAlone();
+    }
+
+    @Override
     public java.time.Duration pollDelay(
             final java.time.Duration fetched, final java.time.Duration probed) {
         return store.pollDelay(fetched, probed);
@@ -127,5 +132,10 @@ final class LoggedStore implements PlanningStore {
     @Override
     public void retire() {
         store.retire();
+    }
+
+    @Override
+    public java.util.Optional<org.fuin.porelo.planner.store.ReadProgress> reading() {
+        return store.reading();
     }
 }

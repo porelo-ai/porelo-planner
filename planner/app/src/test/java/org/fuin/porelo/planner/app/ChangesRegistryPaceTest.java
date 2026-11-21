@@ -70,6 +70,66 @@ class ChangesRegistryPaceTest {
         }
     }
 
+    @Test
+    void aStoreThatReadsAloneAnswersItsBoardAtOnceAndStillReadsWhole() throws Exception {
+        // Harm: the window's reload of a large tracked project waits minutes and times out, or
+        // the reload answered at once never reads the project whole.
+        final java.util.concurrent.CountDownLatch reading =
+                new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        final PlanningStore alone =
+                new PlanningStore() {
+                    @Override
+                    public Board board() {
+                        return boardAt("kept");
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        refreshes.incrementAndGet();
+                        reading.countDown();
+                        try {
+                            release.await(5, TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return boardAt("read");
+                    }
+
+                    @Override
+                    public Board poll() {
+                        polls.incrementAndGet();
+                        return boardAt("kept");
+                    }
+
+                    @Override
+                    public boolean reloadsAlone() {
+                        return true;
+                    }
+                };
+        final Projects projects = new Projects((project, repository, branch) -> alone, 8);
+        try (ChangesRegistry registry =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor())) {
+            projects.put("alpha", "one", null);
+            final Changes.Subscription one = registry.subscribe("alpha");
+
+            final String answered = registry.refresh("alpha");
+
+            assertThat(answered)
+                    .as("the reload's answer")
+                    .isEqualTo(boardAt("kept").revision().value());
+            assertThat(reading.await(5, TimeUnit.SECONDS)).as("the whole read started").isTrue();
+            release.countDown();
+            assertThat(refreshes.get()).as("whole reads of the reload").isEqualTo(1);
+            one.close();
+        }
+    }
+
     private PlanningStore probed() {
         return new PlanningStore() {
             @Override

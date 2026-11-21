@@ -32,11 +32,18 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     private final Function<StoryStates, BoardReader> readers;
 
-    private final Supplier<BoardWriter> writers;
+    private final Function<Touched, BoardWriter> writers;
 
     private final Supplier<ChangeProbe> probes;
 
     private final Duration lockWait;
+
+    /** Runs the change probe's look right after a read or save. */
+    private final Executor looks;
+
+    /** Runs a look after a read or save on a thread of its own, so the caller does not wait. */
+    private static final Executor SETTLE_LOOKS =
+            task -> Thread.ofVirtual().name("github-settle").start(task);
 
     /**
      * Makes an opener that reads and writes each project's board over GitHub's API.
@@ -56,8 +63,12 @@ public final class GitHubStoreOpener implements TrackedStores {
                 states ->
                         new ItemsBoardReader(
                                 queries, tokens, new ForgeAccessRefusals(GITHUB), states),
-                () -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
-                lockWait);
+                touched ->
+                        new FieldsBoardWriter(
+                                touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
+                () -> ChangeProbe.ALWAYS_CHANGED,
+                lockWait,
+                SETTLE_LOOKS);
     }
 
     /**
@@ -69,7 +80,8 @@ public final class GitHubStoreOpener implements TrackedStores {
      * @param queries the GraphQL reads of a project
      * @param writes the calls a write to a project is made of
      * @param conditional the conditional reads that ask whether a project changed
-     * @param executor runs a project's conditional reads side by side
+     * @param executor runs a project's conditional reads side by side, and a look after a read or
+     *     save beside the caller
      * @param clock tells the time a wait of GitHub's ends by
      * @param lockWait how long a call waits for another on the same project
      */
@@ -100,9 +112,12 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 states),
-                () -> new FieldsBoardWriter(writes, tokens, new ForgeAccessRefusals(GITHUB)),
+                touched ->
+                        new FieldsBoardWriter(
+                                touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
                 () -> new ConditionalChangeProbe(conditional, tokens, pace, executor),
-                lockWait);
+                lockWait,
+                executor);
     }
 
     /**
@@ -136,6 +151,27 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Supplier<BoardWriter> writers,
             final Supplier<ChangeProbe> probes,
             final Duration lockWait) {
+        this(tokens, readers, touched -> writers.get(), probes, lockWait, SETTLE_LOOKS);
+    }
+
+    /**
+     * Makes an opener whose writer per project records what its calls touch.
+     *
+     * @param tokens gives the person's token for the forge
+     * @param readers makes a project's reader, given how its story states follow the workflow
+     * @param writers makes a project's writer, given what records its calls
+     * @param probes makes a project's change probe
+     * @param lockWait how long a call waits for another on the same project
+     * @param looks runs the change probe's look right after a read or save, beside the caller
+     */
+    private GitHubStoreOpener(
+            final TokenSource tokens,
+            final Function<StoryStates, BoardReader> readers,
+            final Function<Touched, BoardWriter> writers,
+            final Supplier<ChangeProbe> probes,
+            final Duration lockWait,
+            final Executor looks) {
+        this.looks = looks;
         this.tokens = tokens;
         this.readers = readers;
         this.writers = writers;
@@ -151,6 +187,7 @@ public final class GitHubStoreOpener implements TrackedStores {
         final StoryStates states =
                 issueStates ->
                         Objects.requireNonNull(latest.get()).storyStates().storyState(issueStates);
+        final Touched touched = new Touched();
         return new GitHubStore(
                 first,
                 () -> {
@@ -160,11 +197,13 @@ public final class GitHubStoreOpener implements TrackedStores {
                     return config;
                 },
                 GitHubStore.Parts.reading(readers.apply(states), states)
-                        .writer(writers.get())
+                        .writer(writers.apply(touched))
                         .refusals(new ForgeAccessRefusals(GITHUB))
                         .probe(probes.get()),
                 tokens,
-                lockWait);
+                lockWait,
+                touched,
+                looks);
     }
 
     /** Checks the tracker the project's files name, and answers what its board is read with. */

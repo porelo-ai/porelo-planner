@@ -34,4 +34,21 @@ public interface ChangeProbe {
     default void forget() {
         // A probe that keeps nothing has nothing to forget.
     }
+
+    /**
+     * Takes the next look's answers as the board's own, after the store wrote and read again only
+     * what it wrote, so its own save is never taken for another's change and the project is not
+     * read whole for it.
+     */
+    default void adoptNext() {
+        // A probe that keeps nothing has nothing to take.
+    }
+
+    /**
+     * Takes every change a look sees for a while as the store's own save, which GitHub's lists show
+     * only a moment after it was written.
+     */
+    default void adoptSave() {
+        adoptNext();
+    }
 }

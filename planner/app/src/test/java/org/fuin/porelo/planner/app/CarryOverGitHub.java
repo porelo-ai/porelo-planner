@@ -173,7 +173,7 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                                                     List.of(), new PageInfo(false, null))),
                                     List.of()));
                 });
-        return new GitHubGraphQl.ProjectItems(page, new PageInfo(false, null), COST);
+        return new GitHubGraphQl.ProjectItems(page, new PageInfo(false, null), COST, page.size());
     }
 
     @Override

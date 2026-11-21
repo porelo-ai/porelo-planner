@@ -12,6 +12,8 @@ import org.jspecify.annotations.Nullable;
  * @param size its size, or null when it is not known yet
  * @param worker who works it
  * @param task the Porelo task that proposed it, or null when none did
+ * @param priority its priority, or null for the store's own
+ * @param story the story it is hung into last, or null for none
  */
 public record NewIssue(
         String repository,
@@ -19,7 +21,9 @@ public record NewIssue(
         String mustBeTrue,
         @Nullable String size,
         Worker worker,
-        @Nullable String task) {
+        @Nullable String task,
+        @Nullable String priority,
+        @Nullable String story) {
 
     /**
      * Checks the repository's name, so no store resolves a path from an unchecked one, and the
@@ -30,6 +34,29 @@ public record NewIssue(
         if (task != null) {
             Ids.task(task);
         }
+        if (story != null) {
+            Ids.story(story);
+        }
+    }
+
+    /**
+     * A new issue without a priority or story of its own.
+     *
+     * @param repository the name of the project's repository it belongs to
+     * @param title its title, one line
+     * @param mustBeTrue what must be true
+     * @param size its size, or null when it is not known yet
+     * @param worker who works it
+     * @param task the Porelo task that proposed it, or null when none did
+     */
+    public NewIssue(
+            final String repository,
+            final String title,
+            final String mustBeTrue,
+            final @Nullable String size,
+            final Worker worker,
+            final @Nullable String task) {
+        this(repository, title, mustBeTrue, size, worker, task, null, null);
     }
 
     /**

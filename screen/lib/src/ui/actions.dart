@@ -80,7 +80,7 @@ PlanningAction _movePlanningIssueAction(PlanningBoard board, PlanIssue issue, St
       label: '${issue.id} → $to',
       unavailable: board.disposed || !board.live
           ? 'The planning board is not live.'
-          : board.saving || board.pending.isNotEmpty
+          : board.holdsMoves || board.waitsOnItsSave('issue ${issue.id}')
           ? 'Saving…'
           : null,
       // The state shown is the one the list was built with, so a move after a task moved the issue is refused.

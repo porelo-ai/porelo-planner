@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
@@ -75,8 +76,38 @@ class ConditionalChangeProbeTest {
 
     private volatile @Nullable RuntimeException readFailure;
 
+    /** The probes' monotonic clock, in nanoseconds; a test moves it on by hand. */
+    private final AtomicLong nanos = new AtomicLong();
+
     private ConditionalChangeProbe probe(final ConditionalReads reads) {
-        return new ConditionalChangeProbe(reads, origin -> TOKEN, pace, Runnable::run);
+        return new ConditionalChangeProbe(
+                reads,
+                origin -> TOKEN,
+                pace,
+                Runnable::run,
+                ConditionalChangeProbe.DEADLINE,
+                nanos::get);
+    }
+
+    private void pastTheSavesOwnWindow() {
+        nanos.addAndGet(ConditionalChangeProbe.ADOPT_FOR.toNanos() + 1);
+    }
+
+    /** A store whose save changes nothing GitHub shows until a test sets the tag after it. */
+    private GitHubStore savingStore() {
+        return store(
+                probe(github),
+                new BoardWriter() {
+                    @Override
+                    public void save(
+                            final Snapshot current, final Revision revision, final Writes writes) {
+                        // GitHub's lists show the save only a moment later.
+                    }
+                });
+    }
+
+    private void saveNothing(final GitHubStore store) {
+        store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
     }
 
     private GitHubStore store(final ChangeProbe probe) {
@@ -182,9 +213,14 @@ class ConditionalChangeProbeTest {
         final int asksBefore = github.asks.get();
 
         final Board reloaded = store.refresh();
+        final int asksOfTheReload = github.asks.get() - asksBefore;
+        store.poll();
+        final int asksOfALook = github.asks.get() - asksBefore - asksOfTheReload;
 
         assertThat(reads.get()).as("whole reads of the reload").isEqualTo(before + 1);
-        assertThat(github.asks.get()).as("conditional asks of the reload").isEqualTo(asksBefore);
+        assertThat(asksOfTheReload)
+                .as("conditional asks of the reload: only the look that takes its board")
+                .isEqualTo(asksOfALook);
         assertThat(reloaded.revision().value())
                 .as("the board of the reload")
                 .isEqualTo("read-" + (before + 1));
@@ -212,6 +248,7 @@ class ConditionalChangeProbeTest {
         github.issueTags.put("example-two", "\"two-2\"");
         store.poll();
         store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
+        pastTheSavesOwnWindow();
         // A person undoes the planner's write on GitHub.
         github.issueTags.put("example-two", "\"two-2\"");
         final int before = reads.get();
@@ -222,6 +259,50 @@ class ConditionalChangeProbeTest {
         assertThat(after.revision().value())
                 .as("the board after the undo")
                 .isEqualTo("read-" + (before + 1));
+    }
+
+    @Test
+    void aSaveThatGitHubShowsOnlyAtALaterLookStartsNoWholeRead() {
+        // Harm: GitHub's lists show the planner's own save a moment after it, so the look that
+        // first sees it reads the whole board for a change the planner made itself.
+        final GitHubStore store = savingStore();
+        store.refresh();
+        store.poll();
+        saveNothing(store);
+        final int before = reads.get();
+
+        store.poll();
+        github.issueTags.put("example-two", "\"two-2\"");
+        final Board after = store.poll();
+        store.poll();
+
+        assertThat(reads.get()).as("whole reads once GitHub shows the save").isEqualTo(before);
+        assertThat(after.revision().value())
+                .as("the board after the save shows on GitHub")
+                .isEqualTo("read-" + before);
+    }
+
+    @Test
+    void aChangeSeenWithinTheSavesOwnWindowIsTakenAsTheSave() {
+        // Harm: none to guard; this pins the price of taking a save's change as its own. A change
+        // another makes within the window shows at the next change or reload, never at once.
+        final GitHubStore store = savingStore();
+        store.refresh();
+        store.poll();
+        saveNothing(store);
+        final int before = reads.get();
+
+        github.issueTags.put("example-two", "\"two-2\"");
+        store.poll();
+        final int withinTheWindow = reads.get();
+        pastTheSavesOwnWindow();
+        github.issueTags.put("example-two", "\"two-3\"");
+        store.poll();
+
+        assertThat(withinTheWindow).as("whole reads within the window").isEqualTo(before);
+        assertThat(reads.get())
+                .as("whole reads at the next change after the window")
+                .isEqualTo(before + 1);
     }
 
     @Test
@@ -683,7 +764,7 @@ class ConditionalChangeProbeTest {
                     final @Nullable String after) {
                 graphQl.incrementAndGet();
                 return new GitHubGraphQl.ProjectItems(
-                        List.of(), new GitHubGraphQl.PageInfo(false, null), COST);
+                        List.of(), new GitHubGraphQl.PageInfo(false, null), COST, 0);
             }
 
             @Override
