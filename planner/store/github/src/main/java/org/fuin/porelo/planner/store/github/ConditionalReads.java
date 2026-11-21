@@ -4,9 +4,9 @@ import org.fuin.porelo.forge.github.Conditional;
 import org.fuin.porelo.forge.github.CursorPage;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.Page;
+import org.fuin.porelo.forge.github.ProjectItemSummary;
 import org.fuin.porelo.forge.github.RateLimit;
 import org.fuin.porelo.forge.github.model.Issue;
-import org.fuin.porelo.forge.github.model.ProjectsV2ItemWithContent;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -110,9 +110,9 @@ public interface ConditionalReads {
                     final int number,
                     final @Nullable String after,
                     final @Nullable String etag) {
-                final Conditional<CursorPage<ProjectsV2ItemWithContent>> answer =
+                final Conditional<CursorPage<ProjectItemSummary>> answer =
                         client.projectItemsIfChanged(token, owner, number, after, PAGE_SIZE, etag);
-                final CursorPage<ProjectsV2ItemWithContent> page = answer.value();
+                final CursorPage<ProjectItemSummary> page = answer.value();
                 return answer(
                         answer,
                         page == null ? null : page.after(),

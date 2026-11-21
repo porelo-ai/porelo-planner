@@ -357,7 +357,8 @@ public final class ItemsBoardReader implements BoardReader {
                 }
                 items.put(
                         itemId,
-                        new GitHubGraphQl.ProjectItem(itemId, archived, on.issue(), on.values()));
+                        new GitHubGraphQl.ProjectItem(
+                                itemId, archived, on.issue(), on.values(), on.valuesPage()));
             }
         }
         LOG.info("Read {} issues again after a save, in place of the whole project", all.size());

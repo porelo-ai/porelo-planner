@@ -271,7 +271,7 @@ class CarryOverTest {
             for (final String option : options) {
                 held.add(new FieldOption(id + "_" + option, option, "GRAY", ""));
             }
-            return new ProjectField(id, name, "SINGLE_SELECT", held);
+            return new ProjectField(id, name, "SINGLE_SELECT", held, 1L);
         }
 
         @Override
@@ -282,7 +282,8 @@ class CarryOverTest {
                 final @Nullable String after) {
             assertThat(token).as("the token").isEqualTo(TOKEN);
             final List<ProjectField> fields = new ArrayList<>();
-            fields.add(new ProjectField("F_status", FieldNames.STATUS, "SINGLE_SELECT", statuses));
+            fields.add(
+                    new ProjectField("F_status", FieldNames.STATUS, "SINGLE_SELECT", statuses, 1L));
             fields.add(
                     select(
                             "F_priority",
@@ -310,7 +311,7 @@ class CarryOverTest {
                             FieldNames.VM_MINUTES,
                             FieldNames.TOKENS,
                             FieldNames.STAGES)) {
-                fields.add(new ProjectField("F_" + name, name, "NUMBER", List.of()));
+                fields.add(new ProjectField("F_" + name, name, "NUMBER", List.of(), 1L));
             }
             return new GitHubGraphQl.ProjectFields(
                     "PVT_7", "Plan", Instant.EPOCH, fields, new PageInfo(false, null), COST);
@@ -363,9 +364,10 @@ class CarryOverTest {
                                                 issue.labels,
                                                 null,
                                                 new IssueRefs(List.of(), new PageInfo(false, null)),
-                                                new IssueRefs(
-                                                        List.of(), new PageInfo(false, null))),
-                                        held));
+                                                new IssueRefs(List.of(), new PageInfo(false, null)),
+                                                new GitHubGraphQl.PageInfo(false, null)),
+                                        held,
+                                        new GitHubGraphQl.PageInfo(false, null)));
                     });
             return new GitHubGraphQl.ProjectItems(
                     page, new PageInfo(false, null), COST, page.size());

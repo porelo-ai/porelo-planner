@@ -101,7 +101,8 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                 "SINGLE_SELECT",
                 options.stream()
                         .map(option -> new FieldOption("O_" + option, option, "GRAY", ""))
-                        .toList());
+                        .toList(),
+                1L);
     }
 
     @Override
@@ -112,7 +113,7 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
             final @Nullable String after) {
         call(token, "fields");
         final List<ProjectField> fields = new ArrayList<>();
-        fields.add(new ProjectField("F_Status", FieldNames.STATUS, "SINGLE_SELECT", statuses));
+        fields.add(new ProjectField("F_Status", FieldNames.STATUS, "SINGLE_SELECT", statuses, 1L));
         fields.add(
                 select(FieldNames.PRIORITY, List.of("Highest", "High", "Medium", "Low", "Lowest")));
         fields.add(select(FieldNames.SIZE, List.of("XS", "S", "M", "L", "XL")));
@@ -130,7 +131,7 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                         FieldNames.VM_MINUTES,
                         FieldNames.TOKENS,
                         FieldNames.STAGES)) {
-            fields.add(new ProjectField("F_" + name, name, "NUMBER", List.of()));
+            fields.add(new ProjectField("F_" + name, name, "NUMBER", List.of(), 1L));
         }
         return new GitHubGraphQl.ProjectFields(
                 "PVT_7", "Plan", Instant.EPOCH, fields, new PageInfo(false, null), COST);
@@ -170,8 +171,10 @@ class CarryOverGitHub implements ProjectQueries, ProjectWrites, CarryOverCalls {
                                             new GitHubGraphQl.IssueRefs(
                                                     List.of(), new PageInfo(false, null)),
                                             new GitHubGraphQl.IssueRefs(
-                                                    List.of(), new PageInfo(false, null))),
-                                    List.of()));
+                                                    List.of(), new PageInfo(false, null)),
+                                            new GitHubGraphQl.PageInfo(false, null)),
+                                    List.of(),
+                                    new GitHubGraphQl.PageInfo(false, null)));
                 });
         return new GitHubGraphQl.ProjectItems(page, new PageInfo(false, null), COST, page.size());
     }

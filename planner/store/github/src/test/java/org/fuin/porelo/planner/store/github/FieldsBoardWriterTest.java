@@ -201,9 +201,11 @@ class FieldsBoardWriterTest {
                         List.of(),
                         null,
                         none,
-                        none),
+                        none,
+                        new GitHubGraphQl.PageInfo(false, null)),
                 item.itemId(),
-                values);
+                values,
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     /** GitHub's side of a write: what it holds, what it answers, and every call made. */
@@ -947,7 +949,11 @@ class FieldsBoardWriterTest {
     /** The issue as GitHub holds it now, after a person changed it. */
     private static IssueOnBoard changed(final ItemView item, final UnaryOperator<BoardIssue> edit) {
         final IssueOnBoard read = onBoard(item);
-        return new IssueOnBoard(edit.apply(read.issue()), read.itemId(), read.values());
+        return new IssueOnBoard(
+                edit.apply(read.issue()),
+                read.itemId(),
+                read.values(),
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     private static BoardIssue issueWith(
@@ -970,7 +976,8 @@ class FieldsBoardWriterTest {
                 labels,
                 parent,
                 subIssues,
-                blockedBy);
+                blockedBy,
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     private static IssueRefs refs(final boolean more, final String... ids) {
@@ -1165,7 +1172,11 @@ class FieldsBoardWriterTest {
         final IssueOnBoard read = onBoard(item);
         refusedAsChanged(
                 item,
-                new IssueOnBoard(read.issue(), "PVTI_again", read.values()),
+                new IssueOnBoard(
+                        read.issue(),
+                        "PVTI_again",
+                        read.values(),
+                        new GitHubGraphQl.PageInfo(false, null)),
                 "item a person removed and added again");
     }
 

@@ -23,7 +23,6 @@ import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
 import org.fuin.porelo.forge.github.model.PrivateUser;
-import org.fuin.porelo.forge.github.model.ProjectsV2ItemWithContent;
 import org.fuin.porelo.forge.github.model.PublicUser;
 import org.fuin.porelo.forge.github.model.SimpleUser;
 import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
@@ -86,8 +85,7 @@ public class StoreConfiguration {
         SimpleUser.class,
         PrivateUser.class,
         PublicUser.class,
-        UsersGetAuthenticated200Response.class,
-        ProjectsV2ItemWithContent.class
+        UsersGetAuthenticated200Response.class
     })
     public GitProjects gitProjects() {
         return gitProjects(System.getenv());

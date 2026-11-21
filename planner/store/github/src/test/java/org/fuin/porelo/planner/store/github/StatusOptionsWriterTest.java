@@ -159,8 +159,8 @@ class StatusOptionsWriterTest {
                     Instant.EPOCH,
                     List.of(
                             new ProjectField(
-                                    "F_status", FieldNames.STATUS, "SINGLE_SELECT", options),
-                            new ProjectField("F_rank", FieldNames.RANK, "NUMBER", List.of())),
+                                    "F_status", FieldNames.STATUS, "SINGLE_SELECT", options, 1L),
+                            new ProjectField("F_rank", FieldNames.RANK, "NUMBER", List.of(), 1L)),
                     new PageInfo(false, null),
                     COST);
         }
@@ -187,7 +187,13 @@ class StatusOptionsWriterTest {
                                     .name();
                     held.add(new ItemValue("F_status", optionId, name, null, null));
                 }
-                page.add(new ProjectItem(itemId, false, items.get(itemId), held));
+                page.add(
+                        new ProjectItem(
+                                itemId,
+                                false,
+                                items.get(itemId),
+                                held,
+                                new GitHubGraphQl.PageInfo(false, null)));
             }
             final boolean more = to < ids.size();
             if (stuckCursor) {
@@ -388,7 +394,8 @@ class StatusOptionsWriterTest {
                 List.of(),
                 null,
                 none,
-                none);
+                none,
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     /** 120 items holding the old states in turn, one without a Status and one draft. */

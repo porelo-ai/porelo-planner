@@ -243,9 +243,11 @@ class FieldsBoardWriterEditsTest {
                             item.labels(),
                             item.parentIssueId(),
                             refs(item.subIssueIds()),
-                            refs(item.blockedByIds())),
+                            refs(item.blockedByIds()),
+                            new GitHubGraphQl.PageInfo(false, null)),
                     item.itemId(),
-                    values);
+                    values,
+                    new GitHubGraphQl.PageInfo(false, null));
         }
 
         private static IssueRefs refs(final List<String> nodes) {

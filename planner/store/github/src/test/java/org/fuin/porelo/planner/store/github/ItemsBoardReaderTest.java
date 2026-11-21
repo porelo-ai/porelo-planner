@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubExceptions;
+import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GitHubGraphQl.BoardIssue;
 import org.fuin.porelo.forge.github.GitHubGraphQl.FieldOption;
 import org.fuin.porelo.forge.github.GitHubGraphQl.IssueBoard;
@@ -126,7 +127,8 @@ class ItemsBoardReaderTest {
                                                     null,
                                                     refs(false)),
                                             on ? "PVTI_lib_3" : null,
-                                            List.of()));
+                                            List.of(),
+                                            new GitHubGraphQl.PageInfo(false, null)));
                         }
                         return new IssueBoard(issues, COST);
                     });
@@ -209,7 +211,7 @@ class ItemsBoardReaderTest {
     }
 
     private static ProjectField field(final String id, final String name, final String type) {
-        return new ProjectField(id, name, type, List.of());
+        return new ProjectField(id, name, type, List.of(), 1L);
     }
 
     private static ProjectField select(
@@ -220,7 +222,8 @@ class ItemsBoardReaderTest {
                 "SINGLE_SELECT",
                 Arrays.stream(options)
                         .map(option -> new FieldOption(id + "_" + option, option, "GRAY", ""))
-                        .toList());
+                        .toList(),
+                1L);
     }
 
     private static ItemValue option(final String fieldId, final String name) {
@@ -272,7 +275,8 @@ class ItemsBoardReaderTest {
                 labels,
                 parent,
                 subs,
-                blockers);
+                blockers,
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     private static String node(final String nameWithOwner, final int number) {
@@ -294,7 +298,8 @@ class ItemsBoardReaderTest {
                         List.of(IssueMapping.STORY_LABEL),
                         null,
                         refs(false, subNodes)),
-                List.of(option("F_status", "Idea"), option("F_priority", priority)));
+                List.of(option("F_status", "Idea"), option("F_priority", priority)),
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     private static ProjectItem libIssue(final int number, final IssueRefs subs) {
@@ -311,7 +316,8 @@ class ItemsBoardReaderTest {
                         option("F_status", "Backlog"),
                         option("F_size", "M"),
                         number("F_rank", 3),
-                        number("F_minutes", 12.5)));
+                        number("F_minutes", 12.5)),
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     private static final String LIB_3 = node(OWNER + "/example-lib", 3);
@@ -411,7 +417,8 @@ class ItemsBoardReaderTest {
                                         "PVTI_draft",
                                         false,
                                         null,
-                                        List.of(option("F_status", "Idea"))))
+                                        List.of(option("F_status", "Idea")),
+                                        new GitHubGraphQl.PageInfo(false, null)))
                         .read();
 
         assertThat(snapshot.board().stories())
@@ -455,7 +462,8 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false),
                                 refs(false, LIB_3)),
-                        List.of(option("F_status", "Backlog")));
+                        List.of(option("F_status", "Backlog")),
+                        new GitHubGraphQl.PageInfo(false, null));
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -483,7 +491,8 @@ class ItemsBoardReaderTest {
                         "PVTI_odd",
                         false,
                         issue(OWNER + "/_repo", 3, List.of(), null, refs(false)),
-                        List.of(option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
@@ -503,7 +512,8 @@ class ItemsBoardReaderTest {
                         "PVTI_capitals",
                         false,
                         issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
-                        List.of(option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
 
         final Snapshot snapshot =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, capitals).read();
@@ -526,7 +536,8 @@ class ItemsBoardReaderTest {
                         "PVTI_odd",
                         false,
                         issue(OWNER + "/lib\nInjected line", 3, List.of(), null, refs(false)),
-                        List.of(option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
@@ -710,7 +721,8 @@ class ItemsBoardReaderTest {
                 item.id(),
                 item.archived(),
                 change.apply(java.util.Objects.requireNonNull(item.issue())),
-                item.values());
+                item.values(),
+                item.valuesPage());
     }
 
     private static BoardIssue changed(
@@ -732,7 +744,8 @@ class ItemsBoardReaderTest {
                 labels,
                 issue.parentId(),
                 issue.subIssues(),
-                issue.blockedBy());
+                issue.blockedBy(),
+                new GitHubGraphQl.PageInfo(false, null));
     }
 
     @Test
@@ -796,7 +809,8 @@ class ItemsBoardReaderTest {
                         "PVTI_stranger",
                         false,
                         issue("other-org/example-lib", 3, List.of(), null, refs(false)),
-                        List.of(option("F_status", "Idea")));
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
 
         final Snapshot snapshot =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, stranger).read();
@@ -1150,7 +1164,8 @@ class ItemsBoardReaderTest {
                                 List.of(),
                                 node(OWNER + "/example-project", 1),
                                 refs(false)),
-                        List.of(option("F_status", "Backlog")));
+                        List.of(option("F_status", "Backlog")),
+                        new GitHubGraphQl.PageInfo(false, null));
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
