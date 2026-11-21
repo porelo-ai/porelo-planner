@@ -18,16 +18,15 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
 - **The work format has one copy, in `store/git`**: the executable's `issues` and `stories` commands call it, and give
   the build tools' lines and exit codes for as long as those still carry the commands; a test runs both on one
   fixture.
-- **Before a hand-over, this repository's issues are indexed and checked with the planner's own command**,
-  `issues index issues` and `issues check issues`, run by the native executable or by `PlannerApplication` on the
-  app's runtime classpath.
 - **The window's planning screen is a Flutter package in `screen/`**, because the window is Flutter and embeds it by a
   Git ref and the path `screen`. Maven drives Flutter there as the window's build does; the module is listed only
   under the root's profile `all`, so a Java build needs no Flutter, and the Build workflow runs it in a job of its own.
 - **A mock mode serves the window's mock board**, for the window's planning tests; it reaches no store.
 - **A changelog entry is one YAML file under `changelog/unreleased/`** with a one-sentence `title` and a `type`.
 - **The tests tagged `documents` run alone with `./mvnw -B -s settings.xml -Pdocuments test`.**
-- **Issue prefix: `PL`**, in `issues/`.
+- **Issues are in the repository's GitHub Issues**, each named by its reference there
+  (`porelo-ai/porelo-planner#<number>`); one carried over from the Markdown files keeps its old id (`PL`) as a fixed
+  alias.
 - **`tool/planner-probe.sh` is bash, not Java**: it reads a real run's effects on a VM beside the native
   executable, where there is no Java.
 - **The story tests in `tool/story-tests/` are bash, not Java**: they play a story on the test VM beside the native

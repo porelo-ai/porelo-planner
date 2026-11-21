@@ -12,4 +12,4 @@ reviewed, and what a commit carries. It is one page for every Porelo repository:
   both declare; the Build publishes them from a push to main (snapshots) or a tag `v<version>` (releases).
 - **The contract** with the window is the planner's OpenAPI description, so a change to what it answers is made
   together with the window.
-- **Requirements** are in [issues/README.md](issues/README.md).
+- **Requirements** are in the repository's [GitHub Issues](https://github.com/porelo-ai/porelo-planner/issues).
