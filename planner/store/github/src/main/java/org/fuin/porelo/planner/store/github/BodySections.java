@@ -598,7 +598,10 @@ public final class BodySections {
             }
             int from = 0;
             while (true) {
-                final java.util.regex.Matcher open = kind.opener().matcher(text);
+                // Comments and pre blocks keep backticks literal until they close.
+                final String prose =
+                        depth == 0 || kind.nests() ? outsideCodeSpans(text, from) : text;
+                final java.util.regex.Matcher open = kind.opener().matcher(prose);
                 final java.util.regex.Matcher close = kind.closer().matcher(text);
                 final boolean opens = (depth == 0 || kind.nests()) && open.find(from);
                 final boolean closes = depth > 0 && close.find(from);
@@ -621,6 +624,55 @@ public final class BodySections {
                     "the " + kind.named() + " opened in " + place(opened) + " never closes");
         }
         return Optional.empty();
+    }
+
+    /** Masks matched backtick spans so their HTML examples cannot open a block. */
+    private static String outsideCodeSpans(final String text, final int from) {
+        final StringBuilder prose = new StringBuilder(text);
+        int at = from;
+        while (at < text.length()) {
+            if (text.charAt(at) == '\\') {
+                at += 2;
+                continue;
+            }
+            if (text.charAt(at) != '`') {
+                at++;
+                continue;
+            }
+            final int end = backticksEnd(text, at);
+            final int length = end - at;
+            int close = end;
+            boolean matched = false;
+            while (close < text.length()) {
+                if (text.charAt(close) != '`') {
+                    close++;
+                    continue;
+                }
+                final int after = backticksEnd(text, close);
+                if (after - close == length) {
+                    for (int mask = at; mask < after; mask++) {
+                        prose.setCharAt(mask, ' ');
+                    }
+                    at = after;
+                    matched = true;
+                    break;
+                }
+                close = after;
+            }
+            if (!matched) {
+                at = end;
+            }
+        }
+        return prose.toString();
+    }
+
+    /** The end of one complete backtick run; only an equally long run closes a code span. */
+    private static int backticksEnd(final String text, final int start) {
+        int end = start;
+        while (end < text.length() && text.charAt(end) == '`') {
+            end++;
+        }
+        return end;
     }
 
     /**

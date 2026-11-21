@@ -1,0 +1,2 @@
+title: A tag named inside a code span in an issue's text no longer opens an HTML block.
+type: fixed

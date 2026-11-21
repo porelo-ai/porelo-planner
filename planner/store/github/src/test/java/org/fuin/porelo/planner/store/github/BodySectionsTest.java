@@ -382,6 +382,106 @@ class BodySectionsTest {
     }
 
     @Test
+    void htmlOpenersInCodeSpansLeaveSectionsClearAndResultsWritable() {
+        // Harm: code examples prevent a stage result from being saved into an otherwise clear body.
+        for (final String opener : List.of("<!--", "<details>", "<pre>")) {
+            for (final String span : List.of("`" + opener + "`", "`` ` " + opener + " ``")) {
+                final String lead = "Covers " + span + ".\n\n";
+                assertClearAndWritable(lead);
+            }
+        }
+    }
+
+    @Test
+    void htmlOpenersInFencedCodeLeaveSectionsClearAndResultsWritable() {
+        // Harm: an HTML example in either kind of fence prevents saving a stage result.
+        for (final String opener : List.of("<!--", "<details>", "<pre>")) {
+            for (final String fence : List.of("```", "~~~")) {
+                assertClearAndWritable(
+                        "Covers.\n\n" + fence + "html\n" + opener + "\n" + fence + "\n\n");
+            }
+        }
+    }
+
+    @Test
+    void aRealHtmlOpenerAfterACodeSpanStillMakesAHiddenHeadingAmbiguous() {
+        // Harm: skipping a whole line for inline code lets a save overwrite a hidden section.
+        for (final String opener : List.of("<!--", "<details>", "<pre>")) {
+            final BodySections body =
+                    BodySections.read("Covers `example`. " + opener + "\n\n## Plan\n\n- Old.\n");
+            assertThat(body.ambiguity()).as("a real opener after a span: %s", opener).isPresent();
+            assertThatThrownBy(() -> body.with(BodySections.Part.PLAN, "- New."))
+                    .as("a heading hidden by a real opener: %s", opener)
+                    .isInstanceOf(BodySections.Ambiguous.class);
+        }
+    }
+
+    @Test
+    void unmatchedOrEscapedBackticksDoNotHideRealHtmlOpeners() {
+        // Harm: punctuation mistaken for code lets a save cross a real HTML block.
+        for (final String prefix : List.of("Covers `<!--", "Covers \\`<!--\\`", "Covers ``<!--`")) {
+            assertThat(BodySections.read(prefix + "\n\n## Plan\n\n- Old.\n").ambiguity())
+                    .as("a real comment after literal backticks: %s", prefix)
+                    .isPresent();
+        }
+    }
+
+    @Test
+    void backticksInsideARealCommentCannotHideALaterRealOpener() {
+        // Harm: raw comment text mistaken for code permits a save across another hidden heading.
+        final BodySections body = BodySections.read("<!-- ` --> <!-- `\n\n## Plan\n\n- Old.\n");
+        assertThat(body.ambiguity()).as("the second real comment hides the plan").isPresent();
+        assertThatThrownBy(() -> body.with(BodySections.Part.PLAN, "- New."))
+                .as("a result cannot cross the second real comment")
+                .isInstanceOf(BodySections.Ambiguous.class);
+    }
+
+    @Test
+    void aCodeSpanInsideDetailsDoesNotOpenNestedDetails() {
+        // Harm: a tag example inside a closed details block prevents saving a stage result.
+        assertClearAndWritable(
+                "Covers.\n\n<details>\n\nAn example of `<details>`.\n\n</details>\n\n");
+    }
+
+    @Test
+    void aRealHtmlCommentStillHidesAHeadingWhenItContainsBackticks() {
+        // Harm: treating raw comment text as code allows a save across a hidden heading.
+        final BodySections body =
+                BodySections.read(
+                        "Covers.\n\n<!-- `example\n## Plan\n` -->\n\n## Acceptance\n\n- A\n");
+        assertThat(body.ambiguity()).as("a heading inside a real HTML comment").isPresent();
+        assertThatThrownBy(() -> body.withResult(WorkRule.Result.ANALYSIS, analysis(List.of())))
+                .as("a result must not overwrite a heading hidden in a real comment")
+                .isInstanceOf(BodySections.Ambiguous.class);
+    }
+
+    private static void assertClearAndWritable(final String lead) {
+        final BodySections body =
+                BodySections.read(lead + "## Plan\n\n- Old.\n\n## Acceptance\n\n- A\n");
+        assertThat(body.ambiguity()).as("sections following code: %s", lead).isEmpty();
+        assertThat(body.part(BodySections.Part.PLAN))
+                .as("the heading after code")
+                .contains("- Old.");
+        final BodySections written =
+                body.withResult(WorkRule.Result.ANALYSIS, result("- New.", List.of("Measure it.")));
+        assertThat(written.part(BodySections.Part.PLAN))
+                .as("the stage result's plan")
+                .contains("- New.");
+        assertThat(written.part(BodySections.Part.TO_BE_CHECKED))
+                .as("the stage result's checks")
+                .contains("- Measure it.");
+        assertThat(written.part(BodySections.Part.FINDINGS))
+                .as("the stage result's findings")
+                .contains("- Found one.");
+        assertThat(written.part(BodySections.Part.ACCEPTANCE))
+                .as("the acceptance preserved")
+                .contains("- A");
+        assertThat(written.without(BodySections.Part.WHY_THIS_SIZE).text())
+                .as("the code example preserved")
+                .contains(lead.strip());
+    }
+
+    @Test
     void aClosedHtmlCommentWithoutAHeadingIsWrittenAround() {
         // Harm: a body refused for a comment a template leaves, so no result is ever written.
         final String body =
