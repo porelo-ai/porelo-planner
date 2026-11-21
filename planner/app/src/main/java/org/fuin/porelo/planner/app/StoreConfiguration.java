@@ -2,8 +2,12 @@ package org.fuin.porelo.planner.app;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileAttribute;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.forge.github.GitHubClient;
@@ -31,10 +35,18 @@ import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.app.mock.MockStore;
 import org.fuin.porelo.planner.store.TrackedStores;
+import org.fuin.porelo.planner.store.cache.BoardCopies;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.CopyFiles;
+import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
+import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.fuin.porelo.planner.store.github.ConditionalReads;
+import org.fuin.porelo.planner.store.github.GitHubChanges;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
@@ -85,7 +97,18 @@ public class StoreConfiguration {
         SimpleUser.class,
         PrivateUser.class,
         PublicUser.class,
-        UsersGetAuthenticated200Response.class
+        UsersGetAuthenticated200Response.class,
+        // Apache Fory makes the board copy's records through their constructors by reflection.
+        BoardCopy.class,
+        BoardCopy.Project.class,
+        TrackerBoard.class,
+        TrackedItem.class,
+        TrackedItem.Issue.class,
+        TrackedItem.Links.class,
+        TrackedItem.Link.class,
+        TrackedItem.Value.class,
+        ChangeCursor.class,
+        ChangeCursor.Page.class
     })
     public GitProjects gitProjects() {
         return gitProjects(System.getenv());
@@ -131,14 +154,59 @@ public class StoreConfiguration {
         final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
         final GitHubClient rest = new GitHubClient(GITHUB_API, http);
         return new GitHubStoreOpener(
-                origin -> tokens.token(origin, origin.getHost()),
-                ProjectQueries.over(graphQl),
-                ProjectWrites.over(graphQl, rest),
-                ConditionalReads.over(rest),
-                task -> Thread.ofVirtual().name("github-probe").start(task),
-                Clock.systemUTC(),
-                // A save waits for a whole read under way rather than being refused as busy.
-                Duration.ofMinutes(2));
+                        origin -> tokens.token(origin, origin.getHost()),
+                        ProjectQueries.over(graphQl),
+                        ProjectWrites.over(graphQl, rest),
+                        ConditionalReads.over(rest),
+                        task -> Thread.ofVirtual().name("github-probe").start(task),
+                        Clock.systemUTC(),
+                        // A save waits for a whole read under way rather than being refused as
+                        // busy.
+                        Duration.ofMinutes(2))
+                .keepingCopies(() -> boardCopies(environment))
+                .lookingForChanges(
+                        GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));
+    }
+
+    /**
+     * The directory below the planner's cache the tracked boards' copies lie in, beside the
+     * projects' clones; no project's name starts with an underscore, so none of their directories
+     * is it, even where names are compared without case.
+     */
+    static final String BOARDS = "_boards";
+
+    /**
+     * The tracked boards' copies, under {@code $XDG_CACHE_HOME/porelo-planner/_boards/} on Linux
+     * and {@code %LOCALAPPDATA%\porelo-planner\cache\_boards\} on Windows, the directory made or
+     * checked as the person's alone each time a project is opened.
+     *
+     * @param environment the planner's environment
+     * @return the copies
+     * @throws IllegalStateException when the directory, or one on its way, is not the person's own
+     */
+    static BoardCopies boardCopies(final Map<String, String> environment) {
+        final PrivateFiles files = PrivateFiles.of(environment);
+        final List<String> steps = new ArrayList<>(files.steps(PrivateFiles.Kind.CACHE));
+        steps.add(BOARDS);
+        final Path directory =
+                files.directories(
+                        files.base(PrivateFiles.Kind.CACHE, environment),
+                        true,
+                        PrivateFiles.Kind.CACHE,
+                        steps);
+        return new BoardCopies(
+                directory,
+                new CopyFiles() {
+                    @Override
+                    public FileAttribute<?>[] ownerOnlyFile() {
+                        return files.ownerOnlyFile();
+                    }
+
+                    @Override
+                    public void requireOwnFile(final Path file, final boolean alone) {
+                        files.requireOwnFile(file, alone);
+                    }
+                });
     }
 
     /**

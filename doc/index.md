@@ -123,6 +123,7 @@ person's window never finds a mock.
 | The address file and its lock | `$XDG_RUNTIME_DIR/porelo-planner/planner.json` | `%LOCALAPPDATA%\porelo-planner\planner.json` |
 | The work record | `$XDG_STATE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\state\<project>\` |
 | The clones | `$XDG_CACHE_HOME/porelo-planner/<project>/` | `%LOCALAPPDATA%\porelo-planner\cache\<project>\` |
+| The copies of tracked boards | `$XDG_CACHE_HOME/porelo-planner/_boards/` | `%LOCALAPPDATA%\porelo-planner\cache\_boards\` |
 | The log, beside the window's | `$XDG_STATE_HOME/porelo/logs/planner.log` | `%LOCALAPPDATA%\porelo\logs\planner.log` |
 
 - Every base is an absolute path read from the environment; a relative path, `..` or, on Windows, a UNC path is

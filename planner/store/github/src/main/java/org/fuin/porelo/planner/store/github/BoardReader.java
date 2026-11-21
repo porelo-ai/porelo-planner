@@ -1,5 +1,7 @@
 package org.fuin.porelo.planner.store.github;
 
+import org.jspecify.annotations.Nullable;
+
 /** Reads the whole GitHub project and maps it to a board. */
 @FunctionalInterface
 public interface BoardReader {
@@ -34,5 +36,69 @@ public interface BoardReader {
     default Snapshot reread(
             final ProjectConfig config, final Snapshot held, final Touched.Ids touched) {
         return read(config);
+    }
+
+    /**
+     * Reads again only the issues a look named and maps the board anew, each item read archived as
+     * the look's list showed it: a read of an issue by id does not tell whether its item is.
+     *
+     * @param config what to read with, as the project's files name it now
+     * @param held the snapshot the look's answer is folded into
+     * @param touched what to read again
+     * @param archived whether each item the look's list showed is archived, by the items' ids
+     * @return the snapshot
+     */
+    default Snapshot reread(
+            final ProjectConfig config,
+            final Snapshot held,
+            final Touched.Ids touched,
+            final java.util.Map<String, Boolean> archived) {
+        return reread(config, held, touched);
+    }
+
+    /**
+     * Answers the board's copy to keep on disk, in the copy's own terms.
+     *
+     * @param held the snapshot
+     * @param cursor where the tracker's look for changes stands
+     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @return the copy, or null for a snapshot this reader cannot give again from one
+     */
+    default org.fuin.porelo.planner.store.cache.@Nullable BoardCopy toCopy(
+            final Snapshot held,
+            final org.fuin.porelo.planner.store.cache.ChangeCursor cursor,
+            final java.util.List<org.fuin.porelo.planner.store.cache.TrackedItem> heldItems) {
+        return null;
+    }
+
+    /**
+     * Answers the board's copy to keep on disk, each item with its own last change as the tracker's
+     * list last showed it.
+     *
+     * @param held the snapshot
+     * @param cursor where the tracker's look for changes stands
+     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @param listedAt each item's own last change as the list showed it, by the items' ids
+     * @return the copy, or null for a snapshot this reader cannot give again from one
+     */
+    default org.fuin.porelo.planner.store.cache.@Nullable BoardCopy toCopy(
+            final Snapshot held,
+            final org.fuin.porelo.planner.store.cache.ChangeCursor cursor,
+            final java.util.List<org.fuin.porelo.planner.store.cache.TrackedItem> heldItems,
+            final java.util.Map<String, java.time.Instant> listedAt) {
+        return toCopy(held, cursor, heldItems);
+    }
+
+    /**
+     * Answers the snapshot a copy holds, as a read of the project would have given it.
+     *
+     * @param copy the copy
+     * @param config what the project is read with, as its files name it now
+     * @return the snapshot, or null when the copy is not of this project and its files, or this
+     *     reader keeps none
+     */
+    default @Nullable Snapshot fromCopy(
+            final org.fuin.porelo.planner.store.cache.BoardCopy copy, final ProjectConfig config) {
+        return null;
     }
 }

@@ -1,12 +1,16 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -14,11 +18,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.ReadProgress;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
@@ -28,6 +34,10 @@ import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.cache.BoardCopies;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +59,9 @@ public final class GitHubStore implements PlanningStore {
      * @param refusals turns a failure into the store's refusal
      * @param metrics gives a stage's numbers
      * @param storyStates derives a story's state
+     * @param copies keeps the board's copy on disk, which a start serves before GitHub is read, or
+     *     null to keep none
+     * @param changes tells what changed on the board since its copy's last look
      */
     public record Parts(
             BoardReader reader,
@@ -56,7 +69,9 @@ public final class GitHubStore implements PlanningStore {
             ChangeProbe probe,
             AccessRefusals refusals,
             StageMetrics metrics,
-            StoryStates storyStates) {
+            StoryStates storyStates,
+            @Nullable BoardCopies copies,
+            TrackerChanges changes) {
 
         /**
          * Parts that only read, knowing no change probe and no stage numbers.
@@ -72,7 +87,9 @@ public final class GitHubStore implements PlanningStore {
                     ChangeProbe.ALWAYS_CHANGED,
                     AccessRefusals.DEFAULT,
                     StageMetrics.NONE,
-                    storyStates);
+                    storyStates,
+                    null,
+                    TrackerChanges.NONE);
         }
 
         /**
@@ -82,7 +99,7 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts writer(final BoardWriter other) {
-            return new Parts(reader, other, probe, refusals, metrics, storyStates);
+            return new Parts(reader, other, probe, refusals, metrics, storyStates, copies, changes);
         }
 
         /**
@@ -92,7 +109,8 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts probe(final ChangeProbe other) {
-            return new Parts(reader, writer, other, refusals, metrics, storyStates);
+            return new Parts(
+                    reader, writer, other, refusals, metrics, storyStates, copies, changes);
         }
 
         /**
@@ -102,7 +120,7 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts refusals(final AccessRefusals other) {
-            return new Parts(reader, writer, probe, other, metrics, storyStates);
+            return new Parts(reader, writer, probe, other, metrics, storyStates, copies, changes);
         }
 
         /**
@@ -112,7 +130,27 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts metrics(final StageMetrics other) {
-            return new Parts(reader, writer, probe, refusals, other, storyStates);
+            return new Parts(reader, writer, probe, refusals, other, storyStates, copies, changes);
+        }
+
+        /**
+         * The same parts keeping the board's copy in another place.
+         *
+         * @param other the copies, or null to keep none
+         * @return the parts
+         */
+        public Parts copies(final @Nullable BoardCopies other) {
+            return new Parts(reader, writer, probe, refusals, metrics, storyStates, other, changes);
+        }
+
+        /**
+         * The same parts asking another tracker what changed since the copy's last look.
+         *
+         * @param other the tracker's changes
+         * @return the parts
+         */
+        public Parts changes(final TrackerChanges other) {
+            return new Parts(reader, writer, probe, refusals, metrics, storyStates, copies, other);
         }
     }
 
@@ -135,6 +173,33 @@ public final class GitHubStore implements PlanningStore {
     private volatile @Nullable Snapshot snapshot;
 
     private volatile boolean retired;
+
+    /** Whether the copy on disk was looked for; it is, once, on the first read of the board. */
+    private volatile boolean copyLooked;
+
+    /**
+     * Whether the board held was taken from the copy and GitHub has not been read whole since, so
+     * the next poll reads it whole rather than asking whether it changed since the copy.
+     */
+    private volatile boolean fromCopy;
+
+    /** Where the tracker's look for changes stands, kept with the copy. */
+    private volatile ChangeCursor cursor = ChangeCursor.NONE;
+
+    /** The planner's own saves the tracker's list may not show yet, kept with the copy. */
+    private final HeldSaves saves = new HeldSaves();
+
+    /**
+     * Each item's own last change as the tracker's list showed it at the last look that took it,
+     * kept with the copy, so a look sees a change the list shows by the item's time alone.
+     */
+    private final Map<String, Instant> listedAt = new ConcurrentHashMap<>();
+
+    /** How far the look for changes under way has come, or null while none runs. */
+    private volatile @Nullable ReadProgress looking;
+
+    /** What the saves since the look under way began touched; null while none runs. */
+    private @Nullable List<Touched.Ids> lookSaves;
 
     /** Guards the whole read under way and what saves touched while it ran. */
     private final Object fold = new Object();
@@ -216,7 +281,81 @@ public final class GitHubStore implements PlanningStore {
     @Override
     public Board board() {
         final Snapshot current = snapshot;
-        return current != null ? served(current.board()) : refresh();
+        if (current != null) {
+            return served(current.board());
+        }
+        final Snapshot copied = fromCopy();
+        return copied != null ? served(copied.board()) : refresh();
+    }
+
+    /**
+     * Takes the board from its copy on disk, once per store and under the lock, so a start shows
+     * the board before GitHub is read; the next poll then reads GitHub whole.
+     *
+     * @return the board held now, or null when there is none and the copy gave none
+     */
+    private @Nullable Snapshot fromCopy() {
+        final BoardCopies copies = parts.copies();
+        if (copies == null || copyLooked) {
+            return null;
+        }
+        refuseRetired();
+        try {
+            if (!lock.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                // Another call holds the project; the whole read answers as it always did.
+                return null;
+            }
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new StoreException.Busy(config.own());
+        }
+        try {
+            if (copyLooked) {
+                return snapshot;
+            }
+            copyLooked = true;
+            if (snapshot != null) {
+                return snapshot;
+            }
+            final ProjectConfig now = configNow();
+            final BoardCopy copy =
+                    copies.read(BoardCopyMapping.project(now), now.commit()).orElse(null);
+            if (copy == null) {
+                return null;
+            }
+            final Snapshot loaded = parts.reader().fromCopy(copy, now);
+            if (loaded == null) {
+                LOG.info("The board's copy is not of the project as its files name it now");
+                return null;
+            }
+            snapshot = loaded;
+            fromCopy = true;
+            // The probe knows nothing from before the copy: its first look takes what it sees as
+            // this board, while the item look tells what changed on it since.
+            parts.probe().adoptNext();
+            cursor = copy.cursor();
+            saves.load(copy.held(), copy.cursor());
+            listedAt.clear();
+            for (final TrackedItem item : copy.items()) {
+                final Instant at = item.updatedAt();
+                if (at != null) {
+                    listedAt.put(item.id(), at);
+                }
+            }
+            LOG.info(
+                    "Took the board from its copy of {} items held at {}; GitHub is read next",
+                    copy.items().size(),
+                    copy.takenAt());
+            return loaded;
+        } catch (final RuntimeException e) {
+            // The copy only spares a whole read: one that cannot be used leaves the read to do.
+            LOG.warn(
+                    "The board's copy could not be taken: {}; GitHub is read whole",
+                    e.getClass().getSimpleName());
+            return null;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -407,8 +546,9 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
-    public java.util.Optional<org.fuin.porelo.planner.store.ReadProgress> reading() {
-        return parts.reader().progress();
+    public java.util.Optional<ReadProgress> reading() {
+        final ReadProgress look = looking;
+        return look != null ? java.util.Optional.of(look) : parts.reader().progress();
     }
 
     /**
@@ -425,12 +565,324 @@ public final class GitHubStore implements PlanningStore {
             if (current == null || !current.config().commit().equals(now.commit())) {
                 return wholeBesideSaves(now, true);
             }
+            if (fromCopy || parts.changes() != TrackerChanges.NONE) {
+                final Looked looked = lookBesideSaves(now, current);
+                if (looked != null) {
+                    if (looked.named()) {
+                        // The look read again what it named; the probe takes what it sees as this
+                        // board, so the next poll asks it from here.
+                        parts.probe().adoptNext();
+                        parts.probe().unchanged(looked.board());
+                        return looked.board();
+                    }
+                    // The item list carries only the board's items: an issue of the project's
+                    // repositories it lacks changes only the probe's answer, and is read whole.
+                    return parts.probe().unchanged(looked.board())
+                            ? looked.board()
+                            : wholeBesideSaves(now, false);
+                }
+                // A tracker that cannot tell what changed has the board read whole, never the probe
+                // alone: within its wait after a save, the probe takes another's change for the
+                // save's own.
+                return wholeBesideSaves(now, true);
+            }
             same = parts.probe().unchanged(current);
         } catch (final RuntimeException e) {
             throw refused(e);
         }
         // The probe saw the change and keeps its tags for the board this read gives.
         return same ? current : wholeBesideSaves(now, false);
+    }
+
+    /** The items of a board, as the copy holds them, by their ids, the saves held laid over. */
+    private Map<String, TrackedItem> known(final Snapshot current) {
+        final Map<String, TrackedItem> known = new LinkedHashMap<>();
+        current.raw()
+                .forEach(
+                        (id, item) ->
+                                known.put(id, BoardCopyMapping.tracked(item, listedAt.get(id))));
+        return saves.overlaid(known);
+    }
+
+    /**
+     * A look's board and whether the look named any item changed, new or gone.
+     *
+     * @param board the board with the look's answer folded in
+     * @param named whether the answer named any item
+     */
+    private record Looked(Snapshot board, boolean named) {}
+
+    /**
+     * Asks the tracker what changed since the last look, beside the saves: they go on against the
+     * board held while the look runs, and what they touched is laid onto its answer.
+     *
+     * @return the board with the answer folded in, or null when the tracker cannot tell, the answer
+     *     names an item new on the board that cannot be read by its issue, or a failed save dropped
+     *     the board meanwhile
+     */
+    private @Nullable Looked lookBesideSaves(final ProjectConfig now, final Snapshot base) {
+        final List<Touched.Ids> during = new ArrayList<>();
+        synchronized (fold) {
+            lookSaves = during;
+        }
+        looking = new ReadProgress(java.time.Instant.now(), 0, base.raw().size(), null, "GitHub");
+        try {
+            final String token = tokens.token(now.forge());
+            final Map<String, TrackedItem> known = known(base);
+            // The board's own read names the project's node id and fields, which its files do
+            // not; the commit is the files' own, checked before the look.
+            final ProjectConfig read = base.config();
+            final TrackerChanges.Changed changed =
+                    (parts.changes() instanceof GitHubChanges github
+                                    ? github.since(
+                                            read,
+                                            token,
+                                            cursor,
+                                            known,
+                                            GitHubChanges.plannersFields(base))
+                                    : parts.changes().since(read, token, cursor, known))
+                            .orElse(null);
+            if (changed == null) {
+                return null;
+            }
+            final Map<String, String> added = new LinkedHashMap<>();
+            for (final String item : changed.added()) {
+                final String issue =
+                        parts.changes() instanceof ItemIssues issues ? issues.issueOf(item) : null;
+                if (issue == null) {
+                    // An item the look cannot name the issue of is read with the whole board.
+                    return null;
+                }
+                added.put(item, issue);
+            }
+            final Snapshot board = folded(now, changed, added, during);
+            return board == null
+                    ? null
+                    : new Looked(
+                            board,
+                            !changed.changed().isEmpty()
+                                    || !changed.added().isEmpty()
+                                    || !changed.gone().isEmpty());
+        } finally {
+            synchronized (fold) {
+                lookSaves = null;
+            }
+            looking = null;
+        }
+    }
+
+    /**
+     * Folds what changed since the last look into the board held now, under the lock: the gone
+     * items dropped, the changed ones read again by id, the new ones by their issues, the saves
+     * made during the look that touched any of them read again too, and the sub-issues a parent
+     * gained or lost read again, so their parent is right. A board a failed save dropped meanwhile
+     * drops the look, and the board is read whole.
+     *
+     * @param added the new items' issues' node ids by the items' ids
+     * @param during what the saves since the look began touched, taken under the lock, so no save
+     *     falls between them and the fold
+     */
+    private @Nullable Snapshot folded(
+            final ProjectConfig now,
+            final TrackerChanges.Changed changed,
+            final Map<String, String> added,
+            final List<Touched.Ids> during) {
+        final java.util.function.Function<String, ItemIssues.@Nullable Listed> listed =
+                parts.changes() instanceof ItemIssues issues ? issues::listed : id -> null;
+        final @Nullable Snapshot result =
+                this.<@Nullable Snapshot>locked(
+                        () -> {
+                            // A save holds the lock until it has noted what it touched, so every
+                            // save before this point is in the list, and every later one is made
+                            // against the board folded here.
+                            final List<Touched.Ids> saved;
+                            synchronized (fold) {
+                                lookSaves = null;
+                                saved = List.copyOf(during);
+                            }
+                            final Snapshot base = snapshot;
+                            if (base == null) {
+                                return null;
+                            }
+                            if (changed.changed().isEmpty()
+                                    && changed.added().isEmpty()
+                                    && changed.gone().isEmpty()) {
+                                // Nothing changed: the board stays, and its copy is written only
+                                // for a
+                                // look that moved.
+                                boolean moved = !changed.next().equals(cursor) || saves.any();
+                                cursor = changed.next();
+                                saves.looked(changed, base, saved, listed);
+                                moved |= tookTimes(base, listed);
+                                if (moved) {
+                                    hold(base, false);
+                                }
+                                return base;
+                            }
+                            final Map<String, GitHubGraphQl.ProjectItem> kept =
+                                    new LinkedHashMap<>(base.raw());
+                            changed.gone().forEach(kept::remove);
+                            final Snapshot without =
+                                    new Snapshot(
+                                            base.board(),
+                                            base.items(),
+                                            base.config(),
+                                            kept,
+                                            base.fieldFaults(),
+                                            base.fieldNames(),
+                                            base.restFieldIds());
+                            final Set<String> items = new LinkedHashSet<>(changed.changed());
+                            final Set<String> issues = new LinkedHashSet<>(added.values());
+                            issues.addAll(HeldSaves.issuesOf(base, items));
+                            final List<Touched.Ids> overlapping = new ArrayList<>();
+                            for (final Touched.Ids save : saved) {
+                                if (overlaps(base, items, issues, save)) {
+                                    overlapping.add(save);
+                                }
+                            }
+                            final List<Touched.Ids> all = new ArrayList<>(overlapping);
+                            all.add(new Touched.Ids(issues, items, Set.of(), Set.of()));
+                            // A read by id does not tell whether an item is archived; the list
+                            // does.
+                            final Map<String, Boolean> archived = new LinkedHashMap<>();
+                            final Set<String> named = new LinkedHashSet<>(changed.changed());
+                            named.addAll(added.keySet());
+                            for (final String id : named) {
+                                final ItemIssues.Listed shown = listed.apply(id);
+                                if (shown != null) {
+                                    archived.put(id, shown.archived());
+                                }
+                            }
+                            Snapshot folded =
+                                    parts.reader().reread(now, without, merged(all), archived);
+                            // A parent gone, new or changed may have gained or lost a sub-issue,
+                            // whose own item the list shows unchanged.
+                            final Set<String> children = new LinkedHashSet<>();
+                            final Set<String> moved = new LinkedHashSet<>(named);
+                            moved.addAll(changed.gone());
+                            for (final String id : moved) {
+                                children.addAll(
+                                        movedChildren(base.raw().get(id), folded.raw().get(id)));
+                            }
+                            if (!children.isEmpty()) {
+                                folded =
+                                        parts.reader()
+                                                .reread(
+                                                        now,
+                                                        folded,
+                                                        new Touched.Ids(
+                                                                children, Set.of(), Set.of(),
+                                                                Set.of()),
+                                                        archived);
+                            }
+                            cursor = changed.next();
+                            saves.looked(changed, folded, saved, listed);
+                            tookTimes(folded, listed);
+                            hold(folded, false);
+                            LOG.info(
+                                    "Took {} changed, {} new and {} gone items since the last look into"
+                                            + " the board, and {} saves made during it",
+                                    changed.changed().size(),
+                                    added.size(),
+                                    changed.gone().size(),
+                                    overlapping.size());
+                            return folded;
+                        });
+        if (result == null) {
+            // A failed save dropped the board while the look ran; its answer is not laid on.
+            LOG.info("The look's answer is dropped, since a failed save dropped the board");
+        }
+        return result;
+    }
+
+    /**
+     * Whether a save made during a look touched any item the look named, by any of the names
+     * GitHub's calls gave it, so it is read again with them.
+     */
+    private static boolean overlaps(
+            final Snapshot base,
+            final Set<String> items,
+            final Set<String> issues,
+            final Touched.Ids save) {
+        if (save.items().stream().anyMatch(items::contains)
+                || save.issues().stream().anyMatch(issues::contains)) {
+            return true;
+        }
+        for (final GitHubGraphQl.ProjectItem item : base.raw().values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            final boolean named =
+                    items.contains(item.id()) || (issue != null && issues.contains(issue.id()));
+            if (named && HeldSaves.matches(BoardCopyMapping.tracked(item), save)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Takes each item's own time as the look's list showed it, for a board that holds the item as
+     * it is now: read again by id when the list named it, or unchanged when it did not.
+     *
+     * @return whether any time changed
+     */
+    private boolean tookTimes(
+            final Snapshot board,
+            final java.util.function.Function<String, ItemIssues.@Nullable Listed> listed) {
+        boolean changed = false;
+        for (final String id : board.raw().keySet()) {
+            final ItemIssues.Listed shown = listed.apply(id);
+            if (shown != null && !shown.updatedAt().equals(listedAt.put(id, shown.updatedAt()))) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /** The node ids of the sub-issues an issue gained or lost between two reads of it. */
+    private static Set<String> movedChildren(
+            final GitHubGraphQl.@Nullable ProjectItem before,
+            final GitHubGraphQl.@Nullable ProjectItem after) {
+        final Set<String> was = childrenOf(before);
+        final Set<String> is = childrenOf(after);
+        final Set<String> moved = new LinkedHashSet<>(was);
+        moved.addAll(is);
+        final Set<String> both = new LinkedHashSet<>(was);
+        both.retainAll(is);
+        moved.removeAll(both);
+        return moved;
+    }
+
+    private static Set<String> childrenOf(final GitHubGraphQl.@Nullable ProjectItem item) {
+        final GitHubGraphQl.BoardIssue issue = item == null ? null : item.issue();
+        final Set<String> children = new LinkedHashSet<>();
+        if (issue != null) {
+            issue.subIssues().nodes().forEach(ref -> children.add(ref.id()));
+        }
+        return children;
+    }
+
+    /**
+     * Keeps the saves held that a whole read of GitHub's list does not show yet: each is read again
+     * by its issue, which GitHub answers as it stands, the save included; the others are released.
+     */
+    private Snapshot keptHeld(final ProjectConfig now, final Snapshot read) {
+        final Map<String, String> lagging = saves.lagging(read);
+        if (lagging.isEmpty()) {
+            return read;
+        }
+        final Snapshot kept =
+                parts.reader()
+                        .reread(
+                                now,
+                                read,
+                                new Touched.Ids(
+                                        new LinkedHashSet<>(lagging.keySet()),
+                                        Set.of(),
+                                        Set.of(),
+                                        Set.of()));
+        saves.refreshed(kept, lagging.values(), cursor);
+        LOG.info("Read {} own saves again that GitHub's list did not show yet", lagging.size());
+        return kept;
     }
 
     /**
@@ -481,7 +933,8 @@ public final class GitHubStore implements PlanningStore {
                                                     + " board",
                                             saved.size());
                                 }
-                                snapshot = result;
+                                result = keptHeld(configNow(), result);
+                                hold(result, true);
                                 synchronized (fold) {
                                     inFlight = null;
                                 }
@@ -545,8 +998,8 @@ public final class GitHubStore implements PlanningStore {
             return current;
         }
         // The probe saw the change and keeps its tags for the board this read gives.
-        final Snapshot fresh = parts.reader().read(now);
-        snapshot = fresh;
+        final Snapshot fresh = keptHeld(now, parts.reader().read(now));
+        hold(fresh, true);
         return fresh;
     }
 
@@ -556,8 +1009,8 @@ public final class GitHubStore implements PlanningStore {
      */
     private Snapshot readWhole(final ProjectConfig now) {
         parts.probe().forget();
-        final Snapshot fresh = parts.reader().read(now);
-        snapshot = fresh;
+        final Snapshot fresh = keptHeld(now, parts.reader().read(now));
+        hold(fresh, true);
         settle(fresh, false);
         return fresh;
     }
@@ -645,7 +1098,7 @@ public final class GitHubStore implements PlanningStore {
                                 configNow(),
                                 held,
                                 new Touched.Ids(issues, Set.of(), Set.of(), Set.of()));
-        snapshot = fresh;
+        hold(fresh, false);
         return fresh;
     }
 
@@ -660,8 +1113,11 @@ public final class GitHubStore implements PlanningStore {
             if (held == null) {
                 return readWhole(configNow());
             }
-            final Snapshot fresh = parts.reader().reread(configNow(), held, touched.ids());
-            snapshot = fresh;
+            final Touched.Ids written = touched.ids();
+            final Snapshot fresh = parts.reader().reread(configNow(), held, written);
+            // GitHub's lists show the save a moment after it; until then it is held.
+            saves.hold(fresh, written, cursor, held);
+            hold(fresh, false);
             settle(fresh, true);
             return fresh;
         } catch (final RuntimeException e) {
@@ -714,16 +1170,22 @@ public final class GitHubStore implements PlanningStore {
                     try {
                         return work.get();
                     } catch (final StoreException.StaleRevision e) {
-                        snapshot = null;
+                        saves.forget(touched.ids());
+                        drop();
                         throw staleNamingTheBoardNow(e);
                     } catch (final RuntimeException e) {
                         // The next board is read from GitHub, never the one from before the save.
-                        snapshot = null;
+                        saves.forget(touched.ids());
+                        drop();
                         throw e;
                     } finally {
                         synchronized (fold) {
                             if (inFlight != null) {
                                 pending.add(touched.ids());
+                            }
+                            final List<Touched.Ids> during = lookSaves;
+                            if (during != null) {
+                                during.add(touched.ids());
                             }
                         }
                     }
@@ -760,7 +1222,7 @@ public final class GitHubStore implements PlanningStore {
         return current != null ? current : read();
     }
 
-    private Snapshot locked(final Supplier<Snapshot> work) {
+    private <T extends @Nullable Object> T locked(final Supplier<T> work) {
         refuseRetired();
         final boolean held;
         try {
@@ -794,9 +1256,65 @@ public final class GitHubStore implements PlanningStore {
                         : parts.refusals().refusal(config.own(), e, tokenToScrub());
         if (refusal instanceof StoreException.NoForgeAccess) {
             // Read again next time, so the window is told the refusal, not the board kept.
-            snapshot = null;
+            saves.clear();
+            drop();
         }
         return refusal;
+    }
+
+    /**
+     * Holds a board read or saved, and writes its copy at once, so the next start shows it.
+     *
+     * @param fresh the board
+     * @param whole whether GitHub was read whole for it, which ends a board taken from the copy
+     */
+    private void hold(final Snapshot fresh, final boolean whole) {
+        snapshot = fresh;
+        // Only the items held keep their times; one gone and back is compared anew.
+        listedAt.keySet().retainAll(fresh.raw().keySet());
+        if (whole) {
+            // A look's cursor from before a whole read does not describe its board.
+            fromCopy = false;
+            cursor = ChangeCursor.NONE;
+        }
+        final BoardCopies copies = parts.copies();
+        if (copies == null) {
+            return;
+        }
+        try {
+            final BoardCopy copy =
+                    parts.reader().toCopy(fresh, cursor, saves.items(), Map.copyOf(listedAt));
+            if (copy == null) {
+                copies.remove(BoardCopyMapping.project(fresh.config()));
+            } else {
+                copies.write(copy);
+            }
+        } catch (final RuntimeException e) {
+            // A copy that may be older than the board held is never shown at the next start.
+            LOG.warn("The board's copy could not be written: {}", e.getClass().getSimpleName());
+            removeCopy();
+        }
+    }
+
+    /** Forgets the board held and removes its copy, so neither comes back at the next read. */
+    private void drop() {
+        snapshot = null;
+        listedAt.clear();
+        fromCopy = false;
+        cursor = ChangeCursor.NONE;
+        removeCopy();
+    }
+
+    private void removeCopy() {
+        final BoardCopies copies = parts.copies();
+        if (copies == null) {
+            return;
+        }
+        try {
+            copies.remove(BoardCopyMapping.project(config));
+        } catch (final RuntimeException e) {
+            LOG.warn("The board's copy could not be removed: {}", e.getClass().getSimpleName());
+        }
     }
 
     private String tokenToScrub() {

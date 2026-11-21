@@ -180,3 +180,17 @@ and stands as its alternative text; raw HTML is shown as text; control and direc
 rendered piece, character references included. A text past a size or nesting bound is shown plain before it is parsed,
 since the parser follows nesting by recursion. The text is parsed again on each rebuild of its page: within the bounds
 that costs milliseconds, and a cache would hold a second copy of every description.
+
+## A tracked board starts from its own copy, written by Apache Fory
+
+A board tracked on GitHub is kept as a copy on the person's computer, so a start shows it at once and a look for
+changes reads again only what changed, not the whole project. The copy lies in the planner's cache, a file the person
+alone may read and write, checked on every read, and is never the truth: one the planner cannot read, or one written
+for another project, commit or set of repositories, is dropped and the board read whole. Apache Fory writes it, with
+its strings compressed, the copy's records registered with it and its serializers made when the executable is built.
+On a board of 1,388 items, measured in the native executable against the same copy written as strict JSON by Jackson,
+a write took 25 ms against 59 ms (16 ms with the strings compressed), a read at start 18 to 22 ms against 57 to
+74 ms (14 to 16 ms compressed), and the file 4.6 MB compressed against 5.4 MB. The price is 13 MB more executable, a
+copy no person can read, and a build that warns of Fory's use of `sun.misc.Unsafe`, which a later JDK may refuse;
+the copy is then dropped and the board read whole, as with any copy the planner cannot read. Fory carries the Janino
+compiler it builds its serializers with inside itself, so its separate jars are not linked.

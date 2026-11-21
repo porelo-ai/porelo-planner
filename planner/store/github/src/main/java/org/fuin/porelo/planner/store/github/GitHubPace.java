@@ -6,8 +6,12 @@ import java.time.InstantSource;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import org.fuin.porelo.forge.github.Conditional;
+import org.fuin.porelo.forge.github.CursorPage;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.ProjectItemSummary;
+import org.fuin.porelo.forge.github.RateLimit;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -198,6 +202,29 @@ public final class GitHubPace implements Pace {
                     throw noted(e);
                 }
             }
+        };
+    }
+
+    /**
+     * Wraps a project's REST item list so a spent rate limit it meets holds every look, and the
+     * limit each answer names paces the looks, as the other reads do.
+     *
+     * @param pages the item list
+     * @return the same list, noting the rate limit
+     */
+    public GitHubChanges.ItemPages watching(final GitHubChanges.ItemPages pages) {
+        return (token, owner, number, after, perPage, fieldIds, etag) -> {
+            final Conditional<CursorPage<ProjectItemSummary>> answer;
+            try {
+                answer = pages.page(token, owner, number, after, perPage, fieldIds, etag);
+            } catch (final GitHubException e) {
+                throw noted(e);
+            }
+            final RateLimit limit = answer.rateLimit();
+            if (limit != null) {
+                seen(limit.remaining(), limit.limit());
+            }
+            return answer;
         };
     }
 

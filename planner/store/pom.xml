@@ -14,6 +14,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>api</module>
+        <module>cache</module>
         <module>git</module>
         <module>github</module>
     </modules>

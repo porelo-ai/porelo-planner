@@ -1,0 +1,2 @@
+title: A GitHub-tracked board looks only for what changed since its copy on each poll, through GitHub's item list with its tags, and keeps what the planner saved on the board until GitHub's list shows it.
+type: changed

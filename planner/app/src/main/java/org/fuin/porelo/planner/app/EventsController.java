@@ -240,8 +240,14 @@ public class EventsController {
             }
             final Duration step = keepAlive.compareTo(LOAD_EVERY) < 0 ? keepAlive : LOAD_EVERY;
             Instant lastSent = Instant.now();
-            boolean reading = false;
             Instant readSince = Instant.now();
+            // A look right after the first board takes about a second: its progress is told at
+            // once, so the window sees it end with done rather than never see it.
+            boolean reading = subscription.open() && store.reading().isPresent();
+            if (reading) {
+                load(emitter, store, Instant.now());
+                lastSent = Instant.now();
+            }
             while (subscription.open()) {
                 final Optional<Changes.Frame> next = subscription.nextFrame(step);
                 if (!subscription.open()) {

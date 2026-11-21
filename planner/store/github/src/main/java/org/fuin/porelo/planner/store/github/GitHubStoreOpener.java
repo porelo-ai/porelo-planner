@@ -14,6 +14,10 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
+import org.fuin.porelo.planner.store.cache.BoardCopies;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Opens a project whose stories and issues a GitHub project keeps: opening sends GitHub nothing,
@@ -21,6 +25,8 @@ import org.fuin.porelo.planner.store.TrackedStores;
  * never a field or its options.
  */
 public final class GitHubStoreOpener implements TrackedStores {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GitHubStoreOpener.class);
 
     /** The kind {@code project.yml} names a GitHub project's tracker by. */
     public static final String KIND = "github";
@@ -40,6 +46,15 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     /** Runs the change probe's look right after a read or save. */
     private final Executor looks;
+
+    /** Gives the place a project's board copy is kept, checked as each project is opened. */
+    private final @Nullable Supplier<BoardCopies> copies;
+
+    /** Gives each project's look for what changed on its board since the last one. */
+    private final Supplier<TrackerChanges> changes;
+
+    /** The pace of the person's token the reads are held by, or null when none is kept. */
+    private final @Nullable GitHubPace pace;
 
     /** Runs a look after a read or save on a thread of its own, so the caller does not wait. */
     private static final Executor SETTLE_LOOKS =
@@ -117,7 +132,10 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
                 () -> new ConditionalChangeProbe(conditional, tokens, pace, executor),
                 lockWait,
-                executor);
+                executor,
+                null,
+                () -> TrackerChanges.NONE,
+                pace);
     }
 
     /**
@@ -171,12 +189,86 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Supplier<ChangeProbe> probes,
             final Duration lockWait,
             final Executor looks) {
+        this(
+                tokens,
+                readers,
+                writers,
+                probes,
+                lockWait,
+                looks,
+                null,
+                () -> TrackerChanges.NONE,
+                null);
+    }
+
+    private GitHubStoreOpener(
+            final TokenSource tokens,
+            final Function<StoryStates, BoardReader> readers,
+            final Function<Touched, BoardWriter> writers,
+            final Supplier<ChangeProbe> probes,
+            final Duration lockWait,
+            final Executor looks,
+            final @Nullable Supplier<BoardCopies> copies,
+            final Supplier<TrackerChanges> changes,
+            final @Nullable GitHubPace pace) {
+        this.pace = pace;
+        this.copies = copies;
+        this.changes = changes;
         this.looks = looks;
         this.tokens = tokens;
         this.readers = readers;
         this.writers = writers;
         this.probes = probes;
         this.lockWait = lockWait;
+    }
+
+    /**
+     * The same opener, keeping each project's board on disk, so a start shows it before GitHub is
+     * read.
+     *
+     * @param copies gives the copies' place; asked as each project is opened, and a place it cannot
+     *     give leaves that project without a copy, read whole from GitHub as before
+     * @return the opener
+     */
+    public GitHubStoreOpener keepingCopies(final Supplier<BoardCopies> copies) {
+        return new GitHubStoreOpener(
+                tokens,
+                readers,
+                writers,
+                probes,
+                lockWait,
+                looks,
+                Objects.requireNonNull(copies),
+                changes,
+                pace);
+    }
+
+    /**
+     * The same opener, asking GitHub's item list at each poll what changed since the last look, so
+     * only those items are read again.
+     *
+     * @param pages GitHub's REST item list
+     * @param queries reads an item missing from the list, or new on it, by its issue
+     * @return the opener
+     */
+    public GitHubStoreOpener lookingForChanges(
+            final GitHubChanges.ItemPages pages, final ProjectQueries queries) {
+        Objects.requireNonNull(pages, "pages");
+        Objects.requireNonNull(queries, "queries");
+        // The look goes through the token's pace, so a spent rate limit holds it as other reads.
+        final GitHubPace held = pace;
+        final GitHubChanges.ItemPages paced = held == null ? pages : held.watching(pages);
+        final ProjectQueries watched = held == null ? queries : held.watching(queries);
+        return new GitHubStoreOpener(
+                tokens,
+                readers,
+                writers,
+                probes,
+                lockWait,
+                looks,
+                copies,
+                () -> new GitHubChanges(paced, watched),
+                pace);
     }
 
     @Override
@@ -199,11 +291,31 @@ public final class GitHubStoreOpener implements TrackedStores {
                 GitHubStore.Parts.reading(readers.apply(states), states)
                         .writer(writers.apply(touched))
                         .refusals(new ForgeAccessRefusals(GITHUB))
-                        .probe(probes.get()),
+                        .probe(probes.get())
+                        .copies(copies())
+                        .changes(changes.get()),
                 tokens,
                 lockWait,
                 touched,
                 looks);
+    }
+
+    /** The copies' place, or null when none is kept or it cannot be given now. */
+    private @Nullable BoardCopies copies() {
+        if (copies == null) {
+            return null;
+        }
+        try {
+            return copies.get();
+        } catch (final RuntimeException e) {
+            // Without its copy the board is read whole from GitHub, as it was before copies. The
+            // failure's words may quote the environment or a path naming the person's account,
+            // so only its class is named.
+            LOG.warn(
+                    "The board's copies cannot be kept ({}); the board is read whole from GitHub",
+                    e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     /** Checks the tracker the project's files name, and answers what its board is read with. */

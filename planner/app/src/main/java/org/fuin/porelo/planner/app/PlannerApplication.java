@@ -6,9 +6,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.ImportRuntimeHints;
 
 /** Starts the planner. */
 @SpringBootApplication
+@ImportRuntimeHints(AnswerArrays.class)
 public class PlannerApplication {
 
     /** The argument that serves the window's mock board instead of the person's stores. */

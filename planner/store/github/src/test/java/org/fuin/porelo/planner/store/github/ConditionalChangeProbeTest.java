@@ -584,6 +584,29 @@ class ConditionalChangeProbeTest {
     }
 
     @Test
+    void aSpentRateLimitOfTheItemLookHoldsThePolls() {
+        // Harm: GitHub's REST refusal of a spent limit fails every poll and is asked again at
+        // each, as the look did not hold the token's pace.
+        final AtomicInteger listed = new AtomicInteger();
+        final GitHubStore store =
+                overGitHub(
+                        (token, owner, number, after, perPage, fieldIds, etag) -> {
+                            listed.incrementAndGet();
+                            throw GitHubExceptions.rateLimited(
+                                    403, "spent", Duration.ofSeconds(90));
+                        });
+        store.refresh();
+
+        final Board first = store.poll();
+        store.poll();
+
+        assertThat(first.faults())
+                .as("the board's faults at the refusal")
+                .anySatisfy(fault -> assertThat(fault).contains("rate limit is spent"));
+        assertThat(listed.get()).as("asks of the item list").isEqualTo(1);
+    }
+
+    @Test
     void aPersonsReloadWhileHeldAsksOnceAndGetsTheSameRefusal() {
         // Harm: the person's own reload silently answered from the board kept, as GitHub answers
         // 304 to the change check even while its rate limit is spent, or asking without end.
@@ -777,6 +800,15 @@ class ConditionalChangeProbeTest {
 
     /** A store opened as the planner opens one, over GraphQL reads and the fake's 304s. */
     private GitHubStore overGitHub() {
+        return overGitHub(null);
+    }
+
+    /**
+     * A store opened as the planner opens one, looking at the item list given for changes.
+     *
+     * @param pages the REST item list, or null to look at none
+     */
+    private GitHubStore overGitHub(final GitHubChanges.@Nullable ItemPages pages) {
         final TrackedProject project =
                 new TrackedProject(
                         URI.create("https://github.com"),
@@ -788,22 +820,24 @@ class ConditionalChangeProbeTest {
                         new Work(Map.of(), List.of()),
                         "c0ffee0",
                         states -> null);
-        return (GitHubStore)
+        final GitHubStoreOpener opener =
                 new GitHubStoreOpener(
-                                origin -> TOKEN,
-                                queries(),
-                                (ProjectWrites)
-                                        java.lang.reflect.Proxy.newProxyInstance(
-                                                ProjectWrites.class.getClassLoader(),
-                                                new Class<?>[] {ProjectWrites.class},
-                                                (proxy, method, args) -> {
-                                                    throw new AssertionError(
-                                                            "A read called " + method.getName());
-                                                }),
-                                github,
-                                Runnable::run,
-                                clock,
-                                Duration.ofMillis(500))
+                        origin -> TOKEN,
+                        queries(),
+                        (ProjectWrites)
+                                java.lang.reflect.Proxy.newProxyInstance(
+                                        ProjectWrites.class.getClassLoader(),
+                                        new Class<?>[] {ProjectWrites.class},
+                                        (proxy, method, args) -> {
+                                            throw new AssertionError(
+                                                    "A read called " + method.getName());
+                                        }),
+                        github,
+                        Runnable::run,
+                        clock,
+                        Duration.ofMillis(500));
+        return (GitHubStore)
+                (pages == null ? opener : opener.lookingForChanges(pages, queries()))
                         .open(project, () -> project);
     }
 

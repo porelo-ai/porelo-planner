@@ -18,6 +18,8 @@ import org.fuin.porelo.planner.store.Board;
  *     snapshot was not read from GitHub's item list, so it is never read again in part
  * @param fieldFaults the faults of the project's fields, which a read in part keeps
  * @param fieldNames the fields' names by their ids
+ * @param restFieldIds the fields' numeric ids by their ids, which GitHub's REST item list takes to
+ *     name the fields whose values it gives; empty when they were not read
  */
 public record Snapshot(
         Board board,
@@ -25,7 +27,8 @@ public record Snapshot(
         ProjectConfig config,
         Map<String, GitHubGraphQl.ProjectItem> raw,
         List<String> fieldFaults,
-        Map<String, String> fieldNames) {
+        Map<String, String> fieldNames,
+        Map<String, Long> restFieldIds) {
 
     /** Copies the maps, keeping their order. */
     public Snapshot {
@@ -33,6 +36,27 @@ public record Snapshot(
         raw = Collections.unmodifiableMap(new LinkedHashMap<>(raw));
         fieldFaults = List.copyOf(fieldFaults);
         fieldNames = Collections.unmodifiableMap(new LinkedHashMap<>(fieldNames));
+        restFieldIds = Collections.unmodifiableMap(new LinkedHashMap<>(restFieldIds));
+    }
+
+    /**
+     * Makes a snapshot read without the fields' numeric ids.
+     *
+     * @param board the board
+     * @param items every item read, by its Porelo id
+     * @param config what it was read with
+     * @param raw every project item as GitHub gave it, by its node id in GitHub's order
+     * @param fieldFaults the faults of the project's fields
+     * @param fieldNames the fields' names by their ids
+     */
+    public Snapshot(
+            final Board board,
+            final Map<String, ItemView> items,
+            final ProjectConfig config,
+            final Map<String, GitHubGraphQl.ProjectItem> raw,
+            final List<String> fieldFaults,
+            final Map<String, String> fieldNames) {
+        this(board, items, config, raw, fieldFaults, fieldNames, Map.of());
     }
 
     /**
@@ -44,6 +68,6 @@ public record Snapshot(
      */
     public Snapshot(
             final Board board, final Map<String, ItemView> items, final ProjectConfig config) {
-        this(board, items, config, Map.of(), List.of(), Map.of());
+        this(board, items, config, Map.of(), List.of(), Map.of(), Map.of());
     }
 }

@@ -3,8 +3,20 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The sources the planner refuses before it touches Git or the cache. */
 class StoreConfigurationTest {
@@ -53,5 +65,48 @@ class StoreConfigurationTest {
                                     .as("what it names")
                                     .containsEntry("project", "alpha");
                         });
+    }
+
+    @Test
+    void theBoardsCopiesLieInTheCachesOwnDirectoryClosedToOthers(@TempDir final Path home)
+            throws IOException {
+        // Harm: a board copy another account can read, or one written where it is never found.
+        final Path cache = Files.createDirectories(home.resolve("cache"));
+        Files.setPosixFilePermissions(cache, PosixFilePermissions.fromString("rwx------"));
+        final Map<String, String> environment =
+                Map.of("HOME", home.toString(), "XDG_CACHE_HOME", cache.toString());
+        final BoardCopy.Project project = new BoardCopy.Project("github.com", "example-org", 7);
+        final BoardCopy copy =
+                new BoardCopy(
+                        project,
+                        "c0ffee0",
+                        List.of("example-project"),
+                        Instant.parse("2026-11-21T10:00:00Z"),
+                        new TrackerBoard(
+                                "PVT_7", Map.of(), Map.of(), Map.of(), List.of(), Map.of()),
+                        List.of(),
+                        ChangeCursor.NONE,
+                        List.of());
+
+        StoreConfiguration.boardCopies(environment).write(copy);
+
+        final Path directory = cache.resolve("porelo-planner").resolve(StoreConfiguration.BOARDS);
+        assertThat(Files.getPosixFilePermissions(directory))
+                .as("the copies' directory")
+                .containsExactlyInAnyOrder(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE,
+                        PosixFilePermission.OWNER_EXECUTE);
+        try (Stream<Path> files = Files.list(directory)) {
+            final List<Path> written = files.toList();
+            assertThat(written).as("the copies written").hasSize(1);
+            assertThat(Files.getPosixFilePermissions(written.get(0)))
+                    .as("the copy's file")
+                    .containsExactlyInAnyOrder(
+                            PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+        }
+        assertThat(StoreConfiguration.boardCopies(environment).read(project, "c0ffee0"))
+                .as("the copy read back")
+                .contains(copy);
     }
 }

@@ -41,6 +41,8 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -447,6 +449,38 @@ class ItemsBoardReaderTest {
                         "Item example-org/example-lib#3 has more sub-issues or blockers than one"
                                 + " page carries and is left out; its story is not whole");
         assertThat(snapshot.board().stories().get(0).issuesWhole()).as("its story").isFalse();
+    }
+
+    @Test
+    void anItemWithASecondPageOfFieldValuesIsLeftOutAndKeptMarkedInItsCopy() {
+        // Harm: an issue mapped from its first fifty values, its Status or Size among those cut
+        // off, shown and copied as if whole.
+        final ProjectItem cut = libIssue(3, refs(false));
+        final ProjectItem partial =
+                new ProjectItem(
+                        cut.id(),
+                        cut.archived(),
+                        cut.issue(),
+                        cut.values(),
+                        new GitHubGraphQl.PageInfo(true, "values-2"));
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), partial)
+                        .read();
+
+        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
+        assertThat(snapshot.board().faults())
+                .containsExactly(
+                        "Item example-org/example-lib#3 has more labels or field values than one"
+                                + " page carries and is left out");
+        assertThat(BoardCopyMapping.tracked(partial).partial()).as("its copy").isTrue();
+        assertThat(
+                        BoardCopyMapping.item(BoardCopyMapping.tracked(partial))
+                                .valuesPage()
+                                .hasNextPage())
+                .as("read back from its copy, still not whole")
+                .isTrue();
     }
 
     @Test
@@ -1247,5 +1281,106 @@ class ItemsBoardReaderTest {
                 .as("under its story again")
                 .containsExactly("example-lib#3");
         assertThat(after.outside()).as("no longer outside").isEmpty();
+    }
+
+    @Test
+    void aSnapshotThroughItsCopyGivesTheSameBoardAndRevision() {
+        // Harm: a board shown at start from its copy that differs from the one GitHub gave, or
+        // whose revision refuses the first save made against it.
+        final List<ProjectField> fields = new ArrayList<>(FIELDS);
+        // A second field of one name: its values are still read by the field's id.
+        fields.add(field("F_rank_new", FieldNames.RANK, "NUMBER"));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(fields, null)
+                        .itemsPage(
+                                null,
+                                story("High", LIB_3, node(OWNER + "/example-lib", 4)),
+                                libIssue(3, refs(false)),
+                                libIssue(4, refs(true, "I_part")),
+                                new ProjectItem(
+                                        "PVTI_draft",
+                                        true,
+                                        null,
+                                        List.of(),
+                                        new GitHubGraphQl.PageInfo(false, null)));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot read = reader.read(CONFIG);
+
+        final BoardCopy copy = reader.toCopy(read, ChangeCursor.NONE, List.of());
+        assertThat(copy).as("the copy of a snapshot read from GitHub").isNotNull();
+        final Snapshot loaded = reader.fromCopy(copy, CONFIG);
+
+        assertThat(read.board().faults()).as("the faults the copy must keep").isNotEmpty();
+        assertThat(loaded).as("the snapshot from the copy").isNotNull();
+        assertThat(loaded.board().revision())
+                .as("the revision from the copy")
+                .isEqualTo(read.board().revision());
+        assertThat(loaded.board()).as("the board from the copy").isEqualTo(read.board());
+        assertThat(loaded).as("the whole snapshot from the copy").isEqualTo(read);
+        assertThat(github.calls)
+                .as("GitHub asked only by the read itself")
+                .containsExactly("projectFields after null", "projectItems after null");
+    }
+
+    @Test
+    void aCopyOfOtherProjectFilesOrAnotherProjectGivesNoSnapshot() {
+        // Harm: a board held under another workflow or of another project shown as this one.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final BoardCopy copy = reader.toCopy(reader.read(CONFIG), ChangeCursor.NONE, List.of());
+        assertThat(copy).as("the copy").isNotNull();
+
+        for (final ProjectConfig other :
+                List.of(
+                        new ProjectConfig(
+                                CONFIG.forge(),
+                                CONFIG.project(),
+                                "beef001",
+                                CONFIG.workflow(),
+                                CONFIG.work(),
+                                CONFIG.repositories(),
+                                Map.of(),
+                                Map.of()),
+                        new ProjectConfig(
+                                CONFIG.forge(),
+                                new ProjectRef(OWNER, 8),
+                                CONFIG.commit(),
+                                CONFIG.workflow(),
+                                CONFIG.work(),
+                                CONFIG.repositories(),
+                                Map.of(),
+                                Map.of()),
+                        new ProjectConfig(
+                                CONFIG.forge(),
+                                CONFIG.project(),
+                                CONFIG.commit(),
+                                CONFIG.workflow(),
+                                CONFIG.work(),
+                                List.of("example-project"),
+                                Map.of(),
+                                Map.of()))) {
+            assertThat(reader.fromCopy(copy, other)).as("the copy read for %s", other).isNull();
+        }
+    }
+
+    @Test
+    void aSnapshotNotReadFromGitHubGivesNoCopy() {
+        // Harm: a board made without GitHub's items kept and shown at start as an empty board.
+        final Snapshot made =
+                new Snapshot(
+                        new GitHub().fieldsPage(FIELDS, null).itemsPage(null).read().board(),
+                        Map.of(),
+                        CONFIG);
+
+        assertThat(
+                        new GitHub()
+                                .reader(AccessRefusals.DEFAULT)
+                                .toCopy(made, ChangeCursor.NONE, List.of()))
+                .as("the copy of a snapshot not read from GitHub")
+                .isNull();
     }
 }

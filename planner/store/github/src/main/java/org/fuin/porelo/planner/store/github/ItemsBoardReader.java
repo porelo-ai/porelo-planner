@@ -30,6 +30,10 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -225,6 +229,7 @@ public final class ItemsBoardReader implements BoardReader {
         final Map<String, Map<String, String>> optionIds = new LinkedHashMap<>();
         final Map<String, String> fieldNames = new LinkedHashMap<>();
         final Map<String, String> dataTypes = new LinkedHashMap<>();
+        final Map<String, Long> restFieldIds = new LinkedHashMap<>();
         @Nullable String after = null;
         String projectId = "";
         for (int page = 1; ; page++) {
@@ -246,6 +251,7 @@ public final class ItemsBoardReader implements BoardReader {
             for (final GitHubGraphQl.ProjectField field : fields.fields()) {
                 fieldIds.put(field.name(), field.id());
                 fieldNames.put(field.id(), field.name());
+                restFieldIds.put(field.id(), field.databaseId());
                 dataTypes.put(field.name(), field.dataType());
                 // A later field of the same name stands for it, so no option of an earlier one
                 // is written to it.
@@ -290,7 +296,7 @@ public final class ItemsBoardReader implements BoardReader {
                     reads,
                     current.lacksAny(lagging) ? "still lacked them" : "then held them");
         }
-        return snapshot(read, faults, current, fieldNames);
+        return snapshot(read, faults, current, fieldNames, restFieldIds);
     }
 
     /**
@@ -301,6 +307,19 @@ public final class ItemsBoardReader implements BoardReader {
     @Override
     public Snapshot reread(
             final ProjectConfig config, final Snapshot held, final Touched.Ids touched) {
+        return reread(config, held, touched, Map.of());
+    }
+
+    /**
+     * Reads again only the issues named, as {@link #reread(ProjectConfig, Snapshot, Touched.Ids)}
+     * does, each item archived as the look's list showed it and otherwise as the snapshot held it.
+     */
+    @Override
+    public Snapshot reread(
+            final ProjectConfig config,
+            final Snapshot held,
+            final Touched.Ids touched,
+            final Map<String, Boolean> archivedNow) {
         final ProjectConfig read = held.config();
         if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
             return read(config);
@@ -351,7 +370,9 @@ public final class ItemsBoardReader implements BoardReader {
                     }
                     continue;
                 }
-                final boolean archived = kept != null && kept.archived();
+                // A read by id does not tell whether the item is archived: the look's list does.
+                final Boolean listed = archivedNow.get(itemId);
+                final boolean archived = listed != null ? listed : kept != null && kept.archived();
                 if (kept != null && !kept.id().equals(itemId)) {
                     items.remove(kept.id());
                 }
@@ -366,7 +387,76 @@ public final class ItemsBoardReader implements BoardReader {
                 read,
                 held.fieldFaults(),
                 mapped(items, read, held.fieldNames()),
-                held.fieldNames());
+                held.fieldNames(),
+                held.restFieldIds());
+    }
+
+    /**
+     * Answers the board's copy, taken now; see {@link BoardCopyMapping#toCopy}.
+     *
+     * @param held the snapshot
+     * @param cursor where the tracker's look for changes stands
+     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @return the copy, or null for a snapshot not read from GitHub's item list
+     */
+    @Override
+    public @Nullable BoardCopy toCopy(
+            final Snapshot held, final ChangeCursor cursor, final List<TrackedItem> heldItems) {
+        return toCopy(held, cursor, heldItems, Map.of());
+    }
+
+    /** Answers the board's copy, each item with its time as the list last showed it. */
+    @Override
+    public @Nullable BoardCopy toCopy(
+            final Snapshot held,
+            final ChangeCursor cursor,
+            final List<TrackedItem> heldItems,
+            final Map<String, Instant> listedAt) {
+        if (held.config().projectId().isEmpty()) {
+            // Not read from GitHub: its board could not be mapped again from its items.
+            return null;
+        }
+        return BoardCopyMapping.toCopy(held, cursor, heldItems, listedAt, clock.instant());
+    }
+
+    /**
+     * Maps the board anew from a copy's items, as a read of them from GitHub maps it, so the board
+     * and its revision are the ones the copy was taken of.
+     *
+     * @param copy the copy
+     * @param config what the project is read with, as its files name it now
+     * @return the snapshot, or null when the copy is of another project, other project files or
+     *     other repositories
+     */
+    @Override
+    public @Nullable Snapshot fromCopy(final BoardCopy copy, final ProjectConfig config) {
+        if (!copy.project().equals(BoardCopyMapping.project(config))
+                || !copy.filesCommit().equals(config.commit())
+                || !copy.repositories().equals(config.repositories())) {
+            return null;
+        }
+        final TrackerBoard board = copy.board();
+        final ProjectConfig read =
+                new ProjectConfig(
+                        config.forge(),
+                        config.project(),
+                        config.commit(),
+                        config.workflow(),
+                        config.work(),
+                        config.repositories(),
+                        board.fieldIds(),
+                        board.optionIds(),
+                        board.id());
+        final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>();
+        for (final TrackedItem item : copy.items()) {
+            items.putIfAbsent(item.id(), BoardCopyMapping.item(item));
+        }
+        return snapshot(
+                read,
+                board.faults(),
+                mapped(items, read, board.fieldNames()),
+                board.fieldNames(),
+                board.restFieldIds());
     }
 
     /** Maps the items read to the board and the snapshot that holds it. */
@@ -374,7 +464,8 @@ public final class ItemsBoardReader implements BoardReader {
             final ProjectConfig read,
             final List<String> faults,
             final ItemsRead current,
-            final Map<String, String> fieldNames) {
+            final Map<String, String> fieldNames,
+            final Map<String, Long> restFieldIds) {
         final List<String> allFaults = new ArrayList<>(faults);
         allFaults.addAll(current.faults());
         final IssueMapping.Mapped mapped = current.mapped();
@@ -396,7 +487,7 @@ public final class ItemsBoardReader implements BoardReader {
                 byId.putIfAbsent(id, view);
             }
         }
-        return new Snapshot(board, byId, read, current.items(), faults, fieldNames);
+        return new Snapshot(board, byId, read, current.items(), faults, fieldNames, restFieldIds);
     }
 
     /**
@@ -765,6 +856,14 @@ public final class ItemsBoardReader implements BoardReader {
                     where
                             + " has more sub-issues or blockers than one page carries and is left"
                             + " out; its story is not whole");
+            overflowing.add(item.id());
+        } else if (Boolean.TRUE.equals(issue.labelsPage().hasNextPage())
+                || Boolean.TRUE.equals(item.valuesPage().hasNextPage())) {
+            // Labels or values read in part would map to a story or an issue that is not it.
+            faults.add(
+                    where
+                            + " has more labels or field values than one page carries and is left"
+                            + " out");
             overflowing.add(item.id());
         }
         final String reason = issue.stateReason();

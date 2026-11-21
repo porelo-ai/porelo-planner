@@ -51,6 +51,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-store-cache</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
@@ -352,6 +357,9 @@
                                         <buildArg>-H:+ReportExceptionStackTraces</buildArg>
                                         <!-- x86-64 v1, so it starts on any x86-64 CPU, not only the build host's. -->
                                         <buildArg>-march=x86-64</buildArg>
+                                        <!-- Apache Fory, which writes the board's copy, is made and compiles its
+                                             serializers when the image is built, as Fory asks for GraalVM. -->
+                                        <buildArg>--initialize-at-build-time=org.fuin.porelo.planner.store.cache.ForyEncoding</buildArg>
                                     </buildArgs>
                                 </configuration>
                             </execution>
