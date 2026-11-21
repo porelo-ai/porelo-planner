@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -231,6 +232,12 @@ class FieldsBoardWriterTest {
 
         private @Nullable RuntimeException updateFailure;
 
+        /** The waits of the writes, in order; a test waits nothing. */
+        private final List<java.time.Duration> waits = new ArrayList<>();
+
+        /** Whether the update's failure happens only once, as a passing one of GitHub's. */
+        private boolean failsOnce;
+
         GitHub holding(final ItemView... items) {
             for (final ItemView item : items) {
                 held.put(item.issueId(), onBoard(item));
@@ -269,7 +276,8 @@ class FieldsBoardWriterTest {
                     this,
                     origin -> TOKEN,
                     new ForgeAccessRefusals(URI.create("https://github.com")),
-                    () -> NOW);
+                    () -> NOW,
+                    waits::add);
         }
 
         @Override
@@ -424,8 +432,12 @@ class FieldsBoardWriterTest {
                 final @Nullable Opening opening) {
             assertThat(title).as("only an edit of the text sends a title").isNull();
             calls.add("updateIssue");
-            if (updateFailure != null) {
-                throw updateFailure;
+            final RuntimeException failure = updateFailure;
+            if (failure != null) {
+                if (failsOnce) {
+                    updateFailure = null;
+                }
+                throw failure;
             }
             updates.add(repository + "#" + number + " " + opening);
             if (body != null) {
@@ -582,6 +594,15 @@ class FieldsBoardWriterTest {
                 new GitHub()
                         .holding(items.toArray(ItemView[]::new))
                         .answering(FieldsBoardWriterTest::saved)
+                        // Asked again after GitHub's failure, which holds every time.
+                        .answering(
+                                values -> {
+                                    throw GitHubExceptions.refused(502, "bad gateway " + TOKEN);
+                                })
+                        .answering(
+                                values -> {
+                                    throw GitHubExceptions.refused(502, "bad gateway " + TOKEN);
+                                })
                         .answering(
                                 values -> {
                                     throw GitHubExceptions.refused(502, "bad gateway " + TOKEN);
@@ -605,7 +626,9 @@ class FieldsBoardWriterTest {
                                     .as("the failure's words")
                                     .doesNotContain(TOKEN);
                         });
-        assertThat(github.mutations).as("the mutations sent").hasSize(2);
+        assertThat(github.mutations)
+                .as("the mutations sent: the second asked three times")
+                .hasSize(1 + WritePace.TRIES);
     }
 
     @Test
@@ -670,6 +693,120 @@ class FieldsBoardWriterTest {
                 .containsExactly(
                         "example-project#1 Opening[open=false, notPlanned=true]",
                         "example-project#2 Opening[open=true, notPlanned=false]");
+    }
+
+    @Test
+    void aMoveToAClosedStateWritesTheStatusBeforeItClosesTheIssue() {
+        // Harm: a save cut off after the close leaves an issue closed on GitHub that the board
+        // still shows in its old state, as a story's Finished cut off midway did.
+        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(open);
+
+        github.writer()
+                .save(
+                        snapshot(open),
+                        SHOWN,
+                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
+
+        assertThat(github.calls)
+                .as("the writes, in order")
+                .containsSubsequence("setFieldValues", "updateIssue");
+        assertThat(github.calls.indexOf("updateIssue"))
+                .as("the close after the Status")
+                .isGreaterThan(github.calls.lastIndexOf("setFieldValues"));
+    }
+
+    @Test
+    void aCloseThatFailsOnceOnGitHubsSideIsAskedAgainBeforeItIsRefused() {
+        // Harm: one passing failure of GitHub's answers PartlySaved, and the person's move of a
+        // story with many issues stops halfway.
+        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(open);
+        github.updateFailure = GitHubExceptions.refused(502, "bad gateway");
+        github.failsOnce = true;
+
+        github.writer()
+                .save(
+                        snapshot(open),
+                        SHOWN,
+                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
+
+        assertThat(github.updates)
+                .as("the issue closed")
+                .containsExactly("example-project#1 Opening[open=false, notPlanned=false]");
+        assertThat(github.calls.stream().filter("updateIssue"::equals).count())
+                .as("asks to close it")
+                .isEqualTo(2);
+    }
+
+    @Test
+    void aCloseGitHubRefusedAsRateLimitedIsAskedAgainAfterTheWaitItAskedFor() {
+        // Harm: a story's Finished stopped by GitHub's limit on writes in a burst, answered as
+        // partly saved though GitHub only asked for a wait.
+        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(open);
+        github.updateFailure =
+                GitHubExceptions.rateLimited(403, "secondary rate limit", Duration.ofSeconds(3));
+        github.failsOnce = true;
+
+        github.writer()
+                .save(
+                        snapshot(open),
+                        SHOWN,
+                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
+
+        assertThat(github.updates).as("the issue closed").hasSize(1);
+        assertThat(github.waits).as("the waits").containsExactly(Duration.ofSeconds(3));
+    }
+
+    @Test
+    void theWritesOfALargeMoveStandASecondApartAfterTheFirstFew() {
+        // Harm: a story of many issues moved in one burst of writes, which GitHub's limit on
+        // writes in a burst refuses midway.
+        final List<ItemView> items = new ArrayList<>();
+        final Map<String, String> moves = new LinkedHashMap<>();
+        for (int n = 1; n <= 8; n++) {
+            items.add(item("PL" + n, "example-project", n, true, "", state("Backlog")));
+            moves.put("PL" + n, "Finished");
+        }
+        final GitHub github = new GitHub().holding(items.toArray(ItemView[]::new));
+
+        github.writer()
+                .save(
+                        snapshot(items.toArray(ItemView[]::new)),
+                        SHOWN,
+                        new Writes(moves, Map.of(), List.of()));
+
+        assertThat(github.updates).as("the issues closed").hasSize(8);
+        // One batch of values and eight closes: the first five go at once, the other four wait.
+        assertThat(github.waits)
+                .as("the waits between writes")
+                .containsExactly(
+                        WritePace.SPACING, WritePace.SPACING, WritePace.SPACING, WritePace.SPACING);
+    }
+
+    @Test
+    void aCloseGitHubRefusesIsNotAskedAgain() {
+        // Harm: a refusal asked again, which only repeats it and delays the person's answer.
+        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(open);
+        github.updateFailure = GitHubExceptions.refused(422, "Validation Failed");
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(open),
+                                                SHOWN,
+                                                new Writes(
+                                                        ordered("PL1", "Finished"),
+                                                        Map.of(),
+                                                        List.of())))
+                .as("a close GitHub refused")
+                .isInstanceOf(StoreException.class);
+        assertThat(github.calls.stream().filter("updateIssue"::equals).count())
+                .as("asks to close it")
+                .isEqualTo(1);
     }
 
     @Test
@@ -1122,6 +1259,15 @@ class FieldsBoardWriterTest {
         final GitHub github =
                 new GitHub()
                         .holding(one)
+                        // Asked again after GitHub's failure, which holds every time.
+                        .answering(
+                                values -> {
+                                    throw GitHubExceptions.unanswered("timed out");
+                                })
+                        .answering(
+                                values -> {
+                                    throw GitHubExceptions.unanswered("timed out");
+                                })
                         .answering(
                                 values -> {
                                     throw GitHubExceptions.unanswered("timed out");

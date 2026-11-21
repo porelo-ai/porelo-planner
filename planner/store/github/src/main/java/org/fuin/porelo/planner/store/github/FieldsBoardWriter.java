@@ -50,6 +50,8 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     private final InstantSource clock;
 
+    private final WritePace.Sleeper sleeper;
+
     /**
      * Makes the writer.
      *
@@ -75,10 +77,29 @@ public final class FieldsBoardWriter implements BoardWriter {
             final TokenSource tokens,
             final AccessRefusals refusals,
             final InstantSource clock) {
+        this(github, tokens, refusals, clock, Thread::sleep);
+    }
+
+    /**
+     * Makes the writer with its own clock and its own waits between writes.
+     *
+     * @param github the calls a write is made of
+     * @param tokens the person's token, asked for once a write
+     * @param refusals turns a failure into the store's refusal, scrubbed of the token
+     * @param clock tells the time a new issue's call is sent at
+     * @param sleeper waits between writes and before a write is made again
+     */
+    FieldsBoardWriter(
+            final ProjectWrites github,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final InstantSource clock,
+            final WritePace.Sleeper sleeper) {
         this.github = github;
         this.tokens = tokens;
         this.refusals = refusals;
         this.clock = clock;
+        this.sleeper = sleeper;
     }
 
     @Override
@@ -490,6 +511,9 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** What GitHub held of each item right before the write, by the issue's node id. */
         private final Map<String, GitHubGraphQl.BoardIssue> reads = new LinkedHashMap<>();
 
+        /** The pace of this save's writes, made when it writes. */
+        private WritePace pace = new WritePace(InstantSource.system(), Thread::sleep, "");
+
         Plan(final Snapshot current) {
             this.current = current;
         }
@@ -709,6 +733,7 @@ public final class FieldsBoardWriter implements BoardWriter {
          * leaves the state and the sums unwritten and the result can be handed in again.
          */
         void write(final String token) {
+            pace = new WritePace(clock, sleeper, token);
             final String own = current.config().own();
             if (current.config().projectId().isBlank()) {
                 throw new StoreException.Unreadable(own, "the GitHub project's id was not read");
@@ -730,25 +755,11 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final String id = entry.getKey();
                 final String title = titles.get(id);
                 final String body = bodies.get(id);
-                final ProjectWrites.Opening opening = openings.get(id);
-                if (title == null && body == null && opening == null) {
+                if (title == null && body == null) {
                     continue;
                 }
                 final ItemView item = entry.getValue();
-                try {
-                    github.updateIssue(
-                            token,
-                            current.config().project().owner(),
-                            item.repository(),
-                            item.number(),
-                            title,
-                            body,
-                            opening);
-                } catch (final RuntimeException e) {
-                    // GitHub's words may repeat the title or body sent, so a refusal is fixed.
-                    throw refusedCall(e, id, item.repository(), written, token);
-                }
-                written.add(item.repository());
+                update(token, id, item, title, body, null, written);
             }
             final List<Value> all = new ArrayList<>(values.values());
             if (planned != null && toComment == null) {
@@ -765,8 +776,13 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final Batch<String> batch;
                 try {
                     batch =
-                            github.setFieldValues(
-                                    token, projectId, chunk.stream().map(Value::value).toList());
+                            pace.again(
+                                    "the field values of " + chunk.size() + " items",
+                                    () ->
+                                            github.setFieldValues(
+                                                    token,
+                                                    projectId,
+                                                    chunk.stream().map(Value::value).toList()));
                 } catch (final RuntimeException e) {
                     throw failed(e, chunk.get(0).item().repository(), written, token);
                 }
@@ -796,11 +812,25 @@ public final class FieldsBoardWriter implements BoardWriter {
                             refused.item().repository(), List.copyOf(written), reason);
                 }
             }
+            // After the field values: a save cut off between them leaves an issue whose Status
+            // already says what the person chose, never a closed one the board shows in its old
+            // state; the same move again closes what is still open.
+            for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
+                final ProjectWrites.Opening opening = openings.get(entry.getKey());
+                if (opening != null) {
+                    update(token, entry.getKey(), entry.getValue(), null, null, opening, written);
+                }
+            }
             final String owner = current.config().project().owner();
             for (final Link link : links) {
                 final ItemView from = link.from();
                 try {
-                    change(token, owner, link);
+                    pace.once(
+                            "a link of " + from.repository() + "#" + from.number(),
+                            () -> {
+                                change(token, owner, link);
+                                return null;
+                            });
                 } catch (final RuntimeException e) {
                     throw refusedCall(e, link.id(), from.repository(), written, token);
                 }
@@ -819,6 +849,39 @@ public final class FieldsBoardWriter implements BoardWriter {
                     throw failed(e, item.repository(), written, token);
                 }
             }
+        }
+
+        /** Writes an issue's title, text or open state, once more after a passing failure. */
+        private void update(
+                final String token,
+                final String id,
+                final ItemView item,
+                final @Nullable String title,
+                final @Nullable String body,
+                final ProjectWrites.@Nullable Opening opening,
+                final Set<String> written) {
+            try {
+                pace.again(
+                        (opening == null ? "the text of " : "the open state of ")
+                                + item.repository()
+                                + "#"
+                                + item.number(),
+                        () -> {
+                            github.updateIssue(
+                                    token,
+                                    current.config().project().owner(),
+                                    item.repository(),
+                                    item.number(),
+                                    title,
+                                    body,
+                                    opening);
+                            return null;
+                        });
+            } catch (final RuntimeException e) {
+                // GitHub's words may repeat the title or body sent, so a refusal is fixed.
+                throw refusedCall(e, id, item.repository(), written, token);
+            }
+            written.add(item.repository());
         }
 
         private void change(final String token, final String owner, final Link link) {
