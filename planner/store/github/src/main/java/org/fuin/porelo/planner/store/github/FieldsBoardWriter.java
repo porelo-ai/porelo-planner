@@ -112,7 +112,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         writes.issues()
                 .forEach(
                         (id, state) -> {
-                            final ItemView item = issueItem(current, id);
+                            final ItemView item = movedItem(current, id);
                             plan.state(id, item, state);
                         });
         writes.workers()
@@ -475,6 +475,18 @@ public final class FieldsBoardWriter implements BoardWriter {
             throw new StoreException.NoSuchIssue(id);
         }
         return item;
+    }
+
+    /**
+     * The item of an issue on the board or left out of its workflow, which a move brings back, or
+     * the refusal that it has none.
+     */
+    private static ItemView movedItem(final Snapshot current, final String id) {
+        final ItemView item = current.items().get(id);
+        if (item != null && current.board().outsideIssue(id).isPresent()) {
+            return item;
+        }
+        return issueItem(current, id);
     }
 
     /** The item of a story on the board, or the refusal that it has none. */

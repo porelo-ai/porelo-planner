@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import org.assertj.core.groups.Tuple;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
@@ -460,16 +461,37 @@ class IssueMappingTest {
     @Test
     void aFaultNeverRepeatsWhatAPersonWroteOnGitHub() {
         // Harm: a private title or body shown in the log or to whoever reads the board's faults.
-        final Item bad = new Item("example-lib", 1).field(FieldNames.STATUS, SECRET_TITLE);
+        final Item bad = new Item("example-lib", 1).field(FieldNames.STATUS, SECRET_TITLE + "\n");
+        final Item tooLong =
+                new Item("example-lib", 3).field(FieldNames.STATUS, SECRET_BODY.repeat(4));
+        final Item badWorker =
+                new Item("example-lib", 4)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.WORKER, SECRET_TITLE);
         final Item badSize =
                 new Item("example-lib", 2)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.SIZE, SECRET_BODY);
+        final Item accepted = new Item("example-lib", 5).field(FieldNames.STATUS, "Accepted");
 
-        assertThat(String.join("\n", read(bad, badSize).faults()))
+        final List<String> faults = read(bad, tooLong, badWorker, badSize, accepted).faults();
+
+        assertThat(String.join("\n", faults))
                 .as("the faults' words")
                 .doesNotContain(SECRET_TITLE)
                 .doesNotContain(SECRET_BODY);
+        assertThat(faults)
+                .as("a Status that is no plain option name, named without it")
+                .contains(
+                        "example-lib#1 has a Status the workflow does not hold; move it into a"
+                                + " state of the board to repair it",
+                        "example-lib#3 has a Status the workflow does not hold; move it into a"
+                                + " state of the board to repair it");
+        assertThat(faults)
+                .as("a plain option name named")
+                .contains(
+                        "example-lib#5 has the Status Accepted, which the workflow does not hold;"
+                                + " move it into a state of the board to repair it");
     }
 
     @Test
@@ -778,5 +800,129 @@ class IssueMappingTest {
                 .as("named")
                 .containsExactly(
                         "example-lib#1 is blocked by an issue outside the project and is left out");
+    }
+
+    @Test
+    void anIssueWhoseStatusTheWorkflowDoesNotHoldIsListedOutsideTheBoardToBeMovedBack() {
+        // Harm: an issue a person set to a Status the workflow lacks vanishes from the window, and
+        // no move can bring it back.
+        final Item story = new Item("example-project", 1).story();
+        final Item accepted =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Accepted")
+                        .field(FieldNames.WORKER, "Manual");
+        final Item none = new Item("example-lib", 3);
+        final Item fine = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        story.sub(accepted).sub(fine);
+
+        final IssueMapping.Mapped mapped = read(story, accepted, none, fine);
+
+        assertThat(mapped.issues())
+                .as("only the issues in a state of the workflow are on the board")
+                .extracting(Issue::id)
+                .containsExactly("example-lib#4");
+        assertThat(mapped.outsideWorkflow())
+                .as("each issue left out of the workflow, with what the window shows of it")
+                .containsExactlyInAnyOrder(
+                        new OutsideIssue(
+                                "example-lib#2",
+                                "example-lib",
+                                SECRET_TITLE,
+                                "Accepted",
+                                "example-project#1",
+                                null,
+                                URI.create("https://github.com/example-org/example-lib/issues/2"),
+                                Worker.MANUAL),
+                        new OutsideIssue(
+                                "example-lib#3",
+                                "example-lib",
+                                SECRET_TITLE,
+                                "",
+                                null,
+                                null,
+                                URI.create("https://github.com/example-org/example-lib/issues/3"),
+                                Worker.AGENT));
+        assertThat(mapped.faults())
+                .as("each named with how a person repairs it")
+                .containsExactlyInAnyOrder(
+                        "example-lib#2 has the Status Accepted, which the workflow does not hold;"
+                                + " move it into a state of the board to repair it",
+                        "example-lib#3 has no Status; move it into a state of the board to repair"
+                                + " it");
+    }
+
+    @Test
+    void anIssueUnderAParentOutsideTheWorkflowIsWorkedAsItsParentAndStandsUnderIt() {
+        // Harm: a sub-issue moved by hand into a working state an agent's parent enters only by
+        // work, or moved open under a parent closed in the same batch.
+        final Item parent =
+                new Item("example-lib", 1)
+                        .field(FieldNames.STATUS, "Accepted")
+                        .field(FieldNames.WORKER, "Agent");
+        final Item sub =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Accepted")
+                        .field(FieldNames.WORKER, "Manual");
+        parent.sub(sub);
+
+        assertThat(read(parent, sub).outsideWorkflow())
+                .as("the sub-issue under its parent, with its parent's worker")
+                .filteredOn(issue -> issue.id().equals("example-lib#2"))
+                .singleElement()
+                .extracting(OutsideIssue::parent, OutsideIssue::worker)
+                .containsExactly("example-lib#1", Worker.AGENT);
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowWithAnotherFaultIsLeftOutForThatFaultAlone() {
+        // Harm: an issue offered for a move back onto the board that the next read leaves out
+        // again, or worked as a parent of another repository.
+        final Item blockedElsewhere =
+                new Item("example-lib", 1)
+                        .field(FieldNames.STATUS, "Accepted")
+                        .blockedByNode("I_elsewhere_9");
+        final Item otherRepository =
+                new Item("example-project", 2)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.WORKER, "Manual");
+        final Item crossing = new Item("example-lib", 3).field(FieldNames.STATUS, "Accepted");
+        otherRepository.sub(crossing);
+        final Item top = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        final Item middle = new Item("example-lib", 5).field(FieldNames.STATUS, "Idea");
+        final Item deep = new Item("example-lib", 6).field(FieldNames.STATUS, "Accepted");
+        top.sub(middle);
+        middle.sub(deep);
+        final Item leftOut =
+                new Item("example-lib", 7)
+                        .field(FieldNames.STATUS, "Idea")
+                        .blockedByNode("I_elsewhere_8");
+        final Item dangling =
+                new Item("example-lib", 8).field(FieldNames.STATUS, "Accepted").blockedBy(leftOut);
+        final Item orphan = new Item("example-lib", 9).field(FieldNames.STATUS, "Accepted");
+        orphan.parent = "I_elsewhere_7";
+
+        final IssueMapping.Mapped mapped =
+                read(
+                        blockedElsewhere,
+                        otherRepository,
+                        crossing,
+                        top,
+                        middle,
+                        deep,
+                        leftOut,
+                        dangling,
+                        orphan);
+
+        assertThat(mapped.outsideWorkflow()).as("none offered for a move").isEmpty();
+        assertThat(mapped.faults())
+                .as("each named for its other fault alone, as a board issue with it is")
+                .containsExactlyInAnyOrder(
+                        "example-lib#1 is blocked by an issue outside the project and is left out",
+                        "example-lib#3 stands in another repository than its parent and is left"
+                                + " out",
+                        "example-lib#6 is a sub-issue of a sub-issue and is left out",
+                        "example-lib#7 is blocked by an issue outside the project and is left out",
+                        "example-lib#8 depends on an issue left out and is left out too",
+                        "example-lib#9 has a parent outside the project and is left out");
     }
 }

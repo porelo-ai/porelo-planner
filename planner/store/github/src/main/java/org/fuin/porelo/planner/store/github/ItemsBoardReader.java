@@ -387,7 +387,8 @@ public final class ItemsBoardReader implements BoardReader {
                         read.work(),
                         read.repositories(),
                         allFaults,
-                        read.project().owner());
+                        read.project().owner(),
+                        mapped.outsideWorkflow());
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         for (final ItemView view : current.views()) {
             final String id = IssueMapping.idOf(view);

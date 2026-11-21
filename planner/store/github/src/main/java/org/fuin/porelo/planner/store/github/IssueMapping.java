@@ -17,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Worker;
@@ -50,6 +51,8 @@ public final class IssueMapping {
      *     of each writes again
      * @param outside the node ids of the sub-issues a story was named to have outside the project,
      *     each once
+     * @param outsideWorkflow the issues left out because their Status is none of the workflow's
+     *     states, by priority and then rank
      */
     public record Mapped(
             List<Story> stories,
@@ -57,7 +60,8 @@ public final class IssueMapping {
             List<String> faults,
             Map<String, StageComment.Sums> sums,
             List<String> rewrite,
-            List<String> outside) {
+            List<String> outside,
+            List<OutsideIssue> outsideWorkflow) {
 
         /** Copies the lists and the map. */
         public Mapped {
@@ -67,6 +71,7 @@ public final class IssueMapping {
             sums = Collections.unmodifiableMap(new LinkedHashMap<>(sums));
             rewrite = List.copyOf(rewrite);
             outside = List.copyOf(outside);
+            outsideWorkflow = List.copyOf(outsideWorkflow);
         }
     }
 
@@ -166,17 +171,30 @@ public final class IssueMapping {
         }
 
         final Map<String, Issue> issues = new LinkedHashMap<>();
+        final Set<String> unstated = new HashSet<>();
         for (final Map.Entry<String, ItemView> entry : issueItems.entrySet()) {
             final Issue issue =
                     issue(entry.getKey(), entry.getValue(), workflow, byIssueId, idOf, faults);
             if (issue != null) {
                 issues.put(issue.id(), issue);
+                if (!workflow.states().contains(issue.state())) {
+                    unstated.add(issue.id());
+                }
             }
         }
+        // An issue whose Status is its one defect goes through the same checks as one on the
+        // board, so only an issue a move can put on the board is listed outside it.
         leaveOutCycles(issues, faults);
         leaveOutSubSubIssues(issues, faults);
-        leaveOutDangling(issues, faults);
         workedAsParents(issues);
+        final Map<String, Issue> unplaced = new LinkedHashMap<>();
+        for (final String id : List.copyOf(issues.keySet())) {
+            if (unstated.contains(id)) {
+                unplaced.put(id, Objects.requireNonNull(issues.remove(id)));
+            }
+        }
+        leaveOutDangling(issues, unplaced, faults);
+        unplaced.values().forEach(issue -> faults.add(outsideFault(issue.id(), issue.state())));
         final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
         final List<String> rewrite = new ArrayList<>();
         for (final String id : issues.keySet()) {
@@ -228,7 +246,51 @@ public final class IssueMapping {
                 issues.values().stream()
                         .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
                         .toList();
-        return new Mapped(sortedStories, sortedIssues, faults, sums, rewrite, List.copyOf(outside));
+        final List<OutsideIssue> outsideWorkflow =
+                unplaced.values().stream()
+                        .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
+                        .map(issue -> outsideIssue(issue, issueItems, stories, byIssueId, idOf))
+                        .toList();
+        return new Mapped(
+                sortedStories,
+                sortedIssues,
+                faults,
+                sums,
+                rewrite,
+                List.copyOf(outside),
+                outsideWorkflow);
+    }
+
+    /**
+     * An issue left out because its Status is none of the workflow's, with the story or the issue
+     * the board holds that it stands under, so a move into the workflow is judged as its place
+     * there will be.
+     */
+    private static OutsideIssue outsideIssue(
+            final Issue issue,
+            final Map<String, ItemView> issueItems,
+            final List<Story> stories,
+            final Map<String, ItemView> byIssueId,
+            final Map<String, String> idOf) {
+        final ItemView item = Objects.requireNonNull(issueItems.get(issue.id()));
+        final ItemView parentItem =
+                item.parentIssueId() == null ? null : byIssueId.get(item.parentIssueId());
+        final String storyId =
+                parentItem != null && isStory(parentItem) ? idOf.get(parentItem.issueId()) : null;
+        final String story =
+                storyId != null && stories.stream().anyMatch(s -> s.id().equals(storyId))
+                        ? storyId
+                        : null;
+        // Its parent and worker are those the board issue would have, a parent outside too.
+        return new OutsideIssue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.state(),
+                story,
+                issue.parent(),
+                issue.link(),
+                issue.worker());
     }
 
     /**
@@ -280,11 +342,10 @@ public final class IssueMapping {
             final Map<String, String> idOf,
             final List<String> faults) {
         final String state = item.fields().getOrDefault(FieldNames.STATUS, "");
-        if (!workflow.states().contains(state)) {
-            faults.add(id + " has a Status outside the workflow and is left out");
-            return null;
+        // An issue outside the workflow has no open state to check against it.
+        if (workflow.states().contains(state)) {
+            checkOpen(id, item, state, workflow, faults);
         }
-        checkOpen(id, item, state, workflow, faults);
         String parent = null;
         if (item.parentIssueId() != null) {
             final ItemView parentItem = byIssueId.get(item.parentIssueId());
@@ -334,6 +395,37 @@ public final class IssueMapping {
                 body,
                 worker,
                 risk);
+    }
+
+    /** The longest Status a fault names, as a plain option name of a single-select field. */
+    private static final int LONGEST_NAMED_STATUS = 100;
+
+    /**
+     * Names an issue left out of the workflow and how a person brings it back; a Status that is no
+     * plain option name is a person's text and not repeated.
+     */
+    private static String outsideFault(final String id, final String status) {
+        final String what;
+        if (status.isEmpty()) {
+            what = id + " has no Status";
+        } else if (plainName(status)) {
+            what = id + " has the Status " + status + ", which the workflow does not hold";
+        } else {
+            what = id + " has a Status the workflow does not hold";
+        }
+        return what + "; move it into a state of the board to repair it";
+    }
+
+    /** Whether a text is short and on one line, without a control or line-breaking character. */
+    private static boolean plainName(final String text) {
+        return text.codePointCount(0, text.length()) <= LONGEST_NAMED_STATUS
+                && text.codePoints()
+                        .noneMatch(
+                                c ->
+                                        Character.isISOControl(c)
+                                                || Character.getType(c) == Character.LINE_SEPARATOR
+                                                || Character.getType(c)
+                                                        == Character.PARAGRAPH_SEPARATOR);
     }
 
     private static @Nullable Story story(
@@ -531,24 +623,44 @@ public final class IssueMapping {
         }
     }
 
-    /** Leaves out, until none is left, every issue whose parent or blocker was left out. */
+    /**
+     * Leaves out, until none is left, every issue whose parent or blocker was left out: a board
+     * issue that depends on one off the board, and an issue outside the workflow that depends on
+     * one neither on the board nor outside it.
+     */
     private static void leaveOutDangling(
-            final Map<String, Issue> issues, final List<String> faults) {
+            final Map<String, Issue> issues,
+            final Map<String, Issue> unplaced,
+            final List<String> faults) {
         boolean removed = true;
         while (removed) {
-            removed = false;
-            for (final Issue issue : List.copyOf(issues.values())) {
-                final boolean parentGone =
-                        issue.parent() != null && !issues.containsKey(issue.parent());
-                final boolean blockerGone =
-                        issue.blockedBy().stream().anyMatch(b -> !issues.containsKey(b));
-                if (parentGone || blockerGone) {
-                    issues.remove(issue.id());
-                    faults.add(issue.id() + " depends on an issue left out and is left out too");
-                    removed = true;
-                }
+            removed =
+                    leaveOutDanglingFrom(issues, issues, unplaced, faults)
+                            | leaveOutDanglingFrom(unplaced, issues, unplaced, faults);
+        }
+    }
+
+    /** One pass over one of the two sets; answers whether it left any out. */
+    private static boolean leaveOutDanglingFrom(
+            final Map<String, Issue> from,
+            final Map<String, Issue> issues,
+            final Map<String, Issue> unplaced,
+            final List<String> faults) {
+        // A board issue needs what it hangs on to be on the board too.
+        final boolean onBoard = from == issues;
+        boolean removed = false;
+        for (final Issue issue : List.copyOf(from.values())) {
+            final java.util.function.Predicate<String> gone =
+                    id -> !issues.containsKey(id) && (onBoard || !unplaced.containsKey(id));
+            final boolean parentGone = issue.parent() != null && gone.test(issue.parent());
+            final boolean blockerGone = issue.blockedBy().stream().anyMatch(gone);
+            if (parentGone || blockerGone) {
+                from.remove(issue.id());
+                faults.add(issue.id() + " depends on an issue left out and is left out too");
+                removed = true;
             }
         }
+        return removed;
     }
 
     /**

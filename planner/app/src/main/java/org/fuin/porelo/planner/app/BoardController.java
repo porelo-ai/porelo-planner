@@ -50,6 +50,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -699,7 +700,20 @@ public class BoardController {
                 workflow.faults(),
                 board.stories().stream()
                         .map(story -> story(board, story, snapshot, derive))
-                        .toList());
+                        .toList(),
+                board.outside().stream().map(BoardController::outsideIssue).toList());
+    }
+
+    /** Maps an issue the board left out of its workflow, which the window offers to move. */
+    private static org.fuin.porelo.planner.app.answers.OutsideIssue outsideIssue(
+            final OutsideIssue issue) {
+        return new org.fuin.porelo.planner.app.answers.OutsideIssue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.status(),
+                issue.story(),
+                issue.link());
     }
 
     /**

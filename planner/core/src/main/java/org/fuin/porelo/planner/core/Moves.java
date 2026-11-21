@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -188,7 +189,8 @@ public final class Moves {
                 affected.add(move.id());
                 continue;
             }
-            final Story story = board.story(move.id()).orElse(null);
+            final Story story =
+                    board.story(move.id()).map(found -> story(board, found.id())).orElse(null);
             if (story == null) {
                 continue;
             }
@@ -225,10 +227,13 @@ public final class Moves {
             final Set<String> lineage = new HashSet<>();
             @Nullable String id = move.id();
             while (id != null && lineage.add(id)) {
-                id = board.issue(id).map(Issue::parent).orElse(null);
+                id = parentOf(board, id);
             }
             board.stories().stream()
-                    .filter(story -> story.issues().stream().anyMatch(lineage::contains))
+                    .filter(
+                            story ->
+                                    story(board, story.id()).issues().stream()
+                                            .anyMatch(lineage::contains))
                     .forEach(story -> stories.add(story.id()));
         }
         return stories;
@@ -382,16 +387,24 @@ public final class Moves {
                                                     Map.of("story", move.id())))
                             .state();
         } else {
-            final Issue issue =
-                    board.issue(move.id())
-                            .orElseThrow(
-                                    () ->
-                                            new Refused(
-                                                    "NoSuchIssue",
-                                                    "There is no issue " + move.id() + ".",
-                                                    Map.of("issue", move.id())));
-            from = issue.state();
-            manual = issue.worker() == Worker.MANUAL;
+            final Optional<Issue> issue = board.issue(move.id());
+            if (issue.isPresent()) {
+                from = issue.get().state();
+                manual = issue.get().worker() == Worker.MANUAL;
+            } else {
+                // An issue left out of the workflow moves into it from no state, as a board
+                // issue would.
+                final OutsideIssue outside =
+                        board.outsideIssue(move.id())
+                                .orElseThrow(
+                                        () ->
+                                                new Refused(
+                                                        "NoSuchIssue",
+                                                        "There is no issue " + move.id() + ".",
+                                                        Map.of("issue", move.id())));
+                from = "";
+                manual = outside.worker() == Worker.MANUAL;
+            }
         }
         // A story that follows its issues takes their state, a working one too, without starting
         // work.
@@ -439,9 +452,13 @@ public final class Moves {
     /** After the batch, no parent stands in a closed state while a sub-issue of it is open. */
     private static void checkParents(
             final Board board, final Workflow workflow, final Map<String, String> states) {
-        for (final Issue sub : board.issues()) {
-            final String parent = sub.parent();
-            final String state = states.get(sub.id());
+        final Map<String, @Nullable String> parents = new LinkedHashMap<>();
+        board.issues().forEach(issue -> parents.put(issue.id(), issue.parent()));
+        // A moved issue left out of the workflow stands under its parent once it is saved.
+        board.outside().forEach(issue -> parents.put(issue.id(), issue.parent()));
+        for (final Map.Entry<String, @Nullable String> sub : parents.entrySet()) {
+            final String parent = sub.getValue();
+            final String state = states.get(sub.getKey());
             final String parentState = parent == null ? null : states.get(parent);
             if (parent != null
                     && state != null
@@ -450,7 +467,7 @@ public final class Moves {
                     && !workflow.closed().contains(state)) {
                 final String reason =
                         "Its sub-issue "
-                                + sub.id()
+                                + sub.getKey()
                                 + " stands in "
                                 + state
                                 + ", which is not closed.";
@@ -566,16 +583,30 @@ public final class Moves {
      */
     private static List<String> withSubIssues(final Board board, final List<String> issues) {
         final Set<String> all = new LinkedHashSet<>(issues);
+        final Map<String, @Nullable String> parents = new LinkedHashMap<>();
+        board.issues().forEach(each -> parents.put(each.id(), each.parent()));
+        // A sub-issue outside the workflow counts once a move gives it a state.
+        board.outside().forEach(each -> parents.put(each.id(), each.parent()));
         boolean grew = true;
         while (grew) {
             grew = false;
-            for (final Issue each : board.issues()) {
-                if (each.parent() != null && all.contains(each.parent()) && all.add(each.id())) {
+            for (final Map.Entry<String, @Nullable String> each : parents.entrySet()) {
+                final String parent = each.getValue();
+                if (parent != null && all.contains(parent) && all.add(each.getKey())) {
                     grew = true;
                 }
             }
         }
         return List.copyOf(all);
+    }
+
+    /** An issue's parent, on the board or outside its workflow. */
+    private static @Nullable String parentOf(final Board board, final String id) {
+        final Optional<Issue> issue = board.issue(id);
+        if (issue.isPresent()) {
+            return issue.get().parent();
+        }
+        return board.outsideIssue(id).map(OutsideIssue::parent).orElse(null);
     }
 
     /** A story's issues in the earliest state, among the open ones while any is open. */
@@ -614,8 +645,33 @@ public final class Moves {
                 parameters);
     }
 
+    /**
+     * A story with the issues outside the workflow that stand under it, which a batch judges as its
+     * issues once a move gives them a state; one without a state is not known to the checks.
+     */
     private static Story story(final Board board, final String id) {
-        return board.story(id).orElseThrow();
+        final Story story = board.story(id).orElseThrow();
+        final List<String> under =
+                board.outside().stream()
+                        .filter(issue -> id.equals(issue.story()))
+                        .map(OutsideIssue::id)
+                        .toList();
+        if (under.isEmpty()) {
+            return story;
+        }
+        final List<String> issues = new ArrayList<>(story.issues());
+        issues.addAll(under);
+        return new Story(
+                story.id(),
+                story.title(),
+                story.state(),
+                story.stateGiven(),
+                story.priority(),
+                story.size(),
+                issues,
+                story.description(),
+                story.link(),
+                story.issuesWhole());
     }
 
     private static String of(final Optional<String> value) {

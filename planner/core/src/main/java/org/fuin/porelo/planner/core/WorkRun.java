@@ -2903,7 +2903,8 @@ public final class WorkRun {
                 board.work(),
                 board.repositories(),
                 board.faults(),
-                board.owner());
+                board.owner(),
+                board.outside());
     }
 
     /** Checks opaque and display labels before they can occur in any refusal. */

@@ -2259,6 +2259,40 @@ components:
           description: Every story, without its description.
           items:
             $ref: '#/components/schemas/Story'
+        outside:
+          type: array
+          description: >-
+            The issues left out of the board because their Status is none of the workflow's states, each named in
+            `faults` too. Each may be moved into a state of the workflow as a board issue is; once moved, it stands
+            on the board again, under its story. Empty when there are none; a store without a tracker answers it
+            empty.
+          items:
+            $ref: '#/components/schemas/OutsideIssue'
+
+    OutsideIssue:
+      description: An issue the board left out because its Status is none of the workflow's states.
+      type: object
+      required: [id, repository, title, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+        status:
+          type: string
+          description: The Status the tracker holds for it, as it holds it; empty when it holds none.
+        story:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: The story it stands under, when the board holds that story.
+          allOf:
+            - $ref: '#/components/schemas/StoryId'
+        link:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          format: uri
+          description: The issue on the tracker.
 
     Moves:
       description: >-
@@ -2405,7 +2439,12 @@ components:
         story:
           $ref: '#/components/schemas/StoryId'
         issue:
-          $ref: '#/components/schemas/IssueId'
+          description: >-
+            An issue of the board, or one of the board's `outside` issues; an outside issue moves from no state, under
+            the same rules as a board issue (a working state only for an issue a person works), and its preview
+            names no state it leaves.
+          allOf:
+            - $ref: '#/components/schemas/IssueId'
         to:
           type: string
           description: The state it moves to.

@@ -61,6 +61,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Issue", org.fuin.porelo.planner.app.answers.Issue.class),
                     Map.entry("IssueDetail", org.fuin.porelo.planner.app.answers.IssueDetail.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
+                    Map.entry(
+                            "OutsideIssue", org.fuin.porelo.planner.app.answers.OutsideIssue.class),
                     Map.entry("Refreshed", org.fuin.porelo.planner.app.answers.Refreshed.class),
                     Map.entry("Moved", org.fuin.porelo.planner.app.answers.Moved.class),
                     Map.entry("StoppedRun", org.fuin.porelo.planner.app.answers.StoppedRun.class),
@@ -264,7 +266,9 @@ class ApiMatchesDescriptionTest {
                         component.getAccessor().getAnnotation(JsonInclude.class);
                 final boolean leftOut =
                         include != null && include.value() == JsonInclude.Include.NON_NULL;
-                if (!leftOut) {
+                if (!leftOut
+                        && !AnswerRecordsTest.SENT_THOUGH_OPTIONAL.contains(
+                                entry.getKey() + "." + component.getName())) {
                     always.add(component.getName());
                 }
             }

@@ -29,6 +29,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
@@ -1861,5 +1862,58 @@ class FieldsBoardWriterTest {
                 4.5,
                 1.5,
                 Map.of("claude_input_tokens", 200L, "claude_output_tokens", 100L));
+    }
+
+    @Test
+    void aMoveOfAnIssueOutsideTheWorkflowWritesItsStatusAndItsOpenState() {
+        // Harm: an issue a person set to a Status the workflow lacks cannot be moved back into it,
+        // or comes back closed on GitHub against the state it was moved to.
+        final ItemView accepted = item("PL1", "example-project", 1, false, "", state("Accepted"));
+        final GitHub github = new GitHub().holding(accepted);
+        final Snapshot current =
+                new Snapshot(
+                        new Board(
+                                SHOWN,
+                                WORKFLOW,
+                                List.of(),
+                                List.of(),
+                                new Work(Map.of(), List.of()),
+                                CONFIG.repositories(),
+                                List.of(),
+                                null,
+                                List.of(
+                                        new OutsideIssue(
+                                                "PL1",
+                                                "example-project",
+                                                accepted.title(),
+                                                "Accepted",
+                                                null,
+                                                null,
+                                                accepted.link(),
+                                                Worker.AGENT))),
+                        Map.of("PL1", accepted),
+                        CONFIG);
+
+        github.writer()
+                .save(current, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of(), List.of()));
+
+        assertThat(github.mutations)
+                .as("its Status written")
+                .containsExactly(List.of(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog")));
+        assertThat(github.updates)
+                .as("reopened, as its open state asks")
+                .containsExactly("example-project#1 Opening[open=true, notPlanned=false]");
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                current,
+                                                SHOWN,
+                                                new Writes(
+                                                        Map.of("PL9", "Backlog"),
+                                                        Map.of(),
+                                                        List.of())))
+                .as("an issue neither on the board nor outside it")
+                .isInstanceOf(StoreException.NoSuchIssue.class);
     }
 }

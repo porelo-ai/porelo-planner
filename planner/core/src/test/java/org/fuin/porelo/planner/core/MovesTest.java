@@ -8,10 +8,12 @@ import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -675,6 +677,136 @@ class MovesTest {
                                 .getMessage())
                 .as("the follow is refused")
                 .contains("does not hold all of its issues");
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowMovesIntoItFromNoStateUnderTheRulesOfABoardIssue() {
+        // Harm: an issue whose Status a person set outside the workflow can never be moved back,
+        // or comes back in a working state no task works.
+        final Board outside =
+                withOutside(
+                        board,
+                        outside("PL7", "ST1", null, Worker.AGENT),
+                        outside("PL8", null, null, Worker.MANUAL));
+
+        final Moves.Planned planned =
+                Moves.check(outside, List.of(issue("PL7", "Backlog")), false, DERIVE);
+        assertThat(planned.issues())
+                .as("its state written")
+                .containsExactly(entry("PL7", "Backlog"));
+        assertThat(planned.moved()).as("the window's expected issues").containsExactly("PL7");
+        final MovePreview preview =
+                Moves.preview(
+                        outside,
+                        List.of(issue("PL7", "Backlog")),
+                        DERIVE,
+                        (issues, stories) -> List.of());
+        assertThat(preview.issues())
+                .as("the preview moves it from no state")
+                .containsExactly(
+                        new MovePreview.MovedIssue("PL7", "porelo-planner", "", "Backlog"));
+        assertThat(Moves.stories(outside, List.of(issue("PL7", "Backlog"))))
+                .as("its story's running work is the work it moves under")
+                .containsExactly("ST1");
+
+        final Moves.Refused agents = refused(outside, List.of(issue("PL7", "Building")));
+        assertThat(agents.name())
+                .as("an agent's issue enters a working state only by work, as on the board")
+                .isEqualTo("EnteredOnlyByWork");
+        assertThat(agents.getMessage())
+                .as("with the words a board issue is refused with")
+                .isEqualTo(refused(List.of(issue("PL1", "Building")), false).getMessage());
+        assertThat(Moves.check(outside, List.of(issue("PL8", "Building")), false, DERIVE).issues())
+                .as("a person's issue moved into a working state by hand")
+                .containsExactly(entry("PL8", "Building"));
+        assertThat(refused(outside, List.of(issue("PL9", "Backlog"))).name())
+                .as("an id neither on the board nor outside it")
+                .isEqualTo("NoSuchIssue");
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowIsNotMovedOpenUnderAClosedParent() {
+        // Harm: a sub-issue brought back open under a parent Finished hides its work from the
+        // board.
+        final Board outside = withOutside(board, outside("PL5.2", null, "PL5", Worker.AGENT));
+
+        final Moves.Refused refused = refused(outside, List.of(issue("PL5.2", "Backlog")));
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.parameters()).containsEntry("item", "PL5");
+        assertThat(
+                        Moves.check(outside, List.of(issue("PL5.2", "Finished")), false, DERIVE)
+                                .issues())
+                .as("closed beside its parent")
+                .containsExactly(entry("PL5.2", "Finished"));
+    }
+
+    @Test
+    void aSubIssueOutsideTheWorkflowIsNotMovedOpenUnderItsParentOutsideItClosedInTheBatch() {
+        // Harm: two issues brought back at once leave a sub-issue open under a Finished parent.
+        final Board outside =
+                withOutside(
+                        board,
+                        outside("PL6", null, null, Worker.AGENT),
+                        outside("PL6.1", null, "PL6", Worker.AGENT));
+
+        final Moves.Refused refused =
+                refused(outside, List.of(issue("PL6", "Finished"), issue("PL6.1", "Backlog")));
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.parameters()).as("the parent named").containsEntry("item", "PL6");
+    }
+
+    @Test
+    void aStoryMovedWithItsIssueOutsideTheWorkflowJudgesThatIssueInTheStateItIsMovedTo() {
+        // Harm: a story Finished in the same batch that brings an issue of it back open, or one
+        // stated where that issue does not fit, as a board issue would refuse it.
+        final Board outside =
+                withOutside(
+                        board,
+                        outside("PL7", "ST3", null, Worker.AGENT),
+                        outside("PL3.1", null, "PL3", Worker.AGENT));
+
+        final Moves.Refused finished =
+                refused(outside, List.of(story("ST3", "Finished"), issue("PL7", "Idea")));
+        assertThat(finished.name()).as("its issue brought back open").isEqualTo("MoveNotAllowed");
+        assertThat(finished.getMessage()).as("the issue named").contains("PL7:Idea");
+        // Its parent kept in Review by its own move, so only the story's finish can refuse it.
+        final Moves.Refused sub =
+                refused(
+                        outside,
+                        List.of(
+                                story("ST3", "Finished"),
+                                issue("PL3", "Review"),
+                                issue("PL3.1", "Idea")));
+        assertThat(sub.name()).as("a sub-issue brought back open").isEqualTo("MoveNotAllowed");
+        assertThat(sub.getMessage()).as("the sub-issue named").contains("PL3.1:Idea");
+        assertThat(refused(outside, List.of(story("ST3", "Backlog"), issue("PL7", "Idea"))).name())
+                .as("a story stated where its issue brought back does not fit")
+                .isEqualTo("StoryStateMismatch");
+        assertThat(Moves.check(outside, List.of(story("ST3", "Finished")), false, DERIVE).issues())
+                .as("an issue left outside is not judged")
+                .containsExactly(entry("PL3", "Finished"));
+    }
+
+    private static Board withOutside(final Board board, final OutsideIssue... outside) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues(),
+                board.work(),
+                board.repositories(),
+                List.of(),
+                null,
+                List.of(outside));
+    }
+
+    private static OutsideIssue outside(
+            final String id,
+            final @Nullable String story,
+            final @Nullable String parent,
+            final Worker worker) {
+        return new OutsideIssue(
+                id, "porelo-planner", "An issue", "Accepted", story, parent, null, worker);
     }
 
     private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {

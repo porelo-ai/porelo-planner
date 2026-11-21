@@ -42,6 +42,13 @@ class AnswerRecordsTest {
 
     private static JsonMapper mapper;
 
+    /**
+     * The optional lists this planner always sends, empty when there is nothing: optional, so the
+     * window reads a board from a planner without them, and the generated record writes them as
+     * given, so nothing here ever passes null for one.
+     */
+    static final Set<String> SENT_THOUGH_OPTIONAL = Set.of("Board.outside");
+
     @BeforeAll
     static void read() throws Exception {
         final com.fasterxml.jackson.databind.JsonNode description;
@@ -109,7 +116,8 @@ class AnswerRecordsTest {
             for (int i = 0; i < components.length; i++) {
                 final String field = components[i].getName();
                 final boolean required = required(schema).contains(field);
-                if (!required || nullable(property(schema, field))) {
+                if ((!required || nullable(property(schema, field)))
+                        && !SENT_THOUGH_OPTIONAL.contains(schema + "." + field)) {
                     final Object[] values = values(type);
                     values[i] = null;
                     final JsonNode written = mapper.valueToTree(construct(type, values));

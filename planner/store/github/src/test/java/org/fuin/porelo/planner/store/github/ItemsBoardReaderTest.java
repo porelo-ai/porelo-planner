@@ -35,9 +35,11 @@ import org.fuin.porelo.forge.github.GitHubGraphQl.ProjectItems;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -1179,5 +1181,71 @@ class ItemsBoardReaderTest {
         assertThat(github.calls)
                 .as("only the fields and the items")
                 .containsExactly("projectFields after null", "projectItems after null");
+    }
+
+    @Test
+    void anIssueWithAStatusTheWorkflowLacksIsReadOutsideTheBoardAndOnItOnceMovedIntoIt() {
+        // Harm: an issue whose Status a person set outside the workflow vanishes from the window
+        // with no way to move it back, or shows on the board and outside it at once.
+        final ProjectItem accepted =
+                new ProjectItem(
+                        "PVTI_lib_3",
+                        false,
+                        issue(
+                                OWNER + "/example-lib",
+                                3,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false)),
+                        List.of(option("F_status", "Accepted"), option("F_worker", "Manual")),
+                        new GitHubGraphQl.PageInfo(false, null));
+
+        final Board before =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), accepted)
+                        .read()
+                        .board();
+
+        assertThat(before.issues()).as("not on the board").isEmpty();
+        assertThat(before.outside())
+                .as("listed outside it, under its story")
+                .containsExactly(
+                        new OutsideIssue(
+                                "example-lib#3",
+                                "example-lib",
+                                "A title",
+                                "Accepted",
+                                "example-project#1",
+                                null,
+                                URI.create("https://github.com/" + OWNER + "/example-lib/issues/3"),
+                                Worker.MANUAL));
+        assertThat(before.faults())
+                .as("named with how a person repairs it")
+                .contains(
+                        "example-lib#3 has the Status Accepted, which the workflow does not hold;"
+                                + " move it into a state of the board to repair it");
+
+        final ProjectItem moved =
+                new ProjectItem(
+                        accepted.id(),
+                        false,
+                        accepted.issue(),
+                        List.of(option("F_status", "Backlog"), option("F_worker", "Manual")),
+                        new GitHubGraphQl.PageInfo(false, null));
+        final Board after =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), moved)
+                        .read()
+                        .board();
+
+        assertThat(after.issue("example-lib#3").map(Issue::state))
+                .as("on the board in the state it was moved to")
+                .contains("Backlog");
+        assertThat(after.stories().get(0).issues())
+                .as("under its story again")
+                .containsExactly("example-lib#3");
+        assertThat(after.outside()).as("no longer outside").isEmpty();
     }
 }

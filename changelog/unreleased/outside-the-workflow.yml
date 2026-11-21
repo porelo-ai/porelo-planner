@@ -1,0 +1,2 @@
+title: A GitHub-tracked board lists in `outside` each issue whose Status is none of the workflow's states, and a move brings it back into a state of the board under the rules of a board issue.
+type: added
