@@ -95,7 +95,9 @@ jobs:
                       fi
                       start=origin/main
                   fi
-                  planner/app/target/porelo-planner check-commits "$start..$GITHUB_SHA"
+                  # The build tools' check, as the Shared rules check runs it: it reads the project's tracker,
+                  # while the planner's own copy of the check still needs the Markdown issues for a prefix.
+                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $start..$GITHUB_SHA"
 
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
