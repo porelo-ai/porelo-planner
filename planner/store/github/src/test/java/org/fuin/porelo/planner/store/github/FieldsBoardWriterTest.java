@@ -34,6 +34,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -87,7 +88,7 @@ class FieldsBoardWriterTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-project", "example-lib"),
+                    List.of("example-project", "example-lib", "example-tool"),
                     FIELD_IDS,
                     OPTION_IDS,
                     "PVT_7");
@@ -130,9 +131,13 @@ class FieldsBoardWriterTest {
                 false);
     }
 
-    /** The id a test's item was made with, which its item id carries. */
+    /**
+     * The id a test's item was made with, which its item id carries; an item of an issue the fake
+     * GitHub made is named by its tracker reference.
+     */
     private static String idOf(final ItemView item) {
-        return item.itemId().substring("PVTI_".length());
+        final String id = item.itemId().substring("PVTI_".length());
+        return id.startsWith("I_") ? item.repository() + "#" + item.number() : id;
     }
 
     private static Issue issue(final ItemView item) {
@@ -151,15 +156,36 @@ class FieldsBoardWriterTest {
     private static Snapshot snapshot(final ItemView... items) {
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         final List<Issue> issues = new ArrayList<>();
+        final List<Story> stories = new ArrayList<>();
         for (final ItemView item : items) {
+            if (item.labels().contains(IssueMapping.STORY_LABEL)) {
+                stories.add(
+                        new Story(
+                                idOf(item),
+                                item.title(),
+                                "Idea",
+                                false,
+                                "High",
+                                null,
+                                List.of(),
+                                "",
+                                item.link()));
+            }
             byId.put(idOf(item), item);
-            issues.add(issue(item));
+            // A story is no issue of the board, and here the board leaves out an issue without a
+            // Status of the workflow; the writer reads their items alone.
+            final String status = item.fields().get(FieldNames.STATUS);
+            if (!item.labels().contains(IssueMapping.STORY_LABEL)
+                    && status != null
+                    && WORKFLOW.states().contains(status)) {
+                issues.add(issue(item));
+            }
         }
         return new Snapshot(
                 new Board(
                         SHOWN,
                         WORKFLOW,
-                        List.of(),
+                        stories,
                         issues,
                         new Work(Map.of(), List.of()),
                         CONFIG.repositories()),
@@ -224,6 +250,18 @@ class FieldsBoardWriterTest {
         private final List<String> added = new ArrayList<>();
         private final List<String> subIssues = new ArrayList<>();
 
+        /** The failures the next calls that link a sub-issue end in, one each. */
+        private final Deque<RuntimeException> linkFailures = new ArrayDeque<>();
+
+        /** When each issue was made, by its node id. */
+        private final Map<String, Instant> madeAt = new LinkedHashMap<>();
+
+        /** The failures the next calls that add items to the project end in, one each. */
+        private final Deque<RuntimeException> addFailures = new ArrayDeque<>();
+
+        /** The field values GitHub took, by item id and field id. */
+        private final Map<String, Map<String, FieldValue>> values = new LinkedHashMap<>();
+
         /** The empty pages of comments before the one that holds {@code standing}. */
         private int pagesBefore;
 
@@ -254,12 +292,23 @@ class FieldsBoardWriterTest {
                 final String title,
                 final String body,
                 final List<String> labels) {
+            return makeAt(repository, title, body, labels, NOW);
+        }
+
+        /** Makes an issue at a moment, numbered across the repositories. */
+        Created makeAt(
+                final String repository,
+                final String title,
+                final String body,
+                final List<String> labels,
+                final Instant at) {
             final int number = 100 + made.values().stream().mapToInt(List::size).sum();
             final Created created =
                     new Created("I_" + repository + "_" + number, 9000L + number, number, labels);
             made.computeIfAbsent(repository, r -> new ArrayList<>())
                     // GitHub keeps a title without the spaces around it.
                     .add(new Found(created, title.strip(), body));
+            madeAt.put(created.nodeId(), at);
             return created;
         }
 
@@ -298,6 +347,10 @@ class FieldsBoardWriterTest {
         public Batch<String> addProjectItems(
                 final String token, final String projectId, final List<String> issueIds) {
             calls.add("addProjectItems");
+            final RuntimeException failure = addFailures.poll();
+            if (failure != null) {
+                throw failure;
+            }
             added.addAll(issueIds);
             return new Batch<>(
                     issueIds.stream().map(id -> Batch.Outcome.of("PVTI_" + id)).toList(), null);
@@ -309,7 +362,16 @@ class FieldsBoardWriterTest {
             calls.add("setFieldValues");
             mutations.add(List.copyOf(values));
             final Function<List<FieldValue>, Batch<String>> answer = batches.poll();
-            return answer != null ? answer.apply(values) : saved(values);
+            final Batch<String> batch = answer != null ? answer.apply(values) : saved(values);
+            for (int at = 0; at < values.size() && at < batch.outcomes().size(); at++) {
+                if (batch.outcomes().get(at).saved()) {
+                    final FieldValue value = values.get(at);
+                    this.values
+                            .computeIfAbsent(value.itemId(), id -> new LinkedHashMap<>())
+                            .put(value.fieldId(), value);
+                }
+            }
+            return batch;
         }
 
         @Override
@@ -338,6 +400,10 @@ class FieldsBoardWriterTest {
             if (answer.equals("lost")) {
                 throw GitHubExceptions.unanswered("timed out");
             }
+            if (answer.startsWith("twice")) {
+                // A call GitHub took twice, as a proxy that sends it again does.
+                make(repository, title, body, labels);
+            }
             final Created created =
                     make(
                             repository,
@@ -361,6 +427,10 @@ class FieldsBoardWriterTest {
                 final int number,
                 final long subIssueId) {
             calls.add("addSubIssue");
+            final RuntimeException failure = linkFailures.poll();
+            if (failure != null) {
+                throw failure;
+            }
             subIssues.add(repository + "#" + number + " < " + subIssueId);
         }
 
@@ -375,7 +445,11 @@ class FieldsBoardWriterTest {
             assertThat(since)
                     .as("the look starts before the call was sent")
                     .isBeforeOrEqualTo(NOW.minusSeconds(60));
-            final List<Found> mine = made.getOrDefault(repository, List.of());
+            // GitHub lists only the issues made at or after the moment asked for.
+            final List<Found> mine =
+                    made.getOrDefault(repository, List.of()).stream()
+                            .filter(f -> !madeAt.get(f.issue().nodeId()).isBefore(since))
+                            .toList();
             final int from = (page - 1) * 2;
             return new FoundPage(
                     mine.subList(Math.min(from, mine.size()), Math.min(from + 2, mine.size())),
@@ -1453,8 +1527,9 @@ class FieldsBoardWriterTest {
 
         assertThat(reference).as("the answer, its tracker reference").isEqualTo("example-lib#100");
         assertThat(github.calls)
-                .as("the calls made")
-                .containsExactly("createIssue", "addProjectItems", "setFieldValues");
+                .as("the calls made: the look for an earlier try's issue, then the issue placed")
+                .containsExactly(
+                        "issuesCreatedSince", "createIssue", "addProjectItems", "setFieldValues");
         final ProjectWrites.Found issue = github.made.get("example-lib").get(0);
         assertThat(issue.title()).as("its title").isEqualTo("A new thing");
         assertThat(issue.body())
@@ -1506,21 +1581,46 @@ class FieldsBoardWriterTest {
                 .as("every item added to the project")
                 .containsExactly(
                         "I_example-project_100", "I_example-lib_101", "I_example-project_102");
-        assertThat(github.mutations.get(0))
-                .as("the story follows its issues' state; each issue starts in Idea")
+        assertThat(github.mutations)
+                .as(
+                        "the story follows its issues' state; each issue starts in Idea; each"
+                                + " item's values written before the next item is made")
                 .containsExactly(
-                        FieldValue.option("PVTI_I_example-project_100", "F_Priority", "O_High"),
-                        FieldValue.number("PVTI_I_example-project_100", "F_Rank", 1),
-                        FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Idea"),
-                        FieldValue.option("PVTI_I_example-lib_101", "F_Size", "O_S"),
-                        FieldValue.option("PVTI_I_example-lib_101", "F_Worker", "O_Agent"),
-                        FieldValue.option("PVTI_I_example-lib_101", "F_Priority", "O_High"),
-                        FieldValue.number("PVTI_I_example-lib_101", "F_Rank", 1),
-                        FieldValue.option("PVTI_I_example-project_102", "F_Status", "O_Idea"),
-                        FieldValue.option("PVTI_I_example-project_102", "F_Size", "O_S"),
-                        FieldValue.option("PVTI_I_example-project_102", "F_Worker", "O_Agent"),
-                        FieldValue.option("PVTI_I_example-project_102", "F_Priority", "O_High"),
-                        FieldValue.number("PVTI_I_example-project_102", "F_Rank", 2));
+                        List.of(
+                                FieldValue.option(
+                                        "PVTI_I_example-project_100", "F_Priority", "O_High"),
+                                FieldValue.number("PVTI_I_example-project_100", "F_Rank", 1)),
+                        List.of(
+                                FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Idea"),
+                                FieldValue.option("PVTI_I_example-lib_101", "F_Size", "O_S"),
+                                FieldValue.option("PVTI_I_example-lib_101", "F_Worker", "O_Agent"),
+                                FieldValue.option("PVTI_I_example-lib_101", "F_Priority", "O_High"),
+                                FieldValue.number("PVTI_I_example-lib_101", "F_Rank", 1)),
+                        List.of(
+                                FieldValue.option(
+                                        "PVTI_I_example-project_102", "F_Status", "O_Idea"),
+                                FieldValue.option("PVTI_I_example-project_102", "F_Size", "O_S"),
+                                FieldValue.option(
+                                        "PVTI_I_example-project_102", "F_Worker", "O_Agent"),
+                                FieldValue.option(
+                                        "PVTI_I_example-project_102", "F_Priority", "O_High"),
+                                FieldValue.number("PVTI_I_example-project_102", "F_Rank", 2)));
+        assertThat(github.calls)
+                .as("each item made, added, hung under the story and given its values in turn")
+                .containsExactly(
+                        "issuesCreatedSince",
+                        "createIssue",
+                        "addProjectItems",
+                        "setFieldValues",
+                        "issuesCreatedSince",
+                        "createIssue",
+                        "addProjectItems",
+                        "addSubIssue",
+                        "setFieldValues",
+                        "createIssue",
+                        "addProjectItems",
+                        "addSubIssue",
+                        "setFieldValues");
     }
 
     @Test
@@ -1595,6 +1695,7 @@ class FieldsBoardWriterTest {
         assertThat(github.calls)
                 .as("the calls made")
                 .containsExactly(
+                        "issuesCreatedSince",
                         "createIssue",
                         "issuesCreatedSince",
                         "createIssue",
@@ -1605,10 +1706,9 @@ class FieldsBoardWriterTest {
     @Test
     void twoIssuesFoundAfterAnUnansweredCallStopTheWriteNamingBoth() {
         // Harm: one of two issues alike taken at a guess, the other left beside it unnamed.
-        final GitHub github = new GitHub().creating("unanswered");
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        final GitHub github = new GitHub().creating("twice-unanswered");
+        // One alike on each of two pages: the other issue and the first alike fill the first.
         github.make("example-lib", "Something else", WRITTEN, List.of());
-        github.make("example-lib", "Something more", WRITTEN, List.of());
 
         assertThatThrownBy(
                         () ->
@@ -1626,7 +1726,7 @@ class FieldsBoardWriterTest {
                                     .containsExactly("example-lib");
                             assertThat(partly.getMessage())
                                     .as("both named")
-                                    .contains("example-lib#100, example-lib#103");
+                                    .contains("example-lib#101, example-lib#102");
                         });
         assertThat(github.added).as("nothing added to the project").isEmpty();
     }
@@ -1651,7 +1751,9 @@ class FieldsBoardWriterTest {
                                 assertThat(partly.getMessage())
                                         .as("the story named")
                                         .contains("example-project#100"));
-        assertThat(github.calls).as("the calls made").containsExactly("createIssue");
+        assertThat(github.calls)
+                .as("the calls made")
+                .containsExactly("issuesCreatedSince", "createIssue");
     }
 
     @Test
@@ -1709,6 +1811,405 @@ class FieldsBoardWriterTest {
                 .containsExactly("example-lib#100", "example-lib#101");
     }
 
+    /**
+     * The project's items as the store reads them again after a write GitHub took a part of: each
+     * issue added, with the values GitHub took and its parent.
+     *
+     * @param automatic the Status a project's own automation gives every item added, or null
+     */
+    private static ItemView[] onTheProject(final GitHub github, final @Nullable String automatic) {
+        final Map<String, String> fieldNames = new LinkedHashMap<>();
+        FIELD_IDS.forEach((name, id) -> fieldNames.put(id, name));
+        final List<ItemView> items = new ArrayList<>();
+        github.made.forEach(
+                (repository, issues) -> {
+                    for (final ProjectWrites.Found found : issues) {
+                        final ProjectWrites.Created issue = found.issue();
+                        if (!github.added.contains(issue.nodeId())) {
+                            continue;
+                        }
+                        final Map<String, String> fields = new LinkedHashMap<>();
+                        github.values
+                                .getOrDefault("PVTI_" + issue.nodeId(), Map.of())
+                                .forEach(
+                                        (fieldId, value) -> {
+                                            final String option = value.optionId();
+                                            fields.put(
+                                                    fieldNames.get(fieldId),
+                                                    option != null
+                                                            ? option.substring(2)
+                                                            : String.valueOf(value.number()));
+                                        });
+                        if (automatic != null) {
+                            fields.putIfAbsent(FieldNames.STATUS, automatic);
+                        }
+                        @Nullable String parent = null;
+                        for (final String link : github.subIssues) {
+                            if (link.endsWith(" < " + issue.databaseId())) {
+                                final String story = link.substring(0, link.indexOf(' '));
+                                parent = "I_" + story.replace('#', '_');
+                            }
+                        }
+                        items.add(
+                                new ItemView(
+                                        "PVTI_" + issue.nodeId(),
+                                        issue.nodeId(),
+                                        repository,
+                                        issue.number(),
+                                        found.title(),
+                                        found.body(),
+                                        true,
+                                        null,
+                                        fields,
+                                        issue.labels(),
+                                        parent,
+                                        List.of(),
+                                        List.of(),
+                                        null,
+                                        URI.create(
+                                                "https://github.com/"
+                                                        + OWNER
+                                                        + "/"
+                                                        + repository
+                                                        + "/issues/"
+                                                        + issue.number()),
+                                        Instant.EPOCH,
+                                        false));
+                    }
+                });
+        return items.toArray(ItemView[]::new);
+    }
+
+    /**
+     * GitHub that takes the values of a story and two issues, then fails on its side three times.
+     */
+    private static GitHub failingOnTheThirdIssuesValues() {
+        final Function<List<FieldValue>, Batch<String>> failing =
+                values -> {
+                    throw GitHubExceptions.refused(502, "bad gateway");
+                };
+        return new GitHub()
+                .answering(FieldsBoardWriterTest::saved)
+                .answering(FieldsBoardWriterTest::saved)
+                .answering(FieldsBoardWriterTest::saved)
+                .answering(failing)
+                .answering(failing)
+                .answering(failing);
+    }
+
+    /** An idea of three issues, one in each repository. */
+    private static NewIdea threeIssues() {
+        return idea(
+                newIssue("example-lib", "First"),
+                newIssue("example-project", "Second"),
+                newIssue("example-tool", "Third"));
+    }
+
+    /** A value of a number field as the fake GitHub took it. */
+    private static @Nullable Double numberOf(
+            final GitHub github, final String itemId, final String fieldId) {
+        final FieldValue value = github.values.getOrDefault(itemId, Map.of()).get(fieldId);
+        return value == null ? null : value.number();
+    }
+
+    @Test
+    void aCreationCutOffMidwayIsFinishedBySendingItAgainWithNothingMadeTwice() {
+        // Harm: a story's creation cut off midway that leaves issues on the project without
+        // their Status or off it, a story without its values, and a second try that makes the
+        // issues of the first one again or moves the ranks the first one gave.
+        final GitHub github = failingOnTheThirdIssuesValues();
+        final NewIdea idea = threeIssues();
+
+        assertThatThrownBy(() -> github.writer().createIdea(snapshot(), SHOWN, idea))
+                .as("a creation whose third issue's values GitHub failed to take")
+                .isInstanceOfSatisfying(
+                        StoreException.PartlySaved.class,
+                        partly ->
+                                assertThat(partly.getMessage())
+                                        .as("what GitHub holds")
+                                        .contains(
+                                                "example-project#100, example-lib#101,"
+                                                        + " example-project#102, example-tool#103"));
+        assertThat(github.waits)
+                .as("the third issue's values asked again after each failure, then given up")
+                .contains(Duration.ofSeconds(2), Duration.ofSeconds(5));
+        assertThat(github.values.keySet())
+                .as("each item before the third given its values before the next was made")
+                .containsExactly(
+                        "PVTI_I_example-project_100",
+                        "PVTI_I_example-lib_101",
+                        "PVTI_I_example-project_102");
+
+        final int before = github.mutations.size();
+        final BoardWriter.IdeaIds ids =
+                github.writer().createIdea(snapshot(onTheProject(github, "Accepted")), SHOWN, idea);
+
+        assertThat(ids)
+                .as("the answer names the story and every issue")
+                .isEqualTo(
+                        new BoardWriter.IdeaIds(
+                                "example-project#100",
+                                List.of(
+                                        "example-lib#101",
+                                        "example-project#102",
+                                        "example-tool#103")));
+        assertThat(held(github))
+                .as("the issues GitHub holds, none made twice")
+                .containsExactlyInAnyOrder(
+                        "example-project#100",
+                        "example-project#102",
+                        "example-lib#101",
+                        "example-tool#103");
+        assertThat(github.added)
+                .as("every item added to the project once")
+                .containsExactly(
+                        "I_example-project_100",
+                        "I_example-lib_101",
+                        "I_example-project_102",
+                        "I_example-tool_103");
+        assertThat(github.subIssues)
+                .as("every issue hung under the story once, in the idea's order")
+                .containsExactly(
+                        "example-project#100 < 9101",
+                        "example-project#100 < 9102",
+                        "example-project#100 < 9103");
+        for (final String item :
+                List.of(
+                        "PVTI_I_example-lib_101",
+                        "PVTI_I_example-project_102",
+                        "PVTI_I_example-tool_103")) {
+            assertThat(github.values.get(item))
+                    .as("the Status of " + item)
+                    .containsEntry("F_Status", FieldValue.option(item, "F_Status", "O_Idea"));
+        }
+        assertThat(github.values.get("PVTI_I_example-project_100"))
+                .as("the story's values")
+                .containsKeys("F_Priority", "F_Rank")
+                .doesNotContainKey("F_Status");
+        assertThat(
+                        List.of(
+                                numberOf(github, "PVTI_I_example-project_100", "F_Rank"),
+                                numberOf(github, "PVTI_I_example-lib_101", "F_Rank"),
+                                numberOf(github, "PVTI_I_example-project_102", "F_Rank"),
+                                numberOf(github, "PVTI_I_example-tool_103", "F_Rank")))
+                .as("the ranks the first try gave kept, the third issue's after them")
+                .containsExactly(1.0, 1.0, 2.0, 3.0);
+        assertThat(github.mutations.subList(before, github.mutations.size()))
+                .as("the second try writes only the values the third issue lacks")
+                .hasSize(1)
+                .allSatisfy(
+                        values ->
+                                assertThat(values)
+                                        .allSatisfy(
+                                                value ->
+                                                        assertThat(value.itemId())
+                                                                .isEqualTo(
+                                                                        "PVTI_I_example-tool_103")));
+    }
+
+    @Test
+    void aCutOffCreationWhoseStoryTheAutomationGaveIdeaMakesNothingTwiceWhenSentAgain() {
+        // Harm: a project whose own automation gives every new item Idea makes the story
+        // look whole, so the second try makes a second story and every issue again.
+        final GitHub github = failingOnTheThirdIssuesValues();
+        final NewIdea idea = threeIssues();
+        assertThatThrownBy(() -> github.writer().createIdea(snapshot(), SHOWN, idea))
+                .isInstanceOf(StoreException.PartlySaved.class);
+
+        final BoardWriter.IdeaIds ids =
+                github.writer().createIdea(snapshot(onTheProject(github, "Idea")), SHOWN, idea);
+
+        assertThat(ids.story()).as("the story taken").isEqualTo("example-project#100");
+        assertThat(held(github))
+                .as("the issues GitHub holds, none made twice")
+                .containsExactlyInAnyOrder(
+                        "example-project#100",
+                        "example-project#102",
+                        "example-lib#101",
+                        "example-tool#103");
+        assertThat(github.subIssues).as("every issue hung under the story once").hasSize(3);
+    }
+
+    @Test
+    void aSecondCompleteStoryIsMadeAnewAndItsNamesakesWorkedIssueKeepsItsState() {
+        // Harm: a story the person made again with the same words taken as an earlier try's,
+        // its namesake's issue moved back from the state the person worked it to.
+        final GitHub github = new GitHub();
+        final NewIdea idea = idea(newIssue("example-lib", "First"));
+        github.writer().createIdea(snapshot(), SHOWN, idea);
+        github.values
+                .get("PVTI_I_example-lib_101")
+                .put(
+                        "F_Status",
+                        FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Analysis"));
+        final int before = github.mutations.size();
+
+        final BoardWriter.IdeaIds ids =
+                github.writer().createIdea(snapshot(onTheProject(github, null)), SHOWN, idea);
+
+        assertThat(ids)
+                .as("a new story and issue")
+                .isEqualTo(
+                        new BoardWriter.IdeaIds("example-project#102", List.of("example-lib#103")));
+        assertThat(github.values.get("PVTI_I_example-lib_101").get("F_Status"))
+                .as("the namesake's issue in the state the person worked it to")
+                .isEqualTo(FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Analysis"));
+        assertThat(github.mutations.subList(before, github.mutations.size()))
+                .as("the second creation writes nothing to the first one's items")
+                .allSatisfy(
+                        values ->
+                                assertThat(values)
+                                        .noneSatisfy(
+                                                value ->
+                                                        assertThat(value.itemId())
+                                                                .isIn(
+                                                                        "PVTI_I_example-project_100",
+                                                                        "PVTI_I_example-lib_101")));
+        assertThat(github.subIssues)
+                .as("the new issue hung under the new story")
+                .containsExactly("example-project#100 < 9101", "example-project#102 < 9103");
+    }
+
+    @Test
+    void anIssueAlikeUnderAnotherStoryIsNotTaken() {
+        // Harm: an issue of another story, not yet given its Status, taken as the new one and
+        // given the new one's values.
+        final GitHub github = new GitHub();
+        github.make("example-project", "Another story", "", List.of(IssueMapping.STORY_LABEL));
+        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.added.add("I_example-project_100");
+        github.added.add("I_example-lib_101");
+        github.subIssues.add("example-project#100 < 9101");
+
+        final String reference =
+                github.writer()
+                        .createIssue(
+                                snapshot(onTheProject(github, null)),
+                                SHOWN,
+                                newIssue("example-lib", "A new thing"));
+
+        assertThat(reference).as("a new issue made").isEqualTo("example-lib#102");
+        assertThat(github.values)
+                .as("the other story's issue left")
+                .doesNotContainKey("PVTI_I_example-lib_101");
+    }
+
+    @Test
+    void anIssueAlikeOlderThanADayIsNeverTaken() {
+        // Harm: an issue the person made long before, off the project, taken as the new one.
+        final GitHub github = new GitHub();
+        github.makeAt(
+                "example-lib", "A new thing", WRITTEN, List.of(), NOW.minus(Duration.ofHours(25)));
+
+        final String reference =
+                github.writer()
+                        .createIssue(snapshot(), SHOWN, newIssue("example-lib", "A new thing"));
+
+        assertThat(reference).as("a new issue made").isEqualTo("example-lib#101");
+    }
+
+    @Test
+    void anIssueUnderAStoryCutOffAfterItsStatusIsTakenWhenSentAgain() {
+        // Harm: an issue added under a story and given its Status, whose creation was cut off,
+        // made a second time when the person sends it again.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.added.add("I_example-project_100");
+        github.added.add("I_example-lib_101");
+        github.subIssues.add("example-project#100 < 9101");
+        github.values.put(
+                "PVTI_I_example-lib_101",
+                new LinkedHashMap<>(
+                        Map.of(
+                                "F_Status",
+                                FieldValue.option(
+                                        "PVTI_I_example-lib_101", "F_Status", "O_Idea"))));
+
+        final String reference =
+                github.writer()
+                        .createIssue(
+                                snapshot(onTheProject(github, null)),
+                                SHOWN,
+                                new NewIssue(
+                                        "example-lib",
+                                        "A new thing",
+                                        "It holds.",
+                                        "S",
+                                        Worker.AGENT,
+                                        null,
+                                        null,
+                                        "example-project#100"));
+
+        assertThat(reference).as("the issue taken").isEqualTo("example-lib#101");
+        assertThat(held(github)).as("nothing made twice").hasSize(2);
+        assertThat(github.subIssues).as("no second link").hasSize(1);
+    }
+
+    @Test
+    void aSubIssueLinkThatFailsOnGitHubsSideIsMadeAgain() {
+        // Harm: a passing failure on GitHub's side stops the creation before the issue's
+        // Status, leaving it on the project without one.
+        final GitHub github = new GitHub();
+        github.linkFailures.add(GitHubExceptions.refused(502, "bad gateway"));
+
+        github.writer().createIdea(snapshot(), SHOWN, idea(newIssue("example-lib", "First")));
+
+        assertThat(github.subIssues)
+                .as("the link made")
+                .containsExactly("example-project#100 < 9101");
+        assertThat(github.values.get("PVTI_I_example-lib_101"))
+                .as("the issue's values")
+                .containsKey("F_Status");
+    }
+
+    @Test
+    void anAddToTheProjectGitHubRefusedAsRateLimitedIsAskedAgainAfterTheWait() {
+        // Harm: a new issue left off the project because GitHub's limit on writes in a burst
+        // asked for a wait, answered as partly saved.
+        final GitHub github = new GitHub();
+        github.addFailures.add(
+                GitHubExceptions.rateLimited(403, "secondary rate limit", Duration.ofSeconds(3)));
+
+        final String reference =
+                github.writer()
+                        .createIssue(snapshot(), SHOWN, newIssue("example-lib", "A new thing"));
+
+        assertThat(reference).as("the issue made").isEqualTo("example-lib#100");
+        assertThat(github.added)
+                .as("the issue added to the project")
+                .containsExactly("I_example-lib_100");
+        assertThat(github.waits).as("the waits").containsExactly(Duration.ofSeconds(3));
+        assertThat(github.values.get("PVTI_I_example-lib_100"))
+                .as("its values")
+                .containsKey("F_Status");
+    }
+
+    @Test
+    void twoIssuesAlikeOfAnEarlierTryStopTheWriteNamingBoth() {
+        // Harm: one of two issues alike an earlier try may have made taken at a guess, the
+        // other left beside it unnamed.
+        final GitHub github = new GitHub();
+        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.make("example-lib", "A new thing", WRITTEN, List.of());
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createIssue(
+                                                snapshot(),
+                                                SHOWN,
+                                                newIssue("example-lib", "A new thing")))
+                .as("a write that finds two issues alike made before it")
+                .isInstanceOfSatisfying(
+                        StoreException.PartlySaved.class,
+                        partly ->
+                                assertThat(partly.getMessage())
+                                        .as("both named")
+                                        .contains("example-lib#100, example-lib#101"));
+        assertThat(github.calls).as("the calls made").containsExactly("issuesCreatedSince");
+    }
+
     @Test
     void aStoryFoundAfterAnUnansweredCallWithoutItsLabelStopsTheWrite() {
         // Harm: issues made under a story found again that GitHub holds as a plain issue.
@@ -1730,7 +2231,7 @@ class FieldsBoardWriterTest {
                                         .contains("example-project#100"));
         assertThat(github.calls)
                 .as("the calls made")
-                .containsExactly("createIssue", "issuesCreatedSince");
+                .containsExactly("issuesCreatedSince", "createIssue", "issuesCreatedSince");
     }
 
     @Test
@@ -1753,7 +2254,9 @@ class FieldsBoardWriterTest {
                                 assertThat(partly.pushed())
                                         .as("the repository that may hold it")
                                         .containsExactly("example-lib"));
-        assertThat(github.calls).as("the calls made").containsExactly("createIssue");
+        assertThat(github.calls)
+                .as("the calls made")
+                .containsExactly("issuesCreatedSince", "createIssue");
     }
 
     @Test

@@ -25,9 +25,16 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * One write that adds new issues, and a story above them, to the GitHub project: every part is
- * checked before the first call; then each issue is made, added to the project, made a sub-issue of
- * the story and given its field values. GitHub has no transaction, so a write that stops after the
- * first issue was made is {@link StoreException.PartlySaved}, naming what GitHub holds.
+ * checked before the first call; then the story, with its Priority and Rank, and each issue in turn
+ * is made, added to the project, made a sub-issue of the story and given its field values before
+ * the next one is made. GitHub has no transaction, so a write that stops after the first issue was
+ * made is {@link StoreException.PartlySaved}, naming what GitHub holds. The same write tried again
+ * finishes it: the person's open issue of the same title and body made within {@link
+ * #TRIED_AGAIN_WITHIN} is taken as the one an earlier try made, never made twice: a story only
+ * while an issue planned under it has none alike hanging under it with all its values, an issue
+ * only under the story it is planned under or off the project under no story. A taken item gets its
+ * place and the values it lacks and keeps every value it holds; several alike stop the write,
+ * naming them. The calls go at the pace of a {@link WritePace}.
  */
 final class NewItems {
 
@@ -36,6 +43,9 @@ final class NewItems {
      * keeps whole seconds, and a clock running apart from GitHub's would miss the issue otherwise.
      */
     static final Duration CLOCK_SLACK = Duration.ofSeconds(60);
+
+    /** How long after an earlier try a write tried again takes the issues that try made. */
+    static final Duration TRIED_AGAIN_WITHIN = Duration.ofHours(24);
 
     /** The most pages of a repository's issues read to find one GitHub made without answering. */
     static final int MOST_FOUND_PAGES = 10;
@@ -49,7 +59,15 @@ final class NewItems {
 
     private final InstantSource clock;
 
+    private final WritePace.Sleeper sleeper;
+
     private final Snapshot current;
+
+    /** The pace of this write's calls, started when it writes with the person's token. */
+    private @Nullable WritePace pace;
+
+    /** The person's issues of the last {@link #TRIED_AGAIN_WITHIN}, by repository, read once. */
+    private final Map<String, List<ProjectWrites.Found>> earlier = new HashMap<>();
 
     /** The last rank given, by kind and priority, so the items of one write follow each other. */
     private final Map<String, Integer> ranks = new HashMap<>();
@@ -69,18 +87,29 @@ final class NewItems {
      * @param github the calls the write is made of
      * @param refusals turns a failure into the store's refusal, scrubbed of the token
      * @param clock tells the time a call is sent at
+     * @param sleeper waits between calls and before a call is made again
      * @param current the snapshot the store holds
      */
     NewItems(
             final ProjectWrites github,
             final AccessRefusals refusals,
             final InstantSource clock,
+            final WritePace.Sleeper sleeper,
             final Snapshot current) {
         this.github = github;
         this.refusals = refusals;
         this.clock = clock;
+        this.sleeper = sleeper;
         this.current = current;
     }
+
+    /**
+     * A field value an item is given, made for its item id when it is written.
+     *
+     * @param field the field's name
+     * @param make the value for an item id
+     */
+    private record Value(String field, Function<String, GitHubGraphQl.FieldValue> make) {}
 
     /** An issue to be made, with what it is given once GitHub made it. */
     static final class Planned {
@@ -88,7 +117,7 @@ final class NewItems {
         private final String title;
         private final String body;
         private final List<String> labels;
-        private final List<Function<String, GitHubGraphQl.FieldValue>> values;
+        private final List<Value> values;
         private ProjectWrites.@Nullable Created created;
         private @Nullable String itemId;
 
@@ -97,7 +126,7 @@ final class NewItems {
                 final String title,
                 final String body,
                 final List<String> labels,
-                final List<Function<String, GitHubGraphQl.FieldValue>> values) {
+                final List<Value> values) {
             this.repository = repository;
             this.title = title;
             this.body = body;
@@ -146,7 +175,7 @@ final class NewItems {
         }
         line(issue.title(), "the title of a new issue");
         final String body = issueBody(issue);
-        final List<Function<String, GitHubGraphQl.FieldValue>> values = new ArrayList<>();
+        final List<Value> values = new ArrayList<>();
         values.add(option(FieldNames.STATUS, current.config().workflow().states().get(0)));
         final String size = issue.size();
         if (size != null) {
@@ -154,7 +183,7 @@ final class NewItems {
         }
         values.add(option(FieldNames.WORKER, issue.worker() == Worker.MANUAL ? "Manual" : "Agent"));
         values.add(option(FieldNames.PRIORITY, priority(priority)));
-        values.add(number(FieldNames.RANK, rank(false, priority)));
+        values.add(rank(false, priority));
         return planned(repository, issue.title().strip(), body, List.of(), values);
     }
 
@@ -178,9 +207,9 @@ final class NewItems {
                         + "\n\n**The test.** "
                         + idea.test().strip()
                         + "\n";
-        final List<Function<String, GitHubGraphQl.FieldValue>> values = new ArrayList<>();
+        final List<Value> values = new ArrayList<>();
         values.add(option(FieldNames.PRIORITY, idea.priority()));
-        values.add(number(FieldNames.RANK, rank(true, idea.priority())));
+        values.add(rank(true, idea.priority()));
         return planned(
                 current.config().own(),
                 idea.title().strip(),
@@ -190,55 +219,272 @@ final class NewItems {
     }
 
     /**
-     * Makes the issues, the story first, adds them to the project, makes each issue a sub-issue of
-     * the story in their order, and sets their field values.
+     * Places a new story, then each issue in turn under it, or issues alone: each is made or taken
+     * from an earlier try, added to the project, made a sub-issue of the story and given its field
+     * values, the Status first, before the next one is made.
      *
      * @param token the person's token
      * @param story the story, or null when only issues are added
-     * @param issues the issues
+     * @param issues the issues, in the story's order
      */
     void write(final String token, final @Nullable Planned story, final List<Planned> issues) {
+        final String projectId = begin(token);
+        @Nullable Parent parent = null;
+        if (story != null) {
+            place(token, projectId, story, null, issues);
+            parent =
+                    new Parent(
+                            story.repository,
+                            story.made().number(),
+                            story.made().nodeId(),
+                            story.reference());
+        }
+        for (final Planned issue : issues) {
+            place(token, projectId, issue, parent, List.of());
+        }
+    }
+
+    /**
+     * Places one issue under a story the board holds: made or taken from an earlier try, added to
+     * the project, made the story's last sub-issue and given its field values.
+     *
+     * @param token the person's token
+     * @param story the story on the board
+     * @param issue the issue
+     */
+    void writeUnder(final String token, final ItemView story, final Planned issue) {
+        final String projectId = begin(token);
+        place(
+                token,
+                projectId,
+                issue,
+                new Parent(
+                        story.repository(),
+                        story.number(),
+                        story.issueId(),
+                        story.repository() + "#" + story.number()),
+                List.of());
+    }
+
+    /** Checks the project's id and starts the pace of this write's calls. */
+    private String begin(final String token) {
         final String projectId = current.config().projectId();
         if (projectId.isBlank()) {
             throw new StoreException.Unreadable(
                     current.config().own(), "the GitHub project's id was not read");
         }
-        final List<Planned> all = new ArrayList<>();
-        if (story != null) {
-            all.add(story);
+        pace = new WritePace(clock, sleeper, token);
+        return projectId;
+    }
+
+    /**
+     * The story an issue of this write hangs under.
+     *
+     * @param repository the story's repository
+     * @param number the story's number
+     * @param nodeId the story's node id, which a sub-issue's parent names
+     * @param reference the story's tracker reference
+     */
+    private record Parent(String repository, int number, String nodeId, String reference) {}
+
+    /**
+     * Makes an item or takes it from an earlier try, adds it to the project unless the board holds
+     * it, hangs it under its story unless the board shows it there, and gives it the values it
+     * lacks. The link comes before the values, so a try cut off before them leaves an issue under
+     * its story that the next try takes.
+     *
+     * @param parent the story the item hangs under, or null for a story or an issue alone
+     * @param under for a story, the issues planned under it; empty for an issue
+     */
+    private void place(
+            final String token,
+            final String projectId,
+            final Planned planned,
+            final @Nullable Parent parent,
+            final List<Planned> under) {
+        final ProjectWrites.@Nullable Created taken = madeBefore(token, planned, parent, under);
+        planned.created = taken != null ? taken : create(token, planned);
+        made.add(planned.reference());
+        written.add(planned.repository);
+        if (planned.labels.contains(IssueMapping.STORY_LABEL)
+                && !planned.made().labels().contains(IssueMapping.STORY_LABEL)) {
+            throw partly(
+                    planned.repository,
+                    "GitHub made "
+                            + planned.reference()
+                            + " without the label "
+                            + IssueMapping.STORY_LABEL
+                            + ", which only an account with push access sets, so it is no"
+                            + " story");
         }
-        all.addAll(issues);
-        for (final Planned planned : all) {
-            planned.created = create(token, planned);
-            made.add(planned.reference());
-            written.add(planned.repository);
-            if (planned == story && !planned.made().labels().contains(IssueMapping.STORY_LABEL)) {
-                throw partly(
-                        planned.repository,
-                        "GitHub made "
-                                + planned.reference()
-                                + " without the label "
-                                + IssueMapping.STORY_LABEL
-                                + ", which only an account with push access sets, so it is no"
-                                + " story");
+        final @Nullable ItemView standing = onBoard(planned.repository, planned.made().number());
+        if (standing != null) {
+            planned.itemId = standing.itemId();
+        } else {
+            addToProject(token, projectId, List.of(planned));
+        }
+        if (parent != null
+                && !(standing != null && parent.nodeId().equals(standing.parentIssueId()))) {
+            try {
+                // Made again after a lost answer: a link GitHub made is refused then, so the
+                // write stops partly saved and the next try finds it linked.
+                pace().again(
+                                "the sub-issue "
+                                        + planned.reference()
+                                        + " of "
+                                        + parent.reference(),
+                                () -> {
+                                    github.addSubIssue(
+                                            token,
+                                            current.config().project().owner(),
+                                            parent.repository(),
+                                            parent.number(),
+                                            planned.made().databaseId());
+                                    return null;
+                                });
+            } catch (final RuntimeException e) {
+                throw failed(e, planned.repository, token);
             }
         }
-        addToProject(token, projectId, all);
-        if (story != null) {
-            for (final Planned issue : issues) {
-                try {
-                    github.addSubIssue(
-                            token,
-                            current.config().project().owner(),
-                            story.repository,
-                            story.made().number(),
-                            issue.made().databaseId());
-                } catch (final RuntimeException e) {
-                    throw failed(e, issue.repository, token);
+        setValues(token, projectId, planned, standing);
+    }
+
+    /** The board's item of an issue, or null when the project does not hold it. */
+    private @Nullable ItemView onBoard(final String repository, final int number) {
+        for (final ItemView item : current.items().values()) {
+            if (item.repository().equals(repository) && item.number() == number) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The issue an earlier try of this write made: the person's one open issue of the same title
+     * and body made within {@link #TRIED_AGAIN_WITHIN}, not yet taken by this write, and left by a
+     * cut-off try; null when there is none.
+     */
+    private ProjectWrites.@Nullable Created madeBefore(
+            final String token,
+            final Planned planned,
+            final @Nullable Parent parent,
+            final List<Planned> under) {
+        final List<ProjectWrites.Found> mine =
+                earlier.computeIfAbsent(
+                        planned.repository,
+                        repository ->
+                                issuesOf(
+                                        token, planned, clock.instant().minus(TRIED_AGAIN_WITHIN)));
+        final List<ProjectWrites.Found> same = new ArrayList<>();
+        for (final ProjectWrites.Found issue : mine) {
+            final int number = issue.issue().number();
+            final @Nullable ItemView item = onBoard(planned.repository, number);
+            final boolean left =
+                    planned.labels.contains(IssueMapping.STORY_LABEL)
+                            ? cutOff(issue.issue().nodeId(), under)
+                            : leftUnder(issue, item, parent);
+            if (!made.contains(planned.repository + "#" + number)
+                    && left
+                    && issue.title().equals(planned.title)
+                    && plain(issue.body()).equals(plain(planned.body))) {
+                same.add(issue);
+            }
+        }
+        if (same.isEmpty()) {
+            return null;
+        }
+        if (same.size() > 1) {
+            same.forEach(f -> made.add(planned.repository + "#" + f.issue().number()));
+            written.add(planned.repository);
+            throw partly(
+                    planned.repository,
+                    "the person holds "
+                            + same.size()
+                            + " open issues with the title and body of a new one in "
+                            + planned.repository
+                            + ", so none of them is taken as an earlier try's");
+        }
+        return same.get(0).issue();
+    }
+
+    /**
+     * Whether a story alike was left by a cut-off try: an issue planned under it has none of its
+     * title and body hanging under it with a value of every field planned for it, as a try cut off
+     * before that issue's values leaves it. A complete story is the person's own, whatever its
+     * Status, and a new one is made beside it.
+     */
+    private boolean cutOff(final String storyNodeId, final List<Planned> under) {
+        for (final Planned issue : under) {
+            boolean there = false;
+            for (final ItemView item : current.items().values()) {
+                if (storyNodeId.equals(item.parentIssueId())
+                        && item.repository().equals(issue.repository)
+                        && item.title().equals(issue.title)
+                        && plain(item.body()).equals(plain(issue.body))
+                        && issue.values.stream().allMatch(v -> holds(item, v.field()))) {
+                    there = true;
+                    break;
                 }
             }
+            if (!there) {
+                return true;
+            }
         }
-        setValues(token, projectId, all);
+        return false;
+    }
+
+    /**
+     * Whether an issue alike was left by an earlier try of this write: it hangs under the story it
+     * is planned under, or it stands off the project under no story, as a try cut off before it
+     * added the issue leaves it. One on the project alone or under another story is the person's
+     * own.
+     */
+    private static boolean leftUnder(
+            final ProjectWrites.Found issue,
+            final @Nullable ItemView item,
+            final @Nullable Parent parent) {
+        if (item == null) {
+            return !issue.underParent();
+        }
+        return parent != null && parent.nodeId().equals(item.parentIssueId());
+    }
+
+    /** The person's open issues of a repository made since a moment, every page read. */
+    private List<ProjectWrites.Found> issuesOf(
+            final String token, final Planned planned, final Instant since) {
+        final List<ProjectWrites.Found> found = new ArrayList<>();
+        for (int page = 1; page <= MOST_FOUND_PAGES; page++) {
+            final ProjectWrites.FoundPage read;
+            try {
+                read =
+                        github.issuesCreatedSince(
+                                token,
+                                current.config().project().owner(),
+                                planned.repository,
+                                since,
+                                page);
+            } catch (final RuntimeException e) {
+                throw failed(e, planned.repository, token);
+            }
+            found.addAll(read.issues());
+            if (!read.more()) {
+                return found;
+            }
+        }
+        final String why =
+                "the person made more issues in "
+                        + planned.repository
+                        + " within a day than are read to find an earlier try's among them";
+        if (made.isEmpty() && !sent) {
+            // Nothing of this write stands yet, so it is refused, not partly saved.
+            throw new StoreException.Unreadable(planned.repository, why);
+        }
+        throw partly(planned.repository, why);
+    }
+
+    /** The pace of this write's calls, started by {@link #begin}. */
+    private WritePace pace() {
+        return Objects.requireNonNull(pace, "the write was not begun");
     }
 
     private void addToProject(final String token, final String projectId, final List<Planned> all) {
@@ -248,10 +494,15 @@ final class NewItems {
             final Batch<String> batch;
             try {
                 batch =
-                        github.addProjectItems(
-                                token,
-                                projectId,
-                                chunk.stream().map(p -> p.made().nodeId()).toList());
+                        pace().again(
+                                        "the project item of " + chunk.get(0).reference(),
+                                        () ->
+                                                github.addProjectItems(
+                                                        token,
+                                                        projectId,
+                                                        chunk.stream()
+                                                                .map(p -> p.made().nodeId())
+                                                                .toList()));
             } catch (final RuntimeException e) {
                 throw failed(e, chunk.get(0).repository, token);
             }
@@ -272,30 +523,39 @@ final class NewItems {
         }
     }
 
-    private void setValues(final String token, final String projectId, final List<Planned> all) {
+    /**
+     * Writes the values an item lacks: an item the board holds keeps every value it has, and its
+     * Status when it is one of the workflow's.
+     */
+    private void setValues(
+            final String token,
+            final String projectId,
+            final Planned planned,
+            final @Nullable ItemView standing) {
         final List<GitHubGraphQl.FieldValue> values = new ArrayList<>();
-        final List<Planned> owners = new ArrayList<>();
-        for (final Planned planned : all) {
-            final String itemId = Objects.requireNonNull(planned.itemId);
-            for (final Function<String, GitHubGraphQl.FieldValue> value : planned.values) {
-                values.add(value.apply(itemId));
-                owners.add(planned);
+        final String itemId = Objects.requireNonNull(planned.itemId);
+        for (final Value value : planned.values) {
+            if (standing == null || !holds(standing, value.field())) {
+                values.add(value.make().apply(itemId));
             }
         }
         for (int from = 0; from < values.size(); from += GitHubGraphQl.MAX_BATCH) {
             final int to = Math.min(values.size(), from + GitHubGraphQl.MAX_BATCH);
             final Batch<String> batch;
             try {
-                batch = github.setFieldValues(token, projectId, values.subList(from, to));
+                final List<GitHubGraphQl.FieldValue> part = values.subList(from, to);
+                batch =
+                        pace().again(
+                                        "the field values of " + planned.reference(),
+                                        () -> github.setFieldValues(token, projectId, part));
             } catch (final RuntimeException e) {
-                throw failed(e, owners.get(from).repository, token);
+                throw failed(e, planned.repository, token);
             }
             for (int at = from; at < to; at++) {
                 final int part = at - from;
                 final Batch.Outcome<String> outcome =
                         part < batch.outcomes().size() ? batch.outcomes().get(part) : null;
                 if (outcome == null || !outcome.saved()) {
-                    final Planned planned = owners.get(at);
                     throw partly(
                             planned.repository,
                             "GitHub refused a field value of "
@@ -304,6 +564,16 @@ final class NewItems {
                 }
             }
         }
+    }
+
+    /** Whether an item on the board holds a value of a field, for Status one of the workflow. */
+    private boolean holds(final ItemView item, final String field) {
+        final String value = item.fields().get(field);
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        return !field.equals(FieldNames.STATUS)
+                || current.config().workflow().states().contains(value);
     }
 
     /**
@@ -350,13 +620,17 @@ final class NewItems {
     }
 
     private ProjectWrites.Created send(final String token, final Planned planned) {
-        return github.createIssue(
-                token,
-                current.config().project().owner(),
-                planned.repository,
-                planned.title,
-                planned.body,
-                planned.labels);
+        // Made once at the pace: a call that makes an issue is never sent again blindly.
+        return pace().once(
+                        "the new issue in " + planned.repository,
+                        () ->
+                                github.createIssue(
+                                        token,
+                                        current.config().project().owner(),
+                                        planned.repository,
+                                        planned.title,
+                                        planned.body,
+                                        planned.labels));
     }
 
     /** The person's issues made since a moment with the planned title and body. */
@@ -483,7 +757,7 @@ final class NewItems {
             final String title,
             final String body,
             final List<String> labels,
-            final List<Function<String, GitHubGraphQl.FieldValue>> values) {
+            final List<Value> values) {
         if (body.length() > BodySections.LONGEST) {
             throw new StoreException.NotSavable(
                     "", "the body of a new issue is longer than GitHub takes");
@@ -539,8 +813,7 @@ final class NewItems {
         }
     }
 
-    private Function<String, GitHubGraphQl.FieldValue> option(
-            final String field, final String name) {
+    private Value option(final String field, final String name) {
         final String fieldId = fieldId(field);
         final String optionId =
                 current.config().optionIds().getOrDefault(field, Map.of()).get(name);
@@ -548,13 +821,21 @@ final class NewItems {
             throw new StoreException.NotSavable(
                     "", "the project's field " + field + " has no option " + name);
         }
-        return itemId -> GitHubGraphQl.FieldValue.option(itemId, fieldId, optionId);
+        return new Value(
+                field, itemId -> GitHubGraphQl.FieldValue.option(itemId, fieldId, optionId));
     }
 
-    private Function<String, GitHubGraphQl.FieldValue> number(
-            final String field, final double value) {
-        final String fieldId = fieldId(field);
-        return itemId -> GitHubGraphQl.FieldValue.number(itemId, fieldId, value);
+    /**
+     * The rank after the last item of a kind and priority, given when it is written: an item that
+     * keeps the rank it holds takes none, so no rank moves and the next follows the last.
+     */
+    private Value rank(final boolean story, final String priority) {
+        final String fieldId = fieldId(FieldNames.RANK);
+        return new Value(
+                FieldNames.RANK,
+                itemId ->
+                        GitHubGraphQl.FieldValue.number(
+                                itemId, fieldId, nextRank(story, priority)));
     }
 
     private String fieldId(final String field) {
@@ -566,7 +847,7 @@ final class NewItems {
     }
 
     /** The rank after the last item of a kind and priority, and after those this write gave. */
-    private int rank(final boolean story, final String priority) {
+    private int nextRank(final boolean story, final String priority) {
         final String key = story + "\n" + priority;
         final int next =
                 Math.min(

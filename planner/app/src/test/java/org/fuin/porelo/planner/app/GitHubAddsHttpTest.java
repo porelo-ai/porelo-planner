@@ -140,7 +140,8 @@ class GitHubAddsHttpTest {
                 final String repository,
                 final Instant since,
                 final int page) {
-            throw new AssertionError("every call was answered, so none is looked for");
+            // The look for an earlier try's issues finds none: no try came before.
+            return new FoundPage(List.of(), false);
         }
 
         @Override

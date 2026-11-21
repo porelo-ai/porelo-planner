@@ -77,8 +77,21 @@ public interface ProjectWrites {
      * @param issue the issue
      * @param title its title
      * @param body its body, empty when it has none
+     * @param underParent whether GitHub names a parent issue it is a sub-issue of
      */
-    record Found(Created issue, String title, String body) {}
+    record Found(Created issue, String title, String body, boolean underParent) {
+
+        /**
+         * An issue found under no parent.
+         *
+         * @param issue the issue
+         * @param title its title
+         * @param body its body, empty when it has none
+         */
+        public Found(final Created issue, final String title, final String body) {
+            this(issue, title, body, false);
+        }
+    }
 
     /**
      * A page of the issues the person made in a repository.
@@ -385,7 +398,8 @@ public interface ProjectWrites {
                                 new Found(
                                         created(issue),
                                         Objects.requireNonNullElse(issue.title(), ""),
-                                        Objects.requireNonNullElse(issue.body(), "")));
+                                        Objects.requireNonNullElse(issue.body(), ""),
+                                        issue.parentIssueUrl() != null));
                     }
                 }
                 return new FoundPage(found, issues.more());

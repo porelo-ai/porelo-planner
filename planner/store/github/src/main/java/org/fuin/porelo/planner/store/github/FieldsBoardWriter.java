@@ -142,8 +142,10 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /**
-     * Makes the issue in its repository, adds it to the project and sets its fields; a call GitHub
-     * took without answering is never sent again blindly.
+     * Makes the issue in its repository, adds it to the project, makes it its story's last
+     * sub-issue and sets its fields; a call GitHub took without answering is never sent again
+     * blindly, and an issue an earlier try of the same creation left half made is taken, not made
+     * twice.
      */
     @Override
     public String createIssue(
@@ -151,39 +153,26 @@ public final class FieldsBoardWriter implements BoardWriter {
         fresh(current, revision);
         final String storyId = issue.story();
         final @Nullable ItemView story = storyId == null ? null : storyItem(current, storyId);
-        final NewItems adding = new NewItems(github, refusals, clock, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
         // Without a priority of its own an issue takes the Medium a new issue has in Git.
         final NewItems.Planned planned =
                 adding.issue(issue, Objects.requireNonNullElse(issue.priority(), "Medium"));
         final String token = tokens.token(current.config().forge());
-        adding.write(token, null, List.of(planned));
-        if (story != null) {
-            try {
-                // GitHub hangs a new sub-issue last, so the story's list ends with it.
-                github.addSubIssue(
-                        token,
-                        current.config().project().owner(),
-                        story.repository(),
-                        story.number(),
-                        planned.databaseId());
-            } catch (final RuntimeException e) {
-                throw new StoreException.PartlySaved(
-                        issue.repository(),
-                        List.of(issue.repository()),
-                        "GitHub made "
-                                + planned.reference()
-                                + " but did not hang it into "
-                                + storyId
-                                + "; "
-                                + refusals.refusal(current.config().own(), e, token).getMessage());
-            }
+        if (story == null) {
+            adding.write(token, null, List.of(planned));
+        } else {
+            // GitHub hangs a new sub-issue last, so the story's list ends with it.
+            adding.writeUnder(token, story, planned);
         }
         return planned.reference();
     }
 
     /**
-     * Makes the story labeled as one, then each issue, adds them to the project, makes the issues
-     * the story's sub-issues in the idea's order and sets their fields.
+     * Makes the story labeled as one, adds it to the project with its Priority and Rank, then makes
+     * each issue in the idea's order, adds it to the project, makes it the story's next sub-issue
+     * and sets its fields before the next one is made. A creation cut off midway is finished by
+     * sending it again: what the earlier try made is taken, never made twice, and the answer names
+     * every issue.
      */
     @Override
     public IdeaIds createIdea(final Snapshot current, final Revision revision, final NewIdea idea) {
@@ -195,7 +184,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                         "", "the idea names " + issue.repository() + " twice");
             }
         }
-        final NewItems adding = new NewItems(github, refusals, clock, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
         final NewItems.Planned story = adding.story(idea);
         final List<NewItems.Planned> issues = new ArrayList<>();
         idea.issues().forEach(issue -> issues.add(adding.issue(issue, idea.priority())));
