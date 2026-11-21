@@ -40,6 +40,7 @@ import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.github.CarryOver;
 import org.fuin.porelo.planner.store.github.CarryOverCalls;
 import org.fuin.porelo.planner.store.github.CarryOverMap;
+import org.fuin.porelo.planner.store.github.CarryOverPace;
 import org.fuin.porelo.planner.store.github.CarryOverPlan;
 import org.fuin.porelo.planner.store.github.ProjectConfig;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
@@ -62,12 +63,14 @@ final class CarryOverCommand {
     /** The command's form. */
     static final String USAGE =
             "carry-over --project <dir> --to <owner>/<number> [--dry-run] [--seed <csv>]"
-                    + " [--state <file>]\n"
+                    + " [--state <file>] [--per-minute <n>]\n"
                     + "  --seed   rows repository,size,minutes under that header; written into"
                     + " project.yml as velocity.seed\n"
                     + "  --state  the run's map; by default carry-over/<owner>-<number>.json under"
                     + " the planner's state directory ($XDG_STATE_HOME/porelo-planner, or"
-                    + " %LOCALAPPDATA%\\porelo-planner on Windows)";
+                    + " %LOCALAPPDATA%\\porelo-planner on Windows)\n"
+                    + "  --per-minute  the issues and comments made a minute, from 1 to 60 (60);"
+                    + " at most 450 in any hour either way";
 
     /** GitHub's web address, which every repository of a carried project stands under. */
     private static final String GITHUB = "https://github.com/";
@@ -84,7 +87,8 @@ final class CarryOverCommand {
             ProjectWrites writes,
             CarryOverCalls calls,
             TokenSource tokens,
-            InstantSource clock) {}
+            InstantSource clock,
+            CarryOverPace.Sleeper sleeper) {}
 
     private CarryOverCommand() {}
 
@@ -125,7 +129,8 @@ final class CarryOverCommand {
                             ProjectWrites.over(graphQl, client),
                             CarryOverCalls.over(client),
                             origin -> tokens.token(origin, origin.getHost()),
-                            InstantSource.system());
+                            InstantSource.system(),
+                            wait -> Thread.sleep(wait));
                 });
     }
 
@@ -141,7 +146,8 @@ final class CarryOverCommand {
             ProjectRef target,
             boolean dry,
             @Nullable Path seed,
-            @Nullable Path state) {}
+            @Nullable Path state,
+            int perMinute) {}
 
     /**
      * Runs the command.
@@ -215,6 +221,7 @@ final class CarryOverCommand {
         String to = null;
         String seed = null;
         String state = null;
+        String perMinute = null;
         boolean dry = false;
         for (int i = 0; i < rest.size(); i++) {
             final String arg = rest.get(i);
@@ -227,6 +234,8 @@ final class CarryOverCommand {
                 seed = rest.get(++i);
             } else if (arg.equals("--state") && state == null && valued) {
                 state = rest.get(++i);
+            } else if (arg.equals("--per-minute") && perMinute == null && valued) {
+                perMinute = rest.get(++i);
             } else if (arg.equals("--dry-run") && !dry) {
                 dry = true;
             } else {
@@ -237,6 +246,17 @@ final class CarryOverCommand {
         if (project == null || to == null || (dry && state != null)) {
             usage(err);
             return null;
+        }
+        int pace = CarryOverPace.MOST_PER_MINUTE;
+        if (perMinute != null) {
+            if (!perMinute.matches("[1-9][0-9]?")
+                    || Integer.parseInt(perMinute) > CarryOverPace.MOST_PER_MINUTE) {
+                err.println(
+                        "carry-over: --per-minute: a whole number from 1 to "
+                                + CarryOverPace.MOST_PER_MINUTE);
+                return null;
+            }
+            pace = Integer.parseInt(perMinute);
         }
         final ProjectRef target;
         try {
@@ -250,7 +270,8 @@ final class CarryOverCommand {
                 target,
                 dry,
                 seed == null ? null : Path.of(seed),
-                state == null ? null : Path.of(state));
+                state == null ? null : Path.of(state),
+                pace);
     }
 
     private static int dryRun(
@@ -407,13 +428,20 @@ final class CarryOverCommand {
                         board.repositories(),
                         Map.of(),
                         Map.of());
+        // Each wait is said as it begins, so a person sees where an unattended run stands.
+        final CarryOverPace pace =
+                new CarryOverPace(
+                        remote.clock(),
+                        remote.sleeper(),
+                        line -> say(err, secrets, line),
+                        arguments.perMinute());
         final CarryOver.Outcome outcome;
         try {
             outcome =
                     new CarryOver(
-                                    remote.queries(),
-                                    remote.writes(),
-                                    remote.calls(),
+                                    pace.queries(remote.queries()),
+                                    pace.writes(remote.writes()),
+                                    pace.calls(remote.calls()),
                                     tokens,
                                     remote.clock())
                             .run(config, read.planner(), map, state);

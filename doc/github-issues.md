@@ -185,6 +185,15 @@ carried, the run adds `tracker` and, with `--seed <csv>` (rows `repository,size,
 minutes as `velocity.seed.<repository>.<size>` to `project.yml`, removes the map and commits nothing: the person
 reviews the file, signs it with `porelo project sign` and commits it.
 
+The run keeps under GitHub's limits: it makes an issue or a comment at most once a second and at most 450 in any
+hour, every other write (a body, a sub-issue, a dependency, the fields) a second after the last write, and reads
+unpaced; a call GitHub answers with a refusal as rate limited is made again after the wait GitHub names, at least a minute doubling with each refusal in a row and at most an hour, nine times at most. Each wait
+longer than ten seconds is one line on the error stream naming the call by its kind, repository and number and the
+time the run goes on, so a project of more than a thousand items is carried in one unattended run of some hours.
+`--per-minute <n>` (1 to 60) makes it slower still, for a token that other work shares. The project, its fields and
+the label `story` are made beforehand with `tool/github-project-setup.sh <organization> <title> <stories repository>`,
+the token on its standard input.
+
 
 ## Access
 

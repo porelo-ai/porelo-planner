@@ -105,6 +105,38 @@ class CarryOverCommandTest {
     }
 
     @Test
+    void aPaceOutsideOneToSixtyAMinuteIsRefusedBeforeAnyLine() throws IOException {
+        // Harm: a pace over GitHub's limit asked for and taken, or none at all.
+        final Path root = WorkFixture.copy(dir);
+        for (final String pace : java.util.List.of("0", "61", "4.5", "")) {
+            final WorkFixture.Answer answer =
+                    WorkFixture.planner(
+                            "carry-over",
+                            "--project",
+                            root.resolve("porelo-sample").toString(),
+                            "--to",
+                            "porelo-ai/7",
+                            "--per-minute",
+                            pace,
+                            "--dry-run");
+            assertThat(answer.code()).as("the exit code for %s", pace).isNotZero();
+            assertThat(answer.out()).as("the lines for %s", pace).isEmpty();
+            assertThat(answer.err()).as("the fault for %s", pace).contains("--per-minute");
+        }
+        final WorkFixture.Answer taken =
+                WorkFixture.planner(
+                        "carry-over",
+                        "--project",
+                        root.resolve("porelo-sample").toString(),
+                        "--to",
+                        "porelo-ai/7",
+                        "--per-minute",
+                        "4",
+                        "--dry-run");
+        assertThat(taken.code()).as("the exit code for 4; it said %s", taken.err()).isZero();
+    }
+
+    @Test
     void aMissingCheckoutStopsTheRunBeforeAnyLine() throws IOException {
         // Harm: a project read without one of its repositories is planned as if it were whole.
         final Path root = WorkFixture.copy(dir);

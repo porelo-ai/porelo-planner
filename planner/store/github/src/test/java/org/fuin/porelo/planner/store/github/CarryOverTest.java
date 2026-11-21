@@ -233,8 +233,18 @@ class CarryOverTest {
 
         private int writes;
 
+        /**
+         * Refusals as rate limited still to answer the next making of an issue, taking no effect.
+         */
+        int issuesRateLimited;
+
         /** Counts a write and cuts it where told; answers whether it takes effect. */
         private void write(final String what) {
+            if (what.startsWith("issue ") && issuesRateLimited > 0) {
+                issuesRateLimited--;
+                throw org.fuin.porelo.forge.github.GitHubExceptions.rateLimited(
+                        403, "secondary rate limit", java.time.Duration.ofSeconds(30));
+            }
             writes++;
             if (writes == cutAt && !takenBeforeCut) {
                 throw new Cut();
@@ -703,6 +713,37 @@ class CarryOverTest {
                 .extracting(FieldOption::name)
                 .as("the Status options")
                 .containsExactlyElementsOf(WORKFLOW.states());
+    }
+
+    @Test
+    void aRunWhoseIssueIsRefusedAsRateLimitedWaitsAndEndsWholeWithTheIssueMadeOnce() {
+        // Harm: an unattended carry-over stopped by a refusal it could wait out, or an issue
+        // made twice when its call is made again.
+        final GitHub whole = new GitHub();
+        run(whole, new File());
+        final GitHub github = new GitHub();
+        github.issuesRateLimited = 1;
+        final List<java.time.Duration> slept = new ArrayList<>();
+        final List<String> lines = new ArrayList<>();
+        final CarryOverPace pace = new CarryOverPace(() -> NOW, slept::add, lines::add);
+        final File file = new File();
+        final CarryOver.Outcome outcome =
+                new CarryOver(
+                                pace.queries(github),
+                                pace.writes(github),
+                                pace.calls(github),
+                                origin -> TOKEN,
+                                () -> NOW)
+                        .run(CONFIG, planner(CarryOverTest::title), file.map(), file);
+        assertThat(outcome.whole()).as("whether the run is whole: %s", outcome.failures()).isTrue();
+        assertThat(github.everything()).as("GitHub after the run").isEqualTo(whole.everything());
+        assertThat(slept).as("the waits").contains(java.time.Duration.ofMinutes(1));
+        assertThat(lines)
+                .as("the lines said")
+                .singleElement()
+                .asString()
+                .contains("GitHub refused making an issue in")
+                .doesNotContain(TOKEN);
     }
 
     @Test

@@ -80,7 +80,11 @@ class CarryOverRunTest {
                         "PATH",
                         System.getenv("PATH"));
         github = new CarryOverGitHub();
+        slept.clear();
     }
+
+    /** The waits the runs' pace asked for; the test's sleeper never sleeps. */
+    private final List<java.time.Duration> slept = new ArrayList<>();
 
     private static void git(final Path where, final String... arguments) throws Exception {
         final List<String> command = new ArrayList<>();
@@ -121,7 +125,8 @@ class CarryOverRunTest {
                                     github,
                                     github,
                                     origin -> CarryOverGitHub.TOKEN,
-                                    InstantSource.fixed(CarryOverGitHub.NOW));
+                                    InstantSource.fixed(CarryOverGitHub.NOW),
+                                    slept::add);
                         });
         return new WorkFixture.Answer(
                 code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
@@ -198,6 +203,17 @@ class CarryOverRunTest {
         assertThat(new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8))
                 .as("the own checkout's changes, nothing committed")
                 .isEqualTo(" M project.yml\n");
+    }
+
+    @Test
+    void aRunAtFourAMinuteWaitsFifteenSecondsBetweenItsIssuesAndSaysEachWait() throws Exception {
+        // Harm: a pace the person asked for not reaching the run, so it writes at GitHub's limit.
+        final WorkFixture.Answer answer = carry("--per-minute", "4");
+        assertThat(answer.code()).as("the exit code; it said %s", answer.err()).isZero();
+        assertThat(slept).as("the waits").contains(java.time.Duration.ofSeconds(15));
+        assertThat(answer.err())
+                .as("the lines said")
+                .contains("waiting 15 s before making an issue in");
     }
 
     @Test
