@@ -348,6 +348,31 @@ void main() {
     expect(story.issues.single.state, 'Ready', reason: 'it stands under its story again');
   });
 
+  // Harm: an outside issue moved into a state only work enters shows as moved, or its refusal is said otherwise than a
+  // board issue's.
+  testWidgets('an outside issue moved into a working state is refused as only work enters it, and stays listed', (
+    tester,
+  ) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    data['outside'] = [
+      {'id': 'own#7', 'repository': 'own', 'title': 'A lost issue', 'status': 'Accepted', 'story': 'StoryOne'},
+    ];
+    backend.push('checkout', data);
+    await settle(tester);
+
+    await tester.tap(find.byKey(const Key('planning-outside-move own#7')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('planning-outside-to own#7 Building')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+
+    expect(backend.moveCalls, isEmpty, reason: 'refused at the preview, nothing saved');
+    expect(boards.selected!.moveProblem, 'own#7 was not moved: Building can be entered only by work.');
+    expect(find.byKey(const Key('planning-outside own#7')), findsOneWidget, reason: 'still outside the workflow');
+    expect(boards.selected!.waitsOnItsSave('issue own#7'), isFalse, reason: 'it may be moved again');
+  });
+
   // Harm: a confirmed move is saved twice, or under another preview than the one the person confirmed.
   testWidgets('a drop confirmed over its warning is saved once with the digest of what was shown', (tester) async {
     final (backend, boards) = await _showBoard(tester);
