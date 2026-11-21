@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL174",
   "title": "The Workflow's States Kept as Status Options Without Losing a Value",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 91,
@@ -47,3 +47,9 @@ whose `Status` is no state of the workflow is shown and warned, and the person c
 
 - In the test organization, a workflow with a renamed state is applied to a project of ten items, and every item
   keeps its state.
+
+## To be checked
+
+- The step and its tests are built and on main, and the carry-over calls it. Still open: the step applied in the
+  test organization to a project of ten items with a renamed state; the carry-over runs it only into an empty
+  project, and no call yet applies a changed workflow to a project that holds items.

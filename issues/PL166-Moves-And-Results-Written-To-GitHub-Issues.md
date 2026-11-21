@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL166",
   "title": "Moves and Results Written to GitHub Issues",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "M",
   "priority": "High",
   "rank": 82,
@@ -145,6 +145,10 @@ its own.
 
 ## To be checked
 
+- Built and on main; the first criterion is met: the joint acceptance run against the test organization writes a
+  move through the native planner, sees it in GitHub's `Status` within the second (0.37 s) and no repository
+  gaining a commit. Still open: a finished task's result handed in through the planner and seen on its issue as a
+  comment by the person; the joint run plays no stage result yet.
 - Measured by the forge clients' recorder: GitHub saves the parts before and after a refused one, and a batch that
   fails naming no part is unknown, so the store reads the written items by `issueBoard` before it answers or retries;
   the `PartlySaved` answer names what GitHub really saved.

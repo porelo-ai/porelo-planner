@@ -79,3 +79,9 @@ its own.
 - In the test organization, a token without Projects rights gives the board's refusal naming `Projects`, and the
   offer stands beside it.
 - The window's pin can be raised to the commit that carries both the refusal and the call.
+
+## To be checked
+
+- Both steps are built and on main, and the screen commit asked of the window's pin carries the refusal and the
+  call. Still open: the board read in the test organization with a token without Projects rights, its refusal
+  naming `Projects` and the offer beside it; no run has played it.

@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL167",
   "title": "The GitHub Board Read Again Only When Changed",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 83,
@@ -111,5 +111,9 @@ its own.
 
 ## To be checked
 
+- Built and on main; the second half is met: in the joint acceptance run against the test organization, a `Status`
+  set on GitHub directly reaches the board through the background poll in 4.7 s, within the 30 s interval. Still
+  open: a look at an unchanged board measured to take the conditional requests only, which needs the planner's
+  calls counted in the run; the run's log names none.
 - Whether the project items' ETag changes when only a field value changes (the forge clients' recorder measures
   it); if not, the probe compares `projectFields`' `updatedAt` instead.

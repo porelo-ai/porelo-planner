@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "PL171",
   "title": "A Body Written Only Where Its Sections Are Unambiguous",
-  "state": "Backlog",
+  "state": "Review",
   "size": "S",
   "priority": "High",
   "rank": 88,
@@ -46,3 +46,7 @@ sections apart for certain, it writes nothing into the body and tells the person
 ## Acceptance
 
 - The test above, seen red before the guard.
+- Met on main: with `BodySections.ambiguity()` made to answer every body as unambiguous, `BodySectionsTest` fails 5
+  of its 24 tests (an unclosed fence before a closed block, a fence left open under a person's section, a
+  tab-indented fence, a lead standing twice, a part leaving a block open) and `FieldsBoardWriterTest` fails the
+  stage result that saves everything but an unclear body; with the guard all 81 tests of the three classes pass.

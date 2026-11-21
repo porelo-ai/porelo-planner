@@ -144,3 +144,10 @@ answered:
 
 - The board of a GitHub project in the test organization, with no `Id` field, shows an item made after the
   cut-over and a carried-over one, each by its tracker reference, and moves each, measured on the native planner.
+
+## To be checked
+
+- Steps 1 and 2 are built and on main. Measured on the native planner in the joint acceptance run: a project with
+  no `Id` field shows issues made on GitHub by their tracker references and moves them. Still open: an item the
+  carry-over made, shown on its project's board by its reference and moved; the run checks the carried items on
+  GitHub but reads no board of them.
