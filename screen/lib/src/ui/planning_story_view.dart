@@ -9,6 +9,7 @@ import '../issue_filter.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
+import '../story_groups.dart';
 import '../story_work.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_text.dart';
@@ -98,12 +99,18 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     final issues = detail.issues?.issues ?? boardStory?.issues;
     final reported = detail.issues?.reported ?? boardStory?.issuesReported ?? false;
     final supplied = detail.issues?.supplied ?? boardStory?.issuesReported ?? false;
-    final completed = issues != null && reported && issues.every((issue) => issue.state.isNotEmpty)
-        ? issues.where((issue) => {'Review', 'Finished'}.contains(issue.state)).length
-        : null;
     final shown = issues == null
         ? const <PlanIssue>[]
         : _list.shown(issues, [for (final state in detail.board.states) state.name]);
+    final board = detail.board;
+    final groups = groupStoryIssues(
+      issues: shown,
+      // Every issue of the page too, so a blocker a search hides or the board's list lacks still blocks.
+      board: [...?issues, ...board.stories.expand((story) => story.issues), ...board.noStory],
+      states: board.states,
+      work: board.snapshot?.work ?? const [],
+      storyWork: story?.work,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -120,6 +127,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),
           PlanningWebLink(link: story.link, label: 'Open story', openLink: openLink),
+          _head(context, story),
           if (detail.story != null) _description(context, story),
         ],
         planningSection(context, 'Issues', heading: _issuesHeading(context, issues), [
@@ -133,11 +141,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
             if (!reported)
               Text(supplied ? 'Issues not reported completely' : 'Issues not reported')
             else if (issues.isEmpty)
-              Text('No issues yet.', style: Theme.of(context).textTheme.bodySmall)
-            else if (completed != null)
-              Text('$completed of ${issues.length} in Review or Finished')
-            else
-              const Text('Issue progress not reported'),
+              Text('No issues yet.', style: Theme.of(context).textTheme.bodySmall),
             if (issues.isNotEmpty && shown.isEmpty) ...[
               Text(
                 'Nothing matches.',
@@ -153,35 +157,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
                 ),
               ),
             ] else if (issues.isNotEmpty)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  dataRowMaxHeight: double.infinity,
-                  columns: [
-                    for (final label in ['Issue', 'Title', 'Repository', 'Size', 'Worker', 'State'])
-                      DataColumn(label: Text(label)),
-                  ],
-                  rows: [
-                    for (final issue in shown)
-                      DataRow(
-                        cells: [
-                          DataCell(
-                            TextButton(
-                              key: Key('planning-issue ${issue.id}'),
-                              onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
-                              child: Text(planningValue(issue.id)),
-                            ),
-                          ),
-                          DataCell(Text(planningValue(issue.title))),
-                          DataCell(Text(planningValue(issue.repository))),
-                          DataCell(Text(planningValue(issue.size))),
-                          DataCell(Text(planningWorker(issue.worker))),
-                          DataCell(_issueState(context, issue)),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
+              for (final group in groups) ..._group(context, group),
           ],
         ]),
         if (story != null && detail.story != null)
@@ -208,6 +184,190 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
             ],
           ]),
         ListenableBuilder(listenable: detail.board, builder: (context, _) => _attention(context)),
+      ],
+    );
+  }
+
+  /// The groups whose fold the person turned from its default on this page.
+  final Set<String> _turned = {};
+
+  /// What is still open of the story, from the planner's count alone: while the board is not live or a move is being
+  /// saved, the count may not match the groups shown below, so it reads unknown.
+  Widget _head(BuildContext context, PlanStory story) {
+    final board = detail.board;
+    // A read under way still shows the previous count beside groups of a newer board.
+    final known = board.live && detail.pendingMoves.isEmpty && !detail.saving && !detail.loading;
+    final figures = StoryHeadFigures(known ? story.open : null, board.states, board.snapshot?.work ?? const []);
+    final theme = Theme.of(context);
+    final minutes = switch ((figures.left, figures.minutes)) {
+      (null, _) => storyFigureUnknown,
+      (0, _) => 'nothing left',
+      (_, null) => storyFigureUnknown,
+      (_, final minutes?) => [
+        '≈ ${storyMinutesText(minutes)}',
+        if (figures.unestimated case final count? when count > 0) '+ $count without minutes',
+      ].join(' '),
+    };
+    Widget figure(String label, String value, String key) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.labelSmall),
+        Text(value, key: Key(key), style: theme.textTheme.titleMedium),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Space.small),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Space.small,
+        children: [
+          Wrap(
+            spacing: Space.wide,
+            runSpacing: Space.small,
+            children: [
+              figure('Still to build', switch ((figures.left, figures.total)) {
+                (final left?, final total?) when left <= total => '$left of $total',
+                // An issue in a state the workflow lacks is left but in no state of the total.
+                (final left?, _) => '$left',
+                _ => storyFigureUnknown,
+              }, 'planning-story-left'),
+              figure('Left by velocity', minutes, 'planning-story-minutes'),
+              figure('Open by size', switch (figures.sizes) {
+                null => storyFigureUnknown,
+                [] => 'none',
+                final sizes => sizes.join(' · '),
+              }, 'planning-story-sizes'),
+            ],
+          ),
+          if (figures.bar case final bar? when bar.isNotEmpty)
+            Tooltip(
+              message: [for (final MapEntry(:key, :value) in bar.entries) '$value ${_kindName(key)}'].join(', '),
+              child: ClipRRect(
+                key: const Key('planning-story-bar'),
+                borderRadius: BorderRadius.circular(PlanningStyle.radiusSmall),
+                child: SizedBox(
+                  height: Space.small,
+                  child: Row(
+                    children: [
+                      for (final MapEntry(:key, :value) in bar.entries)
+                        Expanded(
+                          flex: value,
+                          child: ColoredBox(color: _kindColor(key, theme.colorScheme)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _kindName(StoryGroupKind kind) => switch (kind) {
+    StoryGroupKind.working => 'in work',
+    StoryGroupKind.blocked => 'blocked',
+    StoryGroupKind.waiting => 'waiting',
+    StoryGroupKind.review => 'in review',
+    StoryGroupKind.other => 'outside the workflow',
+    StoryGroupKind.closed => 'closed',
+  };
+
+  static Color _kindColor(StoryGroupKind kind, ColorScheme scheme) => switch (kind) {
+    StoryGroupKind.working => scheme.tertiary,
+    StoryGroupKind.blocked => scheme.error,
+    StoryGroupKind.waiting => scheme.outline,
+    StoryGroupKind.review => scheme.primary,
+    StoryGroupKind.other => scheme.secondary,
+    StoryGroupKind.closed => scheme.outlineVariant,
+  };
+
+  /// One group's head, which folds and unfolds it, and its issues while it is unfolded.
+  List<Widget> _group(BuildContext context, StoryIssueGroup group) {
+    final theme = Theme.of(context);
+    final folded = group.foldedByDefault != _turned.contains(group.key);
+    final note = switch (group.kind) {
+      StoryGroupKind.review => 'built and pushed, your decision',
+      StoryGroupKind.other => 'in a state the workflow lacks',
+      _ => '',
+    };
+    return [
+      InkWell(
+        key: Key('planning-issue-group ${group.key}'),
+        onTap: () => setState(() {
+          if (!_turned.remove(group.key)) _turned.add(group.key);
+        }),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.small),
+          child: Row(
+            spacing: Space.small,
+            children: [
+              Container(width: Space.tight, height: Space.wide, color: _kindColor(group.kind, theme.colorScheme)),
+              Text(planningShown(group.label, multiline: false), style: theme.textTheme.titleSmall),
+              Text('${group.rows.length}', style: theme.textTheme.bodySmall),
+              if (note.isNotEmpty) Flexible(child: Text(note, style: theme.textTheme.bodySmall)),
+              const Spacer(),
+              Icon(folded ? Icons.expand_more : Icons.expand_less, size: PlanningStyle.rowIcon),
+            ],
+          ),
+        ),
+      ),
+      if (!folded)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            dataRowMaxHeight: double.infinity,
+            columns: [
+              for (final label in ['Issue', 'Title', 'Repository', 'Size', 'Left', 'Who', 'Waits on / next'])
+                DataColumn(label: Text(label)),
+            ],
+            rows: [for (final row in group.rows) _row(context, group, row)],
+          ),
+        ),
+    ];
+  }
+
+  DataRow _row(BuildContext context, StoryIssueGroup group, StoryIssueRow row) {
+    final issue = row.issue;
+    final waits = switch (group.kind) {
+      StoryGroupKind.blocked =>
+        'Waits on ${[for (final blocker in row.blockers) '${planningShown(blocker.id, multiline: false)} (${planningValue(blocker.state)})'].join(', ')}',
+      StoryGroupKind.review => 'Your review',
+      _ => '',
+    };
+    return DataRow(
+      cells: [
+        DataCell(
+          TextButton(
+            key: Key('planning-issue ${issue.id}'),
+            onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
+            child: Text(planningValue(issue.id)),
+          ),
+        ),
+        DataCell(Text(planningValue(issue.title))),
+        DataCell(Text(planningValue(issue.repository))),
+        DataCell(Text(planningValue(issue.size))),
+        DataCell(Text(issue.minutesLeft == null ? '—' : storyMinutesText(issue.minutesLeft!))),
+        DataCell(
+          Text(row.runAgent == null ? planningWorker(issue.worker) : planningShown(row.runAgent!, multiline: false)),
+        ),
+        DataCell(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (waits.isNotEmpty)
+                Text(
+                  waits,
+                  style: group.kind == StoryGroupKind.blocked
+                      ? TextStyle(color: Theme.of(context).colorScheme.error)
+                      : null,
+                ),
+              _issueState(context, issue),
+            ],
+          ),
+        ),
       ],
     );
   }

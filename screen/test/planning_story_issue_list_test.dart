@@ -44,6 +44,23 @@ Map<String, dynamic> _board() => {
       'priority': 'High',
       'link': 'https://example.org/stories/ST1',
       'issues': [_issue('PL1', 'Review'), _issue('PL2', 'Backlog'), _issue('PL3', 'Finished')],
+      'open': {
+        'states': [
+          {'name': 'Backlog', 'issues': 1},
+          {'name': 'Implementing', 'issues': 0},
+          {'name': 'Review', 'issues': 1},
+          {'name': 'Finished', 'issues': 1},
+        ],
+        'blocked': 0,
+        'sizes': [
+          {'name': 'S', 'issues': 1},
+        ],
+        'unsized': 0,
+        'left': 1,
+        'minutes': 30,
+        'unestimated': 0,
+        'review': 1,
+      },
     },
   ],
   'revision': 'r1',
@@ -82,7 +99,7 @@ Future<void> _show(WidgetTester tester, PlanningBoard board) async {
 void main() {
   // Harm: a story whose issues a search hides is read as empty, so its issues are filed twice; and a move of a hidden
   // issue is saved unseen.
-  testWidgets('a search that matches no issue says so, and the progress still counts all', (tester) async {
+  testWidgets('a search that matches no issue says so, and what is still to build still counts all', (tester) async {
     final source = MockPlanningSource()..boards['demo'] = _board();
     final board = PlanningBoard(source, 'demo');
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -100,9 +117,15 @@ void main() {
     expect(find.byKey(const Key('planning-issue PL2')), findsNothing, reason: 'the search hides every row');
     expect(find.text('Nothing matches.'), findsOneWidget, reason: 'the list says the search hides them');
     expect(find.text('No issues yet.'), findsNothing, reason: 'the story is never read as empty');
-    expect(find.textContaining(' of 3 in Review or Finished'), findsOneWidget, reason: 'progress counts every issue');
+    expect(
+      tester.widget<Text>(find.byKey(const Key('planning-story-left'))).data,
+      '1 of 3',
+      reason: 'what is still to build counts every issue, the hidden ones too',
+    );
 
     await tester.tap(find.byKey(const Key('planning-issue-search-clear')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-issue-group closed Finished')));
     await settle(tester);
     expect(
       find.byWidgetPredicate(
