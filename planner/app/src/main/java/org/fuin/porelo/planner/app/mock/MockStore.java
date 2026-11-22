@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
@@ -689,6 +690,40 @@ public final class MockStore implements PlanningStore {
                                 known.stream().allMatch(state -> closed.indexOf(state) > 0)
                                         ? known.getFirst()
                                         : closed.getFirst());
+    }
+
+    /**
+     * Makes a story over issues of the board in memory, numbered after the highest story; its state
+     * follows its issues' as every story's here does, and nothing reaches a repository.
+     */
+    @Override
+    public synchronized NewIdea.Added createStoryFromIssues(
+            final Revision revision, final StoryFromIssues story) {
+        final Board board = fresh(revision);
+        story.existing().forEach(id -> issueOf(board, id));
+        int last = 0;
+        for (final Story known : board.stories()) {
+            last = Math.max(last, Integer.parseInt(known.id().substring(2)));
+        }
+        final String id = "ST" + (last + 1);
+        final List<Story> stories = new ArrayList<>(board.stories());
+        stories.add(
+                new Story(
+                        id,
+                        story.title(),
+                        board.workflow().states().getFirst(),
+                        false,
+                        story.priority(),
+                        null,
+                        story.existing(),
+                        "**What a user gains.** "
+                                + story.gain()
+                                + "\n\n**The test.** "
+                                + story.test()
+                                + "\n",
+                        null));
+        current = saved(withItems(board, stories, board.issues()), NOTHING);
+        return new NewIdea.Added(id, story.existing(), current);
     }
 
     /**

@@ -182,6 +182,29 @@ public interface PlanningStore {
     }
 
     /**
+     * Makes a story over issues that stand on the board against the revision the caller read: the
+     * story in the project's own repository, each issue hung under it in its order, keeping its own
+     * fields. Every issue is checked before anything is written; a save cut off after the story was
+     * made is finished by the same call sent again, which takes that story and hangs only the
+     * issues it lacks.
+     *
+     * @param revision the revision the caller read
+     * @param story the story and its issues
+     * @return the story's id, the issues' ids in the story's order and the board after the save
+     * @throws StoreException.StaleRevision if the store moved since that revision, or an issue
+     *     changed since it was read
+     * @throws StoreException.NoSuchIssue if the board has no such issue
+     * @throws StoreException.NotSavable if an issue cannot be hung under a new story
+     * @throws UnsupportedOperationException if the store does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     * @throws StoreException.PartlySaved if a later call failed after the story was made
+     */
+    default NewIdea.Added createStoryFromIssues(
+            final Revision revision, final StoryFromIssues story) {
+        throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /**
      * Sets an issue's fields a person keeps by hand against the revision the caller read.
      *
      * @param revision the revision the caller read

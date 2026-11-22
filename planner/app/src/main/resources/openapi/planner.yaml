@@ -317,26 +317,37 @@ paths:
           $ref: '#/components/responses/Unreachable'
     post:
       operationId: createStory
-      summary: Make a story with its issues
+      summary: Make a story with new issues, or from issues that stand
       description: >-
-        Saves an idea a person, or an agent acting for them, wrote without a discussion: one story in state Idea in
-        the project's own repository and an issue in state Idea in each repository the idea names, in one save against
-        the board at the given revision, as a discussion's hand-in is saved. The idea is checked against the idea
-        format before anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a
-        part of it stands answers PartlySaved, naming the repositories that hold their part. A run whose story is
-        gone is dropped first, so the new story never takes it over; one with a task still at work refuses the call
-        (WorkRunning). The JSON body is at most
-        65536 bytes. The changes stream announces the new board as it does after any save.
+        Makes a story in the project's own repository in one of two ways, told apart by the body's members. A
+        StoryRequest saves an idea a person, or an agent acting for them, wrote without a discussion: one story in
+        state Idea and an issue in state Idea in each repository the idea names, in one save against the board at the
+        given revision, as a discussion's hand-in is saved. The idea is checked against the idea format before
+        anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
+        stands answers PartlySaved, naming the repositories that hold their part. A StoryFromIssuesRequest makes a
+        story over issues that stand on the board: each must be an open issue of the workflow, no story, no sub-issue
+        and held by no other story; they become the story's issues in the order named and keep their own fields, and
+        the story's state follows theirs. Every issue is checked against the board, and read again from the tracker
+        where the store keeps one, before anything is written; an issue changed or linked there since the board was
+        read refuses the call as stale, and each refused id is named in the IdeaRefused answer, with nothing made. A
+        save that stops after the story was made answers PartlySaved; the same request sent again finishes it: the
+        story that save made is taken, never made twice, and an issue it already holds is not linked again. The Git
+        store makes no story from issues that stand (NotOffered). Either way, a run whose story is gone is dropped
+        first, so the new story never takes it over; one with a task still at work refuses the call, as does a
+        started task that works one of the issues named (WorkRunning). The JSON body is at most 65536 bytes. The
+        changes stream announces the new board as it does after any save.
       tags: [board]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StoryRequest'
+              oneOf:
+                - $ref: '#/components/schemas/StoryRequest'
+                - $ref: '#/components/schemas/StoryFromIssuesRequest'
       responses:
         '201':
-          description: The story and its issues are saved.
+          description: The story is saved, with its issues.
           content:
             application/json:
               schema:
@@ -1970,8 +1981,8 @@ components:
       description: >-
         The board moved since the given revision (StaleRevision, naming the current one, and the item when a person
         changed it on the tracker since the board was read), or a started task of a run
-        works an issue the change takes out of its story, or a run whose story is gone still has a task at work
-        (WorkRunning, naming the story and its tasks).
+        works an issue the change takes out of its story or an issue a new story would take, or a run whose story is
+        gone still has a task at work (WorkRunning, naming the story and its tasks).
       content:
         application/problem+json:
           schema:
@@ -2021,8 +2032,8 @@ components:
         An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in or
         no new story - larger than 65536 bytes, not JSON, not an object, a member missing or unknown, offer no
         lowercase UUID, or revision no revision - with one fault; or the idea breaks the idea format, at most 100
-        faults, each starting with the field it names (story, story.title, issues, issues[0].repository, counted from
-        0); or the store cannot write it, its words as the one fault; or the offer's save is still pending or was only
+        faults, each starting with the field it names (story, story.title, issues, issues[0].repository, existing,
+        existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault; or the offer's save is still pending or was only
         partly pushed, with pushed naming the repositories already pushed (comma-joined, empty when none).
       content:
         application/problem+json:
@@ -2911,8 +2922,30 @@ components:
           $ref: '#/components/schemas/Idea'
         revision:
           $ref: '#/components/schemas/Revision'
+    StoryFromIssuesRequest:
+      description: >-
+        A new story over issues that stand on the board, against the board at a revision; no other member is taken,
+        and no new issue is made.
+      type: object
+      additionalProperties: false
+      required: [story, existing, revision]
+      properties:
+        story:
+          $ref: '#/components/schemas/IdeaStory'
+        existing:
+          description: The issues the story takes, in its order, each named once.
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
     StoryAdded:
-      description: The new story's id, its issues' ids in the idea's order, and the board's revision after the save.
+      description: >-
+        The new story's id, its issues' ids - the new ones in the idea's order, or the existing ones in the order
+        named - and the board's revision after the save.
       type: object
       required: [id, issues, revision]
       properties:

@@ -1,20 +1,23 @@
 package org.fuin.porelo.planner.core;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Checks an idea a discussion wrote against the idea format and the board, before the store writes
  * anything from it; a refusal lists every fault by its field in fixed words and never repeats what
- * was sent.
+ * was sent beyond an issue's id, which the reader checked as one.
  */
 public final class NewIdeas {
 
@@ -99,24 +102,7 @@ public final class NewIdeas {
     public static NewIdea check(final Board board, final Idea idea, final List<String> shape) {
         final Faults faults = new Faults();
         shape.forEach(faults::add);
-        final Story story = idea.story();
-        String title = "";
-        String gain = "";
-        String test = "";
-        String priority = "";
-        if (story == null) {
-            faults.add("story: The idea must hold a story with title, gain, test and priority.");
-        } else {
-            title = line(faults, "story.title", "The title", story.title(), MOST_TITLE);
-            gain = line(faults, "story.gain", "What a user gains", story.gain(), MOST_LINE);
-            test = line(faults, "story.test", "The test", story.test(), MOST_LINE);
-            priority = String.valueOf(story.priority());
-            if (!org.fuin.porelo.planner.store.Story.PRIORITIES.contains(priority)) {
-                faults.add(
-                        "story.priority: The priority must be Highest, High, Medium, Low or"
-                                + " Lowest.");
-            }
-        }
+        final Head head = head(faults, idea.story(), "The idea");
         if (idea.issues().isEmpty()) {
             faults.add("issues: The idea must name one issue at least.");
         }
@@ -140,7 +126,140 @@ public final class NewIdeas {
         if (!faults.list.isEmpty()) {
             throw refused(faults.list);
         }
-        return new NewIdea(title, gain, test, priority, issues);
+        return new NewIdea(head.title(), head.gain(), head.test(), head.priority(), issues);
+    }
+
+    /**
+     * Checks a story to be made over issues that stand on the board, and answers what the store
+     * saves. Each issue must stand on the board in an open state of the workflow, be no story and
+     * no sub-issue, be named once and be held by no other story; one held by a story of the same
+     * title whose every issue is named too is let through, since that is the story a cut-off save
+     * of the same request made, and the store takes it or refuses the issue before it writes.
+     *
+     * @param board the board the story is saved against
+     * @param story the story, or null when it is missing or no object
+     * @param existing the issues' ids, each already checked as an issue's id, in the story's order
+     * @param shape the faults of the body's shape the reader found, each by its field
+     * @return the story the store saves, its texts without the spaces around them
+     * @throws WorkRefusal {@code IdeaRefused} listing at most {@value #MOST_FAULTS} faults, each
+     *     refused issue named by its id
+     */
+    public static StoryFromIssues checkFromIssues(
+            final Board board,
+            final @Nullable Story story,
+            final List<String> existing,
+            final List<String> shape) {
+        final Faults faults = new Faults();
+        shape.forEach(faults::add);
+        final Head head = head(faults, story, "The body");
+        if (existing.isEmpty()) {
+            faults.add("existing: The story must name one issue at least.");
+        } else if (existing.size() > Edits.MOST_ISSUES) {
+            faults.add("existing: A story holds at most " + Edits.MOST_ISSUES + " issues.");
+        }
+        final Map<String, org.fuin.porelo.planner.store.Story> holder = new HashMap<>();
+        for (final org.fuin.porelo.planner.store.Story other : board.stories()) {
+            other.issues().forEach(id -> holder.putIfAbsent(id, other));
+        }
+        final Set<String> named = new HashSet<>();
+        for (int index = 0; index < existing.size() && !faults.full(); index++) {
+            final String fault =
+                    existingFault(
+                            board, existing.get(index), head.title(), existing, holder, named);
+            if (fault != null) {
+                faults.add("existing[" + index + "]: " + fault);
+            }
+        }
+        if (!faults.list.isEmpty()) {
+            throw WorkRefusal.ideaRefused(
+                    "The story cannot be made from these issues.", faults.list, null);
+        }
+        return new StoryFromIssues(
+                head.title(), head.gain(), head.test(), head.priority(), existing);
+    }
+
+    /** Why one issue cannot be taken into a new story, naming it by its checked id, or null. */
+    private static @Nullable String existingFault(
+            final Board board,
+            final String id,
+            final String title,
+            final List<String> existing,
+            final Map<String, org.fuin.porelo.planner.store.Story> holder,
+            final Set<String> named) {
+        if (!named.add(id)) {
+            return "The issue " + id + " is named twice.";
+        }
+        if (board.twice(id).isPresent()) {
+            return "The id " + id + " names two items of the board, so no one issue is meant.";
+        }
+        if (board.story(id).isPresent()) {
+            return id + " is a story, not an issue.";
+        }
+        if (board.outsideIssue(id).isPresent()) {
+            return "The issue "
+                    + id
+                    + " stands outside the workflow; move it into a state of the workflow first.";
+        }
+        final org.fuin.porelo.planner.store.Issue issue = board.issue(id).orElse(null);
+        if (issue == null) {
+            return "There is no issue " + id + " on the board.";
+        }
+        if (board.workflow().closed().contains(issue.state())) {
+            return "The issue "
+                    + id
+                    + " is "
+                    + issue.state()
+                    + "; a new story takes open issues only.";
+        }
+        if (issue.parent() != null) {
+            return "The issue " + id + " is a sub-issue of " + issue.parent() + ".";
+        }
+        final org.fuin.porelo.planner.store.Story other = holder.get(id);
+        if (other != null && !madeBefore(other, title, existing)) {
+            return "The issue " + id + " belongs to " + other.id() + "; an issue has one story.";
+        }
+        return null;
+    }
+
+    /**
+     * Whether a story holding an issue may be the one an earlier, cut-off save of the same request
+     * made: it has the same title and every issue it holds is named.
+     */
+    private static boolean madeBefore(
+            final org.fuin.porelo.planner.store.Story other,
+            final String title,
+            final List<String> existing) {
+        return other.issuesWhole()
+                && other.title().strip().equals(title)
+                && existing.containsAll(other.issues());
+    }
+
+    /**
+     * A story's title, gain, test and priority as checked.
+     *
+     * @param title its title
+     * @param gain what a user gains
+     * @param test its test
+     * @param priority its priority
+     */
+    private record Head(String title, String gain, String test, String priority) {}
+
+    private static Head head(final Faults faults, final @Nullable Story story, final String whole) {
+        if (story == null) {
+            faults.add(
+                    "story: " + whole + " must hold a story with title, gain, test and priority.");
+            return new Head("", "", "", "");
+        }
+        final String title = line(faults, "story.title", "The title", story.title(), MOST_TITLE);
+        final String gain =
+                line(faults, "story.gain", "What a user gains", story.gain(), MOST_LINE);
+        final String test = line(faults, "story.test", "The test", story.test(), MOST_LINE);
+        final String priority = String.valueOf(story.priority());
+        if (!org.fuin.porelo.planner.store.Story.PRIORITIES.contains(priority)) {
+            faults.add(
+                    "story.priority: The priority must be Highest, High, Medium, Low or Lowest.");
+        }
+        return new Head(title, gain, test, priority);
     }
 
     // The repository is checked before any NewIssue is built, whose constructor refuses a bad name.

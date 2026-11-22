@@ -40,29 +40,45 @@ public class EditsController {
     }
 
     /**
-     * Makes a story with its issues.
+     * Makes a story with new issues, or over issues that stand on the board.
      *
      * @param project the project's name
-     * @param request the request, whose body is the idea and the revision
+     * @param request the request, whose body is the idea and the revision, or the story, the
+     *     existing issues and the revision
      * @return the story's and its issues' ids and the revision after the save, as created
      */
     @PostMapping("/projects/{project}/stories")
     public ResponseEntity<StoryAdded> createStory(
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
-        final EditRequests.NewStory body = EditRequests.story(request);
+        final EditRequests.StoryBody read = EditRequests.story(request);
         final NewIdea.Added added;
         try {
             added =
-                    offered(
-                            name,
-                            "This planner does not add stories.",
-                            () ->
-                                    edits.createStory(
-                                            name,
-                                            body.request().revision(),
-                                            body.request().idea(),
-                                            body.shape()));
+                    switch (read) {
+                        case EditRequests.NewStory body ->
+                                offered(
+                                        name,
+                                        "This planner does not add stories.",
+                                        () ->
+                                                edits.createStory(
+                                                        name,
+                                                        body.request().revision(),
+                                                        body.request().idea(),
+                                                        body.shape()));
+                        case EditRequests.FromIssues body ->
+                                offered(
+                                        name,
+                                        "This planner does not make a story from issues that"
+                                                + " stand.",
+                                        () ->
+                                                edits.createStoryFromIssues(
+                                                        name,
+                                                        body.request().revision(),
+                                                        body.request().story(),
+                                                        body.request().existing(),
+                                                        body.shape()));
+                    };
         } catch (final StoreException.NotSavable e) {
             throw WorkRefusal.ideaRefused(
                     "The store cannot write the idea.",

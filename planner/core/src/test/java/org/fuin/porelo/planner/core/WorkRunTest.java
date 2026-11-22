@@ -1026,6 +1026,32 @@ class WorkRunTest {
     }
 
     @Test
+    void aNewStoryTakingAnIssueARunningTaskWorksIsRefusedBeforeItIsSaved() {
+        // Harm: an issue a started task works hung into a new story, so the task's results land
+        // in a story it was not started for.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        f.start(f.order().tasks().getFirst());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () ->
+                                f.run.newStory(
+                                        List.of("AA1"),
+                                        board -> board,
+                                        (board, checked) -> {
+                                            saved.set(true);
+                                            return board;
+                                        }));
+
+        assertThat(refused).as("a running task works AA1").isNotNull();
+        assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
+        assertThat(saved).as("a refused story never reaches the save").isFalse();
+    }
+
+    @Test
     void anIssueHungInAndStartedMeanwhileIsNotTakenOutUnderItsRunningTask() {
         // A list planned on the board from before an issue was hung in and started would take
         // that issue out from under its task, which never saw the list.

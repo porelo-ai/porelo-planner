@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
@@ -135,6 +136,15 @@ class EditsEndpointTest {
                     @Override
                     public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
                         return new NewIdea.Added("ST2", List.of("AB3"), write(idea.title()));
+                    }
+
+                    @Override
+                    public NewIdea.Added createStoryFromIssues(
+                            final Revision revision, final StoryFromIssues story) {
+                        return new NewIdea.Added(
+                                "ST2",
+                                story.existing(),
+                                write(story.title() + " " + story.existing()));
                     }
                 };
         final Projects projects = new Projects((project, repository, branch) -> store, 8);
@@ -386,5 +396,78 @@ class EditsEndpointTest {
                                 + " \"revision\": \"r1\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("IdeaRefused"));
+    }
+
+    private static final String HEAD =
+            "\"story\": {\"title\": \"A story\", \"gain\": \"A gain.\", \"test\": \"A test.\","
+                    + " \"priority\": \"High\"}";
+
+    @Test
+    void aStoryFromIssuesIsAnsweredAsCreatedWithTheIssuesInTheOrderNamed() throws Exception {
+        // Harm: the second body the description names served unlike it, or answered without the
+        // ids the window shows the new story by.
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("ST2"))
+                .andExpect(jsonPath("$.issues[0]").value("AB2"))
+                .andExpect(jsonPath("$.revision").value("r2"));
+        assertThat(written).as("the story the store was given").containsExactly("A story [AB2]");
+    }
+
+    @Test
+    void aStoryFromIssuesWhoseBodyBreaksItsShapeOrNamesATakenIssueIsRefusedBeforeTheStore()
+            throws Exception {
+        // Harm: a body mixing new and existing issues, an unknown member, a list out of bounds or
+        // an issue another story holds that makes a story anyway, or a refusal that repeats a
+        // text sent as an id.
+        final String idea =
+                "\"idea\": {"
+                        + HEAD
+                        + ", \"issues\": [{\"repository\": \"porelo-store\","
+                        + " \"title\": \"An issue\", \"mustBeTrue\": \"It works.\","
+                        + " \"worker\": \"Agent\"}]}";
+        final String ids101 = String.join(", ", java.util.Collections.nCopies(101, "\"AB2\""));
+        final Map<String, String> bodies = new java.util.LinkedHashMap<>();
+        bodies.put("{" + idea + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}", "body: ");
+        bodies.put(
+                "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\", \"more\": 1}",
+                "body: ");
+        bodies.put("{" + HEAD + ", \"existing\": [], \"revision\": \"r1\"}", "existing: ");
+        bodies.put(
+                "{" + HEAD + ", \"existing\": [" + ids101 + "], \"revision\": \"r1\"}",
+                "existing: ");
+        bodies.put(
+                "{" + HEAD + ", \"existing\": [\"AB2\", \"<b>x</b>\"], \"revision\": \"r1\"}",
+                "existing[1]: The id must be an issue's id.");
+        bodies.put(
+                "{" + HEAD + ", \"existing\": [\"AB1\"], \"revision\": \"r1\"}",
+                "existing[0]: The issue AB1 belongs to ST1; an issue has one story.");
+        for (final Map.Entry<String, String> body : bodies.entrySet()) {
+            final String answer =
+                    send("POST", "/stories", body.getKey())
+                            .andExpect(status().isUnprocessableContent())
+                            .andExpect(jsonPath("$.title").value("IdeaRefused"))
+                            .andReturn()
+                            .getResponse()
+                            .getContentAsString();
+            assertThat(answer).as("the refusal of %s", body.getKey()).contains(body.getValue());
+            assertThat(answer).as("nothing sent repeated").doesNotContain("<b>x</b>", "more");
+        }
+        assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aStoryFromIssuesOnAMovedBoardIsAConflictAndOneTheStoreDoesNotMakeIsNotOffered()
+            throws Exception {
+        // Harm: a story made over a board the caller never saw, or a store that makes none, such
+        // as the Git store, answered as a refused write the window would show as the person's.
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r0\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("StaleRevision"));
+        offered = false;
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.title").value("NotOffered"));
+        assertThat(written).as("nothing written").isEmpty();
     }
 }

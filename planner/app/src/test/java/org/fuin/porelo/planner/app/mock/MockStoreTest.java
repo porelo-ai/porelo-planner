@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -829,5 +830,50 @@ class MockStoreTest {
                 .as("one factory for each kind constant")
                 .containsExactlyElementsOf(constants);
         return made;
+    }
+
+    @Test
+    void aStoryMadeFromAnIssueOfTheMockBoardHoldsItAndAStaleOneChangesNothing() {
+        // Harm: the window's planning tests of a story made from issues that stand pass against
+        // a mock that holds no such story, or that took an old revision.
+        final Board board = store.board();
+        final java.util.Set<String> held = new java.util.HashSet<>();
+        board.stories().forEach(story -> held.addAll(story.issues()));
+        final List<Issue> loose =
+                board.issues().stream()
+                        .filter(
+                                issue ->
+                                        !held.contains(issue.id())
+                                                && issue.parent() == null
+                                                && !board.workflow()
+                                                        .closed()
+                                                        .contains(issue.state()))
+                        .limit(1)
+                        .toList();
+        assertThat(loose).as("the mock board's loose open issue").hasSize(1);
+        final List<String> ids = List.of(loose.get(0).id());
+
+        final NewIdea.Added added =
+                store.createStoryFromIssues(
+                        board.revision(),
+                        new StoryFromIssues("A story", "A gain.", "A test.", "High", ids));
+
+        final Story made = added.board().story(added.story()).orElseThrow();
+        assertThat(made.issues()).as("the story's issues").isEqualTo(ids);
+        assertThat(added.issues()).as("the answer's issues").isEqualTo(ids);
+        assertThat(made.state())
+                .as("its state following its issues'")
+                .isEqualTo(store.storyState(List.of(loose.get(0).state())));
+        assertThat(added.board().revision()).as("a new revision").isNotEqualTo(board.revision());
+
+        assertThatThrownBy(
+                        () ->
+                                store.createStoryFromIssues(
+                                        board.revision(),
+                                        new StoryFromIssues(
+                                                "Another", "A gain.", "A test.", "High", ids)))
+                .as("a story from issues against an older revision")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(store.board()).as("the board after the stale call").isEqualTo(added.board());
     }
 }

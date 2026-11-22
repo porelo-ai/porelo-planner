@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Warning;
@@ -424,6 +425,39 @@ public final class FieldsBoardWriter implements BoardWriter {
                     "It stands under an issue of another repository,"
                             + warned(Warning.PARENT_IN_OTHER_REPOSITORY));
         }
+    }
+
+    /**
+     * Makes the story labeled as one, as an idea's story is made, then hangs each issue under it in
+     * the story's order; the issues keep their own fields. Before the story is made, every issue is
+     * refused that the board lacks or that hangs under another parent on GitHub, and every one is
+     * read again and checked unchanged. A creation cut off after the story was made is finished by
+     * sending it again: that story is taken, never made twice, and an issue it holds is not hung
+     * again.
+     */
+    @Override
+    public IdeaIds createStoryFromIssues(
+            final Snapshot current, final Revision revision, final StoryFromIssues story) {
+        fresh(current, revision);
+        final Plan plan = new Plan(current);
+        final List<NewItems.Over> existing = new ArrayList<>();
+        for (final String id : story.existing()) {
+            final ItemView item = issueItem(current, id);
+            plan.read(id, item);
+            existing.add(new NewItems.Over(id, item));
+        }
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        final NewItems.Planned planned =
+                adding.story(
+                        new NewIdea(
+                                story.title(),
+                                story.gain(),
+                                story.test(),
+                                story.priority(),
+                                List.of()));
+        final String token = tokens.token(current.config().forge());
+        adding.writeOver(token, planned, existing, () -> plan.readUnchanged(token));
+        return new IdeaIds(planned.reference(), story.existing());
     }
 
     @Override
@@ -843,6 +877,31 @@ public final class FieldsBoardWriter implements BoardWriter {
             } else if (!Integer.toString(n).equals(held)) {
                 number(id, item, field, n);
             }
+        }
+
+        /** Adds an item that is only read before a write and checked unchanged. */
+        void read(final String id, final ItemView item) {
+            items.putIfAbsent(id, item);
+        }
+
+        /**
+         * Reads the items named and refuses, naming the first, when one differs from the board the
+         * write was planned on; writes nothing.
+         *
+         * @param token the person's token
+         * @return each item's issue id in REST, by its node id
+         */
+        Map<String, Long> readUnchanged(final String token) {
+            try {
+                unchanged(token);
+            } catch (final StoreException e) {
+                throw e;
+            } catch (final RuntimeException e) {
+                throw refusals.refusal(current.config().own(), e, token);
+            }
+            final Map<String, Long> ids = new LinkedHashMap<>();
+            reads.forEach((node, issue) -> ids.put(node, issue.databaseId()));
+            return ids;
         }
 
         /** Adds a link to change; both items are read before the write and checked unchanged. */

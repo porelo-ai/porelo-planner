@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
@@ -90,6 +91,9 @@ final class NewItems {
 
     /** Whether a call that makes an issue went without a clear answer, so GitHub may hold it. */
     private boolean sent;
+
+    /** The issues standing on the project a new story is made over, empty for any other write. */
+    private List<Over> over = List.of();
 
     /**
      * Starts a write.
@@ -330,6 +334,69 @@ final class NewItems {
                 List.of());
     }
 
+    /**
+     * An issue standing on the project that a new story is made over.
+     *
+     * @param id the issue's id on the board
+     * @param item its item
+     */
+    record Over(String id, ItemView item) {}
+
+    /**
+     * Places a new story over issues that stand on the project: the story is made, or taken from an
+     * earlier try of the same write, then each issue it does not hold yet is hung under it in the
+     * story's order, keeping its own fields. Before the story is made, an issue hanging under any
+     * other parent on GitHub is refused, and every issue is read again and checked unchanged, so
+     * nothing is written over a board the caller never saw.
+     *
+     * @param token the person's token
+     * @param story the planned story
+     * @param existing the issues, in the story's order
+     * @param unchanged reads the issues again, refuses the write when one changed since the board
+     *     was read, and answers each issue's id in REST by its node id
+     * @throws StoreException.NotSavable when an issue hangs under another parent on GitHub
+     * @throws StoreException.StaleRevision when an issue changed since the board was read
+     */
+    void writeOver(
+            final String token,
+            final Planned story,
+            final List<Over> existing,
+            final Supplier<Map<String, Long>> unchanged) {
+        final String projectId = begin(token);
+        over = List.copyOf(existing);
+        final ProjectWrites.@Nullable Created taken = madeBefore(token, story, null, List.of());
+        for (final Over issue : existing) {
+            final @Nullable String parent = issue.item().parentIssueId();
+            if (parent != null && (taken == null || !parent.equals(taken.nodeId()))) {
+                throw new StoreException.NotSavable(
+                        issue.id(), "the issue " + issue.id() + " has a parent on GitHub already");
+            }
+        }
+        final Map<String, Long> databaseIds = unchanged.get();
+        placeTaken(token, projectId, story, null, taken);
+        final Parent parent =
+                new Parent(
+                        story.repository,
+                        story.made().number(),
+                        story.made().nodeId(),
+                        story.reference());
+        for (final Over issue : existing) {
+            if (parent.nodeId().equals(issue.item().parentIssueId())) {
+                // An earlier try hung it already; the story is read again as after a link.
+                github.issueTaken(parent.nodeId());
+                continue;
+            }
+            hang(
+                    token,
+                    parent,
+                    issue.id(),
+                    Objects.requireNonNull(
+                            databaseIds.get(issue.item().issueId()),
+                            "an issue hung was not read before the write"),
+                    story.repository);
+        }
+    }
+
     /** Checks the project's id and starts the pace of this write's calls. */
     private String begin(final String token) {
         final String projectId = current.config().projectId();
@@ -366,7 +433,19 @@ final class NewItems {
             final Planned planned,
             final @Nullable Parent parent,
             final List<Planned> under) {
-        final ProjectWrites.@Nullable Created taken = madeBefore(token, planned, parent, under);
+        placeTaken(token, projectId, planned, parent, madeBefore(token, planned, parent, under));
+    }
+
+    /**
+     * Places an item as {@link #place} does, taking the issue an earlier try made when one is given
+     * and making it otherwise.
+     */
+    private void placeTaken(
+            final String token,
+            final String projectId,
+            final Planned planned,
+            final @Nullable Parent parent,
+            final ProjectWrites.@Nullable Created taken) {
         planned.created = taken != null ? taken : create(token, planned);
         made.add(planned.reference());
         written.add(planned.repository);
@@ -392,28 +471,40 @@ final class NewItems {
             // Its story's item may not list it yet, so the story is read again as after a link.
             github.issueTaken(parent.nodeId());
         } else if (parent != null) {
-            try {
-                // Made again after a lost answer: a link GitHub made is refused then, so the
-                // write stops partly saved and the next try finds it linked.
-                pace().again(
-                                "the sub-issue "
-                                        + planned.reference()
-                                        + " of "
-                                        + parent.reference(),
-                                () -> {
-                                    github.addSubIssue(
-                                            token,
-                                            current.config().project().owner(),
-                                            parent.repository(),
-                                            parent.number(),
-                                            planned.made().databaseId());
-                                    return null;
-                                });
-            } catch (final RuntimeException e) {
-                throw failed(e, planned.repository, token);
-            }
+            hang(
+                    token,
+                    parent,
+                    planned.reference(),
+                    planned.made().databaseId(),
+                    planned.repository);
         }
         setValues(token, projectId, planned, standing);
+    }
+
+    /** Makes an issue the last sub-issue of its story, at the pace of this write's calls. */
+    private void hang(
+            final String token,
+            final Parent parent,
+            final String reference,
+            final long databaseId,
+            final String repository) {
+        try {
+            // Made again after a lost answer: a link GitHub made is refused then, so the write
+            // stops partly saved and the next try finds it linked.
+            pace().again(
+                            "the sub-issue " + reference + " of " + parent.reference(),
+                            () -> {
+                                github.addSubIssue(
+                                        token,
+                                        current.config().project().owner(),
+                                        parent.repository(),
+                                        parent.number(),
+                                        databaseId);
+                                return null;
+                            });
+        } catch (final RuntimeException e) {
+            throw failed(e, repository, token);
+        }
     }
 
     /** The board's item of an issue, or null when the project does not hold it. */
@@ -483,6 +574,9 @@ final class NewItems {
      * Status, and a new one is made beside it.
      */
     private boolean cutOff(final String storyNodeId, final List<Planned> under) {
+        if (!over.isEmpty()) {
+            return holdsOnlyOver(storyNodeId);
+        }
         for (final Planned issue : under) {
             boolean there = false;
             for (final ItemView item : current.items().values()) {
@@ -500,6 +594,27 @@ final class NewItems {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether a story alike was left by an earlier try of a story made over issues that stand:
+     * every sub-issue the board shows under it is one of those issues. A try cut off before its
+     * first link leaves none, one cut off later some of them, and one whose answer was lost all; a
+     * story holding any other issue is the person's own, and a new one is made beside it.
+     */
+    private boolean holdsOnlyOver(final String storyNodeId) {
+        final Set<String> issues = new java.util.HashSet<>();
+        over.forEach(issue -> issues.add(issue.item().issueId()));
+        for (final ItemView item : current.items().values()) {
+            if (storyNodeId.equals(item.parentIssueId()) && !issues.contains(item.issueId())) {
+                return false;
+            }
+            // The story's own item names a sub-issue the project does not hold too.
+            if (storyNodeId.equals(item.issueId()) && !issues.containsAll(item.subIssueIds())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

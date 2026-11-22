@@ -155,6 +155,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Landing", NextStep.Landing.class),
                     Map.entry("Level", LogLevelController.Chosen.class),
                     Map.entry("StoryRequest", EditRequests.StoryRequest.class),
+                    Map.entry("StoryFromIssuesRequest", EditRequests.StoryFromIssuesRequest.class),
                     Map.entry("StoryIssuesRequest", EditRequests.StoryIssuesRequest.class),
                     Map.entry("BlockedByRequest", EditRequests.BlockedByRequest.class),
                     Map.entry("CommentRequest", EditRequests.CommentRequest.class),

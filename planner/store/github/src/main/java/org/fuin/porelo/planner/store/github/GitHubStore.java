@@ -30,6 +30,7 @@ import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
@@ -630,6 +631,22 @@ public final class GitHubStore implements PlanningStore {
                             return readAfterMaking(List.of(issue));
                         });
         return served(after.board());
+    }
+
+    @Override
+    public NewIdea.Added createStoryFromIssues(
+            final Revision revision, final StoryFromIssues story) {
+        final BoardWriter.IdeaIds[] ids = new BoardWriter.IdeaIds[1];
+        final Snapshot after =
+                writing(
+                        () -> {
+                            ids[0] =
+                                    parts.writer()
+                                            .createStoryFromIssues(current(), revision, story);
+                            return readAfterMaking(List.of(ids[0].story()));
+                        });
+        final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
+        return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
     }
 
     @Override

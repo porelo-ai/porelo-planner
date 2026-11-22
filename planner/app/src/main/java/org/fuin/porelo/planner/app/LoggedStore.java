@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Writes;
@@ -112,6 +113,12 @@ final class LoggedStore implements PlanningStore {
     @Override
     public Board addUnlistedIssue(final Revision revision, final String issue) {
         return store.addUnlistedIssue(revision, issue);
+    }
+
+    @Override
+    public NewIdea.Added createStoryFromIssues(
+            final Revision revision, final StoryFromIssues story) {
+        return store.createStoryFromIssues(revision, story);
     }
 
     @Override

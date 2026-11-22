@@ -1517,11 +1517,36 @@ public final class WorkRun {
      * @throws WorkRefusal {@code WorkRunning} while a task of a gone story's run still works
      */
     public <C, T> T newStory(final Function<Board, C> check, final BiFunction<Board, C, T> save) {
+        return newStory(List.of(), check, save);
+    }
+
+    /**
+     * Saves a new story over issues that stand on the board, as {@link #newStory(Function,
+     * BiFunction)} saves one, and refuses it while a started task works one of those issues or a
+     * sub-issue of one: the task's results would land in a story it was not started for.
+     *
+     * @param issues the issues the new story takes
+     * @param check checks the story against the board and answers what the save takes
+     * @param save the write, given the board and what the check answered
+     * @param <C> what the check answers
+     * @param <T> what the write answers
+     * @return what the write answered
+     * @throws WorkRefusal {@code WorkRunning} while a started task works an issue taken, or a task
+     *     of a gone story's run still works
+     */
+    public <C, T> T newStory(
+            final List<String> issues,
+            final Function<Board, C> check,
+            final BiFunction<Board, C, T> save) {
+        issues.forEach(Ids::issue);
         return record.locked(
                 session -> {
                     final Board board = store.board();
                     final C checked = check.apply(board);
                     final Snapshot snapshot = read(session);
+                    final Set<String> owned = new HashSet<>();
+                    issues.forEach(issue -> owned.addAll(withSubIssues(board, issue)));
+                    refuseOwned(snapshot, owned, Set.of());
                     final Snapshot kept = withoutGoneRuns(snapshot, board);
                     if (!kept.runs().equals(snapshot.runs())) {
                         session.preflight(kept);

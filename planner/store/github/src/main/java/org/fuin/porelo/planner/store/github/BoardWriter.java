@@ -9,6 +9,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
+import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
@@ -119,6 +120,19 @@ public interface BoardWriter {
      */
     default void addUnlistedIssue(
             final Snapshot current, final Revision revision, final String issue) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Makes a story over issues that stand on the board, each hung under it in its order.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param story the story and its issues
+     * @return the ids it was saved under, the issues in the story's order
+     */
+    default IdeaIds createStoryFromIssues(
+            final Snapshot current, final Revision revision, final StoryFromIssues story) {
         throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 

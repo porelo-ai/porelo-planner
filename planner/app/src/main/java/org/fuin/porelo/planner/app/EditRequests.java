@@ -33,13 +33,35 @@ final class EditRequests {
      */
     record StoryRequest(NewIdeas.Idea idea, String revision) {}
 
+    /** A body of the call that makes a story, one of the two the description names. */
+    sealed interface StoryBody permits NewStory, FromIssues {}
+
     /**
      * A new story as read: the request and the faults of the idea's shape, each by its field.
      *
      * @param request the request
      * @param shape the members the idea format does not name, by where they stand
      */
-    record NewStory(StoryRequest request, List<String> shape) {}
+    record NewStory(StoryRequest request, List<String> shape) implements StoryBody {}
+
+    /**
+     * A new story over issues that stand on the board, as the description names it.
+     *
+     * @param story the story, each member null where it is missing or no text; null when it is no
+     *     object
+     * @param existing the issues' checked ids, in the story's order
+     * @param revision the revision the caller read
+     */
+    record StoryFromIssuesRequest(
+            NewIdeas.@Nullable Story story, List<String> existing, String revision) {}
+
+    /**
+     * A new story over issues that stand, as read: the request and the faults of the story's shape.
+     *
+     * @param request the request
+     * @param shape the members the story does not name, by where they stand
+     */
+    record FromIssues(StoryFromIssuesRequest request, List<String> shape) implements StoryBody {}
 
     /**
      * An issue's fields as read.
@@ -96,26 +118,35 @@ final class EditRequests {
 
     private static final String NO_STORY = "The body is no new story.";
 
+    /** The members of a new story over issues that stand. */
+    private static final Set<String> FROM_ISSUES = Set.of("story", "existing", "revision");
+
     /** A revision as the description's {@code Revision} gives it. */
     private static final Pattern REVISION = Pattern.compile("[!-~]{1,200}");
 
     /**
      * Reads a new story: at most 65536 bytes, one JSON object with exactly an idea object and a
-     * revision.
+     * revision, or exactly a story, a list of existing issues' ids and a revision.
      *
      * @param request the request
-     * @return the story and the faults of its idea's shape
+     * @return the story and the faults of its shape
      * @throws WorkRefusal {@code IdeaRefused} for a body that is no new story
      */
-    static NewStory story(final HttpServletRequest request) {
+    static StoryBody story(final HttpServletRequest request) {
         final JsonNode body;
         try {
             body = WorkRequests.read(request);
         } catch (final WorkRefusal invalid) {
             throw noStory("body: " + NO_STORY);
         }
-        if (!Set.of("idea", "revision").equals(Set.copyOf(body.propertyNames()))) {
-            throw noStory("body: The body must hold exactly an idea and a revision.");
+        final Set<String> members = Set.copyOf(body.propertyNames());
+        if (FROM_ISSUES.equals(members)) {
+            return fromIssues(body);
+        }
+        if (!Set.of("idea", "revision").equals(members)) {
+            throw noStory(
+                    "body: The body must hold exactly an idea and a revision, or exactly a story,"
+                            + " the existing issues and a revision.");
         }
         if (!isRevision(body.get("revision"))) {
             throw noStory("revision: The revision must be a text.");
@@ -127,6 +158,36 @@ final class EditRequests {
         final List<String> shape = new ArrayList<>();
         return new NewStory(
                 new StoryRequest(WorkRequests.idea(idea, shape), body.get("revision").asString()),
+                shape);
+    }
+
+    /** Reads a new story over issues that stand, its members known to be exactly those named. */
+    private static FromIssues fromIssues(final JsonNode body) {
+        if (!isRevision(body.get("revision"))) {
+            throw noStory("revision: The revision must be a text.");
+        }
+        final JsonNode list = body.get("existing");
+        if (!list.isArray() || list.isEmpty() || list.size() > Edits.MOST_ISSUES) {
+            throw noStory(
+                    "existing: The existing issues must be a list of 1 to "
+                            + Edits.MOST_ISSUES
+                            + " issues' ids.");
+        }
+        final List<String> existing = new ArrayList<>();
+        for (final JsonNode id : list) {
+            try {
+                existing.add(Ids.issue(id.isString() ? id.asString() : ""));
+            } catch (final IllegalArgumentException invalid) {
+                // What was sent is repeated only once it is known to be an issue's id.
+                throw noStory("existing[" + existing.size() + "]: The id must be an issue's id.");
+            }
+        }
+        final List<String> shape = new ArrayList<>();
+        return new FromIssues(
+                new StoryFromIssuesRequest(
+                        WorkRequests.story(body.get("story"), shape),
+                        existing,
+                        body.get("revision").asString()),
                 shape);
     }
 

@@ -316,6 +316,25 @@ public final class WorkRequests {
     }
 
     /**
+     * Reads an idea's story object as {@link #idea(JsonNode, List)} reads it.
+     *
+     * @param story the story's member, of any type
+     * @param shape takes the faults of the story's shape, each by its field
+     * @return the story, or null when the member is no object
+     */
+    static NewIdeas.@Nullable Story story(final JsonNode story, final List<String> shape) {
+        if (!story.isObject()) {
+            return null;
+        }
+        known(story, Set.of("title", "gain", "test", "priority"), "story", shape);
+        return new NewIdeas.Story(
+                textOrNull(story, "title"),
+                textOrNull(story, "gain"),
+                textOrNull(story, "test"),
+                textOrNull(story, "priority"));
+    }
+
+    /**
      * Reads an idea object: a member of the wrong type arrives as null or an empty text, and a
      * member the idea format does not name as a fault of its shape, so the core names every fault
      * by its field and nothing sent is repeated.
@@ -326,17 +345,7 @@ public final class WorkRequests {
      */
     static NewIdeas.Idea idea(final JsonNode idea, final List<String> shape) {
         known(idea, Set.of("story", "issues"), "idea", shape);
-        final JsonNode story = idea.path("story");
-        NewIdeas.Story readStory = null;
-        if (story.isObject()) {
-            known(story, Set.of("title", "gain", "test", "priority"), "story", shape);
-            readStory =
-                    new NewIdeas.Story(
-                            textOrNull(story, "title"),
-                            textOrNull(story, "gain"),
-                            textOrNull(story, "test"),
-                            textOrNull(story, "priority"));
-        }
+        final NewIdeas.Story readStory = story(idea.path("story"), shape);
         final List<NewIdeas.@Nullable Issue> issues = new ArrayList<>();
         final JsonNode items = idea.path("issues");
         if (items.isArray()) {

@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -72,6 +73,53 @@ public class BoardEdits {
             LOG.info(
                     "Made story {} in project {} as revision {}",
                     LogText.of(added.story()),
+                    LogText.of(project),
+                    LogText.of(added.board().revision().value()));
+            return added;
+        } finally {
+            changes.saved(project);
+        }
+    }
+
+    /**
+     * Makes a story over issues that stand on the board, against the revision the caller read; a
+     * started task at work on one of them refuses it.
+     *
+     * @param project the project's checked name
+     * @param revision the revision the caller read
+     * @param story the story, each member null where it is missing; null when it is no object
+     * @param existing the issues' checked ids, in the story's order
+     * @param shape the faults of the story's shape its reader found
+     * @return the story's and its issues' ids and the board after the save
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws org.fuin.porelo.planner.core.WorkRefusal {@code IdeaRefused} naming each issue that
+     *     cannot be taken, {@code WorkRunning} while a task works one of them or a gone story's run
+     * @throws UnsupportedOperationException when the store makes no story from issues
+     */
+    public NewIdea.Added createStoryFromIssues(
+            final String project,
+            final String revision,
+            final NewIdeas.@Nullable Story story,
+            final List<String> existing,
+            final List<String> shape) {
+        try {
+            final NewIdea.Added added =
+                    projects.work(project)
+                            .newStory(
+                                    existing,
+                                    board -> {
+                                        Edits.fresh(board, revision);
+                                        return NewIdeas.checkFromIssues(
+                                                board, story, existing, shape);
+                                    },
+                                    (board, checked) ->
+                                            projects.store(project)
+                                                    .createStoryFromIssues(
+                                                            board.revision(), checked));
+            LOG.info(
+                    "Made story {} of {} issues in project {} as revision {}",
+                    LogText.of(added.story()),
+                    added.issues().size(),
                     LogText.of(project),
                     LogText.of(added.board().revision().value()));
             return added;
