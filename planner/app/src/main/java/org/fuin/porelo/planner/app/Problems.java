@@ -58,7 +58,7 @@ public class Problems {
     public ResponseEntity<ProblemDetail> refused(final Moves.Refused refused) {
         final HttpStatus status =
                 switch (refused.name()) {
-                    case "NoSuchStory", "NoSuchIssue" -> HttpStatus.NOT_FOUND;
+                    case "NoSuchStory", "NoSuchIssue", "NotUnlisted" -> HttpStatus.NOT_FOUND;
                     case "StoryStateMismatch" -> HttpStatus.CONFLICT;
                     default -> HttpStatus.UNPROCESSABLE_CONTENT;
                 };

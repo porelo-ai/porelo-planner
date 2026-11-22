@@ -214,7 +214,7 @@ class GitHubStoreWriterFailureTest {
             }
             final int number = byId.size() + 1;
             byId.put("I_" + number, "O_idea");
-            return new ProjectWrites.Created("I_" + number, 100L + number, number, List.of());
+            return new ProjectWrites.Created("I_" + number, 100L + number, number, null);
         }
 
         private static GitHubGraphQl.ProjectItem item(final String issueId, final String option) {

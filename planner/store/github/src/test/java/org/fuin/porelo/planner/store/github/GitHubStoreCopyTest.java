@@ -162,11 +162,12 @@ class GitHubStoreCopyTest {
                             null,
                             Instant.parse("2026-11-20T10:00:00Z"),
                             OWNER + "/example-project",
-                            List.of(IssueMapping.STORY_LABEL),
+                            List.of(),
                             null,
                             none,
                             none,
-                            new GitHubGraphQl.PageInfo(false, null)),
+                            new GitHubGraphQl.PageInfo(false, null),
+                            IssueMapping.STORY_TYPE),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
                     new GitHubGraphQl.PageInfo(false, null));
         }

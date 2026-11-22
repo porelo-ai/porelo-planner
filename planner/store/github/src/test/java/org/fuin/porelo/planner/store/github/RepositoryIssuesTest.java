@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubExceptions;
+import org.fuin.porelo.forge.github.model.AuthorAssociation;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -29,6 +30,28 @@ class RepositoryIssuesTest {
 
     private static List<String> numbers(final RepositoryIssues.Read read) {
         return read.issues().stream().map(i -> i.repository() + "#" + i.number()).toList();
+    }
+
+    @Test
+    void anIssuesAuthorIsListedOnlyByALoginAndAnAssociationGitHubNames() {
+        // Harm: a person adds an issue anyone could open seeing only its title, or a text that is
+        // no login reaches the window as the account that wrote it.
+        github.holds(
+                OWN,
+                List.of(
+                        OpenIssues.authored(OWN, 1, "a-person", AuthorAssociation.FIRST_TIMER),
+                        OpenIssues.authored(OWN, 2, "no login", AuthorAssociation.OWNER),
+                        OpenIssues.authored(OWN, 3, null, null)));
+
+        final RepositoryIssues.Read read = read(OWN);
+
+        assertThat(read.issues())
+                .as("each issue's author and association")
+                .extracting(Snapshot.Unlisted::author, Snapshot.Unlisted::authorAssociation)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("a-person", "FIRST_TIMER"),
+                        org.assertj.core.groups.Tuple.tuple(null, "OWNER"),
+                        org.assertj.core.groups.Tuple.tuple(null, null));
     }
 
     @Test

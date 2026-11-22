@@ -8,7 +8,7 @@ the work rules stay files in the project's own repository.
 
 | Porelo | GitHub |
 |---|---|
-| A story | An issue in the project's own repository, labeled `story` |
+| A story | An issue in the project's own repository of the issue type `Story` |
 | A story's issues | Its sub-issues, in their own repositories, in the story's order |
 | An issue in a second story | Listed under *Also needs* in that story's body; GitHub allows one parent |
 | A Porelo sub-issue | A sub-issue of its issue, in the issue's repository, with its own number; never under another sub-issue |
@@ -98,19 +98,24 @@ are added, as the Markdown store's stage records count them; a pause and a perso
 - An item is known by its tracker reference alone, its repository and GitHub's number, and no field holds another
   id. An old id, of an item carried over from Markdown, is matched to nothing: old commits, velocity rows and task
   records stay under it.
-- An issue labeled `story` is a story; every other issue of the project is an issue.
+- An item of the issue type `Story` is a story; every other item of the project is an issue, and the label `story`
+  is neither read nor written. Issue types exist only on an organization's repositories, so a project of a personal
+  account holds no story. An item of the type `Story` outside the project's own repository is shown as an issue,
+  warned, with the issues under it.
 - An open issue of a repository `project.yml` names that is no item of the project, as one made by hand on GitHub is,
   is answered in the board's `unlisted`, apart from the stories, and the window shows it under
-  "Issues not on the project", its title as plain text and its link, built from its repository and number, opened
-  only when it is HTTPS. It is a story when its issue type is `Story` and it is in the project's own repository, and
+  "Issues not on the project", its title, its author's login and how the author stands to the repository as plain
+  text and its link, built from its repository and number, opened only when it is HTTPS. A login of no login's form
+  and an association GitHub does not name are left out, and the window shows none; neither stands in a fault or a
+  log line. It is a story when its issue type is `Story` and it is in the project's own repository, and
   an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, at most
   50 pages of 100 across all repositories within 20 s; a repository not reached, or one GitHub refuses to list, keeps
   the list last read for it and is named as a fault. A new or retitled one changes the board's revision.
 - Only an item without a valid reference, one of another owner and one of a repository `project.yml` does not name
   are left out and named as a fault; an item without an issue is left out unnamed.
 - Every other item a person edited into something the board cannot hold is shown, and the issues under it stay
-  under it. Most are warned so that no work, move or edit starts on them: an item labeled `story` outside the
-  project's own repository is an issue; a parent outside the project, a parent in another repository, a parent whose
+  under it. Most are warned so that no work, move or edit starts on them: an item of the issue type `Story` outside
+  the project's own repository is an issue; a parent outside the project, a parent in another repository, a parent whose
   parents lead back to the issue, and a parent that is a sub-issue itself are cut; a story as a blocker is dropped;
   and a link to an issue the board does not place - an archived one GitHub has open, an archived parent, or one
   whose id names two items - is cut. A story under another issue is shown without that parent and
@@ -185,10 +190,25 @@ true* as the lead's paragraph followed by the task that proposed it, or, for a t
 section of its own below the task's paragraph; it is added to the project, and given the workflow's
 first state in `Status`, its `Size` when given, `Worker`, `Priority` (Medium, or the idea's priority) and the
 `Rank` after the last issue of that priority. A *What must be true* holding a heading of the first or second
-level or leaving a code block open is refused. An idea's story is made first in the project's own repository, labeled `story`, its gain and
-its test in its body, given `Priority` and `Rank`, and no `Status`, so its state follows its issues; then each issue
-is made, and they become the story's sub-issues in the idea's order. GitHub drops a label in silence for an account
-without push access, so a story made or found without its label stops the write.
+level or leaving a code block open is refused. An idea's story is made first in the project's own repository, of the
+issue type `Story`, its gain and its test in its body, given `Priority` and `Rank`, and no `Status`, so its state
+follows its issues; then each issue is made, and they become the story's sub-issues in the idea's order. GitHub drops
+an issue type in silence for an account that may not set one, so a story made or found without its type stops the
+write.
+
+An issue offered under "Issues not on the project" is added with the person's own access, in one save. The planner
+checks the revision the window showed and that the board still offers the issue, then reads the issue right before the
+write: one GitHub no longer holds is no longer offered; one that is closed, moved to another repository or already an
+item of the project, as when a person added it on GitHub meanwhile, is a stale revision, and none of these writes
+anything. One the board could not hold once added is refused with nothing written: of the type `Story` outside the
+project's own repository, under a parent that is no item of the project, under an issue of another repository, or
+blocked by a story. An issue is then added to the project and given the workflow's first state in `Status`, `Worker`
+Manual, so no agent takes an issue nobody chose, `Priority` Medium and the `Rank` after the last issue of that
+priority; a story is given `Priority` and `Rank` only, so its state follows its issues. An add GitHub refused writes
+nothing and is refused as such; once the add stands, or may stand after a call GitHub left unanswered, a stop is partly
+saved, naming the issue, since it then stands on the project outside the workflow until it gets its `Status`. A
+workflow of GitHub's own project that sets a `Status` on an added item writes after the planner and is seen at the
+next read. The Git store adds none and answers the add as not offered.
 
 A call that makes an issue is never sent twice blindly. When it goes without an answer, the planner reads the
 open issues the person made in that repository from a minute before the call on, pull requests, closed issues and

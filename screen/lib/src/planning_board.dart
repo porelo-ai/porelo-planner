@@ -1727,6 +1727,72 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
+  /// The issue made outside the project whose add is out, or null; its row offers no second add meanwhile.
+  String? listing;
+
+  /// Adds an issue the board offers as made outside the project to the project, at the revision currently shown.
+  Future<void> listIssue(String issue, {String? revision}) async {
+    if (_disposed || _oneAtATime(issue)) return;
+    if (actionBusy || listing != null) {
+      moveProblem = 'Waiting for the planner before adding an issue.';
+      _changed();
+      return;
+    }
+    if (!takesMoves ||
+        snapshot!.revision.isEmpty ||
+        revision != null && revision != snapshot!.revision ||
+        !unlisted.any((each) => each.id == issue)) {
+      moveProblem = '$issue was not added: the board no longer offers it.';
+      _changed();
+      return;
+    }
+    final source = backend;
+    final name = project;
+    final at = snapshot!.revision;
+    _moveTurns++;
+    saving = true;
+    listing = issue;
+    moveProblem = null;
+    moveRefusal = null;
+    moveNotice = null;
+    _changed();
+    var refused = false;
+    var readAfter = false;
+    try {
+      await source.listIssue(name, issue, at);
+      if (!_sameBoard(source, name)) return;
+      _savesLanded++;
+      moveNotice = '$issue added to the project.';
+      readAfter = true;
+      _readsAfterSave++;
+    } catch (error) {
+      if (!_sameBoard(source, name)) return;
+      refused = true;
+      final words = planningFailureWords(error);
+      final refusedAs = error is PlanningRefusal ? error.name : null;
+      moveProblem = refusedAs == 'PartlySaved'
+          ? '$issue may stand on the project outside the workflow, without its state: '
+                '$words'
+          : '$issue was not added: $words';
+      // The planner streams the board whenever the add changed it or found it changed, so the offer shown follows that;
+      // a read of the parts would carry no offer.
+      _keepRefusal(error);
+      moveRefusal = error is PlanningRefusal ? error : null;
+    } finally {
+      if (_sameBoard(source, name)) {
+        listing = null;
+        _finishOperation(reconcile: !refused);
+      }
+    }
+    if (readAfter) {
+      if (_sameBoard(source, name)) {
+        await _readAfterSave(source, name, counted: true);
+      } else {
+        _readsAfterSave--;
+      }
+    }
+  }
+
   /// The open issues of the project's repositories that are no items of the project, which the screen only shows.
   List<PlanUnlistedIssue> get unlisted => snapshot?.unlisted ?? const [];
 

@@ -303,6 +303,10 @@ abstract interface class PlanningSource {
   /// Replaces a story's whole issue list, preserving its supplied order, against the board at [revision].
   Future<String> setStoryIssues(String project, String story, List<String> issues, String revision);
 
+  /// Adds an issue the board offers as made outside the project to the project, against the board at [revision];
+  /// answers the board's revision after the save.
+  Future<String> listIssue(String project, String issue, String revision);
+
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);
 

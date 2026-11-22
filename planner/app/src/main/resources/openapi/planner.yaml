@@ -1246,6 +1246,61 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/items:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: listIssue
+      summary: Add an issue made outside the project
+      description: >-
+        Adds one open issue the board offers among its unlisted issues to the project, against the board at the given
+        revision, in one save: an issue enters the workflow's first state with Worker Manual, Priority Medium and the
+        rank after the last issue of that priority; a story, an issue of the tracker's issue type Story in the
+        project's own repository, gets Priority Medium and its rank and no state, so its state follows its issues. A
+        store that adds no issue made outside the project answers NotOffered for any issue, before the issue is looked
+        for; the Git store and the mock mode answer so. An issue the board does not offer, one on the board or outside
+        its workflow among them, or one the tracker no longer holds, answers NotUnlisted, and the window reads the
+        board again. On GitHub the issue is read again right before the write: one a person added to the project,
+        closed or moved since the board was read is refused (StaleRevision, naming the issue), and one the board
+        could not show once added - a story outside the project's own repository, an issue under an issue that is no
+        item of the project or under an issue of another repository, an issue blocked by a story - is refused
+        (EditNotAllowed, field issue, naming what to repair), each before anything is written. A refusal never
+        repeats the tracker's title or text. A failure after GitHub added the issue is PartlySaved, and the issue
+        then stands outside the workflow until its state is moved. The JSON body is at most 65536 bytes. The changes
+        stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListIssueRequest'
+      responses:
+        '200':
+          description: The issue is saved on the project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotUnlisted'
+        '409':
+          $ref: '#/components/responses/EditConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/tasks/{task}/events:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1727,6 +1782,32 @@ components:
             parameters:
               repository: example
 
+    NotUnlisted:
+      description: >-
+        The project is not known (NoSuchProject), or the board does not offer the issue to add, or the tracker no
+        longer holds it (NotUnlisted, naming the issue); an issue on the board or outside its workflow answers so
+        too, and the window reads the board again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            NoSuchProject:
+              value:
+                type: urn:porelo-planner:NoSuchProject
+                title: NoSuchProject
+                status: 404
+                detail: The project is not known.
+                parameters:
+                  project: example
+            NotUnlisted:
+              value:
+                type: urn:porelo-planner:NotUnlisted
+                title: NotUnlisted
+                status: 404
+                detail: The issue porelo-lib#7 is not offered to add to the project.
+                parameters:
+                  issue: porelo-lib#7
     NoSuchItem:
       description: NoSuchProject(project), NoSuchStory(story), NoSuchIssue(issue), or TaskNotAnswered(task,offer) for an unknown, void or foreign offer.
       content:
@@ -1976,8 +2057,8 @@ components:
         another story or a sub-issue of an issue hung into a story, a story the board shows only in part given a whole
         list, an issue blocking itself, blockers that lead back to the issue, a comment opening with the planner's own
         marker `<!-- porelo:`, a title of more than one line, a part that would open a part of its own or leave a
-        block open, a body grown past what the tracker takes, or a body whose sections cannot be told apart.
-        MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
+        block open, a body grown past what the tracker takes, a body whose sections cannot be told apart, or an issue
+        made outside the project the board could not show once added, with what to repair. MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
         issue a story holds only under Also needs in its body taken out, an issue that has a parent on the tracker
         hung in, or a call the tracker refused, named by its status alone.
       content:
@@ -2061,9 +2142,10 @@ components:
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
-        stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment
-        or saves no stage's result; the mock mode previews and saves moves, saves workers, adds ideas and stories and
-        takes the edits by hand into its in-memory board, but adds no issues and saves no priorities (NotOffered).
+        stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment,
+        adds no issue made outside the project or saves no stage's result; the mock mode previews and saves moves,
+        saves workers, adds ideas and stories and takes the edits by hand into its in-memory board, but adds no issues,
+        adds no issue made outside the project and saves no priorities (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -2402,6 +2484,21 @@ components:
           type: string
           format: uri
           description: The issue on the tracker, built from its repository and number.
+        author:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          pattern: '^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$'
+          description: >-
+            The login of the account that opened the issue, shown as plain text; left out when the tracker named none
+            of a login's form, as for an account the tracker no longer holds; the window then shows no author.
+        authorAssociation:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          pattern: '^[A-Z][A-Z_]{0,63}$'
+          description: >-
+            How that account stands to the issue's repository, as the tracker names it, shown as plain text: OWNER,
+            MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN or NONE; left out when
+            the tracker named none of these; the window then shows none.
 
     Moves:
       description: >-
@@ -2864,6 +2961,19 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/IssueId'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    ListIssueRequest:
+      description: >-
+        An issue the board offers among its unlisted issues, by its tracker reference, against the board at a
+        revision; no other member is taken. A fixed alias or an id of the Git store's form names no such issue and is
+        refused (EditNotAllowed, field issue) before the board is read.
+      type: object
+      additionalProperties: false
+      required: [issue, revision]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
         revision:
           $ref: '#/components/schemas/Revision'
     BlockedByRequest:

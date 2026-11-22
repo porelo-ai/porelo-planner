@@ -79,6 +79,18 @@ class LoggedStoreTest {
                     public void comment(final String issue, final String text) {
                         reached.add("comment " + issue);
                     }
+
+                    @Override
+                    public boolean listsIssues() {
+                        reached.add("lists");
+                        return true;
+                    }
+
+                    @Override
+                    public Board listIssue(final Revision revision, final String issue) {
+                        reached.add("list " + issue);
+                        return BOARD;
+                    }
                 };
         final LoggedStore store = new LoggedStore("alpha", wrapped);
 
@@ -93,10 +105,18 @@ class LoggedStoreTest {
                 "ST1",
                 new TextEdit(TextEdit.Kind.STORY, "A title", Map.of(), Set.of()));
         store.comment("AB1", "A comment.");
+        assertThat(store.listsIssues()).as("the wrapped store's add").isTrue();
+        store.listIssue(BOARD.revision(), "porelo-lib#7");
 
         assertThat(reached)
                 .as("the edits the wrapped store was given")
                 .containsExactly(
-                        "fields AB1", "issues ST1", "blockers AB1", "text ST1", "comment AB1");
+                        "fields AB1",
+                        "issues ST1",
+                        "blockers AB1",
+                        "text ST1",
+                        "comment AB1",
+                        "lists",
+                        "list porelo-lib#7");
     }
 }

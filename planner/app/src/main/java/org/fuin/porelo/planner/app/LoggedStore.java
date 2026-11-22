@@ -105,6 +105,16 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public boolean listsIssues() {
+        return store.listsIssues();
+    }
+
+    @Override
+    public Board listIssue(final Revision revision, final String issue) {
+        return store.listIssue(revision, issue);
+    }
+
+    @Override
     public Board setFields(final Revision revision, final String issue, final Fields fields) {
         return store.setFields(revision, issue, fields);
     }

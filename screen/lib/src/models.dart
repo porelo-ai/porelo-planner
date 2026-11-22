@@ -571,7 +571,9 @@ class PlanUnlistedIssue {
       repository = _planText(map, 'repository'),
       title = _planText(map, 'title'),
       story = _planText(map, 'kind') == 'story',
-      link = _planText(map, 'link');
+      link = _planText(map, 'link'),
+      author = _planText(map, 'author'),
+      authorAssociation = _planText(map, 'authorAssociation');
 
   /// Its tracker reference, `<repository>#<number>`.
   final String id;
@@ -587,6 +589,13 @@ class PlanUnlistedIssue {
 
   /// Its web link; empty when none was reported.
   final String link;
+
+  /// The login of the account that opened it, shown as plain text; empty when the planner named none.
+  final String author;
+
+  /// How that account stands to the issue's repository, as the tracker names it, shown as plain text; empty when the
+  /// planner named none.
+  final String authorAssociation;
 }
 
 /// One breach of the stories' rules a whole board names: shown to the person, never holding a move back.

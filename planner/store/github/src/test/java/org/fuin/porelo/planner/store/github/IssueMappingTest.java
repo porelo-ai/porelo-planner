@@ -66,6 +66,7 @@ class IssueMappingTest {
         private final List<String> blockers = new ArrayList<>();
         private final List<ItemView.Blocker> named = new ArrayList<>();
         private @Nullable String parent;
+        private @Nullable String type;
         private boolean open = true;
         private boolean archived;
         private String body = SECRET_BODY;
@@ -83,8 +84,13 @@ class IssueMappingTest {
         }
 
         private Item story() {
-            labels.add(IssueMapping.STORY_LABEL);
+            type = IssueMapping.STORY_TYPE;
             fields.putIfAbsent(FieldNames.PRIORITY, "Medium");
+            return this;
+        }
+
+        private Item labeled(final String label) {
+            labels.add(label);
             return this;
         }
 
@@ -182,7 +188,8 @@ class IssueMappingTest {
                     Instant.parse("2026-01-01T00:00:00Z"),
                     archived,
                     named,
-                    0);
+                    0,
+                    type);
         }
     }
 
@@ -325,18 +332,39 @@ class IssueMappingTest {
     }
 
     @Test
-    void anItemLabeledStoryOutsideTheOwnRepositoryIsAWarnedIssueAndKeepsItsSubIssues() {
-        // Harm: one label set by hand in another repository hides that issue and every issue
-        // under it from the board.
-        final Item own = new Item("example-project", 1).story();
-        final Item labeled = new Item("example-lib", 3).story();
-        final Item under = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
-        labeled.sub(under);
+    void aStoryKnownByItsIssueTypeAloneMapsAsAStoryAndALabelMakesNone() {
+        // Harm: a story made by hand on GitHub, typed Story without the label, showed as an issue
+        // held in Idea, and an issue labeled story vanished from the board as a story.
+        final Item typed = new Item("example-project", 1).story();
+        final Item labeled =
+                new Item("example-project", 2).labeled("story").field(FieldNames.STATUS, "Idea");
 
-        final IssueMapping.Mapped mapped = read(own, labeled, under);
+        final IssueMapping.Mapped mapped = read(typed, labeled);
+
+        assertThat(mapped.stories())
+                .as("the typed story")
+                .extracting(org.fuin.porelo.planner.store.Story::id)
+                .containsExactly("example-project#1");
+        assertThat(mapped.issues())
+                .as("the labeled issue")
+                .extracting(org.fuin.porelo.planner.store.Issue::id)
+                .containsExactly("example-project#2");
+        assertThat(mapped.faults()).as("neither is a fault").isEmpty();
+    }
+
+    @Test
+    void anItemTypedStoryOutsideTheOwnRepositoryIsAWarnedIssueAndKeepsItsSubIssues() {
+        // Harm: one issue typed Story by hand in another repository hides that issue and every
+        // issue under it from the board, or shows as a story the board cannot hold.
+        final Item own = new Item("example-project", 1).story();
+        final Item typed = new Item("example-lib", 3).story();
+        final Item under = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
+        typed.sub(under);
+
+        final IssueMapping.Mapped mapped = read(own, typed, under);
 
         assertThat(mapped.issues())
-                .as("the labeled item as an issue, warned, and its sub-issue under it")
+                .as("the typed item as an issue, warned, and its sub-issue under it")
                 .extracting(Issue::id, Issue::parent, Issue::warnings)
                 .containsExactlyInAnyOrder(
                         Tuple.tuple(

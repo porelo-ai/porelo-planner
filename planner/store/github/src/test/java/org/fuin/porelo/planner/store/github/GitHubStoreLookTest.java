@@ -325,11 +325,12 @@ class GitHubStoreLookTest {
                             null,
                             held.at,
                             REPOSITORY,
-                            held.story ? List.of(IssueMapping.STORY_LABEL) : List.of(),
+                            List.of(),
                             held.parent,
                             new GitHubGraphQl.IssueRefs(subs, NONE),
                             none,
-                            NONE),
+                            NONE,
+                            held.story ? IssueMapping.STORY_TYPE : null),
                     values,
                     NONE);
         }

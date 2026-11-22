@@ -55,9 +55,38 @@ public record Snapshot(
      * @param number its number in its repository
      * @param title its title
      * @param type the name of its issue type, or null when it has none
+     * @param author the login of the account that opened it, or null when none of a login's form
+     *     was given
+     * @param authorAssociation how that account stands to the repository, or null when none known
+     *     was given
      */
     public record Unlisted(
-            String nodeId, String repository, int number, String title, @Nullable String type) {}
+            String nodeId,
+            String repository,
+            int number,
+            String title,
+            @Nullable String type,
+            @Nullable String author,
+            @Nullable String authorAssociation) {
+
+        /**
+         * An issue whose author is not known.
+         *
+         * @param nodeId its node id
+         * @param repository the project's repository whose list gave it
+         * @param number its number in its repository
+         * @param title its title
+         * @param type the name of its issue type, or null when it has none
+         */
+        public Unlisted(
+                final String nodeId,
+                final String repository,
+                final int number,
+                final String title,
+                final @Nullable String type) {
+            this(nodeId, repository, number, title, type, null, null);
+        }
+    }
 
     /** Copies the maps, keeping their order. */
     public Snapshot {

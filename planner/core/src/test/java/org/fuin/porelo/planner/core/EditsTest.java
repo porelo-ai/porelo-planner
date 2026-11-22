@@ -485,7 +485,7 @@ class EditsTest {
 
     @Test
     void anEditOfAnIssueCarryingAnyKindTheGitHubStoreWarnsWithIsRefused() {
-        // Harm: a hand edit GitHub's store shows warned - a story label in another repository, a
+        // Harm: a hand edit GitHub's store shows warned - a story type in another repository, a
         // cut parent or blocker, an item read in part - built on by the planner's own write.
         for (final Warning warning : HeldBoards.HAND_EDITS) {
             final Board held = HeldBoards.warned(board, "AB5", warning);
@@ -493,6 +493,56 @@ class EditsTest {
                     .as("an edit of an issue warned " + warning.kind())
                     .isEqualTo("AB5: " + warning.text());
         }
+    }
+
+    @Test
+    void anAddOfAnIssueTheBoardDoesNotOfferIsRefusedAndAnOfferedOneIsTaken() {
+        // Harm: the add took any issue the window named - one on the board, one never offered -
+        // and wrote it to the project, or one against an old board.
+        final org.fuin.porelo.planner.store.UnlistedIssue made =
+                new org.fuin.porelo.planner.store.UnlistedIssue(
+                        "porelo-store#7",
+                        "porelo-store",
+                        "Made by hand",
+                        org.fuin.porelo.planner.store.UnlistedIssue.Kind.ISSUE,
+                        java.net.URI.create("https://github.com/porelo-ai/porelo-store/issues/7"));
+        final Board offering =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
+                        List.of(),
+                        List.of(
+                                new Issue(
+                                        "porelo-store#3",
+                                        "porelo-store",
+                                        "On the board",
+                                        "Idea",
+                                        null,
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "")),
+                        new Work(Map.of(), List.of()),
+                        List.of("porelo-store"),
+                        List.of(),
+                        "porelo-ai",
+                        List.of(),
+                        List.of(made));
+
+        assertThat(Edits.unlisted(offering, "r1", "porelo-store#7"))
+                .as("the offered issue")
+                .isEqualTo(made);
+        for (final String id : List.of("porelo-store#3", "porelo-store#8")) {
+            final Moves.Refused refused = refusal(() -> Edits.unlisted(offering, "r1", id));
+            assertThat(refused.name()).as("the refusal of %s", id).isEqualTo("NotUnlisted");
+            assertThat(refused.parameters()).as("what it names").isEqualTo(Map.of("issue", id));
+        }
+        assertThat(
+                        catchThrowableOfType(
+                                StoreException.StaleRevision.class,
+                                () -> Edits.unlisted(offering, "r0", "porelo-store#7")))
+                .as("an add against an old board")
+                .isNotNull();
     }
 
     private static Moves.Refused refusal(final Runnable edit) {

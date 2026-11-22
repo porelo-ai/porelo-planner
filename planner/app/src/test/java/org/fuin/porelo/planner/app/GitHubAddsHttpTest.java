@@ -101,10 +101,10 @@ class GitHubAddsHttpTest {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels) {
+                final @Nullable String type) {
             final int number = made.size() + 1;
             made.add(repository + "#" + number);
-            return new Created("I_" + number, 9000L + number, number, labels);
+            return new Created("I_" + number, 9000L + number, number, type);
         }
 
         @Override

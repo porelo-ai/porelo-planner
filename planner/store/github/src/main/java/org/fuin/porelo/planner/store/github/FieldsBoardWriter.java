@@ -15,6 +15,7 @@ import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Fields;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -195,6 +196,126 @@ public final class FieldsBoardWriter implements BoardWriter {
         adding.write(tokens.token(current.config().forge()), story, issues);
         return new IdeaIds(
                 story.reference(), issues.stream().map(NewItems.Planned::reference).toList());
+    }
+
+    /**
+     * Reads the issue by its node id right before the write and refuses it, writing nothing, when
+     * the board read after the add would not show it: GitHub holds it on the project already, it is
+     * gone, closed, or moved to another repository, it is a story outside the project's own
+     * repository, it hangs under an issue that is no item of the project or under one of another
+     * repository, or it is blocked by a story. Then it is added and given its values.
+     */
+    @Override
+    public void listIssue(final Snapshot current, final Revision revision, final String issue) {
+        fresh(current, revision);
+        final String repository = Ids.repositoryOf(issue);
+        final int number = Integer.parseInt(issue.substring(issue.lastIndexOf('#') + 1));
+        // Checked again under the save's lock: a look since the caller's check moves the offer.
+        final Snapshot.Unlisted offered =
+                current.board().unlisted().stream().anyMatch(u -> u.id().equals(issue))
+                        ? unlisted(current, repository, number)
+                        : null;
+        if (offered == null) {
+            throw new StoreException.StaleRevision(current.board().revision().value(), issue);
+        }
+        final String token = tokens.token(current.config().forge());
+        final GitHubGraphQl.@Nullable IssueOnBoard now;
+        try {
+            final GitHubGraphQl.IssueBoard board =
+                    github.issueBoard(
+                            token, List.of(offered.nodeId()), current.config().projectId());
+            now = board.issues().isEmpty() ? null : board.issues().get(0);
+        } catch (final RuntimeException e) {
+            throw refusals.refusal(repository, e, token);
+        }
+        if (now == null) {
+            throw new StoreException.NoSuchIssue(issue);
+        }
+        final GitHubGraphQl.BoardIssue read = now.issue();
+        if (read == null) {
+            throw new StoreException.NoSuchIssue(issue);
+        }
+        if (now.itemId() != null
+                || !"OPEN".equals(read.state())
+                || read.number() != number
+                || !(current.config().project().owner() + "/" + repository)
+                        .equalsIgnoreCase(read.repository())) {
+            // A person added, closed or moved it since the board was read.
+            throw new StoreException.StaleRevision(current.board().revision().value(), issue);
+        }
+        final boolean story = IssueMapping.STORY_TYPE.equals(read.issueType());
+        if (story && !repository.equals(current.config().own())) {
+            throw new StoreException.NotSavable(
+                    issue,
+                    "It is of the issue type Story outside the project's own repository, which the"
+                            + " board does not hold.");
+        }
+        checkParent(current, issue, repository, story, read.parentId());
+        for (final GitHubGraphQl.IssueRef blocker : read.blockedBy().nodes()) {
+            if (IssueMapping.isStory(itemOf(current, blocker.id()))) {
+                throw new StoreException.NotSavable(
+                        issue, "It is blocked by a story, which the board does not hold.");
+            }
+        }
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        adding.list(
+                token,
+                adding.existing(repository, number, offered.nodeId(), read.databaseId(), story));
+    }
+
+    /** The issue a repository's list gave that is no item of the project, or null. */
+    private static Snapshot.@Nullable Unlisted unlisted(
+            final Snapshot current, final String repository, final int number) {
+        for (final Snapshot.Unlisted listed : current.unlisted()) {
+            if (listed.repository().equals(repository)
+                    && listed.number() == number
+                    && itemOf(current, listed.nodeId()) == null) {
+                return listed;
+            }
+        }
+        return null;
+    }
+
+    /** The project's item of an issue by its node id, or null. */
+    private static @Nullable ItemView itemOf(final Snapshot current, final String issueId) {
+        for (final ItemView item : current.items().values()) {
+            if (item.issueId().equals(issueId)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Refuses an issue the board would leave out for its parent: one under an issue that is no item
+     * of the project, or an issue under an issue of another repository.
+     */
+    private static void checkParent(
+            final Snapshot current,
+            final String issue,
+            final String repository,
+            final boolean story,
+            final @Nullable String parentId) {
+        if (parentId == null) {
+            return;
+        }
+        final ItemView parent = itemOf(current, parentId);
+        if (parent == null) {
+            String named = "its parent";
+            for (final Snapshot.Unlisted listed : current.unlisted()) {
+                if (listed.nodeId().equals(parentId)) {
+                    named = "its parent " + listed.repository() + "#" + listed.number();
+                }
+            }
+            throw new StoreException.NotSavable(
+                    issue, "Add " + named + " to the project first; it is no item of it.");
+        }
+        if (!story && !IssueMapping.isStory(parent) && !parent.repository().equals(repository)) {
+            throw new StoreException.NotSavable(
+                    issue,
+                    "It stands under an issue of another repository, which the board does not"
+                            + " hold.");
+        }
     }
 
     @Override
@@ -1203,8 +1324,8 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     /**
      * What a person's change to an item shows in: its field values, its parent, its sub-issues, its
-     * blockers, its labels, whether either list runs past the one page read, whether it is open,
-     * its title and its body.
+     * blockers, its labels, its issue type, whether either list runs past the one page read,
+     * whether it is open, its title and its body.
      */
     private record Seen(
             Map<String, String> fields,
@@ -1212,6 +1333,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             List<String> subIssues,
             List<String> blockers,
             List<String> labels,
+            @Nullable String type,
             boolean more,
             boolean open,
             String title,
@@ -1225,6 +1347,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     item.subIssueIds(),
                     item.blockedByIds(),
                     item.labels(),
+                    item.issueType(),
                     false,
                     item.open(),
                     item.title(),
@@ -1239,6 +1362,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     ids(issue.subIssues()),
                     ids(issue.blockedBy()),
                     List.copyOf(issue.labels()),
+                    issue.issueType(),
                     Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
                             || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage()),
                     "OPEN".equals(issue.state()),

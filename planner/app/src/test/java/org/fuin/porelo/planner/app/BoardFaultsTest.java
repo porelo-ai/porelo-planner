@@ -131,7 +131,9 @@ class BoardFaultsTest {
                                         "A story by hand",
                                         UnlistedIssue.Kind.STORY,
                                         URI.create(
-                                                "https://github.com/example-org/porelo-store/issues/4")),
+                                                "https://github.com/example-org/porelo-store/issues/4"),
+                                        "a-person",
+                                        "FIRST_TIMER"),
                                 new UnlistedIssue(
                                         "porelo-other#2",
                                         "porelo-other",
@@ -155,7 +157,8 @@ class BoardFaultsTest {
                 .isEqualTo(
                         "[{\"id\":\"porelo-store#4\",\"repository\":\"porelo-store\","
                                 + "\"title\":\"A story by hand\",\"kind\":\"story\",\"link\":"
-                                + "\"https://github.com/example-org/porelo-store/issues/4\"},"
+                                + "\"https://github.com/example-org/porelo-store/issues/4\","
+                                + "\"author\":\"a-person\",\"authorAssociation\":\"FIRST_TIMER\"},"
                                 + "{\"id\":\"porelo-other#2\",\"repository\":\"porelo-other\","
                                 + "\"title\":\"An issue by hand\",\"kind\":\"issue\",\"link\":"
                                 + "\"https://github.com/example-org/porelo-other/issues/2\"}]");

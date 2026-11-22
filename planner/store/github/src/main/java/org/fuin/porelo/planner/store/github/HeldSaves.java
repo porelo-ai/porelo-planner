@@ -153,7 +153,8 @@ final class HeldSaves {
                                 issue.labels(),
                                 null,
                                 none,
-                                none),
+                                none,
+                                issue.type()),
                 item.values(),
                 null,
                 item.partial());

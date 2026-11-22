@@ -97,23 +97,30 @@ class FieldsBoardWriterEditsTest {
         final Map<String, String> all = new LinkedHashMap<>(Map.of(FieldNames.STATUS, "Idea"));
         all.putAll(fields);
         return new ItemView(
-                "PVTI_" + number,
-                node(id),
-                repository,
-                number,
-                "Title of " + id,
-                "",
-                true,
-                null,
-                all,
-                id.equals(STORY) ? List.of("story") : List.of(),
-                parent == null ? null : node(parent),
-                subIssues.stream().map(FieldsBoardWriterEditsTest::node).toList(),
-                blockedBy.stream().map(FieldsBoardWriterEditsTest::node).toList(),
-                null,
-                URI.create("https://github.com/" + OWNER + "/" + repository + "/issues/" + number),
-                Instant.EPOCH,
-                false);
+                        "PVTI_" + number,
+                        node(id),
+                        repository,
+                        number,
+                        "Title of " + id,
+                        "",
+                        true,
+                        null,
+                        all,
+                        List.of(),
+                        parent == null ? null : node(parent),
+                        subIssues.stream().map(FieldsBoardWriterEditsTest::node).toList(),
+                        blockedBy.stream().map(FieldsBoardWriterEditsTest::node).toList(),
+                        null,
+                        URI.create(
+                                "https://github.com/"
+                                        + OWNER
+                                        + "/"
+                                        + repository
+                                        + "/issues/"
+                                        + number),
+                        Instant.EPOCH,
+                        false)
+                .typed(id.equals(STORY) ? IssueMapping.STORY_TYPE : null);
     }
 
     private static String node(final String id) {
@@ -248,7 +255,8 @@ class FieldsBoardWriterEditsTest {
                             item.parentIssueId(),
                             refs(item.subIssueIds()),
                             refs(item.blockedByIds()),
-                            new GitHubGraphQl.PageInfo(false, null)),
+                            new GitHubGraphQl.PageInfo(false, null),
+                            item.issueType()),
                     item.itemId(),
                     values,
                     new GitHubGraphQl.PageInfo(false, null));
@@ -299,7 +307,7 @@ class FieldsBoardWriterEditsTest {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels) {
+                final @Nullable String type) {
             throw new AssertionError("an edit made an issue");
         }
 

@@ -126,9 +126,9 @@ public final class Touched {
                     final String repository,
                     final String title,
                     final String body,
-                    final List<String> labels) {
+                    final @Nullable String type) {
                 final Created created =
-                        writes.createIssue(token, owner, repository, title, body, labels);
+                        writes.createIssue(token, owner, repository, title, body, type);
                 issue(created.nodeId());
                 return created;
             }

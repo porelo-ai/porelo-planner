@@ -305,6 +305,23 @@ class MockModeTest {
     }
 
     @Test
+    void theMockAnswersAnAddOfAnIssueMadeOutsideTheProjectAsNotOffered() throws Exception {
+        // Harm: the mock answered the add as saved or as no longer offered, so the window's tests
+        // passed an add that never happened or reloaded a board that never changes.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+        final HttpResponse<String> added =
+                call(
+                        runtime,
+                        "POST",
+                        "/projects/any/items",
+                        "{\"issue\": \"porelo#7\", \"revision\": \"mock@1\"}");
+        assertThat(added.statusCode()).as("the status of an add: %s", added.body()).isEqualTo(501);
+        assertThat(JSON.readTree(added.body()).path("type").asString())
+                .as("the refusal of an add")
+                .isEqualTo("urn:porelo-planner:NotOffered");
+    }
+
+    @Test
     void theMockSavesAHandedInIdeaOnItsBoardOnceUntilAReset() throws Exception {
         // The window's tests of a discussion's end need the story on the board, made once.
         call(runtime, "PUT", "/projects/any", SOURCE);

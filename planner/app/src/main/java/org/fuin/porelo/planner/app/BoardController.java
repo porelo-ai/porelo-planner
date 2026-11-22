@@ -907,7 +907,9 @@ public class BoardController {
                 issue.repository(),
                 issue.title(),
                 issue.kind() == UnlistedIssue.Kind.STORY ? "story" : "issue",
-                issue.link());
+                issue.link(),
+                issue.author(),
+                issue.authorAssociation());
     }
 
     /**

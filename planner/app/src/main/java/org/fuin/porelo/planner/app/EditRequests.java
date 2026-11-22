@@ -66,6 +66,14 @@ final class EditRequests {
     record BlockedByRequest(List<String> blockedBy, String revision) {}
 
     /**
+     * An add of an issue made outside the project, as the description names it.
+     *
+     * @param issue the issue's checked tracker reference
+     * @param revision the revision the caller read
+     */
+    record ListRequest(String issue, String revision) {}
+
+    /**
      * A comment, as the description names it.
      *
      * @param text the person's text
@@ -166,6 +174,26 @@ final class EditRequests {
         exactly(body, story, Set.of("issues", "revision"));
         return new StoryIssuesRequest(
                 ids(body, "issues", story, Edits.MOST_ISSUES), revision(body, story));
+    }
+
+    /**
+     * Reads an add of an issue made outside the project: at most 65536 bytes, one JSON object with
+     * exactly an issue's tracker reference and a revision; a fixed alias names no issue the tracker
+     * holds outside the project, so it is refused as any other id.
+     *
+     * @param request the request
+     * @return the issue and the revision
+     * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
+     *     no such add
+     */
+    static ListRequest listed(final HttpServletRequest request) {
+        final JsonNode body = object(request, "", WorkRequests::read);
+        exactly(body, "", Set.of("issue", "revision"));
+        final JsonNode issue = body.get("issue");
+        if (!issue.isString() || !Ids.isReference(issue.asString())) {
+            throw Edits.refused("", "issue", "The issue must be a tracker reference.");
+        }
+        return new ListRequest(issue.asString(), revision(body, ""));
     }
 
     /**

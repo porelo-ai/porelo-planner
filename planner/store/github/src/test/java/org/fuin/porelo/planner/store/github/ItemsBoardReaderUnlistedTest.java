@@ -59,7 +59,10 @@ class ItemsBoardReaderUnlistedTest {
 
     /** The project's items: a story of the own repository and an archived issue of the other. */
     private final List<GitHubGraphQl.ProjectItem> items =
-            new ArrayList<>(List.of(item(OWN, 1, false, "story"), item(LIB, 2, true)));
+            new ArrayList<>(
+                    List.of(
+                            item(OWN, 1, false, IssueMapping.STORY_TYPE),
+                            item(LIB, 2, true, null)));
 
     /** How many pages of open issues had been asked for when the items were first read. */
     private @Nullable Integer asksBeforeItems;
@@ -156,7 +159,7 @@ class ItemsBoardReaderUnlistedTest {
             final String repository,
             final int number,
             final boolean archived,
-            final String... labels) {
+            final @Nullable String type) {
         final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), LAST);
         return new GitHubGraphQl.ProjectItem(
                 "PVTI_" + repository + "_" + number,
@@ -171,11 +174,12 @@ class ItemsBoardReaderUnlistedTest {
                         null,
                         Instant.parse("2026-11-20T10:00:00Z"),
                         OWNER + "/" + repository,
-                        List.of(labels),
+                        List.of(),
                         null,
                         none,
                         none,
-                        LAST),
+                        LAST,
+                        type),
                 List.of(
                         new GitHubGraphQl.ItemValue(
                                 "F_" + FieldNames.STATUS, "O_Idea", "Idea", null, null),
@@ -493,7 +497,7 @@ class ItemsBoardReaderUnlistedTest {
         pages.holds(OWN, List.of(open(OWN, 5)));
         final ItemsBoardReader reader = reader();
         final Snapshot held = reader.read(CONFIG);
-        items.add(item(OWN, 5, false));
+        items.add(item(OWN, 5, false, null));
 
         final Snapshot after =
                 reader.reread(

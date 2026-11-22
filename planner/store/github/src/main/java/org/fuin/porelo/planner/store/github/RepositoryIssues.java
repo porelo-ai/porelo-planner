@@ -12,8 +12,11 @@ import org.fuin.porelo.forge.github.Conditional;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.Page;
+import org.fuin.porelo.forge.github.model.AuthorAssociation;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueType;
+import org.fuin.porelo.forge.github.model.SimpleUser;
+import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -298,15 +301,42 @@ public final class RepositoryIssues {
             }
             // The forge client refuses an issue without its node id, number or title.
             final IssueType type = issue.type();
+            final SimpleUser user = issue.user();
+            final AuthorAssociation association = issue.authorAssociation();
             issues.add(
                     new Snapshot.Unlisted(
                             issue.nodeId(),
                             repository,
                             issue.number(),
                             issue.title(),
-                            type == null ? null : type.name()));
+                            type == null ? null : type.name(),
+                            author(user == null ? null : user.login()),
+                            association(association == null ? null : association.getValue())));
         }
         return new Kept(answer.etag(), page.items().size(), issues);
+    }
+
+    /**
+     * The login of an issue's author, or null when none of a login's form was given: the window
+     * shows it as the account that wrote the issue.
+     *
+     * @param login the login as given
+     * @return the login, or null
+     */
+    static @Nullable String author(final @Nullable String login) {
+        return login != null && UnlistedIssue.isLogin(login) ? login : null;
+    }
+
+    /**
+     * How an issue's author stands to the repository, or null when none known was given.
+     *
+     * @param association the association's name as given
+     * @return the name, or null
+     */
+    static @Nullable String association(final @Nullable String association) {
+        return association != null && UnlistedIssue.ASSOCIATIONS.contains(association)
+                ? association
+                : null;
     }
 
     /**

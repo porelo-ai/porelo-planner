@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.UnlistedIssue;
 
 /**
  * Checks the edits a person keeps the board with by hand - an issue's fields, a story's issues, an
@@ -25,6 +26,9 @@ public final class Edits {
 
     /** The refusal's name the window reads. */
     public static final String REFUSED = "EditNotAllowed";
+
+    /** The refusal's name of an add of an issue the board does not offer. */
+    public static final String NOT_UNLISTED = "NotUnlisted";
 
     /** The most issues one story's list may hold. */
     public static final int MOST_ISSUES = 100;
@@ -64,6 +68,43 @@ public final class Edits {
         if (!board.revision().value().equals(revision)) {
             throw new StoreException.StaleRevision(board.revision().value());
         }
+    }
+
+    /**
+     * Checks an add of an issue made outside the project: the board read at that revision offers it
+     * among the issues that are no items of the project.
+     *
+     * @param board the board the store holds
+     * @param revision the revision the caller read
+     * @param issue the issue's tracker reference
+     * @return the issue as the board offers it
+     * @throws StoreException.StaleRevision when the board moved since that revision
+     * @throws Moves.Refused {@value #NOT_UNLISTED} for an issue the board does not offer, one on
+     *     the board or outside its workflow among them
+     */
+    public static UnlistedIssue unlisted(
+            final Board board, final String revision, final String issue) {
+        fresh(board, revision);
+        for (final UnlistedIssue offered : board.unlisted()) {
+            if (offered.id().equals(issue)) {
+                return offered;
+            }
+        }
+        throw notUnlisted(issue);
+    }
+
+    /**
+     * A refusal of an add of an issue the board does not offer, or no longer offers: the window
+     * reads the board again.
+     *
+     * @param issue the issue's tracker reference
+     * @return the refusal
+     */
+    public static Moves.Refused notUnlisted(final String issue) {
+        return new Moves.Refused(
+                NOT_UNLISTED,
+                "The issue " + issue + " is not offered to add to the project.",
+                Map.of("issue", issue));
     }
 
     /**

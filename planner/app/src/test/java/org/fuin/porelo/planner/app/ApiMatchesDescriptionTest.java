@@ -157,7 +157,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("StoryRequest", EditRequests.StoryRequest.class),
                     Map.entry("StoryIssuesRequest", EditRequests.StoryIssuesRequest.class),
                     Map.entry("BlockedByRequest", EditRequests.BlockedByRequest.class),
-                    Map.entry("CommentRequest", EditRequests.CommentRequest.class));
+                    Map.entry("CommentRequest", EditRequests.CommentRequest.class),
+                    Map.entry("ListIssueRequest", EditRequests.ListRequest.class));
 
     /** Every controller of the planner, found as Spring finds them, so none escapes the check. */
     private static Set<Class<?>> controllers() throws ClassNotFoundException {
@@ -247,7 +248,8 @@ class ApiMatchesDescriptionTest {
                         "PUT /projects/{project}/issues/{issue}/blockedBy",
                         "PUT /projects/{project}/issues/{issue}/text",
                         "PUT /projects/{project}/stories/{story}/text",
-                        "POST /projects/{project}/issues/{issue}/comments")
+                        "POST /projects/{project}/issues/{issue}/comments",
+                        "POST /projects/{project}/items")
                 .isEqualTo(served);
     }
 

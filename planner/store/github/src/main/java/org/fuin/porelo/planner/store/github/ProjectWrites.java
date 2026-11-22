@@ -11,7 +11,7 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
-import org.fuin.porelo.forge.github.model.IssueLabelsInner;
+import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
@@ -61,15 +61,9 @@ public interface ProjectWrites {
      * @param nodeId its node id, which the project adds it by
      * @param databaseId its id in REST, which a parent takes it as a sub-issue by
      * @param number its number in its repository
-     * @param labels the names of the labels GitHub gave it
+     * @param type the name of the issue type GitHub gave it, or null for none
      */
-    record Created(String nodeId, long databaseId, int number, List<String> labels) {
-
-        /** Copies the labels. */
-        public Created {
-            labels = List.copyOf(labels);
-        }
-    }
+    record Created(String nodeId, long databaseId, int number, @Nullable String type) {}
 
     /**
      * An issue the person made, as a look for one GitHub may have made without answering finds it.
@@ -139,15 +133,15 @@ public interface ProjectWrites {
             String token, String projectId, List<GitHubGraphQl.FieldValue> values);
 
     /**
-     * Makes an issue. GitHub drops the labels in silence for an account without push access, so the
-     * caller reads them in the answer.
+     * Makes an issue. GitHub drops the issue type in silence for an account without the right to
+     * set it, so the caller reads it in the answer.
      *
      * @param token the person's token
      * @param owner the repository's owner
      * @param repository the repository's name
      * @param title the issue's title
      * @param body the issue's body
-     * @param labels the names of the labels it is to carry
+     * @param type the name of the issue type it is to carry, or null for none
      * @return the issue as GitHub made it
      */
     Created createIssue(
@@ -156,7 +150,7 @@ public interface ProjectWrites {
             String repository,
             String title,
             String body,
-            List<String> labels);
+            @Nullable String type);
 
     /**
      * Makes an issue a sub-issue of another, after the sub-issues it has.
@@ -324,21 +318,14 @@ public interface ProjectWrites {
                     final String repository,
                     final String title,
                     final String body,
-                    final List<String> labels) {
+                    final @Nullable String type) {
                 return created(
                         rest.createIssue(
                                 token,
                                 owner,
                                 repository,
                                 new IssuesCreateRequest(
-                                        title,
-                                        body,
-                                        null,
-                                        labels.isEmpty() ? null : labels,
-                                        null,
-                                        null,
-                                        null,
-                                        null)));
+                                        title, body, null, null, null, null, type, null)));
             }
 
             @Override
@@ -534,16 +521,7 @@ public interface ProjectWrites {
         if (nodeId == null || id == null || number == null) {
             throw new IllegalStateException("GitHub answered an issue without its ids");
         }
-        final List<IssueLabelsInner> labels = issue.labels();
-        return new Created(
-                nodeId,
-                id,
-                number,
-                labels == null
-                        ? List.of()
-                        : labels.stream()
-                                .map(IssueLabelsInner::name)
-                                .filter(Objects::nonNull)
-                                .toList());
+        final IssueType type = issue.type();
+        return new Created(nodeId, id, number, type == null ? null : type.name());
     }
 }

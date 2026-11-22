@@ -7,6 +7,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.git.LogText;
@@ -227,6 +228,53 @@ public class BoardEdits {
                                         id,
                                         project,
                                         saved);
+                                return saved;
+                            });
+        } finally {
+            changes.saved(project);
+        }
+    }
+
+    /**
+     * Adds an issue made outside the project from the board's offer, against the revision the
+     * caller read. A store that adds none is asked first, so it is refused as not offered for any
+     * issue; then core checks the offer, and the store checks it again under its save's lock.
+     *
+     * @param project the project's checked name
+     * @param issue the issue's checked tracker reference
+     * @param revision the revision the caller read
+     * @return the revision after the save
+     * @throws UnsupportedOperationException when the store adds no issue made outside the project
+     * @throws org.fuin.porelo.planner.core.Moves.Refused {@code NotUnlisted} for an issue the board
+     *     does not offer or the tracker no longer holds, {@code EditNotAllowed} for one the board
+     *     could not hold once added
+     */
+    public String listIssue(final String project, final String issue, final String revision) {
+        try {
+            return projects.work(project)
+                    .alone(
+                            () -> {
+                                final PlanningStore store = projects.store(project);
+                                if (!store.listsIssues()) {
+                                    throw new UnsupportedOperationException(
+                                            PlanningStore.NOT_OFFERED);
+                                }
+                                final Board board = store.board();
+                                Edits.unlisted(board, revision, issue);
+                                final String saved;
+                                try {
+                                    saved =
+                                            store.listIssue(board.revision(), issue)
+                                                    .revision()
+                                                    .value();
+                                } catch (final StoreException.NoSuchIssue gone) {
+                                    throw Edits.notUnlisted(issue);
+                                } catch (final StoreException.NotSavable refused) {
+                                    // The store's words are fixed and never repeat the tracker's.
+                                    throw Edits.refused(
+                                            issue, "issue", String.valueOf(refused.getMessage()));
+                                }
+                                saved("the issue made outside the project", issue, project, saved);
                                 return saved;
                             });
         } finally {

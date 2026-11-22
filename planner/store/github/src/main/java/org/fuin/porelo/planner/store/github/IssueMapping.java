@@ -35,8 +35,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class IssueMapping {
 
-    /** The label that makes an issue of the project's own repository a story. */
-    public static final String STORY_LABEL = "story";
+    /**
+     * The name of the issue type that makes an issue of the project's own repository a story,
+     * matched exactly; a label makes none.
+     */
+    public static final String STORY_TYPE = "Story";
 
     /** The sizes a {@code Size} field may hold. */
     public static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL");
@@ -355,7 +358,7 @@ public final class IssueMapping {
             this.waits = waits;
         }
 
-        /** Whether an item is a story: labeled one, in the repository that holds the stories. */
+        /** Whether an item is a story: typed Story, in the repository that holds the stories. */
         private boolean storyOf(final @Nullable ItemView item) {
             return item != null && isStory(item) && item.repository().equals(config.own());
         }
@@ -1042,9 +1045,14 @@ public final class IssueMapping {
         return Ids.isReference(id) ? id : null;
     }
 
-    /** Whether an item is a story: an issue labeled {@code story}. */
-    private static boolean isStory(final @Nullable ItemView item) {
-        return item != null && item.labels().contains(STORY_LABEL);
+    /**
+     * Whether an item is a story: an issue of the issue type {@link #STORY_TYPE}.
+     *
+     * @param item the item, or null
+     * @return true for a story
+     */
+    static boolean isStory(final @Nullable ItemView item) {
+        return item != null && STORY_TYPE.equals(item.issueType());
     }
 
     /**

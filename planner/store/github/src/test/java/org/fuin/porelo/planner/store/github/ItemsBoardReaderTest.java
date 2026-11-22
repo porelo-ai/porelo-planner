@@ -301,6 +301,33 @@ class ItemsBoardReaderTest {
             final @Nullable String parent,
             final IssueRefs subs,
             final IssueRefs blockers) {
+        return issue(nameWithOwner, number, labels, parent, subs, blockers, null);
+    }
+
+    /** A story as GitHub answers it: an issue of the issue type Story, with no label. */
+    private static BoardIssue storyIssue(
+            final String nameWithOwner,
+            final int number,
+            final @Nullable String parent,
+            final IssueRefs subs) {
+        return issue(
+                nameWithOwner,
+                number,
+                List.of(),
+                parent,
+                subs,
+                refs(false),
+                IssueMapping.STORY_TYPE);
+    }
+
+    private static BoardIssue issue(
+            final String nameWithOwner,
+            final int number,
+            final List<String> labels,
+            final @Nullable String parent,
+            final IssueRefs subs,
+            final IssueRefs blockers,
+            final @Nullable String type) {
         return new BoardIssue(
                 node(nameWithOwner, number),
                 number,
@@ -315,7 +342,8 @@ class ItemsBoardReaderTest {
                 parent,
                 subs,
                 blockers,
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                type);
     }
 
     private static String node(final String nameWithOwner, final int number) {
@@ -331,12 +359,7 @@ class ItemsBoardReaderTest {
         return new ProjectItem(
                 "PVTI_story",
                 archived,
-                issue(
-                        OWNER + "/example-project",
-                        1,
-                        List.of(IssueMapping.STORY_LABEL),
-                        null,
-                        refs(false, subNodes)),
+                storyIssue(OWNER + "/example-project", 1, null, refs(false, subNodes)),
                 List.of(option("F_status", "Idea"), option("F_priority", priority)),
                 new GitHubGraphQl.PageInfo(false, null));
     }
@@ -390,7 +413,8 @@ class ItemsBoardReaderTest {
                         issue.parentId(),
                         issue.subIssues(),
                         issue.blockedBy(),
-                        info(next)),
+                        info(next),
+                        issue.issueType()),
                 item.values(),
                 item.valuesPage());
     }
@@ -607,12 +631,7 @@ class ItemsBoardReaderTest {
                 new ProjectItem(
                         whole.id(),
                         false,
-                        issue(
-                                OWNER + "/example-project",
-                                1,
-                                List.of(IssueMapping.STORY_LABEL),
-                                null,
-                                refs(true)),
+                        storyIssue(OWNER + "/example-project", 1, null, refs(true)),
                         whole.values(),
                         info(null));
         final GitHub github =
@@ -1300,7 +1319,8 @@ class ItemsBoardReaderTest {
                 issue.parentId(),
                 issue.subIssues(),
                 issue.blockedBy(),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                issue.issueType());
     }
 
     @Test

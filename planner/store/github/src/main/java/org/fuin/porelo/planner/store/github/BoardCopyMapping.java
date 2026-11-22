@@ -94,7 +94,9 @@ final class BoardCopyMapping {
                                                 issue.repository(),
                                                 issue.number(),
                                                 issue.title(),
-                                                issue.type()))
+                                                issue.type(),
+                                                issue.author(),
+                                                issue.authorAssociation()))
                         .toList());
     }
 
@@ -181,7 +183,8 @@ final class BoardCopyMapping {
                 issue.labels(),
                 issue.parentId(),
                 links(issue.subIssues()),
-                links(issue.blockedBy()));
+                links(issue.blockedBy()),
+                issue.issueType());
     }
 
     private static GitHubGraphQl.BoardIssue issue(
@@ -200,7 +203,8 @@ final class BoardCopyMapping {
                 issue.parentId(),
                 refs(issue.subIssues()),
                 refs(issue.blockedBy()),
-                new GitHubGraphQl.PageInfo(partial, null));
+                new GitHubGraphQl.PageInfo(partial, null),
+                issue.type());
     }
 
     private static TrackedItem.Links links(final GitHubGraphQl.IssueRefs refs) {

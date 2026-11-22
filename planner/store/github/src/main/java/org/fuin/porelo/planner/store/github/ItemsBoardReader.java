@@ -98,9 +98,6 @@ public final class ItemsBoardReader implements BoardReader {
         return false;
     }
 
-    /** The name of the issue type a story made outside the project bears, matched exactly. */
-    static final String STORY_TYPE = "Story";
-
     /** An owner's or a repository's name as GitHub allows it in an address. */
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
 
@@ -794,7 +791,9 @@ public final class ItemsBoardReader implements BoardReader {
                                                 issue.repository(),
                                                 issue.number(),
                                                 issue.title(),
-                                                issue.type()))
+                                                issue.type(),
+                                                issue.author(),
+                                                issue.authorAssociation()))
                         .toList();
         // A repository the next read cannot list keeps what the copy held of it.
         unlisted.keep(repositoryIssues);
@@ -916,7 +915,8 @@ public final class ItemsBoardReader implements BoardReader {
                             id,
                             repository,
                             issue.title(),
-                            STORY_TYPE.equals(issue.type()) && repository.equals(read.own())
+                            IssueMapping.STORY_TYPE.equals(issue.type())
+                                            && repository.equals(read.own())
                                     ? UnlistedIssue.Kind.STORY
                                     : UnlistedIssue.Kind.ISSUE,
                             URI.create(
@@ -926,7 +926,11 @@ public final class ItemsBoardReader implements BoardReader {
                                             + "/"
                                             + repository
                                             + "/issues/"
-                                            + issue.number())));
+                                            + issue.number()),
+                            // A copy read back may hold any text: one of no known form is left
+                            // out.
+                            RepositoryIssues.author(issue.author()),
+                            RepositoryIssues.association(issue.authorAssociation())));
         }
         return unlisted;
     }
@@ -1432,7 +1436,8 @@ public final class ItemsBoardReader implements BoardReader {
                 issue.blockedBy().nodes().stream()
                         .map(ref -> new ItemView.Blocker(ref.id(), ref.repository(), ref.number()))
                         .toList(),
-                unseen(issue.blockedBy()));
+                unseen(issue.blockedBy()),
+                issue.issueType());
     }
 
     /**
@@ -1546,6 +1551,8 @@ public final class ItemsBoardReader implements BoardReader {
             // Whether labels or values lie past one page decides a warning on its own.
             add(digest, String.valueOf(Boolean.TRUE.equals(issue.labelsPage().hasNextPage())));
             add(digest, String.valueOf(Boolean.TRUE.equals(item.valuesPage().hasNextPage())));
+            // The type makes an item a story or an issue.
+            addNullable(digest, issue.issueType());
             add(digest, issue.updatedAt().toString());
             add(digest, issue.state());
             addNullable(digest, issue.stateReason());

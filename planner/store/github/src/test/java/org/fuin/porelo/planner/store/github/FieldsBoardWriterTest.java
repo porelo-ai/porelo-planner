@@ -163,7 +163,7 @@ class FieldsBoardWriterTest {
         final List<Issue> issues = new ArrayList<>();
         final List<Story> stories = new ArrayList<>();
         for (final ItemView item : items) {
-            if (item.labels().contains(IssueMapping.STORY_LABEL)) {
+            if (IssueMapping.isStory(item)) {
                 stories.add(
                         new Story(
                                 idOf(item),
@@ -180,7 +180,7 @@ class FieldsBoardWriterTest {
             // A story is no issue of the board, and here the board leaves out an issue whose
             // Status is outside the workflow; the writer reads their items alone.
             final String status = item.fields().get(FieldNames.STATUS);
-            if (!item.labels().contains(IssueMapping.STORY_LABEL)
+            if (!IssueMapping.isStory(item)
                     && (status == null || WORKFLOW.states().contains(status))) {
                 issues.add(issue(item));
             }
@@ -237,7 +237,8 @@ class FieldsBoardWriterTest {
                                         .toList(),
                                 new PageInfo(false, null)),
                         none,
-                        new GitHubGraphQl.PageInfo(false, null)),
+                        new GitHubGraphQl.PageInfo(false, null),
+                        item.issueType()),
                 item.itemId(),
                 values,
                 new GitHubGraphQl.PageInfo(false, null));
@@ -307,8 +308,8 @@ class FieldsBoardWriterTest {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels) {
-            return makeAt(repository, title, body, labels, NOW);
+                final @Nullable String type) {
+            return makeAt(repository, title, body, type, NOW);
         }
 
         /** Makes an issue at a moment, numbered across the repositories. */
@@ -316,11 +317,11 @@ class FieldsBoardWriterTest {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels,
+                final @Nullable String type,
                 final Instant at) {
             final int number = 100 + made.values().stream().mapToInt(List::size).sum();
             final Created created =
-                    new Created("I_" + repository + "_" + number, 9000L + number, number, labels);
+                    new Created("I_" + repository + "_" + number, 9000L + number, number, type);
             made.computeIfAbsent(repository, r -> new ArrayList<>())
                     // GitHub keeps a title without the spaces around it.
                     .add(new Found(created, title.strip(), body));
@@ -401,7 +402,7 @@ class FieldsBoardWriterTest {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels) {
+                final @Nullable String type) {
             calls.add("createIssue");
             assertThat(token).as("the issue made with the person's token").isEqualTo(TOKEN);
             assertThat(owner).as("the owner of the repository").isEqualTo(OWNER);
@@ -414,14 +415,10 @@ class FieldsBoardWriterTest {
             }
             if (answer.startsWith("twice")) {
                 // A call GitHub took twice, as a proxy that sends it again does.
-                make(repository, title, body, labels);
+                make(repository, title, body, type);
             }
             final Created created =
-                    make(
-                            repository,
-                            title,
-                            body,
-                            answer.startsWith("unlabeled") ? List.of() : labels);
+                    make(repository, title, body, answer.startsWith("untyped") ? null : type);
             if (answer.endsWith("unanswered")) {
                 throw GitHubExceptions.unanswered("timed out");
             }
@@ -843,27 +840,32 @@ class FieldsBoardWriterTest {
                         "example-project#11 Opening[open=false, notPlanned=false]");
     }
 
-    /** A story's item, open, labeled as a story, with the sub-issues given by node id. */
+    /** A story's item, open, of the issue type Story, with the sub-issues given by node id. */
     private static ItemView storyItem(
             final String id, final int number, final List<String> subIssueIds) {
         return new ItemView(
-                "PVTI_" + id,
-                "I_" + id,
-                "example-project",
-                number,
-                "A story",
-                "",
-                true,
-                null,
-                Map.of(),
-                List.of(IssueMapping.STORY_LABEL),
-                null,
-                subIssueIds,
-                List.of(),
-                null,
-                URI.create("https://github.com/" + OWNER + "/example-project/issues/" + number),
-                Instant.EPOCH,
-                false);
+                        "PVTI_" + id,
+                        "I_" + id,
+                        "example-project",
+                        number,
+                        "A story",
+                        "",
+                        true,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        null,
+                        subIssueIds,
+                        List.of(),
+                        null,
+                        URI.create(
+                                "https://github.com/"
+                                        + OWNER
+                                        + "/example-project/issues/"
+                                        + number),
+                        Instant.EPOCH,
+                        false)
+                .typed(IssueMapping.STORY_TYPE);
     }
 
     @Test
@@ -1368,27 +1370,10 @@ class FieldsBoardWriterTest {
 
     private static final Writes.Reason BUILT = new Writes.Reason("Finished", "Built as asked.");
 
-    /** A story's item, as the board reads one by its label. */
+    /** A story's item, as the board reads one by its issue type. */
     private static ItemView storyItem(final String id, final int number) {
-        final ItemView plain = item(id, "example-project", number, true, "", Map.of());
-        return new ItemView(
-                plain.itemId(),
-                plain.issueId(),
-                plain.repository(),
-                plain.number(),
-                plain.title(),
-                plain.body(),
-                plain.open(),
-                plain.stateReason(),
-                plain.fields(),
-                List.of(IssueMapping.STORY_LABEL),
-                plain.parentIssueId(),
-                plain.subIssueIds(),
-                plain.blockedByIds(),
-                plain.comments(),
-                plain.link(),
-                plain.updatedAt(),
-                plain.archived());
+        return item(id, "example-project", number, true, "", Map.of())
+                .typed(IssueMapping.STORY_TYPE);
     }
 
     private static Writes closing(
@@ -1603,7 +1588,8 @@ class FieldsBoardWriterTest {
                 parent,
                 subIssues,
                 blockedBy,
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                issue.issueType());
     }
 
     private static IssueRefs refs(final boolean more, final String... ids) {
@@ -2121,7 +2107,9 @@ class FieldsBoardWriterTest {
                                 "example-project#100",
                                 List.of("example-lib#101", "example-project#102")));
         final ProjectWrites.Found story = github.made.get("example-project").get(0);
-        assertThat(story.issue().labels()).as("the story's labels").containsExactly("story");
+        assertThat(story.issue().type())
+                .as("the story's issue type, and no label")
+                .isEqualTo(IssueMapping.STORY_TYPE);
         assertThat(story.body())
                 .as("the story's body")
                 .isEqualTo("**What a user gains.** A gain\n\n**The test.** A test\n");
@@ -2204,7 +2192,7 @@ class FieldsBoardWriterTest {
         // Harm: a call that timed out after GitHub made the issue sent again, so the person
         // finds the issue twice.
         final GitHub github = new GitHub().creating("unanswered");
-        github.make("example-lib", "A new thing", "**What must be true.** Another.\n", List.of());
+        github.make("example-lib", "A new thing", "**What must be true.** Another.\n", null);
 
         final String reference =
                 github.writer()
@@ -2259,7 +2247,7 @@ class FieldsBoardWriterTest {
         // Harm: one of two issues alike taken at a guess, the other left beside it unnamed.
         final GitHub github = new GitHub().creating("twice-unanswered");
         // One alike on each of two pages: the other issue and the first alike fill the first.
-        github.make("example-lib", "Something else", WRITTEN, List.of());
+        github.make("example-lib", "Something else", WRITTEN, null);
 
         assertThatThrownBy(
                         () ->
@@ -2283,10 +2271,10 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void aStoryWhoseLabelGitHubDroppedStopsTheWriteNamingIt() {
+    void aStoryWhoseIssueTypeGitHubDroppedStopsTheWriteNamingIt() {
         // Harm: issues made under a story GitHub holds as a plain issue, which the board shows
         // as no story.
-        final GitHub github = new GitHub().creating("unlabeled");
+        final GitHub github = new GitHub().creating("untyped");
 
         assertThatThrownBy(
                         () ->
@@ -2295,7 +2283,7 @@ class FieldsBoardWriterTest {
                                                 snapshot(),
                                                 SHOWN,
                                                 idea(newIssue("example-lib", "First"))))
-                .as("an idea whose story GitHub made without its label")
+                .as("an idea whose story GitHub made without its issue type")
                 .isInstanceOfSatisfying(
                         StoreException.PartlySaved.class,
                         partly ->
@@ -2346,7 +2334,7 @@ class FieldsBoardWriterTest {
         // Harm: the person's earlier, finished issue of the same words taken as the new one, so
         // the new one GitHub made stands beside it off the project.
         final GitHub github = new GitHub().creating("unanswered");
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.make("example-lib", "A new thing", WRITTEN, null);
         final ItemView earlier =
                 item(
                         "LB9",
@@ -2420,29 +2408,30 @@ class FieldsBoardWriterTest {
                         }
                         items.add(
                                 new ItemView(
-                                        "PVTI_" + issue.nodeId(),
-                                        issue.nodeId(),
-                                        repository,
-                                        issue.number(),
-                                        found.title(),
-                                        found.body(),
-                                        true,
-                                        null,
-                                        fields,
-                                        issue.labels(),
-                                        parent,
-                                        List.of(),
-                                        List.of(),
-                                        null,
-                                        URI.create(
-                                                "https://github.com/"
-                                                        + OWNER
-                                                        + "/"
-                                                        + repository
-                                                        + "/issues/"
-                                                        + issue.number()),
-                                        Instant.EPOCH,
-                                        false));
+                                                "PVTI_" + issue.nodeId(),
+                                                issue.nodeId(),
+                                                repository,
+                                                issue.number(),
+                                                found.title(),
+                                                found.body(),
+                                                true,
+                                                null,
+                                                fields,
+                                                List.of(),
+                                                parent,
+                                                List.of(),
+                                                List.of(),
+                                                null,
+                                                URI.create(
+                                                        "https://github.com/"
+                                                                + OWNER
+                                                                + "/"
+                                                                + repository
+                                                                + "/issues/"
+                                                                + issue.number()),
+                                                Instant.EPOCH,
+                                                false)
+                                        .typed(issue.type()));
                     }
                 });
         return items.toArray(ItemView[]::new);
@@ -2643,8 +2632,8 @@ class FieldsBoardWriterTest {
         // Harm: an issue of another story, not yet given its Status, taken as the new one and
         // given the new one's values.
         final GitHub github = new GitHub();
-        github.make("example-project", "Another story", "", List.of(IssueMapping.STORY_LABEL));
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.make("example-project", "Another story", "", IssueMapping.STORY_TYPE);
+        github.make("example-lib", "A new thing", WRITTEN, null);
         github.added.add("I_example-project_100");
         github.added.add("I_example-lib_101");
         github.subIssues.add("example-project#100 < 9101");
@@ -2666,8 +2655,7 @@ class FieldsBoardWriterTest {
     void anIssueAlikeOlderThanADayIsNeverTaken() {
         // Harm: an issue the person made long before, off the project, taken as the new one.
         final GitHub github = new GitHub();
-        github.makeAt(
-                "example-lib", "A new thing", WRITTEN, List.of(), NOW.minus(Duration.ofHours(25)));
+        github.makeAt("example-lib", "A new thing", WRITTEN, null, NOW.minus(Duration.ofHours(25)));
 
         final String reference =
                 github.writer()
@@ -2706,7 +2694,7 @@ class FieldsBoardWriterTest {
     void aCreateSentAgainAfterItsIssueWasMovedKeepsThePersonsMove() {
         // Harm: a create sent again puts an issue the person has since moved back where it began.
         final GitHub github = new GitHub();
-        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
         github.added.add("I_example-project_100");
         final NewIssue issue =
                 new NewIssue(
@@ -2740,7 +2728,7 @@ class FieldsBoardWriterTest {
         // Harm: a retry duplicates an issue or preserves an automation's first state over its
         // requested placement.
         final GitHub github = new GitHub();
-        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
         github.added.add("I_example-project_100");
         final NewIssue issue =
                 new NewIssue(
@@ -2870,7 +2858,7 @@ class FieldsBoardWriterTest {
         // Harm: the story stays without its new issue until a whole read when GitHub's sub-issue
         // list lags the link.
         final GitHub github = new GitHub();
-        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
         github.added.add("I_example-project_100");
         final Touched touched = new Touched();
         final FieldsBoardWriter writer = github.writer(touched.recording(github));
@@ -2944,8 +2932,8 @@ class FieldsBoardWriterTest {
         // Harm: an issue added under a story and given its Status, whose creation was cut off,
         // made a second time when the person sends it again.
         final GitHub github = new GitHub();
-        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
+        github.make("example-lib", "A new thing", WRITTEN, null);
         github.added.add("I_example-project_100");
         github.added.add("I_example-lib_101");
         github.subIssues.add("example-project#100 < 9101");
@@ -3021,8 +3009,8 @@ class FieldsBoardWriterTest {
         // Harm: one of two issues alike an earlier try may have made taken at a guess, the
         // other left beside it unnamed.
         final GitHub github = new GitHub();
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
-        github.make("example-lib", "A new thing", WRITTEN, List.of());
+        github.make("example-lib", "A new thing", WRITTEN, null);
+        github.make("example-lib", "A new thing", WRITTEN, null);
 
         assertThatThrownBy(
                         () ->
@@ -3042,9 +3030,9 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void aStoryFoundAfterAnUnansweredCallWithoutItsLabelStopsTheWrite() {
+    void aStoryFoundAfterAnUnansweredCallWithoutItsIssueTypeStopsTheWrite() {
         // Harm: issues made under a story found again that GitHub holds as a plain issue.
-        final GitHub github = new GitHub().creating("unlabeled-unanswered");
+        final GitHub github = new GitHub().creating("untyped-unanswered");
 
         assertThatThrownBy(
                         () ->
@@ -3053,7 +3041,7 @@ class FieldsBoardWriterTest {
                                                 snapshot(),
                                                 SHOWN,
                                                 idea(newIssue("example-lib", "First"))))
-                .as("an idea whose story was found again without its label")
+                .as("an idea whose story was found again without its issue type")
                 .isInstanceOfSatisfying(
                         StoreException.PartlySaved.class,
                         partly ->

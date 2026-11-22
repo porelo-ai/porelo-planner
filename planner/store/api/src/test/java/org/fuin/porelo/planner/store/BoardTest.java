@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -179,6 +180,54 @@ class BoardTest {
         assertThatThrownBy(() -> withUnlisted(List.of(), List.of(unlisted("elsewhere", 4))))
                 .as("a repository outside the project")
                 .hasMessage("An issue names a repository outside the project");
+    }
+
+    @Test
+    void anIssuesAuthorIsOnlyALoginAndAnAssociationTheForgeNames() {
+        // Harm: a text that is no login, or an association GitHub never gives, reaches the window
+        // as the account that wrote an issue the person is about to add.
+        final URI link = URI.create("https://github.com/porelo-ai/porelo-lib/issues/7");
+        assertThat(
+                        new UnlistedIssue(
+                                        "porelo-lib#7",
+                                        "porelo-lib",
+                                        "A title",
+                                        UnlistedIssue.Kind.ISSUE,
+                                        link,
+                                        "dependabot[bot]",
+                                        "NONE")
+                                .author())
+                .as("a bot's login")
+                .isEqualTo("dependabot[bot]");
+        for (final String login : List.of("", "-a", "a-", "a--b", "a b", "a".repeat(40), "a\nb")) {
+            assertThat(UnlistedIssue.isLogin(login)).as("the login %s", login).isFalse();
+            assertThatThrownBy(
+                            () ->
+                                    new UnlistedIssue(
+                                            "porelo-lib#7",
+                                            "porelo-lib",
+                                            "A title",
+                                            UnlistedIssue.Kind.ISSUE,
+                                            link,
+                                            login,
+                                            "OWNER"))
+                    .as("an author %s", login)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("An author is named by a login");
+        }
+        assertThatThrownBy(
+                        () ->
+                                new UnlistedIssue(
+                                        "porelo-lib#7",
+                                        "porelo-lib",
+                                        "A title",
+                                        UnlistedIssue.Kind.ISSUE,
+                                        link,
+                                        "a-person",
+                                        "ADMIN"))
+                .as("an association GitHub never gives")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("An author's association is none the forge names");
     }
 
     private static UnlistedIssue unlisted(final String repository, final int number) {

@@ -1627,6 +1627,36 @@ void main() {
     }
   });
 
+  // Harm: who opened an issue offered to add never reaches the screen, or a text that is no login is shown as one.
+  test('an offered issue\'s author and association are read, and one of no login\'s form ends the watch', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    Map<String, Object?> authored(String login, String association) => {
+      'unlisted': [
+        {
+          'id': 'porelo-project#9',
+          'repository': 'porelo-project',
+          'title': 'Made by hand',
+          'kind': 'issue',
+          'link': 'https://github.com/porelo-ai/porelo-project/issues/9',
+          'author': login,
+          'authorAssociation': association,
+        },
+      ],
+    };
+    final read = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    streams.opened.last.add(_event('r1', more: authored('a-person', 'FIRST_TIMER')));
+    final issue = (await read).unlisted.single;
+    expect(issue.author, 'a-person');
+    expect(issue.authorAssociation, 'FIRST_TIMER');
+
+    final bad = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 1, 'the second stream');
+    streams.opened.last.add(_event('r1', more: authored('a person\nOWNER', 'NONE')));
+    expect((await _refusal(bad)).name, 'BadAnswer');
+  });
+
   // Harm: an id past its bound would go back to the planner as an endless header.
   test('an event id longer than 200 characters ends the watch', () async {
     final (planner, source) = await _started();
@@ -1825,6 +1855,22 @@ void main() {
       'revision': 'r1',
       'issues': ['PR1', 'B900'],
     });
+  });
+
+  // Harm: an add writes another issue, drops the revision that keeps a person's change since, or sends a fixed alias
+  // the planner cannot add.
+  test('an add of an issue made outside the project sends its reference and the revision, and no alias', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/items'] = () => _Reply(200, {'revision': 'r2'});
+    expect(await source.listIssue('demo', 'porelo-lib#7', 'r1'), 'r2');
+    final call = planner.calls.last;
+    expect(call.method, 'POST');
+    expect(call.target, '/projects/demo/items');
+    expect(jsonDecode(call.body), {'issue': 'porelo-lib#7', 'revision': 'r1'});
+
+    final calls = planner.calls.length;
+    await expectLater(source.listIssue('demo', 'PL4', 'r1'), throwsA(isA<PlanningRefusal>()));
+    expect(planner.calls, hasLength(calls), reason: 'an alias is refused before it is sent');
   });
 
   // Harm: a story, its issues or an issue reach the screen without their text, state or criteria.

@@ -51,6 +51,15 @@ final class NewItems {
     /** The most pages of a repository's issues read to find one GitHub made without answering. */
     static final int MOST_FOUND_PAGES = 10;
 
+    /**
+     * The Worker an issue made outside the project is given when it is added: no agent takes an
+     * issue nobody chose for one.
+     */
+    static final Worker ADDED_WORKER = Worker.MANUAL;
+
+    /** The Priority an issue made outside the project is given when it is added. */
+    static final String ADDED_PRIORITY = "Medium";
+
     /** Anything that would break a title's or a line's one line. */
     private static final Pattern BREAKS = Pattern.compile("[\\p{Cntrl}\\u0085\\u2028\\u2029]");
 
@@ -117,7 +126,7 @@ final class NewItems {
         private final String repository;
         private final String title;
         private final String body;
-        private final List<String> labels;
+        private final boolean story;
         private final List<Value> values;
         private ProjectWrites.@Nullable Created created;
         private @Nullable String itemId;
@@ -126,12 +135,12 @@ final class NewItems {
                 final String repository,
                 final String title,
                 final String body,
-                final List<String> labels,
+                final boolean story,
                 final List<Value> values) {
             this.repository = repository;
             this.title = title;
             this.body = body;
-            this.labels = List.copyOf(labels);
+            this.story = story;
             this.values = List.copyOf(values);
         }
 
@@ -189,16 +198,68 @@ final class NewItems {
         if (size != null) {
             values.add(option(FieldNames.SIZE, size));
         }
-        values.add(option(FieldNames.WORKER, issue.worker() == Worker.MANUAL ? "Manual" : "Agent"));
+        values.add(worker(issue.worker()));
         values.add(option(FieldNames.PRIORITY, priority(priority)));
         values.add(rank(false, priority));
-        return planned(repository, issue.title().strip(), body, List.of(), values);
+        return planned(repository, issue.title().strip(), body, false, values);
     }
 
     /**
-     * Plans an idea's story in the project's own repository, labeled as a story, its gain and its
-     * test in its body as a carried story holds them; it gets no Status, so its state follows its
-     * issues'.
+     * Plans the add of an open issue GitHub holds that is no item of the project: an issue gets the
+     * workflow's first state as its Status, {@link #ADDED_WORKER} as its Worker, {@link
+     * #ADDED_PRIORITY} and the rank after the last issue of it; a story gets that Priority and its
+     * rank and no Status, so its state follows its issues'.
+     *
+     * @param repository the repository that holds it, as the board names it
+     * @param number its number
+     * @param nodeId its node id, which the project adds it by
+     * @param databaseId its id in REST
+     * @param story whether it is a story
+     * @return the planned add
+     * @throws StoreException.NotSavable when the project cannot hold it
+     */
+    Planned existing(
+            final String repository,
+            final int number,
+            final String nodeId,
+            final long databaseId,
+            final boolean story) {
+        final List<Value> values = new ArrayList<>();
+        if (!story) {
+            values.add(option(FieldNames.STATUS, current.config().workflow().states().get(0)));
+            values.add(worker(ADDED_WORKER));
+        }
+        values.add(option(FieldNames.PRIORITY, ADDED_PRIORITY));
+        values.add(rank(story, ADDED_PRIORITY));
+        final Planned planned = new Planned(repository, "", "", story, values);
+        planned.created =
+                new ProjectWrites.Created(
+                        nodeId, databaseId, number, story ? IssueMapping.STORY_TYPE : null);
+        return planned;
+    }
+
+    /**
+     * Adds an issue GitHub holds to the project and gives it its values. Once GitHub added it, a
+     * later failure is {@link StoreException.PartlySaved}; an add GitHub refused saved nothing, and
+     * one it took without answering may stand.
+     *
+     * @param token the person's token
+     * @param planned the add, as {@link #existing} planned it
+     */
+    void list(final String token, final Planned planned) {
+        final String projectId = begin(token);
+        addToProject(token, projectId, List.of(planned));
+        setValues(token, projectId, planned, null);
+    }
+
+    private Value worker(final Worker worker) {
+        return option(FieldNames.WORKER, worker == Worker.MANUAL ? "Manual" : "Agent");
+    }
+
+    /**
+     * Plans an idea's story in the project's own repository, of the issue type Story, its gain and
+     * its test in its body as a carried story holds them; it gets no Status, so its state follows
+     * its issues'.
      *
      * @param idea the idea
      * @return the planned story
@@ -218,12 +279,7 @@ final class NewItems {
         final List<Value> values = new ArrayList<>();
         values.add(option(FieldNames.PRIORITY, idea.priority()));
         values.add(rank(true, idea.priority()));
-        return planned(
-                current.config().own(),
-                idea.title().strip(),
-                body,
-                List.of(IssueMapping.STORY_LABEL),
-                values);
+        return planned(current.config().own(), idea.title().strip(), body, true, values);
     }
 
     /**
@@ -314,16 +370,15 @@ final class NewItems {
         planned.created = taken != null ? taken : create(token, planned);
         made.add(planned.reference());
         written.add(planned.repository);
-        if (planned.labels.contains(IssueMapping.STORY_LABEL)
-                && !planned.made().labels().contains(IssueMapping.STORY_LABEL)) {
+        if (planned.story && !IssueMapping.STORY_TYPE.equals(planned.made().type())) {
             throw partly(
                     planned.repository,
                     "GitHub made "
                             + planned.reference()
-                            + " without the label "
-                            + IssueMapping.STORY_LABEL
-                            + ", which only an account with push access sets, so it is no"
-                            + " story");
+                            + " without the issue type "
+                            + IssueMapping.STORY_TYPE
+                            + ", which only an account that may set issue types gives it, so it is"
+                            + " no story");
         }
         final @Nullable ItemView standing = onBoard(planned.repository, planned.made().number());
         if (standing != null) {
@@ -392,7 +447,7 @@ final class NewItems {
             final int number = issue.issue().number();
             final @Nullable ItemView item = onBoard(planned.repository, number);
             final boolean left =
-                    planned.labels.contains(IssueMapping.STORY_LABEL)
+                    planned.story
                             ? cutOff(issue.issue().nodeId(), under)
                             : leftUnder(issue, item, parent, planned);
             if (!made.contains(planned.repository + "#" + number)
@@ -537,6 +592,10 @@ final class NewItems {
                                                                 .map(p -> p.made().nodeId())
                                                                 .toList()));
             } catch (final RuntimeException e) {
+                if (outcome(e) == Outcome.UNANSWERED) {
+                    // An add GitHub took without answering may stand.
+                    chunk.forEach(this::unsure);
+                }
                 throw failed(e, chunk.get(0).repository, token);
             }
             for (int at = 0; at < chunk.size(); at++) {
@@ -544,14 +603,23 @@ final class NewItems {
                         at < batch.outcomes().size() ? batch.outcomes().get(at) : null;
                 final Planned planned = chunk.get(at);
                 if (outcome == null || !outcome.saved() || outcome.value() == null) {
-                    throw partly(
-                            planned.repository,
+                    final String why =
                             "GitHub did not add "
                                     + planned.reference()
                                     + " to the project"
-                                    + refusedWords(outcome, token));
+                                    + refusedWords(outcome, token);
+                    if (made.isEmpty() && !sent) {
+                        // Nothing of this write stands, so it is refused, not partly saved.
+                        throw new StoreException.Unreadable(planned.repository, why);
+                    }
+                    throw partly(planned.repository, why);
                 }
                 planned.itemId = outcome.value();
+                // From here on GitHub holds it on the project, so a later failure is a part saved.
+                if (!made.contains(planned.reference())) {
+                    made.add(planned.reference());
+                }
+                written.add(planned.repository);
             }
         }
     }
@@ -685,7 +753,7 @@ final class NewItems {
                                         planned.repository,
                                         planned.title,
                                         planned.body,
-                                        planned.labels));
+                                        planned.story ? IssueMapping.STORY_TYPE : null));
     }
 
     /** The person's issues made since a moment with the planned title and body. */
@@ -811,13 +879,13 @@ final class NewItems {
             final String repository,
             final String title,
             final String body,
-            final List<String> labels,
+            final boolean story,
             final List<Value> values) {
         if (body.length() > BodySections.LONGEST) {
             throw new StoreException.NotSavable(
                     "", "the body of a new issue is longer than GitHub takes");
         }
-        return new Planned(repository, title, body, labels, values);
+        return new Planned(repository, title, body, story, values);
     }
 
     /**
@@ -916,7 +984,7 @@ final class NewItems {
     private int highest(final boolean story, final String priority) {
         int most = 0;
         for (final ItemView item : current.items().values()) {
-            if (item.labels().contains(IssueMapping.STORY_LABEL) != story) {
+            if (IssueMapping.isStory(item) != story) {
                 continue;
             }
             final String given = item.fields().getOrDefault(FieldNames.PRIORITY, "");

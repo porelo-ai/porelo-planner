@@ -94,11 +94,19 @@ class PlanningStoreTest {
                                                 "A title",
                                                 Map.of(),
                                                 Set.of())),
-                        () -> STORE.comment("XY03", "A comment."))) {
+                        () -> STORE.comment("XY03", "A comment."),
+                        () -> STORE.listIssue(BOARD.revision(), "porelo-lib#7"))) {
             assertThatThrownBy(edit::run)
                     .as("an edit the store does not offer")
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessage(PlanningStore.NOT_OFFERED);
         }
+    }
+
+    @Test
+    void aStoreThatAddsNoIssueMadeOutsideTheProjectSaysSoBeforeAnyCheck() {
+        // Harm: a store without the add answered as if the issue were no longer offered, so the
+        // window reloads forever instead of hiding a button the store cannot serve.
+        assertThat(STORE.listsIssues()).as("a store adds none unless it says so").isFalse();
     }
 }

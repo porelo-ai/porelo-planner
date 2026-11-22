@@ -1342,8 +1342,9 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  /// The open issues of the project's repositories that are no items of the project, each with its tracker link;
-  /// the title is shown as plain text, and only an HTTPS link opens.
+  /// The open issues of the project's repositories that are no items of the project, each with its tracker link, its
+  /// author and an Add; the title, the author's login and association are shown as plain text, and only an HTTPS link
+  /// opens.
   Widget _unlisted(BuildContext context) {
     final issues = board.unlisted;
     return SizedBox(
@@ -1386,7 +1387,29 @@ class _BoardViewState extends State<_BoardView> {
                           ),
                         ],
                       ),
-                      Text(issue.story ? 'Story' : 'Issue'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              [
+                                issue.story ? 'Story' : 'Issue',
+                                if (issue.author.isNotEmpty) 'by ${_line(issue.author)}',
+                                if (issue.authorAssociation.isNotEmpty) _line(issue.authorAssociation),
+                              ].join('  '),
+                              key: Key('planning-unlisted-author ${issue.id}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          TextButton(
+                            key: Key('planning-unlisted-add ${issue.id}'),
+                            onPressed: board.takesMoves && !board.holdsMoves && !board.actionBusy
+                                ? () => unawaited(board.listIssue(issue.id, revision: board.snapshot?.revision))
+                                : null,
+                            child: Text(board.listing == issue.id ? 'Adding…' : 'Add'),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

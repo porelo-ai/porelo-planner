@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
@@ -55,13 +57,25 @@ Future<(MockPlanningSource, PlanningBoards)> _showBoard(
   return (backend, boards);
 }
 
-Map<String, Object?> _issue(String id, String title, {String kind = 'issue', String? link}) => {
+Map<String, Object?> _issue(
+  String id,
+  String title, {
+  String kind = 'issue',
+  String? link,
+  String? author,
+  String? association,
+}) => {
   'id': id,
   'repository': id.substring(0, id.indexOf('#')),
   'title': title,
   'kind': kind,
   'link': link ?? 'https://github.com/example-org/${id.replaceFirst('#', '/issues/')}',
+  'author': ?author,
+  'authorAssociation': ?association,
 };
+
+Finder _inRow(String id, Finder matching) =>
+    find.descendant(of: find.byKey(Key('planning-unlisted $id')), matching: matching);
 
 void main() {
   // Harm: an issue made by hand on the tracker is never seen in the window, a story made by hand reads as an issue,
@@ -175,5 +189,113 @@ void main() {
     final named = planningActions(boards, host).where((action) => action.label.startsWith('Open issue own#'));
     expect(named, hasLength(planningUnlistedActions));
     expect(named.first.label, 'Open issue own#1 in browser', reason: 'the first ones in the planner\'s order');
+  });
+
+  // Harm: the person adds an issue anyone could open seeing only its title, or a login typed with markup is read as
+  // markup.
+  testWidgets('each offered issue shows its author and association as plain text, and none when the planner names '
+      'none', (tester) async {
+    await _showBoard(
+      tester,
+      TestHost(),
+      unlisted: [
+        _issue('own#1', 'By a stranger', author: 'a-person', association: 'FIRST_TIMER'),
+        _issue('own#2', 'By nobody named'),
+      ],
+    );
+
+    expect(_inRow('own#1', find.text('Issue  by a-person  FIRST_TIMER')), findsOneWidget);
+    expect(_inRow('own#2', find.text('Issue')), findsOneWidget, reason: 'no author is made up');
+  });
+
+  // Harm: Add writes another issue or against another board, the row stays offered after the add, or the issue
+  // vanishes from both the offer and the board.
+  testWidgets('Add sends the offered issue at the shown revision, and the new board shows it on the project, offered '
+      'no longer', (tester) async {
+    final (backend, _) = await _showBoard(
+      tester,
+      TestHost(),
+      unlisted: [_issue('own#4', 'An issue by hand'), _issue('other#2', 'Another')],
+    );
+
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
+    await settle(tester);
+
+    expect(backend.listCalls, [
+      {'project': 'checkout', 'issue': 'own#4', 'revision': 'initial'},
+    ]);
+    expect(find.byKey(const Key('planning-unlisted own#4')), findsNothing, reason: 'offered no longer');
+    expect(find.byKey(const Key('planning-unlisted other#2')), findsOneWidget, reason: 'the other stays offered');
+    expect(find.text('own#4 added to the project.'), findsOneWidget);
+    final added = (backend.boards['checkout']!['issues'] as List).cast<Map<String, dynamic>>().single;
+    expect(added['id'], 'own#4', reason: 'the issue stands on the board');
+    expect(added['state'], 'Ready', reason: 'in the first state');
+  });
+
+  // Harm: a second add while one is out writes against a board the first one changes, or the person cannot tell
+  // which row is being added.
+  testWidgets('while an add is out its row says so and no row offers a second add', (tester) async {
+    final (backend, _) = await _showBoard(
+      tester,
+      TestHost(),
+      unlisted: [_issue('own#4', 'An issue by hand'), _issue('other#2', 'Another')],
+    );
+    final gate = Completer<void>();
+    backend.moveGate = gate;
+
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
+    await tester.pump();
+
+    expect(_inRow('own#4', find.text('Adding…')), findsOneWidget);
+    for (final id in ['own#4', 'other#2']) {
+      final add = tester.widget<TextButton>(find.byKey(Key('planning-unlisted-add $id')));
+      expect(add.onPressed, isNull, reason: '$id offers no add meanwhile');
+    }
+    gate.complete();
+    await settle(tester);
+    expect(backend.listCalls, hasLength(1));
+  });
+
+  // Harm: an issue the planner no longer offers is shown as added, or kept offered after the board said it is gone.
+  testWidgets('an add the planner refuses names the reason, and the board streamed next shows what it offers now', (
+    tester,
+  ) async {
+    final (backend, _) = await _showBoard(
+      tester,
+      TestHost(),
+      unlisted: [_issue('own#4', 'An issue by hand'), _issue('other#2', 'Another')],
+    );
+    backend.moveFailure = const PlanningRefusal('NotUnlisted', {'issue': 'own#4'}, 'not offered');
+
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
+    await settle(tester);
+    final data = backend.boards['checkout']!;
+    data['unlisted'] = [_issue('other#2', 'Another')];
+    data['revision'] = 'later';
+    backend.push('checkout', data);
+    await settle(tester);
+
+    expect(tester.widget<Text>(find.byKey(const Key('planning-move-error'))).data, startsWith('own#4 was not added: '));
+    expect(
+      find.byKey(const Key('planning-unlisted own#4')),
+      findsNothing,
+      reason: 'the streamed board offers it no longer',
+    );
+    expect(find.byKey(const Key('planning-unlisted other#2')), findsOneWidget);
+  });
+
+  // Harm: an add that may stand on the project outside the workflow is told as not saved, and the person adds it
+  // once more or never looks for it.
+  testWidgets('an add partly saved says the issue may stand on the project without its state', (tester) async {
+    final (backend, _) = await _showBoard(tester, TestHost(), unlisted: [_issue('own#4', 'An issue by hand')]);
+    backend.moveFailure = const PlanningRefusal('PartlySaved', {}, 'partly saved');
+
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
+    await settle(tester);
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('planning-move-error'))).data,
+      startsWith('own#4 may stand on the project outside the workflow, without its state: '),
+    );
   });
 }

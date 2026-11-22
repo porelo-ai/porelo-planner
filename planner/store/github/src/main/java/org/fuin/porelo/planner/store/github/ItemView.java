@@ -36,6 +36,8 @@ import org.jspecify.annotations.Nullable;
  *     {@code blockedByIds}; empty when the read named only their ids
  * @param unseenBlockers how many more issues GitHub counts among its blockers than it names, as it
  *     leaves out one the person's login cannot read
+ * @param issueType the name of its issue type, which makes it a story when it is {@link
+ *     IssueMapping#STORY_TYPE}, or null when it has none
  */
 public record ItemView(
         String itemId,
@@ -56,7 +58,8 @@ public record ItemView(
         Instant updatedAt,
         boolean archived,
         List<Blocker> blockers,
-        int unseenBlockers) {
+        int unseenBlockers,
+        @Nullable String issueType) {
 
     /**
      * An issue that blocks the item's, as GitHub names it.
@@ -78,6 +81,166 @@ public record ItemView(
         if (unseenBlockers < 0) {
             throw new IllegalArgumentException("An item counts no blockers below none");
         }
+    }
+
+    /**
+     * An item of no issue type.
+     *
+     * @param itemId the project item's node id
+     * @param issueId the issue's node id
+     * @param repository the name of the repository that holds the issue
+     * @param number the issue's number in its repository
+     * @param title its title
+     * @param body its body
+     * @param open whether GitHub has it open
+     * @param stateReason why GitHub closed it, or null while open
+     * @param fields the project's field values by field name
+     * @param labels its labels' names
+     * @param parentIssueId the node id of its GitHub parent issue, or null
+     * @param subIssueIds the node ids of its GitHub sub-issues
+     * @param blockedByIds the node ids of the issues it is blocked by
+     * @param comments its comments, or null when they were not read
+     * @param link where a person reads it
+     * @param updatedAt when GitHub last changed it
+     * @param archived whether the item is archived in the project
+     * @param blockers the issues it is blocked by, each with its repository and number
+     */
+    public ItemView(
+            final String itemId,
+            final String issueId,
+            final String repository,
+            final int number,
+            final String title,
+            final String body,
+            final boolean open,
+            final @Nullable String stateReason,
+            final Map<String, String> fields,
+            final List<String> labels,
+            final @Nullable String parentIssueId,
+            final List<String> subIssueIds,
+            final List<String> blockedByIds,
+            final @Nullable List<CommentView> comments,
+            final URI link,
+            final Instant updatedAt,
+            final boolean archived,
+            final List<Blocker> blockers) {
+        this(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                comments,
+                link,
+                updatedAt,
+                archived,
+                blockers,
+                0,
+                null);
+    }
+
+    /**
+     * An item of no issue type with the blockers GitHub counts but does not name.
+     *
+     * @param itemId the project item's node id
+     * @param issueId the issue's node id
+     * @param repository the name of the repository that holds the issue
+     * @param number the issue's number in its repository
+     * @param title its title
+     * @param body its body
+     * @param open whether GitHub has it open
+     * @param stateReason why GitHub closed it, or null while open
+     * @param fields the project's field values by field name
+     * @param labels its labels' names
+     * @param parentIssueId the node id of its GitHub parent issue, or null
+     * @param subIssueIds the node ids of its GitHub sub-issues
+     * @param blockedByIds the node ids of the issues it is blocked by
+     * @param comments its comments, or null when they were not read
+     * @param link where a person reads it
+     * @param updatedAt when GitHub last changed it
+     * @param archived whether the item is archived in the project
+     * @param blockers the issues it is blocked by, each with its repository and number
+     * @param unseenBlockers how many more issues GitHub counts among its blockers than it names
+     */
+    public ItemView(
+            final String itemId,
+            final String issueId,
+            final String repository,
+            final int number,
+            final String title,
+            final String body,
+            final boolean open,
+            final @Nullable String stateReason,
+            final Map<String, String> fields,
+            final List<String> labels,
+            final @Nullable String parentIssueId,
+            final List<String> subIssueIds,
+            final List<String> blockedByIds,
+            final @Nullable List<CommentView> comments,
+            final URI link,
+            final Instant updatedAt,
+            final boolean archived,
+            final List<Blocker> blockers,
+            final int unseenBlockers) {
+        this(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                comments,
+                link,
+                updatedAt,
+                archived,
+                blockers,
+                unseenBlockers,
+                null);
+    }
+
+    /**
+     * Answers the same item with an issue type.
+     *
+     * @param type the name of its issue type, or null for none
+     * @return the item
+     */
+    public ItemView typed(final @Nullable String type) {
+        return new ItemView(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                comments,
+                link,
+                updatedAt,
+                archived,
+                blockers,
+                unseenBlockers,
+                type);
     }
 
     /**
@@ -138,6 +301,7 @@ public record ItemView(
                 updatedAt,
                 archived,
                 List.of(),
-                0);
+                0,
+                null);
     }
 }

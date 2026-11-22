@@ -152,6 +152,36 @@ public interface PlanningStore {
     }
 
     /**
+     * Whether the store adds an issue made outside the project to it, so a caller asks this before
+     * it checks the issue against the board's offer: a store that offers none is refused as such.
+     *
+     * @return true when {@link #listIssue} is offered
+     */
+    default boolean listsIssues() {
+        return false;
+    }
+
+    /**
+     * Adds an open issue of the project's repositories that is no item of the project, as the
+     * board's {@link Board#unlisted()} offers it, against the revision the caller read: an issue
+     * enters the workflow's first state, a story follows its issues.
+     *
+     * @param revision the revision the caller read
+     * @param issue the issue's tracker reference
+     * @return the board after the save
+     * @throws StoreException.StaleRevision if the store moved since that revision, or the issue
+     *     changed on the tracker since the board was read
+     * @throws StoreException.NoSuchIssue if the tracker no longer holds the issue
+     * @throws StoreException.NotSavable if the board could not hold the issue once added
+     * @throws UnsupportedOperationException if the store does not offer it
+     * @throws StoreException.Busy if another save or a check holds the project too long
+     * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
+     */
+    default Board listIssue(final Revision revision, final String issue) {
+        throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /**
      * Sets an issue's fields a person keeps by hand against the revision the caller read.
      *
      * @param revision the revision the caller read

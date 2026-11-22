@@ -606,6 +606,26 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
+    public boolean listsIssues() {
+        return true;
+    }
+
+    /**
+     * Adds the issue under the save's lock, where the writer checks the revision and the offer
+     * again, then reads the board after it as after a made issue.
+     */
+    @Override
+    public Board listIssue(final Revision revision, final String issue) {
+        final Snapshot after =
+                writing(
+                        () -> {
+                            parts.writer().listIssue(current(), revision, issue);
+                            return readAfterMaking(List.of(issue));
+                        });
+        return served(after.board());
+    }
+
+    @Override
     public Board setFields(final Revision revision, final String issue, final Fields fields) {
         return edited(snapshot -> parts.writer().setFields(snapshot, revision, issue, fields));
     }

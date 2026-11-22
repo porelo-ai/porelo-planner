@@ -107,6 +107,21 @@ public interface BoardWriter {
     }
 
     /**
+     * Adds an open issue of the project's repositories that is no item of the project, as the board
+     * offers it: an issue in the workflow's first state, a story following its issues.
+     *
+     * @param current the snapshot the store holds
+     * @param revision the revision the caller read
+     * @param issue the issue's tracker reference
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision if the board moved since
+     *     that revision or the issue changed on GitHub since it was read
+     * @throws org.fuin.porelo.planner.store.StoreException.PartlySaved if only a part was saved
+     */
+    default void listIssue(final Snapshot current, final Revision revision, final String issue) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
      * Sets an issue's fields; a value the issue holds is not written again.
      *
      * @param current the snapshot the store holds

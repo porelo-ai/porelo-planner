@@ -16,10 +16,12 @@ import java.util.function.Function;
 import org.fuin.porelo.forge.github.Conditional;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.Page;
+import org.fuin.porelo.forge.github.model.AuthorAssociation;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.IssuePullRequest;
 import org.fuin.porelo.forge.github.model.IssueType;
+import org.fuin.porelo.forge.github.model.SimpleUser;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -204,6 +206,71 @@ final class OpenIssues implements RepositoryIssues.Pages {
             final @Nullable String type,
             final boolean pull,
             final List<String> labels) {
+        return issue(nodeId, repository, number, title, type, pull, labels, null, null);
+    }
+
+    /**
+     * An open issue as GitHub's REST list gives it, with its author.
+     *
+     * @param repository its repository
+     * @param number its number
+     * @param login its author's login, or null when GitHub names no author
+     * @param association how the author stands to the repository, or null
+     * @return the issue
+     */
+    static Issue authored(
+            final String repository,
+            final int number,
+            final @Nullable String login,
+            final @Nullable AuthorAssociation association) {
+        return issue(
+                nodeOf(repository, number),
+                repository,
+                number,
+                "Made by hand " + number,
+                null,
+                false,
+                List.of(),
+                login == null ? null : user(login),
+                association);
+    }
+
+    private static SimpleUser user(final String login) {
+        return new SimpleUser(
+                null,
+                null,
+                login,
+                1L,
+                "U_1",
+                URI.create("https://avatars.example/1"),
+                "",
+                URI.create("https://api.github.com/users/1"),
+                URI.create("https://github.com/1"),
+                URI.create("https://api.github.com/users/1/followers"),
+                "",
+                "",
+                "",
+                URI.create("https://api.github.com/users/1/subscriptions"),
+                URI.create("https://api.github.com/users/1/orgs"),
+                URI.create("https://api.github.com/users/1/repos"),
+                "",
+                URI.create("https://api.github.com/users/1/received_events"),
+                "User",
+                false,
+                null,
+                null);
+    }
+
+    private static Issue issue(
+            final String nodeId,
+            final String repository,
+            final int number,
+            final String title,
+            final @Nullable String type,
+            final boolean pull,
+            final List<String> labels,
+            final @Nullable SimpleUser user,
+            final @Nullable AuthorAssociation association) {
         final URI api = URI.create("https://api.github.com/repos/example-org/" + repository);
         return new Issue(
                 (long) number,
@@ -220,7 +287,7 @@ final class OpenIssues implements RepositoryIssues.Pages {
                 null,
                 title,
                 null,
-                null,
+                user,
                 labels.stream()
                         .map(
                                 name ->
@@ -254,7 +321,7 @@ final class OpenIssues implements RepositoryIssues.Pages {
                         : new IssueType(7L, "IT_" + type, type, null, null, null, null, true),
                 null,
                 null,
-                null,
+                association,
                 null,
                 null,
                 null,

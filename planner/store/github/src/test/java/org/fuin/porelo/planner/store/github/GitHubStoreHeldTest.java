@@ -170,8 +170,8 @@ class GitHubStoreHeldTest {
                 items.add(issue2());
             }
             if (recentIssues) {
-                items.add(item("PVTI_3", "I_3", 3, "Recent three", BEFORE, List.of()));
-                items.add(item("PVTI_4", "I_4", 4, "Recent four", BEFORE, List.of()));
+                items.add(item("PVTI_3", "I_3", 3, "Recent three", BEFORE, null));
+                items.add(item("PVTI_4", "I_4", 4, "Recent four", BEFORE, null));
             }
             return new GitHubGraphQl.ProjectItems(items, NONE, COST, items.size());
         }
@@ -187,13 +187,7 @@ class GitHubStoreHeldTest {
                         "I_1".equals(id)
                                 ? story(title, updatedAt)
                                 : "I_3".equals(id)
-                                        ? item(
-                                                "PVTI_3",
-                                                "I_3",
-                                                3,
-                                                "Recent three",
-                                                BEFORE,
-                                                List.of())
+                                        ? item("PVTI_3", "I_3", 3, "Recent three", BEFORE, null)
                                         : "I_4".equals(id)
                                                 ? item(
                                                         "PVTI_4",
@@ -201,7 +195,7 @@ class GitHubStoreHeldTest {
                                                         4,
                                                         "Recent four",
                                                         BEFORE,
-                                                        List.of())
+                                                        null)
                                                 : second ? issue2() : null;
                 on.add(
                         item == null
@@ -213,11 +207,11 @@ class GitHubStoreHeldTest {
         }
 
         private static GitHubGraphQl.ProjectItem story(final String title, final Instant at) {
-            return item("PVTI_1", "I_1", 1, title, at, List.of(IssueMapping.STORY_LABEL));
+            return item("PVTI_1", "I_1", 1, title, at, IssueMapping.STORY_TYPE);
         }
 
         private static GitHubGraphQl.ProjectItem issue2() {
-            return item("PVTI_2", "I_2", 2, "Two", SAVED, List.of());
+            return item("PVTI_2", "I_2", 2, "Two", SAVED, null);
         }
 
         private static GitHubGraphQl.ProjectItem item(
@@ -226,7 +220,7 @@ class GitHubStoreHeldTest {
                 final int number,
                 final String title,
                 final Instant at,
-                final List<String> labels) {
+                final @Nullable String type) {
             final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE);
             return new GitHubGraphQl.ProjectItem(
                     itemId,
@@ -241,11 +235,12 @@ class GitHubStoreHeldTest {
                             null,
                             at,
                             OWNER + "/example-project",
-                            labels,
+                            List.of(),
                             null,
                             none,
                             none,
-                            NONE),
+                            NONE,
+                            type),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
                     NONE);
         }
@@ -261,21 +256,19 @@ class GitHubStoreHeldTest {
                                 switch (method.getName()) {
                                     case "createIssue" -> {
                                         github.second = true;
-                                        yield new ProjectWrites.Created("I_2", 12L, 2, List.of());
+                                        yield new ProjectWrites.Created("I_2", 12L, 2, null);
                                     }
                                     case "issuesCreatedSince" ->
                                             new ProjectWrites.FoundPage(
                                                     List.of(
                                                             new ProjectWrites.Found(
                                                                     new ProjectWrites.Created(
-                                                                            "I_3", 13L, 3,
-                                                                            List.of()),
+                                                                            "I_3", 13L, 3, null),
                                                                     "Recent three",
                                                                     "A body"),
                                                             new ProjectWrites.Found(
                                                                     new ProjectWrites.Created(
-                                                                            "I_4", 14L, 4,
-                                                                            List.of()),
+                                                                            "I_4", 14L, 4, null),
                                                                     "Recent four",
                                                                     "A body")),
                                                     false);
@@ -316,7 +309,7 @@ class GitHubStoreHeldTest {
             @Override
             public String createIssue(
                     final Snapshot current, final Revision revision, final NewIssue issue) {
-                recorded.createIssue(TOKEN, OWNER, "example-project", "Two", "", List.of());
+                recorded.createIssue(TOKEN, OWNER, "example-project", "Two", "", null);
                 if (issue.story() != null) {
                     recorded.addSubIssue(TOKEN, OWNER, "example-project", 1, 12L);
                 }

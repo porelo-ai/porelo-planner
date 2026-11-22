@@ -354,6 +354,20 @@ class MockPlanningSource implements PlanningSource {
     return next['revision'] as String;
   }
 
+  /// The adds of an issue made outside the project the screen asked for, each with its project and revision.
+  final listCalls = <Map<String, String>>[];
+
+  @override
+  Future<String> listIssue(String project, String issue, String revision) async {
+    listCalls.add({'project': project, 'issue': issue, 'revision': revision});
+    if (moveGate case final gate?) await gate.future;
+    if (moveFailure case final failure?) throw failure;
+    final current = board(project);
+    final next = applyPlanningListIssue(current, issue, revision);
+    push(project, next);
+    return next['revision'] as String;
+  }
+
   @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async {
     if (detailFailure case final failure?) throw failure;

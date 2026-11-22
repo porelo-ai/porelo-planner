@@ -416,6 +416,35 @@ List<Map<String, dynamic>> _leastAdvanced(List<Map<String, dynamic>> states, Lis
   ];
 }
 
+/// Adds an issue the board offers as made outside the project, on a copy: it leaves the offer and stands in no story
+/// in the first state, as the planner adds it.
+Map<String, dynamic> applyPlanningListIssue(Map<String, dynamic> source, String issue, String revision) {
+  if (revision != source['revision']) throw mockRefusal('StaleRevision', {'revision': source['revision']});
+  final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  final offer = (board['unlisted'] as List? ?? const []).cast<Map<String, dynamic>>();
+  final offered = offer.where((each) => each['id'] == issue).firstOrNull;
+  if (offered == null) throw mockRefusal('NotUnlisted', {'issue': issue});
+  final first = ((board['states'] as List).cast<Map<String, dynamic>>().first)['name'];
+  board['unlisted'] = [
+    for (final each in offer)
+      if (each['id'] != issue) each,
+  ];
+  board['issues'] = [
+    ...(board['issues'] as List? ?? const []),
+    {
+      'id': issue,
+      'repository': offered['repository'],
+      'title': offered['title'],
+      'state': first,
+      'worker': 'MANUAL',
+      'blockedBy': <String>[],
+    },
+  ];
+  board['revision'] = '$revision:listed';
+  board.remove('rules');
+  return board;
+}
+
 /// Checks a whole story list on a copy so a refusal cannot remove any of its issues.
 Map<String, dynamic> applyPlanningStoryIssues(
   Map<String, dynamic> source,

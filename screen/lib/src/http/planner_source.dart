@@ -563,6 +563,10 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   static final _issueId = RegExp(
     r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
   );
+  // A tracker's reference alone, as an issue made outside the project is named.
+  static final _trackerId = RegExp(r'^(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
+  static final _login = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$');
+  static final _association = RegExp(r'^[A-Z][A-Z_]{0,63}$');
 
   /// Closes the connections it holds; calls after it fail.
   void close() => _link.close();
@@ -623,6 +627,16 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'revision': revision,
       },
       method: 'PUT',
+    );
+    return answer['revision'] as String;
+  }
+
+  @override
+  Future<String> listIssue(String project, String issue, String revision) async {
+    final answer = await _write(
+      project,
+      ['items'],
+      {'issue': _checked('issue', issue, _trackerId), 'revision': revision},
     );
     return answer['revision'] as String;
   }
@@ -1700,7 +1714,9 @@ class _Watch {
             !HttpPlanningSource._name.hasMatch(issue.repository) ||
             !issue.id.startsWith('${issue.repository}#') ||
             held.contains(issue.id) ||
-            !named.add(issue.id),
+            !named.add(issue.id) ||
+            issue.author.isNotEmpty && !HttpPlanningSource._login.hasMatch(issue.author) ||
+            issue.authorAssociation.isNotEmpty && !HttpPlanningSource._association.hasMatch(issue.authorAssociation),
       )) {
         throw const PlanningRefusal(
           'BadAnswer',

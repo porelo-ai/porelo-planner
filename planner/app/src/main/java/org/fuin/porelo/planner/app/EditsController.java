@@ -99,6 +99,25 @@ public class EditsController {
     }
 
     /**
+     * Adds an issue made outside the project from the board's offer.
+     *
+     * @param project the project's name
+     * @param request the request, whose body is the issue and the revision
+     * @return the revision after the save
+     */
+    @PostMapping("/projects/{project}/items")
+    public EditSaved listIssue(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = BoardController.name(project);
+        final EditRequests.ListRequest body = EditRequests.listed(request);
+        return new EditSaved(
+                offered(
+                        name,
+                        "This planner does not add an issue made outside the project.",
+                        () -> edits.listIssue(name, body.issue(), body.revision())));
+    }
+
+    /**
      * Sets a story's whole issue list.
      *
      * @param project the project's name
