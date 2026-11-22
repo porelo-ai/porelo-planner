@@ -11,6 +11,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.fuin.porelo.planner.core.Misfits;
+import org.fuin.porelo.planner.core.MovePreview;
+import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
@@ -337,6 +339,96 @@ class MockStoreTest {
                                 null,
                                 List.of("Measure it."),
                                 List.of())));
+    }
+
+    @Test
+    void aStoryFinishedOverRejectedIssuesOnlyOrNoneOrItsDoneIssueIsSavedAsItsPreviewShowed() {
+        // Harm: a window test of a Finished the preview passed seeing the mock's save fail, or
+        // the board after it differ from what the preview showed.
+        final List<String> states =
+                List.of("Idea", "Backlog", "Building", "Review", "Finished", "Rejected");
+        final Board board =
+                new Board(
+                        FIRST,
+                        new org.fuin.porelo.planner.store.Workflow(
+                                states, List.of(), List.of("Finished", "Rejected")),
+                        List.of(
+                                new Story(
+                                        "ST4",
+                                        "A story",
+                                        "Rejected",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("PL5", "PL6"),
+                                        "",
+                                        null),
+                                new Story(
+                                        "ST5", "A story", "Idea", false, "High", null, List.of(),
+                                        "", null),
+                                new Story(
+                                        "ST6",
+                                        "A story",
+                                        "Review",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("PL7"),
+                                        "",
+                                        null)),
+                        List.of(
+                                mockIssue("PL5", "Rejected"),
+                                mockIssue("PL6", "Rejected"),
+                                mockIssue("PL7", "Review")),
+                        new org.fuin.porelo.planner.store.Work(
+                                Map.of(
+                                        "Building",
+                                        new WorkRule(
+                                                List.of("Backlog"),
+                                                "Review",
+                                                null,
+                                                null,
+                                                WorkRule.Per.STORY,
+                                                List.of("UNATTENDED"),
+                                                "Build {story}",
+                                                Map.of("codex", "gpt"))),
+                                List.of()));
+        final MockStore mock = new MockStore(board);
+        final List<Moves.Move> moves =
+                List.of(
+                        new Moves.Move(true, "ST4", "Finished"),
+                        new Moves.Move(true, "ST5", "Finished"),
+                        new Moves.Move(true, "ST6", "Finished"));
+
+        final MovePreview preview =
+                Moves.preview(
+                        board, moves, mock::storyState, (issues, stories) -> List.of(), NO_RUNS);
+        final Moves.Planned planned = Moves.check(board, moves, true, mock::storyState, NO_RUNS);
+        final Board after =
+                mock.save(
+                        FIRST, new Writes(planned.issues(), planned.stories(), planned.unstated()));
+
+        assertThat(preview.warnings())
+                .as("the done issue taken along, the rejected-only story asked about")
+                .extracting(MovePreview.Warning::kind)
+                .containsExactly(MovePreview.ISSUES_ALONG, MovePreview.STORY_MISMATCH);
+        assertThat(preview.issues())
+                .as("the preview shows the issue finished")
+                .extracting(MovePreview.MovedIssue::id, MovePreview.MovedIssue::to)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("PL7", "Finished"));
+        assertThat(List.of(story(after, "ST4"), story(after, "ST5"), story(after, "ST6")))
+                .as("each story Finished after the save")
+                .extracting(Story::state)
+                .containsExactly("Finished", "Finished", "Finished");
+        assertThat(List.of(state(after, "PL5"), state(after, "PL6"), state(after, "PL7")))
+                .as("the rejected issues kept, the done one finished")
+                .containsExactly("Rejected", "Rejected", "Finished");
+    }
+
+    private static final Moves.Runs NO_RUNS = (issue, stories) -> false;
+
+    private static Issue mockIssue(final String id, final String state) {
+        return new Issue(id, "porelo-planner", "An issue", state, "S", List.of(), null, null, "");
     }
 
     private static Writes moves(final Map<String, String> issues) {

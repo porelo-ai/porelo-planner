@@ -227,9 +227,13 @@ class FieldsBoardWriterTest {
                         null,
                         item.updatedAt(),
                         OWNER + "/" + item.repository(),
-                        List.of(),
-                        null,
-                        none,
+                        item.labels(),
+                        item.parentIssueId(),
+                        new IssueRefs(
+                                item.subIssueIds().stream()
+                                        .map(id -> new IssueRef(id, 0L, 0, ""))
+                                        .toList(),
+                                new PageInfo(false, null)),
                         none,
                         new GitHubGraphQl.PageInfo(false, null)),
                 item.itemId(),
@@ -768,6 +772,61 @@ class FieldsBoardWriterTest {
                 .containsExactly(
                         "example-project#1 Opening[open=false, notPlanned=true]",
                         "example-project#2 Opening[open=true, notPlanned=false]");
+    }
+
+    @Test
+    void aStoryFinishedOverRejectedIssuesOnlyOrNoneIsSavedWhole() {
+        // Harm: a story's Finished that the preview passed failing in the store afterwards, so
+        // the person's confirmed move is never saved.
+        final ItemView none = storyItem("ST1", 10, List.of());
+        final ItemView rejected = storyItem("ST2", 11, List.of("I_PL1", "I_PL2"));
+        final ItemView first = item("PL1", "example-project", 1, false, "", state("Rejected"));
+        final ItemView second = item("PL2", "example-project", 2, false, "", state("Rejected"));
+        final GitHub github = new GitHub().holding(none, rejected, first, second);
+
+        github.writer()
+                .save(
+                        snapshot(none, rejected, first, second),
+                        SHOWN,
+                        new Writes(
+                                Map.of(),
+                                ordered("ST1", "Finished", "ST2", "Finished"),
+                                List.of()));
+
+        assertThat(github.mutations)
+                .as("each story's Status")
+                .flatMap(values -> values)
+                .containsExactlyInAnyOrder(
+                        FieldValue.option("PVTI_ST1", "F_Status", "O_Finished"),
+                        FieldValue.option("PVTI_ST2", "F_Status", "O_Finished"));
+        assertThat(github.updates)
+                .as("each story closed as done")
+                .containsExactlyInAnyOrder(
+                        "example-project#10 Opening[open=false, notPlanned=false]",
+                        "example-project#11 Opening[open=false, notPlanned=false]");
+    }
+
+    /** A story's item, open, labeled as a story, with the sub-issues given by node id. */
+    private static ItemView storyItem(
+            final String id, final int number, final List<String> subIssueIds) {
+        return new ItemView(
+                "PVTI_" + id,
+                "I_" + id,
+                "example-project",
+                number,
+                "A story",
+                "",
+                true,
+                null,
+                Map.of(),
+                List.of(IssueMapping.STORY_LABEL),
+                null,
+                subIssueIds,
+                List.of(),
+                null,
+                URI.create("https://github.com/" + OWNER + "/example-project/issues/" + number),
+                Instant.EPOCH,
+                false);
     }
 
     @Test

@@ -226,6 +226,115 @@ class MovePreviewTest {
                 .doesNotHaveDuplicates();
     }
 
+    /** Stories finished in odd shapes: over rejected issues only, over none, over work. */
+    private final Board finishing =
+            new Board(
+                    new Revision("r1"),
+                    new Workflow(STATES, List.of(), CLOSED),
+                    List.of(
+                            story("ST4", "Rejected", "PL5", "PL6"),
+                            new Story(
+                                    "ST5", "A story", "Idea", false, "High", null, List.of(), "",
+                                    null),
+                            story("ST6", "Review", "PL7"),
+                            story("ST7", "Reading", "PL8")),
+                    List.of(
+                            issue("PL5", OWN, "Rejected"),
+                            issue("PL6", OWN, "Rejected"),
+                            issue("PL7", OWN, "Review"),
+                            issue("PL8", OWN, "Reading")),
+                    WORK,
+                    List.of(OWN));
+
+    @Test
+    void aStoryFinishedOverRejectedIssuesOnlyIsAskedAboutAndSavedAsConfirmed() {
+        // Harm: a Finished over rejected work only passed unasked, or asked about and then
+        // refused by the save the person confirmed.
+        final List<Moves.Move> moves = List.of(story("ST4", "Finished"));
+        final MovePreview preview = Moves.preview(finishing, moves, DERIVE, NOTHING_RUNS, NO_RUNS);
+
+        assertThat(kinds(preview)).as("asked about").containsExactly(MovePreview.STORY_MISMATCH);
+        final Moves.Refused unconfirmed =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () -> Moves.check(finishing, moves, false, DERIVE, NO_RUNS));
+        assertThat(unconfirmed).as("the save unconfirmed refused").isNotNull();
+        assertThat(unconfirmed.name()).isEqualTo("StoryStateMismatch");
+        final Moves.Planned planned = Moves.check(finishing, moves, true, DERIVE, NO_RUNS);
+        assertThat(planned.stories())
+                .as("the confirmed save states the story Finished")
+                .containsExactly(Map.entry("ST4", "Finished"));
+        assertThat(planned.issues()).as("its rejected issues stay").isEmpty();
+    }
+
+    @Test
+    void aStoryWithoutIssuesFinishedIsSavedUnasked() {
+        // Harm: a Finished of a story without issues asked about, or refused by its save.
+        final List<Moves.Move> moves = List.of(story("ST5", "Finished"));
+        final MovePreview preview = Moves.preview(finishing, moves, DERIVE, NOTHING_RUNS, NO_RUNS);
+
+        assertThat(preview.warnings()).as("nothing to ask").isEmpty();
+        assertThat(Moves.check(finishing, moves, false, DERIVE, NO_RUNS).stories())
+                .as("saved unasked")
+                .containsExactly(Map.entry("ST5", "Finished"));
+    }
+
+    @Test
+    void aStoryFinishedOverAnIssueWhoseStageRunsIsRefusedInOneLineByItsPreview() {
+        // Harm: a Finished over an issue a stage still works passed by the preview and then
+        // failing in the store.
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () ->
+                                Moves.preview(
+                                        finishing,
+                                        List.of(story("ST7", "Finished")),
+                                        DERIVE,
+                                        NOTHING_RUNS,
+                                        NO_RUNS));
+
+        assertThat(refused).as("refused by the preview").isNotNull();
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
+        assertThat(refused.getMessage())
+                .as("one line naming the issue")
+                .contains("PL8:Reading")
+                .doesNotContain("\n");
+        final Moves.Refused saved =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () ->
+                                Moves.check(
+                                        finishing,
+                                        List.of(story("ST7", "Finished")),
+                                        true,
+                                        DERIVE,
+                                        NO_RUNS));
+        assertThat(saved).as("refused by the save alike").isNotNull();
+        assertThat(saved.getMessage()).as("in the same words").isEqualTo(refused.getMessage());
+    }
+
+    @Test
+    void aStoryFinishedOverRunningWorkIsAskedAboutAndSavedAsConfirmed() {
+        // Harm: work at a task over a finished issue ended unasked, or the confirmed save refused.
+        final List<Moves.Move> moves = List.of(story("ST6", "Finished"));
+        final MovePreview preview =
+                Moves.preview(
+                        finishing,
+                        moves,
+                        DERIVE,
+                        (issues, stories) ->
+                                List.of(
+                                        new MovePreview.Owned(
+                                                "ST6", "run-1", List.of("read"), List.of())),
+                        NO_RUNS);
+
+        assertThat(kinds(preview)).as("asked about").contains(MovePreview.RUNNING_WORK);
+        assertThat(Moves.check(finishing, moves, true, DERIVE, NO_RUNS).issues())
+                .as("the issue finished with its story")
+                .containsExactly(Map.entry("PL7", "Finished"));
+    }
+
     private MovePreview preview(final List<Moves.Move> moves, final MovePreview.Running running) {
         return Moves.preview(board, moves, DERIVE, running, NO_RUNS);
     }
