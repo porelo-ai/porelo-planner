@@ -11,6 +11,7 @@ export 'src/client.dart';
 export 'src/forge_access_offer.dart';
 export 'src/hooks.dart';
 export 'src/issue_filter.dart';
+export 'src/open_work_filter.dart';
 export 'src/http/planner_source.dart';
 export 'src/models.dart';
 export 'src/planning_board.dart';

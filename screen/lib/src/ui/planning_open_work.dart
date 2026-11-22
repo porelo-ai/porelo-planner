@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../hooks.dart';
 import '../models.dart';
+import '../open_work_filter.dart';
 import '../planning_board.dart';
 import '../story_work_order.dart';
 import '../client.dart';
@@ -99,6 +101,35 @@ abstract final class _Width {
 class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
   PlanningBoard get board => widget.board;
 
+  /// The filter and sort, kept in the project's view choices across leaving Open work.
+  PlanningOpenWorkFilter get _choices => board.preferences.openWork;
+
+  late final _search = TextEditingController(text: _choices.search);
+
+  @override
+  void didUpdateWidget(PlanningOpenWorkView old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.board, board)) _search.text = _choices.search;
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _searchFor(String text) => setState(() => _choices.search = text);
+
+  void _closeSearch() => setState(() {
+    _choices.closeSearch();
+    _search.clear();
+  });
+
+  void _clearSearch() => setState(() {
+    _choices.search = '';
+    _search.clear();
+  });
+
   /// Each story's first paragraph, read once from its own page, since the board's list carries no description.
   final Map<String, String> _holds = {};
 
@@ -187,7 +218,8 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
       final list = snapshot == null
           ? null
           : planningOpenWork(board.stories, board.states, planningReviewStates(snapshot), known: known);
-      if (list != null) _askHolds(list.rows);
+      final shown = list == null ? null : _choices.shown(list.rows);
+      if (shown != null) _askHolds(shown);
       return Padding(
         key: const Key('planning-open-work'),
         padding: const EdgeInsets.all(Space.wide),
@@ -212,27 +244,51 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
               ),
             if (board.problem case final problem?) _failure(problem, theme),
             const SizedBox(height: Space.normal),
-            if (list == null)
+            if (list == null || shown == null)
               const Text('Reading the planning…')
             else ...[
-              Text(
-                [
-                  '${list.rows.length} ${list.rows.length == 1 ? 'story' : 'stories'} listed',
-                  if (list.finished > 0)
-                    '${list.finished} with nothing left to build ${list.finished == 1 ? 'is' : 'are'} not listed',
-                  if (!known) 'what is left is not known now, so every story is listed',
-                ].join(' · '),
-                key: const Key('planning-open-work-summary'),
+              Row(
+                spacing: Space.small,
+                children: [
+                  Expanded(
+                    child: Text(
+                      [
+                        '${list.rows.length} ${list.rows.length == 1 ? 'story' : 'stories'} listed',
+                        if (_choices.filtering) '${shown.length} ${shown.length == 1 ? 'matches' : 'match'} the filter',
+                        if (list.finished > 0)
+                          '${list.finished} with nothing left to build ${list.finished == 1 ? 'is' : 'are'} not listed',
+                        if (!known) 'what is left is not known now, so every story is listed',
+                      ].join(' · '),
+                      key: const Key('planning-open-work-summary'),
+                    ),
+                  ),
+                  ..._controls(theme),
+                ],
               ),
               const SizedBox(height: Space.small),
               _header(theme),
               const Divider(height: 1),
+              if (shown.isEmpty && list.rows.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Space.normal),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Nothing matches.', style: theme.textTheme.bodySmall),
+                      TextButton(
+                        key: const Key('planning-open-work-search-clear'),
+                        onPressed: _closeSearch,
+                        child: const Text('Clear the filter'),
+                      ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: ListView.separated(
                   key: const Key('planning-open-work-list'),
-                  itemCount: list.rows.length,
+                  itemCount: shown.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) => _row(context, list.rows[index]),
+                  itemBuilder: (context, index) => _row(context, shown[index]),
                 ),
               ),
             ],
@@ -242,13 +298,70 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
     },
   );
 
+  /// The filter and the sort, as the window's own lists hold them in their head: a magnifier that opens the filter
+  /// field, and a menu that names the order and its direction.
+  List<Widget> _controls(ThemeData theme) {
+    final small = theme.textTheme.bodySmall;
+    return [
+      if (_choices.searchOpen)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
+          child: CallbackShortcuts(
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clearSearch},
+            child: TextField(
+              key: const Key('planning-open-work-search'),
+              controller: _search,
+              autofocus: true,
+              onChanged: _searchFor,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Filter open work',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  key: const Key('planning-open-work-search-close'),
+                  tooltip: 'Close the filter',
+                  icon: const Icon(Icons.close),
+                  onPressed: _closeSearch,
+                ),
+              ),
+            ),
+          ),
+        )
+      else
+        IconButton(
+          key: const Key('planning-open-work-search-open'),
+          tooltip: 'Filter open work',
+          icon: const Icon(Icons.search),
+          onPressed: () => setState(() => _choices.searchOpen = true),
+        ),
+      PopupMenuButton<PlanningOpenWorkSort>(
+        key: const Key('planning-open-work-sort'),
+        tooltip: 'Sort open work',
+        onSelected: (sort) => setState(() => _choices.choose(sort)),
+        itemBuilder: (_) => [
+          for (final sort in PlanningOpenWorkSort.values)
+            PopupMenuItem(value: sort, key: Key('planning-open-work-sort-to ${sort.name}'), child: Text(sort.label)),
+        ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_choices.ascending ? Icons.arrow_upward : Icons.arrow_downward, size: PlanningStyle.rowIcon),
+            Text(_choices.sort.label, key: const Key('planning-open-work-sort-label'), style: small),
+          ],
+        ),
+      ),
+    ];
+  }
+
   Widget _header(ThemeData theme) {
     final style = theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600);
-    Widget cell(String words, double? width) => width == null
-        ? Expanded(child: Text(words, style: style))
+    Widget cell(String words, double? width, {TextAlign align = TextAlign.start}) => width == null
+        ? Expanded(
+            child: Text(words, style: style, textAlign: align),
+          )
         : SizedBox(
             width: width,
-            child: Text(words, style: style),
+            child: Text(words, style: style, textAlign: align),
           );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Space.small, horizontal: Space.small),
@@ -259,8 +372,9 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
           cell('Priority', _Width.priority),
           cell('Open issues', _Width.open),
           cell('Now', _Width.now),
+          // Over its values, which stand to the right.
+          cell('Left', _Width.left, align: TextAlign.end),
           cell('What it holds', null),
-          cell('Left', _Width.left),
         ],
       ),
     );
@@ -285,7 +399,6 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
       key: Key('planning-open-work-holds ${story.id}'),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.bodySmall,
     );
     return InkWell(
       key: Key('planning-open-work-row ${story.id}'),
@@ -350,12 +463,12 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
                       ],
                     ),
             ),
-            Expanded(
-              child: hint.isEmpty ? holdsText : Tooltip(message: hint, child: holdsText),
-            ),
             SizedBox(
               width: _Width.left,
               child: Text(left, key: Key('planning-open-work-left ${story.id}'), textAlign: TextAlign.end),
+            ),
+            Expanded(
+              child: hint.isEmpty ? holdsText : Tooltip(message: hint, child: holdsText),
             ),
           ],
         ),

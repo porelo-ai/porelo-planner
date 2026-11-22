@@ -90,7 +90,7 @@ class PlanningIssueFilter {
   }
 
   int _compare(PlanIssue a, PlanIssue b, List<String> states) => switch (sort) {
-    PlanningIssueSort.identifier => _byIdentifier(a.id, b.id),
+    PlanningIssueSort.identifier => byIdentifier(a.id, b.id),
     PlanningIssueSort.title => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
     PlanningIssueSort.repository => a.repository.toLowerCase().compareTo(b.repository.toLowerCase()),
     PlanningIssueSort.size => _byRank(_sizes, a.size, b.size),
@@ -98,7 +98,7 @@ class PlanningIssueFilter {
   };
 
   /// By trailing number, an identifier without one after those with one, then by its text.
-  static int _byIdentifier(String a, String b) {
+  static int byIdentifier(String a, String b) {
     final numberA = int.tryParse(_trailingNumber.firstMatch(a)?.group(0) ?? '');
     final numberB = int.tryParse(_trailingNumber.firstMatch(b)?.group(0) ?? '');
     if (numberA != null && numberB != null && numberA != numberB) return numberA.compareTo(numberB);

@@ -248,6 +248,56 @@ void main() {
     }
   });
 
+  // Harm: Open work without the filter and sort the window's other lists have, so a long list cannot be narrowed or
+  // reordered, or a choice lost on the way back from a story.
+  testWidgets('the filter narrows Open work and the sort reorders it, both kept on the way back', (tester) async {
+    final (_, host) = await _show(tester);
+    expect(_text(tester, 'planning-open-work-sort-label'), 'Left', reason: 'it starts by what is left');
+
+    await tester.tap(find.byKey(const Key('planning-open-work-search-open')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('planning-open-work-search')), 'highest');
+    await tester.pumpAndSettle();
+    expect(_listed(tester), [
+      'NOTIME',
+      'NONE',
+    ], reason: 'the stories of priority Highest, in the order by what is left');
+    expect(_text(tester, 'planning-open-work-summary'), contains('2 match the filter'));
+
+    await tester.tap(find.byKey(const Key('planning-open-work-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('planning-open-work-sort-to story')).last);
+    await tester.pumpAndSettle();
+    expect(_listed(tester), ['NONE', 'NOTIME'], reason: 'by story');
+    expect(_text(tester, 'planning-open-work-sort-label'), 'Story');
+
+    await tester.tap(find.byKey(const Key('planning-open-work-row NONE')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('planning-crumb 0')));
+    await tester.pumpAndSettle();
+    expect(_listed(tester), ['NONE', 'NOTIME'], reason: 'the filter and the sort kept under the story');
+    expect(_text(tester, 'planning-open-work-sort-label'), 'Story');
+
+    // The board in its place builds Open work anew on the way back.
+    final place = host.place;
+    host.go(PlanningPlace(project: place.project, source: place.source, view: PlanningView.board));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('planning-open-work')), findsNothing, reason: 'the board stands in its place');
+    host.go(PlanningPlace(project: place.project, source: place.source, view: PlanningView.openWork));
+    await tester.pumpAndSettle();
+    expect(_listed(tester), ['NONE', 'NOTIME'], reason: 'the filter and the sort kept with the project');
+    expect(_text(tester, 'planning-open-work-sort-label'), 'Story');
+
+    await tester.enterText(find.byKey(const Key('planning-open-work-search')), 'no such story');
+    await tester.pumpAndSettle();
+    expect(_listed(tester), isEmpty);
+    expect(find.text('Nothing matches.'), findsOneWidget, reason: 'an empty match is said, not shown as no work');
+    await tester.tap(find.byKey(const Key('planning-open-work-search-clear')));
+    await tester.pumpAndSettle();
+    expect(_listed(tester), ['BIG', 'NONE', 'NOTIME', 'REVIEW', 'SMALL'], reason: 'every story again, by story');
+    expect(find.byKey(const Key('planning-open-work-search')), findsNothing, reason: 'the filter is closed');
+  });
+
   // Harm: a planner that refuses every read asked once per story, each waiting its time, or a refusal shown as what
   // the story holds.
   testWidgets('a refused description read shows Not read and asks no more until the board changes', (tester) async {
