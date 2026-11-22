@@ -1539,7 +1539,7 @@ class _BoardViewState extends State<_BoardView> {
                     _menu(story, dense: true),
                   ],
                 ),
-                if (board.pending.containsKey(story.id)) const Text('Saving…'),
+                if (board.movingWords(story.id) case final words?) Text(words),
               ],
             ),
           ),
@@ -1788,7 +1788,9 @@ class _BoardViewState extends State<_BoardView> {
       _work(story),
       _needsYou(story),
       board.pending[story.id],
+      board.movingWords(story.id),
       board.refusalOf(story.id),
+      [for (final issue in story.issues) board.refusalOf('issue ${issue.id}')].join('\n'),
       board.holdsMoves,
       board.snapshot?.revision,
       board.pendingPriorities[story.id],
@@ -1862,7 +1864,7 @@ class _BoardViewState extends State<_BoardView> {
                 const SizedBox(height: Space.small),
                 Text(_line(story.title)),
                 if (_offered) ...[const SizedBox(height: Space.small), _openWork(context, story)],
-                if (board.pending.containsKey(story.id)) const Text('Saving…'),
+                if (board.movingWords(story.id) case final words?) Text(words),
                 if (board.refusalOf(story.id) case final words?)
                   Text(
                     words,
@@ -1925,6 +1927,7 @@ class _BoardViewState extends State<_BoardView> {
                           found.contains(issue.id) ? issue.id : null,
                           PlanningIssueRow(
                             issue: issue,
+                            refusal: board.refusalOf('issue ${issue.id}'),
                             onOpen: () => widget.onIssue(story.id, issue.id),
                             sizeBadge: _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
                           ),

@@ -71,9 +71,10 @@ class PlanningDetail extends ChangeNotifier {
       board.states.where((state) => state.name.isNotEmpty && board.issueMayEnter(issue, state)).toList();
 
   /// Why an issue cannot be moved now.
-  String? get moveUnavailable => saving || board.holdsMoves
-      ? 'Saving…'
-      : loading
+  ///
+  /// A save out holds no move here: a move of an issue whose save is out waits behind it, and the issue's own row says
+  /// when its save went unanswered.
+  String? get moveUnavailable => loading
       ? 'Waiting for the latest issue details.'
       // A move is saved against the revision shown, also while a Reload opens the watch anew.
       : !board.takesMoves

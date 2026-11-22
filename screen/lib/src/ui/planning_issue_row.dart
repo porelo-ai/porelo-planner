@@ -7,7 +7,14 @@ import 'style.dart';
 /// The board's issue row, shared by stories and the card of issues in no story.
 class PlanningIssueRow extends StatelessWidget {
   /// Keeps issue navigation and actions with the board that supplied the row.
-  const PlanningIssueRow({required this.issue, required this.onOpen, this.sizeBadge, this.menu, super.key});
+  const PlanningIssueRow({
+    required this.issue,
+    required this.onOpen,
+    this.sizeBadge,
+    this.menu,
+    this.refusal,
+    super.key,
+  });
 
   /// The issue as reported at the board's revision.
   final PlanIssue issue;
@@ -20,6 +27,9 @@ class PlanningIssueRow extends StatelessWidget {
 
   /// Actions available from this row.
   final Widget? menu;
+
+  /// Why the issue's last move was refused, or null.
+  final String? refusal;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -61,6 +71,12 @@ class PlanningIssueRow extends StatelessWidget {
         Text(
           planningShown('Waits on ${issue.waitsHolding.map((wait) => wait.spoken).join(', ')}', multiline: false),
           key: Key('planning-waits ${issue.id}'),
+        ),
+      if (refusal case final words?)
+        Text(
+          words,
+          key: Key('planning-issue-refused ${issue.id}'),
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
     ],
   );

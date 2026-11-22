@@ -228,6 +228,7 @@ void main() {
 
   // Harm: one save answered too late holds the whole board, so no other card moves until it is told as not saved; or
   // its own card is moved and written twice.
+  // Every other card takes its move, which waits until the late save landed, so it is saved against its board.
   test('while a slow save is unanswered every other card moves, and its own waits for it', () async {
     final source = _SlowSource();
     final slow = PlanningBoard(source, 'demo');
@@ -239,27 +240,31 @@ void main() {
     await slow.move('S2', 'Backlog');
     await pumpEventQueue();
 
-    expect(source.previews, hasLength(2), reason: 'the second move is previewed and saved');
-    expect(slow.stories.firstWhere((story) => story.id == 'S2').state, 'Backlog');
-    expect(slow.pending.keys, ['S1'], reason: 'the slow save still waits on the board');
+    expect(source.previews, hasLength(1), reason: 'the second move waits for the late save');
+    expect(slow.queuedMoves, ['S2'], reason: 'it was taken');
+    expect(slow.displayedState(slow.stories.firstWhere((story) => story.id == 'S2')), 'Backlog');
 
-    await slow.move('S1', 'Review');
+    await slow.move('S1', 'Finished');
 
-    expect(source.previews, hasLength(2), reason: 'the card whose save may still land is not moved again');
+    expect(source.previews, hasLength(1), reason: 'the card whose save may still land is not moved again');
     expect(slow.moveProblem, contains('may still land'));
     expect(slow.waitsOnItsSave('S1'), isTrue);
   });
 
   // Harm: a move refused while another's save is unanswered keeps saying "Still saving", or holds the board after it.
+  // The move waits until the late save is told as not seen, then is refused.
   test('a move refused while another save is unanswered says its refusal and holds nothing', () async {
     final source = _SlowSource();
-    final slow = PlanningBoard(source, 'demo');
+    final slow = PlanningBoard(source, 'demo', unansweredWait: const Duration(milliseconds: 20));
     addTearDown(slow.dispose);
     await pumpEventQueue();
     await slow.move('S1', 'Review');
     source.refuseNext = const PlanningRefusal('Unreachable', {}, 'The remote cannot be reached.');
 
     await slow.move('S2', 'Backlog');
+    expect(slow.queuedMoves, ['S2'], reason: 'it waits for the late save');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(slow.moveProblem, contains('was not seen'), reason: 'the late save was given up');
 
     expect(slow.moveProblem, contains('The remote cannot be reached.'), reason: 'the refusal is said');
     expect(slow.moveNotice, isNull, reason: 'nothing still says a save runs for the refused move');
@@ -777,12 +782,12 @@ void main() {
   });
 
   // Harm: a second move of the card being saved goes out beside its save, or a move of another card is lost.
-  test('a move made while another is saved is queued, and a second move of the same card is refused', () async {
+  test('a move made while another is saved is queued, and the same move again adds nothing', () async {
     backend.gate = Completer<void>();
     final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
     await board.move('StoryOne', 'Rejected');
-    expect(board.moveProblem, contains('Saving…'));
+    expect(board.queuedMoves, isEmpty, reason: 'the card goes there already');
     await board.move('StoryTwo', 'Rejected');
     expect(backend.calls, hasLength(1), reason: 'one save is out at a time');
     expect(board.pending.keys, ['StoryOne', 'StoryTwo']);
@@ -1304,6 +1309,9 @@ void main() {
     expect(board.queuedMoves, ['issue IssueOne']);
     backend.gate!.complete();
     await saving;
+    await pumpEventQueue();
+    expect(backend.calls, hasLength(2), reason: 'the issue move was saved after the story\'s save');
+    expect((backend.calls.last['moves'] as List).single['issue'], 'IssueOne');
   });
 
   // Harm: a person's move lost without a word when its destination is not one the issue may enter.

@@ -31,14 +31,18 @@ class _Source extends FakePlanningSource {
   /// The moves whose preview the planner refuses as not allowed, by id.
   final Set<String> notAllowed = {};
 
-  /// While set, the first save also moves the board on to this revision unseen, as another person's change would.
-  String? movedOnAfterSave;
+  /// The moves whose preview finds the board moved on unseen to r9 first, as another person's change would, by id.
+  final Set<String> movesOnAtPreviewOf = {};
+
+  /// The refusal each move's save answers with, by id; the preview takes it.
+  final Map<String, String> refusedAtSave = {};
 
   @override
   Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) {
     if (moves.any((move) => notAllowed.contains(move.id))) {
       return Future.error(PlanningRefusal('MoveNotAllowed', {}, '${moves.first.id} may not go there.'));
     }
+    if (moves.any((move) => movesOnAtPreviewOf.remove(move.id))) board = {...board, 'revision': 'r9'};
     return super.previewMoves(project, moves, revision);
   }
 
@@ -72,12 +76,11 @@ class _Source extends FakePlanningSource {
       saves.add((project, moves, revision));
       throw failure;
     }
-    final saved = await super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
-    if (movedOnAfterSave case final next?) {
-      movedOnAfterSave = null;
-      board = {...board, 'revision': next};
+    if (refusedAtSave.remove(moves.single.id) case final name?) {
+      saves.add((project, moves, revision));
+      throw PlanningRefusal(name, {}, '${moves.single.id} was refused at its save.');
     }
-    return saved;
+    return super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
   }
 
   @override
@@ -300,6 +303,7 @@ void main() {
 
   // Harm: a save that only the window stopped waiting for blanks every count and locks the other cards (the 2-minute
   // write timeout against a planner retrying GitHub's 502s).
+  // A move of another card is taken meanwhile and saved only once the late save landed, against the board it left.
   test('a save that timed out keeps the counts known and the other cards take moves', () async {
     final (source, board) = await _liveBoard();
     source.saveFailure = const PlanningRefusal('TimedOut', {}, 'The planner did not answer in time.');
@@ -309,8 +313,38 @@ void main() {
     expect(_figuresShown(board), isTrue, reason: 'the counts known stay');
     source.saveFailure = null;
     await board.move('S2', 'Finished');
-    expect(source.saves, hasLength(2), reason: 'another card\'s drag was saved');
-    expect(_stateOf(board, 'S2'), 'Finished', reason: 'and is shown');
+    expect(board.queuedMoves, ['S2'], reason: 'another card\'s drag was taken');
+    expect(board.displayedState(board.stories.last), 'Finished', reason: 'and is shown where it goes');
+    expect(source.saves, hasLength(1), reason: 'not saved beside a save that may still land');
+    // A board that does not show the late save yet holds the queue still.
+    source.board = {...source.board, 'revision': 'r4'};
+    source.send();
+    await _turns();
+    expect(source.saves, hasLength(1), reason: 'still not saved while the late save may land');
+    expect(board.queuedMoves, ['S2']);
+    // The late save lands: the planner's board shows S1 moved, at a revision of its own.
+    final stories = (source.board['stories'] as List).cast<Map<String, dynamic>>();
+    source.board = {
+      ...source.board,
+      'revision': 'r5',
+      'stories': [
+        {
+          ...stories.first,
+          'state': 'Review',
+          'issues': [
+            for (final issue in (stories.first['issues'] as List).cast<Map<String, dynamic>>())
+              {...issue, 'state': 'Review'},
+          ],
+        },
+        stories.last,
+      ],
+    };
+    source.send();
+    await _turns();
+    expect(board.pending.containsKey('S1'), isFalse, reason: 'the late save landed');
+    expect(source.saves.last.$2.single.id, 'S2', reason: 'the queued move was saved once it landed');
+    expect(source.saves.last.$3, 'r5', reason: 'against the board the late save left');
+    expect(_stateOf(board, 'S2'), 'Finished');
   });
 
   // Harm: a Reload asked for during a slow save opens the watch anew under it, and the save's end is lost.
@@ -635,10 +669,10 @@ void main() {
       await _turns();
       await board.move('S2', 'Finished');
       expect(board.queuedMoves, ['S2'], reason: 'taken and queued');
+      expect(board.movingWords('S1'), 'Saving…');
+      expect(board.movingWords('S2'), 'Waiting for the moves before it…', reason: 'only queued, nothing sent');
       expect(board.pending.keys, containsAll(['S1', 'S2']), reason: 'both show as pending');
       expect(board.displayedState(board.stories.last), 'Finished', reason: 'shown at once where it goes');
-      await board.move('S1', 'Finished');
-      expect(board.moveProblem, contains('its own move'), reason: 'the card being saved takes no second move');
       expect(source.saves, isEmpty, reason: 'S1\'s save is out and nothing else went');
       source.saveHeld!.complete();
       await _turns();
@@ -673,7 +707,7 @@ void main() {
     test('refused as stale reads the board again, and the next one is saved against it', () async {
       final (source, board) = await _liveBoard(data: _wide());
       source.saveHeld = Completer<void>();
-      source.movedOnAfterSave = 'r9';
+      source.movesOnAtPreviewOf.add('S2');
       unawaited(board.move('S1', 'Review'));
       await _turns();
       await board.move('S2', 'Finished');
@@ -717,6 +751,7 @@ void main() {
       source.send();
       await _turns();
       expect(saved(source), [('S1', 'r1')], reason: 'nothing of the queue was saved');
+      expect(source.saves.where((save) => save.$2.single.id == 'S2'), isEmpty, reason: 'S2 was never saved');
       expect(source.saves.where((save) => save.$1 == 'other'), isEmpty);
       expect(board.pending, isEmpty);
     });
@@ -733,6 +768,7 @@ void main() {
       source.saveHeld!.complete();
       await _turns();
       expect(source.saves, hasLength(1));
+      expect(source.saves.where((save) => save.$2.single.id == 'S2'), isEmpty, reason: 'S2 was never saved');
     });
 
     // Harm: a queued move is lost when the watch is lost, or saved on a board that takes no moves.
@@ -748,9 +784,198 @@ void main() {
       await _turns();
       expect(saved(source), [('S1', 'r1')], reason: 'the queue waits while no watch answers');
       expect(board.queuedMoves, ['S2'], reason: 'still queued');
+      expect(board.movingWords('S2'), 'Waiting for planning to be live', reason: 'its card says what it waits for');
       unawaited(board.reloadPlanning());
       await _turns();
       expect(saved(source), [('S1', 'r1'), ('S2', 'r2')], reason: 'saved once the board takes moves again');
     });
+  });
+
+  group('the last reading of the queue', () {
+    /// The id, destination and revision of every save, in order.
+    List<(String, String, String)> sent(_Source source) => [
+      for (final save in source.saves) (save.$2.single.id, save.$2.single.to, save.$3),
+    ];
+
+    // Harm: a move made on a board that changed during the gesture is queued and saved against a later revision.
+    test('a move made on an older board than the one shown is not queued', () async {
+      final (source, board) = await _liveBoard();
+      source.saveHeld = Completer<void>();
+      unawaited(board.move('S1', 'Review'));
+      await _turns();
+      await board.move('S2', 'Finished', revision: 'r0');
+      expect(board.queuedMoves, isEmpty, reason: 'refused, not queued');
+      expect(board.refusalOf('S2'), contains('planning changed'));
+      source.saveHeld!.complete();
+      await _turns();
+      expect(sent(source), [('S1', 'Review', 'r1')], reason: 'S2 was never saved');
+    });
+
+    // Harm: a queued move is saved from a state the person never saw: a story's close moved its issue, and the
+    // issue's move queued from its old state reopens it.
+    test('a queued move whose card the save before it moved is refused, not saved', () async {
+      final (source, board) = await _liveBoard();
+      source.saveHeld = Completer<void>();
+      unawaited(board.move('S1', 'Finished'));
+      await _turns();
+      await board.moveIssue('I1', 'Review');
+      expect(board.queuedMoves, ['issue I1']);
+      source.saveHeld!.complete();
+      await _turns();
+      expect(sent(source), [('S1', 'Finished', 'r1')], reason: 'I1 was not reopened');
+      expect(board.refusalOf('issue I1'), contains('Planning changed: I1 now stands in Finished'));
+      expect(board.moveProblem, contains('I1 now stands in Finished'));
+      expect(_stateOf(board, 'S1'), 'Finished');
+      expect(board.pending, isEmpty);
+    });
+
+    // Harm: a second move of a card whose save is out is refused, though the operator wants it to wait for that save.
+    test('a card\'s next move waits for its own save and goes from where that save left it', () async {
+      final (source, board) = await _liveBoard();
+      source.saveHeld = Completer<void>();
+      unawaited(board.move('S1', 'Review'));
+      await _turns();
+      await board.move('S1', 'Finished');
+      expect(board.queuedMoves, ['S1'], reason: 'its next move waits');
+      expect(board.displayedState(board.stories.first), 'Finished', reason: 'the newest destination is shown');
+      expect(board.movingWords('S1'), 'Saving…', reason: 'its first move is being saved');
+      source.saveHeld!.complete();
+      await _turns();
+      expect(sent(source), [('S1', 'Review', 'r1'), ('S1', 'Finished', 'r2')], reason: 'one after the other');
+      expect(_stateOf(board, 'S1'), 'Finished');
+      expect(board.pending, isEmpty);
+    });
+
+    // Harm: a card's next move is saved though the move it was made behind was refused, from a state never reached.
+    test('a card\'s next move goes, with words, when its first save is refused', () async {
+      final (source, board) = await _liveBoard();
+      source.saveHeld = Completer<void>();
+      source.refusedAtSave['S1'] = 'MoveNotAllowed';
+      unawaited(board.move('S1', 'Review'));
+      await _turns();
+      await board.move('S1', 'Finished');
+      source.saveHeld!.complete();
+      await _turns();
+      expect(sent(source), [('S1', 'Review', 'r1')], reason: 'the next move was not saved');
+      expect(board.refusalOf('S1'), contains('Its next move to Finished was not made.'));
+      expect(board.moveProblem, contains('Its next move to Finished was not made.'));
+      expect(board.pending, isEmpty);
+      expect(board.queuedMoves, isEmpty);
+    });
+
+    // Harm: a card moved twice while nothing of its move was sent is saved twice, or with the older destination.
+    test('a second move of a card only queued replaces its queued move', () async {
+      final (source, board) = await _liveBoard();
+      source.saveHeld = Completer<void>();
+      unawaited(board.move('S1', 'Review'));
+      await _turns();
+      await board.move('S2', 'Finished');
+      await board.move('S2', 'Backlog');
+      expect(board.queuedMoves, ['S2'], reason: 'one queued move for the card');
+      expect(board.displayedState(board.stories.last), 'Backlog');
+      source.saveHeld!.complete();
+      await _turns();
+      expect(sent(source), [('S1', 'Review', 'r1'), ('S2', 'Backlog', 'r2')]);
+    });
+
+    // Harm: a question dropped by the provider's reconnect leaves its save held, and the board takes no move again.
+    test('a question dropped when the provider reconnects ends its hold, and a later move is saved', () async {
+      final source = _Source({..._counted(), 'reasons': true});
+      final client = FakePlanningClient([provider('m', source)]);
+      final boards = PlanningBoards(client);
+      addTearDown(boards.dispose);
+      final board = boards.selected!;
+      source.send();
+      await _turns();
+      await board.move('S2', 'Finished');
+      expect(board.question?.key, 'S2', reason: 'the close asks its reason');
+      client.providers = [provider('m', source, connected: false)];
+      await _turns();
+      client.providers = [provider('m', source)];
+      await _turns();
+      expect(board.question, isNull);
+      expect(board.moveProblem, contains('S2 was not moved'), reason: 'the dropped move is said');
+      source.send();
+      await _turns();
+      expect(board.live, isTrue, reason: 'the watch opened anew');
+      await board.move('S1', 'Review');
+      expect(sent(source), [('S1', 'Review', 'r1')], reason: 'the later move was saved');
+    });
+
+    // Harm: a queued issue move refused at its save leaves no words, as the next queued move clears them.
+    test('a queued issue move refused at its save keeps its words past the next queued move', () async {
+      final (source, board) = await _liveBoard(data: _wide());
+      source.saveHeld = Completer<void>();
+      source.refusedAtSave['repo#900'] = 'MoveNotAllowed';
+      unawaited(board.move('S1', 'Review'));
+      await _turns();
+      await board.moveIssue('repo#900', 'Review');
+      await board.move('S2', 'Finished');
+      source.saveHeld!.complete();
+      await _turns();
+      expect(board.refusalOf('issue repo#900'), contains('was refused at its save'), reason: 'on its row');
+      expect(board.moveProblem, contains('was refused at its save'), reason: 'the next save did not clear it');
+      expect(sent(source).last, ('S2', 'Finished', 'r2'), reason: 'the queue went on');
+    });
+
+    // Harm: a card's refusal stands on a card the board shows elsewhere since, or goes with another card's change.
+    test('a card\'s refusal goes once the board shows the card elsewhere', () async {
+      final (source, board) = await _liveBoard();
+      source.notAllowed.add('S2');
+      await board.move('S2', 'Finished');
+      expect(board.refusalOf('S2'), contains('may not go there'));
+      source.board = {...source.board, 'revision': 'r4'};
+      source.send();
+      await _turns();
+      expect(board.refusalOf('S2'), isNotNull, reason: 'the card still stands where it was refused');
+      final stories = (source.board['stories'] as List).cast<Map<String, dynamic>>();
+      source.board = {
+        ...source.board,
+        'revision': 'r5',
+        'stories': [
+          stories.first,
+          {...stories.last, 'state': 'Backlog'},
+        ],
+      };
+      source.send();
+      await _turns();
+      expect(board.refusalOf('S2'), isNull, reason: 'the board shows it elsewhere now');
+    });
+
+    // Harm: a move queued while a story action waits is saved beside it, against the revision the action replaces.
+    test('a move made while a story action waits is queued until the action ends', () async {
+      final (source, board) = await _liveBoard();
+      source.priorityHeld = Completer<void>();
+      unawaited(board.setPriority('S2', 'Low'));
+      await _turns();
+      await board.move('S1', 'Review');
+      expect(board.queuedMoves, ['S1'], reason: 'taken while the action waits');
+      expect(source.previews, isEmpty, reason: 'nothing sent beside the action');
+      source.priorityHeld!.complete();
+      await _turns();
+      expect(board.actionBusy, isFalse);
+      expect(source.previews, isNotEmpty, reason: 'previewed once the action ended');
+      expect(board.queuedMoves, isEmpty);
+    });
+
+    for (final name in ['StaleRevision', 'PreviewChanged']) {
+      // Harm: a queued move meeting a changed board at its save is saved unseen, or stops the queue behind it.
+      test('a queued move refused at its save with $name is asked anew, and the queue goes on after', () async {
+        final (source, board) = await _liveBoard(data: _wide());
+        source.saveHeld = Completer<void>();
+        source.refusedAtSave['S2'] = name;
+        unawaited(board.move('S1', 'Review'));
+        await _turns();
+        await board.move('S2', 'Finished');
+        await board.moveIssue('repo#900', 'Review');
+        source.saveHeld!.complete();
+        await _turns();
+        expect(board.question?.key, 'S2', reason: 'asked anew on the board read again');
+        expect(board.queuedMoves, ['issue repo#900'], reason: 'the next one waits for the answer');
+        board.cancelMove();
+        await _turns();
+        expect(sent(source).last, ('repo#900', 'Review', 'r2'), reason: 'the queue went on');
+      });
+    }
   });
 }

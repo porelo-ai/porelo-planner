@@ -589,7 +589,9 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
 
   String? _moveUnavailable(PlanIssue issue) =>
       detail.moveUnavailable ??
-      (issue.id.isEmpty
+      (detail.board.waitsOnItsSave('issue ${issue.id}')
+          ? 'Saving…'
+          : issue.id.isEmpty
           ? 'Issue identifier not reported.'
           : issue.state.isEmpty
           ? 'Issue state not reported.'
@@ -640,7 +642,12 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
       ),
       if (_moveUnavailable(issue) case final reason?) Text(reason),
       if (detail.pendingMoves[issue.id] case final move?)
-        Text('Saving… ${move.to}', key: Key('planning-move-pending ${issue.id}')),
+        Text(switch (detail.board.movingWords('issue ${issue.id}')) {
+          'Saving…' || null => 'Saving… ${move.to}',
+          final words => '$words ${move.to}',
+        }, key: Key('planning-move-pending ${issue.id}')),
+      if (detail.board.refusalOf('issue ${issue.id}') case final words?)
+        Text(words, key: Key('planning-move-refused ${issue.id}')),
     ],
   );
 }

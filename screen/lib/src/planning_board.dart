@@ -246,44 +246,122 @@ class PlanningBoard extends ChangeNotifier {
   VoidCallback? _unfollowReconnect;
   final Map<String, PendingPlanningMove> _pending = {};
 
-  /// The moves in flight: the one previewed, asked about or saved, those answered too late, and those queued.
-  Map<String, PendingPlanningMove> get pending => Map.unmodifiable(_pending);
+  /// The moves in flight by card: the one previewed, asked about or saved, those answered too late, and those
+  /// queued; where a card's next move waits behind its own save, that next move, whose destination is shown.
+  Map<String, PendingPlanningMove> get pending =>
+      Map.unmodifiable({..._pending, for (final queued in _queue) queued.key: queued.shown});
 
-  /// Moves of other cards made while a save was out, in the order made; each is previewed and saved once the save
-  /// before it answered, against the revision that save left. Their cards show them as pending meanwhile.
-  final List<({String key, PlanningMove move, PlanningSource source, String name})> _queue = [];
+  /// The move [key]'s card shows: its queued next move, else its move in flight.
+  PendingPlanningMove? _shownMove(String key) =>
+      _queue.where((queued) => queued.key == key).lastOrNull?.shown ?? _pending[key];
+
+  /// Moves made while a save was out, in the order made, at most one per card; each is previewed and saved once the
+  /// save before it answered and was read again, against the revision it left. A card's next move made while its own
+  /// save is out waits here too, from the state that save goes to. Their cards show them as pending meanwhile.
+  final List<_QueuedMove> _queue = [];
 
   /// The keys of the queued moves, in their order.
   List<String> get queuedMoves => [for (final queued in _queue) queued.key];
 
-  bool _queued(String key) => _queue.any((queued) => queued.key == key);
+  /// Whether [key]'s card has only a queued move, with nothing of it sent yet.
+  bool _queuedOnly(String key) => _queue.any((queued) => queued.key == key && identical(_pending[key], queued.shown));
 
-  /// The planner's words for the last move of a card it refused, by the card's key, until that card moves again.
-  final Map<String, String> _cardRefusals = {};
+  bool get _anyUnanswered => _pending.values.any((move) => move.unanswered);
+
+  /// Reads after a save not yet ended; the queue waits for them, so a queued move is judged on the board they read.
+  int _readsAfterSave = 0;
+
+  /// The planner's words for the last move of a card it refused, by the card's key, with the state the card stood in
+  /// then; kept until the card moves again or the board shows it elsewhere.
+  final Map<String, ({String words, String? state})> _cardRefusals = {};
 
   /// Why the last move of [key]'s card was refused, or null.
-  String? refusalOf(String key) => _cardRefusals[key];
+  String? refusalOf(String key) => _cardRefusals[key]?.words;
+
+  /// What [key]'s card says of its move: being saved, waiting in the queue, or waiting for the watch; null without
+  /// one.
+  String? movingWords(String key) {
+    if (_pending[key] == null && !_queue.any((queued) => queued.key == key)) return null;
+    if (_pending[key] != null && !_queuedOnly(key)) return 'Saving…';
+    return takesMoves ? 'Waiting for the moves before it…' : 'Waiting for planning to be live';
+  }
+
+  /// The state [key]'s card stands in on [reply]: a story's, or an issue's on it or in no story; null where unknown.
+  String? _stateOfKey(PlanningSnapshot reply, String key) => key.startsWith('issue ')
+      ? [
+          ...reply.stories.expand((story) => story.issues),
+          if (_noStory != null && _noStory!.revision == reply.revision) ..._noStory!.issues,
+        ].where((issue) => 'issue ${issue.id}' == key).firstOrNull?.state
+      : reply.stories.where((story) => story.id == key).firstOrNull?.state;
+
+  void _addProblem(String words) {
+    final now = moveProblem;
+    if (now != null && now.split('\n').contains(words)) return;
+    moveProblem = now == null ? words : '$now\n$words';
+  }
+
+  void _addNotice(String words) {
+    final now = moveNotice;
+    if (now != null && now.split('\n').contains(words)) return;
+    moveNotice = now == null ? words : '$now\n$words';
+  }
+
+  /// Takes back [key]'s refused move and says [words] on its card; a next move queued behind it goes too, said.
+  /// Answers the words said.
+  String _refuseCard(String key, String words) {
+    _pending.remove(key);
+    var said = words;
+    final next = _queue.where((queued) => queued.key == key).lastOrNull;
+    if (next != null) {
+      _queue.removeWhere((queued) => queued.key == key);
+      said = '$words\n${planningShown('Its next move to ${next.shown.to} was not made.')}';
+    }
+    _cardRefusals[key] = (words: said, state: snapshot == null ? null : _stateOfKey(snapshot!, key));
+    return said;
+  }
 
   /// Drops every queued move and its pending card; nothing of it is saved.
   void _dropQueue() {
     for (final queued in _queue) {
-      _pending.remove(queued.key);
+      if (identical(_pending[queued.key], queued.shown)) _pending.remove(queued.key);
     }
     _queue.clear();
   }
 
-  /// Starts the next queued move once nothing holds the moves, the board takes them, and no project switch or reopen
-  /// waits to run first; a move queued on another board is dropped.
+  /// Starts the next queued move once nothing holds the moves, the board takes them, no story action, project switch
+  /// or reopen waits to run first, no save answered too late may still land, and every read after a save ended. A
+  /// move whose card no longer stands where it was made from is refused, and the queue goes on.
   void _drainQueue() {
-    if (_disposed || _queue.isEmpty || holdsMoves || !takesMoves || question != null) return;
+    if (_disposed || _queue.isEmpty || holdsMoves || !takesMoves || question != null || actionBusy) return;
     if (_queuedProject != null || _reopenQueued || snapshot!.revision.isEmpty) return;
-    final next = _queue.removeAt(0);
+    if (_anyUnanswered || _readsAfterSave > 0) return;
+    final next = _queue.first;
     if (!_sameBoard(next.source, next.name)) {
-      _pending.remove(next.key);
+      _queue.removeAt(0);
+      if (identical(_pending[next.key], next.shown)) _pending.remove(next.key);
       _changed();
       return _drainQueue();
     }
-    unawaited(_startMove(next.key, next.move, snapshot!.revision));
+    final shown = next.shown;
+    final outsideMove = shown.from.isEmpty;
+    final now = _stateOfKey(snapshot!, next.key);
+    // An issue in no story is judged once its list is read at the board's revision.
+    if (!outsideMove && now == null && shown.isIssue && _noStory?.revision != snapshot!.revision) return;
+    _queue.removeAt(0);
+    _pending[next.key] = shown;
+    final moved = outsideMove ? !outside.any((issue) => 'issue ${issue.id}' == next.key) : now != shown.from;
+    if (moved) {
+      // Never saved from a state the person did not see.
+      _addProblem(
+        _refuseCard(
+          next.key,
+          planningShown('Planning changed: ${next.move.id} now stands in ${now ?? 'no state'}; it was not moved.'),
+        ),
+      );
+      _changed();
+      return _drainQueue();
+    }
+    unawaited(_startMove(next.key, next.move, snapshot!.revision, drained: true));
   }
 
   /// Whether a move, a save or a reload is in progress.
@@ -1176,6 +1254,8 @@ class PlanningBoard extends ChangeNotifier {
     actionBusy = false;
     _changed();
     if (_reopenQueued) unawaited(_reopen());
+    // Moves made while it waited are saved against the board it left.
+    _drainQueue();
   }
 
   /// Applies a run reply immediately, independently of a subsequent board reload.
@@ -1189,8 +1269,14 @@ class PlanningBoard extends ChangeNotifier {
   /// Replaces the source, canceling its silent watch before accepting another project's replies.
   Future<void> changeProject(PlanningSource next, String name) async {
     if (_disposed) return;
-    // A move still asked about was never confirmed, so it goes with the project it was shown for.
-    if (question != null) _dropQuestion();
+    // A move still asked about was never confirmed, so it goes with the project it was shown for, said, and the save it
+    // held ends, so the switch runs now.
+    if (question case final asked?) {
+      _dropQuestion();
+      _addProblem(planningShown('${asked.move.id} was not moved: planning was opened anew before it was confirmed.'));
+      _reopenQueued = false;
+      _finishOperation(drain: false);
+    }
     // Moves queued on this board are never saved against another one.
     if (!identical(backend, next) || project != name) _dropQueue();
     if (saving) {
@@ -1316,7 +1402,7 @@ class PlanningBoard extends ChangeNotifier {
 
   /// The displayed destination: the move in flight's target until its answer.
   String displayedState(PlanStory story) {
-    final move = _pending[story.id];
+    final move = _shownMove(story.id);
     final destination = move == null ? null : state(move.to);
     return move != null && destination != null && phases.any((phase) => phase.states.contains(move.to))
         ? move.to
@@ -1339,7 +1425,8 @@ class PlanningBoard extends ChangeNotifier {
       _changed();
       return;
     }
-    if (to == story.state || _oneAtATime(id, queues: true)) return;
+    // Against where the card is shown: a move back while its move is out is its next move.
+    if (to == displayedState(story) || _oneAtATime(id, queues: true)) return;
     await _moveNow(id, PlanningStoryMove(id, to), PendingPlanningMove(story.state, to), revision: revision);
   }
 
@@ -1367,7 +1454,7 @@ class PlanningBoard extends ChangeNotifier {
 
   /// The issue move in flight, by issue id.
   Map<String, PendingPlanningMove> get pendingIssues => {
-    for (final entry in _pending.entries)
+    for (final entry in pending.entries)
       if (entry.value.isIssue) entry.key.substring('issue '.length): entry.value,
   };
 
@@ -1419,7 +1506,7 @@ class PlanningBoard extends ChangeNotifier {
     final seen = shown ?? (reported?.id == id ? reported!.state : null);
     if (seen != null && seen != issue.state) return refuseMove(id, 'it now stands in ${issue.state}; choose again.');
     final target = state(to);
-    if (to == issue.state) return;
+    if (to == (_shownMove('issue $id')?.to ?? issue.state)) return;
     if (!issueMayEnter(issue, target)) return refuseMove(id, 'it may not enter $to from ${issue.state}.');
     await _moveNow(
       'issue $id',
@@ -1477,6 +1564,8 @@ class PlanningBoard extends ChangeNotifier {
         _noStory = reply;
         if (reconcile) _reconcileMoves(shown);
         _changed();
+        // A queued issue move waits for this list to be judged.
+        _drainQueue();
         return;
       }
       if (mayCatchUp && !saving) {
@@ -1556,8 +1645,9 @@ class PlanningBoard extends ChangeNotifier {
       if (!_sameBoard(source, name)) return;
       _savesLanded++;
       moveNotice = 'Issue changes saved.';
-      // The story list is read once the save has ended, so a slow read holds no move.
+      // The story list is read once the save has ended, so a slow read holds no move; the queue waits for it.
       readAfter = true;
+      _readsAfterSave++;
     } catch (error) {
       if (!_sameBoard(source, name)) return;
       refused = true;
@@ -1580,7 +1670,13 @@ class PlanningBoard extends ChangeNotifier {
         if (_sameBoard(source, name)) _finishOperation(reconcile: !refused);
       }
     }
-    if (readAfter && _sameBoard(source, name)) await _readAfterSave(source, name);
+    if (readAfter) {
+      if (_sameBoard(source, name)) {
+        await _readAfterSave(source, name, counted: true);
+      } else {
+        _readsAfterSave--;
+      }
+    }
   }
 
   /// The issues the board left out because their Status is none of the workflow's states, by id.
@@ -1624,7 +1720,7 @@ class PlanningBoard extends ChangeNotifier {
   }
 
   /// Refuses a change while another is previewed, asked about, saved or unanswered; with [queues], a move is refused
-  /// only while its own card's move is out, and queued behind the others.
+  /// only while its own card's save went unanswered, and is queued otherwise.
   bool _oneAtATime(String id, {bool queues = false}) {
     if (_pending[id]?.unanswered == true || _pending['issue $id']?.unanswered == true) {
       refuseMove(
@@ -1633,11 +1729,8 @@ class PlanningBoard extends ChangeNotifier {
       );
       return true;
     }
-    if (queues) {
-      if (!_pending.containsKey(id) && !_pending.containsKey('issue $id')) return false;
-      refuseMove(id, 'Saving… its own move is still being saved; move it again once it is saved.');
-      return true;
-    }
+    // A move of a card whose own move is out waits behind it.
+    if (queues) return false;
     if (!holdsMoves) return false;
     refuseMove(id, 'Saving… another move is still being saved; move it again once it is saved.');
     return true;
@@ -1646,10 +1739,11 @@ class PlanningBoard extends ChangeNotifier {
   /// Whether a save runs and holds every move until its answer. A move whose answer came too late holds only its own
   /// card: every save is bound to the revision it was previewed against, so another move made meanwhile is refused
   /// as stale and asked about anew where that save lands first, never written over it.
-  bool get holdsMoves => saving || _pending.entries.any((entry) => !entry.value.unanswered && !_queued(entry.key));
+  bool get holdsMoves => saving || _pending.entries.any((entry) => !entry.value.unanswered && !_queuedOnly(entry.key));
 
-  /// Whether [id]'s card waits for its own save, a late one included, and cannot be moved now.
-  bool waitsOnItsSave(String id) => _pending.containsKey(id);
+  /// Whether [id]'s card takes no move now: its save went unanswered and may still land. A card whose save is out
+  /// takes its next move, which waits behind that save.
+  bool waitsOnItsSave(String id) => _pending[id]?.unanswered == true;
 
   String? _reportedState(PlanningSnapshot reply, String key, PendingPlanningMove move) => move.isIssue
       ? [
@@ -1666,23 +1760,49 @@ class PlanningBoard extends ChangeNotifier {
     _beginAction();
     _moveTurns++;
     _cardRefusals.remove(key);
-    final waits = holdsMoves || _queue.isNotEmpty;
-    _pending[key] = shown;
-    if (waits) {
-      // Shown pending at once, and saved once the moves before it answered.
-      _queue.add((key: key, move: move, source: backend, name: project));
-      _changed();
+    final inFlight = _pending[key];
+    final place = _queue.indexWhere((queued) => queued.key == key);
+    final waits = holdsMoves || _queue.isNotEmpty || _anyUnanswered || actionBusy || inFlight != null;
+    if (!waits) {
+      _pending[key] = shown;
+      // The gesture's revision: a board that changed during it answers StaleRevision instead of being read anew.
+      return _startMove(key, move, revision ?? snapshot!.revision);
+    }
+    // A queued move is saved against a later revision, so one made on a board that changed during it moves nothing.
+    if (revision != null && revision != snapshot!.revision) {
+      refuseMove(move.id, 'planning changed while it was moved; move it again.');
+      _cardRefusals[key] = (words: moveProblem!, state: _stateOfKey(snapshot!, key));
       return;
     }
-    // The gesture's revision: a board that changed during it answers StaleRevision instead of being read anew.
-    await _startMove(key, move, revision ?? snapshot!.revision);
+    // A queued move goes from where the card will stand: a move already queued for it starts from the same state, and
+    // one behind its own save from where that save goes.
+    final only = place >= 0 && _queuedOnly(key);
+    final from = place >= 0 ? _queue[place].shown.from : inFlight?.to ?? shown.from;
+    final queued = (
+      key: key,
+      move: move,
+      shown: PendingPlanningMove(from, shown.to, isIssue: shown.isIssue, inNoStory: shown.inNoStory),
+      source: backend,
+      name: project,
+    );
+    if (place >= 0) _queue.removeAt(place);
+    if (only) _pending.remove(key);
+    if (queued.shown.to != from) {
+      // A card's move made while nothing of its last one was sent replaces it in its place.
+      _queue.insert(place >= 0 ? place : _queue.length, queued);
+      if (inFlight == null || only) _pending[key] = queued.shown;
+    }
+    _changed();
   }
 
-  /// Previews and saves [move] of [key]'s pending card against [revision].
-  Future<void> _startMove(String key, PlanningMove move, String revision) async {
+  /// Previews and saves [move] of [key]'s pending card against [revision]; a [drained] one keeps the words of the
+  /// moves before it and adds its own.
+  Future<void> _startMove(String key, PlanningMove move, String revision, {bool drained = false}) async {
     saving = true;
-    moveProblem = null;
-    moveNotice = null;
+    if (!drained) {
+      moveProblem = null;
+      moveNotice = null;
+    }
     moveRefusal = null;
     final source = backend;
     final name = project;
@@ -1713,24 +1833,32 @@ class PlanningBoard extends ChangeNotifier {
       }
     } catch (error) {
       if (!_sameBoard(source, name)) return;
-      _pending.remove(key);
       final stale = error is PlanningRefusal && error.name == 'StaleRevision';
-      final words = stale
-          ? planningShown('Planning changed while ${move.id} was moved; nothing was moved. Move it again.')
-          : planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
-      _cardRefusals[key] = words;
+      final words = _refuseCard(
+        key,
+        stale
+            ? planningShown('Planning changed while ${move.id} was moved; nothing was moved. Move it again.')
+            : planningShown('${move.id} was not moved: ${planningFailureWords(error)}'),
+      );
+      final before = moveProblem;
       // A queued move goes on only after the board is read again, so it is not refused as stale in turn.
       _finishOperation(drain: !stale);
       // The board the gesture began on is gone; the person moves again on the one read now.
       if (stale) {
         await reload();
+        // The words stand on the board read again, where the refusal left the card.
+        if (_cardRefusals[key] case final said? when snapshot != null) {
+          _cardRefusals[key] = (words: said.words, state: _stateOfKey(snapshot!, key));
+        }
         // A read that could not run leaves the queue to go on against the board shown.
         if (!saving) _drainQueue();
       }
       if (!_sameBoard(source, name)) return;
       moveRefusal = error is PlanningRefusal ? error : null;
       _keepRefusal(error, action: true);
-      moveProblem = words;
+      // The board read again clears the words; those of the moves before this one stay.
+      if (before != null) _addProblem(before);
+      _addProblem(words);
       _changed();
       return;
     }
@@ -1805,6 +1933,10 @@ class PlanningBoard extends ChangeNotifier {
     if (asked == null) return;
     question = null;
     _pending.remove(asked.key);
+    // A next move of the card waited for this one, which is not made.
+    if (_queue.any((queued) => queued.key == asked.key)) {
+      _addProblem(_refuseCard(asked.key, planningShown('${asked.move.id} was not moved.')));
+    }
   }
 
   /// Ends the tasks of each run a confirmed save stopped, as the story's Stop ends them.
@@ -1861,16 +1993,22 @@ class PlanningBoard extends ChangeNotifier {
     return _snapshotOrder == order;
   }
 
-  /// Reads the board again after a save landed; a failed read is said, the save stands.
-  Future<void> _readAfterSave(PlanningSource source, String name) async {
+  /// Reads the board again after a save landed; a failed read is said, the save stands. The queue waits for it:
+  /// [counted] where the save already counted it, before it ended.
+  Future<void> _readAfterSave(PlanningSource source, String name, {bool counted = false}) async {
+    if (!counted) _readsAfterSave++;
     try {
       await _readBeside(source, name);
     } catch (error) {
       if (_sameBoard(source, name)) {
-        moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
+        _addProblem('Saved, but planning could not be read again: ${planningFailureWords(error)}');
       }
     } finally {
-      if (!_disposed) _changed();
+      _readsAfterSave--;
+      if (!_disposed) {
+        _changed();
+        _drainQueue();
+      }
     }
   }
 
@@ -1908,6 +2046,11 @@ class PlanningBoard extends ChangeNotifier {
     workUnsupported.clear();
     unawaited(_readWork(reply, _generation));
     _reconcilePriorities(reply);
+    // A card the board shows elsewhere than where its move was refused no longer needs the words.
+    _cardRefusals.removeWhere((key, refused) {
+      final now = _stateOfKey(reply, key);
+      return now != null && now != refused.state;
+    });
     if (reconcile) _reconcileMoves(reply);
   }
 
@@ -1929,6 +2072,8 @@ class PlanningBoard extends ChangeNotifier {
       _unansweredDeadline?.cancel();
       _unansweredDeadline = null;
       if (landed.isNotEmpty) moveNotice = _savedNotice(landed);
+      // The queue held behind a save answered too late goes on once it landed.
+      _drainQueue();
     }
   }
 
@@ -1944,10 +2089,15 @@ class PlanningBoard extends ChangeNotifier {
     final late = _pending.entries.where((entry) => entry.value.unanswered).map((entry) => entry.key).toList();
     if (late.isEmpty) return;
     final words = planningShown('The save of ${late.join(', ')} was not seen on the planning board. Move it again.');
-    late.forEach(_pending.remove);
     moveNotice = null;
-    moveProblem = moveProblem == null ? words : '$moveProblem\n$words';
+    for (final key in late) {
+      final said = _refuseCard(key, words);
+      if (said != words) _addProblem(said.substring(words.length + 1));
+    }
+    _addProblem(words);
     _changed();
+    // The queue held behind those saves goes on.
+    _drainQueue();
   }
 
   static String _savedNotice(Iterable<PendingPlanningMove> moves) =>
@@ -2117,9 +2267,9 @@ class PlanningBoard extends ChangeNotifier {
           storyDestinations[move.id] = move.to;
         }
         if (follows) followed.add(move.id);
-        moveNotice = move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.';
+        _addNotice(move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.');
       } else {
-        moveProblem = planningShown('${move.id}: the planner did not confirm this destination.');
+        _addProblem(planningShown('${move.id}: the planner did not confirm this destination.'));
       }
       _accept(
         PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations, followed: followed),
@@ -2129,14 +2279,16 @@ class PlanningBoard extends ChangeNotifier {
       );
       _changed();
       _savesLanded++;
-      // SaveMoves does not return computed story states; they are read from the store once the save has ended.
+      // SaveMoves does not return computed story states; they are read from the store once the save has ended, and
+      // the queue waits for that read.
       readAfter = true;
+      _readsAfterSave++;
     } on PlanningRefusal catch (error) {
       if (!_sameBoard(source, name)) return;
       if (error.name == 'TimedOut') {
         // Only the screen stopped waiting; the planner finishes the save, and the streamed board shows when it landed.
         _pending[key]?.unanswered = true;
-        moveNotice = 'Still saving. The move shows as saved once planning shows it.';
+        _addNotice('Still saving. The move shows as saved once planning shows it.');
         return;
       }
       refused = true;
@@ -2158,33 +2310,31 @@ class PlanningBoard extends ChangeNotifier {
           if (shown != null && now == shown.to) {
             // Made elsewhere meanwhile: nothing is left to save, and nothing went wrong.
             _pending.remove(key);
-            moveProblem = null;
-            moveNotice = planningShown('Planning already shows ${move.id} in $now.');
+            _addNotice(planningShown('Planning already shows ${move.id} in $now.'));
             return;
           }
           if (shown == null || now != shown.from) {
-            _pending.remove(key);
-            moveProblem = planningShown(
-              'Planning changed: ${move.id} now stands in ${now ?? 'no state'}; it was not moved.',
+            _addProblem(
+              _refuseCard(
+                key,
+                planningShown('Planning changed: ${move.id} now stands in ${now ?? 'no state'}; it was not moved.'),
+              ),
             );
-            _cardRefusals[key] = moveProblem!;
             return;
           }
           handedOn = true;
           await _preview(key, move, snapshot!.revision, source, name, again: true);
         } catch (readError) {
           if (!_sameBoard(source, name)) return;
-          _pending.remove(key);
-          moveProblem = planningShown('${move.id} was not moved: $detail\n${planningFailureWords(readError)}');
-          _cardRefusals[key] = moveProblem!;
+          _addProblem(
+            _refuseCard(key, planningShown('${move.id} was not moved: $detail\n${planningFailureWords(readError)}')),
+          );
         }
         return;
       }
-      _pending.remove(key);
       moveRefusal = error;
       _keepRefusal(error, action: true);
-      moveProblem = planningShown('${move.id} was not moved: $detail');
-      _cardRefusals[key] = moveProblem!;
+      _addProblem(_refuseCard(key, planningShown('${move.id} was not moved: $detail')));
       if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
       if (error.name == 'PartlySaved') {
         try {
@@ -2197,10 +2347,8 @@ class PlanningBoard extends ChangeNotifier {
     } catch (error) {
       if (_sameBoard(source, name)) {
         refused = true;
-        _pending.remove(key);
         _keepRefusal(error, action: true);
-        moveProblem = planningShown('${move.id} was not moved: ${planningFailureWords(error)}');
-        _cardRefusals[key] = moveProblem!;
+        _addProblem(_refuseCard(key, planningShown('${move.id} was not moved: ${planningFailureWords(error)}')));
       }
     } finally {
       if (!handedOn) {
@@ -2213,7 +2361,13 @@ class PlanningBoard extends ChangeNotifier {
         }
       }
     }
-    if (readAfter && _sameBoard(source, name)) await _readAfterSave(source, name);
+    if (readAfter) {
+      if (_sameBoard(source, name)) {
+        await _readAfterSave(source, name, counted: true);
+      } else {
+        _readsAfterSave--;
+      }
+    }
   }
 
   /// The reported states, without inventing any workflow.
@@ -2769,3 +2923,6 @@ class _PendingPriority {
 
   bool answered = false;
 }
+
+/// A move waiting in a board's queue: its card's key, the move, what its card shows, and the board it was made on.
+typedef _QueuedMove = ({String key, PlanningMove move, PendingPlanningMove shown, PlanningSource source, String name});

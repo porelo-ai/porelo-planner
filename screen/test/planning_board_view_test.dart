@@ -504,16 +504,20 @@ void main() {
 
     await _drop(tester, 'StoryTwo', 'Ready');
 
-    expect(backend.moveCalls.map((call) => (call['moves'] as List<dynamic>).single['story']), [
-      'StoryOne',
-      'StoryTwo',
-    ], reason: 'the column took the second card');
+    expect(boards.selected!.queuedMoves, ['StoryTwo'], reason: 'the column took the second card');
+    expect(find.text('Waiting for the moves before it…'), findsOneWidget, reason: 'its card says it waits');
+    expect(backend.moveCalls, hasLength(1), reason: 'not saved beside a save that may still land');
     await tester.pump(const Duration(minutes: 5));
+    await settle(tester);
     expect(
       boards.selected!.waitsOnItsSave('StoryOne'),
       isFalse,
       reason: 'the unanswered save is given up after its wait',
     );
+    expect(backend.moveCalls.map((call) => (call['moves'] as List<dynamic>).single['story']), [
+      'StoryOne',
+      'StoryTwo',
+    ], reason: 'the queued card is saved once the late save was given up');
   });
 
   // Harm: an issue whose Status the workflow does not hold is not seen, or can be repaired only on GitHub's own board.

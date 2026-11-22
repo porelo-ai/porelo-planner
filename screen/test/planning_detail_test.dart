@@ -259,7 +259,7 @@ void main() {
     await _flush();
     expect(backend.moveCalls, hasLength(1), reason: 'the move went out without a Save');
     expect(detail.pendingMoves.keys, ['B541']);
-    expect(detail.moveUnavailable, 'Saving…', reason: 'no second move while one is out');
+    expect(detail.moveUnavailable, isNull, reason: 'a next move waits behind the one out');
     expect(detail.issues!.issues.singleWhere((issue) => issue.id == 'B541').state, 'Implementing');
     held.complete();
     await _flush();

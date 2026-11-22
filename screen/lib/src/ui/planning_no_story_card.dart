@@ -92,6 +92,7 @@ class PlanningNoStoryCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: Space.small),
                   child: PlanningIssueRow(
                     issue: issue,
+                    refusal: board.refusalOf('issue ${issue.id}'),
                     onOpen: () => onIssue(issue.id),
                     sizeBadge: sizeBadge(issue),
                     menu: _menu(context, issue),
@@ -113,11 +114,13 @@ class PlanningNoStoryCard extends StatelessWidget {
   Widget _menu(BuildContext context, PlanIssue issue) => PopupMenuButton<(String, String, int)>(
     key: Key('planning-no-story-menu ${issue.id}'),
     tooltip: 'Change ${planningShown(issue.id, multiline: false)}',
-    enabled: board.takesMoves && !board.holdsMoves && !board.actionBusy && !board.waitsOnItsSave('issue ${issue.id}'),
+    // A move waits behind the saves out; changing a story's list is held while one is out.
+    enabled: board.takesMoves && !board.actionBusy && !board.waitsOnItsSave('issue ${issue.id}'),
     icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
     itemBuilder: (_) => [
       PopupMenuItem(
         value: ('hang', board.snapshot!.revision, board.generation),
+        enabled: !board.holdsMoves,
         child: const Text('Hang into a story…'),
       ),
       PopupMenuItem(value: ('move', board.snapshot!.revision, board.generation), child: const Text('Move to…')),
