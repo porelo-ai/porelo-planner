@@ -104,10 +104,23 @@ are added, as the Markdown store's stage records count them; a pause and a perso
   an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, at most
   50 pages of 100 across all repositories within 20 s; a repository not reached, or one GitHub refuses to list, keeps
   the list last read for it and is named as a fault. A new or retitled one changes the board's revision.
-- An item a person edited into something the board cannot hold - an item of a repository `project.yml` does not
-  name, a `Status` outside the workflow, a parent outside the project, a story as a blocker, a sub-issue in another
-  repository than its parent or under another sub-issue - is left out with every issue under it and named as a
-  fault, and the story it belongs to says that an issue of it is missing.
+- Only an item without a valid reference, one of another owner and one of a repository `project.yml` does not name
+  are left out and named as a fault; an item without an issue is left out unnamed.
+- Every other item a person edited into something the board cannot hold is shown, with a warning that holds work on
+  it back, and the issues under it stay under it: an item labeled `story` outside the project's own repository is an
+  issue; a parent in another repository, a parent whose parents lead back to the issue, and a parent that is a
+  sub-issue itself are cut; a story as a blocker is dropped; and a link to an issue the board does not place - an
+  archived one, one listed apart, or one whose id names two items - is cut.
+- Two items whose ids are one, as two repositories named alike in other capitals give, are both shown, each warned;
+  neither is worked nor moved until one id changes.
+- An item with more sub-issues, blockers, labels or field values than one page of GitHub's answer carries is shown
+  as far as it was read, warned, and its story says that an issue of it may be missing.
+- An issue without a `Status` stands in the workflow's first state, unwarned; no save writes its `Status` until it is
+  moved. An issue whose `Status` alone is outside the workflow is listed apart, for a move back into a state of the
+  board; one with a warning besides stays on the board, warned for both. A story whose `Status` is outside the
+  workflow is shown in that state, warned, with its issues.
+- The board's revision is made of the items as GitHub holds them and of the faults, never of the warnings, which
+  follow from the items alone.
 - A blocker the project does not hold leaves its issue on the board, waiting on it: `waitsOn` names it as
   `owner/repository#number` with whether it is done and its link. A blocker the person's token cannot read is named
   as a wait on something not readable, never as done; so is each blocker GitHub counts but leaves out of the ones it
@@ -142,7 +155,7 @@ A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
 the planner never sets the `Status` options: they are the workflow's states as the person set them on the project,
-and an item whose `Status` is an option the workflow does not have is named as a fault and left out. A stage's
+and an item whose `Status` is an option the workflow does not have is warned or listed apart. A stage's
 result overwrites the sections of the body its kind writes and no other byte.
 
 A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the

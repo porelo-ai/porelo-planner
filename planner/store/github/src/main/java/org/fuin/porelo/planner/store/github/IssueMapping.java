@@ -23,13 +23,16 @@ import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Maps a GitHub project's items to the planner's stories and issues and back. An item a person
- * edited by hand into something the board cannot hold is left out as a fault, never a crash.
+ * edited by hand into something the board cannot hold is shown, warned where it cannot be held;
+ * only an item that cannot be named, or one of a repository the project does not plan, is left out
+ * as a fault. Never a crash.
  */
 public final class IssueMapping {
 
@@ -106,17 +109,18 @@ public final class IssueMapping {
      * are not on the board, and a story or issue that needs one of those left out is told so.
      *
      * @param items every item of the project
-     * @param leftOut the item ids of items the board leaves out, already named in a fault
+     * @param pastPage the item ids of items read past one page of GitHub's answer, each shown
+     *     warned
      * @param config the project's repositories and workflow
      * @param states derives a story's state from its issues' when its {@code Status} is empty
      * @return the stories, the issues and the faults
      */
     public static Mapped read(
             final Collection<ItemView> items,
-            final Set<String> leftOut,
+            final Set<String> pastPage,
             final ProjectConfig config,
             final StoryStates states) {
-        return read(items, leftOut, config, states, Map.of());
+        return read(items, pastPage, config, states, Map.of());
     }
 
     /**
@@ -124,7 +128,8 @@ public final class IssueMapping {
      * blocked by an issue that is no item of the project waits on it, with its state as read.
      *
      * @param items every item of the project
-     * @param leftOut the item ids of items the board leaves out, already named in a fault
+     * @param pastPage the item ids of items read past one page of GitHub's answer, each shown
+     *     warned
      * @param config the project's repositories and workflow
      * @param states derives a story's state from its issues' when its {@code Status} is empty
      * @param waits the blockers that are no items of the project, by their node ids, as last read
@@ -132,99 +137,114 @@ public final class IssueMapping {
      */
     public static Mapped read(
             final Collection<ItemView> items,
-            final Set<String> leftOut,
+            final Set<String> pastPage,
             final ProjectConfig config,
             final StoryStates states,
             final Map<String, Snapshot.Waited> waits) {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
-        final Map<String, ItemView> byIssueId = new HashMap<>();
-        final Map<String, String> idOf = new HashMap<>();
-        final Set<String> taken = new HashSet<>();
-        final List<ItemView> live = new ArrayList<>();
+        // Only an item that cannot be named, or one of a repository the project does not plan,
+        // stays off the board as a fault; every other is shown, warned where it cannot be held.
+        final List<ItemView> candidates = new ArrayList<>();
+        final Map<String, Integer> named = new HashMap<>();
         for (final ItemView item : items) {
             final String id = idOf(item);
             if (id == null) {
                 faults.add(where(item) + " has no valid tracker reference and is left out");
                 continue;
             }
-            if (!taken.add(id)) {
-                faults.add(where(item) + " stands in the project twice and is left out");
-                continue;
-            }
-            final boolean shown = !item.archived() && !leftOut.contains(item.itemId());
-            // Left out before it can be found as a parent or a sub-issue, so nothing hangs on it.
             if (!config.repositories().contains(item.repository())) {
-                if (shown) {
+                if (!item.archived()) {
                     faults.add(
                             where(item)
                                     + " lies outside the project's repositories and is left out");
                 }
                 continue;
             }
-            if (isStory(item) && !item.repository().equals(config.own())) {
-                if (shown) {
-                    faults.add(
-                            id
-                                    + " is a story outside the project's own repository and is left out");
-                }
-                continue;
+            candidates.add(item);
+            if (!item.archived()) {
+                named.merge(id, 1, Integer::sum);
             }
-            byIssueId.put(item.issueId(), item);
-            idOf.put(item.issueId(), id);
-            if (shown) {
+        }
+        final Context context = new Context(config, pastPage, waits);
+        final List<ItemView> live = new ArrayList<>();
+        for (final ItemView item : candidates) {
+            final String id = Objects.requireNonNull(idOf(item));
+            context.byIssueId.put(item.issueId(), item);
+            context.idOf.put(item.issueId(), id);
+            if (!item.archived()) {
                 live.add(item);
+                if (named.getOrDefault(id, 0) > 1) {
+                    // Every copy is warned, so the board takes the id on each.
+                    context.twice.add(item.issueId());
+                }
             }
         }
 
         final Map<String, ItemView> issueItems = new LinkedHashMap<>();
         final Map<String, ItemView> storyItems = new LinkedHashMap<>();
+        final List<ItemView> twiceIssueItems = new ArrayList<>();
+        final List<ItemView> twiceStoryItems = new ArrayList<>();
         for (final ItemView item : live) {
-            // Every live item was given its id above.
-            final String id = Objects.requireNonNull(idOf.get(item.issueId()));
-            final boolean story = isStory(item);
-            if (story) {
+            final String id = Objects.requireNonNull(context.idOf.get(item.issueId()));
+            final boolean twice = context.twice.contains(item.issueId());
+            if (context.storyOf(item)) {
                 if (item.parentIssueId() != null) {
                     faults.add(id + " is a story under another issue, shown without it");
                 }
-                storyItems.put(id, item);
+                if (twice) {
+                    twiceStoryItems.add(item);
+                } else {
+                    storyItems.put(id, item);
+                }
+            } else if (twice) {
+                twiceIssueItems.add(item);
             } else {
                 issueItems.put(id, item);
             }
         }
 
         final Map<String, Issue> issues = new LinkedHashMap<>();
-        final Set<String> unstated = new HashSet<>();
         for (final Map.Entry<String, ItemView> entry : issueItems.entrySet()) {
-            final Issue issue =
-                    issue(
-                            entry.getKey(),
-                            entry.getValue(),
-                            workflow,
-                            byIssueId,
-                            idOf,
-                            waits,
-                            config.forge(),
-                            faults);
-            if (issue != null) {
-                issues.put(issue.id(), issue);
-                if (!workflow.states().contains(issue.state())) {
-                    unstated.add(issue.id());
-                }
-            }
+            issues.put(entry.getKey(), issue(entry.getKey(), entry.getValue(), context, faults));
         }
-        // An issue whose Status is its one defect goes through the same checks as one on the
-        // board, so only an issue a move can put on the board is listed outside it.
-        leaveOutCycles(issues, faults);
-        leaveOutSubSubIssues(issues, faults);
+        final List<Map.Entry<Issue, ItemView>> twiceIssues = new ArrayList<>();
+        for (final ItemView item : twiceIssueItems) {
+            final String id = Objects.requireNonNull(context.idOf.get(item.issueId()));
+            final Issue issue = issue(id, item, context, faults);
+            // Its id names another item too: no issue can stand under it, nor it under one.
+            twiceIssues.add(
+                    Map.entry(
+                            relinked(issue, null, issue.blockedBy(), List.of(Warning.idTwice())),
+                            item));
+        }
+        cutCycles(issues);
+        cutSubSubIssues(issues);
+        // A link to one of the project's items the board does not show, such as an archived one.
+        final Set<String> shown = Set.copyOf(issues.keySet());
+        cutDangling(issues, id -> !shown.contains(id));
         workedAsParents(issues);
         final Map<String, Issue> unplaced = new LinkedHashMap<>();
         for (final String id : List.copyOf(issues.keySet())) {
-            if (unstated.contains(id)) {
+            final Issue issue = Objects.requireNonNull(issues.get(id));
+            if (workflow.states().contains(issue.state())) {
+                continue;
+            }
+            if (issue.warnings().isEmpty()) {
+                // Its Status alone is outside the workflow: listed apart, for a move back.
                 unplaced.put(id, Objects.requireNonNull(issues.remove(id)));
+            } else {
+                issues.put(
+                        id,
+                        relinked(
+                                issue,
+                                issue.parent(),
+                                issue.blockedBy(),
+                                List.of(Warning.stateOutsideWorkflow())));
             }
         }
-        leaveOutDangling(issues, unplaced, faults);
+        // A board issue never hangs on one listed apart: that link is cut and warned.
+        cutDangling(issues, unplaced::containsKey);
         unplaced.values().forEach(issue -> faults.add(outsideFault(issue.id(), issue.state())));
         final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
         final List<String> rewrite = new ArrayList<>();
@@ -254,38 +274,73 @@ public final class IssueMapping {
             unclearBody(item).ifPresent(repair -> faults.add(where(item) + repair));
         }
 
-        final List<Story> stories = new ArrayList<>();
+        final Set<String> twiceIds = new HashSet<>();
+        twiceIssues.forEach(entry -> twiceIds.add(entry.getKey().id()));
+        final List<Map.Entry<Story, ItemView>> stories = new ArrayList<>();
         final Set<String> outside = new LinkedHashSet<>();
         for (final Map.Entry<String, ItemView> entry : storyItems.entrySet()) {
+            stories.add(
+                    Map.entry(
+                            story(
+                                    entry.getKey(),
+                                    entry.getValue(),
+                                    issues,
+                                    twiceIds,
+                                    pastPage,
+                                    context.idOf,
+                                    config.repositories(),
+                                    states,
+                                    workflow,
+                                    faults,
+                                    outside),
+                            entry.getValue()));
+        }
+        for (final ItemView item : twiceStoryItems) {
+            final String id = Objects.requireNonNull(context.idOf.get(item.issueId()));
             final Story story =
                     story(
-                            entry.getKey(),
-                            entry.getValue(),
+                            id,
+                            item,
                             issues,
-                            idOf,
+                            twiceIds,
+                            pastPage,
+                            context.idOf,
                             config.repositories(),
                             states,
                             workflow,
                             faults,
                             outside);
-            if (story != null) {
-                stories.add(story);
-            }
+            stories.add(
+                    Map.entry(
+                            story.withWarnings(withAdded(story.warnings(), Warning.idTwice())),
+                            item));
         }
 
         final Comparator<ItemView> order = byPriorityThenRank();
         final List<Story> sortedStories =
                 stories.stream()
-                        .sorted(Comparator.comparing(s -> storyItems.get(s.id()), order))
+                        .sorted(Comparator.comparing(Map.Entry::getValue, order))
+                        .map(Map.Entry::getKey)
                         .toList();
+        final List<Map.Entry<Issue, ItemView>> all = new ArrayList<>();
+        issues.values()
+                .forEach(
+                        issue ->
+                                all.add(
+                                        Map.entry(
+                                                issue,
+                                                Objects.requireNonNull(
+                                                        issueItems.get(issue.id())))));
+        all.addAll(twiceIssues);
         final List<Issue> sortedIssues =
-                issues.values().stream()
-                        .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
+                all.stream()
+                        .sorted(Comparator.comparing(Map.Entry::getValue, order))
+                        .map(Map.Entry::getKey)
                         .toList();
         final List<OutsideIssue> outsideWorkflow =
                 unplaced.values().stream()
                         .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
-                        .map(issue -> outsideIssue(issue, issueItems, stories, byIssueId, idOf))
+                        .map(issue -> outsideIssue(issue, issueItems, sortedStories, context))
                         .toList();
         return new Mapped(
                 sortedStories,
@@ -298,6 +353,73 @@ public final class IssueMapping {
     }
 
     /**
+     * What an item's mapping reads beside it: the project's items by their issues' node ids and
+     * their ids, the node ids of the items whose id names another item too, and those read past one
+     * page.
+     */
+    private static final class Context {
+        private final ProjectConfig config;
+        private final Set<String> pastPage;
+        private final Map<String, Snapshot.Waited> waits;
+        private final Map<String, ItemView> byIssueId = new HashMap<>();
+        private final Map<String, String> idOf = new HashMap<>();
+        private final Set<String> twice = new HashSet<>();
+
+        private Context(
+                final ProjectConfig config,
+                final Set<String> pastPage,
+                final Map<String, Snapshot.Waited> waits) {
+            this.config = config;
+            this.pastPage = pastPage;
+            this.waits = waits;
+        }
+
+        /** Whether an item is a story: labeled one, in the repository that holds the stories. */
+        private boolean storyOf(final @Nullable ItemView item) {
+            return item != null && isStory(item) && item.repository().equals(config.own());
+        }
+    }
+
+    /** The issue with another parent and other blockers, and the warnings added it lacks. */
+    private static Issue relinked(
+            final Issue issue,
+            final @Nullable String parent,
+            final List<String> blockedBy,
+            final List<Warning> added) {
+        List<Warning> warnings = issue.warnings();
+        for (final Warning warning : added) {
+            warnings = withAdded(warnings, warning);
+        }
+        return new Issue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.state(),
+                issue.size(),
+                blockedBy,
+                parent,
+                issue.link(),
+                issue.text(),
+                issue.worker(),
+                issue.risk(),
+                issue.estimate(),
+                issue.minutes(),
+                issue.priority(),
+                warnings,
+                issue.waitsOn());
+    }
+
+    /** The warnings with one more, each kind once. */
+    private static List<Warning> withAdded(final List<Warning> warnings, final Warning warning) {
+        if (warnings.contains(warning)) {
+            return warnings;
+        }
+        final List<Warning> more = new ArrayList<>(warnings);
+        more.add(warning);
+        return more;
+    }
+
+    /**
      * An issue left out because its Status is none of the workflow's, with the story or the issue
      * the board holds that it stands under, so a move into the workflow is judged as its place
      * there will be.
@@ -306,13 +428,14 @@ public final class IssueMapping {
             final Issue issue,
             final Map<String, ItemView> issueItems,
             final List<Story> stories,
-            final Map<String, ItemView> byIssueId,
-            final Map<String, String> idOf) {
+            final Context context) {
         final ItemView item = Objects.requireNonNull(issueItems.get(issue.id()));
         final ItemView parentItem =
-                item.parentIssueId() == null ? null : byIssueId.get(item.parentIssueId());
+                item.parentIssueId() == null ? null : context.byIssueId.get(item.parentIssueId());
         final String storyId =
-                parentItem != null && isStory(parentItem) ? idOf.get(parentItem.issueId()) : null;
+                parentItem != null && context.storyOf(parentItem)
+                        ? context.idOf.get(parentItem.issueId())
+                        : null;
         final String story =
                 storyId != null && stories.stream().anyMatch(s -> s.id().equals(storyId))
                         ? storyId
@@ -370,53 +493,57 @@ public final class IssueMapping {
         return fields;
     }
 
-    private static @Nullable Issue issue(
+    private static Issue issue(
             final String id,
             final ItemView item,
-            final Workflow workflow,
-            final Map<String, ItemView> byIssueId,
-            final Map<String, String> idOf,
-            final Map<String, Snapshot.Waited> waits,
-            final URI forge,
+            final Context context,
             final List<String> faults) {
-        final String state = item.fields().getOrDefault(FieldNames.STATUS, "");
+        final Workflow workflow = context.config.workflow();
+        final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
+        // An issue without a Status stands in the workflow's first state; none is written for it.
+        final String state = status.isEmpty() ? workflow.states().get(0) : status;
         // An issue outside the workflow has no open state to check against it.
-        if (workflow.states().contains(state)) {
+        if (!status.isEmpty() && workflow.states().contains(state)) {
             checkOpen(id, item, state, workflow, faults);
         }
+        List<Warning> warnings = new ArrayList<>();
         String parent = null;
         if (item.parentIssueId() != null) {
-            final ItemView parentItem = byIssueId.get(item.parentIssueId());
+            final ItemView parentItem = context.byIssueId.get(item.parentIssueId());
             if (parentItem == null) {
-                faults.add(id + " has a parent outside the project and is left out");
-                return null;
-            }
-            // Under a story it is the story's issue; under an issue, a Porelo sub-issue, whose
-            // parent left out leaves it out too.
-            if (!isStory(parentItem)) {
-                if (!parentItem.repository().equals(item.repository())) {
-                    faults.add(
-                            id + " stands in another repository than its parent and is left out");
-                    return null;
+                warnings = withAdded(warnings, Warning.parentOutsideProject());
+            } else if (!context.storyOf(parentItem)) {
+                // Under a story it is the story's issue; under an issue, a Porelo sub-issue.
+                if (context.twice.contains(parentItem.issueId())) {
+                    warnings = withAdded(warnings, Warning.dependsOnUnplaced());
+                } else if (!parentItem.repository().equals(item.repository())) {
+                    warnings = withAdded(warnings, Warning.parentInOtherRepository());
+                } else {
+                    parent = Objects.requireNonNull(context.idOf.get(parentItem.issueId()));
                 }
-                parent = Objects.requireNonNull(idOf.get(parentItem.issueId()));
             }
         }
         final List<String> blockedBy = new ArrayList<>();
         final List<Wait> waitsOn = new ArrayList<>();
         for (final String blocker : item.blockedByIds()) {
-            final ItemView blocking = byIssueId.get(blocker);
+            final ItemView blocking = context.byIssueId.get(blocker);
             if (blocking == null) {
                 // No item of the project: the issue stays on the board and waits on it.
-                waitsOn.add(wait(item, blocker, waits, forge));
-                continue;
+                waitsOn.add(wait(item, blocker, context.waits, context.config.forge()));
+            } else if (context.storyOf(blocking)) {
+                warnings = withAdded(warnings, Warning.blockedByStory());
+            } else if (context.twice.contains(blocking.issueId())) {
+                warnings = withAdded(warnings, Warning.dependsOnUnplaced());
+            } else {
+                blockedBy.add(Objects.requireNonNull(context.idOf.get(blocking.issueId())));
             }
-            final String blockerId = idOf.get(blocking.issueId());
-            if (blockerId == null || isStory(blocking)) {
-                faults.add(id + " is blocked by a story and is left out");
-                return null;
-            }
-            blockedBy.add(blockerId);
+        }
+        if (isStory(item)) {
+            // Marked a story outside the repository that holds the stories: shown as an issue.
+            warnings = withAdded(warnings, Warning.storyOutsideOwnRepository());
+        }
+        if (context.pastPage.contains(item.itemId())) {
+            warnings = withAdded(warnings, Warning.pastOnePage());
         }
         // A blocker GitHub counts but does not name is one the person's login cannot read.
         for (int unseen = 0; unseen < item.unseenBlockers(); unseen++) {
@@ -446,7 +573,7 @@ public final class IssueMapping {
                 figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
                 figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
                 choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults),
-                List.of(),
+                warnings,
                 waitsOn);
     }
 
@@ -571,10 +698,12 @@ public final class IssueMapping {
                                                         == Character.PARAGRAPH_SEPARATOR);
     }
 
-    private static @Nullable Story story(
+    private static Story story(
             final String id,
             final ItemView item,
             final Map<String, Issue> issues,
+            final Set<String> twiceIds,
+            final Set<String> pastPage,
             final Map<String, String> idOf,
             final List<String> repositories,
             final StoryStates states,
@@ -585,8 +714,10 @@ public final class IssueMapping {
         boolean whole = true;
         for (final String subIssueId : item.subIssueIds()) {
             final String subId = idOf.get(subIssueId);
-            if (subId != null && issues.containsKey(subId)) {
-                own.add(subId);
+            if (subId != null && (issues.containsKey(subId) || twiceIds.contains(subId))) {
+                if (!own.contains(subId)) {
+                    own.add(subId);
+                }
             } else {
                 if (subId == null) {
                     faults.add(id + " has a sub-issue outside the project");
@@ -631,18 +762,35 @@ public final class IssueMapping {
         final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
         final String state;
         final boolean given = !status.isEmpty();
-        if (given) {
-            if (!workflow.states().contains(status)) {
-                faults.add(id + " has a Status outside the workflow and is left out");
-                return null;
+        final List<Warning> warnings = new ArrayList<>();
+        if (pastPage.contains(item.itemId())) {
+            warnings.add(Warning.pastOnePage());
+            whole = false;
+        }
+        for (final String part : own) {
+            final Issue issue = issues.get(part);
+            if (issue != null && issue.warnings().contains(Warning.pastOnePage())) {
+                // An issue of it read in part may have parts the story misses.
+                whole = false;
             }
+        }
+        if (given) {
             state = status;
-            checkOpen(id, item, state, workflow, faults);
+            if (workflow.states().contains(status)) {
+                checkOpen(id, item, state, workflow, faults);
+            } else {
+                // Shown in a column of its own state, its issues with it.
+                warnings.add(Warning.stateOutsideWorkflow());
+            }
         } else {
             final String followed =
                     states.storyState(
+                            // Only an issue in a state of the workflow tells the story's.
                             own.stream()
-                                    .map(i -> Objects.requireNonNull(issues.get(i)).state())
+                                    .map(issues::get)
+                                    .filter(Objects::nonNull)
+                                    .map(Issue::state)
+                                    .filter(workflow.states()::contains)
                                     .toList());
             state = followed != null ? followed : workflow.states().get(0);
         }
@@ -657,7 +805,17 @@ public final class IssueMapping {
         }
         final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
         return new Story(
-                id, item.title(), state, given, priority, size, own, body, item.link(), whole);
+                        id,
+                        item.title(),
+                        state,
+                        given,
+                        priority,
+                        size,
+                        own,
+                        body,
+                        item.link(),
+                        whole)
+                .withWarnings(warnings);
     }
 
     /**
@@ -715,34 +873,35 @@ public final class IssueMapping {
     }
 
     /**
-     * Leaves out every issue whose parents lead back to it, which GitHub itself refuses but a race
-     * may leave.
+     * Cuts the parent of every issue whose parents lead back to it, which GitHub itself refuses but
+     * a race may leave; each is warned and stands without a parent.
      */
-    private static void leaveOutCycles(final Map<String, Issue> issues, final List<String> faults) {
-        final Set<String> cyclic = new HashSet<>();
+    private static void cutCycles(final Map<String, Issue> issues) {
+        final List<String> circle = new ArrayList<>();
         for (final Issue issue : issues.values()) {
             final Set<String> seen = new HashSet<>();
-            Issue at = issue;
-            while (at != null && at.parent() != null) {
-                if (!seen.add(at.id())) {
-                    cyclic.add(issue.id());
+            Issue at = issue.parent() == null ? null : issues.get(issue.parent());
+            while (at != null && seen.add(at.id())) {
+                if (at.id().equals(issue.id())) {
+                    circle.add(issue.id());
                     break;
                 }
-                at = issues.get(at.parent());
+                at = at.parent() == null ? null : issues.get(at.parent());
             }
         }
-        for (final String id : cyclic) {
-            issues.remove(id);
-            faults.add(id + " stands in a circle of parents and is left out");
+        for (final String id : circle) {
+            final Issue issue = Objects.requireNonNull(issues.get(id));
+            issues.put(
+                    id, relinked(issue, null, issue.blockedBy(), List.of(Warning.parentCircle())));
         }
     }
 
     /**
-     * Leaves out every sub-issue of a sub-issue, which the board cannot hold: a Porelo sub-issue's
-     * parent stands under a story, never under another issue.
+     * Cuts the parent of every sub-issue of a sub-issue, which the board cannot hold: a Porelo
+     * sub-issue's parent stands under a story, never under another issue. Each is found before any
+     * is cut, so the order the items come in changes nothing.
      */
-    private static void leaveOutSubSubIssues(
-            final Map<String, Issue> issues, final List<String> faults) {
+    private static void cutSubSubIssues(final Map<String, Issue> issues) {
         final List<String> deep = new ArrayList<>();
         for (final Issue issue : issues.values()) {
             final Issue parent = issue.parent() == null ? null : issues.get(issue.parent());
@@ -751,49 +910,36 @@ public final class IssueMapping {
             }
         }
         for (final String id : deep) {
-            issues.remove(id);
-            faults.add(id + " is a sub-issue of a sub-issue and is left out");
+            final Issue issue = Objects.requireNonNull(issues.get(id));
+            issues.put(
+                    id,
+                    relinked(
+                            issue, null, issue.blockedBy(), List.of(Warning.subIssueOfSubIssue())));
         }
     }
 
     /**
-     * Leaves out, until none is left, every issue whose parent or blocker was left out: a board
-     * issue that depends on one off the board, and an issue outside the workflow that depends on
-     * one neither on the board nor outside it.
+     * Cuts each link of a board issue to an issue the board does not place - one listed apart, or
+     * one of the project's items the board does not show, such as an archived one - and warns it.
+     *
+     * @param issues the board's issues, changed in place
+     * @param gone whether the board does not place the issue of an id
      */
-    private static void leaveOutDangling(
-            final Map<String, Issue> issues,
-            final Map<String, Issue> unplaced,
-            final List<String> faults) {
-        boolean removed = true;
-        while (removed) {
-            removed =
-                    leaveOutDanglingFrom(issues, issues, unplaced, faults)
-                            | leaveOutDanglingFrom(unplaced, issues, unplaced, faults);
-        }
-    }
-
-    /** One pass over one of the two sets; answers whether it left any out. */
-    private static boolean leaveOutDanglingFrom(
-            final Map<String, Issue> from,
-            final Map<String, Issue> issues,
-            final Map<String, Issue> unplaced,
-            final List<String> faults) {
-        // A board issue needs what it hangs on to be on the board too.
-        final boolean onBoard = from == issues;
-        boolean removed = false;
-        for (final Issue issue : List.copyOf(from.values())) {
-            final java.util.function.Predicate<String> gone =
-                    id -> !issues.containsKey(id) && (onBoard || !unplaced.containsKey(id));
+    private static void cutDangling(
+            final Map<String, Issue> issues, final java.util.function.Predicate<String> gone) {
+        for (final Issue issue : List.copyOf(issues.values())) {
             final boolean parentGone = issue.parent() != null && gone.test(issue.parent());
-            final boolean blockerGone = issue.blockedBy().stream().anyMatch(gone);
-            if (parentGone || blockerGone) {
-                from.remove(issue.id());
-                faults.add(issue.id() + " depends on an issue left out and is left out too");
-                removed = true;
+            final List<String> blockers = issue.blockedBy().stream().filter(gone.negate()).toList();
+            if (parentGone || blockers.size() != issue.blockedBy().size()) {
+                issues.put(
+                        issue.id(),
+                        relinked(
+                                issue,
+                                parentGone ? null : issue.parent(),
+                                blockers,
+                                List.of(Warning.dependsOnUnplaced())));
             }
         }
-        return removed;
     }
 
     /**

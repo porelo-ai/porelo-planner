@@ -3913,6 +3913,160 @@
         "text" : "Its text has no sections the planner can read; it is shown as it stands.",
         "holds" : false
       } ]
+    }, {
+      "id" : "B877",
+      "repository" : "porelo",
+      "title" : "An issue marked a story outside the stories' repository",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B877",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "StoryOutsideOwnRepository",
+        "text" : "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it."
+      } ]
+    }, {
+      "id" : "B878",
+      "repository" : "porelo",
+      "title" : "An issue whose parent is in another repository",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B878",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "ParentInOtherRepository",
+        "text" : "Its parent is in another repository, so it is shown without its parent."
+      } ]
+    }, {
+      "id" : "B879",
+      "repository" : "porelo",
+      "title" : "An issue blocked by a story",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B879",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "BlockedByStory",
+        "text" : "It is blocked by a story, which only an issue can block, so it is shown without that blocker."
+      } ]
+    }, {
+      "id" : "B880",
+      "repository" : "porelo",
+      "title" : "An issue whose parents lead back to it",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B880",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "ParentCircle",
+        "text" : "Its parents lead back to it, so it is shown without its parent."
+      } ]
+    }, {
+      "id" : "B881",
+      "repository" : "porelo",
+      "title" : "A sub-issue of a sub-issue",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B881",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "SubIssueOfSubIssue",
+        "text" : "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent."
+      } ]
+    }, {
+      "id" : "B882",
+      "repository" : "porelo",
+      "title" : "An issue read past one page",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B882",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "PastOnePage",
+        "text" : "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read."
+      } ]
+    }, {
+      "id" : "B883",
+      "repository" : "porelo",
+      "title" : "An issue that hangs on one the board does not place",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B883",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "DependsOnUnplaced",
+        "text" : "An issue it stands under or waits on is not placed on the board, so it is shown without that link."
+      } ]
     } ],
     "work" : null,
     "open" : null,
@@ -4029,7 +4183,7 @@
       "issues" : 1
     }, {
       "name" : "Backlog",
-      "issues" : 31
+      "issues" : 38
     }, {
       "name" : "Implementing",
       "issues" : 10
@@ -4061,7 +4215,7 @@
       "issues" : 1
     }, {
       "name" : "S",
-      "issues" : 15
+      "issues" : 22
     }, {
       "name" : "M",
       "issues" : 35
@@ -4070,9 +4224,9 @@
       "issues" : 2
     } ],
     "unsized" : 0,
-    "left" : 53,
+    "left" : 60,
     "minutes" : null,
-    "unestimated" : 53,
+    "unestimated" : 60,
     "review" : 16
   }
 }

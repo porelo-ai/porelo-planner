@@ -1,0 +1,2 @@
+title: An issue a person edited on GitHub into something the board cannot hold, such as a parent in another repository, a story as a blocker or an id on two items, is shown warned with the issues under it instead of being left out.
+type: changed

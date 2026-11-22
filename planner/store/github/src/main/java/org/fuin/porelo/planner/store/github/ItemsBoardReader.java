@@ -1362,9 +1362,9 @@ public final class ItemsBoardReader implements BoardReader {
 
     /**
      * Maps one item, or answers null for an item the board leaves out unseen: one without an issue
-     * silently, one outside the project's owner with a fault. An item whose sub-issues or blockers
-     * run past one page is mapped and named among the overflowing, so the board leaves it out but
-     * knows it.
+     * silently, one outside the project's owner with a fault. An item whose sub-issues, blockers,
+     * labels or values run past one page is mapped and named among the overflowing, so the board
+     * shows it warned.
      */
     private static @Nullable ItemView view(
             final GitHubGraphQl.ProjectItem item,
@@ -1399,20 +1399,8 @@ public final class ItemsBoardReader implements BoardReader {
             faults.add(where + " lies outside the project's repositories and is left out");
             return null;
         }
-        if (Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
-                || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage())) {
-            faults.add(
-                    where
-                            + " has more sub-issues or blockers than one page carries and is left"
-                            + " out; its story is not whole");
-            overflowing.add(item.id());
-        } else if (Boolean.TRUE.equals(issue.labelsPage().hasNextPage())
-                || Boolean.TRUE.equals(item.valuesPage().hasNextPage())) {
-            // Labels or values read in part would map to a story or an issue that is not it.
-            faults.add(
-                    where
-                            + " has more labels or field values than one page carries and is left"
-                            + " out");
+        if (incomplete(item, issue)) {
+            // Shown as far as it was read, warned, so no work starts on what was read in part.
             overflowing.add(item.id());
         }
         final String reason = issue.stateReason();

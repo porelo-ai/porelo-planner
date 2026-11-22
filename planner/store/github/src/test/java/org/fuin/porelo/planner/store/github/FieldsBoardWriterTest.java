@@ -148,7 +148,9 @@ class FieldsBoardWriterTest {
                 idOf(item),
                 item.repository(),
                 item.title(),
-                item.fields().get(FieldNames.STATUS),
+                // An issue without a Status stands in the workflow's first state, as the board
+                // reads it.
+                item.fields().getOrDefault(FieldNames.STATUS, WORKFLOW.states().get(0)),
                 null,
                 List.of(),
                 null,
@@ -175,12 +177,11 @@ class FieldsBoardWriterTest {
                                 item.link()));
             }
             byId.put(idOf(item), item);
-            // A story is no issue of the board, and here the board leaves out an issue without a
-            // Status of the workflow; the writer reads their items alone.
+            // A story is no issue of the board, and here the board leaves out an issue whose
+            // Status is outside the workflow; the writer reads their items alone.
             final String status = item.fields().get(FieldNames.STATUS);
             if (!item.labels().contains(IssueMapping.STORY_LABEL)
-                    && status != null
-                    && WORKFLOW.states().contains(status)) {
+                    && (status == null || WORKFLOW.states().contains(status))) {
                 issues.add(issue(item));
             }
         }
@@ -603,6 +604,26 @@ class FieldsBoardWriterTest {
                 .containsExactlyInAnyOrder(
                         FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"),
                         FieldValue.option("PVTI_LB2", "F_Status", "O_Backlog"));
+    }
+
+    @Test
+    void anIssueWithoutAStatusIsNotGivenOneByASaveBesideIt() {
+        // Harm: a save of other items writes the state the board shows for an issue that states
+        // none, so a person's empty Status turns into one they never chose.
+        final ItemView moved = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView unstated = item("LB3", "example-lib", 3, true, "", Map.of());
+        final GitHub github = new GitHub().holding(moved, unstated);
+        final Snapshot snapshot = snapshot(moved, unstated);
+        assertThat(snapshot.board().issue("LB3").orElseThrow().state())
+                .as("shown in the first state")
+                .isEqualTo("Idea");
+
+        github.writer()
+                .save(snapshot, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of(), List.of()));
+
+        assertThat(github.mutations)
+                .as("only the moved issue's Status")
+                .containsExactly(List.of(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog")));
     }
 
     @Test

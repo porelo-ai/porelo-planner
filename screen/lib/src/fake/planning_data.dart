@@ -2499,6 +2499,202 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
               "holds": false
             }
           ]
+        },
+        {
+          "id": "B877",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B877",
+          "title": "An issue marked a story outside the stories' repository",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "StoryOutsideOwnRepository",
+              "text": "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it."
+            }
+          ]
+        },
+        {
+          "id": "B878",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B878",
+          "title": "An issue whose parent is in another repository",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "ParentInOtherRepository",
+              "text": "Its parent is in another repository, so it is shown without its parent."
+            }
+          ]
+        },
+        {
+          "id": "B879",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B879",
+          "title": "An issue blocked by a story",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "BlockedByStory",
+              "text": "It is blocked by a story, which only an issue can block, so it is shown without that blocker."
+            }
+          ]
+        },
+        {
+          "id": "B880",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B880",
+          "title": "An issue whose parents lead back to it",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "ParentCircle",
+              "text": "Its parents lead back to it, so it is shown without its parent."
+            }
+          ]
+        },
+        {
+          "id": "B881",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B881",
+          "title": "A sub-issue of a sub-issue",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "SubIssueOfSubIssue",
+              "text": "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent."
+            }
+          ]
+        },
+        {
+          "id": "B882",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B882",
+          "title": "An issue read past one page",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "PastOnePage",
+              "text": "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read."
+            }
+          ]
+        },
+        {
+          "id": "B883",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B883",
+          "title": "An issue that hangs on one the board does not place",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "DependsOnUnplaced",
+              "text": "An issue it stands under or waits on is not placed on the board, so it is shown without that link."
+            }
+          ]
         }
       ],
       "description": "",

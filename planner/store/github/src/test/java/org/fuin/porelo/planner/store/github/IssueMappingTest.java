@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -323,9 +324,9 @@ class IssueMappingTest {
     }
 
     @Test
-    void anItemLabeledStoryOutsideTheOwnRepositoryTakesItsSubIssuesOutWithIt() {
-        // Harm: the sub-issue of a refused story is shown as an issue of no story, with its own
-        // worker and risk instead of being left out with it.
+    void anItemLabeledStoryOutsideTheOwnRepositoryIsAWarnedIssueAndKeepsItsSubIssues() {
+        // Harm: one label set by hand in another repository hides that issue and every issue
+        // under it from the board.
         final Item own = new Item("example-project", 1).story();
         final Item labeled = new Item("example-lib", 3).story();
         final Item under = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
@@ -333,19 +334,23 @@ class IssueMappingTest {
 
         final IssueMapping.Mapped mapped = read(own, labeled, under);
 
-        assertThat(mapped.issues()).as("no issue of the refused story").isEmpty();
-        assertThat(mapped.faults())
-                .as("the story outside the own repository and its sub-issue left out")
-                .containsExactly(
-                        "example-lib#3 is a story outside the project's own repository and is"
-                                + " left out",
-                        "example-lib#4 has a parent outside the project and is left out");
+        assertThat(mapped.issues())
+                .as("the labeled item as an issue, warned, and its sub-issue under it")
+                .extracting(Issue::id, Issue::parent, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple(
+                                "example-lib#3",
+                                null,
+                                List.of(Warning.storyOutsideOwnRepository())),
+                        Tuple.tuple("example-lib#4", "example-lib#3", List.of()));
+        assertThat(mapped.stories()).extracting(Story::id).containsExactly("example-project#1");
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test
-    void aSubIssueOfASubIssueIsRefusedWhicheverOrderItsItemsCome() {
-        // Harm: a tree deeper than the board holds is shown as a plan, or an item depending on a
-        // refused one takes the board down.
+    void aSubIssueOfASubIssueIsShownWithoutItsParentWhicheverOrderItsItemsCome() {
+        // Harm: a tree deeper than the board holds hides every issue below its second level, and
+        // the issues waiting on them.
         final Item story = new Item("example-project", 1).story();
         final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
         final Item part = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
@@ -361,26 +366,24 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(deeper, deep, waiting, part, story, issue);
 
         assertThat(mapped.issues())
-                .as("the story's issue and its sub-issue stay")
-                .extracting(Issue::id, Issue::parent)
+                .as("every issue shown, those below a sub-issue without their parent and warned")
+                .extracting(Issue::id, Issue::parent, Issue::warnings)
                 .containsExactlyInAnyOrder(
-                        Tuple.tuple("example-lib#2", null),
-                        Tuple.tuple("example-lib#3", "example-lib#2"));
-        assertThat(mapped.faults())
-                .as("each item below a sub-issue refused, and the one waiting on it")
-                .containsExactlyInAnyOrder(
-                        "example-lib#4 is a sub-issue of a sub-issue and is left out",
-                        "example-lib#5 is a sub-issue of a sub-issue and is left out",
-                        "example-lib#6 depends on an issue left out and is left out too");
+                        Tuple.tuple("example-lib#2", null, List.of()),
+                        Tuple.tuple("example-lib#3", "example-lib#2", List.of()),
+                        Tuple.tuple("example-lib#4", null, List.of(Warning.subIssueOfSubIssue())),
+                        Tuple.tuple("example-lib#5", null, List.of(Warning.subIssueOfSubIssue())),
+                        Tuple.tuple("example-lib#6", null, List.of()));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
         assertThat(mapped.stories().get(0).issuesWhole())
-                .as("the story says an issue of it is missing")
-                .isFalse();
+                .as("the story holds every issue it names")
+                .isTrue();
     }
 
     @Test
-    void anItemEditedByHandIntoWhatTheBoardCannotHoldIsLeftOutAsAFault() {
-        // Harm: one hand edit on GitHub takes the whole board down, or shows a broken plan as
-        // whole.
+    void anItemEditedByHandIntoWhatTheBoardCannotHoldIsShownWarned() {
+        // Harm: one hand edit on GitHub hides an issue, or every issue that hangs on it, from
+        // the board.
         final Item story = new Item("example-project", 1).story();
         final Item parent = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
         final Item badState = new Item("example-lib", 6).field(FieldNames.STATUS, "Somewhere");
@@ -397,15 +400,47 @@ class IssueMappingTest {
                 read(story, parent, badState, blocked, wrongRepository, fine, again);
 
         assertThat(mapped.issues())
-                .as("only the issues the board can hold")
-                .extracting(Issue::id, Issue::state)
+                .as("every issue, warned where the board cannot hold it")
+                .extracting(
+                        Issue::id, Issue::state, Issue::parent, Issue::blockedBy, Issue::warnings)
                 .containsExactlyInAnyOrder(
-                        Tuple.tuple("example-lib#4", "Idea"),
-                        Tuple.tuple("example-lib#10", "Idea"));
-        assertThat(mapped.faults()).as("one fault per item left out").hasSize(4);
+                        Tuple.tuple("example-lib#4", "Idea", null, List.of(), List.of()),
+                        Tuple.tuple(
+                                "example-lib#7",
+                                "Idea",
+                                null,
+                                List.of(),
+                                List.of(Warning.dependsOnUnplaced())),
+                        Tuple.tuple(
+                                "example-project#8",
+                                "Idea",
+                                null,
+                                List.of(),
+                                List.of(Warning.parentInOtherRepository())),
+                        Tuple.tuple(
+                                "example-lib#10",
+                                "Idea",
+                                null,
+                                List.of(),
+                                List.of(Warning.idTwice())),
+                        Tuple.tuple(
+                                "example-lib#10",
+                                "Backlog",
+                                null,
+                                List.of(),
+                                List.of(Warning.idTwice())));
+        assertThat(mapped.outsideWorkflow())
+                .as("the issue whose Status alone is outside the workflow, listed apart")
+                .extracting(OutsideIssue::id)
+                .containsExactly("example-lib#6");
+        assertThat(mapped.faults())
+                .as("only the issue listed apart is named")
+                .containsExactly(
+                        "example-lib#6 has the Status Somewhere, which the workflow does not hold;"
+                                + " move it into a state of the board to repair it");
         assertThat(mapped.stories().get(0).issuesWhole())
-                .as("the story says an issue of it is missing")
-                .isFalse();
+                .as("the story holds every issue it names")
+                .isTrue();
     }
 
     @Test
@@ -710,7 +745,7 @@ class IssueMappingTest {
     @Test
     void aSubIssueIsWorkedAsItsParentAndStandsInItsParentsRepository() {
         // Harm: an agent sent to a manual issue's part, at a lower risk than the issue it belongs
-        // to.
+        // to; or a part in another repository than its parent hidden from the board.
         final Item part = new Item("example-lib", 4).field(FieldNames.STATUS, "Idea");
         final Item parent =
                 new Item("example-lib", 3)
@@ -725,17 +760,24 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(parent, part, other, elsewhere);
 
         assertThat(mapped.issues())
-                .as("the part worked as its parent, the one in another repository left out")
-                .extracting(Issue::id, Issue::worker, Issue::risk)
+                .as("the part worked as its parent, the one in another repository without it")
+                .extracting(Issue::id, Issue::parent, Issue::worker, Issue::risk, Issue::warnings)
                 .containsExactly(
-                        Tuple.tuple("example-lib#3", Worker.MANUAL, Risk.HARM),
-                        Tuple.tuple("example-lib#4", Worker.MANUAL, Risk.HARM),
-                        Tuple.tuple("example-lib#5", Worker.AGENT, Risk.ORDINARY));
-        assertThat(mapped.faults())
-                .as("the misplaced part is named")
-                .containsExactly(
-                        "example-project#6 stands in another repository than its parent and is"
-                                + " left out");
+                        Tuple.tuple("example-lib#3", null, Worker.MANUAL, Risk.HARM, List.of()),
+                        Tuple.tuple(
+                                "example-lib#4",
+                                "example-lib#3",
+                                Worker.MANUAL,
+                                Risk.HARM,
+                                List.of()),
+                        Tuple.tuple("example-lib#5", null, Worker.AGENT, Risk.ORDINARY, List.of()),
+                        Tuple.tuple(
+                                "example-project#6",
+                                null,
+                                Worker.AGENT,
+                                Risk.ORDINARY,
+                                List.of(Warning.parentInOtherRepository())));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test
@@ -798,9 +840,9 @@ class IssueMappingTest {
     }
 
     @Test
-    void anArchivedItemIsNotOnTheBoardAndItsSubIssueIsLeftOutWithIt() {
-        // Harm: an archived issue shown as open work, or its part shown under a parent the board
-        // does not hold.
+    void anArchivedItemIsNotOnTheBoardAndItsSubIssueIsShownWithoutIt() {
+        // Harm: an archived issue shown as open work, or its part hidden with it or shown under a
+        // parent the board does not hold.
         final Item archived =
                 new Item("example-lib", 1).field(FieldNames.STATUS, "Idea").archived();
         final Item part = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
@@ -810,12 +852,12 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(archived, part, live);
 
         assertThat(mapped.issues())
-                .as("only the live item")
-                .extracting(Issue::id)
-                .containsExactly("example-lib#3");
-        assertThat(mapped.faults())
-                .as("the part of the archived issue is named")
-                .containsExactly("example-lib#2 depends on an issue left out and is left out too");
+                .as("the live items, the part without its archived parent and warned")
+                .extracting(Issue::id, Issue::parent, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple("example-lib#2", null, List.of(Warning.dependsOnUnplaced())),
+                        Tuple.tuple("example-lib#3", null, List.of()));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test
@@ -855,6 +897,7 @@ class IssueMappingTest {
                         .findFirst()
                         .orElseThrow();
         assertThat(waiting.blockedBy()).as("no blocker of the board").isEmpty();
+        assertThat(waiting.warnings()).as("a wait, never a fault or a warning").isEmpty();
         assertThat(waiting.waitsOn())
                 .as("each wait, open and done, with its link")
                 .containsExactly(
@@ -899,9 +942,9 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssueBlockedByAStoryIsLeftOutWithEverythingUnderIt() {
-        // Harm: a story taken as a work wait, so an issue waits on a whole story's issues unseen;
-        // this fault stays meant, and the issue's part goes with it, as with every issue left out.
+    void anIssueBlockedByAStoryIsShownWithoutThatBlockerAndHeld() {
+        // Harm: an issue a person blocked by a story vanishes with everything under it; or the
+        // story is taken as a wait, so the issue waits on a whole story's issues unseen.
         final Item story = new Item("example-project", 1).story();
         final Item blocked =
                 new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog").blockedBy(story);
@@ -910,12 +953,21 @@ class IssueMappingTest {
 
         final IssueMapping.Mapped mapped = read(story, blocked, part);
 
-        assertThat(mapped.issues()).as("the issue and its part left out").isEmpty();
-        assertThat(mapped.faults())
-                .as("named")
-                .containsExactlyInAnyOrder(
-                        "example-lib#2 is blocked by a story and is left out",
-                        "example-lib#3 depends on an issue left out and is left out too");
+        assertThat(mapped.issues())
+                .as("the issue without the story as a blocker, warned, and its part under it")
+                .extracting(
+                        Issue::id, Issue::parent, Issue::blockedBy, Issue::waitsOn, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-lib#2",
+                                null,
+                                List.of(),
+                                List.of(),
+                                List.of(Warning.blockedByStory())),
+                        Tuple.tuple(
+                                "example-lib#3", "example-lib#2", List.of(), List.of(), List.of()));
+        assertThat(Warning.blockedByStory().holdsWork()).as("no work starts on it").isTrue();
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test
@@ -934,9 +986,11 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(story, accepted, none, fine);
 
         assertThat(mapped.issues())
-                .as("only the issues in a state of the workflow are on the board")
-                .extracting(Issue::id)
-                .containsExactly("example-lib#4");
+                .as("the issues in a state of the workflow, one without a Status in its first")
+                .extracting(Issue::id, Issue::state, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#3", "Idea", List.of()),
+                        Tuple.tuple("example-lib#4", "Idea", List.of()));
         assertThat(mapped.outsideWorkflow())
                 .as("each issue left out of the workflow, with what the window shows of it")
                 .containsExactlyInAnyOrder(
@@ -948,23 +1002,12 @@ class IssueMappingTest {
                                 "example-project#1",
                                 null,
                                 URI.create("https://github.com/example-org/example-lib/issues/2"),
-                                Worker.MANUAL),
-                        new OutsideIssue(
-                                "example-lib#3",
-                                "example-lib",
-                                SECRET_TITLE,
-                                "",
-                                null,
-                                null,
-                                URI.create("https://github.com/example-org/example-lib/issues/3"),
-                                Worker.AGENT));
+                                Worker.MANUAL));
         assertThat(mapped.faults())
-                .as("each named with how a person repairs it")
-                .containsExactlyInAnyOrder(
+                .as("named with how a person repairs it")
+                .containsExactly(
                         "example-lib#2 has the Status Accepted, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it",
-                        "example-lib#3 has no Status; move it into a state of the board to repair"
-                                + " it");
+                                + " move it into a state of the board to repair it");
     }
 
     @Test
@@ -990,9 +1033,32 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssueOutsideTheWorkflowWithAnotherFaultIsLeftOutForThatFaultAlone() {
-        // Harm: an issue offered for a move back onto the board that the next read leaves out
-        // again, or worked as a parent of another repository.
+    void aStoryWhoseStatusTheWorkflowDoesNotHoldIsShownWarnedWithItsIssues() {
+        // Harm: a story given a Status by hand that the workflow lacks hides itself and leaves
+        // its issues shown as if they belonged to no story.
+        final Item story =
+                new Item("example-project", 1).story().field(FieldNames.STATUS, "Accepted");
+        final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
+        story.sub(issue);
+
+        final IssueMapping.Mapped mapped = read(story, issue);
+
+        assertThat(mapped.stories())
+                .as("the story in its own state, warned, its issue in it")
+                .extracting(Story::id, Story::state, Story::issues, Story::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-project#1",
+                                "Accepted",
+                                List.of("example-lib#2"),
+                                List.of(Warning.stateOutsideWorkflow())));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowWithAWarningStandsOnTheBoardWarnedForBoth() {
+        // Harm: an issue outside the workflow that the board cannot hold for another reason too
+        // is hidden; or it is offered for a move back that the next read refuses again.
         final Item story = new Item("example-project", 10).story();
         final Item blockedElsewhere =
                 new Item("example-lib", 1).field(FieldNames.STATUS, "Accepted").blockedBy(story);
@@ -1007,10 +1073,12 @@ class IssueMappingTest {
         final Item deep = new Item("example-lib", 6).field(FieldNames.STATUS, "Accepted");
         top.sub(middle);
         middle.sub(deep);
-        final Item leftOut =
+        final Item blockedByStory =
                 new Item("example-lib", 7).field(FieldNames.STATUS, "Idea").blockedBy(story);
-        final Item dangling =
-                new Item("example-lib", 8).field(FieldNames.STATUS, "Accepted").blockedBy(leftOut);
+        final Item waiting =
+                new Item("example-lib", 8)
+                        .field(FieldNames.STATUS, "Accepted")
+                        .blockedBy(blockedByStory);
         final Item orphan = new Item("example-lib", 9).field(FieldNames.STATUS, "Accepted");
         orphan.parent = "I_elsewhere_7";
 
@@ -1023,21 +1091,34 @@ class IssueMappingTest {
                         top,
                         middle,
                         deep,
-                        leftOut,
-                        dangling,
+                        blockedByStory,
+                        waiting,
                         orphan);
 
-        assertThat(mapped.outsideWorkflow()).as("none offered for a move").isEmpty();
-        assertThat(mapped.faults())
-                .as("each named for its other fault alone, as a board issue with it is")
+        final Warning outside = Warning.stateOutsideWorkflow();
+        assertThat(mapped.issues())
+                .as("each warned issue on the board, outside the workflow warned too")
+                .filteredOn(issue -> !issue.warnings().isEmpty())
+                .extracting(Issue::id, Issue::warnings)
                 .containsExactlyInAnyOrder(
-                        "example-lib#1 is blocked by a story and is left out",
-                        "example-lib#3 stands in another repository than its parent and is left"
-                                + " out",
-                        "example-lib#6 is a sub-issue of a sub-issue and is left out",
-                        "example-lib#7 is blocked by a story and is left out",
-                        "example-lib#8 depends on an issue left out and is left out too",
-                        "example-lib#9 has a parent outside the project and is left out");
+                        Tuple.tuple("example-lib#1", List.of(Warning.blockedByStory(), outside)),
+                        Tuple.tuple(
+                                "example-lib#3",
+                                List.of(Warning.parentInOtherRepository(), outside)),
+                        Tuple.tuple(
+                                "example-lib#6", List.of(Warning.subIssueOfSubIssue(), outside)),
+                        Tuple.tuple("example-lib#7", List.of(Warning.blockedByStory())),
+                        Tuple.tuple(
+                                "example-lib#9", List.of(Warning.parentOutsideProject(), outside)));
+        assertThat(mapped.outsideWorkflow())
+                .as("the issue whose Status alone is outside the workflow, listed apart")
+                .extracting(OutsideIssue::id)
+                .containsExactly("example-lib#8");
+        assertThat(mapped.faults())
+                .as("only that one named")
+                .containsExactly(
+                        "example-lib#8 has the Status Accepted, which the workflow does not hold;"
+                                + " move it into a state of the board to repair it");
     }
 
     @Test

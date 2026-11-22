@@ -133,6 +133,40 @@ Future<(_Source, PlanningBoard)> _opened({bool automatic = false}) async {
 }
 
 void main() {
+  // Harm: an issue the planner now shows warned, its parent cut, is dropped from the no-story area, so it is on no card.
+  test('an issue in no story that carries a warning is shown there', () async {
+    final source = _Source();
+    final warned = {
+      ..._looseIssue(),
+      'id': 'B901',
+      'parent': null,
+      'warnings': [
+        {
+          'kind': 'ParentInOtherRepository',
+          'text': 'Its parent is in another repository, so it is shown without its parent.',
+        },
+      ],
+    };
+    source.boards['demo'] = {
+      ...smallBoard(),
+      'issues': [_looseIssue(), warned],
+    };
+    final board = PlanningBoard(source, 'demo');
+    addTearDown(() async {
+      board.dispose();
+      await source.end();
+    });
+    await _turn();
+    source.reads.single.complete(
+      PlanIssueList.from({
+        'revision': 'r1',
+        'issues': [_looseIssue(), warned],
+      }),
+    );
+    await _turn();
+    expect(board.noStoryIn('Backlog').map((issue) => issue.id), ['B900', 'B901']);
+  });
+
   // Harm: a repaired outside issue releases its unanswered move before its standalone destination is known.
   test('an unanswered outside move waits for the standalone list after the issue returns to the workflow', () async {
     final (source, board) = await _opened();

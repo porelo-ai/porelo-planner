@@ -946,9 +946,9 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void anItemWithASecondPageOfSubIssuesIsLeftOutAndItsStoryIsNotWhole() {
-        // Harm: an issue shown with only its first hundred parts, and its story counted as whole
-        // and taken for done while parts are missing.
+    void anItemWithASecondPageOfSubIssuesIsShownWarnedAndItsStoryIsNotWhole() {
+        // Harm: an issue with more than a hundred parts hidden from the board; or shown as if whole
+        // and its story taken for done while parts are missing.
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -956,19 +956,22 @@ class ItemsBoardReaderTest {
                         .boardItems(libIssue(3, refs(true, "I_part")))
                         .read();
 
-        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue, warned")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(org.fuin.porelo.planner.store.Warning.pastOnePage().holdsWork())
+                .as("no work starts on it")
+                .isTrue();
         assertThat(snapshot.board().faults())
-                .as("the one fault naming it, never one calling it outside the project")
-                .containsExactly(
-                        "Item example-org/example-lib#3 has more sub-issues or blockers than one"
-                                + " page carries and is left out; its story is not whole");
+                .as("never one calling it outside the project")
+                .isEmpty();
         assertThat(snapshot.board().stories().get(0).issuesWhole()).as("its story").isFalse();
     }
 
     @Test
-    void anItemWithASecondPageOfFieldValuesIsLeftOutAndKeptMarkedInItsCopy() {
-        // Harm: an issue mapped from its first fifty values, its Status or Size among those cut
-        // off, shown and copied as if whole.
+    void anItemWithASecondPageOfFieldValuesIsShownWarnedAndKeptMarkedInItsCopy() {
+        // Harm: an issue with many field values hidden from the board; or mapped from its first
+        // fifty values, its Status or Size among those cut off, and worked as if whole.
         final ProjectItem cut = libIssue(3, refs(false));
         final ProjectItem partial =
                 new ProjectItem(
@@ -984,12 +987,10 @@ class ItemsBoardReaderTest {
                         .boardItems(partial)
                         .read();
 
-        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
-        assertThat(snapshot.board().faults())
-                .as("the fault keeps an incomplete item off the board")
-                .containsExactly(
-                        "Item example-org/example-lib#3 has more labels or field values than one"
-                                + " page carries and is left out");
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue, warned so no work starts on it")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(snapshot.board().faults()).as("nothing left out").isEmpty();
         assertThat(BoardCopyMapping.tracked(partial).partial()).as("its copy").isTrue();
         assertThat(
                         BoardCopyMapping.item(BoardCopyMapping.tracked(partial))
@@ -1000,9 +1001,9 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void anIssueBlockedByAnItemLeftOutForItsPagesIsLeftOutAsDependingOnIt() {
-        // Harm: an issue offered for work while its blocker is unknown, or told as blocked by
-        // something outside the project and sent looking for it there.
+    void anIssueBlockedByAnItemReadPastOnePageWaitsOnItWhileItIsHeld() {
+        // Harm: an issue and its blocker hidden because the blocker has many parts; or the issue
+        // told as blocked by something outside the project and sent looking for it there.
         final ProjectItem blocked =
                 new ProjectItem(
                         "PVTI_lib_4",
@@ -1027,13 +1028,13 @@ class ItemsBoardReaderTest {
                         .boardItems(libIssue(3, refs(true, "I_part")))
                         .read();
 
-        assertThat(snapshot.board().issues()).as("neither issue on the board").isEmpty();
-        assertThat(snapshot.board().faults())
-                .as("the item left out, and the issue that depends on it")
-                .containsExactly(
-                        "Item example-org/example-lib#3 has more sub-issues or blockers than one"
-                                + " page carries and is left out; its story is not whole",
-                        "example-lib#4 depends on an issue left out and is left out too");
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue read in part, warned so no work starts on it")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(snapshot.board().issue("example-lib#4").orElseThrow().blockedBy())
+                .as("the issue blocked by it, on the board")
+                .containsExactly("example-lib#3");
+        assertThat(snapshot.board().faults()).as("nothing left out").isEmpty();
     }
 
     @Test
@@ -1374,6 +1375,72 @@ class ItemsBoardReaderTest {
                 .containsExactly(
                         "Item other-org/example-lib#3 lies outside the project's owner and is left"
                                 + " out");
+    }
+
+    @Test
+    void twoItemsOfOneReferenceAreBothShownWarnedAndTheBoardIsRead() {
+        // Harm: two items that name one issue take the whole board down for everyone, or one of
+        // them is hidden while the other is worked or moved as if it were the only one.
+        final ProjectItem capitals =
+                new ProjectItem(
+                        "PVTI_capitals",
+                        false,
+                        issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
+
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)), capitals)
+                        .read();
+
+        assertThat(snapshot.board().issues())
+                .as("both copies, each warned")
+                .extracting(Issue::id, Issue::warnings)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "example-lib#3",
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "example-lib#3",
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())));
+        assertThat(snapshot.board().issue("example-lib#3")).as("no one issue by the id").isEmpty();
+        assertThat(snapshot.board().twice("example-lib#3")).as("why").isPresent();
+        assertThat(snapshot.board().faults()).as("nothing left out").isEmpty();
+    }
+
+    @Test
+    void anItemOfTheOwnersRepositoryTheProjectDoesNotPlanIsAFaultAndTheBoardIsRead() {
+        // Harm: one issue of a repository project.yml does not name, added to the project by
+        // hand, takes the whole board down for everyone.
+        final ProjectItem elsewhere =
+                new ProjectItem(
+                        "PVTI_elsewhere",
+                        false,
+                        issue(
+                                OWNER + "/other-repo",
+                                5,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false)),
+                        List.of(option("F_status", "Idea")),
+                        new GitHubGraphQl.PageInfo(false, null));
+
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)), elsewhere)
+                        .read();
+
+        assertThat(snapshot.board().issues())
+                .as("the issues of the project's repositories")
+                .extracting(Issue::id)
+                .containsExactly("example-lib#3");
+        assertThat(snapshot.board().faults())
+                .as("the item named, left out")
+                .containsExactly(
+                        "Item other-repo#5 lies outside the project's repositories and is left out");
     }
 
     @Test
@@ -1807,7 +1874,7 @@ class ItemsBoardReaderTest {
         final List<ProjectField> fields = new ArrayList<>(FIELDS);
         // A second field of one name: its values are still read by the field's id.
         fields.add(field("F_rank_new", FieldNames.RANK, "NUMBER"));
-        // An item more than one page carries, asked again and still more, stays a fault.
+        // An item more than one page carries, asked again and still more, stays warned.
         final ProjectItem overflowing = libIssue(4, refs(true, "I_part"));
         final GitHub github =
                 new GitHub()
@@ -1831,7 +1898,9 @@ class ItemsBoardReaderTest {
         assertThat(copy).as("the copy of a snapshot read from GitHub").isNotNull();
         final Snapshot loaded = reader.fromCopy(copy, CONFIG);
 
-        assertThat(read.board().faults()).as("the faults the copy must keep").isNotEmpty();
+        assertThat(read.board().issue("example-lib#4").orElseThrow().warnings())
+                .as("the warning the copy must keep")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
         assertThat(loaded).as("the snapshot from the copy").isNotNull();
         assertThat(loaded.board().revision())
                 .as("the revision from the copy")

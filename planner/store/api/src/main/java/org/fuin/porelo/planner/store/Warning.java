@@ -33,12 +33,14 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
         /** Its priority. */
         PRIORITY,
         /** Its text. */
-        TEXT
+        TEXT,
+        /** What it is: a story or an issue. */
+        KIND
     }
 
-    /** What a warning may be about and still let work start: its state, parent, waits or id. */
+    /** What a warning that holds work back is about: the state, parent, waits, id or kind. */
     private static final Set<Concern> HOLDING =
-            EnumSet.of(Concern.STATE, Concern.PARENT, Concern.BLOCKERS, Concern.ID);
+            EnumSet.of(Concern.STATE, Concern.PARENT, Concern.BLOCKERS, Concern.ID, Concern.KIND);
 
     /** Checks the kind's spelling and copies the concerns. */
     public Warning {
@@ -56,8 +58,8 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
 
     /**
      * Whether work never starts on an item with this warning, nor a move or an edit, since it is
-     * about the item's state, parent, waits or id, which a hand edit could otherwise slip past a
-     * work rule.
+     * about the item's state, parent, waits, id or kind, which a hand edit could otherwise slip
+     * past a work rule.
      *
      * @return true when it holds the item back
      */
@@ -100,6 +102,27 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
 
     /** The kind of a text without the sections the planner reads. */
     public static final String BODY_NOT_SECTIONED = "BodyNotSectioned";
+
+    /** The kind of an issue marked a story outside the repository that holds the stories. */
+    public static final String STORY_OUTSIDE_OWN_REPOSITORY = "StoryOutsideOwnRepository";
+
+    /** The kind of a sub-issue in another repository than its parent. */
+    public static final String PARENT_IN_OTHER_REPOSITORY = "ParentInOtherRepository";
+
+    /** The kind of an issue blocked by a story. */
+    public static final String BLOCKED_BY_STORY = "BlockedByStory";
+
+    /** The kind of an issue whose parents lead back to it. */
+    public static final String PARENT_CIRCLE = "ParentCircle";
+
+    /** The kind of a sub-issue of a sub-issue. */
+    public static final String SUB_ISSUE_OF_SUB_ISSUE = "SubIssueOfSubIssue";
+
+    /** The kind of an item with more links, labels or values than one page of GitHub's answer. */
+    public static final String PAST_ONE_PAGE = "PastOnePage";
+
+    /** The kind of an issue whose parent or blocker the board cannot place. */
+    public static final String DEPENDS_ON_UNPLACED = "DependsOnUnplaced";
 
     /**
      * An item whose state is none of the workflow's; the board shows it in a column of its own.
@@ -209,6 +232,96 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
                 BODY_NOT_SECTIONED,
                 "Its text has no sections the planner can read; it is shown as it stands.",
                 Set.of(Concern.TEXT));
+    }
+
+    /**
+     * An issue marked a story outside the repository that holds the stories, shown as an issue.
+     *
+     * @return the warning
+     */
+    public static Warning storyOutsideOwnRepository() {
+        return new Warning(
+                STORY_OUTSIDE_OWN_REPOSITORY,
+                "It is marked a story outside the repository that holds the stories, so it is"
+                        + " shown as an issue and no work starts on it.",
+                Set.of(Concern.KIND));
+    }
+
+    /**
+     * A sub-issue in another repository than its parent, shown without its parent.
+     *
+     * @return the warning
+     */
+    public static Warning parentInOtherRepository() {
+        return new Warning(
+                PARENT_IN_OTHER_REPOSITORY,
+                "Its parent is in another repository, so it is shown without its parent.",
+                Set.of(Concern.PARENT));
+    }
+
+    /**
+     * An issue blocked by a story, shown without that blocker.
+     *
+     * @return the warning
+     */
+    public static Warning blockedByStory() {
+        return new Warning(
+                BLOCKED_BY_STORY,
+                "It is blocked by a story, which only an issue can block, so it is shown without"
+                        + " that blocker.",
+                Set.of(Concern.BLOCKERS));
+    }
+
+    /**
+     * An issue whose parents lead back to it, shown without its parent.
+     *
+     * @return the warning
+     */
+    public static Warning parentCircle() {
+        return new Warning(
+                PARENT_CIRCLE,
+                "Its parents lead back to it, so it is shown without its parent.",
+                Set.of(Concern.PARENT));
+    }
+
+    /**
+     * A sub-issue of a sub-issue, shown without its parent.
+     *
+     * @return the warning
+     */
+    public static Warning subIssueOfSubIssue() {
+        return new Warning(
+                SUB_ISSUE_OF_SUB_ISSUE,
+                "Its parent is a sub-issue itself, which the board cannot hold, so it is shown"
+                        + " without its parent.",
+                Set.of(Concern.PARENT));
+    }
+
+    /**
+     * An item with more sub-issues, blockers, labels or field values than one page of the tracker's
+     * answer carries, shown as far as it was read.
+     *
+     * @return the warning
+     */
+    public static Warning pastOnePage() {
+        return new Warning(
+                PAST_ONE_PAGE,
+                "It has more sub-issues, blockers, labels or field values than one page carries, so"
+                        + " it is shown as far as it was read.",
+                Set.of(Concern.STATE, Concern.BLOCKERS, Concern.ISSUES));
+    }
+
+    /**
+     * An issue whose parent or blocker the board does not place, shown without that link.
+     *
+     * @return the warning
+     */
+    public static Warning dependsOnUnplaced() {
+        return new Warning(
+                DEPENDS_ON_UNPLACED,
+                "An issue it stands under or waits on is not placed on the board, so it is shown"
+                        + " without that link.",
+                Set.of(Concern.PARENT, Concern.BLOCKERS));
     }
 
     /**

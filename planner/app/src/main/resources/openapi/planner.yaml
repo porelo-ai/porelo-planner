@@ -3348,7 +3348,7 @@ components:
     ItemWarning:
       description: >-
         What a store could not read in a story or an issue it still shows. A warning about the item's state, parent,
-        blockers or id holds it back: no work starts on it, and neither an edit nor a move names it, but for a move
+        blockers, id or kind holds it back: no work starts on it, and neither an edit nor a move names it, but for a move
         out of a state the workflow does not know, which sets it right.
       type: object
       required: [kind, text, holds]
@@ -3359,7 +3359,8 @@ components:
           description: >-
             An open name of what is wrong; a window shows a kind it does not know as any other. Known kinds are
             StateOutsideWorkflow, NoState, NoPriority, IdTwice, ParentOutsideProject, BlockerOutsideProject,
-            IssueOutsideProject, WrongParent and BodyNotSectioned.
+            IssueOutsideProject, WrongParent, BodyNotSectioned, StoryOutsideOwnRepository, ParentInOtherRepository,
+            BlockedByStory, ParentCircle, SubIssueOfSubIssue, PastOnePage and DependsOnUnplaced.
         text:
           type: string
           description: One fixed sentence saying what is wrong, for a tooltip; it never repeats a person's words.
