@@ -25,6 +25,17 @@ public class AccessConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AccessConfiguration.class);
 
     /**
+     * Logs each bean that takes 100 ms or more to make while the planner starts, so a slow start
+     * names its step; static, so it exists before the beans it times.
+     *
+     * @return The start timer.
+     */
+    @Bean
+    static StartSteps startSteps() {
+        return new StartSteps(System::nanoTime);
+    }
+
+    /**
      * The token of this start.
      *
      * @return A new token.

@@ -599,10 +599,11 @@ class NativeStartIT {
         while (System.nanoTime() < end && planner.isAlive()) {
             if (Files.exists(file)) {
                 if (RuntimeDirectories.WINDOWS) {
-                    // A passing start shows its PowerShell timings too, so any Build measures them.
+                    // A passing start shows its PowerShell and slow start step lines too, so any
+                    // Build measures them.
                     // Read leniently: a console line in another code page must not fail a passing
                     // start.
-                    powerShellLines(new String(Files.readAllBytes(output), StandardCharsets.UTF_8))
+                    timingLines(new String(Files.readAllBytes(output), StandardCharsets.UTF_8))
                             .forEach(
                                     line -> System.out.println(output.getFileName() + ": " + line));
                 }
@@ -629,6 +630,12 @@ class NativeStartIT {
     /** The lines the planner logged of its PowerShell calls, in order. */
     private static Stream<String> powerShellLines(final String wrote) {
         return wrote.lines().filter(line -> line.contains("PowerShell "));
+    }
+
+    /** The lines the planner logged of its PowerShell calls and slow start steps, in order. */
+    private static Stream<String> timingLines(final String wrote) {
+        return wrote.lines()
+                .filter(line -> line.contains("PowerShell ") || line.contains("Start step "));
     }
 
     /** The health answer of this build, from the version and commit the build computed. */

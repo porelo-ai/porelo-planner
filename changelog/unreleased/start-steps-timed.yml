@@ -1,0 +1,2 @@
+title: The planner logs each part that took 100 ms or more to make while it starts, with the parts it needs, naming the part and its time.
+type: changed
