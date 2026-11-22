@@ -619,6 +619,72 @@ class GitHubChangesTest {
     }
 
     @Test
+    void anOlderCopyWithoutGitHubsCountOfBlockersHasTheItemReadAgainWhenRestCountsOneMore() {
+        // Harm: a board started from a copy made before the count was kept never learns of a
+        // blocker the person cannot read, and offers its issue.
+        final GitHubGraphQl.PageInfo none = new GitHubGraphQl.PageInfo(false, null);
+        final GitHubGraphQl.BoardIssue open = boardIssue("I_PVTI_1");
+        // An older copy kept as the count the blockers it names.
+        final GitHubGraphQl.IssueRefs blockers =
+                new GitHubGraphQl.IssueRefs(
+                        List.of(
+                                new GitHubGraphQl.IssueRef(
+                                        "I_open", 21L, 21, OWNER + "/example-project")),
+                        none,
+                        1);
+        final GitHubGraphQl.ProjectItem read =
+                new GitHubGraphQl.ProjectItem(
+                        "PVTI_1",
+                        false,
+                        new GitHubGraphQl.BoardIssue(
+                                open.id(),
+                                open.databaseId(),
+                                open.number(),
+                                open.title(),
+                                open.body(),
+                                open.state(),
+                                open.stateReason(),
+                                open.updatedAt(),
+                                open.repository(),
+                                open.labels(),
+                                open.parentId(),
+                                open.subIssues(),
+                                blockers,
+                                none),
+                        List.of(
+                                new GitHubGraphQl.ItemValue(
+                                        STATUS, "opt-idea", "Idea", null, null)),
+                        none);
+        final ProjectItemSummary listed =
+                new ProjectItemSummary(
+                        "PVTI_1",
+                        THEN,
+                        false,
+                        "Issue",
+                        new ProjectItemSummary.IssueSummary(
+                                "I_PVTI_1", OWNER + "/example-project", 1, THEN, "open", 0, 2),
+                        List.of(
+                                new ProjectItemSummary.ValueSummary(
+                                        STATUS_ID, "single_select", "opt-idea", null, null)));
+        final GitHub github = unchanged().page(null, "\"a2\"", "c2", listed, listed("PVTI_2"));
+
+        final TrackerChanges.Changed changed =
+                github.changes()
+                        .since(
+                                CONFIG,
+                                TOKEN,
+                                twoPages(),
+                                known(
+                                        BoardCopyMapping.tracked(read),
+                                        held("PVTI_2"),
+                                        held("PVTI_3")),
+                                FIELDS)
+                        .orElseThrow();
+
+        assertThat(changed.changed()).as("the item read again").contains("PVTI_1");
+    }
+
+    @Test
     void aBlockerGraphQlCountsButDoesNotNameCountsAlikeInRestsCountSoNoItemIsNamedAtEveryLook() {
         // Harm: an issue blocked by an issue the person cannot read is read again at every look,
         // as the copy holds only the blockers GraphQL names against REST's count of all of them.

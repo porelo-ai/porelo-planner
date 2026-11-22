@@ -1931,7 +1931,15 @@ class ItemsBoardReaderTest {
      */
     private static ProjectItem hiding(
             final int number, final int unseen, final IssueRef... blockers) {
-        final ProjectItem plain = waiting(number, blockers);
+        return blocked(
+                number,
+                new IssueRefs(
+                        List.of(blockers), new PageInfo(false, null), blockers.length + unseen));
+    }
+
+    /** An issue of the library, under the story, blocked as GitHub's list of blockers says. */
+    private static ProjectItem blocked(final int number, final IssueRefs blockers) {
+        final ProjectItem plain = waiting(number);
         final BoardIssue issue = java.util.Objects.requireNonNull(plain.issue());
         return new ProjectItem(
                 plain.id(),
@@ -1949,10 +1957,7 @@ class ItemsBoardReaderTest {
                         issue.labels(),
                         issue.parentId(),
                         issue.subIssues(),
-                        new IssueRefs(
-                                List.of(blockers),
-                                new PageInfo(false, null),
-                                blockers.length + unseen),
+                        blockers,
                         issue.labelsPage()),
                 plain.values(),
                 plain.valuesPage());
@@ -2112,6 +2117,57 @@ class ItemsBoardReaderTest {
                 .as("the blocker GitHub names still read")
                 .extracting(IssueRef::id)
                 .containsExactly("I_far_7");
+    }
+
+    @Test
+    void theWaitNotReadableClearsOnceGitHubCountsNoMoreBlockersThanItNames() {
+        // Harm: an issue stays held on a blocker GitHub no longer counts, so work never starts on
+        // it after the person lost or regained sight of that blocker.
+        final ProjectItem now = hiding(3, 0, FAR);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), hiding(3, 1, FAR))
+                        .boardPage(elsewhere(FAR, "CLOSED"))
+                        .boardItems(now)
+                        .boardPage(elsewhere(FAR, "CLOSED"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+        assertThat(held.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("held on the blocker not named")
+                .contains(Wait.unreadable());
+
+        final Snapshot after =
+                reader.reread(
+                        CONFIG, held, new Touched.Ids(Set.of(LIB_3), Set.of(), Set.of(), Set.of()));
+
+        assertThat(after.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("only the named blocker, done")
+                .extracting(Wait::reference, Wait::done)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("other-org/elsewhere#7", true));
+    }
+
+    @Test
+    void anItemWithASecondPageOfBlockersCountsNoneUnseenAndIsLeftOutWithItsFault() {
+        // Harm: an item cut at one page of blockers is shown with waits not readable for the
+        // blockers on the pages after, as though it were whole.
+        final IssueRefs more = new IssueRefs(List.of(FAR), new PageInfo(true, "more"), 150);
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), blocked(3, more))
+                        .boardItems(blocked(3, more))
+                        .boardPage(elsewhere(FAR, "OPEN"))
+                        .read();
+
+        assertThat(ItemsBoardReader.unseen(more)).as("none counted unseen").isZero();
+        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
+        assertThat(snapshot.board().faults())
+                .as("the one fault naming it")
+                .containsExactly(
+                        "Item example-org/example-lib#3 has more sub-issues or blockers than one"
+                                + " page carries and is left out; its story is not whole");
     }
 
     @Test

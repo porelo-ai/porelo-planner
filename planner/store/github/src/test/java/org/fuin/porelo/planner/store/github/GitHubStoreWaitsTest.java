@@ -51,6 +51,14 @@ class GitHubStoreWaitsTest {
 
     /** A board whose issue example-lib#3 waits on other-org/elsewhere#7, done or not. */
     private static Snapshot board(final String revision, final boolean done) {
+        return board(revision, done, false);
+    }
+
+    /**
+     * A board whose issue example-lib#3 waits on other-org/elsewhere#7, done or not, and when
+     * {@code hidden} on a blocker GitHub counts but does not name.
+     */
+    private static Snapshot board(final String revision, final boolean done, final boolean hidden) {
         final ItemView item =
                 new ItemView(
                         "PVTI_3",
@@ -70,7 +78,8 @@ class GitHubStoreWaitsTest {
                         URI.create("https://github.com/example-org/example-lib/issues/3"),
                         Instant.EPOCH,
                         false,
-                        List.of(new ItemView.Blocker("I_far_7", "other-org/elsewhere", 7)));
+                        List.of(new ItemView.Blocker("I_far_7", "other-org/elsewhere", 7)),
+                        hidden ? 1 : 0);
         final Issue issue =
                 new Issue(
                         "example-lib#3",
@@ -88,7 +97,11 @@ class GitHubStoreWaitsTest {
                         null,
                         null,
                         List.of(),
-                        List.of(new Wait("other-org/elsewhere#7", done, FAR_LINK)));
+                        hidden
+                                ? List.of(
+                                        new Wait("other-org/elsewhere#7", done, FAR_LINK),
+                                        Wait.unreadable())
+                                : List.of(new Wait("other-org/elsewhere#7", done, FAR_LINK)));
         return new Snapshot(
                 new Board(
                         new Revision(revision),
@@ -144,10 +157,13 @@ class GitHubStoreWaitsTest {
         private volatile Map<String, Snapshot.Waited> now =
                 Map.of("I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, false));
 
+        /** Whether the board read names a blocker GitHub counts but does not name. */
+        private volatile boolean hidden;
+
         @Override
         public Snapshot read(final ProjectConfig config) {
             wholeReads.incrementAndGet();
-            return board("whole-" + wholeReads.get(), false);
+            return board("whole-" + wholeReads.get(), false, hidden);
         }
 
         @Override
@@ -252,6 +268,29 @@ class GitHubStoreWaitsTest {
         assertThat(store.waitsNow(List.of("example-lib#3")).get("example-lib#3"))
                 .as("an issue whose blockers could not be read whole")
                 .contains(Wait.unreadable());
+    }
+
+    @Test
+    void aStartOnAnIssueWithOneBlockerGitHubDoesNotNameListsOneWaitNotReadable() {
+        // Harm: a start names one blocker the person cannot read twice, so the person is told the
+        // issue waits on two things not readable where it waits on one.
+        final Reader reader = new Reader();
+        reader.hidden = true;
+        final GitHubStore store = store(reader, new Probe());
+        store.refresh();
+        reader.now = Map.of("I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, true));
+        reader.blockersNow =
+                Map.of(
+                        "I_lib_3",
+                        List.of(
+                                new GitHubGraphQl.IssueRef(
+                                        "I_far_7", 70L, 7, "other-org/elsewhere")));
+        reader.unread = Set.of("I_lib_3");
+
+        assertThat(store.waitsNow(List.of("example-lib#3")).get("example-lib#3"))
+                .as("the named wait read now, and the one not readable once")
+                .containsExactly(
+                        new Wait("other-org/elsewhere#7", true, FAR_LINK), Wait.unreadable());
     }
 
     @Test

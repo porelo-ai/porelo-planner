@@ -529,8 +529,14 @@ public final class GitHubStore implements PlanningStore {
             final List<Wait> fresh = new ArrayList<>();
             final List<org.fuin.porelo.forge.github.GitHubGraphQl.IssueRef> now =
                     read.blockers().get(item.issueId());
-            if (read.unread().contains(item.issueId())) {
-                // Its blockers could not be read whole, so it is not known free.
+            // A wait the board holds that the read named none for, such as one not readable, stays.
+            final List<Wait> carried =
+                    held.board().issue(each.getKey()).orElseThrow().waitsOn().stream()
+                            .filter(wait -> wait.reference() == null)
+                            .toList();
+            if (read.unread().contains(item.issueId()) && carried.isEmpty()) {
+                // Its blockers could not be read whole, so it is not known free; a wait not
+                // readable carried over says so already.
                 fresh.add(Wait.unreadable());
             }
             if (now == null) {
@@ -565,9 +571,7 @@ public final class GitHubStore implements PlanningStore {
                     }
                 }
             }
-            // A wait the board holds that the read named none for, such as one not readable, stays.
-            final List<Wait> board = held.board().issue(each.getKey()).orElseThrow().waitsOn();
-            board.stream().filter(wait -> wait.reference() == null).forEach(fresh::add);
+            fresh.addAll(carried);
             waits.put(each.getKey(), fresh);
         }
         return waits;

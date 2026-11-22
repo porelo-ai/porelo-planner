@@ -179,7 +179,8 @@ class IssueMappingTest {
                             "https://github.com/example-org/" + repository + "/issues/" + number),
                     Instant.parse("2026-01-01T00:00:00Z"),
                     archived,
-                    named);
+                    named,
+                    0);
         }
     }
 
