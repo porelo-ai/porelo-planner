@@ -274,14 +274,6 @@ class FieldsBoardWriterEditsTest {
                     values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(), null);
         }
 
-        @Override
-        public GitHubGraphQl.FieldOptions setFieldOptions(
-                final String token,
-                final String fieldId,
-                final List<GitHubGraphQl.NewOption> options) {
-            throw new AssertionError("an edit replaced a field's options");
-        }
-
         private void link(final String call) {
             final RuntimeException failure = linkFailure;
             if (failure != null && linksBeforeFailure-- == 0) {

@@ -36,8 +36,6 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
   out from the window's repository at a pinned commit and never keeps a copy of. **`tool/windows-planner-ready.ps1` is
   PowerShell, not Java**: the window's install check runs it as the planner's part, its `planner.json` and `/health`.
   **`tool/artifactory.sh` is bash**: the publishing steps run curl alone beside the token, with no JVM.
-  **`tool/github-project-setup.sh` is bash**: a person runs it once, with curl and jq beside the token, to make the
-  GitHub project a carry-over writes into, before any planner holds that project.
 - **The Windows job of the Build runs the unit tests tagged `windows` and the native tests not tagged `linux`**; a test
   that needs what only one system has says so by its tag.
 - **Skills used:** `spring-boot-patterns`, `graal`, `api-contract-review`.

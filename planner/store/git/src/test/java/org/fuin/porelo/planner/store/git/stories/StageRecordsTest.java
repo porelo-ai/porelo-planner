@@ -511,16 +511,4 @@ class StageRecordsTest {
                 .as("refused, never taken as no seed")
                 .isInstanceOf(IllegalArgumentException.class);
     }
-
-    @Test
-    void aStageRecordedTwiceWithOneNIsNotCarried() throws Exception {
-        // Harm: a tracker counts the stage once, so the carried sums differ from its comments.
-        final String twice =
-                measured("EX12", "implement", "agent", 4, "Review")
-                        + measured("EX12", "implement", "agent", 5, "Review");
-        assertThatThrownBy(() -> StageRecords.carried(twice, "EX12.jsonl", workflow()))
-                .as("the records carried")
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("recorded twice");
-    }
 }

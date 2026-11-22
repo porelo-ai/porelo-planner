@@ -22,8 +22,8 @@ import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The calls a write to a GitHub project is made of. A save writes values only; replacing a field's
- * options is a call of its own, which only the step that writes every value back makes.
+ * The calls a write to a GitHub project is made of. A save writes values only, never a field's
+ * options.
  */
 public interface ProjectWrites {
 
@@ -137,19 +137,6 @@ public interface ProjectWrites {
      */
     Batch<String> setFieldValues(
             String token, String projectId, List<GitHubGraphQl.FieldValue> values);
-
-    /**
-     * Replaces a single-select field's options. GitHub gives every option a new id, a kept name
-     * too, and clears every item's value of the field, so only {@link StatusOptionsWriter} calls
-     * it, and writes every value back right after.
-     *
-     * @param token the person's token
-     * @param fieldId the field's node id
-     * @param options the options, in their order
-     * @return the options as GitHub holds them now, with their new ids
-     */
-    GitHubGraphQl.FieldOptions setFieldOptions(
-            String token, String fieldId, List<GitHubGraphQl.NewOption> options);
 
     /**
      * Makes an issue. GitHub drops the labels in silence for an account without push access, so the
@@ -321,14 +308,6 @@ public interface ProjectWrites {
                     final String projectId,
                     final List<GitHubGraphQl.FieldValue> values) {
                 return graphQl.setFieldValues(token, projectId, values);
-            }
-
-            @Override
-            public GitHubGraphQl.FieldOptions setFieldOptions(
-                    final String token,
-                    final String fieldId,
-                    final List<GitHubGraphQl.NewOption> options) {
-                return graphQl.setFieldOptions(token, fieldId, options);
             }
 
             @Override

@@ -53,15 +53,4 @@ public final class GitHubExceptions {
     public static GitHubException unanswered(final String message) {
         return new GitHubException(0, message, Delivery.SENT_UNANSWERED, null, false, null);
     }
-
-    /**
-     * A call sent to GitHub whose answer was lost, marked as rate limited, so whether GitHub took
-     * it is unknown.
-     *
-     * @param message its words
-     * @return the failure
-     */
-    public static GitHubException unansweredRateLimited(final String message) {
-        return new GitHubException(0, message, Delivery.SENT_UNANSWERED, null, true, null);
-    }
 }

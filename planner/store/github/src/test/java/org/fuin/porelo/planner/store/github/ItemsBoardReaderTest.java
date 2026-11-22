@@ -425,9 +425,7 @@ class ItemsBoardReaderTest {
                                         "Resource limits for this query exceeded."))
                         .itemsPage(null, story("High"));
         final InstantSource clock = InstantSource.fixed(Instant.EPOCH);
-        final ProjectQueries paced =
-                new CarryOverPace(clock, wait -> {}, line -> {})
-                        .queries(new GitHubPace(clock).watching(github.queries()));
+        final ProjectQueries paced = new GitHubPace(clock).watching(github.queries());
         final ItemsBoardReader reader =
                 new ItemsBoardReader(
                         paced,
@@ -439,9 +437,11 @@ class ItemsBoardReaderTest {
 
         final Snapshot snapshot = reader.read(CONFIG);
 
-        assertThat(snapshot.board().stories()).as("a board read through both wrappers").hasSize(1);
+        assertThat(snapshot.board().stories())
+                .as("a board read through the pacing wrapper")
+                .hasSize(1);
         assertThat(github.limits)
-                .as("both wrappers preserve the requested nested limits")
+                .as("the pacing wrapper preserves the requested nested limits")
                 .containsExactly(
                         new GitHubGraphQl.ItemLimits(10, 20, 10, 30),
                         new GitHubGraphQl.ItemLimits(10, 20, 10, 30));

@@ -1,2 +1,0 @@
-title: The planner's executable carries a Markdown project's open stories and issues over to a GitHub project with `carry-over`, goes on without doubling anything after a stop, and adds the tracker and the velocity seed to `project.yml` for the person to sign and commit.
-type: added

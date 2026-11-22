@@ -151,14 +151,6 @@ class GitHubAddsHttpTest {
         }
 
         @Override
-        public GitHubGraphQl.FieldOptions setFieldOptions(
-                final String token,
-                final String fieldId,
-                final List<GitHubGraphQl.NewOption> options) {
-            throw new AssertionError("a new item sets no field's options");
-        }
-
-        @Override
         public void removeSubIssue(
                 final String token,
                 final String owner,

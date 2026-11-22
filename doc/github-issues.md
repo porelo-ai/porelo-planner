@@ -14,7 +14,6 @@ the work rules stay files in the project's own repository.
 | A Porelo sub-issue | A sub-issue of its issue, in the issue's repository, with its own number; never under another sub-issue |
 | `blockedBy` | GitHub's issue dependency, "blocked by", across repositories |
 | The id | The tracker reference alone, `<repository>#<number>`: the repository the issue lives in, lowercased, and GitHub's number |
-| An old id, of an item carried over from Markdown | Nothing: the carry-over rewrites it to the tracker reference |
 | The state | The project's own field `Status`, whose options are the workflow's states in order |
 | Priority, size, risk, worker | The single-select fields `Priority`, `Size`, `Risk`, `Worker` |
 | The order within a priority | The number field `Rank`, sorted by the planner |
@@ -99,15 +98,8 @@ stage's comment last, so a body GitHub refuses leaves the issue in its state and
 A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
-the `Status` options follow the workflow's states only through one step of the planner's own, run at the carry-over
-or when the person confirms it after the workflow changed, never on a read: it reads every item's `Status` by name,
-reads them once more right before it sets the options and stops when a value or an option changed in between, sets the
-options, and writes every value back by its new option id, in batches of at most 50. An option the workflow does not
-have, held by an item or added by a person, is kept at the end, never dropped, so an item can still be set to it by
-hand; each item holding one is named as a fault, without the option's name. Options that already stand as wanted are
-not set again; values a batch failed to write back are written again from a fresh read, a value a person set since
-stands, and those still missing after the last attempt are named, each with the state it must be given, an option
-outside the workflow by its place. A refusal of the person's access or a spent rate limit is not tried again. A stage's
+the planner never sets the `Status` options: they are the workflow's states as the person set them on the project,
+and an item whose `Status` is an option the workflow does not have is named as a fault and left out. A stage's
 result overwrites the sections of the body its kind writes and no other byte.
 
 A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the
@@ -159,41 +151,6 @@ before the update the item is read again and compared, title and body included; 
 body that read confirms, so a section not named keeps every byte. GitHub takes no condition on an issue's update, so a
 person's edit made in the one round trip between that read and the update is overwritten; it stays in GitHub's own
 history of the body and in the title's rename event.
-
-## The carry-over
-
-`porelo-planner carry-over --project <dir> --to <owner>/<number>` moves a Markdown project's open stories and
-issues to a GitHub project in one run; with `--dry-run` it only says, one line per item, what it would write. The
-own checkout's `project.yml` must be committed, and every repository must stand on github.com under the GitHub
-project's owner, by the name `project.yml` gives it. Before anything is made, the run checks the project's fields
-and options, refuses a project that already holds items it did not make, and sets the `Status` options to the
-workflow's states.
-
-The first pass makes each item as an issue - a story labeled `story` - with a body whose references to other
-carried items are not known yet, adds it to the project and writes its fields and sums. The second pass adds the
-sub-issues and dependencies, writes each body anew from the Markdown text with every carried reference rewritten
-to its tracker reference and a story's *Also needs*, and adds the stage comments, oldest first. A reference to an
-item not carried, finished, rejected or of another project, is left as plain text and listed. A body a person
-changed between the passes is left as it is and the item named; its sub-issues, dependencies and stage comments
-are written all the same.
-
-While it copies, the run keeps a map of old id to new reference, and how far each item came, in a file of its own
-under the planner's state directory (`carry-over/<owner>-<number>.json`, or `--state <file>`), never on GitHub. A
-run that stopped is run again with the same command and goes on from the map without making anything twice: an
-item about to be made is recorded first, and found again on GitHub by its title and first body. Once every item is
-carried, the run adds `tracker` and, with `--seed <csv>` (rows `repository,size,minutes`), the velocity's starting
-minutes as `velocity.seed.<repository>.<size>` to `project.yml`, removes the map and commits nothing: the person
-reviews the file, signs it with `porelo project sign` and commits it.
-
-The run keeps under GitHub's limits: it makes an issue or a comment at most once a second and at most 450 in any
-hour, every other write (a body, a sub-issue, a dependency, the fields) a second after the last write, and reads
-unpaced; a call GitHub answers with a refusal as rate limited is made again after the wait GitHub names, at least a minute doubling with each refusal in a row and at most an hour, nine times at most. Each wait
-longer than ten seconds is one line on the error stream naming the call by its kind, repository and number and the
-time the run goes on, so a project of more than a thousand items is carried in one unattended run of some hours.
-`--per-minute <n>` (1 to 60) makes it slower still, for a token that other work shares. The project, its fields and
-the label `story` are made beforehand with `tool/github-project-setup.sh <organization> <title> <stories repository>`,
-the token on its standard input.
-
 
 ## Access
 

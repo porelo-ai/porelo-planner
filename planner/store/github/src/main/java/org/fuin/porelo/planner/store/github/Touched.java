@@ -108,14 +108,6 @@ public final class Touched {
             }
 
             @Override
-            public GitHubGraphQl.FieldOptions setFieldOptions(
-                    final String token,
-                    final String fieldId,
-                    final List<GitHubGraphQl.NewOption> options) {
-                return writes.setFieldOptions(token, fieldId, options);
-            }
-
-            @Override
             public Created createIssue(
                     final String token,
                     final String owner,

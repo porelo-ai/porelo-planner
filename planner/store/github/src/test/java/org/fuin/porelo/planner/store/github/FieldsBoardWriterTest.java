@@ -375,14 +375,6 @@ class FieldsBoardWriterTest {
         }
 
         @Override
-        public GitHubGraphQl.FieldOptions setFieldOptions(
-                final String token,
-                final String fieldId,
-                final List<GitHubGraphQl.NewOption> options) {
-            throw new AssertionError("a save replaced a field's options, clearing every value");
-        }
-
-        @Override
         public Created createIssue(
                 final String token,
                 final String owner,

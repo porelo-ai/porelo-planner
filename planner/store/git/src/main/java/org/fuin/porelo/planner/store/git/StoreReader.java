@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Issue;
@@ -50,8 +49,6 @@ public final class StoreReader implements PartReader {
 
     private final int filesPerRepository;
 
-    private final @Nullable Consumer<String> asides;
-
     /**
      * Makes a reader.
      *
@@ -59,24 +56,8 @@ public final class StoreReader implements PartReader {
      * @param filesPerRepository the most issue and story files one repository may hold
      */
     public StoreReader(final Remote remote, final int filesPerRepository) {
-        this(remote, filesPerRepository, null);
-    }
-
-    /**
-     * Makes a reader that tells apart the faults no issue's or story's reading depends on: a
-     * settled issue still named outside the issue files, by an index or another page.
-     *
-     * @param remote reads the fetched commits
-     * @param filesPerRepository the most issue and story files one repository may hold
-     * @param asides takes each such fault instead of the part's faults; null keeps it among them
-     */
-    public StoreReader(
-            final Remote remote,
-            final int filesPerRepository,
-            final @Nullable Consumer<String> asides) {
         this.remote = remote;
         this.filesPerRepository = filesPerRepository;
-        this.asides = asides;
     }
 
     @Override
@@ -178,11 +159,7 @@ public final class StoreReader implements PartReader {
             for (final String fault : IssueLinks.check(texts, parsed, linked(name, commit))) {
                 faults.add(name + ": " + fault);
             }
-            final List<String> apart = new ArrayList<>();
-            mentions(name, commit, settled, faults, asides == null ? faults : apart);
-            if (asides != null) {
-                apart.forEach(asides);
-            }
+            mentions(name, commit, settled, faults);
         }
         final List<Issue> issues = parentsWorkers(read);
         faults.addAll(records(name, commit, workflow));
@@ -357,8 +334,7 @@ public final class StoreReader implements PartReader {
             final String repository,
             final String commit,
             final Set<String> settled,
-            final List<String> faults,
-            final List<String> apart) {
+            final List<String> faults) {
         if (settled.isEmpty()) {
             return;
         }
@@ -380,14 +356,9 @@ public final class StoreReader implements PartReader {
             final String path = line.path();
             final String where = repository + ": " + path + ":" + line.line() + ": ";
             if (path.startsWith("issues/")) {
-                // An issue file's link is part of the text read as that issue.
-                final List<String> into =
-                        ISSUE_FILE.matcher(path.substring(path.lastIndexOf('/') + 1)).matches()
-                                ? faults
-                                : apart;
                 for (final String id : settled) {
                     if (word(id, "-[^\\s)/]*\\.md").matcher(line.text()).find()) {
-                        into.add(where + "links to the deleted file of " + id);
+                        faults.add(where + "links to the deleted file of " + id);
                     }
                 }
                 continue;
@@ -406,7 +377,7 @@ public final class StoreReader implements PartReader {
             for (final String id : settled) {
                 // A number followed by ".<digit>" is a sub-issue's, which may still be worked on.
                 if (word(id, "(?![A-Za-z0-9_]|\\.[0-9])").matcher(line.text()).find()) {
-                    apart.add(where + id + " names an issue that is settled");
+                    faults.add(where + id + " names an issue that is settled");
                 }
             }
         }

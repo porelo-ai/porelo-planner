@@ -52,7 +52,7 @@ final class WorkCommands {
 
     /** The work commands by their first argument. */
     private static final Set<String> NAMES =
-            Set.of("issues", "stories", "check-commits", "check-pushes", "stage", "carry-over");
+            Set.of("issues", "stories", "check-commits", "check-pushes", "stage");
 
     private static final String STORIES =
             "stories index <dir> | stories check <dir>"
@@ -72,7 +72,7 @@ final class WorkCommands {
      *
      * @param args the command line
      * @return whether the first argument is {@code issues}, {@code stories}, {@code check-commits},
-     *     {@code check-pushes}, {@code stage} or {@code carry-over}
+     *     {@code check-pushes} or {@code stage}
      */
     static boolean named(final String... args) {
         return args.length > 0 && NAMES.contains(args[0]);
@@ -95,7 +95,6 @@ final class WorkCommands {
                 case "check-commits" -> commands.checkCommits(rest);
                 case "check-pushes" -> commands.checkPushes(rest);
                 case "stage" -> commands.stage(rest);
-                case "carry-over" -> commands.carryOver(rest);
                 default -> commands.stories(rest);
             };
         } catch (RuntimeException | StackOverflowError | OutOfMemoryError ex) {
@@ -268,15 +267,6 @@ final class WorkCommands {
                                         faulter,
                                         System.getenv())
                                 .run(rest));
-    }
-
-    /**
-     * Plans a Markdown project's carry-over to GitHub Issues from its checkouts, or carries it,
-     * each line said escaped, since a line holds an item's title.
-     */
-    private int carryOver(final List<String> rest) {
-        return said(
-                (sayer, faulter) -> CarryOverCommand.run(rest, System.getenv(), sayer, faulter));
     }
 
     /** A command that says its lines to two streams and answers an exit code. */
