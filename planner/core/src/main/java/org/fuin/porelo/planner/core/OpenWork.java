@@ -116,13 +116,16 @@ public record OpenWork(
 
         /**
          * What is open of one story: the issues it names and their sub-issues, each once; null when
-         * the board does not hold every issue its head names, so nothing is told as if it did.
+         * the board does not hold every issue its head names, or holds one of its ids twice, so
+         * nothing is told as if it did.
          *
          * @param story the story
          * @return the story's open work, or null
          */
         public @Nullable OpenWork story(final Story story) {
-            if (!story.issuesWhole()) {
+            // An id on two issues tells no one issue to count.
+            if (!story.issuesWhole()
+                    || story.issues().stream().anyMatch(id -> board.twice(id).isPresent())) {
                 return null;
             }
             final Set<String> ids = new LinkedHashSet<>();

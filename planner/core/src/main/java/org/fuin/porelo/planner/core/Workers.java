@@ -28,6 +28,11 @@ public final class Workers {
      *     issue handed to an agent while it or a sub-issue stands in a working state
      */
     public static Writes check(final Board board, final String issue, final Worker worker) {
+        final java.util.Optional<String> held = board.holdsWork(issue);
+        if (held.isPresent()) {
+            // An id on two issues, or a hand edit of a state, parent or blockers, holds it back.
+            throw refused(issue, held.get());
+        }
         final Issue found =
                 board.issue(issue)
                         .orElseThrow(

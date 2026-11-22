@@ -25,6 +25,8 @@ import org.jspecify.annotations.Nullable;
  * @param minutes the minutes its work took so far, if the store keeps them
  * @param priority its priority, one of {@link Story#PRIORITIES}, or null when the store holds none
  *     or one outside them
+ * @param warnings what the store could not read in it; its state may be none of the workflow's only
+ *     with a warning about the state
  */
 public record Issue(
         String id,
@@ -40,7 +42,8 @@ public record Issue(
         Risk risk,
         @Nullable Double estimate,
         @Nullable Double minutes,
-        @Nullable String priority) {
+        @Nullable String priority,
+        List<Warning> warnings) {
 
     /** Checks the ids, the repository's name and the priority and copies the list. */
     public Issue {
@@ -73,6 +76,83 @@ public record Issue(
             throw new IllegalArgumentException(
                     "The priority of " + id + " is none of " + Story.PRIORITIES);
         }
+        warnings = List.copyOf(warnings);
+    }
+
+    /**
+     * An issue without warnings.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     * @param estimate the minutes it is expected to take, if estimated
+     * @param minutes the minutes its work took so far, if kept
+     * @param priority its priority, or null when the store holds none
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk,
+            final @Nullable Double estimate,
+            final @Nullable Double minutes,
+            final @Nullable String priority) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                List.of());
+    }
+
+    /**
+     * This issue with other warnings.
+     *
+     * @param warnings its warnings
+     * @return the issue
+     */
+    public Issue withWarnings(final List<Warning> warnings) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings);
     }
 
     /**

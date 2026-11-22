@@ -23,7 +23,8 @@ public record WorkProposal(
         int readingRounds,
         List<IssueRounds> issueReadingRounds,
         Revision revision,
-        List<String> manual) {
+        List<String> manual,
+        List<Held> held) {
 
     /** Copies every collection so recomputation cannot be changed by a caller. */
     public WorkProposal {
@@ -31,7 +32,38 @@ public record WorkProposal(
         repositories = List.copyOf(repositories);
         issueReadingRounds = List.copyOf(issueReadingRounds);
         manual = List.copyOf(manual);
+        held = List.copyOf(held);
     }
+
+    /** A proposal that holds no issue back. */
+    public WorkProposal(
+            final List<String> modes,
+            final List<Repository> repositories,
+            final String coordinator,
+            final String comment,
+            final int readingRounds,
+            final List<IssueRounds> issueReadingRounds,
+            final Revision revision,
+            final List<String> manual) {
+        this(
+                modes,
+                repositories,
+                coordinator,
+                comment,
+                readingRounds,
+                issueReadingRounds,
+                revision,
+                manual,
+                List.of());
+    }
+
+    /**
+     * An open issue of the story that no task of the proposal names, since the board holds it back.
+     *
+     * @param issue the issue's id
+     * @param reason why, in the words of its warnings or of its id named twice
+     */
+    public record Held(String issue, String reason) {}
 
     /**
      * The proposed main participant; only its offered agent/model pair is a choice. The effort,
@@ -196,9 +228,19 @@ public record WorkProposal(
             final RunningWork running,
             final @Nullable List<String> picked) {
         final Story story = story(board, id);
+        // A story held back offers none of its issues.
+        WorkRefusal.unlessFree(board, story.id(), story.state(), to);
         final WorkRule rule = picked == null ? rule(board, story, to) : target(board, story, to);
         bounded(story, to, rule.order());
-        final List<Issue> open = issues(board, story, to);
+        final List<Held> held = new ArrayList<>();
+        final List<Issue> open = free(board, issues(board, story, to, held), held);
+        if (picked != null) {
+            for (final Held each : held) {
+                if (picked.contains(each.issue())) {
+                    throw WorkRefusal.notAllowed(story.state(), to, each.reason());
+                }
+            }
+        }
         final List<Issue> issues =
                 picked == null
                         ? leastAdvanced(board, rule, agents(open))
@@ -221,6 +263,11 @@ public record WorkProposal(
                     "A person works every open issue of the story: "
                             + String.join(", ", manual)
                             + ".");
+        }
+        if (issues.isEmpty() && !held.isEmpty()) {
+            // Work never starts over what a hand edit left in doubt; the person sees why.
+            throw WorkRefusal.notAllowed(
+                    story.state(), to, String.join(" ", held.stream().map(Held::reason).toList()));
         }
         if (issues.isEmpty() && rule.then() != null) {
             throw WorkRefusal.notAllowed(story.state(), to, "A reading needs an open issue.");
@@ -291,7 +338,8 @@ public record WorkProposal(
                 2,
                 List.of(),
                 board.revision(),
-                manual);
+                manual,
+                held);
     }
 
     static Story story(final Board board, final String id) {
@@ -403,7 +451,7 @@ public record WorkProposal(
             // A state a person set on the story stands over what its issues say.
             return false;
         }
-        final List<Issue> open = issues(board, story, to);
+        final List<Issue> open = free(board, issues(board, story, to, new ArrayList<>()), null);
         if (open.stream().noneMatch(i -> i.worker() == Worker.MANUAL)) {
             return false;
         }
@@ -453,9 +501,37 @@ public record WorkProposal(
         return issues.stream().filter(i -> i.worker() != Worker.MANUAL).toList();
     }
 
-    private static List<Issue> issues(final Board board, final Story story, final String to) {
+    /**
+     * The open issues nothing holds back, each one held back added to {@code held} with its reason,
+     * so it is named but never worked.
+     */
+    private static List<Issue> free(
+            final Board board, final List<Issue> open, final @Nullable List<Held> held) {
+        final List<Issue> free = new ArrayList<>();
+        for (final Issue issue : open) {
+            final java.util.Optional<String> reason = board.holdsWork(issue.id());
+            if (reason.isEmpty()) {
+                free.add(issue);
+            } else if (held != null) {
+                held.add(new Held(issue.id(), reason.get()));
+            }
+        }
+        return free;
+    }
+
+    /**
+     * The story's open issues and their open sub-issues; an id the board holds twice is added to
+     * {@code held}, since it names no one issue.
+     */
+    private static List<Issue> issues(
+            final Board board, final Story story, final String to, final List<Held> held) {
         final Map<String, Issue> named = new LinkedHashMap<>();
         for (final String id : story.issues()) {
+            final java.util.Optional<String> twice = board.twice(id);
+            if (twice.isPresent()) {
+                held.add(new Held(id, twice.get()));
+                continue;
+            }
             final Issue issue =
                     board.issue(id)
                             .orElseThrow(

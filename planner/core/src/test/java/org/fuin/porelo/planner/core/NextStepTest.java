@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
@@ -844,6 +845,58 @@ class NextStepTest {
                 List.of("AGENT"),
                 "Work {story}: {issues}; {tasks}",
                 Map.of("codex", "model"));
+    }
+
+    /** The board with AA1 warned about its parent, as a hand edit since the start leaves it. */
+    private static Board heldBoard(final String parent, final String child) {
+        final Board board = board(parent, child);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                issue ->
+                                        issue.id().equals("AA1")
+                                                ? issue.withWarnings(
+                                                        List.of(Warning.parentOutsideProject()))
+                                                : issue)
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
+    void aStartedOfferOnAnIssueHeldBackIsRefusedWithItsWarning() {
+        // Work must not enter a working state over a parent the planner cannot see.
+        assertThatThrownBy(
+                        () ->
+                                NextStep.started(
+                                        heldBoard("Backlog", "Backlog"),
+                                        binding(List.of("AA1"), "MAIN", "Building"),
+                                        states -> states.getFirst()))
+                .as("the start is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage("AA1: " + Warning.parentOutsideProject().text());
+    }
+
+    @Test
+    void anEndOverAnIssueHeldBackTakesNoNextStepAndSaysWhy() {
+        // A run whose issue a hand edit put in doubt must neither move it on nor fail.
+        final NextStep.Result next =
+                NextStep.after(
+                        heldBoard("Building", "Review"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        states -> states.getFirst(),
+                        BUILT);
+        assertThat(next.tasks()).as("no follow-up is offered").isEmpty();
+        assertThat(next.writes().issues()).as("nothing is moved").isEmpty();
+        assertThat(next.unavailable())
+                .as("the person reads why")
+                .containsExactly(Map.entry("AA1", "AA1: " + Warning.parentOutsideProject().text()));
     }
 
     static Board board(final String parent, final String child) {

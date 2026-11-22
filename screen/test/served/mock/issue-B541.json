@@ -17,6 +17,7 @@
     "readingStopped" : false,
     "noRunHere" : true,
     "attention" : "NONE",
+    "warnings" : [ ],
     "text" : "**What must be true.** The work meets the story description.\n",
     "textFormat" : "MARKDOWN",
     "subIssues" : [ ],

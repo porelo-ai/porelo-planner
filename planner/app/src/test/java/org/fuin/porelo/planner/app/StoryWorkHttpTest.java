@@ -149,7 +149,8 @@ class StoryWorkHttpTest {
                         "readingRounds",
                         "issueReadingRounds",
                         "revision",
-                        "manual");
+                        "manual",
+                        "held");
         assertThat(
                         proposal.get("repositories")
                                 .get(0)

@@ -13,13 +13,19 @@ import org.jspecify.annotations.Nullable;
  * A project's whole board, read at one revision: every answer about a story or an issue at that
  * revision comes from it.
  *
+ * <p>Every store keeps two rules. An item is never left out: what a store cannot read in a story or
+ * an issue is a {@link Warning} on it, and only what has no place on the board at all is a fault. A
+ * value an item states - its state, its priority, its sums - counts as stated; a store never checks
+ * it against the item's text or history, and never warns because they differ.
+ *
  * @param revision the commits it was read from
  * @param workflow the states and phases
  * @param stories every story
  * @param issues every issue of every repository
  * @param work the work rules and what could not be read of them
  * @param repositories the project's repositories, its own first
- * @param faults each file or reference left out because it could not be read, naming it and why
+ * @param faults what has no place on the board at all, such as a file that names no item, naming it
+ *     and why; an item the store could not fully read is on the board with its warnings instead
  * @param owner the owner of the tracker that keeps the stories and issues, as the store verified it
  *     for the project; null for a board the project's own files hold
  * @param outside the issues left out because their Status is none of the workflow's states, each
@@ -142,11 +148,17 @@ public record Board(
         }
         final Map<String, Story> storyIds = new LinkedHashMap<>();
         for (final Story story : stories) {
-            if (storyIds.put(story.id(), story) != null) {
+            final Story before = storyIds.put(story.id(), story);
+            if (before != null && !(twice(before.warnings()) && twice(story.warnings()))) {
                 throw new IllegalArgumentException(
                         "Story " + story.id() + " is on the board twice");
             }
-            known(workflow, story.state(), story.id());
+            known(workflow, story.state(), story.id(), story.warnings());
+            if (story.state().isEmpty() && story.stateGiven()) {
+                // A save would write the empty state back as one the story states.
+                throw new IllegalArgumentException(
+                        "Story " + story.id() + " states no state but is marked as stating one");
+            }
         }
         final Map<String, Issue> issueIds = new LinkedHashMap<>();
         for (final Issue issue : issues) {
@@ -154,11 +166,12 @@ public record Board(
                 throw new IllegalArgumentException(
                         "An issue names a repository outside the project");
             }
-            if (issueIds.put(issue.id(), issue) != null) {
+            final Issue before = issueIds.put(issue.id(), issue);
+            if (before != null && !(twice(before.warnings()) && twice(issue.warnings()))) {
                 throw new IllegalArgumentException(
                         "Issue " + issue.id() + " is on the board twice");
             }
-            known(workflow, issue.state(), issue.id());
+            known(workflow, issue.state(), issue.id(), issue.warnings());
         }
         final Set<String> outsideIds = new HashSet<>();
         for (final OutsideIssue left : outside) {
@@ -190,20 +203,105 @@ public record Board(
      * Finds a story.
      *
      * @param id the story's id
-     * @return the story, if the board has it
+     * @return the story, if the board has it and its id names no other story
      */
     public Optional<Story> story(final String id) {
-        return stories.stream().filter(story -> story.id().equals(id)).findFirst();
+        final List<Story> found = stories.stream().filter(story -> story.id().equals(id)).toList();
+        return found.size() == 1 ? Optional.of(found.getFirst()) : Optional.empty();
     }
 
     /**
      * Finds an issue.
      *
      * @param id the issue's id
-     * @return the issue, if the board has it
+     * @return the issue, if the board has it and its id names no other issue
      */
     public Optional<Issue> issue(final String id) {
-        return issues.stream().filter(issue -> issue.id().equals(id)).findFirst();
+        final List<Issue> found = copies(id);
+        return found.size() == 1 ? Optional.of(found.getFirst()) : Optional.empty();
+    }
+
+    /**
+     * Says why an id names no one item: the board holds two stories or two issues of it, each
+     * warned {@link Warning#ID_TWICE}, and an id alone cannot tell which a move, an edit or a work
+     * means.
+     *
+     * @param id a story's or an issue's id
+     * @return the words of a refusal, naming the repositories of each issue; empty when the id
+     *     names one item or none
+     */
+    public Optional<String> twice(final String id) {
+        final List<Issue> found = copies(id);
+        if (found.size() > 1) {
+            return Optional.of(
+                    id
+                            + " names an issue in "
+                            + spoken(found.stream().map(Issue::repository).toList())
+                            + "; it can be neither worked nor moved until one id is changed.");
+        }
+        if (stories.stream().filter(story -> story.id().equals(id)).count() > 1) {
+            return Optional.of(
+                    id
+                            + " names two stories; it can be neither worked nor moved until one id"
+                            + " is changed.");
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Says why no work, move or edit may start on an item: its id names two items, or it carries a
+     * warning about its state, parent, waits or id. The one check every route to work or a change
+     * passes.
+     *
+     * @param id a story's or an issue's id
+     * @return the words of a refusal; empty when nothing holds the item back
+     */
+    public Optional<String> holdsWork(final String id) {
+        return held(id, Warning::holdsWork);
+    }
+
+    /**
+     * Says why no move may name an item: what {@link #holdsWork(String)} says, but for a warning
+     * about its state alone, since a move into a state of the workflow is what sets that right.
+     *
+     * @param id a story's or an issue's id
+     * @return the words of a refusal; empty when the item may be moved
+     */
+    public Optional<String> holdsMove(final String id) {
+        return held(
+                id,
+                warning ->
+                        warning.holdsWork()
+                                && !warning.concerns().equals(Set.of(Warning.Concern.STATE)));
+    }
+
+    private Optional<String> held(
+            final String id, final java.util.function.Predicate<Warning> holds) {
+        final Optional<String> twice = twice(id);
+        if (twice.isPresent()) {
+            return twice;
+        }
+        final List<Warning> warnings =
+                issue(id)
+                        .map(Issue::warnings)
+                        .or(() -> story(id).map(Story::warnings))
+                        .orElse(List.of());
+        final List<String> texts = warnings.stream().filter(holds).map(Warning::text).toList();
+        return texts.isEmpty()
+                ? Optional.empty()
+                : Optional.of(id + ": " + String.join(" ", texts));
+    }
+
+    private List<Issue> copies(final String id) {
+        return issues.stream().filter(issue -> issue.id().equals(id)).toList();
+    }
+
+    /** Names joined as words: {@code A and B}, {@code A, B and C}. */
+    private static String spoken(final List<String> names) {
+        if (names.size() < 2) {
+            return String.join("", names);
+        }
+        return String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.getLast();
     }
 
     /**
@@ -216,7 +314,24 @@ public record Board(
         return outside.stream().filter(issue -> issue.id().equals(id)).findFirst();
     }
 
-    private static void known(final Workflow workflow, final String state, final String id) {
+    private static boolean twice(final List<Warning> warnings) {
+        return Warning.has(warnings, Warning.ID_TWICE);
+    }
+
+    /**
+     * Refuses a state the workflow does not know unless the item is warned about its state, and an
+     * empty one unless it is warned that no state can be told.
+     */
+    private static void known(
+            final Workflow workflow,
+            final String state,
+            final String id,
+            final List<Warning> warnings) {
+        if (state.isEmpty()
+                ? Warning.has(warnings, Warning.NO_STATE)
+                : Warning.anyAboutState(warnings)) {
+            return;
+        }
         if (!workflow.states().contains(state)) {
             throw new IllegalArgumentException(id + " has the unknown state '" + state + "'");
         }

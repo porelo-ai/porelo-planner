@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -186,6 +187,10 @@ public final class NextStep {
     /** Plans entry to an offered state; only STARTED calls this. */
     public static Writes started(
             final Board board, final Binding binding, final Moves.StoryState derive) {
+        WorkRefusal.unlessFree(board, binding.story(), "", binding.state());
+        for (final String id : binding.issues()) {
+            WorkRefusal.unlessFree(board, id, "", binding.state());
+        }
         if (!owns(board, binding)) {
             throw WorkRefusal.notAllowed(
                     "", "", "The offered issues no longer belong to this work.");
@@ -288,6 +293,11 @@ public final class NextStep {
             final Build ended) {
         final Map<String, Progress> progress = new LinkedHashMap<>(previous);
         binding.issues().forEach(id -> progress.putIfAbsent(id, Progress.start(2)));
+        final Optional<String> held = held(board, binding);
+        if (held.isPresent()) {
+            // A hand edit since the start leaves the issue in doubt, so no next step is taken.
+            return unavailable(binding, progress, held.get());
+        }
         if (!owns(board, binding)) {
             return unavailable(
                     binding,
@@ -488,7 +498,15 @@ public final class NextStep {
         // As at a build's end, a reading the build's state leads to must have a sound rule.
         final boolean reading =
                 board.work().rules().containsKey(target) || target.equals(binding.rule().then());
+        final Optional<String> storyHeld = board.holdsWork(binding.story());
         for (final String id : binding.issues()) {
+            final Optional<String> held = storyHeld.or(() -> board.holdsWork(id));
+            if (held.isPresent()) {
+                if (progress.containsKey(id)) {
+                    unavailable(progress, unavailable, id, held.get());
+                }
+                continue;
+            }
             final Issue issue = board.issue(id).orElse(null);
             if (issue != null
                     && (issue.worker() == Worker.MANUAL
@@ -795,13 +813,19 @@ public final class NextStep {
             final String derived =
                     derive.of(
                             story.issues().stream()
+                                    // Only states the workflow knows give the story's.
                                     .map(
                                             id ->
                                                     targets.getOrDefault(
                                                             id,
                                                             board.issue(id)
                                                                     .map(Issue::state)
-                                                                    .orElse("")))
+                                                                    .filter(
+                                                                            board.workflow()
+                                                                                            .states()
+                                                                                    ::contains)
+                                                                    .orElse(null)))
+                                    .filter(java.util.Objects::nonNull)
                                     .toList());
             if (derived != null
                     && (derived.equals(story.state()) || targets.containsValue(derived))) {
@@ -864,7 +888,8 @@ public final class NextStep {
                                         unavailable,
                                         id,
                                         issue == null
-                                                ? "it is no longer on the board"
+                                                ? board.twice(id)
+                                                        .orElse("it is no longer on the board")
                                                 : movedMeanwhile(issue, binding));
                                 return;
                             }
@@ -900,6 +925,15 @@ public final class NextStep {
     }
 
     /** Every issue of the binding asks the person, each with the one line saying why. */
+    /** Why the board holds back the binding's story or one of its issues, if it does. */
+    private static Optional<String> held(final Board board, final Binding binding) {
+        Optional<String> held = board.holdsWork(binding.story());
+        for (final String id : binding.issues()) {
+            held = held.or(() -> board.holdsWork(id));
+        }
+        return held;
+    }
+
     private static Result unavailable(
             final Binding binding, final Map<String, Progress> progress, final String why) {
         final Map<String, String> unavailable = new LinkedHashMap<>();

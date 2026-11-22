@@ -208,7 +208,7 @@ public final class Moves {
                 continue;
             }
             final Story story =
-                    board.story(move.id()).map(found -> story(board, found.id())).orElse(null);
+                    board.story(move.id()).map(found -> story(board, found)).orElse(null);
             if (story == null) {
                 continue;
             }
@@ -250,7 +250,7 @@ public final class Moves {
             board.stories().stream()
                     .filter(
                             story ->
-                                    story(board, story.id()).issues().stream()
+                                    story(board, story).issues().stream()
                                             .anyMatch(lineage::contains))
                     .forEach(story -> stories.add(story.id()));
         }
@@ -292,7 +292,11 @@ public final class Moves {
             throw new Refused("MoveNotAllowed", reason, item("", "", "", reason));
         }
         final Map<String, String> states = new LinkedHashMap<>();
-        board.issues().forEach(issue -> states.put(issue.id(), issue.state()));
+        // An issue held back, or in a state the workflow does not know, is moved only by its own
+        // move, never carried along or chosen as a story's earliest.
+        board.issues().stream()
+                .filter(issue -> placed(board, issue))
+                .forEach(issue -> states.put(issue.id(), issue.state()));
         final Map<String, String> onBoard = Map.copyOf(states);
         final Map<String, String> issues = new LinkedHashMap<>();
         final Set<String> moved = new LinkedHashSet<>();
@@ -396,6 +400,11 @@ public final class Moves {
         if (move.follow() && !move.story()) {
             final String reason = "Only a story follows its issues.";
             throw new Refused("MoveNotAllowed", reason, item(move.id(), "", move.to(), reason));
+        }
+        final Optional<String> held = board.holdsMove(move.id());
+        if (held.isPresent()) {
+            throw new Refused(
+                    "MoveNotAllowed", held.get(), item(move.id(), "", move.to(), held.get()));
         }
         final String from;
         boolean manual = false;
@@ -699,7 +708,12 @@ public final class Moves {
      * issues once a move gives them a state; one without a state is not known to the checks.
      */
     private static Story story(final Board board, final String id) {
-        final Story story = board.story(id).orElseThrow();
+        return story(board, board.story(id).orElseThrow());
+    }
+
+    /** A story with the issues outside the workflow that stand under it. */
+    private static Story story(final Board board, final Story story) {
+        final String id = story.id();
         final List<String> under =
                 board.outside().stream()
                         .filter(issue -> id.equals(issue.story()))
@@ -720,7 +734,17 @@ public final class Moves {
                 issues,
                 story.description(),
                 story.link(),
-                story.issuesWhole());
+                story.issuesWhole(),
+                story.warnings());
+    }
+
+    /**
+     * Whether a story's move may carry the issue or judge its fit by it: it is held back by
+     * nothing, and its state is one of the workflow's.
+     */
+    private static boolean placed(final Board board, final Issue issue) {
+        return board.workflow().states().contains(issue.state())
+                && board.holdsWork(issue.id()).isEmpty();
     }
 
     private static String of(final Optional<String> value) {

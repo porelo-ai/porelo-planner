@@ -695,4 +695,44 @@ class MockStoreTest {
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(store.board()).as("the board after both refusals").isEqualTo(edited);
     }
+
+    @Test
+    void theMockBoardCarriesOneItemOfEachWarningTheStoreApiNames() {
+        // The window's planning tests show what a warning looks like only for kinds the mock has.
+        final Board board = store.board();
+        final java.util.Map<String, Long> kinds =
+                java.util.stream.Stream.concat(
+                                board.stories().stream()
+                                        .flatMap(story -> story.warnings().stream()),
+                                board.issues().stream().flatMap(issue -> issue.warnings().stream()))
+                        .collect(
+                                java.util.stream.Collectors.groupingBy(
+                                        org.fuin.porelo.planner.store.Warning::kind,
+                                        java.util.stream.Collectors.counting()));
+        final java.util.Map<String, Long> expected = new java.util.HashMap<>();
+        for (final org.fuin.porelo.planner.store.Warning warning :
+                org.fuin.porelo.planner.store.Warning.named()) {
+            // Both copies of an id on two issues carry it.
+            expected.put(
+                    warning.kind(),
+                    warning.kind().equals(org.fuin.porelo.planner.store.Warning.ID_TWICE)
+                            ? 2L
+                            : 1L);
+        }
+        assertThat(kinds)
+                .as(
+                        "every named kind, %d of them, once, an id on two issues twice",
+                        expected.size())
+                .isEqualTo(expected);
+        assertThat(
+                        java.util.stream.Stream.concat(
+                                        board.stories().stream()
+                                                .flatMap(story -> story.warnings().stream()),
+                                        board.issues().stream()
+                                                .flatMap(issue -> issue.warnings().stream()))
+                                .distinct()
+                                .toList())
+                .as("each as the store API words it")
+                .containsExactlyInAnyOrderElementsOf(org.fuin.porelo.planner.store.Warning.named());
+    }
 }

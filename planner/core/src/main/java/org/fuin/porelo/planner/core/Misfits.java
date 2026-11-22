@@ -34,10 +34,10 @@ public final class Misfits {
         if (!story.stateGiven()) {
             return List.of();
         }
-        final Map<String, String> states = new HashMap<>();
-        for (final String id : story.issues()) {
-            board.issue(id).map(Issue::state).ifPresent(state -> states.put(id, state));
+        if (doubtful(board, story)) {
+            return null;
         }
+        final Map<String, String> states = states(board, story);
         try {
             return of(story.issues(), story.state(), states, derive);
         } catch (final RuntimeException e) {
@@ -103,13 +103,10 @@ public final class Misfits {
      */
     public static @Nullable String derivedState(
             final Board board, final Story story, final Moves.StoryState derive) {
-        if (!story.stateGiven()) {
+        if (!story.stateGiven() || doubtful(board, story)) {
             return null;
         }
-        final Map<String, String> states = new HashMap<>();
-        for (final String id : story.issues()) {
-            board.issue(id).map(Issue::state).ifPresent(state -> states.put(id, state));
-        }
+        final Map<String, String> states = states(board, story);
         return derivedOf(story, states, derive);
     }
 
@@ -127,6 +124,34 @@ public final class Misfits {
             // A store without a read board, or a state its rule does not know: not known.
             return null;
         }
+    }
+
+    /** The states of a story's issues the board holds, by id. */
+    private static Map<String, String> states(final Board board, final Story story) {
+        final Map<String, String> states = new HashMap<>();
+        for (final String id : story.issues()) {
+            board.issue(id).map(Issue::state).ifPresent(state -> states.put(id, state));
+        }
+        return states;
+    }
+
+    /**
+     * Whether the story names an issue whose id the board holds twice, or one in a state the
+     * workflow does not know: the rule cannot be applied to it, so whether its issues fit is not
+     * known.
+     */
+    private static boolean doubtful(final Board board, final Story story) {
+        return story.issues().stream()
+                .anyMatch(
+                        id ->
+                                board.twice(id).isPresent()
+                                        || board.issue(id)
+                                                .filter(
+                                                        issue ->
+                                                                !board.workflow()
+                                                                        .states()
+                                                                        .contains(issue.state()))
+                                                .isPresent());
     }
 
     /**

@@ -3054,7 +3054,7 @@ components:
     Story:
       description: One story as the board shows it.
       type: object
-      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open]
+      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open, warnings]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -3062,6 +3062,10 @@ components:
           type: string
         state:
           type: string
+          description: >-
+            One of the workflow's states; with a warning about its state, a value the workflow does not know, which
+            the board shows in a column of its own at its end named after the value, or empty when no state can be
+            told for it (NoState).
         stateGiven:
           type: boolean
           description: >-
@@ -3109,7 +3113,15 @@ components:
             - type: 'null'
           description: >-
             What is still open of the story's issues and their sub-issues, each counted once. Null when the board does
-            not hold every issue the story's head names, so nothing is told as if it did.
+            not hold every issue the story's head names, or holds one of its ids twice, so nothing is told as if it
+            did.
+        warnings:
+          type: array
+          description: >-
+            What the store could not read in the story, which the board shows beside it; empty when nothing. The
+            story is never left out for it.
+          items:
+            $ref: '#/components/schemas/ItemWarning'
     StoryDetail:
       description: One story with its description.
       allOf:
@@ -3144,9 +3156,11 @@ components:
         issue:
           $ref: '#/components/schemas/IssueDetail'
     Issue:
-      description: One issue on the board.
+      description: >-
+        One issue on the board. Two issues share an id only when each carries the warning IdTwice; neither is then
+        worked, moved or edited, and a read of the issue by that id answers NoSuchIssue.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft]
+      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -3156,6 +3170,9 @@ components:
           type: string
         state:
           type: string
+          description: >-
+            One of the workflow's states; with a warning about its state, a value the workflow does not know, which
+            the board shows in a column of its own at its end named after the value.
         size:
           type: [string, 'null']
           description: The issue's size, or null when it has none.
@@ -3231,6 +3248,41 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/Finding'
+        warnings:
+          type: array
+          description: >-
+            What the store could not read in the issue, which the board shows beside it; empty when nothing. The
+            issue is never left out for it.
+          items:
+            $ref: '#/components/schemas/ItemWarning'
+    ItemWarning:
+      description: >-
+        What a store could not read in a story or an issue it still shows. A warning about the item's state, parent,
+        blockers or id holds it back: no work starts on it, and neither an edit nor a move names it, but for a move
+        out of a state the workflow does not know, which sets it right.
+      type: object
+      required: [kind, text]
+      properties:
+        kind:
+          type: string
+          pattern: '^[A-Z][A-Za-z]{0,63}$'
+          description: >-
+            An open name of what is wrong; a window shows a kind it does not know as any other. Known kinds are
+            StateOutsideWorkflow, NoState, NoPriority, IdTwice, ParentOutsideProject, BlockerOutsideProject,
+            IssueOutsideProject, WrongParent and BodyNotSectioned.
+        text:
+          type: string
+          description: One fixed sentence saying what is wrong, for a tooltip; it never repeats a person's words.
+    HeldIssue:
+      description: An open issue of the story no task of the proposal names, since the board holds it back.
+      type: object
+      required: [issue, reason]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        reason:
+          type: string
+          description: Why, in the words of its warnings, or of its id that names two issues.
     IssueDetail:
       description: One issue with its text and sub-issues.
       allOf:
@@ -3277,7 +3329,7 @@ components:
         $ref: '#/components/schemas/IssueId'
     StoryWorkProposal:
       type: object
-      required: [modes, repositories, coordinator, comment, readingRounds, issueReadingRounds, revision, manual]
+      required: [modes, repositories, coordinator, comment, readingRounds, issueReadingRounds, revision, manual, held]
       properties:
         modes:
           type: array
@@ -3311,6 +3363,14 @@ components:
             names them, and a person moves them through the work by hand.
           items:
             $ref: '#/components/schemas/IssueId'
+        held:
+          type: array
+          default: []
+          description: >-
+            The story's open issues the board holds back by a warning about their state, parent, blockers or id, in
+            story order, each with why: no task of this proposal names them. A Start naming one is refused.
+          items:
+            $ref: '#/components/schemas/HeldIssue'
     PlanRepositoryWork:
       type: object
       additionalProperties: false

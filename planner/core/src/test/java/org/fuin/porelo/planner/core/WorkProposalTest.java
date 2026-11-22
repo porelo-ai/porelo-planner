@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -744,6 +745,185 @@ class WorkProposalTest {
         assertThat(proposal.repositories().getFirst().subAgents())
                 .as("a reading has no helpers")
                 .isEmpty();
+    }
+
+    /** The board with the given issues warned, those in {@code states} moved there too. */
+    static Board warned(
+            final Board board,
+            final Map<String, Warning> warnings,
+            final Map<String, String> states) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        i.title(),
+                                                        states.getOrDefault(i.id(), i.state()),
+                                                        i.size(),
+                                                        i.blockedBy(),
+                                                        i.parent(),
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        i.risk())
+                                                .withWarnings(
+                                                        warnings.containsKey(i.id())
+                                                                ? List.of(warnings.get(i.id()))
+                                                                : List.of()))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
+    void anIssueWarnedAboutItsParentIsHeldWithItsTextWhileTheOthersAreProposed() {
+        // A hand edit of a parent must not slip the issue into work under rules it escapes.
+        final WorkProposal proposal =
+                WorkProposal.propose(
+                        warned(
+                                board(WorkRule.Per.REPOSITORY),
+                                Map.of("BB1", Warning.parentOutsideProject()),
+                                Map.of()),
+                        "ST1",
+                        "Building");
+        assertThat(proposal.repositories())
+                .as("only alpha's issues are worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1", "AA1.1")));
+        assertThat(proposal.held())
+                .as("the warned issue is named with its warning")
+                .containsExactly(
+                        new WorkProposal.Held(
+                                "BB1", "BB1: " + Warning.parentOutsideProject().text()));
+    }
+
+    @Test
+    void anIssueInAStateOutsideTheWorkflowIsHeldAndItsSiblingsStillChosen() {
+        // A state the workflow does not know must never count as the least advanced one.
+        final WorkProposal proposal =
+                WorkProposal.propose(
+                        warned(
+                                board(WorkRule.Per.REPOSITORY),
+                                Map.of("AA1", Warning.stateOutsideWorkflow()),
+                                Map.of("AA1", "Parked")),
+                        "ST1",
+                        "Building");
+        assertThat(proposal.repositories())
+                .as("the sub-issue and the other repository's issue in Backlog are worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1.1")),
+                        org.assertj.core.groups.Tuple.tuple("beta", List.of("BB1")));
+        assertThat(proposal.held())
+                .as("the issue in doubt is held")
+                .containsExactly(
+                        new WorkProposal.Held(
+                                "AA1", "AA1: " + Warning.stateOutsideWorkflow().text()));
+    }
+
+    @Test
+    void anIssueWithoutAPriorityIsStillProposed() {
+        // A warning that touches nothing a work rule reads must not stop the work.
+        final WorkProposal proposal =
+                WorkProposal.propose(
+                        warned(
+                                board(WorkRule.Per.REPOSITORY),
+                                Map.of("BB1", Warning.noPriority()),
+                                Map.of()),
+                        "ST1",
+                        "Building");
+        assertThat(proposal.repositories())
+                .as("both repositories are worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1", "AA1.1")),
+                        org.assertj.core.groups.Tuple.tuple("beta", List.of("BB1")));
+        assertThat(proposal.held()).as("nothing is held").isEmpty();
+    }
+
+    @Test
+    void aStartNamingAHeldIssueIsRefusedWithItsWarning() {
+        // A person's pick must not reach what the story's own work leaves out.
+        final Board board =
+                warned(
+                        board(WorkRule.Per.REPOSITORY),
+                        Map.of("BB1", Warning.blockerOutsideProject()),
+                        Map.of());
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        story -> List.of(),
+                                        List.of("BB1")))
+                .as("the named issue is held back")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage("BB1: " + Warning.blockerOutsideProject().text());
+    }
+
+    @Test
+    void aStoryHeldBackOffersNoneOfItsIssues() {
+        // A story whose state is in doubt must not start work on any of its issues.
+        final Board plain = board(WorkRule.Per.REPOSITORY);
+        final Board board =
+                new Board(
+                        plain.revision(),
+                        plain.workflow(),
+                        List.of(
+                                plain.stories()
+                                        .getFirst()
+                                        .withWarnings(List.of(Warning.stateOutsideWorkflow()))),
+                        plain.issues(),
+                        plain.work(),
+                        plain.repositories());
+        assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Building"))
+                .as("the story is held back")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage("ST1: " + Warning.stateOutsideWorkflow().text());
+    }
+
+    @Test
+    void anIdOnTwoIssuesIsHeldWithWordsNamingBothRepositories() {
+        // One id naming two issues would start a task on whichever was found first.
+        final Board plain = board(WorkRule.Per.REPOSITORY);
+        final List<Issue> issues = new java.util.ArrayList<>();
+        for (final Issue issue : plain.issues()) {
+            issues.add(
+                    issue.id().equals("BB1")
+                            ? issue.withWarnings(List.of(Warning.idTwice()))
+                            : issue);
+        }
+        issues.add(
+                issue("BB1", "alpha", "Same id", "Backlog", null, "")
+                        .withWarnings(List.of(Warning.idTwice())));
+        final Board board =
+                new Board(
+                        plain.revision(),
+                        plain.workflow(),
+                        plain.stories(),
+                        issues,
+                        plain.work(),
+                        plain.repositories());
+        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
+        assertThat(proposal.repositories())
+                .as("only the issues of one id each are worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1", "AA1.1")));
+        assertThat(proposal.held())
+                .as("the id is held with both repositories named")
+                .containsExactly(
+                        new WorkProposal.Held(
+                                "BB1",
+                                "BB1 names an issue in beta and alpha; it can be neither worked"
+                                        + " nor moved until one id is changed."));
     }
 
     /** The board with the given issues moved to the given states. */

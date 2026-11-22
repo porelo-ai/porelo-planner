@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
@@ -80,6 +81,7 @@ public final class Edits {
             final Board board, final String revision, final String issue, final Fields fields) {
         fresh(board, revision);
         known(board, issue);
+        notHeld(board, issue);
         if (fields.none()) {
             throw refused(issue, "", "The body names no field to set.");
         }
@@ -104,14 +106,8 @@ public final class Edits {
             final String story,
             final List<String> issues) {
         fresh(board, revision);
-        final Story found =
-                board.story(story)
-                        .orElseThrow(
-                                () ->
-                                        new Moves.Refused(
-                                                "NoSuchStory",
-                                                "There is no story " + story + ".",
-                                                Map.of("story", story)));
+        final Story found = story(board, story);
+        notHeld(board, story);
         if (!found.issuesWhole()) {
             // An issue the board left out would be dropped from a list written whole.
             throw refused(story, "issues", "The board does not show every issue of the story.");
@@ -171,6 +167,7 @@ public final class Edits {
             final List<String> blockedBy) {
         fresh(board, revision);
         final Issue found = known(board, issue);
+        notHeld(board, issue);
         if (blockedBy.size() > MOST_BLOCKERS) {
             throw refused(
                     issue, "blockedBy", "An issue has at most " + MOST_BLOCKERS + " blockers.");
@@ -219,16 +216,11 @@ public final class Edits {
             final Board board, final String revision, final String id, final TextEdit edit) {
         fresh(board, revision);
         if (edit.kind() == TextEdit.Kind.STORY) {
-            board.story(id)
-                    .orElseThrow(
-                            () ->
-                                    new Moves.Refused(
-                                            "NoSuchStory",
-                                            "There is no story " + id + ".",
-                                            Map.of("story", id)));
+            story(board, id);
         } else {
             known(board, id);
         }
+        notHeld(board, id);
         if (edit.none()) {
             throw refused(id, "", "The body names no title and no part to write.");
         }
@@ -318,7 +310,38 @@ public final class Edits {
         return new Moves.Refused(REFUSED, reason, parameters);
     }
 
+    /**
+     * Refuses an edit of an item held back by its warnings or an id it shares, so a hand edit
+     * cannot be built on by the planner's own writes.
+     */
+    private static void notHeld(final Board board, final String id) {
+        final Optional<String> held = board.holdsWork(id);
+        if (held.isPresent()) {
+            throw refused(id, "", held.get());
+        }
+    }
+
+    private static Story story(final Board board, final String id) {
+        twice(board, id);
+        return board.story(id)
+                .orElseThrow(
+                        () ->
+                                new Moves.Refused(
+                                        "NoSuchStory",
+                                        "There is no story " + id + ".",
+                                        Map.of("story", id)));
+    }
+
+    /** Refuses an id that names two items, which no edit can tell apart. */
+    private static void twice(final Board board, final String id) {
+        final Optional<String> twice = board.twice(id);
+        if (twice.isPresent()) {
+            throw refused(id, "", twice.get());
+        }
+    }
+
     private static Issue known(final Board board, final String id) {
+        twice(board, id);
         return board.issue(id)
                 .orElseThrow(
                         () ->

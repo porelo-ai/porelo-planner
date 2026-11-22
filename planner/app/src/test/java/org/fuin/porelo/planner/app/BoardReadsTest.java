@@ -28,6 +28,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -520,6 +521,101 @@ class BoardReadsTest {
                 .as("the refusal names the project alone, never the value sent")
                 .containsExactly("project");
         assertThat(reads).as("no board read for a refused query").isZero();
+    }
+
+    /** A board whose story stands outside the workflow and names an id on two issues. */
+    private static Board warnedBoard() {
+        final Board base = board();
+        final List<Issue> issues = new ArrayList<>(base.issues());
+        for (final String repository : List.of("porelo-store", "porelo-other")) {
+            issues.add(
+                    new Issue(
+                                    "AB05",
+                                    repository,
+                                    "Twice",
+                                    "Backlog",
+                                    "S",
+                                    List.of(),
+                                    null,
+                                    null,
+                                    "")
+                            .withWarnings(List.of(Warning.idTwice())));
+        }
+        issues.add(
+                new Issue(
+                                "AB06",
+                                "porelo-store",
+                                "Parked",
+                                "Parked",
+                                "S",
+                                List.of(),
+                                null,
+                                null,
+                                "")
+                        .withWarnings(List.of(Warning.stateOutsideWorkflow())));
+        issues.add(
+                new Issue(
+                        "AB07",
+                        "porelo-store",
+                        "Waiting",
+                        "Backlog",
+                        "S",
+                        List.of(),
+                        null,
+                        null,
+                        ""));
+        final List<Story> stories = new ArrayList<>(base.stories());
+        stories.add(
+                new Story(
+                                "ST3",
+                                "Parked by hand",
+                                "Parked",
+                                true,
+                                "High",
+                                null,
+                                List.of("AB05"),
+                                "",
+                                null)
+                        .withWarnings(List.of(Warning.stateOutsideWorkflow())));
+        return new Board(
+                base.revision(),
+                base.workflow(),
+                stories,
+                issues,
+                base.work(),
+                List.of("porelo-store", "porelo-other"));
+    }
+
+    @Test
+    void everyItemIsServedWithItsWarningsAndAnIdOnTwoIssuesShowsBoth() throws Exception {
+        // Harm: an item hidden from the board, or shown without what is wrong with it.
+        supplied = warnedBoard();
+        given();
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[0].warnings").isEmpty())
+                .andExpect(jsonPath("$.stories[0]", org.hamcrest.Matchers.hasKey("warnings")))
+                .andExpect(jsonPath("$.stories[2].state").value("Parked"))
+                .andExpect(jsonPath("$.stories[2].warnings[0].kind").value("StateOutsideWorkflow"))
+                .andExpect(
+                        jsonPath("$.stories[2].warnings[0].text")
+                                .value(Warning.stateOutsideWorkflow().text()))
+                .andExpect(jsonPath("$.stories[2].issues.length()").value(2))
+                .andExpect(jsonPath("$.stories[2].issues[0].repository").value("porelo-store"))
+                .andExpect(jsonPath("$.stories[2].issues[1].repository").value("porelo-other"))
+                .andExpect(jsonPath("$.stories[2].issues[1].warnings[0].kind").value("IdTwice"))
+                .andExpect(jsonPath("$.stories[2].misfits").isEmpty())
+                .andExpect(jsonPath("$.stories[2].open").isEmpty());
+        final JsonNode none = issuesInNoStory();
+        assertThat(none.path("issues").valueStream().map(i -> i.path("id").asString()).toList())
+                .as("an issue outside the workflow follows those in its states")
+                .containsExactly("AB07", "AB06");
+        assertThat(none.path("issues").get(1).path("warnings").get(0).path("text").asString())
+                .as("with its warning's text")
+                .isEqualTo(Warning.stateOutsideWorkflow().text());
+        mvc.perform(get("/projects/alpha/issues/AB05"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchIssue"));
     }
 
     private JsonNode issuesInNoStory() throws Exception {

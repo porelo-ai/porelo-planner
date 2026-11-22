@@ -236,6 +236,7 @@
       "state": "In analysis",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "High",
       "size": "L",
       "issues": [],
@@ -248,6 +249,7 @@
       "state": "Under estimation",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Medium",
       "size": null,
       "issues": [
@@ -267,6 +269,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": "M",
       "issues": [],
@@ -279,6 +282,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": "XL",
       "issues": [],
@@ -291,6 +295,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [],
@@ -303,6 +308,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [],
@@ -315,6 +321,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -327,6 +334,7 @@
       "state": "Idea",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [],
@@ -339,6 +347,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -351,6 +360,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -363,6 +373,7 @@
       "state": "Accepted",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [],
@@ -375,6 +386,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": "S",
       "issues": [
@@ -389,6 +401,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "High",
       "size": "XS",
       "issues": [],
@@ -401,6 +414,7 @@
       "state": "Analyzed",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "High",
       "size": null,
       "issues": [],
@@ -413,6 +427,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -427,6 +442,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -439,6 +455,7 @@
       "state": "Estimated",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [],
@@ -451,6 +468,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -480,6 +498,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -501,6 +520,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [],
@@ -513,6 +533,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -531,6 +552,7 @@
       "state": "Backlog",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": "M",
       "issues": [],
@@ -543,6 +565,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -557,6 +580,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -577,6 +601,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -596,6 +621,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [
@@ -610,6 +636,7 @@
       "state": "Implementing",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [],
@@ -622,6 +649,7 @@
       "state": "Review",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -642,6 +670,7 @@
       "state": "Review",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -656,6 +685,7 @@
       "state": "Review",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -670,6 +700,7 @@
       "state": "Review",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -686,6 +717,7 @@
       "state": "Review",
       "stateGiven": true,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Low",
       "size": null,
       "issues": [
@@ -701,6 +733,7 @@
       "state": "Finished",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [],
@@ -713,6 +746,7 @@
       "state": "Finished",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [],
@@ -725,6 +759,7 @@
       "state": "Finished",
       "stateGiven": false,
       "issuesWhole": true,
+      "warnings": [],
       "priority": "Highest",
       "size": null,
       "issues": [
@@ -733,6 +768,45 @@
       ],
       "description": "",
       "link": "https://example.org/stories/ST243"
+    },
+    {
+      "id": "ST296",
+      "title": "Items the planner could not fully read",
+      "state": "Backlog",
+      "stateGiven": true,
+      "issuesWhole": true,
+      "warnings": [],
+      "priority": "Medium",
+      "size": null,
+      "issues": ["B870", "B871", "B872", "B873", "B874", "B875", "B876"],
+      "description": "Each issue carries one warning of its own kind.",
+      "link": "https://example.org/stories/ST296"
+    },
+    {
+      "id": "ST297",
+      "title": "A story whose state cannot be told",
+      "state": "",
+      "stateGiven": false,
+      "issuesWhole": true,
+      "warnings": [{"kind": "NoState", "text": "No state can be told for it: it states none, and its issues give none.", "concerns": ["STATE"]}],
+      "priority": "Medium",
+      "size": null,
+      "issues": [],
+      "description": "It states no state and its issues give none.",
+      "link": "https://example.org/stories/ST297"
+    },
+    {
+      "id": "ST298",
+      "title": "A story naming an issue outside the project",
+      "state": "Idea",
+      "stateGiven": true,
+      "issuesWhole": false,
+      "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown.", "concerns": ["ISSUES"]}],
+      "priority": "Medium",
+      "size": null,
+      "issues": [],
+      "description": "Its issue outside the project is not shown.",
+      "link": "https://example.org/stories/ST298"
     }
   ],
   "issues": [
@@ -750,7 +824,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "PJ74",
@@ -766,7 +841,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "FC03",
@@ -782,7 +858,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "FC09",
@@ -798,7 +875,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "FC10",
@@ -814,7 +892,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "FC11",
@@ -830,7 +909,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "FC13",
@@ -846,7 +926,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Medium"
+      "priority": "Medium",
+      "warnings": []
     },
     {
       "id": "PJ58",
@@ -862,7 +943,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "SI05",
@@ -878,7 +960,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B540",
@@ -894,7 +977,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B540.1",
@@ -910,7 +994,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B541",
@@ -928,7 +1013,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B542",
@@ -944,7 +1030,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B543",
@@ -960,7 +1047,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B544",
@@ -976,7 +1064,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B545",
@@ -992,7 +1081,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B546",
@@ -1008,7 +1098,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B547",
@@ -1024,7 +1115,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B548",
@@ -1040,7 +1132,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B549",
@@ -1056,7 +1149,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B550",
@@ -1072,7 +1166,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B551",
@@ -1088,7 +1183,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B552",
@@ -1104,7 +1200,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO156",
@@ -1120,7 +1217,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO157",
@@ -1136,7 +1234,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B553",
@@ -1152,7 +1251,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B554",
@@ -1168,7 +1268,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "F444",
@@ -1184,7 +1285,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "F445",
@@ -1202,7 +1304,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO158",
@@ -1218,7 +1321,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX89",
@@ -1234,7 +1338,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX90",
@@ -1252,7 +1357,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX91",
@@ -1270,7 +1376,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX24",
@@ -1286,7 +1393,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX36",
@@ -1302,7 +1410,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "MX39",
@@ -1318,7 +1427,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO07",
@@ -1334,7 +1444,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "B231",
@@ -1350,7 +1461,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "IJ14",
@@ -1366,7 +1478,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT35",
@@ -1382,7 +1495,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT36",
@@ -1398,7 +1512,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT38",
@@ -1414,7 +1529,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT43",
@@ -1430,7 +1546,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT44",
@@ -1446,7 +1563,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT45",
@@ -1462,7 +1580,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT46",
@@ -1478,7 +1597,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "PI43",
@@ -1494,7 +1614,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "OM44",
@@ -1510,7 +1631,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "CC45",
@@ -1526,7 +1648,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "PI39",
@@ -1542,7 +1665,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "OM36",
@@ -1558,7 +1682,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "CC39",
@@ -1574,7 +1699,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "PJ106",
@@ -1590,7 +1716,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "High"
+      "priority": "High",
+      "warnings": []
     },
     {
       "id": "BT42",
@@ -1606,7 +1733,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT39",
@@ -1622,7 +1750,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO52",
@@ -1638,7 +1767,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "SL36",
@@ -1654,7 +1784,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT40",
@@ -1670,7 +1801,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT41",
@@ -1686,7 +1818,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO53",
@@ -1702,7 +1835,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "SL35",
@@ -1718,7 +1852,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "SL37",
@@ -1734,7 +1869,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Low"
+      "priority": "Low",
+      "warnings": []
     },
     {
       "id": "SL38",
@@ -1750,7 +1886,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Low"
+      "priority": "Low",
+      "warnings": []
     },
     {
       "id": "B306",
@@ -1766,7 +1903,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "HO12",
@@ -1782,7 +1920,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT24",
@@ -1798,7 +1937,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "BT25",
@@ -1814,7 +1954,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "PJ62",
@@ -1830,7 +1971,8 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
     },
     {
       "id": "GH18",
@@ -1846,7 +1988,144 @@
       "risk": "ORDINARY",
       "estimate": null,
       "minutes": null,
-      "priority": "Highest"
+      "priority": "Highest",
+      "warnings": []
+    },
+    {
+      "id": "B870",
+      "repository": "porelo",
+      "title": "An issue in a state outside the workflow",
+      "state": "Parked",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B870",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "StateOutsideWorkflow", "text": "Its state is none of the workflow's states, so no work starts on it.", "concerns": ["STATE"]}]
+    },
+    {
+      "id": "B871",
+      "repository": "porelo",
+      "title": "An issue without a priority",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B871",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": null,
+      "warnings": [{"kind": "NoPriority", "text": "It has no priority, so it is sorted as Medium.", "concerns": ["PRIORITY"]}]
+    },
+    {
+      "id": "B872",
+      "repository": "porelo",
+      "title": "An issue whose id stands twice",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B872",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"]}]
+    },
+    {
+      "id": "B873",
+      "repository": "porelo",
+      "title": "An issue whose parent is outside the project",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B873",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "ParentOutsideProject", "text": "Its parent is outside the project and is not shown.", "concerns": ["PARENT"]}]
+    },
+    {
+      "id": "B874",
+      "repository": "porelo",
+      "title": "An issue waiting on an issue outside the project",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B874",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "BlockerOutsideProject", "text": "An issue it waits on is outside the project and is not shown.", "concerns": ["BLOCKERS"]}]
+    },
+    {
+      "id": "B875",
+      "repository": "porelo",
+      "title": "An issue under another parent than its id names",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B875",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "WrongParent", "text": "It stands under another parent than its id names.", "concerns": ["PARENT"]}]
+    },
+    {
+      "id": "B876",
+      "repository": "porelo",
+      "title": "An issue whose text has no sections",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B876",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "BodyNotSectioned", "text": "Its text has no sections the planner can read; it is shown as it stands.", "concerns": ["TEXT"]}]
+    },
+    {
+      "id": "B872",
+      "repository": "porelo-host",
+      "title": "The other issue whose id stands twice",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B872",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"]}]
     }
   ]
 }

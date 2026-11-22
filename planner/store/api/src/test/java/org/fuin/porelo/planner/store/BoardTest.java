@@ -196,4 +196,145 @@ class BoardTest {
                 .as("XY03.1 under XY04")
                 .hasMessage("Sub-issue XY03.1 does not carry its parent's id XY04");
     }
+
+    private static Board board(final List<Story> stories, final List<Issue> issues) {
+        return new Board(
+                new Revision("r"),
+                WORKFLOW,
+                stories,
+                issues,
+                new Work(Map.of(), List.of()),
+                List.of("porelo-planner", "porelo"));
+    }
+
+    private static Issue in(final String repository, final String id, final Warning... warnings) {
+        return new Issue(id, repository, "An issue", "Idea", "S", List.of(), null, null, "Text")
+                .withWarnings(List.of(warnings));
+    }
+
+    @Test
+    void aStateOutsideTheWorkflowStandsOnlyOnAnItemWarnedAboutIt() {
+        // Without the warning a store could slip an item past every rule that reads the workflow.
+        assertThatThrownBy(() -> board(List.of(), List.of(issue("XY03", "Parked"))))
+                .as("an unknown state without a warning")
+                .hasMessage("XY03 has the unknown state 'Parked'");
+        assertThatThrownBy(
+                        () ->
+                                board(
+                                        List.of(),
+                                        List.of(
+                                                issue("XY03", "Parked")
+                                                        .withWarnings(
+                                                                List.of(Warning.noPriority())))))
+                .as("a warning about something else does not let the state in")
+                .isInstanceOf(IllegalArgumentException.class);
+        final Board board =
+                board(
+                        List.of(),
+                        List.of(
+                                issue("XY03", "Parked")
+                                        .withWarnings(List.of(Warning.stateOutsideWorkflow()))));
+        assertThat(board.issue("XY03").map(Issue::state))
+                .as("the warned issue is on the board in its own state")
+                .contains("Parked");
+    }
+
+    @Test
+    void anEmptyStateStandsOnlyOnAStoryWarnedThatNoneCanBeTold() {
+        // An empty state is what a save writes to have a story follow its issues again.
+        assertThatThrownBy(
+                        () ->
+                                board(
+                                        List.of(
+                                                story("ST1", "")
+                                                        .withWarnings(
+                                                                List.of(
+                                                                        Warning
+                                                                                .stateOutsideWorkflow()))),
+                                        List.of(issue("XY03", "Idea"))))
+                .as("an empty state needs the warning that no state can be told")
+                .hasMessage("ST1 has the unknown state ''");
+        assertThatThrownBy(
+                        () ->
+                                board(
+                                        List.of(
+                                                story("ST1", "")
+                                                        .withWarnings(List.of(Warning.noState()))),
+                                        List.of(issue("XY03", "Idea"))))
+                .as("a story without a state never counts as stating one")
+                .hasMessage("Story ST1 states no state but is marked as stating one");
+        final Board board =
+                board(
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "A story",
+                                        "",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("XY03"),
+                                        "Text",
+                                        null,
+                                        true,
+                                        List.of(Warning.noState()))),
+                        List.of(issue("XY03", "Idea")));
+        assertThat(board.holdsWork("ST1"))
+                .as("no work starts on a story whose state cannot be told")
+                .contains("ST1: " + Warning.noState().text());
+    }
+
+    @Test
+    void anIdOnTwoIssuesStandsOnlyWhenEachCopyIsWarnedAndNamesNoOneIssue() {
+        // One id naming two issues would let a move or a work write whichever it found first.
+        assertThatThrownBy(
+                        () ->
+                                board(
+                                        List.of(),
+                                        List.of(
+                                                in("porelo-planner", "XY03", Warning.idTwice()),
+                                                in("porelo", "XY03"))))
+                .as("a copy without the warning")
+                .hasMessage("Issue XY03 is on the board twice");
+        final Board board =
+                board(
+                        List.of(),
+                        List.of(
+                                in("porelo-planner", "XY03", Warning.idTwice()),
+                                in("porelo", "XY03", Warning.idTwice())));
+        assertThat(board.issues()).as("both copies are shown").hasSize(2);
+        assertThat(board.issue("XY03")).as("the id names no one issue").isEmpty();
+        final String words =
+                "XY03 names an issue in porelo-planner and porelo; it can be neither worked nor"
+                        + " moved until one id is changed.";
+        assertThat(board.twice("XY03")).as("the refusal names both repositories").contains(words);
+        assertThat(board.holdsWork("XY03")).as("it holds back work").contains(words);
+        assertThat(board.holdsMove("XY03")).as("and moves").contains(words);
+    }
+
+    @Test
+    void onlyAWarningAboutStateParentBlockersOrIdHoldsAnItemBack() {
+        // A warning that changes nothing a rule reads must not stop the person's work.
+        final Board board =
+                board(
+                        List.of(),
+                        List.of(
+                                in("porelo-planner", "XY01", Warning.noPriority()),
+                                in("porelo-planner", "XY02", Warning.bodyNotSectioned()),
+                                in("porelo-planner", "XY03", Warning.parentOutsideProject()),
+                                issue("XY04", "Parked")
+                                        .withWarnings(List.of(Warning.stateOutsideWorkflow()))));
+        assertThat(board.holdsWork("XY01")).as("no priority").isEmpty();
+        assertThat(board.holdsWork("XY02")).as("no sections").isEmpty();
+        assertThat(board.holdsWork("XY03"))
+                .as("a parent outside the project")
+                .contains("XY03: " + Warning.parentOutsideProject().text());
+        assertThat(board.holdsMove("XY03")).as("which no move sets right").isPresent();
+        assertThat(board.holdsWork("XY04"))
+                .as("a state outside the workflow")
+                .contains("XY04: " + Warning.stateOutsideWorkflow().text());
+        assertThat(board.holdsMove("XY04"))
+                .as("a move into the workflow sets the state right")
+                .isEmpty();
+    }
 }

@@ -82,6 +82,27 @@ public final class WorkRefusal extends RuntimeException {
                 "WorkNotAllowed", reason, Map.of("from", from, "to", to, "reason", reason));
     }
 
+    /**
+     * Refuses work on an item the board holds back: its id names two items, or a warning about its
+     * state, parent, waits or id stands on it.
+     *
+     * @param board the board
+     * @param id the story's or the issue's id
+     * @param from the state the work would start from, or empty
+     * @param to the working state
+     * @throws WorkRefusal when the board holds the item back
+     */
+    public static void unlessFree(
+            final org.fuin.porelo.planner.store.Board board,
+            final String id,
+            final String from,
+            final String to) {
+        final java.util.Optional<String> held = board.holdsWork(id);
+        if (held.isPresent()) {
+            throw notAllowed(from, to, held.get());
+        }
+    }
+
     /** Refuses an offer not issued by this project's current run. */
     public static WorkRefusal taskNotAnswered(final String task, final String offer) {
         return new WorkRefusal(

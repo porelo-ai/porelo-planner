@@ -66,7 +66,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST72",
     "title" : "A forge’s calls in a client that knows nothing of Porelo",
@@ -93,7 +94,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "FC03",
       "repository" : "porelo-forge-clients",
@@ -110,7 +112,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "FC09",
       "repository" : "porelo-forge-clients",
@@ -127,7 +130,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "FC10",
       "repository" : "porelo-forge-clients",
@@ -144,7 +148,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "FC11",
       "repository" : "porelo-forge-clients",
@@ -161,7 +166,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "FC13",
       "repository" : "porelo-forge-clients",
@@ -178,7 +184,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -238,7 +245,8 @@
       "minutes" : null,
       "unestimated" : 6,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST21",
     "title" : "No channel file and no hand-over directory any more",
@@ -305,7 +313,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST11",
     "title" : "porelo-adapters and porelo-ai.github.io each in its own task",
@@ -372,7 +381,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST13",
     "title" : "porelo and porelo-host each in its task, with a way back",
@@ -439,7 +449,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST28",
     "title" : "The setup, move and recovery proven together",
@@ -506,7 +517,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST87",
     "title" : "Invalid machine inputs refused before renting",
@@ -573,7 +585,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST182",
     "title" : "Review a Bitbucket pull request",
@@ -640,7 +653,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST114",
     "title" : "A vulnerability has a way in and is answered",
@@ -707,7 +721,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST111",
     "title" : "Install from the intended package source",
@@ -774,7 +789,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST144",
     "title" : "Understand where a binding setting came from",
@@ -841,7 +857,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST14",
     "title" : "The coordinator reads everything and changes only porelo-project",
@@ -868,7 +885,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -928,7 +946,8 @@
       "minutes" : null,
       "unestimated" : 1,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST39",
     "title" : "A failed delivery named and kept visible",
@@ -995,7 +1014,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST35",
     "title" : "Refuse an incompatible protocol and a meaningless option",
@@ -1062,7 +1082,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST15",
     "title" : "The website builds in its task",
@@ -1089,7 +1110,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -1149,7 +1171,8 @@
       "minutes" : null,
       "unestimated" : 1,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST106",
     "title" : "Make security failures hold the release",
@@ -1216,7 +1239,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST198",
     "title" : "Reach a remote machine from Windows",
@@ -1283,7 +1307,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST291",
     "title" : "The host run by a program of its own, built like porelo",
@@ -1310,7 +1335,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B541",
       "repository" : "porelo",
@@ -1327,7 +1353,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B542",
       "repository" : "porelo",
@@ -1344,7 +1371,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B543",
       "repository" : "porelo",
@@ -1361,7 +1389,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B544",
       "repository" : "porelo",
@@ -1378,7 +1407,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B545",
       "repository" : "porelo",
@@ -1395,7 +1425,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B546",
       "repository" : "porelo",
@@ -1412,7 +1443,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B547",
       "repository" : "porelo",
@@ -1429,7 +1461,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B548",
       "repository" : "porelo",
@@ -1446,7 +1479,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B549",
       "repository" : "porelo",
@@ -1463,7 +1497,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B550",
       "repository" : "porelo",
@@ -1480,7 +1515,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B551",
       "repository" : "porelo",
@@ -1497,7 +1533,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B552",
       "repository" : "porelo",
@@ -1514,7 +1551,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO156",
       "repository" : "porelo-host",
@@ -1531,7 +1569,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO157",
       "repository" : "porelo-host",
@@ -1548,7 +1587,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B540.1",
       "repository" : "porelo",
@@ -1565,7 +1605,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -1631,7 +1672,8 @@
       "minutes" : null,
       "unestimated" : 16,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST292",
     "title" : "A whole move rehearsed by the agents on a rented server",
@@ -1658,7 +1700,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B554",
       "repository" : "porelo",
@@ -1675,7 +1718,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "F444",
       "repository" : "porelo-frontend",
@@ -1692,7 +1736,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "F445",
       "repository" : "porelo-frontend",
@@ -1709,7 +1754,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO158",
       "repository" : "porelo-host",
@@ -1726,7 +1772,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "MX89",
       "repository" : "porelo-message-matrix",
@@ -1743,7 +1790,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "MX90",
       "repository" : "porelo-message-matrix",
@@ -1760,7 +1808,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "MX91",
       "repository" : "porelo-message-matrix",
@@ -1777,7 +1826,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -1846,7 +1896,8 @@
       "minutes" : null,
       "unestimated" : 8,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST293",
     "title" : "Every agent works in a Porelo task, moved one at a time",
@@ -1913,7 +1964,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST23",
     "title" : "The room and the usage records outlive the host",
@@ -1940,7 +1992,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "MX36",
       "repository" : "porelo-message-matrix",
@@ -1957,7 +2010,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "MX39",
       "repository" : "porelo-message-matrix",
@@ -1974,7 +2028,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO07",
       "repository" : "porelo-host",
@@ -1991,7 +2046,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "B231",
       "repository" : "porelo",
@@ -2008,7 +2064,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2068,7 +2125,8 @@
       "minutes" : null,
       "unestimated" : 2,
       "review" : 1
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST6",
     "title" : "porelo-agy and porelo-codex each in its own task",
@@ -2135,7 +2193,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST27",
     "title" : "Every workflow runs on the local forge as on the central one",
@@ -2162,7 +2221,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2222,7 +2282,8 @@
       "minutes" : null,
       "unestimated" : 1,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST12",
     "title" : "The release and pipeline tools the move rests on",
@@ -2249,7 +2310,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT36",
       "repository" : "porelo-buildtools",
@@ -2266,7 +2328,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT38",
       "repository" : "porelo-buildtools",
@@ -2283,7 +2346,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT43",
       "repository" : "porelo-buildtools",
@@ -2300,7 +2364,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT44",
       "repository" : "porelo-buildtools",
@@ -2317,7 +2382,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT45",
       "repository" : "porelo-buildtools",
@@ -2334,7 +2400,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT46",
       "repository" : "porelo-buildtools",
@@ -2351,7 +2418,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2411,7 +2479,8 @@
       "minutes" : null,
       "unestimated" : 4,
       "review" : 2
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST5",
     "title" : "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
@@ -2438,7 +2507,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "OM44",
       "repository" : "porelo-omp",
@@ -2455,7 +2525,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "CC45",
       "repository" : "porelo-claude-code",
@@ -2472,7 +2543,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "PI39",
       "repository" : "porelo-pi",
@@ -2489,7 +2561,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "OM36",
       "repository" : "porelo-omp",
@@ -2506,7 +2579,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "CC39",
       "repository" : "porelo-claude-code",
@@ -2523,7 +2597,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2583,7 +2658,8 @@
       "minutes" : null,
       "unestimated" : 3,
       "review" : 3
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST193",
     "title" : "Choose drive areas for each host",
@@ -2610,7 +2686,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : true,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2670,7 +2747,8 @@
       "minutes" : null,
       "unestimated" : 1,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST127",
     "title" : "Keep container limits on large hosts",
@@ -2737,7 +2815,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST1",
     "title" : "Builds on the host’s forge resolve snapshots with a read-only token",
@@ -2764,7 +2843,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT39",
       "repository" : "porelo-buildtools",
@@ -2781,7 +2861,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO52",
       "repository" : "porelo-host",
@@ -2798,7 +2879,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "SL36",
       "repository" : "porelo-message-sluice",
@@ -2815,7 +2897,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT40",
       "repository" : "porelo-buildtools",
@@ -2832,7 +2915,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT41",
       "repository" : "porelo-buildtools",
@@ -2849,7 +2933,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "HO53",
       "repository" : "porelo-host",
@@ -2866,7 +2951,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -2923,7 +3009,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 4
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST2",
     "title" : "porelo-message-sluice works wholly in its task",
@@ -2950,7 +3037,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -3007,7 +3095,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 1
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST3",
     "title" : "porelo’s Build on the host’s Forgejo",
@@ -3034,7 +3123,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -3091,7 +3181,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 1
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST10",
     "title" : "Test machines by kind from the VM pool",
@@ -3118,7 +3209,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT24",
       "repository" : "porelo-buildtools",
@@ -3135,7 +3227,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "BT25",
       "repository" : "porelo-buildtools",
@@ -3152,7 +3245,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -3209,7 +3303,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 3
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST295",
     "title" : "Hand the sluice's last checks to a person",
@@ -3236,7 +3331,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "SL38",
       "repository" : "porelo-message-sluice",
@@ -3253,7 +3349,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -3313,7 +3410,8 @@
       "minutes" : null,
       "unestimated" : 1,
       "review" : 1
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST264",
     "title" : "A host prepared with no project or person",
@@ -3380,7 +3478,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST268",
     "title" : "Each person’s one key and card, kept in the registry",
@@ -3447,7 +3546,8 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
   }, {
     "id" : "ST243",
     "title" : "Both adapters pass one contract suite",
@@ -3474,7 +3574,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     }, {
       "id" : "GH18",
       "repository" : "porelo-adapters",
@@ -3491,7 +3592,8 @@
       "needsYou" : false,
       "readingStopped" : false,
       "noRunHere" : false,
-      "attention" : "NONE"
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : {
@@ -3548,7 +3650,277 @@
       "minutes" : null,
       "unestimated" : 0,
       "review" : 0
-    }
+    },
+    "warnings" : [ ]
+  }, {
+    "id" : "ST296",
+    "title" : "Items the planner could not fully read",
+    "state" : "Backlog",
+    "stateGiven" : true,
+    "misfits" : null,
+    "derivedState" : null,
+    "priority" : "Medium",
+    "size" : null,
+    "link" : "https://example.org/stories/ST296",
+    "issues" : [ {
+      "id" : "B870",
+      "repository" : "porelo",
+      "title" : "An issue in a state outside the workflow",
+      "state" : "Parked",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B870",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "StateOutsideWorkflow",
+        "text" : "Its state is none of the workflow's states, so no work starts on it."
+      } ]
+    }, {
+      "id" : "B871",
+      "repository" : "porelo",
+      "title" : "An issue without a priority",
+      "state" : "Backlog",
+      "size" : "S",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B871",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "NoPriority",
+        "text" : "It has no priority, so it is sorted as Medium."
+      } ]
+    }, {
+      "id" : "B872",
+      "repository" : "porelo",
+      "title" : "An issue whose id stands twice",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B872",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "IdTwice",
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+      } ]
+    }, {
+      "id" : "B872",
+      "repository" : "porelo-host",
+      "title" : "The other issue whose id stands twice",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B872",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "IdTwice",
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+      } ]
+    }, {
+      "id" : "B873",
+      "repository" : "porelo",
+      "title" : "An issue whose parent is outside the project",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B873",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "ParentOutsideProject",
+        "text" : "Its parent is outside the project and is not shown."
+      } ]
+    }, {
+      "id" : "B874",
+      "repository" : "porelo",
+      "title" : "An issue waiting on an issue outside the project",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B874",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "BlockerOutsideProject",
+        "text" : "An issue it waits on is outside the project and is not shown."
+      } ]
+    }, {
+      "id" : "B875",
+      "repository" : "porelo",
+      "title" : "An issue under another parent than its id names",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B875",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "WrongParent",
+        "text" : "It stands under another parent than its id names."
+      } ]
+    }, {
+      "id" : "B876",
+      "repository" : "porelo",
+      "title" : "An issue whose text has no sections",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B876",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "BodyNotSectioned",
+        "text" : "Its text has no sections the planner can read; it is shown as it stands."
+      } ]
+    } ],
+    "work" : null,
+    "open" : null,
+    "warnings" : [ ]
+  }, {
+    "id" : "ST297",
+    "title" : "A story whose state cannot be told",
+    "state" : "",
+    "stateGiven" : false,
+    "misfits" : [ ],
+    "derivedState" : null,
+    "priority" : "Medium",
+    "size" : null,
+    "link" : "https://example.org/stories/ST297",
+    "issues" : [ ],
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    },
+    "warnings" : [ {
+      "kind" : "NoState",
+      "text" : "No state can be told for it: it states none, and its issues give none."
+    } ]
+  }, {
+    "id" : "ST298",
+    "title" : "A story naming an issue outside the project",
+    "state" : "Idea",
+    "stateGiven" : true,
+    "misfits" : [ ],
+    "derivedState" : null,
+    "priority" : "Medium",
+    "size" : null,
+    "link" : "https://example.org/stories/ST298",
+    "issues" : [ ],
+    "work" : null,
+    "open" : null,
+    "warnings" : [ {
+      "kind" : "IssueOutsideProject",
+      "text" : "It names an issue that is no issue of the project's repositories, which is not shown."
+    } ]
   } ],
   "open" : {
     "states" : [ {
@@ -3571,7 +3943,7 @@
       "issues" : 1
     }, {
       "name" : "Backlog",
-      "issues" : 24
+      "issues" : 31
     }, {
       "name" : "Implementing",
       "issues" : 10
@@ -3603,7 +3975,7 @@
       "issues" : 1
     }, {
       "name" : "S",
-      "issues" : 7
+      "issues" : 15
     }, {
       "name" : "M",
       "issues" : 35
@@ -3612,9 +3984,9 @@
       "issues" : 2
     } ],
     "unsized" : 0,
-    "left" : 45,
+    "left" : 53,
     "minutes" : null,
-    "unestimated" : 45,
+    "unestimated" : 53,
     "review" : 16
   }
 }

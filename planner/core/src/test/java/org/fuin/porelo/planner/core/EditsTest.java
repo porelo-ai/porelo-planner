@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.Test;
@@ -352,6 +353,54 @@ class EditsTest {
                                 "A story",
                                 Map.of(TextEdit.Part.GAIN, "More."),
                                 Set.of(TextEdit.Part.TEST)));
+    }
+
+    @Test
+    void anEditOfAnIdOnTwoIssuesOrOfAnIssueHeldBackIsRefusedWithItsWords() {
+        // Saved by id, the edit would write whichever copy the store found first, or build on a
+        // hand edit the planner cannot hold.
+        final Board twice =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
+                        List.of(story("ST1", List.of("AB1"))),
+                        List.of(
+                                issue("AB1", null, List.of())
+                                        .withWarnings(List.of(Warning.idTwice())),
+                                new Issue(
+                                                "AB1",
+                                                "porelo-other",
+                                                "Issue AB1",
+                                                "Idea",
+                                                null,
+                                                List.of(),
+                                                null,
+                                                null,
+                                                "")
+                                        .withWarnings(List.of(Warning.idTwice())),
+                                issue("AB2", null, List.of())
+                                        .withWarnings(List.of(Warning.parentOutsideProject()))),
+                        new Work(Map.of(), List.of()),
+                        List.of("porelo-store", "porelo-other"));
+        final String words =
+                "AB1 names an issue in porelo-store and porelo-other; it can be neither worked nor"
+                        + " moved until one id is changed.";
+        for (final Runnable edit :
+                List.<Runnable>of(
+                        () -> Edits.fields(twice, "r1", "AB1", SIZE),
+                        () -> Edits.blockedBy(twice, "r1", "AB1", List.of()),
+                        () -> Edits.text(twice, "r1", "AB1", title(TextEdit.Kind.ISSUE, "New")),
+                        () -> Edits.storyIssues(twice, "r1", "ST1", List.of("AB1")),
+                        () -> Edits.comment(twice, "AB1", "A note."))) {
+            final Moves.Refused refused = refusal(edit);
+            assertThat(refused.name())
+                    .as("an edit refusal, not a missing issue")
+                    .isEqualTo(Edits.REFUSED);
+            assertThat(refused.getMessage()).as("naming both repositories").isEqualTo(words);
+        }
+        assertThat(refusal(() -> Edits.fields(twice, "r1", "AB2", SIZE)).getMessage())
+                .as("an issue warned about its parent")
+                .isEqualTo("AB2: " + Warning.parentOutsideProject().text());
     }
 
     private static Moves.Refused refusal(final Runnable edit) {

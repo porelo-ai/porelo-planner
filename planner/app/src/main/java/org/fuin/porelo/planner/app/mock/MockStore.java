@@ -287,9 +287,7 @@ public final class MockStore implements PlanningStore {
         final Map<String, StageResult.ForIssue> given = new LinkedHashMap<>();
         final Map<String, String> states = new LinkedHashMap<>();
         for (final StageResult.ForIssue issue : result.issues()) {
-            final Issue known =
-                    board.issue(issue.id())
-                            .orElseThrow(() -> new StoreException.NoSuchIssue(issue.id()));
+            final Issue known = issueOf(board, issue.id());
             if (!known.state().equals(issue.from())) {
                 throw new StoreException.NotSavable(
                         issue.id(), "It stands in " + known.state() + ", not in " + issue.from());
@@ -321,7 +319,8 @@ public final class MockStore implements PlanningStore {
                                     issue.risk(),
                                     issue.estimate(),
                                     issue.minutes(),
-                                    issue.priority()));
+                                    issue.priority(),
+                                    issue.warnings()));
         }
         final Board sized =
                 new Board(
@@ -344,8 +343,7 @@ public final class MockStore implements PlanningStore {
     public synchronized Board setFields(
             final Revision revision, final String issue, final Fields fields) {
         final Board board = fresh(revision);
-        final Issue held =
-                board.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        final Issue held = issueOf(board, issue);
         final Map<Fields.Field, Object> values =
                 kept.computeIfAbsent(issue, id -> new java.util.EnumMap<>(Fields.Field.class));
         final Map<Fields.Field, @Nullable Object> asked =
@@ -396,7 +394,11 @@ public final class MockStore implements PlanningStore {
                                     known.minutes(),
                                     fields.named().contains(Fields.Field.PRIORITY)
                                             ? fields.priority()
-                                            : known.priority())
+                                            : known.priority(),
+                                    fields.named().contains(Fields.Field.PRIORITY)
+                                                    && fields.priority() != null
+                                            ? prioritized(known.warnings())
+                                            : known.warnings())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -428,7 +430,8 @@ public final class MockStore implements PlanningStore {
                                     issues,
                                     known.description(),
                                     known.link(),
-                                    known.issuesWhole())
+                                    known.issuesWhole(),
+                                    known.warnings())
                             : known);
         }
         current = saved(withItems(board, stories, board.issues()), NOTHING);
@@ -440,10 +443,7 @@ public final class MockStore implements PlanningStore {
     public synchronized Board setBlockedBy(
             final Revision revision, final String issue, final List<String> blockedBy) {
         final Board board = fresh(revision);
-        if (board.issue(issue)
-                .orElseThrow(() -> new StoreException.NoSuchIssue(issue))
-                .blockedBy()
-                .equals(blockedBy)) {
+        if (issueOf(board, issue).blockedBy().equals(blockedBy)) {
             return board;
         }
         final List<Issue> issues = new ArrayList<>();
@@ -464,7 +464,8 @@ public final class MockStore implements PlanningStore {
                                     known.risk(),
                                     known.estimate(),
                                     known.minutes(),
-                                    known.priority())
+                                    known.priority(),
+                                    known.warnings())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -484,13 +485,11 @@ public final class MockStore implements PlanningStore {
         final String title;
         final String text;
         if (story) {
-            final Story known =
-                    board.story(id).orElseThrow(() -> new StoreException.NoSuchStory(id));
+            final Story known = storyOf(board, id);
             title = known.title();
             text = known.description();
         } else {
-            final Issue known =
-                    board.issue(id).orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            final Issue known = issueOf(board, id);
             title = known.title();
             text = known.text();
         }
@@ -513,7 +512,8 @@ public final class MockStore implements PlanningStore {
                                     known.issues(),
                                     newText,
                                     known.link(),
-                                    known.issuesWhole())
+                                    known.issuesWhole(),
+                                    known.warnings())
                             : known);
         }
         final List<Issue> issues = new ArrayList<>();
@@ -534,7 +534,8 @@ public final class MockStore implements PlanningStore {
                                     known.risk(),
                                     known.estimate(),
                                     known.minutes(),
-                                    known.priority())
+                                    known.priority(),
+                                    known.warnings())
                             : known);
         }
         current = saved(withItems(board, stories, issues), NOTHING);
@@ -567,7 +568,7 @@ public final class MockStore implements PlanningStore {
     /** Takes a comment and keeps nothing of it: the board shows no comment. */
     @Override
     public synchronized void comment(final String issue, final String text) {
-        current.issue(issue).orElseThrow(() -> new StoreException.NoSuchIssue(issue));
+        issueOf(current, issue);
     }
 
     /**
@@ -634,13 +635,19 @@ public final class MockStore implements PlanningStore {
         }
         final Workflow workflow = current.workflow();
         final List<String> closed = workflow.closed();
-        return issueStates.stream()
+        // A state the workflow does not know gives no story its state.
+        final List<String> known =
+                issueStates.stream().filter(workflow.states()::contains).toList();
+        if (known.isEmpty()) {
+            return null;
+        }
+        return known.stream()
                 .filter(state -> !closed.contains(state))
                 .min(Comparator.comparingInt(workflow.states()::indexOf))
                 .orElseGet(
                         () ->
-                                issueStates.stream().allMatch(state -> closed.indexOf(state) > 0)
-                                        ? issueStates.getFirst()
+                                known.stream().allMatch(state -> closed.indexOf(state) > 0)
+                                        ? known.getFirst()
                                         : closed.getFirst());
     }
 
@@ -784,9 +791,29 @@ public final class MockStore implements PlanningStore {
     }
 
     private static String repository(final Board board, final String issue) {
-        return board.issue(issue)
-                .orElseThrow(() -> new StoreException.NotSavable(issue, "No issue " + issue))
-                .repository();
+        return issueOf(board, issue).repository();
+    }
+
+    /**
+     * The one issue of an id, refusing one the board holds twice, which no write can tell apart.
+     */
+    private static Issue issueOf(final Board board, final String id) {
+        final java.util.Optional<String> twice = board.twice(id);
+        if (twice.isPresent()) {
+            throw new StoreException.NotSavable(id, twice.get());
+        }
+        return board.issue(id).orElseThrow(() -> new StoreException.NoSuchIssue(id));
+    }
+
+    /**
+     * The one story of an id, refusing one the board holds twice, which no write can tell apart.
+     */
+    private static Story storyOf(final Board board, final String id) {
+        final java.util.Optional<String> twice = board.twice(id);
+        if (twice.isPresent()) {
+            throw new StoreException.NotSavable(id, twice.get());
+        }
+        return board.story(id).orElseThrow(() -> new StoreException.NoSuchStory(id));
     }
 
     /**
@@ -795,9 +822,10 @@ public final class MockStore implements PlanningStore {
      */
     private Board saved(final Board board, final Writes writes) {
         for (final String id : writes.stories().keySet()) {
-            if (board.story(id).isEmpty()) {
-                throw new StoreException.NotSavable(id, "No story " + id);
-            }
+            storyOf(board, id);
+        }
+        for (final String id : writes.issues().keySet()) {
+            issueOf(board, id);
         }
         final Map<String, String> states = new LinkedHashMap<>();
         final List<Issue> issues = new ArrayList<>();
@@ -819,7 +847,8 @@ public final class MockStore implements PlanningStore {
                             issue.risk(),
                             issue.estimate(),
                             issue.minutes(),
-                            issue.priority()));
+                            issue.priority(),
+                            settled(issue.warnings(), writes.issues().containsKey(issue.id()))));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
@@ -869,7 +898,31 @@ public final class MockStore implements PlanningStore {
                 story.issues(),
                 story.description(),
                 story.link(),
-                story.issuesWhole());
+                story.issuesWhole(),
+                settled(story.warnings(), stated != null));
+    }
+
+    /** An issue's warnings after its priority is written: it has one now. */
+    private static List<org.fuin.porelo.planner.store.Warning> prioritized(
+            final List<org.fuin.porelo.planner.store.Warning> warnings) {
+        return warnings.stream()
+                .filter(
+                        warning ->
+                                !warning.kind()
+                                        .equals(org.fuin.porelo.planner.store.Warning.NO_PRIORITY))
+                .toList();
+    }
+
+    /**
+     * An item's warnings after a save: one that wrote its state sets a state of the workflow, so a
+     * warning about its state goes, as a store reading the item again would find it.
+     */
+    private static List<org.fuin.porelo.planner.store.Warning> settled(
+            final List<org.fuin.porelo.planner.store.Warning> warnings,
+            final boolean stateWritten) {
+        return stateWritten
+                ? warnings.stream().filter(warning -> !warning.aboutState()).toList()
+                : warnings;
     }
 
     /** An estimate in minutes as the board holds it, or none. */

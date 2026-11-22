@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -993,6 +994,93 @@ class MovesTest {
 
     private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {
         return refused(board, moves, confirm);
+    }
+
+    /** A board of the given story and issues, over the project's one repository and another. */
+    private static Board warnedBoard(final Story story, final Issue... issues) {
+        return new Board(
+                new Revision("r1"),
+                new Workflow(STATES, List.of(), CLOSED),
+                List.of(story),
+                List.of(issues),
+                WORK,
+                List.of("porelo-planner", "porelo"));
+    }
+
+    @Test
+    void anIssueInAStateOutsideTheWorkflowMovesIntoItByItsOwnMove() {
+        // The move is how a person sets a hand-edited state right from the board.
+        final Board board =
+                warnedBoard(
+                        story("ST1", "Backlog", false, "PL1"),
+                        issue("PL1", "Parked", null)
+                                .withWarnings(List.of(Warning.stateOutsideWorkflow())));
+        final Moves.Planned planned =
+                Moves.check(board, List.of(issue("PL1", "Backlog")), false, DERIVE, NO_RUNS);
+        assertThat(planned.issues())
+                .as("the issue is written into the state picked")
+                .containsExactly(entry("PL1", "Backlog"));
+    }
+
+    @Test
+    void aStoryMoveCarriesItsIssueInAKnownStateAndLeavesTheOneInDoubt() {
+        // A state the workflow does not know must never count as the earliest one.
+        final Board board =
+                warnedBoard(
+                        story("ST1", "Backlog", false, "PL1", "PL2"),
+                        issue("PL1", "Parked", null)
+                                .withWarnings(List.of(Warning.stateOutsideWorkflow())),
+                        issue("PL2", "Backlog", null));
+        final Moves.Planned planned =
+                Moves.check(board, List.of(story("ST1", "Review")), false, DERIVE, NO_RUNS);
+        assertThat(planned.issues())
+                .as("only the issue in a state of the workflow is carried")
+                .containsExactly(entry("PL2", "Review"));
+    }
+
+    @Test
+    void aMoveNamingAnIdOnTwoIssuesIsRefusedNamingBothRepositories() {
+        // Saved by id, the move would write whichever issue the store found first.
+        final Board board =
+                warnedBoard(
+                        story("ST1", "Backlog", false, "PL1"),
+                        issue("PL1", "Backlog", null).withWarnings(List.of(Warning.idTwice())),
+                        new Issue(
+                                        "PL1",
+                                        "porelo",
+                                        "An issue",
+                                        "Backlog",
+                                        "S",
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "")
+                                .withWarnings(List.of(Warning.idTwice())));
+        final Moves.Refused refused = refused(board, List.of(issue("PL1", "Review")));
+        assertThat(refused.name()).as("the move is not allowed").isEqualTo("MoveNotAllowed");
+        assertThat(refused.getMessage())
+                .as("the words name both repositories")
+                .isEqualTo(
+                        "PL1 names an issue in porelo-planner and porelo; it can be neither"
+                                + " worked nor moved until one id is changed.");
+        assertThat(
+                        Moves.check(board, List.of(story("ST1", "Review")), false, DERIVE, NO_RUNS)
+                                .issues())
+                .as("its story's move carries neither copy")
+                .isEmpty();
+    }
+
+    @Test
+    void aMoveOfAnIssueWarnedAboutItsParentIsRefusedWithTheWarning() {
+        // A move into a closed state would close an issue whose parent the planner cannot see.
+        final Board board =
+                warnedBoard(
+                        story("ST1", "Backlog", false, "PL1"),
+                        issue("PL1", "Backlog", null)
+                                .withWarnings(List.of(Warning.parentOutsideProject())));
+        assertThat(refused(board, List.of(issue("PL1", "Finished"))).getMessage())
+                .as("the warning's words")
+                .isEqualTo("PL1: " + Warning.parentOutsideProject().text());
     }
 
     private static Moves.Refused refused(final Board board, final List<Moves.Move> moves) {

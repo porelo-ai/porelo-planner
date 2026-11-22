@@ -87,6 +87,7 @@ public final class StageOrder {
         final List<WorkOrder.Given> given = new ArrayList<>();
         int all = 0;
         for (final String id : owned) {
+            WorkRefusal.unlessFree(board, id, "", to);
             final Issue issue = board.issue(id).orElseThrow();
             final int bytes = issue.text().getBytes(StandardCharsets.UTF_8).length;
             if (bytes > MOST_TEXT) {

@@ -2191,6 +2191,268 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       ],
       "description": "",
       "work": null
+    },
+    {
+      "id": "ST296",
+      "stateGiven": true,
+      "title": "Items the planner could not fully read",
+      "state": "Backlog",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST296",
+      "issues": [
+        {
+          "id": "B870",
+          "repository": "porelo",
+          "state": "Parked",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B870",
+          "title": "An issue in a state outside the workflow",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "StateOutsideWorkflow",
+              "text": "Its state is none of the workflow's states, so no work starts on it."
+            }
+          ]
+        },
+        {
+          "id": "B871",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B871",
+          "title": "An issue without a priority",
+          "size": "S",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "NoPriority",
+              "text": "It has no priority, so it is sorted as Medium."
+            }
+          ]
+        },
+        {
+          "id": "B872",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B872",
+          "title": "An issue whose id stands twice",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "IdTwice",
+              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+            }
+          ]
+        },
+        {
+          "id": "B872",
+          "repository": "porelo-host",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B872",
+          "title": "The other issue whose id stands twice",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "IdTwice",
+              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+            }
+          ]
+        },
+        {
+          "id": "B873",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B873",
+          "title": "An issue whose parent is outside the project",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "ParentOutsideProject",
+              "text": "Its parent is outside the project and is not shown."
+            }
+          ]
+        },
+        {
+          "id": "B874",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B874",
+          "title": "An issue waiting on an issue outside the project",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "BlockerOutsideProject",
+              "text": "An issue it waits on is outside the project and is not shown."
+            }
+          ]
+        },
+        {
+          "id": "B875",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B875",
+          "title": "An issue under another parent than its id names",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "WrongParent",
+              "text": "It stands under another parent than its id names."
+            }
+          ]
+        },
+        {
+          "id": "B876",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "link": "https://example.org/issues/B876",
+          "title": "An issue whose text has no sections",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "BodyNotSectioned",
+              "text": "Its text has no sections the planner can read; it is shown as it stands."
+            }
+          ]
+        }
+      ],
+      "description": "",
+      "work": null,
+      "warnings": []
+    },
+    {
+      "id": "ST297",
+      "stateGiven": false,
+      "title": "A story whose state cannot be told",
+      "state": "",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST297",
+      "issues": [],
+      "description": "",
+      "work": null,
+      "warnings": [
+        {
+          "kind": "NoState",
+          "text": "No state can be told for it: it states none, and its issues give none."
+        }
+      ]
+    },
+    {
+      "id": "ST298",
+      "stateGiven": true,
+      "title": "A story naming an issue outside the project",
+      "state": "Idea",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST298",
+      "issues": [],
+      "description": "",
+      "work": null,
+      "warnings": [
+        {
+          "kind": "IssueOutsideProject",
+          "text": "It names an issue that is no issue of the project's repositories, which is not shown."
+        }
+      ]
     }
   ],
   "revision": "design-1",

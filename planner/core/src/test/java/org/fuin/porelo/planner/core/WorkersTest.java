@@ -3,8 +3,10 @@ package org.fuin.porelo.planner.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
@@ -83,5 +85,34 @@ class WorkersTest {
         assertThat(refused.parameters())
                 .as("the refusal names the issue")
                 .isEqualTo(Map.of("issue", "AA9"));
+    }
+
+    @Test
+    void aWorkerChangeOfAnIssueHeldBackIsRefusedWithItsWarning() {
+        // A worker handed to an agent would let work start on an issue whose state is in doubt.
+        final Board warned =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues().stream()
+                                .map(
+                                        issue ->
+                                                issue.id().equals("AA1")
+                                                        ? issue.withWarnings(
+                                                                List.of(
+                                                                        Warning
+                                                                                .parentOutsideProject()))
+                                                        : issue)
+                                .toList(),
+                        board.work(),
+                        board.repositories());
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class, () -> Workers.check(warned, "AA1", Worker.MANUAL));
+        assertThat(refused).as("the change is refused").isNotNull();
+        assertThat(refused.getMessage())
+                .as("with the warning's words")
+                .isEqualTo("AA1: " + Warning.parentOutsideProject().text());
     }
 }

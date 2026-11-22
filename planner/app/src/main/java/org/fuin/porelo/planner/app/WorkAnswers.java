@@ -72,7 +72,29 @@ public final class WorkAnswers {
                         .map(limit -> new IssueReadingRounds(limit.issue(), limit.rounds()))
                         .toList(),
                 proposal.revision().value(),
-                proposal.manual());
+                proposal.manual(),
+                proposal.held().stream()
+                        .map(
+                                held ->
+                                        new org.fuin.porelo.planner.app.answers.HeldIssue(
+                                                held.issue(), held.reason()))
+                        .toList());
+    }
+
+    /**
+     * Answers an item's warnings as the board shows them.
+     *
+     * @param warnings the store's warnings on the item
+     * @return them, in order
+     */
+    static List<org.fuin.porelo.planner.app.answers.ItemWarning> warnings(
+            final List<org.fuin.porelo.planner.store.Warning> warnings) {
+        return warnings.stream()
+                .map(
+                        warning ->
+                                new org.fuin.porelo.planner.app.answers.ItemWarning(
+                                        warning.kind(), warning.text()))
+                .toList();
     }
 
     static StoryWorkOrder order(final WorkRun.Order order) {
@@ -305,7 +327,8 @@ public final class WorkAnswers {
                 !raised && lost(board, snapshot, issue),
                 org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
                         raised && progress != null ? progress.reason() : "NONE"),
-                progress == null ? null : findings(progress.findings()));
+                progress == null ? null : findings(progress.findings()),
+                warnings(issue.warnings()));
     }
 
     /**

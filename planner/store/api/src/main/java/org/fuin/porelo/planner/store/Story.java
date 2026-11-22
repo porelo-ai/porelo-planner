@@ -20,6 +20,8 @@ import org.jspecify.annotations.Nullable;
  * @param link where a person reads it on the forge, if known
  * @param issuesWhole whether {@code issues} holds every issue its head names; false when the store
  *     left one out, so nothing is read from its issues as if they were all
+ * @param warnings what the store could not read in it; its state may be none of the workflow's, or
+ *     empty, only with a warning about the state
  */
 public record Story(
         String id,
@@ -31,7 +33,8 @@ public record Story(
         List<String> issues,
         String description,
         @Nullable URI link,
-        boolean issuesWhole) {
+        boolean issuesWhole,
+        List<Warning> warnings) {
 
     /** The priorities a story may have, the highest first. */
     public static final List<String> PRIORITIES =
@@ -42,6 +45,67 @@ public record Story(
         Ids.story(id);
         issues = List.copyOf(issues);
         issues.forEach(Ids::issue);
+        warnings = List.copyOf(warnings);
+    }
+
+    /**
+     * A story without warnings.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state its state
+     * @param stateGiven whether its head states the state
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final boolean stateGiven,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole) {
+        this(
+                id,
+                title,
+                state,
+                stateGiven,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                List.of());
+    }
+
+    /**
+     * This story with other warnings.
+     *
+     * @param warnings its warnings
+     * @return the story
+     */
+    public Story withWarnings(final List<Warning> warnings) {
+        return new Story(
+                id,
+                title,
+                state,
+                stateGiven,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                warnings);
     }
 
     /**

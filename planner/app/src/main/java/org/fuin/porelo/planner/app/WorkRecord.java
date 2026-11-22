@@ -608,6 +608,7 @@ public final class WorkRecord implements AutoCloseable {
         public void preflightIssue(
                 final WorkRun.Snapshot snapshot, final Board board, final String issue) {
             preflight(snapshot);
+            WorkRefusal.unlessFree(board, issue, "", "");
             final var found = board.issue(issue).orElseThrow();
             try {
                 for (final WorkRun.Run run : snapshot.runs().values()) {

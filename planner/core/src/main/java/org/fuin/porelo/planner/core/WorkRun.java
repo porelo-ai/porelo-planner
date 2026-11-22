@@ -1280,6 +1280,8 @@ public final class WorkRun {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
                     final Story found = WorkProposal.story(board, story);
+                    WorkRefusal.unlessFree(board, story, found.state(), "");
+                    WorkRefusal.unlessFree(board, issueId, "", "");
                     final Issue issue =
                             board.issue(issueId)
                                     .orElseThrow(() -> new StoreException.NoSuchIssue(issueId));
@@ -1818,6 +1820,13 @@ public final class WorkRun {
      * state, or taken over by a person; null when they all can.
      */
     private static @Nullable String unowned(final Board board, final NextStep.Binding binding) {
+        java.util.Optional<String> held = board.holdsWork(binding.story());
+        for (final String id : binding.issues()) {
+            held = held.or(() -> board.holdsWork(id));
+        }
+        if (held.isPresent()) {
+            return held.get();
+        }
         if (!NextStep.owns(board, binding)) {
             return "The issues no longer belong to story "
                     + binding.story()
@@ -2963,7 +2972,8 @@ public final class WorkRun {
                                                 i.risk(),
                                                 i.estimate(),
                                                 i.minutes(),
-                                                i.priority()))
+                                                i.priority(),
+                                                i.warnings()))
                         .toList(),
                 board.work(),
                 board.repositories(),

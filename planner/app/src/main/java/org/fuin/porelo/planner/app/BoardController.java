@@ -414,6 +414,9 @@ public class BoardController {
             throw NewIssues.refused("priority", "The priority must be Highest to Lowest.");
         }
         final String story = body.story();
+        if (story != null && board.twice(story).isPresent()) {
+            throw NewIssues.refused("story", board.twice(story).get());
+        }
         if (story != null && board.story(story).isEmpty()) {
             throw NewIssues.refused("story", "The story is no story of the project.");
         }
@@ -563,7 +566,8 @@ public class BoardController {
                                             under,
                                             story.description(),
                                             story.link(),
-                                            story.issuesWhole());
+                                            story.issuesWhole(),
+                                            story.warnings());
                                 })
                         .toList();
         final Board withNew =
@@ -937,6 +941,7 @@ public class BoardController {
                         issues(board, story, snapshot, counter.minutes()),
                         WorkAnswers.work(board, snapshot.runs().get(story.id())),
                         storyOpen(counter.story(story)),
+                        WorkAnswers.warnings(story.warnings()),
                         story.description(),
                         format));
     }
@@ -990,13 +995,10 @@ public class BoardController {
                                     board.issues().stream()
                                             .filter(issue -> !assigned.contains(issue.id()))
                                             // Priority and rank live in the store's issue order.
+                                            // One outside the workflow follows its states.
                                             .sorted(
                                                     Comparator.comparingInt(
-                                                            issue ->
-                                                                    board.workflow()
-                                                                            .states()
-                                                                            .indexOf(
-                                                                                    issue.state())))
+                                                            issue -> place(board, issue.state())))
                                             .map(
                                                     issue ->
                                                             WorkAnswers.issue(
@@ -1004,6 +1006,12 @@ public class BoardController {
                                                                     minutes))
                                             .toList());
                         });
+    }
+
+    /** A state's place in the workflow's order; one the workflow lacks comes after them all. */
+    private static int place(final Board board, final String state) {
+        final int place = board.workflow().states().indexOf(state);
+        return place < 0 ? Integer.MAX_VALUE : place;
     }
 
     /**
@@ -1072,6 +1080,7 @@ public class BoardController {
                         view.noRunHere(),
                         IssueDetail.AttentionEnum.fromValue(view.attention().getValue()),
                         view.findings(),
+                        view.warnings(),
                         issue.text(),
                         format,
                         board.issues().stream()
@@ -1414,7 +1423,8 @@ public class BoardController {
                 story.link(),
                 issues(board, story, snapshot, counter.minutes()),
                 WorkAnswers.work(board, snapshot.runs().get(story.id())),
-                storyOpen(counter.story(story)));
+                storyOpen(counter.story(story)),
+                WorkAnswers.warnings(story.warnings()));
     }
 
     private static org.fuin.porelo.planner.app.answers.@Nullable OpenWork storyOpen(
@@ -1445,8 +1455,10 @@ public class BoardController {
             final Map<String, Double> minutes) {
         final List<org.fuin.porelo.planner.app.answers.Issue> issues = new ArrayList<>();
         for (final String id : story.issues()) {
-            board.issue(id)
-                    .ifPresent(
+            // An id on two issues shows each, warned, so neither is hidden.
+            board.issues().stream()
+                    .filter(issue -> issue.id().equals(id))
+                    .forEach(
                             issue ->
                                     issues.add(WorkAnswers.issue(board, issue, snapshot, minutes)));
         }
