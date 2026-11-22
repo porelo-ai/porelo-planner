@@ -75,7 +75,8 @@ class PlanningDetail extends ChangeNotifier {
       ? 'Saving…'
       : loading
       ? 'Waiting for the latest issue details.'
-      : !board.live
+      // A move is saved against the revision shown, also while a Reload opens the watch anew.
+      : !board.takesMoves
       ? 'A live planning answer is needed before changing issues.'
       : problem != null
       ? 'The latest planning details could not be read.'

@@ -12,6 +12,7 @@ import '../planning_detail.dart';
 import '../story_groups.dart';
 import '../story_work.dart';
 import 'actions.dart';
+import 'open_work_figures.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_text.dart';
 import 'planning_move_warning.dart';
@@ -192,12 +193,12 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
   /// The groups whose fold the person turned from its default on this page.
   final Set<String> _turned = {};
 
-  /// What is still open of the story, from the planner's count alone: while the board is not live or a move is being
-  /// saved, the count may not match the groups shown below, so it reads unknown.
+  /// What is still open of the story, from the planner's count alone, read unknown where the board's figures are:
+  /// a count known before a save stays until the planner's read after it replaces it.
   Widget _head(BuildContext context, PlanStory story) {
     final board = detail.board;
     // A read under way still shows the previous count beside groups of a newer board.
-    final known = board.live && detail.pendingMoves.isEmpty && !detail.saving && !detail.loading;
+    final known = planningFiguresKnown(board) && !detail.loading;
     final figures = StoryHeadFigures(known ? story.open : null, board.states, board.snapshot?.work ?? const []);
     final theme = Theme.of(context);
     final minutes = switch ((figures.left, figures.minutes)) {

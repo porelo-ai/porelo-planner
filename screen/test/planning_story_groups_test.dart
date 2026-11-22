@@ -151,9 +151,9 @@ String? _figure(WidgetTester tester, String key) => tester.widget<Text>(find.byK
 const _figures = ['planning-story-left', 'planning-story-minutes', 'planning-story-sizes'];
 
 void main() {
-  // Harm: a story the planner could not count reads as having nothing left, and one whose count a move made stale
-  // shows the old figures beside the moved issues.
-  testWidgets('the head reads unknown without a count and while a move is saved, and the count once known', (
+  // Harm: a story the planner could not count reads as having nothing left, and a count known before a save turns
+  // unknown while the save runs, though it stands until the planner's read after the save replaces it.
+  testWidgets('the head reads unknown without a count, and a count once known stays while a move is saved', (
     tester,
   ) async {
     final (_, unknown) = await _open(tester, _board());
@@ -171,11 +171,8 @@ void main() {
     source.moveHeld = Completer<void>();
     unawaited(board.moveIssue('PL2', 'Backlog'));
     await settle(tester);
-    expect(
-      [for (final key in _figures) _figure(tester, key)],
-      everyElement(storyFigureUnknown),
-      reason: 'the count no longer matches the issues while the move is saved',
-    );
+    expect(board.saving, isTrue, reason: 'the move is being saved');
+    expect(_figure(tester, 'planning-story-left'), '1 of 2', reason: 'the count known before the save stays');
     source.moveHeld!.complete();
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
     await settle(tester);
