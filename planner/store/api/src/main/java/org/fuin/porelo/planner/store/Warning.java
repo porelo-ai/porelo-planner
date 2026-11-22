@@ -212,24 +212,6 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
     }
 
     /**
-     * Every warning the store API names, one of each kind.
-     *
-     * @return them, in a fixed order
-     */
-    public static List<Warning> named() {
-        return List.of(
-                stateOutsideWorkflow(),
-                noState(),
-                noPriority(),
-                idTwice(),
-                parentOutsideProject(),
-                blockerOutsideProject(),
-                issueOutsideProject(),
-                wrongParent(),
-                bodyNotSectioned());
-    }
-
-    /**
      * Whether any of the warnings is about the state.
      *
      * @param warnings an item's warnings

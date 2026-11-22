@@ -643,6 +643,44 @@ class BoardReadsTest {
     }
 
     @Test
+    void aStoryNamedTwiceIsListedTwiceAndReadAsNoSuchStory() throws Exception {
+        // Harm: a read by an id two stories share answers one of them as if it were the one.
+        final Board base = warnedBoard();
+        final Story copy =
+                new Story(
+                                "ST4",
+                                "Copied by hand",
+                                "Backlog",
+                                true,
+                                "High",
+                                null,
+                                List.of(),
+                                "",
+                                null)
+                        .withWarnings(List.of(Warning.idTwice()));
+        final List<Story> stories = new ArrayList<>(base.stories());
+        stories.add(copy);
+        stories.add(copy);
+        supplied =
+                new Board(
+                        base.revision(),
+                        base.workflow(),
+                        stories,
+                        base.issues(),
+                        base.work(),
+                        base.repositories());
+        given();
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[3].id").value("ST4"))
+                .andExpect(jsonPath("$.stories[4].id").value("ST4"))
+                .andExpect(jsonPath("$.stories[4].warnings[0].kind").value("IdTwice"));
+        mvc.perform(get("/projects/alpha/stories/ST4"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"));
+    }
+
+    @Test
     void everyItemIsServedWithItsWarningsAndAnIdOnTwoIssuesShowsBoth() throws Exception {
         // Harm: an item hidden from the board, or shown without what is wrong with it.
         supplied = warnedBoard();

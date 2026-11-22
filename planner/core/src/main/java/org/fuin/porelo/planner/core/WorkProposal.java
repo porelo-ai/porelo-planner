@@ -346,6 +346,11 @@ public record WorkProposal(
 
     static Story story(final Board board, final String id) {
         Ids.story(id);
+        final java.util.Optional<String> twice = board.twice(id);
+        if (twice.isPresent()) {
+            // Both stories are on the board, so "no such story" would send the person looking.
+            throw WorkRefusal.notAllowed("", "", twice.get());
+        }
         return board.story(id).orElseThrow(() -> WorkRefusal.noSuchStory(id));
     }
 

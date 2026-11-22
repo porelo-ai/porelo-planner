@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.time.Clock;
@@ -438,6 +439,53 @@ class HandedResultsTest {
         final WorkRefusal again =
                 catchThrowableOfType(WorkRefusal.class, () -> f.handIn(offer, valid()));
         assertThat(faults(again)).as("the replay's faults").isEqualTo(faults(refused));
+    }
+
+    @Test
+    void aResultForAnIssueHeldBackMeanwhileIsNotSavedAndSaysWhy() {
+        // A result saved over an issue whose parent a hand edit took out of the project would
+        // build on what the planner cannot see.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        f.store.change(
+                "AA1",
+                issue ->
+                        issue.withWarnings(
+                                List.of(org.fuin.porelo.planner.store.Warning.wrongParent())));
+
+        final WorkRefusal refused =
+                catchThrowableOfType(WorkRefusal.class, () -> f.handIn(offer, valid()));
+
+        assertThat(refused).as("the hand-in is refused").isNotNull();
+        assertThat(faults(refused))
+                .as("the faults")
+                .containsExactly(
+                        "issues: AA1: "
+                                + org.fuin.porelo.planner.store.Warning.wrongParent().text());
+        assertThat(f.store.results).as("nothing is saved").isEmpty();
+    }
+
+    @Test
+    void aStageTaskOverAnIssueHeldBackIsRefusedBeforeItIsGivenItsText() {
+        // A task handed the text of an issue the store could not fully read works from it.
+        final Stage f = new Stage();
+        final WorkOrder.Task task = f.order().tasks().getFirst().task();
+        final org.fuin.porelo.planner.store.Board board =
+                HeldBoards.warned(
+                        f.store.board(),
+                        "AA1",
+                        org.fuin.porelo.planner.store.Warning.blockerOutsideProject());
+
+        assertThatThrownBy(
+                        () ->
+                                StageOrder.staged(
+                                        board, board.work().rules().get(WORKING), WORKING, task))
+                .as("the stage is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage(
+                        "AA1: "
+                                + org.fuin.porelo.planner.store.Warning.blockerOutsideProject()
+                                        .text());
     }
 
     @Test

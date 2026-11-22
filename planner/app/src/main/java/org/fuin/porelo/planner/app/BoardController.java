@@ -428,8 +428,9 @@ public class BoardController {
             throw NewIssues.refused("priority", "The priority must be Highest to Lowest.");
         }
         final String story = body.story();
-        if (story != null && board.twice(story).isPresent()) {
-            throw NewIssues.refused("story", board.twice(story).get());
+        if (story != null && board.holdsWork(story).isPresent()) {
+            // Its words name both stories for an id named twice, else the warnings holding it.
+            throw NewIssues.refused("story", board.holdsWork(story).get());
         }
         if (story != null && board.story(story).isEmpty()) {
             throw NewIssues.refused("story", "The story is no story of the project.");

@@ -84,41 +84,13 @@ public record Issue(
     }
 
     /**
-     * An issue that waits on nothing outside the board.
+     * This issue with other warnings.
      *
-     * @param id the issue's id
-     * @param repository the name of the repository that holds it
-     * @param title its title
-     * @param state its state
-     * @param size its size, if it has one yet
-     * @param blockedBy the ids of the issues of the board it waits on
-     * @param parent its parent's id, for a sub-issue
-     * @param link where a person reads it on the forge, if known
-     * @param text its whole text, title and head included
-     * @param worker who works it
-     * @param risk how much harm its change can do
-     * @param estimate the minutes it is expected to take, if estimated
-     * @param minutes the minutes its work took so far, if kept
-     * @param priority its priority, or null when the store holds none
-     * @param warnings what the store could not read in it
+     * @param warnings its warnings
+     * @return the issue
      */
-    public Issue(
-            final String id,
-            final String repository,
-            final String title,
-            final String state,
-            final @Nullable String size,
-            final List<String> blockedBy,
-            final @Nullable String parent,
-            final @Nullable URI link,
-            final String text,
-            final Worker worker,
-            final Risk risk,
-            final @Nullable Double estimate,
-            final @Nullable Double minutes,
-            final @Nullable String priority,
-            final List<Warning> warnings) {
-        this(
+    public Issue withWarnings(final List<Warning> warnings) {
+        return new Issue(
                 id,
                 repository,
                 title,
@@ -134,67 +106,18 @@ public record Issue(
                 minutes,
                 priority,
                 warnings,
-                List.of());
+                waitsOn);
     }
 
     /**
-     * An issue without warnings that waits on nothing outside the board.
+     * This issue worked by another worker with another risk, as a sub-issue is worked as its
+     * parent; every other part, its priority, warnings and waits among them, stays.
      *
-     * @param id the issue's id
-     * @param repository the name of the repository that holds it
-     * @param title its title
-     * @param state its state
-     * @param size its size, if it has one yet
-     * @param blockedBy the ids of the issues of the board it waits on
-     * @param parent its parent's id, for a sub-issue
-     * @param link where a person reads it on the forge, if known
-     * @param text its whole text, title and head included
      * @param worker who works it
      * @param risk how much harm its change can do
-     * @param estimate the minutes it is expected to take, if estimated
-     * @param minutes the minutes its work took so far, if kept
-     * @param priority its priority, or null when the store holds none
-     */
-    public Issue(
-            final String id,
-            final String repository,
-            final String title,
-            final String state,
-            final @Nullable String size,
-            final List<String> blockedBy,
-            final @Nullable String parent,
-            final @Nullable URI link,
-            final String text,
-            final Worker worker,
-            final Risk risk,
-            final @Nullable Double estimate,
-            final @Nullable Double minutes,
-            final @Nullable String priority) {
-        this(
-                id,
-                repository,
-                title,
-                state,
-                size,
-                blockedBy,
-                parent,
-                link,
-                text,
-                worker,
-                risk,
-                estimate,
-                minutes,
-                priority,
-                List.of());
-    }
-
-    /**
-     * This issue with other warnings.
-     *
-     * @param warnings its warnings
      * @return the issue
      */
-    public Issue withWarnings(final List<Warning> warnings) {
+    public Issue withWorkerAndRisk(final Worker worker, final Risk risk) {
         return new Issue(
                 id,
                 repository,
@@ -285,7 +208,9 @@ public record Issue(
                 risk,
                 estimate,
                 minutes,
-                null);
+                null,
+                List.of(),
+                List.of());
     }
 
     /**

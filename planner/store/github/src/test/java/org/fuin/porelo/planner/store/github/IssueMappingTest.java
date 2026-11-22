@@ -455,7 +455,9 @@ class IssueMappingTest {
                         Risk.SMALL,
                         null,
                         null,
-                        "Low");
+                        "Low",
+                        List.of(),
+                        List.of());
         final Item item = new Item("example-lib", 1);
         IssueMapping.fields(issue, "Low", 4).forEach(item::field);
 

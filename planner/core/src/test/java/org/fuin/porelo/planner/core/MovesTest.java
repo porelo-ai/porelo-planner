@@ -1023,6 +1023,32 @@ class MovesTest {
     }
 
     @Test
+    void aStoryIsNotFinishedOverAnIssueInAStateOutsideTheWorkflow() {
+        // Finishing the story would close it while one of its issues is still open by hand.
+        final Board board =
+                warnedBoard(
+                        story("ST1", "Review", false, "PL1", "PL2"),
+                        issue("PL1", "Finished", null),
+                        issue("PL2", "Parked", null)
+                                .withWarnings(List.of(Warning.stateOutsideWorkflow())));
+        assertThatThrownBy(
+                        () ->
+                                Moves.check(
+                                        board,
+                                        List.of(story("ST1", "Finished")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS))
+                .as("the story stays open")
+                .isInstanceOf(Moves.Refused.class)
+                .hasMessage("PL2: " + Warning.stateOutsideWorkflow().text())
+                .satisfies(
+                        error ->
+                                assertThat(((Moves.Refused) error).name())
+                                        .isEqualTo("MoveNotAllowed"));
+    }
+
+    @Test
     void aStoryMoveCarriesItsIssueInAKnownStateAndLeavesTheOneInDoubt() {
         // A state the workflow does not know must never count as the earliest one.
         final Board board =

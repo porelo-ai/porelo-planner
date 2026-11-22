@@ -718,7 +718,9 @@ public final class MockStore implements PlanningStore {
                             Risk.ORDINARY,
                             null,
                             null,
-                            issue.priority()));
+                            issue.priority(),
+                            List.of(),
+                            List.of()));
         }
         int story = 0;
         for (final Story known : board.stories()) {

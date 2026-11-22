@@ -705,23 +705,8 @@ public final class IssueMapping {
                 continue;
             }
             entry.setValue(
-                    new Issue(
-                            issue.id(),
-                            issue.repository(),
-                            issue.title(),
-                            issue.state(),
-                            issue.size(),
-                            issue.blockedBy(),
-                            issue.parent(),
-                            issue.link(),
-                            issue.text(),
-                            parent.worker(),
-                            Risk.highest(List.of(issue.risk(), parent.risk())),
-                            issue.estimate(),
-                            issue.minutes(),
-                            issue.priority(),
-                            issue.warnings(),
-                            issue.waitsOn()));
+                    issue.withWorkerAndRisk(
+                            parent.worker(), Risk.highest(List.of(issue.risk(), parent.risk()))));
         }
     }
 

@@ -360,7 +360,9 @@ paths:
     get:
       operationId: getStory
       summary: Read one story
-      description: Answers one story with its issues and its description.
+      description: >-
+        Answers one story with its issues and its description. An id two stories share answers NoSuchStory, since
+        no one story is meant.
       tags: [board]
       responses:
         '200':
@@ -734,7 +736,9 @@ paths:
     get:
       operationId: getIssue
       summary: Read one issue
-      description: Answers one issue with its text, its sub-issues and its What must be true paragraph when it has one.
+      description: >-
+        Answers one issue with its text, its sub-issues and its What must be true paragraph when it has one. An id two
+        issues share answers NoSuchIssue, since no one issue is meant.
       tags: [board]
       responses:
         '200':
@@ -3077,7 +3081,9 @@ components:
         story:
           $ref: '#/components/schemas/StoryDetail'
     Story:
-      description: One story as the board shows it.
+      description: >-
+        One story as the board shows it. Two stories share an id only when each carries the warning IdTwice; neither
+        is then worked, moved or edited, and a read of the story by that id answers NoSuchStory.
       type: object
       required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open, warnings]
       properties:

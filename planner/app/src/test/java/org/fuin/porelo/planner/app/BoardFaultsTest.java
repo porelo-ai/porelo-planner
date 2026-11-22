@@ -182,7 +182,9 @@ class BoardFaultsTest {
                 Risk.ORDINARY,
                 null,
                 null,
-                priority);
+                priority,
+                List.of(),
+                List.of());
     }
 
     private static org.fuin.porelo.planner.app.answers.Board boardOf(final Board board) {

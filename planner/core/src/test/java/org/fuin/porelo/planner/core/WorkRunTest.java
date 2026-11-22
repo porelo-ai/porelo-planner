@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -475,6 +476,57 @@ class WorkRunTest {
         assertThat(restarted.report("child-rework", start).tasks())
                 .as("a follow-up that has already started is no longer offered")
                 .isEmpty();
+    }
+
+    @Test
+    void aReadingChoiceOnAnIssueHeldBackOrNamedTwiceIsRefusedWithItsWords() {
+        // A rework chosen over an issue the store could not fully read, or over one of two
+        // issues with one id, would work whichever the planner happened to find.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        for (final WorkRun.Offered reader : f.readers()) {
+            f.run.report(
+                    "reader-" + reader.task().issues().getFirst(),
+                    new WorkRun.Report(
+                            reader.offer(),
+                            WorkRun.Event.ENDED,
+                            "box",
+                            "workstation",
+                            ended("Findings:\n1. blocking | - | - | Preserve data")));
+        }
+        final Board stopped = f.store.board();
+
+        f.store.current = HeldBoards.warned(stopped, "AA1", Warning.wrongParent());
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        1,
+                                        ReadingCycle.Choice.REWORK,
+                                        "",
+                                        f.store.board().revision().value(),
+                                        null))
+                .as("an issue held back")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage("AA1: " + Warning.wrongParent().text());
+
+        f.store.current = HeldBoards.twice(stopped, "AA1", "beta");
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        1,
+                                        ReadingCycle.Choice.REWORK,
+                                        "",
+                                        f.store.board().revision().value(),
+                                        null))
+                .as("an id naming two issues")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage(
+                        "AA1 names an issue in alpha and beta; it can be neither worked nor moved"
+                                + " until one id is changed.");
     }
 
     @Test

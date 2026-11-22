@@ -753,9 +753,10 @@ class MockStoreTest {
                                 java.util.stream.Collectors.groupingBy(
                                         org.fuin.porelo.planner.store.Warning::kind,
                                         java.util.stream.Collectors.counting()));
+        // Read from the API itself, so a kind added there fails here until the mock has it.
+        final List<org.fuin.porelo.planner.store.Warning> factories = factories();
         final java.util.Map<String, Long> expected = new java.util.HashMap<>();
-        for (final org.fuin.porelo.planner.store.Warning warning :
-                org.fuin.porelo.planner.store.Warning.named()) {
+        for (final org.fuin.porelo.planner.store.Warning warning : factories) {
             // Both copies of an id on two issues carry it.
             expected.put(
                     warning.kind(),
@@ -765,7 +766,7 @@ class MockStoreTest {
         }
         assertThat(kinds)
                 .as(
-                        "every named kind, %d of them, once, an id on two issues twice",
+                        "every kind the API makes, %d of them, once, an id on two issues twice",
                         expected.size())
                 .isEqualTo(expected);
         assertThat(
@@ -777,6 +778,39 @@ class MockStoreTest {
                                 .distinct()
                                 .toList())
                 .as("each as the store API words it")
-                .containsExactlyInAnyOrderElementsOf(org.fuin.porelo.planner.store.Warning.named());
+                .containsExactlyInAnyOrderElementsOf(factories);
+    }
+
+    /**
+     * Every warning the store API's factories make, each checked against a kind constant, so a kind
+     * named without a factory fails too.
+     */
+    private static List<org.fuin.porelo.planner.store.Warning> factories() {
+        final List<org.fuin.porelo.planner.store.Warning> made = new java.util.ArrayList<>();
+        final java.util.Set<String> constants = new java.util.TreeSet<>();
+        try {
+            for (final java.lang.reflect.Method method :
+                    org.fuin.porelo.planner.store.Warning.class.getMethods()) {
+                if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                        && method.getParameterCount() == 0
+                        && method.getReturnType()
+                                .equals(org.fuin.porelo.planner.store.Warning.class)) {
+                    made.add((org.fuin.porelo.planner.store.Warning) method.invoke(null));
+                }
+            }
+            for (final java.lang.reflect.Field field :
+                    org.fuin.porelo.planner.store.Warning.class.getFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                        && field.getType().equals(String.class)) {
+                    constants.add((String) field.get(null));
+                }
+            }
+        } catch (final ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        assertThat(made.stream().map(org.fuin.porelo.planner.store.Warning::kind).sorted().toList())
+                .as("one factory for each kind constant")
+                .containsExactlyElementsOf(constants);
+        return made;
     }
 }

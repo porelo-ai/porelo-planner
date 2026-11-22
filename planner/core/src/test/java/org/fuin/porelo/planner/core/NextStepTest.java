@@ -899,6 +899,22 @@ class NextStepTest {
                 .containsExactly(Map.entry("AA1", "AA1: " + Warning.parentOutsideProject().text()));
     }
 
+    @Test
+    void aLandedBuildOffersNoReaderForAnIssueHeldBackAndSaysWhy() {
+        // A reader offered over an issue a hand edit put in doubt reads work no one can place.
+        final NextStep.Result next =
+                NextStep.landed(
+                        heldBoard("Reading", "Finished"),
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        Map.of("AA1", NextStep.Progress.start(2)),
+                        "",
+                        BUILT);
+        assertThat(next.tasks()).as("no reader is offered").isEmpty();
+        assertThat(next.unavailable())
+                .as("the person reads why")
+                .containsExactly(Map.entry("AA1", "AA1: " + Warning.parentOutsideProject().text()));
+    }
+
     static Board board(final String parent, final String child) {
         return new Board(
                 new Revision("board@1"),

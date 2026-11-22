@@ -512,7 +512,9 @@ class MovesEndpointTest {
                                 own.risk(),
                                 own.estimate(),
                                 own.minutes(),
-                                issue)),
+                                issue,
+                                List.of(),
+                                List.of())),
                 board.work());
     }
 

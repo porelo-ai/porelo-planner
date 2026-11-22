@@ -504,6 +504,57 @@ class IssuesEndpointTest {
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
     }
 
+    @Test
+    void anIssueUnderAStoryHeldBackOrNamedTwiceIsRefusedWithItsWords() throws Exception {
+        // An issue added under a story the store could not fully read would be worked from it.
+        final org.fuin.porelo.planner.store.Story story =
+                new org.fuin.porelo.planner.store.Story(
+                        "ST1", "S", "Idea", true, "Medium", null, List.of(), "", null);
+        final String body =
+                "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
+                        + " \"W\", \"story\": \"ST1\", \"revision\": \"r1\"}";
+        current =
+                withStories(
+                        List.of(
+                                story.withWarnings(
+                                        List.of(
+                                                org.fuin.porelo.planner.store.Warning
+                                                        .wrongParent()))));
+        issue(body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:IssueNotAllowed"))
+                .andExpect(jsonPath("$.parameters.field").value("story"))
+                .andExpect(
+                        jsonPath("$.parameters.reason")
+                                .value(
+                                        "ST1: "
+                                                + org.fuin.porelo.planner.store.Warning
+                                                        .wrongParent()
+                                                        .text()));
+        final org.fuin.porelo.planner.store.Story copy =
+                story.withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
+        current = withStories(List.of(copy, copy));
+        issue(body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.parameters.field").value("story"))
+                .andExpect(
+                        jsonPath("$.parameters.reason")
+                                .value(
+                                        "ST1 names two stories; it can be neither worked nor moved"
+                                                + " until one id is changed."));
+        assertThat(added).as("nothing created").isEmpty();
+    }
+
+    private Board withStories(final List<org.fuin.porelo.planner.store.Story> stories) {
+        return new Board(
+                current.revision(),
+                current.workflow(),
+                stories,
+                current.issues(),
+                current.work(),
+                current.repositories());
+    }
+
     private void refused(final String body, final String field) throws Exception {
         final String answer =
                 issue(body)

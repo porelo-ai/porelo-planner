@@ -334,6 +334,8 @@ class StoryRulesTest {
                 Risk.ORDINARY,
                 null,
                 null,
-                priority);
+                priority,
+                List.of(),
+                List.of());
     }
 }

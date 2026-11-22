@@ -679,6 +679,16 @@ public final class Moves {
             final Story story,
             final String to,
             final Map<String, String> states) {
+        // An issue in doubt counts as open: finishing over it would close work no one can see.
+        for (final String id : withSubIssues(board, story.issues())) {
+            final Optional<String> held = board.holdsWork(id);
+            if (held.isPresent()) {
+                throw new Refused(
+                        "MoveNotAllowed",
+                        held.get(),
+                        item(story.id(), story.state(), to, held.get()));
+            }
+        }
         final Optional<String> done = lastDone(board);
         final Set<String> finished = new HashSet<>(board.workflow().closed());
         done.ifPresent(finished::add);
@@ -875,7 +885,7 @@ public final class Moves {
         return value.orElse("");
     }
 
-    private static Map<String, String> item(
+    static Map<String, String> item(
             final String id, final String from, final String to, final String reason) {
         final Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("item", id);

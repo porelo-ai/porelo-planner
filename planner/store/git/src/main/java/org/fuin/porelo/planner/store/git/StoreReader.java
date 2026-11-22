@@ -228,24 +228,12 @@ public final class StoreReader implements PartReader {
                 continue;
             }
             issues.add(
-                    new Issue(
-                            issue.id(),
-                            issue.repository(),
-                            issue.title(),
-                            issue.state(),
-                            issue.size(),
-                            issue.blockedBy(),
-                            parent,
-                            issue.link(),
-                            issue.text(),
+                    issue.withWorkerAndRisk(
                             workers.getOrDefault(parent, Worker.AGENT),
                             Risk.highest(
                                     List.of(
                                             issue.risk(),
-                                            risks.getOrDefault(parent, issue.risk()))),
-                            issue.estimate(),
-                            issue.minutes(),
-                            issue.priority()));
+                                            risks.getOrDefault(parent, issue.risk())))));
         }
         return issues;
     }
@@ -447,7 +435,9 @@ public final class StoreReader implements PartReader {
                 // The head's schema takes only these; any other is read as none.
                 org.fuin.porelo.planner.store.Story.PRIORITIES.contains(head.priority())
                         ? head.priority()
-                        : null);
+                        : null,
+                List.of(),
+                List.of());
     }
 
     /** The worker a head names; the schema took only these spellings, or none. */

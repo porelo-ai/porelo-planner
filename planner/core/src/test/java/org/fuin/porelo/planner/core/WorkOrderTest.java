@@ -1172,4 +1172,39 @@ class WorkOrderTest {
                                         .as("typed semantic refusal")
                                         .isEqualTo("WorkNotAllowed"));
     }
+
+    @Test
+    void aStartOfAnIdNamingTwoStoriesIsRefusedWithWordsSayingSo() {
+        // "No such story" for a story on the board twice sends the person looking for one.
+        final Board plain = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
+        final Story story =
+                plain.stories()
+                        .getFirst()
+                        .withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
+        final Board board =
+                new Board(
+                        plain.revision(),
+                        plain.workflow(),
+                        List.of(story, story),
+                        plain.issues(),
+                        plain.work(),
+                        plain.repositories());
+        final String words =
+                "ST1 names two stories; it can be neither worked nor moved until one id is changed.";
+        assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Building"))
+                .as("the proposal")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage(words)
+                .satisfies(
+                        error ->
+                                assertThat(((WorkRefusal) error).name())
+                                        .isEqualTo("WorkNotAllowed"));
+        assertThatThrownBy(
+                        () ->
+                                WorkOrder.accept(
+                                        board, "ST1", "Building", decision(null, null, null, null)))
+                .as("the start")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessage(words);
+    }
 }

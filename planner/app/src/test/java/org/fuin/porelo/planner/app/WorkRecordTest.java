@@ -113,6 +113,89 @@ class WorkRecordTest {
     }
 
     @Test
+    void aReadingDecisionOverAnIssueHeldBackOrNamedTwiceIsRefusedBeforeItIsRecorded() {
+        // A reading decision recorded over an issue the store could not fully read, or over one
+        // of two issues with one id, would move whichever the planner found.
+        final org.fuin.porelo.planner.store.Issue plain =
+                new org.fuin.porelo.planner.store.Issue(
+                        "AA1",
+                        "alpha",
+                        "Issue",
+                        "Reading",
+                        "S",
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        org.fuin.porelo.planner.store.Worker.AGENT,
+                        Risk.ORDINARY);
+        final org.fuin.porelo.planner.store.Issue held =
+                plain.withWarnings(List.of(org.fuin.porelo.planner.store.Warning.wrongParent()));
+        final org.fuin.porelo.planner.store.Issue twice =
+                plain.withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
+        final org.fuin.porelo.planner.store.Issue other =
+                new org.fuin.porelo.planner.store.Issue(
+                                "AA1",
+                                "beta",
+                                "Issue",
+                                "Reading",
+                                "S",
+                                List.of(),
+                                null,
+                                null,
+                                "",
+                                org.fuin.porelo.planner.store.Worker.AGENT,
+                                Risk.ORDINARY)
+                        .withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(
+                                                    session -> {
+                                                        session.preflightIssue(
+                                                                session.read(),
+                                                                readingBoard(List.of(held)),
+                                                                "AA1");
+                                                        return null;
+                                                    }))
+                    .as("an issue held back")
+                    .isInstanceOf(WorkRefusal.class)
+                    .hasMessage(
+                            "AA1: " + org.fuin.porelo.planner.store.Warning.wrongParent().text());
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(
+                                                    session -> {
+                                                        session.preflightIssue(
+                                                                session.read(),
+                                                                readingBoard(List.of(twice, other)),
+                                                                "AA1");
+                                                        return null;
+                                                    }))
+                    .as("an id naming two issues")
+                    .isInstanceOf(WorkRefusal.class)
+                    .hasMessage(
+                            "AA1 names an issue in alpha and beta; it can be neither worked nor"
+                                    + " moved until one id is changed.");
+        }
+    }
+
+    private static org.fuin.porelo.planner.store.Board readingBoard(
+            final List<org.fuin.porelo.planner.store.Issue> issues) {
+        return new org.fuin.porelo.planner.store.Board(
+                new org.fuin.porelo.planner.store.Revision("r1"),
+                new org.fuin.porelo.planner.store.Workflow(
+                        List.of("Backlog", "Reading", "Finished"), List.of(), List.of("Finished")),
+                List.of(),
+                issues,
+                new org.fuin.porelo.planner.store.Work(Map.of(), List.of()),
+                List.of("alpha", "beta"));
+    }
+
+    @Test
     void aTasksMachineNameSurvivesRestartVerbatim() {
         // Prevents a restart from losing or normalizing the machine needed to open a task.
         final String machine = "WSL Ubuntu Äpfel";
