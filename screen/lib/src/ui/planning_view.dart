@@ -1463,6 +1463,12 @@ class _BoardViewState extends State<_BoardView> {
   }
 
   /// A story in a folded phase: its priority, id, size and marks on one line.
+  /// An id as a folded column shows it: its number from `#` on, or the whole id where it has none.
+  static String _folded(String id) {
+    final at = id.lastIndexOf('#');
+    return at > 0 && at < id.length - 1 ? id.substring(at) : id;
+  }
+
   Widget _tile(BuildContext context, PlanStory story) => Padding(
     padding: const EdgeInsets.only(bottom: Space.tight),
     child: _drag(
@@ -1488,7 +1494,8 @@ class _BoardViewState extends State<_BoardView> {
                         child: _priority(context, story.priority ?? '', mark: true),
                       ),
                     ),
-                    Expanded(child: Text(_line(story.id), softWrap: false, overflow: TextOverflow.fade)),
+                    // A folded column is too narrow for a repository's name; the tooltip names the whole id.
+                    Expanded(child: Text(_line(_folded(story.id)), softWrap: false, overflow: TextOverflow.fade)),
                     ?_size(context, story.size, key: 'planning-size ${story.id}'),
                     if (_needsYou(story))
                       Icon(

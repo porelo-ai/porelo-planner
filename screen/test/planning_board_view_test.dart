@@ -1023,7 +1023,7 @@ void main() {
     await settle(tester);
     tester.widget<IconButton>(find.byKey(const Key('planning-fold-phase Work'))).onPressed!();
     await settle(tester);
-    expect(find.text('planner#7'), findsOneWidget, reason: 'the narrowed tile shows the reference alone');
+    expect(find.text('#7'), findsOneWidget, reason: 'the narrowed tile shows the reference\'s number, not ST7');
   });
 
   // Harm: an issue searched for by its number lies in a story far down its column, unseen, and is taken for missing.
