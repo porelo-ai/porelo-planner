@@ -160,7 +160,7 @@ void main() {
     for (final bad in [
       'soft\u{00AD}hyphen',
       'tag\u{E0041}x',
-      'private\u{E000}x',
+      'private\u{E000}x', // not-a-citation
       'braille\u{2800}blank',
       'hangul\u{3164}filler',
       'choseong\u{115F}filler',
