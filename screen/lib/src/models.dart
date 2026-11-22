@@ -7,6 +7,14 @@ import 'story_work_order.dart';
 import 'work_reply.dart';
 
 String _planText(Map<String, dynamic> map, String key) => map[key] is String ? map[key] as String : '';
+
+/// The line the planner ends a story's body with when it made the story from issues that stand: a hidden mark of the
+/// request, which the screen, rendering no HTML, would show as text.
+final _marker = RegExp(r'\n*^[ \t]*<!-- porelo-planner story from issues [0-9a-f]{64} -->[ \t]*$\n?', multiLine: true);
+
+/// [text] without the planner's marker line; a comment a person wrote stays.
+String _withoutMarker(String text) => text.replaceAll(_marker, '\n');
+
 List<String> _planStrings(Object? value) =>
     value is List ? value.whereType<String>().where((text) => text.trim().isNotEmpty).toList() : const [];
 bool _planMapsReported(Object? value) => value is List && value.every((entry) => entry is Map<String, dynamic>);
@@ -430,7 +438,7 @@ class PlanStory {
       derivedState = map['derivedState'] is String ? map['derivedState'] as String : null,
       priority = map['priority'] is String ? map['priority'] as String : null,
       size = _planText(map, 'size'),
-      description = _planText(map, 'description'),
+      description = _withoutMarker(_planText(map, 'description')),
       descriptionFormat = _planText(map, 'descriptionFormat'),
       issues = _planList(map['issues'], PlanIssue.from),
       issuesReported = _planMapsReported(map['issues']),
