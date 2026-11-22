@@ -49,30 +49,30 @@ const _named = {
   'Rejected': PlanningStateKind.rejected,
 };
 
-/// The states that wait for the person's review, as the planner tells them from the work rules: a state a rule's
-/// work ends in that is neither a rule's own working state nor closed.
+/// The states that wait for the person's review: the one [planningStoryReviewState] names, or none. An earlier work's
+/// end, such as an analysis's, waits for the person's next step and shows by its own state, never as review.
 Set<String> planningReviewStates(PlanningSnapshot? snapshot) {
-  if (snapshot == null) return const {};
+  final review = planningStoryReviewState(snapshot);
+  return review == null ? const {} : {review};
+}
+
+/// The state a story waits in for the person's review: of the states a rule's work ends in that are neither a rule's
+/// own working state nor closed, the one latest in the workflow, where its last work ends; null when there is none.
+/// Only a story as a whole is reviewed, so only a story in this state needs the person's review.
+String? planningStoryReviewState(PlanningSnapshot? snapshot) {
+  if (snapshot == null) return null;
   final closed = {
     for (final state in snapshot.states)
       if (state.kind == 'CLOSED') state.name,
   };
   final working = {for (final rule in snapshot.work) rule.state};
-  return {
+  final ends = {
     for (final rule in snapshot.work)
       if (rule.done.isNotEmpty && !working.contains(rule.done) && !closed.contains(rule.done)) rule.done,
   };
-}
-
-/// The state a story waits in for the person's review: of [planningReviewStates], the one latest in the workflow,
-/// where its last work ends; null when there is none. Only a story as a whole is reviewed, so only a story in this
-/// state needs the person's review.
-String? planningStoryReviewState(PlanningSnapshot? snapshot) {
-  if (snapshot == null) return null;
-  final review = planningReviewStates(snapshot);
   String? last;
   for (final state in snapshot.states) {
-    if (review.contains(state.name)) last = state.name;
+    if (ends.contains(state.name)) last = state.name;
   }
   return last;
 }
