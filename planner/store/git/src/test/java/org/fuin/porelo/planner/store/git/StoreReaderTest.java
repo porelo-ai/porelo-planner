@@ -255,6 +255,47 @@ class StoreReaderTest {
     }
 
     @Test
+    void anIndexTheBoardWroteBesideAWarnedIssueKeepsEveryAnchorALinkReaches(
+            @org.junit.jupiter.api.io.TempDir final java.nio.file.Path work) throws Exception {
+        // A warned issue's row dropped from the index leaves the links to it reaching no anchor,
+        // a fault on every read until someone mends the index by hand.
+        final java.nio.file.Path issues =
+                java.nio.file.Files.createDirectories(work.resolve("issues"));
+        java.nio.file.Files.writeString(
+                issues.resolve("XY01-One.md"),
+                issue("XY01", "Idea").replace("\"blockedBy\": []", "\"blockedBy\": [\"XY02\"]"));
+        java.nio.file.Files.writeString(issues.resolve("XY02-One.md"), issue("XY02", "Idea"));
+        final Workflow workflow = Workflow.read(WORKFLOW);
+        assertThat(
+                        org.fuin.porelo.planner.store.git.stories.IssuesIndex.write(
+                                        issues, workflow)
+                                .faults())
+                .as("the clean index")
+                .isEmpty();
+        java.nio.file.Files.writeString(issues.resolve("XY02-One.md"), issue("XY02", "Parked"));
+        assertThat(
+                        org.fuin.porelo.planner.store.git.stories.IssuesIndex.writeForBoard(
+                                        issues, workflow)
+                                .faults())
+                .as("the board's write beside the warned issue")
+                .isEmpty();
+        final Tree tree = new Tree();
+        tree.files.put("stories/workflow.yml", WORKFLOW);
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(issues)) {
+            for (final java.nio.file.Path file : files.toList())
+                tree.files.put(
+                        "issues/" + file.getFileName(), java.nio.file.Files.readString(file));
+        }
+
+        final Part part = new StoreReader(tree, 100).read(OWN, "c1", null);
+
+        assertThat(part.faults()).as("no link reaches a missing anchor").isEmpty();
+        assertThat(tree.files.get("issues/README.md"))
+                .as("the warned issue's row kept where it stood")
+                .contains("<a id=\"xy02\"></a>");
+    }
+
+    @Test
     void theOwnRepositorysIssuesAreCheckedAgainstTheProjectsWorkflowAndNotAnIssuesWorkflow() {
         // A second workflow beside the project's would let the own issues stand in other states.
         final Tree tree = new Tree();

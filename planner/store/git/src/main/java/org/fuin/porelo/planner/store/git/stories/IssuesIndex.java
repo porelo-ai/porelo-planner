@@ -119,14 +119,25 @@ public final class IssuesIndex {
      */
     private final boolean forBoard;
 
+    /**
+     * Whether a warned issue's row stays where the index held it, so every anchor and link to it
+     * holds; the stories index reads the issues without it, so a story naming it gets no row.
+     */
+    private final boolean keepWarned;
+
+    /** The ids of the issues the board warns about, each read as a file without a head. */
+    private final Set<String> warned = new HashSet<>();
+
     private IssuesIndex(Path root, Workflow workflow) throws IOException {
-        this(root, workflow, false);
+        this(root, workflow, false, false);
     }
 
-    private IssuesIndex(Path root, Workflow workflow, boolean forBoard) throws IOException {
+    private IssuesIndex(Path root, Workflow workflow, boolean forBoard, boolean keepWarned)
+            throws IOException {
         this.root = root;
         this.workflow = workflow;
         this.forBoard = forBoard;
+        this.keepWarned = keepWarned;
         final Path parent = root.toAbsolutePath().normalize().getParent();
         this.project =
                 parent != null && Files.isRegularFile(parent.resolve("stories/workflow.yml"));
@@ -230,7 +241,7 @@ public final class IssuesIndex {
     public static Result writeForBoard(Path root, Workflow workflow) throws IOException {
         StoriesIndex.refuseSymlink(root);
         if (!Files.isDirectory(root)) throw new IOException(root + ": no such directory");
-        return write(new IssuesIndex(root, workflow, true));
+        return write(new IssuesIndex(root, workflow, true, true));
     }
 
     /**
@@ -249,6 +260,10 @@ public final class IssuesIndex {
                         located != null
                                 && (!workflow.states().contains(located.head().state())
                                         || ids.getOrDefault(located.head().id(), 0) > 1);
+                if (located != null && warned) {
+                    this.warned.add(issue.id());
+                    this.warned.add(located.head().id());
+                }
                 kept.add(warned ? new Issue(issue.file(), issue.id(), issue.text(), null) : issue);
             }
             dir.setValue(kept);
@@ -327,7 +342,19 @@ public final class IssuesIndex {
      */
     static @Nullable String render(Path root, Path directory, Workflow workflow)
             throws IOException {
-        final IssuesIndex index = new IssuesIndex(root, workflow);
+        return render(root, directory, workflow, false);
+    }
+
+    /**
+     * The index of one directory as {@link #render(Path, Path, Workflow)} gives it; for the board,
+     * an issue it warns about, in a state the workflow does not know or under an id two files
+     * carry, is no fault and has no row, so a story naming it is told by no row.
+     *
+     * @param forBoard whether the heads are read as the board reads them
+     */
+    static @Nullable String render(Path root, Path directory, Workflow workflow, boolean forBoard)
+            throws IOException {
+        final IssuesIndex index = new IssuesIndex(root, workflow, forBoard, false);
         if (!index.headFaults.isEmpty()) throw new IOException(String.join("; ", index.headFaults));
         final Path dir = directory.toAbsolutePath().normalize();
         final List<Issue> here = index.issues.getOrDefault(dir, List.of());
@@ -509,6 +536,7 @@ public final class IssuesIndex {
         final Map<String, List<Chunk>> followers = new HashMap<>();
         final Map<String, Chunk> closed = new HashMap<>();
         final Map<String, List<String>> kept = new HashMap<>();
+        final Map<String, List<String>> keptWarned = new HashMap<>();
         String current = null;
         final Set<String> seen = new HashSet<>();
         for (final Chunk chunk : chunks) {
@@ -536,6 +564,13 @@ public final class IssuesIndex {
             for (int i = 0; i < chunk.lines().size(); i++) {
                 final IssueIndexes.Row row = byLine.get(chunk.start() + i + 1);
                 if (row == null || headed.contains(row.number())) continue;
+                if (warned.contains(row.number())) {
+                    if (keepWarned)
+                        keptWarned
+                                .computeIfAbsent(current, key -> new ArrayList<>())
+                                .add(chunk.lines().get(i));
+                    continue;
+                }
                 if (strict && !files.containsKey(row.number()))
                     faults.add(
                             relative(dir.resolve(INDEX))
@@ -571,6 +606,7 @@ public final class IssuesIndex {
                 for (final IssueHead.Located head : inState)
                     table.add(openRow(dir, head, questions, places));
                 if (!strict) table.addAll(kept.getOrDefault(state, List.of()));
+                table.addAll(keptWarned.getOrDefault(state, List.of()));
                 if (!table.isEmpty()) {
                     final List<String> block = new ArrayList<>();
                     block.add("## " + state);
@@ -638,6 +674,7 @@ public final class IssuesIndex {
             final String line = chunk.lines().get(i);
             final IssueIndexes.Row row = byLine.get(chunk.start() + i + 1);
             if (row != null && headed.contains(row.number())) continue;
+            if (row != null && !keepWarned && warned.contains(row.number())) continue;
             if (row != null) count++;
             table.add(line);
             if (!inserted && SEPARATOR.matcher(line).matches()) {

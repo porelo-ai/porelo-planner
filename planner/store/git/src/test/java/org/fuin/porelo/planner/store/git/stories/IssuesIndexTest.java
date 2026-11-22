@@ -229,9 +229,10 @@ class IssuesIndexTest {
     }
 
     // Prevents one hand-edited issue, in a state the workflow lacks or under an id another file
-    // carries, from refusing every save of the board; the issues command still refuses it.
+    // carries, from refusing every save of the board, and its row, dropped, from leaving every
+    // anchor and link to it reaching nothing; the issues command still refuses it.
     @Test
-    void forTheBoardAnIssueItWarnsAboutGetsNoRowAndIsNoFaultWhileTheCommandStillRefusesIt()
+    void forTheBoardAnIssueItWarnsAboutKeepsItsRowWhereItStoodAndIsNoFaultWhileTheCommandRefusesIt()
             throws IOException {
         IssuesIndex.convert(issues);
         IssuesIndex.write(issues);
@@ -245,16 +246,14 @@ class IssuesIndexTest {
         final Path again = issues.resolve("EX12-Again.md");
         Files.writeString(again, Files.readString(twelve));
         final Map<Path, String> before = texts();
+        final String rows = Files.readString(issues.resolve("README.md"));
 
         final IssuesIndex.Result written = IssuesIndex.writeForBoard(issues, workflow);
 
         assertThat(written.faults()).as("no fault for the warned issues").isEmpty();
-        final String index = Files.readString(issues.resolve("README.md"));
-        assertThat(index)
-                .as("no row for an issue the board warns about, the others kept")
-                .doesNotContain("<a id=\"ex14\">")
-                .doesNotContain("<a id=\"ex12\">")
-                .contains("<a id=\"ex10\">");
+        assertThat(Files.readString(issues.resolve("README.md")))
+                .as("each warned issue's row kept where it stood, so the index is as it was")
+                .isEqualTo(rows);
         final Map<Path, String> after = texts();
         after.remove(issues.resolve("README.md"));
         before.remove(issues.resolve("README.md"));

@@ -39,4 +39,17 @@ public interface IssueSource {
     static IssueSource local(Path projectRoot, Workflow workflow) {
         return new LocalIssues(projectRoot, workflow);
     }
+
+    /**
+     * Reads checkouts as {@link #local(Path, Workflow)} does, but as the board reads the heads: an
+     * issue it warns about, in a state the workflow does not know or under an id two files carry,
+     * is no fault and has no row, so a story naming it is told by no row.
+     *
+     * @param projectRoot the checkout containing project.yml
+     * @param workflow the project's workflow
+     * @return a source that reads local issue indexes only
+     */
+    static IssueSource localForBoard(Path projectRoot, Workflow workflow) {
+        return new LocalIssues(projectRoot, workflow, true);
+    }
 }

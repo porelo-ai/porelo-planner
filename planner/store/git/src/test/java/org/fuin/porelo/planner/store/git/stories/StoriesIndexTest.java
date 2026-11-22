@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -160,86 +161,169 @@ class StoriesIndexTest {
                 + "],\"tested\":null}\n```\n";
     }
 
-    // Prevents one hand-edited story, or a story naming an issue the board warns about, from
-    // refusing every save of the board; the stories command still refuses it.
+    private static String issue(String id, String state) {
+        return "# "
+                + id
+                + " — One\n\n```json\n{\"$schema\": \"issue-1.json\", \"id\": \""
+                + id
+                + "\", \"title\": \"One\", \"state\": \""
+                + state
+                + "\", \"size\": \"S\", \"priority\": \"Medium\", \"rank\": 1, \"blockedBy\": [],"
+                + " \"covers\": \"Something.\"}\n```\n";
+    }
+
+    // Prevents one hand-edited issue, in the own repository or another, from refusing every save
+    // through the issue indexes the stories index reads from the checkouts, as a save reads them.
     @Test
-    void forTheBoardAStoryItWarnsAboutGetsNoRowAndIsNoFaultWhileTheCommandStillRefusesIt()
+    void forTheBoardAStoryNamingAWarnedIssueInAnyCheckoutGetsNoRowAndIsNoFault()
             throws IOException {
-        final Path dir = fixture("warned");
+        final Path own = Files.createDirectories(work.resolve("plans"));
+        final Path widget = Files.createDirectories(work.resolve("porelo-widget/issues"));
+        final Path ownIssues = Files.createDirectories(own.resolve("issues"));
+        final Path stories = Files.createDirectories(own.resolve("stories"));
         Files.writeString(
-                dir.getParent().resolve("project.yml"),
+                own.resolve("project.yml"),
                 """
                 project:
                   central: "git@github.com:porelo-ai/porelo-project.git"
                 repositories:
                   widget:
                     central: "git@github.com:porelo-ai/porelo-widget.git"
-                    issues: [AB]
+                    issues: [CD]
                 """);
-        final IssueSource source =
-                repository ->
-                        repository.equals("porelo-widget")
-                                ? "# Issues\n\n## Review\n| AB01 | S | - | A widget. |\n"
-                                : "# Issues\n";
-        Files.writeString(dir.resolve("ST1.md"), story("ST1", "", "\"porelo-widget#AB01\""));
-        Files.writeString(dir.resolve("ST2.md"), story("ST2", "\"state\":\"Parked\",", ""));
-        Files.writeString(dir.resolve("ST3.md"), story("ST3", "\"state\":\"Idea\",", ""));
-        Files.writeString(dir.resolve("ST3-Copy.md"), story("ST3", "\"state\":\"Idea\",", ""));
-        Files.writeString(dir.resolve("ST4.md"), story("ST4", "", "\"porelo-widget#AB02\""));
-        Files.writeString(dir.resolve("ST5.md"), story("ST5", "", "\"porelo-other#CD01\""));
-        final java.util.Map<String, String> before = new java.util.TreeMap<>();
+        Files.copy(Path.of("src/test/resources/workflow.yml"), stories.resolve("workflow.yml"));
+        final Workflow workflow = Workflow.read(stories.resolve("workflow.yml"));
+        Files.writeString(ownIssues.resolve("AB01-One.md"), issue("AB01", "Backlog"));
+        Files.writeString(ownIssues.resolve("AB02-One.md"), issue("AB02", "Backlog"));
+        Files.writeString(widget.resolve("CD01-One.md"), issue("CD01", "Backlog"));
+        Files.writeString(widget.resolve("CD02-One.md"), issue("CD02", "Backlog"));
+        Files.writeString(
+                stories.resolve("ST1.md"),
+                story("ST1", "", "\"porelo-project#AB01\", \"porelo-widget#CD01\""));
+        Files.writeString(stories.resolve("ST2.md"), story("ST2", "", "\"porelo-project#AB02\""));
+        Files.writeString(stories.resolve("ST3.md"), story("ST3", "", "\"porelo-widget#CD02\""));
+        assertThat(IssuesIndex.write(ownIssues, workflow).faults()).as("own clean").isEmpty();
+        assertThat(IssuesIndex.write(widget, workflow).faults()).as("widget clean").isEmpty();
+        assertThat(StoriesIndex.write(stories, IssueSource.local(own, workflow)).faults())
+                .as("the clean project")
+                .isEmpty();
+        // By hand: an own issue in a state the workflow lacks, another's id in two files.
+        Files.writeString(ownIssues.resolve("AB02-One.md"), issue("AB02", "Parked"));
+        Files.writeString(widget.resolve("CD02-Again.md"), issue("CD02", "Backlog"));
+        // And stories: one in a state the workflow lacks, one id in two files, one naming a
+        // repository outside the project.
+        Files.writeString(stories.resolve("ST4.md"), story("ST4", "\"state\":\"Parked\",", ""));
+        Files.writeString(stories.resolve("ST5.md"), story("ST5", "\"state\":\"Idea\",", ""));
+        Files.writeString(stories.resolve("ST5-Copy.md"), story("ST5", "\"state\":\"Idea\",", ""));
+        Files.writeString(stories.resolve("ST6.md"), story("ST6", "", "\"porelo-other#EF01\""));
+        // A save writes the index of each repository it changed, here the own.
+        assertThat(IssuesIndex.writeForBoard(ownIssues, workflow).faults()).isEmpty();
+        final java.util.Map<String, String> warned = new java.util.TreeMap<>();
         for (final String name :
-                new String[] {"ST2.md", "ST3.md", "ST3-Copy.md", "ST4.md", "ST5.md"})
-            before.put(name, Files.readString(dir.resolve(name)));
+                List.of("ST2.md", "ST3.md", "ST4.md", "ST5.md", "ST5-Copy.md", "ST6.md"))
+            warned.put(name, Files.readString(stories.resolve(name)));
 
-        assertThat(StoriesIndex.writeForBoard(dir, source).faults())
-                .as("no fault for the warned stories")
+        assertThat(
+                        StoriesIndex.writeForBoard(
+                                        stories, IssueSource.localForBoard(own, workflow))
+                                .faults())
+                .as("no fault for a story naming a warned issue in either checkout")
                 .isEmpty();
 
-        assertThat(Files.readString(dir.resolve("README.md")))
-                .as("a row for the story the board shows without a warning alone")
+        assertThat(Files.readString(stories.resolve("README.md")))
+                .as("a row for the story naming no warned issue alone")
                 .contains("[ST1]")
-                .doesNotContain("[ST2]", "[ST3]", "[ST4]", "[ST5]");
-        final java.util.Map<String, String> after = new java.util.TreeMap<>();
-        for (final String name : before.keySet())
-            after.put(name, Files.readString(dir.resolve(name)));
-        assertThat(after).as("every warned story's file as it stood").isEqualTo(before);
-        assertThat(StoriesIndex.writeForBoard(dir, source).written())
+                .doesNotContain("[ST2]", "[ST3]", "[ST4]", "[ST5]", "[ST6]");
+        for (final java.util.Map.Entry<String, String> story : warned.entrySet())
+            assertThat(Files.readString(stories.resolve(story.getKey())))
+                    .as("%s as it stood", story.getKey())
+                    .isEqualTo(story.getValue());
+        assertThat(
+                        StoriesIndex.writeForBoard(
+                                        stories, IssueSource.localForBoard(own, workflow))
+                                .written())
                 .as("a second write changes nothing")
                 .isEmpty();
-        assertThat(StoriesIndex.write(dir, source).faults())
-                .as("the command's write still refuses each, with its own lines")
-                .hasSize(2)
-                .contains("ST3.md: id ST3 also stands in ST3-Copy.md")
-                .anySatisfy(
-                        fault ->
-                                assertThat(fault)
-                                        .startsWith("ST2.md: /state: ")
-                                        .endsWith("unknown state: Parked"));
-        // The command reads every head before it gives any story a row.
-        for (final String name : new String[] {"ST2.md", "ST3.md", "ST3-Copy.md"})
-            Files.delete(dir.resolve(name));
-        assertThat(StoriesIndex.write(dir, source).faults())
-                .as("the command's write still refuses the stories naming no indexed issue")
-                .containsExactly(
-                        "ST4.md: porelo-widget#AB02 is in no issue index of porelo-widget",
-                        "ST5.md: porelo-other#CD01 names a repository project.yml does not");
+        assertThat(StoriesIndex.write(stories, IssueSource.local(own, workflow)).faults())
+                .as("the command's write still refuses the warned stories, with its own lines")
+                .contains("ST5.md: id ST5 also stands in ST5-Copy.md")
+                .anySatisfy(fault -> assertThat(fault).startsWith("ST4.md: /state: "));
+        assertThatThrownBy(() -> IssueSource.local(own, workflow).index("porelo-project"))
+                .as("the command's source still refuses the own warned head")
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("AB02-One.md");
+        assertThatThrownBy(() -> IssueSource.local(own, workflow).index("porelo-widget"))
+                .as("and the other repository's id in two files")
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("CD02");
     }
 
-    // Prevents the board's write from writing a clean project's stories otherwise than the
-    // stories command does.
+    /** The recorded checkouts, copied, with every third story's head given in the second schema. */
+    private Path checkouts(String name) throws IOException {
+        final Path fixtures = Path.of("src/test/resources/checkouts");
+        final Path copied = work.resolve(name);
+        try (var files = Files.walk(fixtures)) {
+            for (final Path file : files.filter(Files::isRegularFile).toList()) {
+                final Path target = copied.resolve(fixtures.relativize(file));
+                Files.createDirectories(target.getParent());
+                Files.copy(file, target);
+            }
+        }
+        final Path stories = copied.resolve("porelo-project/stories");
+        try (var files = Files.list(stories)) {
+            int n = 0;
+            for (final Path file :
+                    files.filter(path -> path.getFileName().toString().startsWith("ST"))
+                            .sorted()
+                            .toList()) {
+                if (n++ % 3 != 0) continue;
+                String text = Files.readString(file);
+                final int head = text.lastIndexOf("```json\n{\n");
+                final String data = text.substring(head);
+                String second =
+                        data.replaceFirst("\\{\n", "{\n  \"\\$schema\": \"story-2.json\",\n");
+                // Beside issues the second schema states no state: the issues give it.
+                if (!data.contains("\"issues\": []"))
+                    second = second.replaceFirst("(?m)^  \"state\": .*\n", "");
+                Files.writeString(file, text.substring(0, head) + second);
+            }
+        }
+        return copied.resolve("porelo-project");
+    }
+
+    // Prevents the board's write from writing a project's stories otherwise than the stories
+    // command does, through the issue indexes read from the checkouts as each reads them.
     @Test
-    void forTheBoardACleanProjectsStoriesAreWrittenAsTheCommandWritesThem() throws IOException {
-        final Path command = fixture("command");
-        final Path board = fixture("board");
+    void forTheBoardTheRecordedProjectsStoriesAreWrittenAsTheCommandWritesThem()
+            throws IOException {
+        final Path command = checkouts("command");
+        final Path board = checkouts("board");
+        final Workflow workflow = Workflow.read(board.resolve("stories/workflow.yml"));
 
-        assertThat(StoriesIndex.write(command, SOURCE).faults()).isEmpty();
-        assertThat(StoriesIndex.writeForBoard(board, SOURCE).faults()).isEmpty();
+        assertThat(
+                        StoriesIndex.write(command.resolve("stories"), IssueSource.local(command))
+                                .faults())
+                .isEmpty();
+        assertThat(
+                        StoriesIndex.writeForBoard(
+                                        board.resolve("stories"),
+                                        IssueSource.localForBoard(board, workflow))
+                                .faults())
+                .isEmpty();
 
-        for (final String name : new String[] {"README.md", "ST1.md"})
-            assertThat(Files.readString(board.resolve(name)))
+        final java.util.List<String> names;
+        try (var files = Files.list(command.resolve("stories"))) {
+            names = files.map(file -> file.getFileName().toString()).sorted().toList();
+        }
+        assertThat(names).as("the index and every story").hasSize(296);
+        for (final String name : names)
+            assertThat(Files.readString(board.resolve("stories").resolve(name)))
                     .as("%s byte for byte", name)
-                    .isEqualTo(Files.readString(command.resolve(name)));
+                    .isEqualTo(Files.readString(command.resolve("stories").resolve(name)));
+        final String index = Files.readString(board.resolve("stories/README.md"));
+        assertThat(index)
+                .as("stories in open and closed states")
+                .contains("## Idea", "## Finished");
     }
 
     // Prevents a writer from truncating content held by an existing reader or hard link.

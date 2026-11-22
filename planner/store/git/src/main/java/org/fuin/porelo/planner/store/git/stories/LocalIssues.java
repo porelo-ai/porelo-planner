@@ -15,9 +15,17 @@ final class LocalIssues implements IssueSource {
     /** The project's workflow, or null to read each repository's own file. */
     private final @org.jspecify.annotations.Nullable Workflow workflow;
 
+    /** Whether each index is given as the board reads the heads, without the issues it warns of. */
+    private final boolean forBoard;
+
     LocalIssues(Path root, @org.jspecify.annotations.Nullable Workflow workflow) {
+        this(root, workflow, false);
+    }
+
+    LocalIssues(Path root, @org.jspecify.annotations.Nullable Workflow workflow, boolean forBoard) {
         this.root = root.toAbsolutePath().normalize();
         this.workflow = workflow;
+        this.forBoard = forBoard;
     }
 
     @Override
@@ -33,7 +41,7 @@ final class LocalIssues implements IssueSource {
         // Read only where needed, so a refused index page is named before a missing workflow.
         final Flow checked = () -> workflow != null ? workflow : Workflow.read(file);
         final StringBuilder text = new StringBuilder();
-        read(tree, "issues/README.md", new HashSet<>(), text, checked);
+        read(tree, "issues/README.md", new HashSet<>(), text, checked, forBoard);
         // A missing or ambiguous row is an unusable source, including across linked pages.
         IssueIndexes.read(text.toString(), repository, checked.get());
         return text.toString();
@@ -52,7 +60,12 @@ final class LocalIssues implements IssueSource {
     }
 
     private static void read(
-            Path tree, String path, Set<String> visited, StringBuilder text, Flow workflow)
+            Path tree,
+            String path,
+            Set<String> visited,
+            StringBuilder text,
+            Flow workflow,
+            boolean forBoard)
             throws IOException {
         if (!visited.add(path)) return;
         final Path file = tree.resolve(path);
@@ -66,7 +79,8 @@ final class LocalIssues implements IssueSource {
         final Path directory = java.util.Objects.requireNonNull(file.getParent());
         final String generated =
                 IssuesIndex.headed(directory)
-                        ? IssuesIndex.render(tree.resolve("issues"), directory, workflow.get())
+                        ? IssuesIndex.render(
+                                tree.resolve("issues"), directory, workflow.get(), forBoard)
                         : null;
         final String page = generated == null ? written : generated;
         text.append(IssueIndexes.page(path, file.toString(), page)).append('\n');
@@ -74,7 +88,7 @@ final class LocalIssues implements IssueSource {
         while (links.find()) {
             final String child = IssueIndexes.indexPath(path, links.group(2));
             if (child != null && child.endsWith("/README.md"))
-                read(tree, child, visited, text, workflow);
+                read(tree, child, visited, text, workflow, forBoard);
         }
     }
 }

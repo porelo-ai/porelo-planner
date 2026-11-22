@@ -774,7 +774,7 @@ public final class GitStore implements PlanningStore {
                         // As the board reads the stories, so one it warns about refuses no save.
                         org.fuin.porelo.planner.store.git.stories.StoriesIndex.writeForBoard(
                                 ownRoot.resolve("stories"),
-                                org.fuin.porelo.planner.store.git.stories.IssueSource.local(
+                                org.fuin.porelo.planner.store.git.stories.IssueSource.localForBoard(
                                         ownRoot, project(of(snapshot.parts(), own))));
             } catch (final IOException | UncheckedIOException e) {
                 throw new StoreException.Unreadable(own, local(e, scratch));
@@ -1112,8 +1112,9 @@ public final class GitStore implements PlanningStore {
         edit(snapshot, name, root, path, text -> HeadEdit.issueWorker(text, worker));
         final org.fuin.porelo.planner.store.git.stories.IssueHead head;
         try {
+            // Read as the board reads it: the worker is checked here, not the state it stood in.
             head =
-                    org.fuin.porelo.planner.store.git.stories.IssueHead.read(
+                    org.fuin.porelo.planner.store.git.stories.IssueHead.readForBoard(
                             Files.readString(root.resolve(path), StandardCharsets.UTF_8),
                             project(of(snapshot.parts(), repositories.get(0).name())));
         } catch (final IOException e) {

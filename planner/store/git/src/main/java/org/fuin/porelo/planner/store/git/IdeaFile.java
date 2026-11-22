@@ -233,7 +233,9 @@ final class IdeaFile {
             }
             try {
                 final IssueHead head =
-                        IssueHead.read(Files.readString(file, StandardCharsets.UTF_8), workflow);
+                        // A head the board warns about still holds its rank.
+                        IssueHead.readForBoard(
+                                Files.readString(file, StandardCharsets.UTF_8), workflow);
                 if (head != null) {
                     most = Math.max(most, head.rank());
                 }
