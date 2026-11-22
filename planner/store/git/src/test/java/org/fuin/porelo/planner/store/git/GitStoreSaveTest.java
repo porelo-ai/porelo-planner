@@ -49,6 +49,22 @@ class GitStoreSaveTest {
 
     private static final String OTHER = "porelo-other";
 
+    /**
+     * The work rules a real store carries: without a readable work.yml the store records a fault,
+     * and neither a move nor a correction is offered. Review alone is entered by work.
+     */
+    private static final String WORK =
+            """
+            work:
+              Review:
+                from: [Backlog]
+                done: Idea
+                per: story
+                modes: [UNATTENDED]
+                order: "Look at {story}."
+                models: {codex: gpt-6.1-sol}
+            """;
+
     private static final String WORKFLOW =
             """
             states:
@@ -757,7 +773,8 @@ class GitStoreSaveTest {
         // Harm: correcting a hand-edited story state moves its issues along, or rewrites more of
         // the person's file than its state.
         final String parked = story("ST4", "  \"state\": \"Parked\",\n", "\"porelo-store#AB01\"");
-        repositories.repository(OWN, Map.of("stories/ST4-Parked.md", parked));
+        repositories.repository(
+                OWN, Map.of("stories/ST4-Parked.md", parked, "stories/work.yml", WORK));
         final GitStore store = store();
         final Board board = store.board();
         assertThat(board.story("ST4").orElseThrow().warnings())
@@ -794,7 +811,8 @@ class GitStoreSaveTest {
         // Harm: a correction rewrites other files of the person's repository, or a confirm sent
         // again after a lost answer commits a second time.
         final String parked = story("ST4", "  \"state\": \"Parked\",\n", "\"porelo-store#AB01\"");
-        repositories.repository(OWN, Map.of("stories/ST4-Parked.md", parked));
+        repositories.repository(
+                OWN, Map.of("stories/ST4-Parked.md", parked, "stories/work.yml", WORK));
         final GitStore store = store();
         final Board board = store.board();
         final String before = head(OWN);
@@ -823,7 +841,7 @@ class GitStoreSaveTest {
         // Harm: giving a story without a state its state rewrites more of the person's head than
         // the one line it adds.
         final String bare = story("ST5", "", "\"porelo-store#AB01\"");
-        repositories.repository(OWN, Map.of("stories/ST5-Bare.md", bare));
+        repositories.repository(OWN, Map.of("stories/ST5-Bare.md", bare, "stories/work.yml", WORK));
         final GitStore store = store();
         final Board board = store.board();
         assertThat(board.story("ST5").orElseThrow().warnings())
