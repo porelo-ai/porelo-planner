@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The comment that holds one stage of an issue: the marker line, one line of words for a person,
- * and the stage's figures as a JSON block; and the sums an issue's stage comments add up to.
+ * and the stage's figures as a JSON block, with the number fields as they stood before the stage
+ * was added to them; and the sums an issue's stage comments add up to.
  */
 public final class StageComment {
 
@@ -60,6 +61,13 @@ public final class StageComment {
                     "vm_min",
                     "tokens");
 
+    /** The JSON field that holds the number fields a summed stage was added to. */
+    private static final String BASE = "base";
+
+    /** The number fields a base names, in the order they are written. */
+    private static final List<String> BASE_FIELDS =
+            List.of("wall_min", "vm_min", "tokens", "stages");
+
     private static final int MOST_TOKEN_KINDS = 32;
 
     /** The largest token count JSON carries exactly. */
@@ -91,12 +99,35 @@ public final class StageComment {
     public sealed interface Read {}
 
     /**
+     * The issue's number fields as they stood right before a stage was added to them.
+     *
+     * @param minutes the field Minutes
+     * @param vmMinutes the field VM minutes
+     * @param tokens the field Tokens
+     * @param stages the field Stages
+     */
+    public record Base(double minutes, double vmMinutes, double tokens, double stages) {
+
+        /** Requires finite figures. */
+        public Base {
+            if (!Double.isFinite(minutes)
+                    || !Double.isFinite(vmMinutes)
+                    || !Double.isFinite(tokens)
+                    || !Double.isFinite(stages)) {
+                throw new IllegalArgumentException("A stage's base is a finite number each");
+            }
+        }
+    }
+
+    /**
      * A stage comment read whole.
      *
      * @param entry the stage
      * @param end when it ended: the comment's {@code createdAt}
+     * @param base the number fields the stage was added to, or null when the comment names none, as
+     *     one written after its figures does
      */
-    public record Stage(StageEntry entry, Instant end) implements Read {
+    public record Stage(StageEntry entry, Instant end, @Nullable Base base) implements Read {
 
         /**
          * Answers when the stage started: its end less its minutes.
@@ -139,10 +170,11 @@ public final class StageComment {
      * Writes a stage as its comment.
      *
      * @param entry the stage
+     * @param base the number fields the stage is added to, or null for a stage not summed
      * @return the comment's text
      * @throws IllegalArgumentException when a value would not read back as written
      */
-    public static String write(final StageEntry entry) {
+    public static String write(final StageEntry entry, final @Nullable Base base) {
         checked(entry);
         final ObjectNode node = JSON.createObjectNode();
         node.put("key", entry.key());
@@ -155,6 +187,13 @@ public final class StageComment {
         node.put("vm_min", entry.vmMinutes());
         final ObjectNode tokens = node.putObject("tokens");
         entry.tokens().forEach(tokens::put);
+        if (base != null) {
+            final ObjectNode written = node.putObject(BASE);
+            written.put("wall_min", base.minutes());
+            written.put("vm_min", base.vmMinutes());
+            written.put("tokens", base.tokens());
+            written.put("stages", base.stages());
+        }
         final String json;
         try {
             // A fixed line feed, so the comment is the same on every system.
@@ -220,11 +259,13 @@ public final class StageComment {
         } catch (final JsonProcessingException e) {
             return Optional.of(broken(comment, "holds JSON that cannot be read"));
         }
+        final JsonNode written = node.isObject() ? ((ObjectNode) node).remove(BASE) : null;
         final StageEntry entry = entry(node);
-        if (entry == null) {
+        final Base base = written == null ? null : base(written);
+        if (entry == null || written != null && base == null) {
             return Optional.of(broken(comment, "holds a field or a value a stage cannot have"));
         }
-        return Optional.of(new Stage(entry, comment.createdAt()));
+        return Optional.of(new Stage(entry, comment.createdAt(), base));
     }
 
     /**
@@ -338,6 +379,22 @@ public final class StageComment {
             return null;
         }
         return entry;
+    }
+
+    /** The base a JSON block holds, or null when it holds other fields or values. */
+    private static @Nullable Base base(final JsonNode node) {
+        if (!node.isObject() || node.size() != BASE_FIELDS.size()) {
+            return null;
+        }
+        final double[] figures = new double[BASE_FIELDS.size()];
+        for (int at = 0; at < figures.length; at++) {
+            final JsonNode figure = node.get(BASE_FIELDS.get(at));
+            if (figure == null || !figure.isNumber() || !Double.isFinite(figure.asDouble())) {
+                return null;
+            }
+            figures[at] = figure.asDouble();
+        }
+        return new Base(figures[0], figures[1], figures[2], figures[3]);
     }
 
     private static @Nullable String text(final @Nullable JsonNode node) {

@@ -1069,7 +1069,7 @@ class FieldsBoardWriterTest {
         // Harm: a stage handed in twice counted twice in the issue's sums and shown twice.
         final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
         final GitHub github = new GitHub().holding(one);
-        github.standing.add(StageComment.write(stage("task-1:2", "implement")));
+        github.standing.add(StageComment.write(stage("task-1:2", "implement"), null));
 
         github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
 
@@ -1078,6 +1078,180 @@ class FieldsBoardWriterTest {
                 .as("the values written")
                 .extracting(FieldValue::fieldId)
                 .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
+    }
+
+    /** The item {@code one} with the number fields GitHub holds for it now. */
+    private static ItemView asGitHubHolds(final ItemView one, final GitHub github) {
+        final Map<String, String> fields = new LinkedHashMap<>(one.fields());
+        final Map<String, FieldValue> taken = github.values.getOrDefault(one.itemId(), Map.of());
+        for (final Map.Entry<String, String> name :
+                Map.of(
+                                "F_Minutes", FieldNames.MINUTES,
+                                "F_VM_minutes", FieldNames.VM_MINUTES,
+                                "F_Tokens", FieldNames.TOKENS,
+                                "F_Stages", FieldNames.STAGES)
+                        .entrySet()) {
+            final FieldValue value = taken.get(name.getKey());
+            if (value != null && value.number() != null) {
+                // As the board reads a number: a whole one without its fraction.
+                final double n = value.number();
+                fields.put(
+                        name.getValue(),
+                        n == Math.rint(n) ? Long.toString((long) n) : Double.toString(n));
+            }
+        }
+        for (final Map.Entry<String, String> name :
+                Map.of("F_Status", FieldNames.STATUS, "F_Size", FieldNames.SIZE).entrySet()) {
+            final FieldValue option = taken.get(name.getKey());
+            if (option != null && option.optionId() != null) {
+                fields.put(name.getValue(), option.optionId().substring("O_".length()));
+            }
+        }
+        return new ItemView(
+                one.itemId(),
+                one.issueId(),
+                one.repository(),
+                one.number(),
+                one.title(),
+                one.body(),
+                one.open(),
+                one.stateReason(),
+                fields,
+                one.labels(),
+                one.parentIssueId(),
+                one.subIssueIds(),
+                one.blockedByIds(),
+                one.comments(),
+                one.link(),
+                one.updatedAt(),
+                one.archived());
+    }
+
+    @Test
+    void aStageHandedInAgainAfterItsFiguresWereWrittenAddsThemOnce() {
+        // Harm: a stage whose save wrote the sums and then failed is counted twice when the
+        // window hands it in again, and the fields, which are what counts, stay wrong for good.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.STAGES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github = new GitHub().holding(one);
+        github.failingComment = 1;
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.class);
+        final ItemView now = asGitHubHolds(one, github);
+        github.holding(now);
+
+        github.writer().saveResult(snapshot(now), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("the sums as GitHub holds them after both tries")
+                .containsEntry("F_Minutes", FieldValue.number("PVTI_PL1", "F_Minutes", 14.5))
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 1.5))
+                .containsEntry("F_Tokens", FieldValue.number("PVTI_PL1", "F_Tokens", 300))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3));
+        assertThat(github.comments).as("the stage comment written once").hasSize(1);
+    }
+
+    @Test
+    void aStageHandedInAgainAfterGitHubTookItsSumsButNotItsStateAddsThemOnce() {
+        // Harm: a save GitHub took in part, the sums but not the state, counts the stage twice
+        // when the same result is handed in again, and the fields keep the double for good.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.STAGES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github =
+                new GitHub()
+                        .holding(one)
+                        .answering(
+                                values ->
+                                        new Batch<>(
+                                                values.stream()
+                                                        .map(
+                                                                value ->
+                                                                        value.fieldId()
+                                                                                        .equals(
+                                                                                                "F_Status")
+                                                                                ? Batch.Outcome
+                                                                                        .<String>
+                                                                                                refused(
+                                                                                                        "refused")
+                                                                                : Batch.Outcome.of(
+                                                                                        value
+                                                                                                .itemId()))
+                                                        .toList(),
+                                                null));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.PartlySaved.class);
+        final ItemView now = asGitHubHolds(one, github);
+        github.holding(now);
+
+        github.writer().saveResult(snapshot(now), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("the sums added once, the state written on the second try")
+                .containsEntry("F_Minutes", FieldValue.number("PVTI_PL1", "F_Minutes", 14.5))
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 1.5))
+                .containsEntry("F_Tokens", FieldValue.number("PVTI_PL1", "F_Tokens", 300))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3))
+                .containsEntry("F_Status", FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"));
+        assertThat(github.comments).as("the stage comment written once").hasSize(1);
+    }
+
+    @Test
+    void aStageHandedInAgainAfterItsCommentStoodButNoFieldWasWrittenAddsItsFiguresThen() {
+        // Harm: a stage whose comment was written but whose fields were refused is never counted,
+        // as the comment found on the second try is taken for the figures added.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.STAGES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github =
+                new GitHub()
+                        .holding(one)
+                        .answering(
+                                values ->
+                                        new Batch<>(
+                                                values.stream()
+                                                        .map(
+                                                                value ->
+                                                                        Batch.Outcome
+                                                                                .<String>refused(
+                                                                                        "refused"))
+                                                        .toList(),
+                                                null));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.class);
+        assertThat(github.comments).as("the comment written before the fields").hasSize(1);
+        final ItemView now = asGitHubHolds(one, github);
+        github.holding(now);
+
+        github.writer().saveResult(snapshot(now), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("the sums added on the second try")
+                .containsEntry("F_Minutes", FieldValue.number("PVTI_PL1", "F_Minutes", 14.5))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3));
+        assertThat(github.comments).as("no second comment").hasSize(1);
     }
 
     private static final Writes.Reason BUILT = new Writes.Reason("Finished", "Built as asked.");
@@ -1644,7 +1818,7 @@ class FieldsBoardWriterTest {
         final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
         final GitHub github = new GitHub().holding(one);
         github.pagesBefore = 1;
-        github.standing.add(StageComment.write(stage("task-1:2", "implement")));
+        github.standing.add(StageComment.write(stage("task-1:2", "implement"), null));
 
         github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
 

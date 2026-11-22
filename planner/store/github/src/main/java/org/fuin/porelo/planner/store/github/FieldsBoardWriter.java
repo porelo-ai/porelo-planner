@@ -681,37 +681,33 @@ public final class FieldsBoardWriter implements BoardWriter {
         }
 
         /**
-         * Adds a stage: its comment and its figures added to the number fields as they stand; a
-         * field without a value counts as 0.
+         * Adds a stage: its comment, which names the number fields as they stand, and its figures
+         * added to them; a field without a value counts as 0.
          */
         void stage(final String id, final ItemView item, final StageEntry entry) {
+            final StageComment.Base base =
+                    StageComment.summed(entry)
+                            ? new StageComment.Base(
+                                    base(id, item, FieldNames.MINUTES),
+                                    base(id, item, FieldNames.VM_MINUTES),
+                                    base(id, item, FieldNames.TOKENS),
+                                    base(id, item, FieldNames.STAGES))
+                            : null;
             final String comment;
             try {
-                comment = StageComment.write(entry);
+                comment = StageComment.write(entry, base);
             } catch (final IllegalArgumentException e) {
                 throw new StoreException.NotSavable(
                         id, "its stage cannot be written as a comment: " + e.getMessage());
             }
             items.putIfAbsent(id, item);
-            if (StageComment.summed(entry)) {
-                number(
-                        id,
-                        item,
-                        FieldNames.MINUTES,
-                        base(id, item, FieldNames.MINUTES) + entry.minutes());
-                number(
-                        id,
-                        item,
-                        FieldNames.VM_MINUTES,
-                        base(id, item, FieldNames.VM_MINUTES) + entry.vmMinutes());
-                number(
-                        id,
-                        item,
-                        FieldNames.TOKENS,
-                        base(id, item, FieldNames.TOKENS) + StageComment.newTokens(entry));
-                number(id, item, FieldNames.STAGES, base(id, item, FieldNames.STAGES) + 1);
+            if (base != null) {
+                number(id, item, FieldNames.MINUTES, base.minutes() + entry.minutes());
+                number(id, item, FieldNames.VM_MINUTES, base.vmMinutes() + entry.vmMinutes());
+                number(id, item, FieldNames.TOKENS, base.tokens() + StageComment.newTokens(entry));
+                number(id, item, FieldNames.STAGES, base.stages() + 1);
             }
-            stage = new Stage(id, entry.key(), comment);
+            stage = new Stage(id, entry.key(), comment, base);
         }
 
         private double base(final String id, final ItemView item, final String field) {
@@ -748,11 +744,12 @@ public final class FieldsBoardWriter implements BoardWriter {
         }
 
         /**
-         * Checks that no item changed since the board was read, then makes every call: bodies and
-         * open states first, field values next, then the links and the comments keeping reasons,
-         * the stage's comment last, so a body GitHub refuses leaves the state and the sums
-         * unwritten and the result can be handed in again, and a reason is kept only with an item
-         * closed.
+         * Checks that no item changed since the board was read, then makes every call: bodies
+         * first, the stage's comment next, field values and open states after it, then the links
+         * and the comments keeping reasons. A body or a stage comment GitHub refuses leaves the
+         * state and the sums unwritten, so the result can be handed in again; a stage comment that
+         * stands names the fields its figures were added to, so a result handed in again adds only
+         * to a field that still stands there; and a reason is kept only with an item closed.
          */
         void write(final String token) {
             pace = new WritePace(clock, sleeper, token);
@@ -764,8 +761,9 @@ public final class FieldsBoardWriter implements BoardWriter {
             final @Nullable Stage planned = stage;
             // The comments may take many calls, so they are read before the check, never between
             // the check and the write.
-            final @Nullable Stage toComment =
-                    planned == null || stageWritten(token, planned) ? null : planned;
+            final StageComment.@Nullable Stage found =
+                    planned == null ? null : stageWritten(token, planned);
+            final @Nullable Stage toComment = planned == null || found != null ? null : planned;
             // A reason kept by an earlier try of the same move is not written twice.
             final Map<String, Writes.Reason> toClose = new LinkedHashMap<>();
             closings.forEach(
@@ -791,13 +789,28 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final ItemView item = entry.getValue();
                 update(token, id, item, title, body, null, written);
             }
+            if (toComment != null) {
+                // Before the figures, so they are never added without the base they were added to.
+                final ItemView item = Objects.requireNonNull(items.get(toComment.id()));
+                try {
+                    github.createIssueComment(
+                            token,
+                            current.config().project().owner(),
+                            item.repository(),
+                            item.number(),
+                            toComment.comment());
+                } catch (final RuntimeException e) {
+                    throw failed(e, item.repository(), written, token);
+                }
+                written.add(item.repository());
+            }
             final List<Value> all = new ArrayList<>(values.values());
-            if (planned != null && toComment == null) {
-                // The stage stands already, so its figures were added with it.
+            if (planned != null && found != null) {
+                // The stage stands already: a field its figures were added to is left as it is.
                 all.removeIf(
                         value ->
                                 value.id().equals(planned.id())
-                                        && summedField(value.value().fieldId()));
+                                        && added(value.value().fieldId(), planned, found));
             }
             final String projectId = current.config().projectId();
             for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_BATCH) {
@@ -880,19 +893,41 @@ public final class FieldsBoardWriter implements BoardWriter {
                 }
                 written.add(item.repository());
             }
-            if (toComment != null) {
-                final ItemView item = Objects.requireNonNull(items.get(toComment.id()));
-                try {
-                    github.createIssueComment(
-                            token,
-                            current.config().project().owner(),
-                            item.repository(),
-                            item.number(),
-                            toComment.comment());
-                } catch (final RuntimeException e) {
-                    throw failed(e, item.repository(), written, token);
-                }
+        }
+
+        /**
+         * Whether a summed field of a stage that stands already holds its figures: always for a
+         * comment that names no base, which was written after them; else unless the field still
+         * stands at the base the comment names, so a save cut off before the field took its sum
+         * adds it once.
+         */
+        private boolean added(
+                final String fieldId, final Stage planned, final StageComment.Stage found) {
+            final StageComment.@Nullable Base before = found.base();
+            final StageComment.@Nullable Base now = planned.base();
+            if (!summedField(fieldId)) {
+                return false;
             }
+            if (before == null || now == null) {
+                return true;
+            }
+            final Map<String, String> ids = current.config().fieldIds();
+            final double was;
+            final double is;
+            if (fieldId.equals(ids.get(FieldNames.MINUTES))) {
+                was = before.minutes();
+                is = now.minutes();
+            } else if (fieldId.equals(ids.get(FieldNames.VM_MINUTES))) {
+                was = before.vmMinutes();
+                is = now.vmMinutes();
+            } else if (fieldId.equals(ids.get(FieldNames.TOKENS))) {
+                was = before.tokens();
+                is = now.tokens();
+            } else {
+                was = before.stages();
+                is = now.stages();
+            }
+            return Double.compare(was, is) != 0;
         }
 
         /** Writes an issue's title, text or open state, once more after a passing failure. */
@@ -1049,19 +1084,25 @@ public final class FieldsBoardWriter implements BoardWriter {
                     "it holds more comments than are read to find whether its reason stands");
         }
 
-        /** Whether the stage's comment stands on its issue already, found by its key. */
-        private boolean stageWritten(final String token, final Stage written) {
-            return holds(
+        /** The stage's comment as it stands on its issue already, found by its key, or null. */
+        private StageComment.@Nullable Stage stageWritten(final String token, final Stage written) {
+            final StageComment.Stage[] found = new StageComment.Stage[1];
+            holds(
                     token,
                     written.id(),
                     body -> {
                         final StageComment.Read read =
                                 StageComment.read(new CommentView("comment", body, Instant.EPOCH))
                                         .orElse(null);
-                        return read instanceof StageComment.Stage found
-                                && found.entry().key().equals(written.key());
+                        if (read instanceof StageComment.Stage stage
+                                && stage.entry().key().equals(written.key())) {
+                            found[0] = stage;
+                            return true;
+                        }
+                        return false;
                     },
                     "it holds more comments than are read to find whether its stage stands");
+            return found[0];
         }
 
         /** Whether one of an item's comments is found, reading at most the pages allowed. */
@@ -1168,8 +1209,9 @@ public final class FieldsBoardWriter implements BoardWriter {
      * @param id the issue's id
      * @param key the stage's key
      * @param comment the comment's text
+     * @param base the number fields its figures are added to, or null for a stage not summed
      */
-    private record Stage(String id, String key, String comment) {}
+    private record Stage(String id, String key, String comment, StageComment.@Nullable Base base) {}
 
     /**
      * What a person's change to an item shows in: its field values, its parent, its sub-issues, its

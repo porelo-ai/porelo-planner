@@ -17,22 +17,54 @@ class StageCommentTest {
     private static final Instant END = Instant.parse("2026-11-20T09:44:45Z");
 
     @Test
+    void aStageWrittenWithItsBaseIsReadBackWithIt() {
+        // Harm: a stage handed in again cannot tell whether its figures were added, as the
+        // fields they were added to are lost in the comment.
+        final StageEntry entry = stage("task-1:3", "implement", "agent", 30);
+        final StageComment.Base base = new StageComment.Base(10, 0.5, 300, 2);
+
+        final StageComment.Read read =
+                StageComment.read(new CommentView("IC_1", StageComment.write(entry, base), END))
+                        .orElseThrow();
+
+        assertThat(read).isEqualTo(new StageComment.Stage(entry, END, base));
+    }
+
+    @Test
+    void aStageCommentWhoseBaseIsNotFourNumbersIsBroken() {
+        // Harm: a base edited by hand taken for the fields a stage was added to.
+        final String written =
+                StageComment.write(
+                        stage("task-1:3", "implement", "agent", 30),
+                        new StageComment.Base(10, 0.5, 300, 2));
+
+        assertThat(
+                        StageComment.read(
+                                new CommentView(
+                                        "IC_1",
+                                        written.replace("\"stages\" : 2.0", "\"stages\" : \"two\""),
+                                        END)))
+                .as("a base with text for a figure")
+                .containsInstanceOf(StageComment.Broken.class);
+    }
+
+    @Test
     void aStageWrittenAndReadBackIsTheSameStageEndingWhenTheCommentWasMade() {
         // Harm: the course of an issue read back other than the planner wrote it, so the
         // velocity counts other minutes.
         final StageEntry entry = stage("task-1:3", "implement", "agent", 30);
 
         final StageComment.Read read =
-                StageComment.read(new CommentView("IC_1", StageComment.write(entry), END))
+                StageComment.read(new CommentView("IC_1", StageComment.write(entry, null), END))
                         .orElseThrow();
 
         assertThat(read)
                 .as("the stage, its end the comment's createdAt")
-                .isEqualTo(new StageComment.Stage(entry, END));
+                .isEqualTo(new StageComment.Stage(entry, END, null));
         assertThat(((StageComment.Stage) read).start())
                 .as("its start its end less its minutes")
                 .isEqualTo(END.minusSeconds(30 * 60));
-        assertThat(StageComment.write(entry))
+        assertThat(StageComment.write(entry, null))
                 .as("the marker as the first line, then the words, then the JSON block")
                 .startsWith(StageComment.MARKER + "\nimplement: done\n```json\n{");
     }
@@ -40,7 +72,8 @@ class StageCommentTest {
     @Test
     void aCommentWithoutTheMarkerAsItsFirstLineIsNoStageComment() {
         // Harm: a person's own comment counted, or named as broken, in an issue's sums.
-        final String written = StageComment.write(stage("task-1:3", "implement", "agent", 30));
+        final String written =
+                StageComment.write(stage("task-1:3", "implement", "agent", 30), null);
 
         assertThat(StageComment.read(new CommentView("IC_1", "Looks fine to me.", END)))
                 .as("a person's comment")
@@ -54,7 +87,8 @@ class StageCommentTest {
     void aHandEditedStageCommentIsAFaultLeftOutOfTheSumsAndNeverEchoed() {
         // Harm: a hand edit on GitHub crashing the board, turning the sums negative or infinite,
         // or its text leaking into a fault.
-        final String written = StageComment.write(stage("task-1:3", "implement", "agent", 30));
+        final String written =
+                StageComment.write(stage("task-1:3", "implement", "agent", 30), null);
         final Map<String, String> edits = new LinkedHashMap<>();
         edits.put(
                 "negative minutes",
@@ -131,7 +165,8 @@ class StageCommentTest {
                                             "high",
                                             1,
                                             0,
-                                            tokens)),
+                                            tokens),
+                                    null),
                             END));
         }
 
@@ -171,8 +206,8 @@ class StageCommentTest {
         final StageComment.Sums sums =
                 StageComment.sums(
                         List.of(
-                                new CommentView("IC_1", StageComment.write(first), END),
-                                new CommentView("IC_2", StageComment.write(retry), END)));
+                                new CommentView("IC_1", StageComment.write(first, null), END),
+                                new CommentView("IC_2", StageComment.write(retry, null), END)));
 
         assertThat(sums.minutes()).as("the first comment's minutes alone").isEqualTo(30);
         assertThat(sums.stages()).as("one stage").isEqualTo(1);
@@ -205,7 +240,8 @@ class StageCommentTest {
     }
 
     private static CommentView comment(final StageEntry entry) {
-        return new CommentView("IC_" + entry.key().hashCode(), StageComment.write(entry), END);
+        return new CommentView(
+                "IC_" + entry.key().hashCode(), StageComment.write(entry, null), END);
     }
 
     private static StageEntry stage(

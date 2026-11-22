@@ -150,7 +150,7 @@ class IssueMappingTest {
             comments.add(
                     new CommentView(
                             "IC_" + key,
-                            StageComment.write(entry),
+                            StageComment.write(entry, null),
                             Instant.parse("2026-01-02T00:00:00Z")));
             return this;
         }

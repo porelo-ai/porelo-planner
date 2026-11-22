@@ -1,0 +1,2 @@
+title: A stage result handed in again after a save that was cut off adds its figures to the issue's number fields once, as its stage comment, written first, names the fields it was added to.
+type: fixed

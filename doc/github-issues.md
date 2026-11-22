@@ -51,8 +51,9 @@ block opened in line 12 under Plan never closes". A read takes such a body and s
 
 Each stage is one comment, written with the person's access, so GitHub shows the person as its author. It starts
 with the line `<!-- porelo:stage -->`, says the stage and its result in words, and holds a JSON block: a key, the
-stage, the result, the actor, the model, the effort, the minutes, the VM minutes and the tokens by kind. The key
-names the task and the stage, so a stage written twice counts once.
+stage, the result, the actor, the model, the effort, the minutes, the VM minutes and the tokens by kind, and for a
+summed stage its `base`, the issue's Minutes, VM minutes, Tokens and Stages before the stage was added to them. The
+key names the task and the stage, so a stage written twice counts once.
 
 A stage ends at the comment's `createdAt`, the second GitHub wrote it, and starts that many minutes before; neither
 is stored. A person's move is no comment: GitHub's timeline shows each `Status` change with its time, its actor and
@@ -70,11 +71,14 @@ sentence after a reopen is written again. The Git store keeps no reason, and a p
 there is refused before anything is written.
 
 The comments are the course of the work and the number fields its sums. A stage's save adds its minutes, VM minutes,
-new tokens and one stage to the fields as they stand right before the write, in the same call as its state, and
-writes its comment beside. A field without a value counts as 0, and a value a person set stays the base later stages
-add to; the planner never sums the comments again. A stage whose comment, found by its key, already stands is
-neither written nor added again. Only an agent's stages of the measured kinds are added, as the Markdown store's
-stage records count them; a pause and a person's move are shown, not summed.
+new tokens and one stage to the fields as the board read them, in the same call as its state, and refuses the save,
+naming the issue, when GitHub's value changed since. Its comment is written before the fields and names, as `base`,
+the four fields as they stood before the stage was added to them. A field without a value counts as 0, and a value a
+person set stays the base later stages add to; the planner never sums the comments again. A stage whose comment,
+found by its key, already stands is not written again, and its figures are added only to a field that still stands
+at the comment's base, so a result handed in again after a save cut off between the comment and the fields counts
+the stage once; with a comment that names no base, none is added again. Only an agent's stages of the measured kinds
+are added, as the Markdown store's stage records count them; a pause and a person's move are shown, not summed.
 
 ## States and ids
 
@@ -127,8 +131,9 @@ the moment between that read and the write is not caught.
 
 Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
 part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
-in, and the board is read anew. An issue's body and open state are written first, its field values next and a
-stage's comment last, so a body GitHub refuses leaves the issue in its state and the result can be handed in again.
+in, and the board is read anew. An issue's body is written first, a stage's comment next, its field values after
+it and its open state after them, so a body or a stage comment GitHub refuses leaves the issue in its state and the
+result can be handed in again.
 A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
