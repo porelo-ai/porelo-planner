@@ -34,6 +34,18 @@ public final class Touched {
             numbered = Set.copyOf(numbered);
             databaseIds = Set.copyOf(databaseIds);
         }
+
+        /**
+         * Answers whether nothing was touched.
+         *
+         * @return whether every set is empty
+         */
+        public boolean none() {
+            return issues.isEmpty()
+                    && items.isEmpty()
+                    && numbered.isEmpty()
+                    && databaseIds.isEmpty();
+        }
     }
 
     private final Set<String> issues = new LinkedHashSet<>();

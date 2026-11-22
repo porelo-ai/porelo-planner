@@ -127,6 +127,69 @@ class ChangesTest {
     }
 
     @Test
+    void aReloadIsNotedWhileItWaitsBehindAFetchUnderWayAndEndedAfterIt() throws Exception {
+        // Harm: a Reload queued behind the planner's own poll is told as that poll's look, so the
+        // window offers Reload again when the look ends, before the read asked for began.
+        final java.util.concurrent.CountDownLatch reading =
+                new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        final AtomicInteger asked = new AtomicInteger();
+        final AtomicInteger refreshedWhileAsked = new AtomicInteger();
+        final FakeStore slow =
+                new FakeStore() {
+                    @Override
+                    public Board poll() {
+                        reading.countDown();
+                        try {
+                            release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return board();
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        refreshedWhileAsked.set(asked.get());
+                        return super.refresh();
+                    }
+
+                    @Override
+                    public void reloadAsked() {
+                        asked.incrementAndGet();
+                    }
+
+                    @Override
+                    public void reloadEnded() {
+                        asked.decrementAndGet();
+                    }
+                };
+        final Changes held = new Changes(slow, idle::incrementAndGet);
+        final Thread fetch = Thread.ofVirtual().start(held::pollOnSchedule);
+        final Thread reload;
+        try {
+            assertThat(reading.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the fetch reading")
+                    .isTrue();
+            reload = Thread.ofVirtual().start(held::poll);
+            final long until = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (asked.get() == 0) {
+                assertThat(System.nanoTime()).as("the Reload noted").isLessThan(until);
+                Thread.onSpinWait();
+            }
+            assertThat(slow.refreshes.get()).as("the Reload's reads begun").isZero();
+        } finally {
+            release.countDown();
+            fetch.join();
+        }
+        reload.join();
+
+        assertThat(refreshedWhileAsked.get()).as("the Reload noted while it reads").isOne();
+        assertThat(asked.get()).as("the Reloads noted after it").isZero();
+    }
+
+    @Test
     void aSaveToldAfterANewerPollNeverTellsTheOlderBoard() throws Exception {
         // A window would go back to a board a push elsewhere has already replaced.
         final Changes.Subscription one = changes.subscribe();

@@ -90,7 +90,13 @@ public final class Changes {
      * @throws RuntimeException what the store's refresh threw; no subscription is told anything
      */
     public Board poll() {
-        return fetched(store::refresh);
+        // Told as a whole read while it waits behind a fetch under way, a look among them.
+        store.reloadAsked();
+        try {
+            return fetched(store::refresh);
+        } finally {
+            store.reloadEnded();
+        }
     }
 
     /**

@@ -314,4 +314,13 @@ public interface PlanningStore {
     default java.util.Optional<ReadProgress> reading() {
         return java.util.Optional.empty();
     }
+
+    /**
+     * Notes a Reload asked for before it may wait behind a fetch under way, so {@link #reading()}
+     * tells its whole read from that moment; each is ended by {@link #reloadEnded()}.
+     */
+    default void reloadAsked() {}
+
+    /** Ends a Reload {@link #reloadAsked()} noted, whether its read ended or failed. */
+    default void reloadEnded() {}
 }

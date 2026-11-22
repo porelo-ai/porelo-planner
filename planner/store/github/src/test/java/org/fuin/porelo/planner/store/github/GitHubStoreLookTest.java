@@ -389,6 +389,12 @@ class GitHubStoreLookTest {
                             final Snapshot current, final Revision revision, final NewIssue issue) {
                         throw new AssertionError("No issue is made here");
                     }
+
+                    @Override
+                    public void comment(
+                            final Snapshot current, final String issue, final String text) {
+                        save.get().accept(recorded);
+                    }
                 };
         return new GitHubStore(
                 CONFIG,
@@ -807,6 +813,217 @@ class GitHubStoreLookTest {
         assertThat(told.get())
                 .as("the read told while both run")
                 .isEqualTo(org.fuin.porelo.planner.store.ReadProgress.Kind.WHOLE);
+    }
+
+    @Test
+    void aReloadAskedWhileALookRunsIsToldAsAWholeReadUntilItEnds() throws Exception {
+        // Harm: a Reload waiting behind the planner's own look is told as that look, so the
+        // window offers Reload again when the look ends, while the read asked for has not begun.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        store.refresh();
+        store.poll();
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        github.onList =
+                () -> {
+                    looking.countDown();
+                    try {
+                        assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                };
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look under way").isTrue();
+        final org.fuin.porelo.planner.store.ReadProgress asked;
+        final org.fuin.porelo.planner.store.ReadProgress ended;
+        try {
+            store.reloadAsked();
+            asked = store.reading().orElseThrow();
+            store.reloadEnded();
+            ended = store.reading().orElseThrow();
+        } finally {
+            release.countDown();
+            poller.join(5000);
+        }
+
+        assertThat(failed.get()).as("a failure of the poll").isNull();
+        assertThat(asked.kind())
+                .as("the read told while the Reload waits behind the look")
+                .isEqualTo(org.fuin.porelo.planner.store.ReadProgress.Kind.WHOLE);
+        assertThat(asked.read()).as("the items the Reload read").isZero();
+        assertThat(ended.kind())
+                .as("the read told once the Reload ended")
+                .isEqualTo(org.fuin.porelo.planner.store.ReadProgress.Kind.LOOK);
+    }
+
+    @Test
+    void aWholeReadBesideALookWaitingForASaveIsNotToldAsWaiting() throws Exception {
+        // Harm: a Reload's read that runs says it waits for a save, because a look beside it
+        // waits for one.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final CountDownLatch inSave = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final GitHubStore store = store(github, new AtomicReference<>(held(inSave, release)));
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        github.answered.set(false);
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread saver = new Thread(() -> run(() -> save(store), failed), "saver");
+        saver.start();
+        assertThat(inSave.await(5, TimeUnit.SECONDS)).as("the save under way").isTrue();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        final long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!(github.answered.get() && poller.getState() == Thread.State.TIMED_WAITING)) {
+            assertThat(System.nanoTime()).as("the look waiting for the save").isLessThan(until);
+            Thread.onSpinWait();
+        }
+        final CountDownLatch toldWhole = new CountDownLatch(1);
+        final AtomicReference<org.fuin.porelo.planner.store.@Nullable ReadProgress> told =
+                new AtomicReference<>();
+        github.onItems =
+                () -> {
+                    told.set(store.reading().orElse(null));
+                    toldWhole.countDown();
+                };
+        final Thread reader = new Thread(() -> run(store::refresh, failed), "reader");
+        reader.start();
+        try {
+            assertThat(toldWhole.await(5, TimeUnit.SECONDS)).as("the whole read").isTrue();
+        } finally {
+            release.countDown();
+            saver.join(5000);
+            poller.join(5000);
+            reader.join(5000);
+        }
+
+        assertThat(failed.get()).as("a failure of the save, the poll or the read").isNull();
+        assertThat(told.get())
+                .as("the whole read told while it reads")
+                .satisfies(
+                        progress -> {
+                            assertThat(progress.kind())
+                                    .isEqualTo(
+                                            org.fuin.porelo.planner.store.ReadProgress.Kind.WHOLE);
+                            assertThat(progress.waitsFor()).as("what it waits for").isNull();
+                        });
+    }
+
+    @Test
+    void aWholeReadWaitingBehindASaveTellsTheTimeItBegan() throws Exception {
+        // Harm: a whole read that read its items and waits for a save to end says it began just
+        // now, so the window's time of the read starts over.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final CountDownLatch inSave = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final GitHubStore store = store(github, new AtomicReference<>(held(inSave, release)));
+        store.refresh();
+        final AtomicReference<java.time.@Nullable Instant> listing = new AtomicReference<>();
+        github.onItems =
+                () -> {
+                    final java.time.Instant at = java.time.Instant.now();
+                    try {
+                        Thread.sleep(20);
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    // Told after the pause, so the read is seen waiting only for the lock.
+                    listing.set(at);
+                };
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread saver = new Thread(() -> run(() -> save(store), failed), "saver");
+        saver.start();
+        assertThat(inSave.await(5, TimeUnit.SECONDS)).as("the save under way").isTrue();
+        final Thread reader = new Thread(() -> run(store::refresh, failed), "reader");
+        reader.start();
+        final org.fuin.porelo.planner.store.ReadProgress waiting;
+        try {
+            final long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!(listing.get() != null && reader.getState() == Thread.State.TIMED_WAITING)) {
+                assertThat(System.nanoTime()).as("the read waiting for the save").isLessThan(until);
+                Thread.onSpinWait();
+            }
+            waiting = store.reading().orElseThrow();
+        } finally {
+            release.countDown();
+            saver.join(5000);
+            reader.join(5000);
+        }
+
+        assertThat(failed.get()).as("a failure of the save or the read").isNull();
+        assertThat(waiting.waitsFor()).as("what the read waits for").isEqualTo("save");
+        assertThat(waiting.since())
+                .as("when the read began, before it listed the items")
+                .isBefore(listing.get());
+    }
+
+    @Test
+    void aLookWaitingBehindACommentTellsThatItWaits() throws Exception {
+        // Harm: a look waiting while a comment holds the project shows a count that stands still
+        // without saying why.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final CountDownLatch inComment = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final GitHubStore store = store(github, new AtomicReference<>(held(inComment, release)));
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        github.answered.set(false);
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread commenter =
+                new Thread(
+                        () -> run(() -> store.comment("example-project#1", "A note"), failed),
+                        "commenter");
+        commenter.start();
+        assertThat(inComment.await(5, TimeUnit.SECONDS)).as("the comment under way").isTrue();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        final org.fuin.porelo.planner.store.ReadProgress waiting;
+        try {
+            final long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!(github.answered.get() && poller.getState() == Thread.State.TIMED_WAITING)) {
+                assertThat(System.nanoTime())
+                        .as("the look waiting for the comment")
+                        .isLessThan(until);
+                Thread.onSpinWait();
+            }
+            waiting = store.reading().orElseThrow();
+        } finally {
+            release.countDown();
+            commenter.join(5000);
+            poller.join(5000);
+        }
+
+        assertThat(failed.get()).as("a failure of the comment or the poll").isNull();
+        assertThat(waiting.waitsFor()).as("what the look waits for").isEqualTo("save");
+    }
+
+    /** A write that says it began and holds the lock until released. */
+    private static Consumer<ProjectWrites> held(
+            final CountDownLatch began, final CountDownLatch release) {
+        return writes -> {
+            began.countDown();
+            try {
+                assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        };
     }
 
     private static void run(

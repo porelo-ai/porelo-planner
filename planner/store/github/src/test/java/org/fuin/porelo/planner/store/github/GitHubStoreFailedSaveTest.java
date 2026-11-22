@@ -101,10 +101,15 @@ class GitHubStoreFailedSaveTest {
         final AtomicInteger whole = new AtomicInteger();
         final List<Touched.Ids> byId = new ArrayList<>();
         @Nullable RuntimeException byIdFailure;
+        @Nullable RuntimeException wholeFailure;
 
         @Override
         public Snapshot read(final ProjectConfig config) {
-            return board("r" + whole.incrementAndGet());
+            final int count = whole.incrementAndGet();
+            if (wholeFailure != null) {
+                throw wholeFailure;
+            }
+            return board("r" + count);
         }
 
         @Override
@@ -249,5 +254,85 @@ class GitHubStoreFailedSaveTest {
                 .as("the board read whole anew")
                 .isEqualTo("r2");
         assertThat(reads.whole.get()).as("whole reads").isEqualTo(2);
+    }
+
+    @Test
+    void aStaleSaveWhoseReadAgainFailsNamesNoRevisionToSaveAgainst() {
+        // Harm: the window is told the revision it showed is current, saves against it again
+        // and is refused again, the board never read anew.
+        final Reads reads = new Reads();
+        final GitHubStore store =
+                store(
+                        reads,
+                        (current, writes) -> {
+                            throw new StoreException.StaleRevision(
+                                    current.board().revision().value(), "PL1");
+                        });
+        store.board();
+        reads.byIdFailure = new IllegalStateException("HTTP 502 again");
+
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("a save over an item a person changed")
+                .isInstanceOfSatisfying(
+                        StoreException.StaleRevision.class,
+                        stale -> {
+                            assertThat(stale.current())
+                                    .as("the revision named")
+                                    .isEqualTo(GitHubStore.UNREAD);
+                            assertThat(stale.changed()).as("the item named").isEqualTo("PL1");
+                        });
+        assertThat(store.board().revision().value())
+                .as("the board read whole anew")
+                .isEqualTo("r2");
+    }
+
+    @Test
+    void aStaleSaveNamingAnItemTheBoardLacksNamesTheBoardReadWholeAnew() {
+        // Harm: an item a person added since the board was read stays off it, and the window is
+        // told a revision that does not show it.
+        final Reads reads = new Reads();
+        final GitHubStore store =
+                store(
+                        reads,
+                        (current, writes) -> {
+                            throw new StoreException.StaleRevision(
+                                    current.board().revision().value(), "PL9");
+                        });
+        store.board();
+
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("a save over an item the board lacks")
+                .isInstanceOfSatisfying(
+                        StoreException.StaleRevision.class,
+                        stale ->
+                                assertThat(stale.current())
+                                        .as("the revision named")
+                                        .isEqualTo("r2"));
+        assertThat(reads.byId).as("reads by id").isEmpty();
+        assertThat(store.board().revision().value()).as("the board held").isEqualTo("r2");
+    }
+
+    @Test
+    void aStaleSaveNamingAnItemTheBoardLacksNamesNoRevisionWhenTheBoardCannotBeRead() {
+        // Harm: the window is told the revision it showed is current and is refused without end.
+        final Reads reads = new Reads();
+        final GitHubStore store =
+                store(
+                        reads,
+                        (current, writes) -> {
+                            throw new StoreException.StaleRevision(
+                                    current.board().revision().value(), "PL9");
+                        });
+        store.board();
+        reads.wholeFailure = new IllegalStateException("HTTP 502");
+
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("a save over an item the board lacks")
+                .isInstanceOfSatisfying(
+                        StoreException.StaleRevision.class,
+                        stale ->
+                                assertThat(stale.current())
+                                        .as("the revision named")
+                                        .isEqualTo(GitHubStore.UNREAD));
     }
 }

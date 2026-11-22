@@ -202,12 +202,14 @@ paths:
         changes retain the revision, including a cancellation or Needs you. Saves, polls and `refresh` publish the
         current board and work snapshot. A comment line `: keep-alive` comes every 15 s while nothing changes; a
         reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
-        current board first. An unknown project is refused before the stream starts. While the store reads the whole
-        board, event `load` tells the read's progress at least every 5 s, its `data` `{"state": "reading", "since",
-        "read", "total", "lastRead", "from", "kind", "waitsFor"}`. `kind` is `whole` (also when it is absent) for a
-        read of the whole board, item by item, or `look` for a look at the board's item list for what changed since
-        the board held, which counts the items its list showed. `waitsFor` is `save` while the read waits for a save
-        of the planner to end, and absent while it reads. A reader ignores a `kind` or `waitsFor` it does not know:
+        current board first. An unknown project is refused before the stream starts. While the store reads the board,
+        whole or by a look, event `load` tells the read's progress at least every 5 s, its `data` `{"state":
+        "reading", "since", "read", "total", "lastRead", "from", "kind", "waitsFor"}`. `kind` is `whole` (also when it
+        is absent) for a read of the whole board, item by item, a `refresh` told so from the moment it is asked, even
+        while it waits behind a look; or `look` for a look at the board's item list for what changed since the board
+        held, whose `read` counts the items its list showed so far and whose `total` is the larger of the items the
+        board holds and those listed so far. `waitsFor` is `save` while the read told waits for the project a save or
+        comment of the planner holds, and absent otherwise. A reader ignores a `kind` or `waitsFor` it does not know:
         an unknown `kind` counts as `whole`, an unknown `waitsFor` as absent. A read ends with its `board`, with
         `load` `{"state": "done"}` when it
         changed nothing, or with `load` `{"state": "failed", "problem", "failure", "parameters"}`: before the first

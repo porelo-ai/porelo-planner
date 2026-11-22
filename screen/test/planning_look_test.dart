@@ -118,6 +118,27 @@ void main() {
     source.refreshHeld!.complete();
   });
 
+  // Harm: the end of a look a Reload waited behind offers Reload again before the Reload's read began, and a second
+  // press asks for a second fetch.
+  test('a look\'s end leaves Reload held while the whole read asked for waits', () async {
+    final (source, board) = await _liveBoard();
+    source.load.value = _told({'kind': 'look', 'read': 5, 'total': 9});
+    await _turns();
+    unawaited(board.reloadPlanning());
+    await _turns();
+    // The planner tells the Reload as a whole read from the moment it is asked, while the look still runs.
+    source.load.value = _told({'read': 0});
+    await _turns();
+    // The look ends with its board; the Reload's read has not begun.
+    source.send();
+    await _turns();
+    expect(board.reloadHeld, isTrue, reason: 'the whole read asked for waits');
+    source.load.value = null;
+    source.send();
+    await _turns();
+    expect(board.reloadHeld, isFalse, reason: 'the whole read ended with its board');
+  });
+
   // Harm: a look shown as a bar over the board, as if the whole board were loaded again.
   testWidgets('a look on a live board is a line of words, never a bar', (tester) async {
     tester.view
