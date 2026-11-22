@@ -1778,7 +1778,6 @@ class _BoardViewState extends State<_BoardView> {
       story,
       Theme.of(context),
       board.preferences.expandedStories.contains(story.id),
-      board.preferences.foldedStories.contains(story.id),
       _foundIn(story).join(' '),
       _work(story),
       _needsYou(story),
@@ -1820,7 +1819,6 @@ class _BoardViewState extends State<_BoardView> {
     // A found issue opens its list while the search stands, without changing the person's own choice.
     final open = board.preferences.expandedStories.contains(story.id) || found.isNotEmpty;
     final work = _work(story);
-    final cardFolded = board.preferences.foldedStories.contains(story.id);
     return _drag(
       story,
       Card(
@@ -1834,35 +1832,32 @@ class _BoardViewState extends State<_BoardView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: Space.small,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_line(story.id), style: theme.textTheme.labelMedium),
-                    _priority(context, story.priority ?? ''),
-                    ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
-                    ?planningRuleMark(board.rulesOf(story.id), key: Key('planning-rule ${story.id}')),
-                    ?_size(context, story.size, key: 'planning-size ${story.id}'),
-                    _menu(story),
-                    IconButton(
-                      key: Key('planning-fold-story ${story.id}'),
-                      tooltip: '${cardFolded ? 'Unfold' : 'Fold'} ${_line(story.id)}',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: story.id.isEmpty ? null : () => board.foldStory(story.id),
-                      icon: Icon(cardFolded ? Icons.unfold_more : Icons.unfold_less, size: PlanningStyle.rowIcon),
+                    Expanded(
+                      child: Wrap(
+                        spacing: Space.small,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(_line(story.id), style: theme.textTheme.labelMedium),
+                          _priority(context, story.priority ?? ''),
+                          ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
+                          ?planningRuleMark(board.rulesOf(story.id), key: Key('planning-rule ${story.id}')),
+                          ?_size(context, story.size, key: 'planning-size ${story.id}'),
+                        ],
+                      ),
                     ),
+                    _menu(story),
                   ],
                 ),
-                if (!cardFolded) ...[
-                  const SizedBox(height: Space.small),
-                  Text(_line(story.title)),
-                  if (_offered) ...[const SizedBox(height: Space.small), _openWork(context, story)],
-                ],
+                const SizedBox(height: Space.small),
+                Text(_line(story.title)),
+                if (_offered) ...[const SizedBox(height: Space.small), _openWork(context, story)],
                 if (board.pending.containsKey(story.id)) const Text('Saving…'),
                 if (board.pendingPriorities[story.id] case final priority?)
                   Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),
-                if (cardFolded) ...[
-                  if (_needsYou(story)) _warning(story),
-                ] else ...[
+                ...[
                   if (work != null && work.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: Space.small),

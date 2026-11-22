@@ -66,9 +66,6 @@ class PlanningPreferences {
   /// States whose card shows all issues in no story rather than the first twenty.
   final Set<String> allNoStoryStates = {};
 
-  /// Stories folded to their number, priority and size.
-  final Set<String> foldedStories = {};
-
   /// Stories whose page shows its description folded to its heading.
   final Set<String> foldedDescriptions = {};
 
@@ -1116,7 +1113,6 @@ class PlanningBoard extends ChangeNotifier {
     final sameProject = identical(backend, next) && project == name;
     // Story ids repeat across projects, so a fold made in one must not fold a card of another.
     if (project != name) {
-      preferences.foldedStories.clear();
       preferences.expandedNoStoryStates.clear();
       preferences.allNoStoryStates.clear();
     }
@@ -1716,11 +1712,6 @@ class PlanningBoard extends ChangeNotifier {
         : accepted;
     snapshot = reply;
     _readingNoStory = _readNoStory(reply, _generation, reconcile: reconcile);
-    // A story gone from the board loses its fold, so one saved anew under its id starts open.
-    if (reply.storiesReported) {
-      final shown = {for (final story in reply.stories) story.id};
-      preferences.foldedStories.removeWhere((id) => !shown.contains(id));
-    }
     if (reply.repositoriesReported) _repositories = List.unmodifiable(reply.repositories);
     for (final story in reply.stories) {
       runOf(story.id).observe(story.work);
@@ -2158,12 +2149,6 @@ class PlanningBoard extends ChangeNotifier {
   /// Toggles one state.
   void foldState(String name) {
     _toggle(preferences.foldedStates, name);
-  }
-
-  /// Folds or unfolds one story's card; an id the board does not show is ignored.
-  void foldStory(String id) {
-    if (!stories.any((story) => story.id == id)) return;
-    _toggle(preferences.foldedStories, id);
   }
 
   /// Toggles the card of issues in no story for one state.

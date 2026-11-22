@@ -153,16 +153,12 @@ void main() {
   });
 
   // Harm: a reading that waits on the person stays unseen behind a fold.
-  testWidgets('a stopped reading is marked on a folded box, a folded card and a narrowed tile', (tester) async {
+  testWidgets('a stopped reading is marked on a folded box and a narrowed tile', (tester) async {
     await _show(tester, [_story('S1', 'Ready', readingStopped: true), _story('S2', 'Building')]);
 
     await _press(tester, 'planning-fold-state Ready');
     expect(find.byKey(const Key('planning-state-raised Ready')), findsOneWidget, reason: 'the folded box counts it');
     await _press(tester, 'planning-fold-state Ready');
-
-    await _press(tester, 'planning-fold-story S1');
-    expect(find.byKey(const Key('planning-warning S1')), findsOneWidget, reason: 'the folded card marks it');
-    await _press(tester, 'planning-fold-story S1');
 
     await _press(tester, 'planning-fold-phase Work');
     expect(find.byKey(const Key('planning-needs-you S1')), findsOneWidget, reason: 'the narrowed tile marks it');
@@ -194,39 +190,6 @@ void main() {
       findsOneWidget,
       reason: 'the refusal and why',
     );
-  });
-
-  // Harm: a fold that reaches other cards hides their work, a stale card hides the unfold, or a fold hides a need.
-  testWidgets('folding one card hides its title alone, keeps its need of you, and unfolds again', (tester) async {
-    await _show(tester, [_story('S1', 'Ready', needsYou: true), _story('S2', 'Ready')]);
-
-    await _press(tester, 'planning-fold-story S1');
-
-    expect(find.text('Title of S1'), findsNothing, reason: 'the folded card hides its title');
-    expect(find.text('Title of S2'), findsOneWidget, reason: 'the card beside it stays open');
-    expect(find.byKey(const Key('planning-warning S1')), findsOneWidget, reason: 'it still says it needs you');
-
-    await _press(tester, 'planning-fold-story S1');
-    expect(find.text('Title of S1'), findsOneWidget, reason: 'the card is built anew, not served folded');
-  });
-
-  // Harm: a fold kept for a story gone from the board folds another story saved under its id, or another project's.
-  testWidgets('a fold is kept only for a story the board shows', (tester) async {
-    final (backend, boards) = await _show(tester, [_story('S1', 'Ready'), _story('S2', 'Ready')]);
-    final board = boards.selected!;
-
-    board.foldStory('S9');
-    await _press(tester, 'planning-fold-story S1');
-    expect(board.preferences.foldedStories, {'S1'}, reason: 'an id the board does not show is not folded');
-
-    backend.push('demo', _board([_story('S2', 'Ready')]));
-    await settle(tester);
-    expect(board.preferences.foldedStories, isEmpty, reason: 'the story left the board, and its fold with it');
-
-    await _press(tester, 'planning-fold-story S2');
-    backend.boards['other'] = _board([_story('S2', 'Ready')]);
-    await tester.runAsync(() => board.changeProject(backend, 'other'));
-    expect(board.preferences.foldedStories, isEmpty, reason: 'another project\'s S2 is another story');
   });
 
   // Harm: a wrong size is planned on, or a server's text is shown as if it were a size.
