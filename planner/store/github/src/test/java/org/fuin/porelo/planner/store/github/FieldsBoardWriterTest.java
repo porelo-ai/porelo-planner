@@ -12,6 +12,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.fuin.porelo.forge.github.Batch;
@@ -1128,9 +1129,9 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void aStageHandedInAgainAfterItsFiguresWereWrittenAddsThemOnce() {
-        // Harm: a stage whose save wrote the sums and then failed is counted twice when the
-        // window hands it in again, and the fields, which are what counts, stay wrong for good.
+    void aStageCommentGitHubRefusesLeavesTheFieldsAsTheyWereAndTheResultHandedInAgainAddsOnce() {
+        // Harm: a stage comment GitHub refuses leaves sums written without it, so the result
+        // handed in again is refused for the state it already moved to, or adds its figures twice.
         final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
         fields.put(FieldNames.MINUTES, "10");
         fields.put(FieldNames.STAGES, "2");
@@ -1145,6 +1146,12 @@ class FieldsBoardWriterTest {
                                                 analysis(),
                                                 stage("task-1:2", "implement")))
                 .isInstanceOf(StoreException.class);
+        assertThat(
+                        github.calls.subList(
+                                github.calls.indexOf("createIssueComment"), github.calls.size()))
+                .as("no value written after the refused comment")
+                .doesNotContain("setFieldValues");
+        assertThat(github.values).as("no field written").isEmpty();
         final ItemView now = asGitHubHolds(one, github);
         github.holding(now);
 
@@ -1209,6 +1216,89 @@ class FieldsBoardWriterTest {
                 .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3))
                 .containsEntry("F_Status", FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"));
         assertThat(github.comments).as("the stage comment written once").hasSize(1);
+    }
+
+    /** Answers a batch by saving only the values of the fields named. */
+    private static Batch<String> savingOnly(
+            final List<FieldValue> values, final Set<String> fieldIds) {
+        return new Batch<>(
+                values.stream()
+                        .map(
+                                value ->
+                                        fieldIds.contains(value.fieldId())
+                                                ? Batch.Outcome.of(value.itemId())
+                                                : Batch.Outcome.<String>refused("refused"))
+                        .toList(),
+                null);
+    }
+
+    @Test
+    void aStageHandedInAgainAfterGitHubTookOneSumAloneAddsEachSumOnce() {
+        // Harm: a save GitHub took for one summed field only is judged as a whole when handed in
+        // again, so that field gets the stage twice or the others never get it.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.STAGES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github =
+                new GitHub()
+                        .holding(one)
+                        .answering(values -> savingOnly(values, Set.of("F_Minutes")));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.PartlySaved.class);
+        final ItemView now = asGitHubHolds(one, github);
+        github.holding(now);
+
+        github.writer().saveResult(snapshot(now), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("each sum added once")
+                .containsEntry("F_Minutes", FieldValue.number("PVTI_PL1", "F_Minutes", 14.5))
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 1.5))
+                .containsEntry("F_Tokens", FieldValue.number("PVTI_PL1", "F_Tokens", 300))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3));
+    }
+
+    @Test
+    void aSumAPersonEditedBetweenTheTwoTriesIsLeftAsTheySetItAndTheOthersAreAdded() {
+        // Harm: a value a person set by hand between a cut-off save and its hand-in again is
+        // overwritten, or the stage is added to it on top of what they chose.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.STAGES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github =
+                new GitHub().holding(one).answering(values -> savingOnly(values, Set.of()));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.class);
+        final Map<String, String> edited = new LinkedHashMap<>(fields);
+        edited.put(FieldNames.MINUTES, "12");
+        final ItemView now = item("PL1", "example-project", 1, true, BODY, edited);
+        github.holding(now);
+
+        github.writer().saveResult(snapshot(now), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.mutations.get(github.mutations.size() - 1))
+                .as("the person's Minutes not written")
+                .extracting(FieldValue::fieldId)
+                .doesNotContain("F_Minutes");
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("the other three sums added")
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 1.5))
+                .containsEntry("F_Tokens", FieldValue.number("PVTI_PL1", "F_Tokens", 300))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 3));
     }
 
     @Test

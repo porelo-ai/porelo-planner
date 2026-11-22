@@ -77,7 +77,10 @@ the four fields as they stood before the stage was added to them. A field withou
 person set stays the base later stages add to; the planner never sums the comments again. A stage whose comment,
 found by its key, already stands is not written again, and its figures are added only to a field that still stands
 at the comment's base, so a result handed in again after a save cut off between the comment and the fields counts
-the stage once; with a comment that names no base, none is added again. Only an agent's stages of the measured kinds
+the stage once; with a comment that names no base, none is added again. A summed field that no longer stands at the
+base when the result is handed in again counts the stage as added there, so a person's edit of it between the two
+tries, or another stage of the issue saved in between, is kept and the stage's figure for that field is not
+added. Only an agent's stages of the measured kinds
 are added, as the Markdown store's stage records count them; a pause and a person's move are shown, not summed.
 
 ## States and ids
@@ -132,8 +135,9 @@ the moment between that read and the write is not caught.
 Field values go to GitHub in mutations of at most 50 values. GitHub has no transaction: a save of which GitHub took a
 part, or a call GitHub took without answering, is refused as partly saved, naming the repositories a part was saved
 in, and the board is read anew. An issue's body is written first, a stage's comment next, its field values after
-it and its open state after them, so a body or a stage comment GitHub refuses leaves the issue in its state and the
-result can be handed in again.
+it and its open state after them, so a body or a stage comment GitHub refuses leaves the issue in its state, and the
+same result can be handed in again; a stage comment refused after the body was written makes the save partly
+saved.
 A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
