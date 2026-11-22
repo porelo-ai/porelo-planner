@@ -18,6 +18,7 @@ public abstract sealed class StoreException extends RuntimeException
                 StoreException.Unreadable,
                 StoreException.StaleRevision,
                 StoreException.NotSavable,
+                StoreException.InStory,
                 StoreException.Busy,
                 StoreException.PartlySaved {
 
@@ -257,6 +258,52 @@ public abstract sealed class StoreException extends RuntimeException
          */
         public NotSavable(final String item, final String reason) {
             super(item, reason);
+        }
+    }
+
+    /** An issue a new story would take that another story holds already. */
+    public static final class InStory extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final String story;
+
+        private final String field;
+
+        /**
+         * Names the issue, the story holding it and the field of the request that named it.
+         *
+         * @param issue the issue's id
+         * @param story the story's id on the board, its tracker reference, or empty when neither is
+         *     known
+         * @param field the field of the request that named the issue, such as {@code existing[0]}
+         */
+        public InStory(final String issue, final String story, final String field) {
+            super(
+                    issue,
+                    "The issue "
+                            + issue
+                            + (story.isEmpty() ? " has a story already" : " belongs to " + story)
+                            + "; an issue has one story.");
+            this.story = story;
+            this.field = field;
+        }
+
+        /**
+         * Answers the story holding the issue.
+         *
+         * @return its id or reference, or empty when neither is known
+         */
+        public String story() {
+            return story;
+        }
+
+        /**
+         * Answers the field of the request that named the issue.
+         *
+         * @return the field
+         */
+        public String field() {
+            return field;
         }
     }
 

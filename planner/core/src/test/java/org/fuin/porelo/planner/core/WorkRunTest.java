@@ -1048,7 +1048,97 @@ class WorkRunTest {
 
         assertThat(refused).as("a running task works AA1").isNotNull();
         assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
+        assertThat(refused.parameters().get("issue"))
+                .as("the issue named that the run works")
+                .isEqualTo("AA1");
         assertThat(saved).as("a refused story never reaches the save").isFalse();
+    }
+
+    @Test
+    void aNewStoryTakingAnIssueWhoseSubIssueARunningTaskWorksIsRefusedNamingTheIssue() {
+        // Harm: a parent hung into a new story while a task works its sub-issue, or a refusal
+        // that does not say which issue named blocks the story, so the person cannot take it out.
+        final Fixture f = new Fixture();
+        final Board board = NextStepTest.board("Backlog", "Backlog");
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Backlog",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("AA1.1"),
+                                        "",
+                                        null)),
+                        board.issues(),
+                        board.work(),
+                        board.repositories());
+        f.start(f.order().tasks().getFirst());
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () ->
+                                f.run.newStory(
+                                        List.of("AA1"),
+                                        b -> b,
+                                        (b, checked) -> {
+                                            saved.set(true);
+                                            return b;
+                                        }));
+
+        assertThat(refused).as("a running task works AA1.1 under AA1").isNotNull();
+        assertThat(refused.name()).as("the owning run refuses it").isEqualTo("WorkRunning");
+        assertThat(refused.parameters())
+                .as("the run's story, its tasks and the issue named")
+                .containsEntry("story", "ST1")
+                .containsEntry("issue", "AA1")
+                .containsKey("tasks");
+        assertThat(saved).as("a refused story never reaches the save").isFalse();
+    }
+
+    @Test
+    void aNewStoryOverIssuesTheStoreRefusesLeavesTheWorkRecordAsItWas() {
+        // Harm: a call the store refuses, stale or not offered, that still dropped a gone
+        // story's run from the work record.
+        final Fixture f = new Fixture();
+        f.order();
+        final Board source = f.store.current;
+        f.store.current =
+                new Board(
+                        source.revision(),
+                        source.workflow(),
+                        List.of(),
+                        source.issues(),
+                        source.work(),
+                        source.repositories());
+        final WorkRun.Snapshot before = f.record.value;
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.newStory(
+                                        List.of("AA1"),
+                                        board -> board,
+                                        (board, checked) -> {
+                                            throw new StoreException.StaleRevision("board@2");
+                                        }))
+                .as("a store that finds an issue changed")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(f.record.value).as("the work record and its generation").isSameAs(before);
+
+        final Map<String, WorkRun.Run> atSave =
+                f.run.newStory(
+                        List.of("AA1"), board -> board, (board, checked) -> f.record.value.runs());
+        assertThat(atSave).as("the gone story's run, still held while the save runs").isNotEmpty();
+        assertThat(f.record.value.runs())
+                .as("the gone story's run, dropped once it stands")
+                .isEmpty();
     }
 
     @Test

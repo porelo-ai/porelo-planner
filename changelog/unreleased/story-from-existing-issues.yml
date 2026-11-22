@@ -1,2 +1,2 @@
-title: A story can be made through the API over issues that already stand on the board, each issue it cannot take refused by its id, and a save cut off midway is finished by sending it again.
+title: A story can be made through the API over issues that already stand on the board, each issue it cannot take refused by its id and one another story holds answered as a conflict naming that story, and a save cut off midway is finished by sending it again, which takes only the story that request marked.
 type: added

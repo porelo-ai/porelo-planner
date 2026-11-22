@@ -634,6 +634,11 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
+    public boolean makesStoriesFromIssues() {
+        return true;
+    }
+
+    @Override
     public NewIdea.Added createStoryFromIssues(
             final Revision revision, final StoryFromIssues story) {
         final BoardWriter.IdeaIds[] ids = new BoardWriter.IdeaIds[1];

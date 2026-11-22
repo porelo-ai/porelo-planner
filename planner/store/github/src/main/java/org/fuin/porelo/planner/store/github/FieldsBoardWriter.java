@@ -428,12 +428,13 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /**
-     * Makes the story labeled as one, as an idea's story is made, then hangs each issue under it in
-     * the story's order; the issues keep their own fields. Before the story is made, every issue is
-     * refused that the board lacks or that hangs under another parent on GitHub, and every one is
-     * read again and checked unchanged. A creation cut off after the story was made is finished by
-     * sending it again: that story is taken, never made twice, and an issue it holds is not hung
-     * again.
+     * Makes the story of the issue type Story, as an idea's story is made, its body carrying the
+     * request's marker, then hangs each issue under it in the story's order; the issues keep their
+     * own fields. Before the story is made, every issue is refused that the board lacks, that is
+     * closed, or that hangs under another parent on GitHub, and every one is read again and checked
+     * unchanged. A creation cut off after the story was made is finished by sending it again
+     * against the board read since: the story carrying the marker is taken, never made twice, and
+     * an issue it holds is not hung again.
      */
     @Override
     public IdeaIds createStoryFromIssues(
@@ -441,8 +442,15 @@ public final class FieldsBoardWriter implements BoardWriter {
         fresh(current, revision);
         final Plan plan = new Plan(current);
         final List<NewItems.Over> existing = new ArrayList<>();
+        final Workflow workflow = current.config().workflow();
         for (final String id : story.existing()) {
             final ItemView item = issueItem(current, id);
+            final Issue issue =
+                    current.board().issue(id).orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            if (!item.open() || workflow.closed().contains(issue.state())) {
+                throw new StoreException.NotSavable(
+                        id, "the issue " + id + " is closed; a new story takes open issues only");
+            }
             plan.read(id, item);
             existing.add(new NewItems.Over(id, item));
         }
@@ -454,9 +462,21 @@ public final class FieldsBoardWriter implements BoardWriter {
                                 story.gain(),
                                 story.test(),
                                 story.priority(),
-                                List.of()));
+                                List.of()),
+                        story.marker());
         final String token = tokens.token(current.config().forge());
-        adding.writeOver(token, planned, existing, () -> plan.readUnchanged(token));
+        adding.writeOver(
+                token,
+                planned,
+                existing,
+                taken -> {
+                    if (taken != null) {
+                        // A story an earlier try made is read again too, so nothing a person hung
+                        // under it since the board was read is missed.
+                        plan.read(plan.idOf(taken), taken);
+                    }
+                    return plan.readUnchanged(token);
+                });
         return new IdeaIds(planned.reference(), story.existing());
     }
 

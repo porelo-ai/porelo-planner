@@ -196,6 +196,12 @@ public class Problems {
                             HttpStatus.UNPROCESSABLE_CONTENT,
                             detail,
                             Map.of("item", subject, "from", "", "to", "", "reason", detail));
+            case StoreException.InStory held ->
+                    problem(
+                            "IssueInStory",
+                            HttpStatus.CONFLICT,
+                            "The issue belongs to another story; an issue has one story.",
+                            Map.of("issue", subject, "story", held.story(), "field", held.field()));
             case StoreException.Busy any ->
                     problem(
                             "Busy",

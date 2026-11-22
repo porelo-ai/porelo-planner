@@ -324,18 +324,26 @@ paths:
         state Idea and an issue in state Idea in each repository the idea names, in one save against the board at the
         given revision, as a discussion's hand-in is saved. The idea is checked against the idea format before
         anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
-        stands answers PartlySaved, naming the repositories that hold their part. A StoryFromIssuesRequest makes a
-        story over issues that stand on the board: each must be an open issue of the workflow, no story, no sub-issue
-        and held by no other story; they become the story's issues in the order named and keep their own fields, and
-        the story's state follows theirs. Every issue is checked against the board, and read again from the tracker
-        where the store keeps one, before anything is written; an issue changed or linked there since the board was
-        read refuses the call as stale, and each refused id is named in the IdeaRefused answer, with nothing made. A
-        save that stops after the story was made answers PartlySaved; the same request sent again finishes it: the
-        story that save made is taken, never made twice, and an issue it already holds is not linked again. The Git
-        store makes no story from issues that stand (NotOffered). Either way, a run whose story is gone is dropped
-        first, so the new story never takes it over; one with a task still at work refuses the call, as does a
-        started task that works one of the issues named (WorkRunning). The JSON body is at most 65536 bytes. The
-        changes stream announces the new board as it does after any save.
+        stands answers PartlySaved, naming the repositories that hold their part; a run whose story is gone is dropped
+        first, so the new story never takes it over. A StoryFromIssuesRequest makes a story over issues that stand on
+        the board: each must be an open issue of the workflow, no story and no sub-issue, and is refused otherwise,
+        each refused id named in the IdeaRefused answer; an issue another story holds is a conflict (IssueInStory,
+        naming the first such issue, the story holding it and the field that named it), told once the body has no
+        other fault. The issues become the story's issues in the order named and keep their own fields, and the
+        story's state follows theirs. Every issue is checked against the board, and read again from the tracker where
+        the store keeps one, before anything is written; an issue changed there since the board was read refuses the
+        call as stale, and one hung under another parent there is IssueInStory, with nothing made. The story's body
+        ends in a hidden HTML comment marking the request, a digest of its title, gain, test and the issues named. A
+        save that stops after the story was made answers PartlySaved; after reading the board again, the same story
+        and issues sent against the new revision finish it: the story carrying that request's mark, made by the same
+        person within a day and holding no issue but those named, is taken, never made twice, an issue it already
+        holds is not linked again, and it keeps the priority it holds. A story a person made, or one another request
+        made, is never taken. A store that makes no story from issues that stand, such as the Git store, answers
+        NotOffered before the body is checked. A run whose story is gone is dropped once the new story stands, so a
+        refused call leaves the work record as it was; a gone story's run with a task still at work refuses the call,
+        as does a started task that works one of the issues named or a sub-issue of one (WorkRunning, naming that
+        issue). The JSON body is at most 65536 bytes. The changes stream announces the new board as it does after any
+        save.
       tags: [board]
       requestBody:
         required: true
@@ -1982,7 +1990,11 @@ components:
         The board moved since the given revision (StaleRevision, naming the current one, and the item when a person
         changed it on the tracker since the board was read), or a started task of a run
         works an issue the change takes out of its story or an issue a new story would take, or a run whose story is
-        gone still has a task at work (WorkRunning, naming the story and its tasks).
+        gone still has a task at work (WorkRunning, naming the story and its tasks, and for a new story over issues
+        that stand the issue named that the run works, itself or through a sub-issue), or an issue a new story would
+        take belongs to another story (IssueInStory, naming the issue, the story holding it - by its id on the board,
+        by its tracker reference when the board does not hold it, or empty when neither is known - and the field of
+        the request that named the issue).
       content:
         application/problem+json:
           schema:
@@ -2005,6 +2017,16 @@ components:
                 parameters:
                   story: ST7
                   tasks: [porelo-task-1]
+            IssueInStory:
+              value:
+                type: urn:porelo-planner:IssueInStory
+                title: IssueInStory
+                status: 409
+                detail: The issue belongs to another story; an issue has one story.
+                parameters:
+                  issue: PL12
+                  story: ST3
+                  field: existing[0]
     IssueRefused:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 65536 bytes (field
@@ -2033,7 +2055,7 @@ components:
         no new story - larger than 65536 bytes, not JSON, not an object, a member missing or unknown, offer no
         lowercase UUID, or revision no revision - with one fault; or the idea breaks the idea format, at most 100
         faults, each starting with the field it names (story, story.title, issues, issues[0].repository, existing,
-        existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault; or the offer's save is still pending or was only
+        existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault, starting with the field that named the issue when it refuses one; or the offer's save is still pending or was only
         partly pushed, with pushed naming the repositories already pushed (comma-joined, empty when none).
       content:
         application/problem+json:
@@ -2863,7 +2885,10 @@ components:
           items:
             $ref: '#/components/schemas/IdeaIssue'
     IdeaStory:
-      description: The idea's story, saved in state Idea in the project's own repository.
+      description: >-
+        A new story's title, what a user gains, its test and its priority, saved in the project's own repository; its
+        state is the one the request that carries it gives it: Idea for an idea, its issues' for a story over issues
+        that stand.
       type: object
       additionalProperties: false
       required: [title, gain, test, priority]

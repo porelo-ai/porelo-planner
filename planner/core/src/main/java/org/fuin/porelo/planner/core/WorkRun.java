@@ -1517,13 +1517,27 @@ public final class WorkRun {
      * @throws WorkRefusal {@code WorkRunning} while a task of a gone story's run still works
      */
     public <C, T> T newStory(final Function<Board, C> check, final BiFunction<Board, C, T> save) {
-        return newStory(List.of(), check, save);
+        return record.locked(
+                session -> {
+                    final Board board = store.board();
+                    final C checked = check.apply(board);
+                    final Snapshot snapshot = read(session);
+                    final Snapshot kept = withoutGoneRuns(snapshot, board);
+                    if (!kept.runs().equals(snapshot.runs())) {
+                        session.preflight(kept);
+                        session.write(kept);
+                    }
+                    return save.apply(board, checked);
+                });
     }
 
     /**
      * Saves a new story over issues that stand on the board, as {@link #newStory(Function,
      * BiFunction)} saves one, and refuses it while a started task works one of those issues or a
-     * sub-issue of one: the task's results would land in a story it was not started for.
+     * sub-issue of one: the task's results would land in a story it was not started for. The runs
+     * of gone stories are dropped from the work record only once the store's save stands, still
+     * under the record's lock, so a call the store refuses leaves the record as it was; the record
+     * is checked writable before the save.
      *
      * @param issues the issues the new story takes
      * @param check checks the story against the board and answers what the save takes
@@ -1531,8 +1545,8 @@ public final class WorkRun {
      * @param <C> what the check answers
      * @param <T> what the write answers
      * @return what the write answered
-     * @throws WorkRefusal {@code WorkRunning} while a started task works an issue taken, or a task
-     *     of a gone story's run still works
+     * @throws WorkRefusal {@code WorkRunning} while a started task works an issue taken, naming the
+     *     issue, or a task of a gone story's run still works
      */
     public <C, T> T newStory(
             final List<String> issues,
@@ -1544,15 +1558,19 @@ public final class WorkRun {
                     final Board board = store.board();
                     final C checked = check.apply(board);
                     final Snapshot snapshot = read(session);
-                    final Set<String> owned = new HashSet<>();
-                    issues.forEach(issue -> owned.addAll(withSubIssues(board, issue)));
-                    refuseOwned(snapshot, owned, Set.of());
+                    for (final String issue : issues) {
+                        refuseOwned(snapshot, withSubIssues(board, issue), Set.of(), issue);
+                    }
                     final Snapshot kept = withoutGoneRuns(snapshot, board);
-                    if (!kept.runs().equals(snapshot.runs())) {
+                    final boolean dropped = !kept.runs().equals(snapshot.runs());
+                    if (dropped) {
                         session.preflight(kept);
+                    }
+                    final T saved = save.apply(board, checked);
+                    if (dropped) {
                         session.write(kept);
                     }
-                    return save.apply(board, checked);
+                    return saved;
                 });
     }
 
@@ -2192,6 +2210,15 @@ public final class WorkRun {
     /** Refuses a change of a story or an issue that a run with a started task owns. */
     private static void refuseOwned(
             final Snapshot snapshot, final Set<String> issues, final Set<String> stories) {
+        refuseOwned(snapshot, issues, stories, null);
+    }
+
+    /** Refuses as above, naming the issue a new story would take when one is given. */
+    private static void refuseOwned(
+            final Snapshot snapshot,
+            final Set<String> issues,
+            final Set<String> stories,
+            final @Nullable String named) {
         for (final Run run : snapshot.runs().values()) {
             final List<String> active =
                     run.offers().stream()
@@ -2202,7 +2229,9 @@ public final class WorkRun {
                 continue;
             }
             if (owns(run, issues, stories)) {
-                throw WorkRefusal.workRunning(run.story(), active);
+                throw named == null
+                        ? WorkRefusal.workRunning(run.story(), active)
+                        : WorkRefusal.workRunning(run.story(), active, named);
             }
         }
     }

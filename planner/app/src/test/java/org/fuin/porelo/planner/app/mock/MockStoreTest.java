@@ -876,4 +876,71 @@ class MockStoreTest {
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(store.board()).as("the board after the stale call").isEqualTo(added.board());
     }
+
+    @Test
+    void theSameStoryFromIssuesSentAgainTakesItsStoryAndAnIssueOfAnotherStoryIsRefused() {
+        // Harm: the window's planning tests run against a mock that makes a second story over
+        // the same issue when a request is sent again, or hangs an issue another story holds,
+        // which no real store does.
+        final Board board = store.board();
+        final java.util.Set<String> held = new java.util.HashSet<>();
+        board.stories().forEach(story -> held.addAll(story.issues()));
+        final String loose =
+                board.issues().stream()
+                        .filter(
+                                issue ->
+                                        !held.contains(issue.id())
+                                                && issue.parent() == null
+                                                && !board.workflow()
+                                                        .closed()
+                                                        .contains(issue.state()))
+                        .findFirst()
+                        .orElseThrow()
+                        .id();
+        final StoryFromIssues request =
+                new StoryFromIssues("A story", "A gain.", "A test.", "High", List.of(loose));
+        final NewIdea.Added first = store.createStoryFromIssues(board.revision(), request);
+
+        final NewIdea.Added again = store.createStoryFromIssues(first.board().revision(), request);
+
+        assertThat(again.story()).as("the story the first call made").isEqualTo(first.story());
+        assertThat(again.board().stories())
+                .as("one story holding the issue")
+                .filteredOn(story -> story.issues().contains(loose))
+                .hasSize(1);
+        assertThat(again.board()).as("the board, unchanged").isEqualTo(first.board());
+
+        final Story other =
+                board.stories().stream()
+                        .filter(story -> story.issues().stream().anyMatch(id -> open(board, id)))
+                        .findFirst()
+                        .orElseThrow();
+        final String taken =
+                other.issues().stream().filter(id -> open(board, id)).findFirst().orElseThrow();
+        assertThatThrownBy(
+                        () ->
+                                store.createStoryFromIssues(
+                                        again.board().revision(),
+                                        new StoryFromIssues(
+                                                other.title(),
+                                                "A gain.",
+                                                "A test.",
+                                                "High",
+                                                List.of(taken))))
+                .as("an issue another story holds")
+                .isInstanceOfSatisfying(
+                        StoreException.InStory.class,
+                        e -> {
+                            assertThat(e.subject()).as("the issue").isEqualTo(taken);
+                            assertThat(e.story()).as("its story").isEqualTo(other.id());
+                        });
+        assertThat(store.board()).as("the board after the refusal").isEqualTo(again.board());
+    }
+
+    /** Whether an issue stands open on the board and under no other issue. */
+    private static boolean open(final Board board, final String id) {
+        return board.issue(id)
+                .filter(i -> i.parent() == null && !board.workflow().closed().contains(i.state()))
+                .isPresent();
+    }
 }

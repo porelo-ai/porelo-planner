@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
@@ -270,6 +269,19 @@ final class NewItems {
      * @throws StoreException.NotSavable when the project cannot hold it
      */
     Planned story(final NewIdea idea) {
+        return story(idea, "");
+    }
+
+    /**
+     * Plans a new story as {@link #story(NewIdea)} does, its body ending in a mark that tells it
+     * from every story not made by the same request.
+     *
+     * @param idea the story, with no issues
+     * @param marker the request's marker, one line, or empty for none
+     * @return the planned story
+     * @throws StoreException.NotSavable when the project cannot hold it
+     */
+    Planned story(final NewIdea idea, final String marker) {
         line(idea.title(), "the title of a new story");
         line(idea.gain(), "what a user gains");
         line(idea.test(), "the test of a new story");
@@ -279,7 +291,8 @@ final class NewItems {
                         + idea.gain().strip()
                         + "\n\n**The test.** "
                         + idea.test().strip()
-                        + "\n";
+                        + "\n"
+                        + (marker.isEmpty() ? "" : "\n" + marker + "\n");
         final List<Value> values = new ArrayList<>();
         values.add(option(FieldNames.PRIORITY, idea.priority()));
         values.add(rank(true, idea.priority()));
@@ -344,35 +357,46 @@ final class NewItems {
 
     /**
      * Places a new story over issues that stand on the project: the story is made, or taken from an
-     * earlier try of the same write, then each issue it does not hold yet is hung under it in the
-     * story's order, keeping its own fields. Before the story is made, an issue hanging under any
-     * other parent on GitHub is refused, and every issue is read again and checked unchanged, so
-     * nothing is written over a board the caller never saw.
+     * earlier try of the same request, then each issue it does not hold yet is hung under it in the
+     * story's order, keeping its own fields. A story is taken only when its body carries the
+     * request's marker, as the planned story's body does, it is the person's own, made within
+     * {@link #TRIED_AGAIN_WITHIN}, and every sub-issue the board shows under it is named; a story a
+     * person made, or one of another request, is never taken. Before the story is made, an issue
+     * hanging under any other parent on GitHub is refused, naming that parent, and every issue, and
+     * a story taken that the board shows, is read again and checked unchanged, so nothing is
+     * written over a board the caller never saw. Two projects sharing a repository may still race
+     * between that check and the links: GitHub then refuses the second parent, and the later call
+     * answers PartlySaved with its story left empty, a window this write accepts as the other
+     * writes of a plan accept theirs.
      *
      * @param token the person's token
-     * @param story the planned story
+     * @param story the planned story, its body ending in the request's marker
      * @param existing the issues, in the story's order
-     * @param unchanged reads the issues again, refuses the write when one changed since the board
-     *     was read, and answers each issue's id in REST by its node id
-     * @throws StoreException.NotSavable when an issue hangs under another parent on GitHub
-     * @throws StoreException.StaleRevision when an issue changed since the board was read
+     * @param unchanged given the board's item of a story taken, or null, reads the issues and that
+     *     item again, refuses the write when one changed since the board was read, and answers each
+     *     issue's id in REST by its node id
+     * @throws StoreException.InStory when an issue hangs under another parent on GitHub
+     * @throws StoreException.StaleRevision when an issue or the story taken changed since the board
+     *     was read
      */
     void writeOver(
             final String token,
             final Planned story,
             final List<Over> existing,
-            final Supplier<Map<String, Long>> unchanged) {
+            final Function<@Nullable ItemView, Map<String, Long>> unchanged) {
         final String projectId = begin(token);
         over = List.copyOf(existing);
         final ProjectWrites.@Nullable Created taken = madeBefore(token, story, null, List.of());
-        for (final Over issue : existing) {
+        for (int index = 0; index < existing.size(); index++) {
+            final Over issue = existing.get(index);
             final @Nullable String parent = issue.item().parentIssueId();
             if (parent != null && (taken == null || !parent.equals(taken.nodeId()))) {
-                throw new StoreException.NotSavable(
-                        issue.id(), "the issue " + issue.id() + " has a parent on GitHub already");
+                throw new StoreException.InStory(
+                        issue.id(), parentNamed(parent), "existing[" + index + "]");
             }
         }
-        final Map<String, Long> databaseIds = unchanged.get();
+        final Map<String, Long> databaseIds =
+                unchanged.apply(taken == null ? null : onBoard(story.repository, taken.number()));
         placeTaken(token, projectId, story, null, taken);
         final Parent parent =
                 new Parent(
@@ -395,6 +419,24 @@ final class NewItems {
                             "an issue hung was not read before the write"),
                     story.repository);
         }
+    }
+
+    /**
+     * Names a parent on GitHub by its id on the board, or by its tracker reference when it is an
+     * issue outside the project the board offers; empty when neither tells it.
+     */
+    private String parentNamed(final String nodeId) {
+        for (final Map.Entry<String, ItemView> entry : current.items().entrySet()) {
+            if (entry.getValue().issueId().equals(nodeId)) {
+                return entry.getKey();
+            }
+        }
+        for (final Snapshot.Unlisted listed : current.unlisted()) {
+            if (listed.nodeId().equals(nodeId)) {
+                return listed.repository() + "#" + listed.number();
+            }
+        }
+        return "";
     }
 
     /** Checks the project's id and starts the pace of this write's calls. */

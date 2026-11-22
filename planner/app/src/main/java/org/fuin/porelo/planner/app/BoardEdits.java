@@ -82,6 +82,16 @@ public class BoardEdits {
     }
 
     /**
+     * Answers whether the project's store makes a story over issues that stand.
+     *
+     * @param project the project's checked name
+     * @return true when it does
+     */
+    public boolean makesStoriesFromIssues(final String project) {
+        return projects.store(project).makesStoriesFromIssues();
+    }
+
+    /**
      * Makes a story over issues that stand on the board, against the revision the caller read; a
      * started task at work on one of them refuses it.
      *
@@ -93,7 +103,8 @@ public class BoardEdits {
      * @return the story's and its issues' ids and the board after the save
      * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
      * @throws org.fuin.porelo.planner.core.WorkRefusal {@code IdeaRefused} naming each issue that
-     *     cannot be taken, {@code WorkRunning} while a task works one of them or a gone story's run
+     *     cannot be taken, {@code IssueInStory} for one another story holds, {@code WorkRunning}
+     *     while a task works one of them, naming it, or a gone story's run
      * @throws UnsupportedOperationException when the store makes no story from issues
      */
     public NewIdea.Added createStoryFromIssues(

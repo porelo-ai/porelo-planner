@@ -139,6 +139,11 @@ class EditsEndpointTest {
                     }
 
                     @Override
+                    public boolean makesStoriesFromIssues() {
+                        return offered;
+                    }
+
+                    @Override
                     public NewIdea.Added createStoryFromIssues(
                             final Revision revision, final StoryFromIssues story) {
                         return new NewIdea.Added(
@@ -439,9 +444,6 @@ class EditsEndpointTest {
         bodies.put(
                 "{" + HEAD + ", \"existing\": [\"AB2\", \"<b>x</b>\"], \"revision\": \"r1\"}",
                 "existing[1]: The id must be an issue's id.");
-        bodies.put(
-                "{" + HEAD + ", \"existing\": [\"AB1\"], \"revision\": \"r1\"}",
-                "existing[0]: The issue AB1 belongs to ST1; an issue has one story.");
         for (final Map.Entry<String, String> body : bodies.entrySet()) {
             final String answer =
                     send("POST", "/stories", body.getKey())
@@ -468,6 +470,55 @@ class EditsEndpointTest {
         send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [], \"more\": 1}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.title").value("NotOffered"));
+        assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void anIssueAnotherStoryHoldsIsAConflictNamingTheIssueItsStoryAndItsField() throws Exception {
+        // Harm: an issue of another story answered as a malformed request, whether core or the
+        // store finds the story, so the window's conflict path never runs.
+        send(
+                        "POST",
+                        "/stories",
+                        "{" + HEAD + ", \"existing\": [\"AB2\", \"AB1\"], \"revision\": \"r1\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("IssueInStory"))
+                .andExpect(jsonPath("$.parameters.issue").value("AB1"))
+                .andExpect(jsonPath("$.parameters.story").value("ST1"))
+                .andExpect(jsonPath("$.parameters.field").value("existing[1]"));
+        failure = new StoreException.InStory("AB2", "porelo-store#9", "existing[0]");
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("IssueInStory"))
+                .andExpect(jsonPath("$.parameters.issue").value("AB2"))
+                .andExpect(jsonPath("$.parameters.story").value("porelo-store#9"))
+                .andExpect(jsonPath("$.parameters.field").value("existing[0]"));
+        assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aStoryFromIssuesTheStoreCannotWriteOrOnlyPartlyWroteIsAnsweredAsTheContractSays()
+            throws Exception {
+        // Harm: a store's refusal of one issue answered without the field naming it, or a save
+        // cut off midway answered as a success or a server fault.
+        failure = new StoreException.NotSavable("AB2", "the issue AB2 is closed");
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("IdeaRefused"))
+                .andExpect(
+                        jsonPath("$.parameters.faults[0]")
+                                .value("existing[0]: the issue AB2 is closed"));
+        failure =
+                new StoreException.PartlySaved(
+                        "porelo-store", List.of("porelo-store"), "GitHub refused a link");
+        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.title").value("PartlySaved"))
+                .andExpect(jsonPath("$.parameters.failed").value("porelo-store"))
+                .andExpect(jsonPath("$.parameters.pushed").value("porelo-store"));
         assertThat(written).as("nothing written").isEmpty();
     }
 }

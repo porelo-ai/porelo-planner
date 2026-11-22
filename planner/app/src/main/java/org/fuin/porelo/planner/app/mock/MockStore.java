@@ -692,36 +692,95 @@ public final class MockStore implements PlanningStore {
                                         : closed.getFirst());
     }
 
+    /** The mock makes a story over issues of its board, as the GitHub store does. */
+    @Override
+    public boolean makesStoriesFromIssues() {
+        return true;
+    }
+
     /**
-     * Makes a story over issues of the board in memory, numbered after the highest story; its state
-     * follows its issues' as every story's here does, and nothing reaches a repository.
+     * Makes a story over issues of the board in memory, numbered after the highest story, its body
+     * carrying the request's marker; its state follows its issues' as every story's here does, and
+     * nothing reaches a repository. The same request sent again takes the story carrying its marker
+     * that holds named issues alone, hangs the ones it lacks, and answers the board unchanged when
+     * it lacks none, so no story is made twice. A closed issue, a sub-issue or an issue another
+     * story holds is refused, as the GitHub store refuses it.
      */
     @Override
     public synchronized NewIdea.Added createStoryFromIssues(
             final Revision revision, final StoryFromIssues story) {
         final Board board = fresh(revision);
-        story.existing().forEach(id -> issueOf(board, id));
-        int last = 0;
+        final String marker = story.marker();
+        @Nullable Story taken = null;
         for (final Story known : board.stories()) {
-            last = Math.max(last, Integer.parseInt(known.id().substring(2)));
+            if (known.description().contains(marker)
+                    && known.title().equals(story.title())
+                    && story.existing().containsAll(known.issues())) {
+                taken = known;
+                break;
+            }
         }
-        final String id = "ST" + (last + 1);
-        final List<Story> stories = new ArrayList<>(board.stories());
-        stories.add(
-                new Story(
+        for (int index = 0; index < story.existing().size(); index++) {
+            final String id = story.existing().get(index);
+            final Issue issue = issueOf(board, id);
+            if (board.workflow().closed().contains(issue.state())) {
+                throw new StoreException.NotSavable(
                         id,
-                        story.title(),
-                        board.workflow().states().getFirst(),
-                        false,
-                        story.priority(),
-                        null,
-                        story.existing(),
-                        "**What a user gains.** "
-                                + story.gain()
-                                + "\n\n**The test.** "
-                                + story.test()
-                                + "\n",
-                        null));
+                        "the issue is " + issue.state() + "; a new story takes open issues only");
+            }
+            if (issue.parent() != null) {
+                throw new StoreException.NotSavable(
+                        id, "the issue is a sub-issue of " + issue.parent());
+            }
+            for (final Story other : board.stories()) {
+                if (other != taken && other.issues().contains(id)) {
+                    throw new StoreException.InStory(id, other.id(), "existing[" + index + "]");
+                }
+            }
+        }
+        final List<Story> stories = new ArrayList<>(board.stories());
+        final String id;
+        if (taken != null) {
+            id = taken.id();
+            if (taken.issues().equals(story.existing())) {
+                return new NewIdea.Added(id, story.existing(), current);
+            }
+            stories.set(
+                    stories.indexOf(taken),
+                    new Story(
+                            id,
+                            taken.title(),
+                            taken.state(),
+                            taken.stateGiven(),
+                            taken.priority(),
+                            taken.size(),
+                            story.existing(),
+                            taken.description(),
+                            taken.link()));
+        } else {
+            int last = 0;
+            for (final Story known : board.stories()) {
+                last = Math.max(last, Integer.parseInt(known.id().substring(2)));
+            }
+            id = "ST" + (last + 1);
+            stories.add(
+                    new Story(
+                            id,
+                            story.title(),
+                            board.workflow().states().getFirst(),
+                            false,
+                            story.priority(),
+                            null,
+                            story.existing(),
+                            "**What a user gains.** "
+                                    + story.gain()
+                                    + "\n\n**The test.** "
+                                    + story.test()
+                                    + "\n\n"
+                                    + marker
+                                    + "\n",
+                            null));
+        }
         current = saved(withItems(board, stories, board.issues()), NOTHING);
         return new NewIdea.Added(id, story.existing(), current);
     }

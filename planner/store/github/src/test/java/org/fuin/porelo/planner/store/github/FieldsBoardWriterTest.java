@@ -12,6 +12,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -2584,7 +2585,12 @@ class FieldsBoardWriterTest {
                                                     fieldNames.get(fieldId),
                                                     option != null
                                                             ? option.substring(2)
-                                                            : String.valueOf(value.number()));
+                                                            // As the board reads a whole number.
+                                                            : String.valueOf(
+                                                                    Math.round(
+                                                                            Objects.requireNonNull(
+                                                                                    value
+                                                                                            .number()))));
                                         });
                         if (automatic != null) {
                             fields.putIfAbsent(FieldNames.STATUS, automatic);
@@ -3449,6 +3455,36 @@ class FieldsBoardWriterTest {
                 item.blockers());
     }
 
+    /** An item as it stands once a person hung another issue under it on GitHub. */
+    private static ItemView holdingAlso(final ItemView item, final String subIssueId) {
+        final List<String> subIssues = new ArrayList<>(item.subIssueIds());
+        subIssues.add(subIssueId);
+        return new ItemView(
+                item.itemId(),
+                item.issueId(),
+                item.repository(),
+                item.number(),
+                item.title(),
+                item.body(),
+                item.open(),
+                item.stateReason(),
+                item.fields(),
+                item.labels(),
+                item.parentIssueId(),
+                subIssues,
+                item.blockedByIds(),
+                item.comments(),
+                item.link(),
+                item.updatedAt(),
+                item.archived(),
+                item.blockers(),
+                item.issueType());
+    }
+
+    /** The body a story made by {@link #overTwo()} is given, without the request's marker. */
+    private static final String OVER_TWO_BODY =
+            "**What a user gains.** People find stories\n\n**The test.** Tag one\n";
+
     private static StoryFromIssues overTwo() {
         return new StoryFromIssues(
                 "Tag stories", "People find stories", "Tag one", "High", List.of("B2", "A1"));
@@ -3474,6 +3510,9 @@ class FieldsBoardWriterTest {
         assertThat(github.made.get("example-project").get(0).issue().type())
                 .as("the story's issue type")
                 .isEqualTo(IssueMapping.STORY_TYPE);
+        assertThat(github.made.get("example-project").get(0).body())
+                .as("the story's body, ending in the request's marker")
+                .isEqualTo(OVER_TWO_BODY + "\n" + overTwo().marker() + "\n");
         assertThat(github.subIssues)
                 .as("each issue hung under the story once, in the order named")
                 .containsExactly("example-project#100 < 5002", "example-project#100 < 5001");
@@ -3488,7 +3527,8 @@ class FieldsBoardWriterTest {
     @Test
     void anIssueLinkedOrChangedOnGitHubRefusesTheStoryBeforeAnythingIsMade() {
         // Harm: a new story left on GitHub, partly saved, over an issue that hangs under another
-        // parent the board did not show, or that a person changed since the board was read.
+        // parent the board did not show, or that a person changed since the board was read; or a
+        // refusal that does not name the story holding the issue and the field that named it.
         final ItemView a = under(standing("A1", 1), "I_elsewhere");
         final ItemView b = standing("B2", 2);
         final GitHub linked = new GitHub().holding(a, b);
@@ -3497,15 +3537,38 @@ class FieldsBoardWriterTest {
                         () ->
                                 linked.writer()
                                         .createStoryFromIssues(snapshot(a, b), SHOWN, overTwo()))
-                .as("an issue with a parent on GitHub")
+                .as("an issue with a parent on GitHub the board does not hold")
                 .isInstanceOfSatisfying(
-                        StoreException.NotSavable.class,
-                        e ->
-                                assertThat(e.getMessage())
-                                        .as("the issue named")
-                                        .contains("A1 has a parent on GitHub already"));
+                        StoreException.InStory.class,
+                        e -> {
+                            assertThat(e.subject()).as("the issue").isEqualTo("A1");
+                            assertThat(e.story()).as("no story the board names").isEmpty();
+                            assertThat(e.field()).as("its field").isEqualTo("existing[1]");
+                        });
         assertThat(linked.calls)
                 .as("nothing made over a linked issue")
+                .doesNotContain("createIssue");
+
+        final ItemView other =
+                item("ST5", "example-project", 5, true, "", Map.of())
+                        .typed(IssueMapping.STORY_TYPE);
+        final ItemView held = under(standing("A1", 1), other.issueId());
+        final GitHub inOther = new GitHub().holding(other, held, b);
+        assertThatThrownBy(
+                        () ->
+                                inOther.writer()
+                                        .createStoryFromIssues(
+                                                snapshot(other, held, b), SHOWN, overTwo()))
+                .as("an issue another story of the board holds, which core did not see")
+                .isInstanceOfSatisfying(
+                        StoreException.InStory.class,
+                        e -> {
+                            assertThat(e.subject()).as("the issue").isEqualTo("A1");
+                            assertThat(e.story()).as("the story holding it").isEqualTo("ST5");
+                            assertThat(e.field()).as("its field").isEqualTo("existing[1]");
+                        });
+        assertThat(inOther.calls)
+                .as("nothing made over an issue of another story")
                 .doesNotContain("createIssue");
 
         final ItemView c = standing("A1", 1);
@@ -3574,7 +3637,7 @@ class FieldsBoardWriterTest {
 
         final ItemView story = onTheProject(github, null)[0];
         final ItemView hung = under(b, story.issueId());
-        github.holding(hung, a);
+        github.holding(story, hung, a);
         final BoardWriter.IdeaIds ids =
                 github.writer().createStoryFromIssues(snapshot(story, a, hung), SHOWN, overTwo());
 
@@ -3585,5 +3648,141 @@ class FieldsBoardWriterTest {
         assertThat(github.subIssues)
                 .as("each issue hung once, the second by the second try")
                 .containsExactly("example-project#100 < 5002", "example-project#100 < 5001");
+    }
+
+    @Test
+    void aStoryAPersonMadeOrAnotherRequestMadeIsNeverTakenAndANewOneIsMade() {
+        // Harm: a create that extends a story a person made on purpose, or one of another
+        // request, of the same title and text, and answers 201 as if it were new.
+        final ItemView a = standing("A1", 1);
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(a, b);
+        github.make("example-project", "Tag stories", OVER_TWO_BODY, IssueMapping.STORY_TYPE);
+        github.make(
+                "example-project",
+                "Tag stories",
+                OVER_TWO_BODY
+                        + "\n"
+                        + StoryFromIssues.marker(
+                                "Tag stories", "People find stories", "Tag one", List.of("A1"))
+                        + "\n",
+                IssueMapping.STORY_TYPE);
+
+        final BoardWriter.IdeaIds ids =
+                github.writer().createStoryFromIssues(snapshot(a, b), SHOWN, overTwo());
+
+        assertThat(ids.story())
+                .as("a new story, neither alike taken")
+                .isEqualTo("example-project#102");
+        assertThat(github.subIssues)
+                .as("the issues hung under the new story alone")
+                .containsExactly("example-project#102 < 5002", "example-project#102 < 5001");
+    }
+
+    @Test
+    void aStoryOfTheSameRequestThatAPersonHungAnotherIssueUnderIsNotTaken() {
+        // Harm: the issues named hung beside an issue a person put under the story an earlier
+        // try made, as if that story were still the request's alone.
+        final ItemView a = standing("A1", 1);
+        final ItemView b = standing("B2", 2);
+        final ItemView c = standing("C3", 3);
+        final GitHub github = new GitHub().holding(a, b, c);
+        github.linksBeforeFailing = 0;
+        github.linkFailures.add(GitHubExceptions.refused(422, "Validation failed"));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createStoryFromIssues(snapshot(a, b, c), SHOWN, overTwo()))
+                .as("a try cut off before its first link")
+                .isInstanceOf(StoreException.PartlySaved.class);
+        final ItemView story = onTheProject(github, null)[0];
+        final ItemView person = under(c, story.issueId());
+        github.holding(story, person);
+
+        final BoardWriter.IdeaIds ids =
+                github.writer()
+                        .createStoryFromIssues(snapshot(story, a, b, person), SHOWN, overTwo());
+
+        assertThat(ids.story())
+                .as("a new story beside the one the person added to")
+                .isEqualTo("example-project#101");
+        assertThat(github.subIssues)
+                .as("the issues hung under the new story alone")
+                .containsExactly("example-project#101 < 5002", "example-project#101 < 5001");
+    }
+
+    @Test
+    void aRequestSentAgainAfterAWholeSaveWhoseAnswerWasLostWritesNothing() {
+        // Harm: a second story made, or an issue hung twice, by the retry of a save that stood.
+        final ItemView a = standing("A1", 1);
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(a, b);
+        github.writer().createStoryFromIssues(snapshot(a, b), SHOWN, overTwo());
+        final ItemView story = onTheProject(github, null)[0];
+        final ItemView hungA = under(a, story.issueId());
+        final ItemView hungB = under(b, story.issueId());
+        github.holding(story, hungA, hungB);
+        final int before = github.calls.size();
+
+        final BoardWriter.IdeaIds ids =
+                github.writer()
+                        .createStoryFromIssues(snapshot(story, hungA, hungB), SHOWN, overTwo());
+
+        assertThat(ids)
+                .as("the story the save made")
+                .isEqualTo(new BoardWriter.IdeaIds("example-project#100", List.of("B2", "A1")));
+        assertThat(github.calls.subList(before, github.calls.size()))
+                .as("nothing made or hung again")
+                .doesNotContain("createIssue", "addSubIssue", "addProjectItems");
+        assertThat(held(github)).as("one story").containsExactly("example-project#100");
+    }
+
+    @Test
+    void aStoryTakenThatAPersonChangedOnGitHubSinceTheBoardWasReadRefusesTheRetry() {
+        // Harm: the issues named hung under the story an earlier try made, beside an issue a
+        // person hung under it on GitHub after the board was read.
+        final ItemView a = standing("A1", 1);
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(a, b);
+        github.linksBeforeFailing = 0;
+        github.linkFailures.add(GitHubExceptions.refused(422, "Validation failed"));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createStoryFromIssues(snapshot(a, b), SHOWN, overTwo()))
+                .isInstanceOf(StoreException.PartlySaved.class);
+        final ItemView story = onTheProject(github, null)[0];
+        github.holding(holdingAlso(story, "I_someone"));
+        final int before = github.calls.size();
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createStoryFromIssues(
+                                                snapshot(story, a, b), SHOWN, overTwo()))
+                .as("the story taken, changed on GitHub")
+                .isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(github.calls.subList(before, github.calls.size()))
+                .as("nothing hung")
+                .doesNotContain("addSubIssue", "createIssue");
+    }
+
+    @Test
+    void aClosedIssueIsRefusedByTheStoreBeforeAnyCall() {
+        // Harm: a closed issue hung into a new story when the check before the store let it by.
+        final ItemView a =
+                item("A1", "example-lib", 1, false, "", ordered(FieldNames.STATUS, "Idea"));
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(a, b);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createStoryFromIssues(snapshot(a, b), SHOWN, overTwo()))
+                .as("a closed issue")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e -> assertThat(e.subject()).as("the issue").isEqualTo("A1"));
+        assertThat(github.calls).as("no call made").isEmpty();
     }
 }

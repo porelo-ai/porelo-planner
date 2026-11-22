@@ -28,6 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class EditsController {
 
+    private static final String FROM_ISSUES_NOT_OFFERED =
+            "This planner does not make a story from issues that stand.";
+
     private final BoardEdits edits;
 
     /**
@@ -51,7 +54,14 @@ public class EditsController {
     public ResponseEntity<StoryAdded> createStory(
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
-        final EditRequests.StoryBody read = EditRequests.story(request);
+        final EditRequests.StoryBody read =
+                EditRequests.story(
+                        request,
+                        () -> {
+                            if (!edits.makesStoriesFromIssues(name)) {
+                                throw notOffered(name, FROM_ISSUES_NOT_OFFERED);
+                            }
+                        });
         final NewIdea.Added added;
         try {
             added =
@@ -66,18 +76,7 @@ public class EditsController {
                                                         body.request().revision(),
                                                         body.request().idea(),
                                                         body.shape()));
-                        case EditRequests.FromIssues body ->
-                                offered(
-                                        name,
-                                        "This planner does not make a story from issues that"
-                                                + " stand.",
-                                        () ->
-                                                edits.createStoryFromIssues(
-                                                        name,
-                                                        body.request().revision(),
-                                                        body.request().story(),
-                                                        body.request().existing(),
-                                                        body.shape()));
+                        case EditRequests.FromIssues body -> fromIssues(name, body);
                     };
         } catch (final StoreException.NotSavable e) {
             throw WorkRefusal.ideaRefused(
@@ -251,13 +250,44 @@ public class EditsController {
     }
 
     /** Answers a store that does not offer the edit as not offered, never as a server fault. */
+    /**
+     * Makes a story over issues that stand; a store's refusal of one issue is a fault of the field
+     * that named it, as the description says every fault starts with its field.
+     */
+    private NewIdea.Added fromIssues(final String name, final EditRequests.FromIssues body) {
+        final List<String> existing = body.request().existing();
+        try {
+            return offered(
+                    name,
+                    FROM_ISSUES_NOT_OFFERED,
+                    () ->
+                            edits.createStoryFromIssues(
+                                    name,
+                                    body.request().revision(),
+                                    body.request().story(),
+                                    existing,
+                                    body.shape()));
+        } catch (final StoreException.NotSavable e) {
+            final int index = existing.indexOf(e.subject());
+            final String fault = BoardController.bounded(String.valueOf(e.getMessage()));
+            throw WorkRefusal.ideaRefused(
+                    "The store cannot write the idea.",
+                    List.of(index < 0 ? fault : "existing[" + index + "]: " + fault),
+                    null);
+        }
+    }
+
     private static <T> T offered(final String name, final String words, final Supplier<T> edit) {
         try {
             return edit.get();
         } catch (final UnsupportedOperationException e) {
-            throw new Refusal(
-                    "NotOffered", HttpStatus.NOT_IMPLEMENTED, words, Map.of("project", name));
+            throw notOffered(name, words);
         }
+    }
+
+    private static Refusal notOffered(final String name, final String words) {
+        return new Refusal(
+                "NotOffered", HttpStatus.NOT_IMPLEMENTED, words, Map.of("project", name));
     }
 
     private static String issueId(final String name, final String issue) {

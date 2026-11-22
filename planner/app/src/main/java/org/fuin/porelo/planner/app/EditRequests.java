@@ -129,15 +129,21 @@ final class EditRequests {
      * revision, or exactly a story, a list of existing issues' ids and a revision.
      *
      * @param request the request
+     * @param fromIssuesOffered refuses a body naming existing issues when the store makes no story
+     *     from them, before anything else of the body is checked
      * @return the story and the faults of its shape
      * @throws WorkRefusal {@code IdeaRefused} for a body that is no new story
      */
-    static StoryBody story(final HttpServletRequest request) {
+    static StoryBody story(final HttpServletRequest request, final Runnable fromIssuesOffered) {
         final JsonNode body;
         try {
             body = WorkRequests.read(request);
         } catch (final WorkRefusal invalid) {
             throw noStory("body: " + NO_STORY);
+        }
+        if (body.has("existing")) {
+            // A store that makes no story from issues refuses the call before its body is judged.
+            fromIssuesOffered.run();
         }
         final Set<String> members = Set.copyOf(body.propertyNames());
         if (FROM_ISSUES.equals(members)) {

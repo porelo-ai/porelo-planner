@@ -182,11 +182,23 @@ public interface PlanningStore {
     }
 
     /**
+     * Answers whether the store makes a story over issues that stand, so a call it does not offer
+     * is refused before its body is checked or anything is written.
+     *
+     * @return true when {@link #createStoryFromIssues} is offered
+     */
+    default boolean makesStoriesFromIssues() {
+        return false;
+    }
+
+    /**
      * Makes a story over issues that stand on the board against the revision the caller read: the
-     * story in the project's own repository, each issue hung under it in its order, keeping its own
+     * story in the project's own repository, its body carrying the request's {@link
+     * StoryFromIssues#marker() marker}, each issue hung under it in its order, keeping its own
      * fields. Every issue is checked before anything is written; a save cut off after the story was
-     * made is finished by the same call sent again, which takes that story and hangs only the
-     * issues it lacks.
+     * made is finished by the same call sent again against the board read since, which takes the
+     * story carrying that marker and hangs only the issues it lacks; the story keeps the priority
+     * it holds.
      *
      * @param revision the revision the caller read
      * @param story the story and its issues
@@ -195,6 +207,7 @@ public interface PlanningStore {
      *     changed since it was read
      * @throws StoreException.NoSuchIssue if the board has no such issue
      * @throws StoreException.NotSavable if an issue cannot be hung under a new story
+     * @throws StoreException.InStory if another story holds an issue
      * @throws UnsupportedOperationException if the store does not offer it
      * @throws StoreException.Busy if another save or a check holds the project too long
      * @throws StoreException.PartlySaved if a later call failed after the story was made

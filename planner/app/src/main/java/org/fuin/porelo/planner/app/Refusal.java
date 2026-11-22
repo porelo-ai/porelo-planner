@@ -68,6 +68,7 @@ public final class Refusal extends RuntimeException {
                     case "NoSuchStory", "NoSuchIssue", "TaskNotAnswered" -> HttpStatus.NOT_FOUND;
                     case "StaleRevision",
                             "WorkRunning",
+                            "IssueInStory",
                             "ReadingNotStopped",
                             "ReadingRoundChanged",
                             "ReworkNeedsFindings",

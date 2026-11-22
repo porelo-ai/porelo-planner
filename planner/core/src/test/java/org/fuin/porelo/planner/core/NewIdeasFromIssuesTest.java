@@ -19,9 +19,15 @@ import org.junit.jupiter.api.Test;
 /** A story made over issues that stand, checked against the board before the store writes it. */
 class NewIdeasFromIssuesTest {
 
+    /** The marker of the request "Tag stories" over a#5 and a#6, which ST2's body carries. */
+    private static final String TAG_STORIES =
+            StoryFromIssues.marker(
+                    "Tag stories", "People find stories", "Tag one", List.of("a#5", "a#6"));
+
     /**
-     * ST1 "Held" holds a#1 and a#8; ST2 "Tag stories" holds a#5; a#2 is open and loose; a#2.1 hangs
-     * under a#2; a#3 is Finished, a#4 Rejected; a#6 is loose; o#7 stands outside the workflow.
+     * ST1 "Held", a person's own, holds a#1 and a#8; ST2 "Tag stories" holds a#5 and carries the
+     * marker of the request over a#5 and a#6; a#2 is open and loose; a#10 hangs under a#2; a#3 is
+     * Finished, a#4 Rejected; a#6 is loose; o#7 stands outside the workflow.
      */
     private static final Board BOARD =
             new Board(
@@ -30,7 +36,9 @@ class NewIdeasFromIssuesTest {
                             List.of("Idea", "Backlog", "Finished", "Rejected"),
                             List.of(),
                             List.of("Finished", "Rejected")),
-                    List.of(story("ST1", "Held", "a#1", "a#8"), story("ST2", "Tag stories", "a#5")),
+                    List.of(
+                            story("ST1", "Held", "", "a#1", "a#8"),
+                            story("ST2", "Tag stories", "Body.\n\n" + TAG_STORIES + "\n", "a#5")),
                     List.of(
                             issue("a#1", "Idea", null),
                             issue("a#2", "Backlog", null),
@@ -48,8 +56,9 @@ class NewIdeasFromIssuesTest {
                             new OutsideIssue(
                                     "o#7", "o", "Loose", "", null, null, null, Worker.AGENT)));
 
-    private static Story story(final String id, final String title, final String... issues) {
-        return new Story(id, title, "Idea", false, "High", null, List.of(issues), "", null);
+    private static Story story(
+            final String id, final String title, final String body, final String... issues) {
+        return new Story(id, title, "Idea", false, "High", null, List.of(issues), body, null);
     }
 
     private static Issue issue(final String id, final String state, final String parent) {
@@ -58,6 +67,30 @@ class NewIdeasFromIssuesTest {
 
     private static NewIdeas.Story head(final String title) {
         return new NewIdeas.Story(" " + title + " ", "People find stories", "Tag one", "High");
+    }
+
+    private static WorkRefusal refused(final String title, final List<String> existing) {
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () -> NewIdeas.checkFromIssues(BOARD, head(title), existing, List.of()));
+        assertThat(refused).as("the refusal of %s under %s", existing, title).isNotNull();
+        return refused;
+    }
+
+    /** Asserts the 409 that names the issue another story holds, that story and its field. */
+    private static void inStory(
+            final String title,
+            final List<String> existing,
+            final String issue,
+            final String story,
+            final int index) {
+        final WorkRefusal refused = refused(title, existing);
+        assertThat(refused.name()).as("the refusal's name").isEqualTo("IssueInStory");
+        assertThat(refused.parameters())
+                .as("the issue, its story and the field naming it")
+                .isEqualTo(
+                        Map.of("issue", issue, "story", story, "field", "existing[" + index + "]"));
     }
 
     private static List<String> faults(final List<String> existing) {
@@ -99,9 +132,8 @@ class NewIdeasFromIssuesTest {
         // issue outside the workflow or one named twice hung into a new story, or refused
         // without its id, so the person cannot tell which one to fix.
         assertThat(faults(List.of("a#1", "ST2", "a#3", "a#4", "a#9", "a#10", "o#7", "a#6", "a#6")))
-                .as("every fault, each by its place and its id")
+                .as("every fault, each by its place and its id, before an issue held elsewhere")
                 .containsExactly(
-                        "existing[0]: The issue a#1 belongs to ST1; an issue has one story.",
                         "existing[1]: ST2 is a story, not an issue.",
                         "existing[2]: The issue a#3 is Finished; a new story takes open issues"
                                 + " only.",
@@ -115,10 +147,17 @@ class NewIdeasFromIssuesTest {
     }
 
     @Test
-    void anIssueHeldByTheStoryACutOffSaveOfTheSameRequestMadeIsLetThroughAndNoOther() {
+    void anIssueAnotherStoryHoldsIsAConflictNamingTheIssueItsStoryAndItsField() {
+        // Harm: an issue of another story answered as a malformed request, so the window's
+        // conflict path never runs and the person is not told which story holds it.
+        inStory("A new story", List.of("a#6", "a#1"), "a#1", "ST1", 1);
+    }
+
+    @Test
+    void onlyTheStoryCarryingTheMarkerOfTheSameRequestIsLetThroughAndNoOther() {
         // Harm: a save cut off after it hung an issue can never be finished, since its own
-        // story holds the issue; or an issue of a person's own story of the same title, which
-        // holds an issue not named, is taken from it.
+        // story holds the issue; or a person's own story, or one another request made, is
+        // extended by a call that says it makes a new one.
         final StoryFromIssues retried =
                 NewIdeas.checkFromIssues(
                         BOARD, head("Tag stories"), List.of("a#5", "a#6"), List.of());
@@ -126,24 +165,21 @@ class NewIdeasFromIssuesTest {
                 .as("the issues of the same request sent again, one held by its earlier story")
                 .containsExactly("a#5", "a#6");
 
-        assertThat(faults(List.of("a#5", "a#6")))
-                .as("the same issues under another title")
-                .containsExactly(
-                        "existing[0]: The issue a#5 belongs to ST2; an issue has one story.");
-        final WorkRefusal own =
-                catchThrowableOfType(
-                        WorkRefusal.class,
-                        () ->
-                                NewIdeas.checkFromIssues(
-                                        BOARD, head("Held"), List.of("a#1", "a#6"), List.of()));
-        assertThat(own)
-                .as("an issue of a story of the same title that holds an issue not named")
-                .isNotNull();
-        assertThat(own.parameters().get("faults"))
-                .as("the issue taken from the person's own story")
-                .isEqualTo(
-                        List.of(
-                                "existing[0]: The issue a#1 belongs to ST1; an issue has one"
-                                        + " story."));
+        inStory("Another title", List.of("a#5", "a#6"), "a#5", "ST2", 0);
+        inStory("Tag stories", List.of("a#5", "a#6", "a#2"), "a#5", "ST2", 0);
+        inStory("Held", List.of("a#1", "a#8"), "a#1", "ST1", 0);
+        inStory("Held", List.of("a#1", "a#6"), "a#1", "ST1", 0);
+    }
+
+    @Test
+    void aStoryOverMoreIssuesThanAStoryHoldsIsRefused() {
+        // Harm: a story the reader's bound never saw made over more issues than any story holds.
+        final List<String> many = new java.util.ArrayList<>();
+        for (int number = 1; number <= Edits.MOST_ISSUES + 1; number++) {
+            many.add("a#" + number);
+        }
+        assertThat(faults(many))
+                .as("the bound named first")
+                .startsWith("existing: A story holds at most 100 issues.");
     }
 }

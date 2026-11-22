@@ -116,6 +116,11 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public boolean makesStoriesFromIssues() {
+        return store.makesStoriesFromIssues();
+    }
+
+    @Override
     public NewIdea.Added createStoryFromIssues(
             final Revision revision, final StoryFromIssues story) {
         return store.createStoryFromIssues(revision, story);
