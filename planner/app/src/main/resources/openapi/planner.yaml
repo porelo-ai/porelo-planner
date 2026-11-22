@@ -1143,6 +1143,42 @@ paths:
   /projects/{project}/issues:
     parameters:
       - $ref: '#/components/parameters/Project'
+    get:
+      operationId: listIssues
+      summary: List the issues in no story
+      description: >-
+        Answers the board's issues that no story names and that are not sub-issues, at any depth, of an issue a
+        story names. An issue outside the workflow is not listed, since it is on no board. Issues follow the
+        board's order of states, then the order in which the store supplies the board's issues. The story query parameter is required and accepts only none; a missing or other value is refused
+        before any board or work record is read (InvalidName).
+      tags: [board]
+      parameters:
+        - name: story
+          in: query
+          required: true
+          description: Selects only issues in no story.
+          schema:
+            type: string
+            enum: [none]
+      responses:
+        '200':
+          description: The issues in no story at the board's revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueList'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
     post:
       operationId: createIssue
       summary: Add an idea as a new issue
@@ -1504,8 +1540,8 @@ components:
             detail: The level is none of ERROR, WARN, INFO, DEBUG.
     InvalidName:
       description: >-
-        A project name, story id or issue id was refused (InvalidName); its parameters name the project, unless the
-        project's own name is the one refused.
+        A project name, story id, issue id or query parameter was refused (InvalidName); its parameters name the
+        project, unless the project's own name is the one refused.
       content:
         application/problem+json:
           schema:
@@ -2972,7 +3008,7 @@ components:
               $ref: '#/components/schemas/TextFormat'
 
     IssueList:
-      description: A story's issues at one revision.
+      description: "Issues at one revision: a story's, or those in no story."
       type: object
       required: [revision, issues]
       properties:
@@ -2992,7 +3028,7 @@ components:
         issue:
           $ref: '#/components/schemas/IssueDetail'
     Issue:
-      description: One issue of a story.
+      description: One issue on the board.
       type: object
       required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention]
       properties:

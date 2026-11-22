@@ -234,15 +234,20 @@ public final class WorkAnswers {
     }
 
     static boolean lost(final Board board, final WorkRun.Snapshot snapshot, final Issue issue) {
-        return issue.worker() != org.fuin.porelo.planner.store.Worker.MANUAL
-                && board.work().rules().containsKey(issue.state())
-                && board.stories().stream()
+        if (issue.worker() == org.fuin.porelo.planner.store.Worker.MANUAL
+                || !board.work().rules().containsKey(issue.state())) {
+            return false;
+        }
+        final List<org.fuin.porelo.planner.store.Story> mine =
+                board.stories().stream()
                         .filter(
                                 s ->
                                         s.issues().contains(issue.id())
                                                 || issue.parent() != null
                                                         && s.issues().contains(issue.parent()))
-                        .anyMatch(s -> !snapshot.runs().containsKey(s.id()));
+                        .toList();
+        // Runs are kept per story, so an issue in no story can have none here.
+        return mine.isEmpty() || mine.stream().anyMatch(s -> !snapshot.runs().containsKey(s.id()));
     }
 
     static org.fuin.porelo.planner.app.answers.Issue issue(

@@ -92,6 +92,24 @@ class MockModeTest {
     }
 
     @Test
+    void theMockListsAnIssueInNoStoryThroughTheBoardApi() throws Exception {
+        // Harm: the window's tests cannot expose work omitted from every story.
+        call(runtime, "PUT", "/projects/any", SOURCE);
+
+        final JsonNode answer = json(call(runtime, "GET", "/projects/any/issues?story=none", null));
+
+        assertThat(answer.path("revision").asString())
+                .as("the mock board's revision")
+                .isEqualTo("mock@1");
+        assertThat(answer.path("issues").valueStream().map(i -> i.path("id").asString()).toList())
+                .as("the mock's issue that no story names")
+                .containsExactly("B900");
+        assertThat(answer.at("/issues/0/worker").asString())
+                .as("the same issue fields the mock serves for story issues")
+                .isEqualTo("AGENT");
+    }
+
+    @Test
     void everyIssueOfTheMockBoardNamesItsWorkerAndSomeArePeoples() throws Exception {
         // A mock issue without a worker, or none a person works, leaves the window's tests of a
         // person's issue nothing to show.

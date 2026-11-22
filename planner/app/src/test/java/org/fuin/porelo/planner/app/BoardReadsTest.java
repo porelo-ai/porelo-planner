@@ -9,14 +9,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
@@ -24,14 +30,20 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /** The board reads as the window calls them, over a store that answers what a test gives it. */
 class BoardReadsTest {
@@ -40,9 +52,15 @@ class BoardReadsTest {
 
     private final List<String> opened = new ArrayList<>();
 
+    private final WorkRecord records = new WorkRecord(Map.of(), true);
+
     private @Nullable RuntimeException refusal;
 
     private MockMvc mvc;
+
+    private Board supplied = board();
+
+    private int reads;
 
     private static Board board() {
         final Map<String, WorkRule> rules = new LinkedHashMap<>();
@@ -125,10 +143,11 @@ class BoardReadsTest {
                 new PlanningStore() {
                     @Override
                     public Board board() {
+                        reads++;
                         if (refusal != null) {
                             throw refusal;
                         }
-                        return BoardReadsTest.board();
+                        return supplied;
                     }
 
                     @Override
@@ -159,7 +178,8 @@ class BoardReadsTest {
                             opened.add(project + " " + repository + " " + branch);
                             return store;
                         },
-                        8);
+                        8,
+                        records);
         mvc =
                 MockMvcBuilders.standaloneSetup(
                                 new BoardController(
@@ -300,6 +320,221 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.issues[0].parent").value("AB01"))
                 .andExpect(jsonPath("$.issues[0].size").isEmpty())
                 .andExpect(jsonPath("$.issues[0].blockedBy[0]").value("AB01"));
+    }
+
+    @Test
+    void theIssuesInNoStoryExcludeStoryIssuesAndTheirDescendantsAtTheBoardsRevision()
+            throws Exception {
+        // Harm: an issue hidden from the board, or a story's work counted twice.
+        supplied =
+                issueBoard(
+                        List.of("porelo-store#1"),
+                        List.of(
+                                unassignedIssue("porelo-store#1", "Backlog", null),
+                                unassignedIssue("porelo-store#2", "Review", null),
+                                unassignedIssue("porelo-store#3", "Backlog", "porelo-store#1"),
+                                unassignedIssue("porelo-store#4", "Backlog", "porelo-store#3")));
+        given();
+
+        final JsonNode answer = issuesInNoStory();
+
+        assertThat(answer.path("revision").asString())
+                .as("the revision of the board that supplied the issues")
+                .isEqualTo("unassigned@c2");
+        assertThat(answer.path("issues").valueStream().map(i -> i.path("id").asString()).toList())
+                .as("only the issue neither named by a story nor descended from one it names")
+                .containsExactly("porelo-store#2");
+    }
+
+    @Test
+    void aSubIssueOfAnIssueInNoStoryIsStillListed() throws Exception {
+        // Harm: filtering every sub-issue hides work whose whole family is in no story.
+        supplied =
+                issueBoard(
+                        List.of(),
+                        List.of(
+                                unassignedIssue("porelo-store#1", "Review", null),
+                                unassignedIssue("porelo-other#3", "Backlog", null),
+                                unassignedIssue("porelo-store#2", "Backlog", "porelo-store#1")));
+        given();
+
+        final JsonNode answer = issuesInNoStory();
+
+        assertThat(answer.path("issues").valueStream().map(i -> i.path("id").asString()).toList())
+                .as("every unassigned issue, by workflow state with the board's order preserved")
+                .containsExactly("porelo-other#3", "porelo-store#2", "porelo-store#1");
+    }
+
+    @Test
+    void anAgentsIssueInNoStoryInAWorkingStateHasNoRunHere() throws Exception {
+        // Harm: work that stands in a working state with no run anywhere here looks looked after.
+        supplied =
+                issueBoard(
+                        List.of(),
+                        List.of(unassignedIssue("porelo-store#2", "Implementing", null)));
+        given();
+
+        final JsonNode answer = issuesInNoStory();
+
+        assertThat(answer.at("/issues/0/noRunHere").asBoolean())
+                .as("an agent's issue in a working state, which no story's run can hold")
+                .isTrue();
+    }
+
+    @Test
+    void anIssueInNoStoryHasTheSameFieldsAsTheSameIssueInAStory() throws Exception {
+        // Harm: a loose issue loses its reading progress or breaks the screen on a missing field.
+        final List<Issue> issues =
+                List.of(unassignedIssue("porelo-store#2", "Backlog", "porelo-store#1"));
+        supplied = issueBoard(List.of(), issues);
+        given();
+        givenReadingProgress();
+        final JsonNode unassigned = issuesInNoStory();
+
+        supplied = issueBoard(List.of("porelo-store#2"), issues);
+        final var response = mvc.perform(get("/projects/alpha/stories/ST1/issues")).andReturn();
+        assertThat(response.getResponse().getStatus())
+                .as("the story issue list used as the screen's reference")
+                .isEqualTo(200);
+        final JsonNode assigned =
+                JsonMapper.builder().build().readTree(response.getResponse().getContentAsString());
+
+        assertThat(unassigned.path("issues").size()).as("the loose issue is present").isEqualTo(1);
+        assertThat(unassigned.path("issues"))
+                .as("the complete issue representation, including nulls and work flags")
+                .isEqualTo(assigned.path("issues"));
+        assertThat(unassigned.at("/issues/0/rounds").asInt())
+                .as("the recorded reading rounds survive detachment from the story")
+                .isEqualTo(2);
+        assertThat(unassigned.at("/issues/0/needsYou").asBoolean())
+                .as("the recorded need for the person remains visible")
+                .isTrue();
+        assertThat(unassigned.at("/issues/0/readingStopped").asBoolean())
+                .as("the stopped reading remains visible")
+                .isTrue();
+        assertThat(unassigned.at("/issues/0/attention").asString())
+                .as("the recorded reason for attention is retained")
+                .isEqualTo("STOPPED");
+        assertThat(unassigned.at("/issues/0/findings/0/text").asString())
+                .as("the finding remains available to the person")
+                .isEqualTo("The issue needs a repair.");
+    }
+
+    private void givenReadingProgress() {
+        final NextStep.Progress progress =
+                new NextStep.Progress(
+                        new ReadingCycle.Rounds(2, 3, true),
+                        List.of(
+                                new WorkEnds.Finding(
+                                        1,
+                                        WorkEnds.Severity.BLOCKING,
+                                        null,
+                                        null,
+                                        "The issue needs a repair.")),
+                        true,
+                        "STOPPED",
+                        "");
+        final WorkRun.Run run =
+                new WorkRun.Run(
+                        "run",
+                        "ST1",
+                        "Implementing",
+                        "AGENT",
+                        "",
+                        "",
+                        3,
+                        List.of(),
+                        List.of(),
+                        Instant.EPOCH.toString(),
+                        List.of(),
+                        Map.of("porelo-store#2", progress),
+                        true,
+                        false,
+                        false);
+        records.open("alpha", "git@example.org:a/porelo-store.git", null)
+                .locked(
+                        session -> {
+                            session.write(new WorkRun.Snapshot(1, Map.of("ST1", run)));
+                            return true;
+                        });
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"ST1", "all", "NONE"})
+    void aMissingOrUnsupportedStoryFilterIsRefusedBeforeReading(final @Nullable String story)
+            throws Exception {
+        // Harm: an unintended list served under a contract nobody agreed, with needless reads.
+        given();
+        reads = 0;
+        final var request = get("/projects/alpha/issues");
+        if (story != null) {
+            request.param("story", story);
+        }
+
+        final var response = mvc.perform(request).andReturn().getResponse();
+
+        assertThat(response.getStatus()).as("the invalid filter's status").isEqualTo(400);
+        assertThat(response.getContentType())
+                .as("a problem the window can read")
+                .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        final JsonNode problem =
+                JsonMapper.builder().build().readTree(response.getContentAsString());
+        assertThat(problem.path("type").asString())
+                .as("the API's bad parameter refusal")
+                .isEqualTo("urn:porelo-planner:InvalidName");
+        assertThat(problem.path("parameters").propertyNames())
+                .as("the refusal names the project alone, never the value sent")
+                .containsExactly("project");
+        assertThat(reads).as("no board read for a refused query").isZero();
+    }
+
+    private JsonNode issuesInNoStory() throws Exception {
+        final var response =
+                mvc.perform(get("/projects/alpha/issues").param("story", "none"))
+                        .andReturn()
+                        .getResponse();
+        assertThat(response.getStatus())
+                .as("the list of issues in no story: %s", response.getContentAsString())
+                .isEqualTo(200);
+        return JsonMapper.builder().build().readTree(response.getContentAsString());
+    }
+
+    private static Board issueBoard(final List<String> named, final List<Issue> issues) {
+        final Board base = board();
+        return new Board(
+                new Revision("unassigned@c2"),
+                base.workflow(),
+                List.of(new Story("ST1", "Story", "Backlog", true, "High", "M", named, "", null)),
+                issues,
+                base.work(),
+                List.of("porelo-store", "porelo-other"),
+                List.of(),
+                null,
+                List.of(
+                        new OutsideIssue(
+                                "porelo-store#5",
+                                "porelo-store",
+                                "Outside",
+                                "Paused",
+                                null,
+                                null,
+                                null,
+                                Worker.AGENT)));
+    }
+
+    private static Issue unassignedIssue(
+            final String id, final String state, final @Nullable String parent) {
+        return new Issue(
+                id,
+                Ids.repositoryOf(id),
+                "Work",
+                state,
+                "S",
+                List.of(Ids.repositoryOf(id) + "#9"),
+                parent,
+                URI.create("https://example.org/work"),
+                "The issue's text.");
     }
 
     @Test

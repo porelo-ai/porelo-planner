@@ -737,6 +737,19 @@
   ],
   "issues": [
     {
+      "id": "B900",
+      "repository": "porelo",
+      "title": "Planning work in no story",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B900",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY"
+    },
+    {
       "id": "PJ74",
       "repository": "porelo-project",
       "title": "Planning work",

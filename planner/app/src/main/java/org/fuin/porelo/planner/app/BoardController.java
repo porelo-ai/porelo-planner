@@ -1,11 +1,16 @@
 package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -918,6 +923,76 @@ public class BoardController {
                                 new IssueList(
                                         board.revision().value(),
                                         issues(board, found(board, checked), snapshot)));
+    }
+
+    /**
+     * Answers the board's issues that belong to no story, directly or through a parent.
+     *
+     * @param project the project's name
+     * @param story the required filter, whose only value is {@code none}
+     * @return the issues and the board's revision
+     */
+    @GetMapping("/projects/{project}/issues")
+    public IssueList issues(
+            @PathVariable("project") final String project,
+            @RequestParam(name = "story", required = false) final @Nullable String story) {
+        final String name = name(project);
+        if (!"none".equals(story)) {
+            throw Refusal.invalidName(
+                    "The story query parameter must be none.", Map.of("project", name));
+        }
+        return projects.work(name)
+                .view(
+                        (board, snapshot) -> {
+                            final Set<String> assigned = issuesInStories(board);
+                            return new IssueList(
+                                    board.revision().value(),
+                                    board.issues().stream()
+                                            .filter(issue -> !assigned.contains(issue.id()))
+                                            // Priority and rank live in the store's issue order.
+                                            .sorted(
+                                                    Comparator.comparingInt(
+                                                            issue ->
+                                                                    board.workflow()
+                                                                            .states()
+                                                                            .indexOf(
+                                                                                    issue.state())))
+                                            .map(issue -> issue(board, issue, snapshot))
+                                            .toList());
+                        });
+    }
+
+    private static Set<String> issuesInStories(final Board board) {
+        final Map<String, List<String>> children = new HashMap<>();
+        for (final Issue issue : board.issues()) {
+            child(children, issue.parent(), issue.id());
+        }
+        final Set<String> assigned = new HashSet<>();
+        final ArrayDeque<String> pending = new ArrayDeque<>();
+        for (final Story story : board.stories()) {
+            for (final String id : story.issues()) {
+                if (assigned.add(id)) {
+                    pending.add(id);
+                }
+            }
+        }
+        while (!pending.isEmpty()) {
+            for (final String id : children.getOrDefault(pending.remove(), List.of())) {
+                if (assigned.add(id)) {
+                    pending.add(id);
+                }
+            }
+        }
+        return assigned;
+    }
+
+    private static void child(
+            final Map<String, List<String>> children,
+            final @Nullable String parent,
+            final String id) {
+        if (parent != null) {
+            children.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(id);
+        }
     }
 
     /**

@@ -234,6 +234,7 @@ class ApiMatchesDescriptionTest {
                         "POST /projects/{project}/stories/{story}/proposal",
                         "POST /projects/{project}/stories/{story}/work",
                         "POST /projects/{project}/stories",
+                        "GET /projects/{project}/issues",
                         "PUT /projects/{project}/issues/{issue}/fields",
                         "PUT /projects/{project}/stories/{story}/issues",
                         "PUT /projects/{project}/issues/{issue}/blockedBy",
