@@ -607,6 +607,27 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<PlanIssueList> listIssues(String project) async {
+    final list = PlanIssueList.from(await _read(project, ['issues'], query: {'story': 'none'}));
+    _workersNamed(list.issues);
+    return list;
+  }
+
+  @override
+  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async {
+    final answer = await _write(
+      project,
+      ['stories', _checked('story', story, _storyId), 'issues'],
+      {
+        'issues': [for (final issue in issues) _checked('issue', issue, _issueId)],
+        'revision': revision,
+      },
+      method: 'PUT',
+    );
+    return answer['revision'] as String;
+  }
+
+  @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async {
     final detail = PlanIssueDetail.from(await _read(project, ['issues', _checked('issue', issue, _issueId)]));
     _workersNamed([?detail.issue]);
@@ -1015,9 +1036,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
 
   /// Reads `projects/{project}/<path>`, telling the planner the project first, again whenever the window names
   /// another repository or branch for it, and again once on `NoSuchProject`.
-  Future<Map<String, dynamic>> _read(String project, List<String> path) async {
+  Future<Map<String, dynamic>> _read(String project, List<String> path, {Map<String, String>? query}) async {
     final given = await _told(project);
-    final uri = _uri(project, path);
+    final uri = _uri(project, path).replace(queryParameters: query);
     try {
       return await _call('GET', uri, null);
     } on PlanningRefusal catch (refusal) {

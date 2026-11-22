@@ -17,6 +17,8 @@ import 'new_issue_dialog.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
+import 'planning_issue_row.dart';
+import 'planning_no_story_card.dart';
 import 'planning_story_view.dart';
 import 'story_work_wizard.dart';
 import 'style.dart';
@@ -586,6 +588,8 @@ class _BoardViewState extends State<_BoardView> {
                           padding: const EdgeInsets.symmetric(vertical: Space.small),
                           child: _problem(problem, theme),
                         ),
+                      if (board.noStoryProblem case final problem?)
+                        _failure('Issues in no story: $problem', theme, key: const Key('planning-no-story-error')),
                       if (board.readProblem case final problem?)
                         _failure(problem, theme, key: const Key('planning-read-error')),
                       if (board.snapshot != null && !board.snapshot!.complete)
@@ -969,6 +973,19 @@ class _BoardViewState extends State<_BoardView> {
                     itemCount: cards.length,
                     itemBuilder: (context, index) =>
                         _dropOn(state, phaseFolded ? _tile(context, cards[index]) : _card(context, cards[index])),
+                  ),
+                ),
+              if (!folded && board.noStoryIn(state.name).isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.tight),
+                    child: PlanningNoStoryCard(
+                      phaseFolded: phaseFolded,
+                      board: board,
+                      state: state.name,
+                      onIssue: (id) => widget.onIssue('', id),
+                      sizeBadge: (issue) => _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                    ),
                   ),
                 ),
             ],
@@ -1389,31 +1406,10 @@ class _BoardViewState extends State<_BoardView> {
                         child: _markFound(
                           context,
                           found.contains(issue.id) ? issue.id : null,
-                          Column(
-                            key: Key('planning-issue-row ${issue.id}'),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              TextButton(
-                                key: Key('planning-issue ${issue.id}'),
-                                onPressed: issue.id.isEmpty ? null : () => widget.onIssue(story.id, issue.id),
-                                child: Text(_line('${issue.id} · ${issue.repository}')),
-                              ),
-                              if (issue.title.isNotEmpty) Text(_line(issue.title)),
-                              Wrap(
-                                spacing: Space.small,
-                                children: [
-                                  if (issue.state.isNotEmpty) Text(_line(issue.state)),
-                                  ?_size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
-                                  if (issue.worker case final worker?) Text(planningWorker(worker)),
-                                  if (issue.noRunHere)
-                                    Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
-                                ],
-                              ),
-                              if (!issue.blockedByReported)
-                                const Text('Blockers not reported')
-                              else if (issue.blockedBy.isNotEmpty)
-                                Text(_line('Blocked by ${issue.blockedBy.join(', ')}')),
-                            ],
+                          PlanningIssueRow(
+                            issue: issue,
+                            onOpen: () => widget.onIssue(story.id, issue.id),
+                            sizeBadge: _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
                           ),
                         ),
                       ),
@@ -1562,12 +1558,14 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton(key: const Key('planning-crumb 0'), onPressed: widget.onBoard, child: const Text('Planning')),
-              const Text('›'),
-              TextButton(
-                key: const Key('planning-crumb 1'),
-                onPressed: widget.issue == null ? null : widget.onParent,
-                child: Text(planningShown(widget.story, multiline: false)),
-              ),
+              if (widget.story.isNotEmpty) ...[
+                const Text('›'),
+                TextButton(
+                  key: const Key('planning-crumb 1'),
+                  onPressed: widget.issue == null ? null : widget.onParent,
+                  child: Text(planningShown(widget.story, multiline: false)),
+                ),
+              ],
               if (widget.issue != null) ...[
                 const Text('›'),
                 // A text button pads its label; the last crumb, plain text, takes the same room.

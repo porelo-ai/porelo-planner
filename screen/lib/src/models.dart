@@ -210,7 +210,7 @@ enum IssueWorker {
   static IssueWorker? read(Object? value) => values.where((worker) => worker.wire == value).firstOrNull;
 }
 
-/// One issue belonging to a story.
+/// One issue on the board, with or without a story.
 class PlanIssue {
   /// Applies destinations explicitly confirmed by the save answer.
   PlanIssue.withState(PlanIssue source, this.state)

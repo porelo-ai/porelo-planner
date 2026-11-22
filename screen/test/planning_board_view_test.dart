@@ -212,6 +212,199 @@ Future<void> _confirmAndCancelInView(WidgetTester tester, {required double above
 }
 
 void main() {
+  // Harm: an unanswered issue save can be submitted again from an enabled row menu.
+  testWidgets('an unanswered standalone issue move disables its row menu', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    backend.push('checkout', {
+      ...backend.board('checkout'),
+      'revision': 'loose',
+      'issues': [
+        {'id': 'B900', 'title': 'Standalone work', 'repository': 'porelo', 'state': 'Ready', 'worker': 'AGENT'},
+      ],
+    });
+    await settle(tester);
+    boards.selected!.expandNoStory('Ready');
+    backend.moveFailure = const PlanningRefusal('TimedOut');
+    await boards.selected!.moveIssue('B900', 'Done');
+    await settle(tester);
+    PopupMenuButton<(String, String, int)> menu() =>
+        tester.widget<PopupMenuButton<(String, String, int)>>(find.byKey(const Key('planning-no-story-menu B900')));
+    expect(boards.selected!.waitsOnItsSave('issue B900'), isTrue, reason: 'its save went unanswered');
+    expect(menu().enabled, isFalse);
+    await tester.pump(const Duration(minutes: 5));
+    expect(menu().enabled, isTrue, reason: 'the menu returns once the unanswered save is given up');
+  });
+
+  // Harm: standalone rows overflow a folded phase and make its count or neighboring states inaccessible.
+  testWidgets('a folded phase shows only a compact standalone tile even when its rows were expanded', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    backend.push('checkout', {
+      ...backend.board('checkout'),
+      'revision': 'loose',
+      'issues': [
+        {'id': 'B900', 'title': 'Standalone work', 'repository': 'porelo', 'state': 'Ready', 'worker': 'AGENT'},
+      ],
+    });
+    await settle(tester);
+    boards.selected!.expandNoStory('Ready');
+    boards.selected!.showAllNoStory('Ready');
+    boards.selected!.foldPhase('Work');
+    await settle(tester);
+    final card = find.byKey(const Key('planning-no-story Ready'));
+    expect(card, findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('No story')), findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('1')), findsOneWidget);
+    expect(find.byKey(const Key('planning-issue-row B900')), findsNothing);
+    expect(tester.getSize(card).width, lessThanOrEqualTo(PlanningStyle.foldedColumn));
+    expect(tester.takeException(), isNull, reason: 'the narrow tile must not overflow');
+  });
+
+  // Harm: a visible issue cannot be opened or assigned to a story through the board's row actions.
+  testWidgets('a row can hang its issue into a story found by title or reference', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    backend.push('checkout', {
+      ...backend.board('checkout'),
+      'revision': 'loose',
+      'stories': [
+        {
+          'id': 'StoryOne',
+          'title': 'A story',
+          'state': 'Ready',
+          'issues': [
+            {'id': 'I1', 'title': 'Existing issue', 'repository': 'porelo', 'state': 'Ready'},
+          ],
+        },
+        {'id': 'Partial', 'title': 'Partial story', 'state': 'Ready'},
+      ],
+      'issues': [
+        {'id': 'B900', 'title': 'Planning work in no story', 'repository': 'porelo', 'state': 'Ready'},
+      ],
+    });
+    await settle(tester);
+    // Two story cards push the card of issues in no story below the view.
+    Future<void> tapShown(String key) async {
+      await tester.ensureVisible(find.byKey(Key(key), skipOffstage: false));
+      await tester.pump();
+      await tester.tap(find.byKey(Key(key)));
+      await settle(tester);
+    }
+
+    await tapShown('planning-no-story-expand Ready');
+    await tapShown('planning-issue B900');
+    expect(find.byKey(const Key('planning-issue-state')), findsOneWidget);
+    expect(find.byKey(const Key('planning-crumb 1')), findsNothing, reason: 'there is no parent story to open');
+    await tester.tap(find.byKey(const Key('planning-crumb 0')).hitTestable());
+    await settle(tester);
+    await tapShown('planning-no-story-menu B900');
+    await tester.tap(find.text('Hang into a story…'));
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('planning-hang-search')), 'Partial');
+    await settle(tester);
+    expect(find.byKey(const Key('planning-hang-story Partial')), findsNothing);
+    await tester.enterText(find.byKey(const Key('planning-hang-search')), 'missing');
+    await settle(tester);
+    expect(find.byKey(const Key('planning-hang-story StoryOne')), findsNothing);
+    await tester.enterText(find.byKey(const Key('planning-hang-search')), 'A story');
+    await settle(tester);
+    expect(find.byKey(const Key('planning-hang-story StoryOne')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('planning-hang-search')), 'StoryOne');
+    await settle(tester);
+    backend.push('checkout', {...backend.board('checkout'), 'revision': 'while-choosing'});
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-hang-story StoryOne')));
+    await settle(tester);
+    expect(boards.selected!.stories.firstWhere((story) => story.id == 'StoryOne').issues.map((issue) => issue.id), [
+      'I1',
+      'B900',
+    ]);
+    boards.selected!.expand('StoryOne');
+    await settle(tester);
+    final rows = find.descendant(
+      of: find.byKey(const Key('planning-card StoryOne')),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget.key == const Key('planning-issue-row I1') || widget.key == const Key('planning-issue-row B900'),
+      ),
+    );
+    expect(tester.widgetList<Column>(rows).map((row) => row.key), [
+      const Key('planning-issue-row I1'),
+      const Key('planning-issue-row B900'),
+    ]);
+    expect(find.byKey(const Key('planning-no-story Ready')), findsNothing);
+  });
+
+  // Harm: an issue in no story cannot be moved from its row, or is offered an agent-only working state.
+  testWidgets('a row offers the permitted states and moves its issue through the board save', (tester) async {
+    final (backend, boards) = await _showBoard(tester);
+    backend.push('checkout', {
+      ...backend.board('checkout'),
+      'revision': 'loose',
+      'issues': [
+        {
+          'id': 'B900',
+          'title': 'Planning work in no story',
+          'repository': 'porelo',
+          'state': 'Ready',
+          'worker': 'AGENT',
+        },
+      ],
+    });
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-no-story-expand Ready')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-no-story-menu B900')));
+    await settle(tester);
+    await tester.tap(find.text('Move to…'));
+    await settle(tester);
+    expect(find.byKey(const Key('planning-move-to B900 Building')), findsNothing);
+    await tester.tap(find.byKey(const Key('planning-move-to B900 Done')));
+    await settle(tester);
+    expect(backend.moveCalls.single['moves'], [
+      {'issue': 'B900', 'to': 'Done'},
+    ]);
+    expect(boards.selected!.noStory.single.state, 'Done');
+    expect(find.byKey(const Key('planning-no-story Done')), findsOneWidget);
+    expect(find.byKey(const Key('planning-no-story Ready')), findsNothing);
+  });
+
+  // Harm: issues in no story cannot be seen, especially beyond the first page of rows.
+  testWidgets('only states with issues in no story have a folded card that opens twenty rows and then all', (
+    tester,
+  ) async {
+    final (backend, boards) = await _showBoard(tester);
+    final data = backend.boards['checkout']!;
+    backend.push('checkout', {
+      ...data,
+      'revision': 'loose',
+      'issues': [
+        for (var i = 1; i <= 21; i++)
+          {'id': 'B$i', 'title': 'Loose issue $i', 'repository': 'own', 'state': 'Ready', 'worker': 'AGENT'},
+      ],
+    });
+    await settle(tester);
+    final card = find.byKey(const Key('planning-no-story Ready'));
+    expect(card, findsOneWidget);
+    expect(find.byKey(const Key('planning-no-story Building')), findsNothing);
+    expect(find.byKey(const Key('planning-no-story Review')), findsNothing);
+    expect(find.byKey(const Key('planning-no-story Done')), findsNothing);
+    expect(find.descendant(of: card, matching: find.text('21 issues')), findsOneWidget);
+    expect(find.byKey(const Key('planning-issue-row B1')), findsNothing);
+    await tester.tap(find.byKey(const Key('planning-no-story-expand Ready')));
+    await settle(tester);
+    expect(
+      find.byWidgetPredicate((widget) => widget.key is Key && widget.key.toString().contains('planning-issue-row B')),
+      findsNWidgets(20),
+    );
+    expect(find.byKey(const Key('planning-issue-row B21')), findsNothing);
+    final all = find.byKey(const Key('planning-no-story-all Ready'));
+    await tester.ensureVisible(all);
+    await tester.pump();
+    await tester.tap(all);
+    await settle(tester);
+    expect(find.byKey(const Key('planning-issue-row B21')), findsOneWidget);
+    expect(boards.selected!.noStory.length, 21);
+  });
+
   // Harm: a person cannot confirm or cancel a move over running work, since the warning pushes its buttons out of
   // the window.
   testWidgets('a move warning with every list shown keeps Confirm and Cancel in a 1280x800 window', (tester) async {

@@ -277,6 +277,12 @@ abstract interface class PlanningSource {
   /// Reads exactly the issues of one story.
   Future<PlanIssueList> listStoryIssues(String project, String story);
 
+  /// Reads the board's issues in no story at one revision.
+  Future<PlanIssueList> listIssues(String project);
+
+  /// Replaces a story's whole issue list, preserving its supplied order, against the board at [revision].
+  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision);
+
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);
 

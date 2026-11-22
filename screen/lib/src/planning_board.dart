@@ -58,6 +58,12 @@ class PlanningPreferences {
   /// Stories whose issue lists are unfolded.
   final Set<String> expandedStories = {};
 
+  /// States whose card of issues in no story is unfolded.
+  final Set<String> expandedNoStoryStates = {};
+
+  /// States whose card shows all issues in no story rather than the first twenty.
+  final Set<String> allNoStoryStates = {};
+
   /// Stories folded to their number, priority and size.
   final Set<String> foldedStories = {};
 
@@ -74,10 +80,13 @@ class PlanningPreferences {
 /// card stands at its target until the answer.
 class PendingPlanningMove {
   /// Records the state the person saw and the target.
-  PendingPlanningMove(this.from, this.to, {this.isIssue = false});
+  PendingPlanningMove(this.from, this.to, {this.isIssue = false, this.inNoStory = false});
 
   /// Whether this destination belongs to an issue rather than a story.
   final bool isIssue;
+
+  /// Whether this issue was read separately from stories, so its absence needs that list at the same revision.
+  final bool inNoStory;
 
   /// The state the person saw when the move began.
   String from;
@@ -1016,7 +1025,10 @@ class PlanningBoard extends ChangeNotifier {
   bool _moving(PlanIssue issue) {
     final moving = pendingIssues.keys.toSet();
     return moving.contains(issue.id) ||
-        stories.expand((story) => story.issues).any((each) => each.parent == issue.id && moving.contains(each.id));
+        [
+          ...stories.expand((story) => story.issues),
+          ...noStory,
+        ].any((each) => each.parent == issue.id && moving.contains(each.id));
   }
 
   /// Sets who works [issue] against the revision the board shows; answers the planner's words for a refusal, which
@@ -1086,7 +1098,11 @@ class PlanningBoard extends ChangeNotifier {
     }
     final sameProject = identical(backend, next) && project == name;
     // Story ids repeat across projects, so a fold made in one must not fold a card of another.
-    if (project != name) preferences.foldedStories.clear();
+    if (project != name) {
+      preferences.foldedStories.clear();
+      preferences.expandedNoStoryStates.clear();
+      preferences.allNoStoryStates.clear();
+    }
     final generation = ++_generation;
     _stopFollowingReconnect();
     catchingUp = false;
@@ -1097,6 +1113,8 @@ class PlanningBoard extends ChangeNotifier {
     if (_disposed || generation != _generation) return;
     backend = next;
     project = name;
+    _noStory = null;
+    noStoryProblem = null;
     if (!sameProject) {
       snapshot = null;
       _repositories = const [];
@@ -1239,9 +1257,13 @@ class PlanningBoard extends ChangeNotifier {
       return refuseMove(id, 'the board is not live and complete.');
     }
     // Judged on the board's issue: the page's copy may be older or newer in any field.
-    final onBoard = stories.expand((story) => story.issues).where((issue) => issue.id == id).firstOrNull;
-    // Only a board that reports every story's issues can say an issue is gone; otherwise the page's copy stands.
-    final issue = onBoard ?? (stories.every((story) => story.issuesReported) || reported?.id != id ? null : reported);
+    final onBoard = [
+      ...stories.expand((story) => story.issues),
+      ...noStory,
+    ].where((issue) => issue.id == id).firstOrNull;
+    // Absence is known only after both parts of the board have been read at its revision.
+    final complete = stories.every((story) => story.issuesReported) && _noStory?.revision == snapshot?.revision;
+    final issue = onBoard ?? (complete || reported?.id != id ? null : reported);
     if (issue == null) return refuseMove(id, 'it is no longer on the board.');
     if (issue.state.isEmpty) return refuseMove(id, 'its state was not reported.');
     // A menu shows the issue as it stood when it opened; a task may have moved it since.
@@ -1253,9 +1275,167 @@ class PlanningBoard extends ChangeNotifier {
     await _moveNow(
       'issue $id',
       PlanningIssueMove(id, to),
-      PendingPlanningMove(issue.state, to, isIssue: true),
+      PendingPlanningMove(issue.state, to, isIssue: true, inNoStory: noStory.any((each) => each.id == id)),
       revision: revision,
     );
+  }
+
+  PlanIssueList? _noStory;
+  int _noStoryRead = 0;
+  Future<void>? _readingNoStory;
+  bool _catchingUpNoStory = false;
+
+  /// Why the latest list of issues in no story could not be read.
+  String? noStoryProblem;
+
+  /// Issues in no story from exactly the board's revision; a newer board hides an earlier list immediately.
+  List<PlanIssue> get noStory =>
+      _noStory != null && _noStory!.revision == snapshot?.revision ? _noStory!.issues : const [];
+
+  /// Issues in no story in [name], under the board's search and priority filter; they have no story priority.
+  List<PlanIssue> noStoryIn(String name) {
+    if (preferences.priority.maximum != null && rank(null) > preferences.priority.maximum!) return const [];
+    final query = preferences.search.trim().toLowerCase();
+    return noStory
+        .where(
+          (issue) =>
+              issue.state == name &&
+              (query.isEmpty || issue.id.toLowerCase().contains(query) || issue.title.toLowerCase().contains(query)),
+        )
+        .toList();
+  }
+
+  Future<void> _readNoStory(PlanningSnapshot shown, int generation, {required bool reconcile}) async {
+    final mayCatchUp = !_catchingUpNoStory;
+    final read = ++_noStoryRead;
+    final source = backend;
+    final name = project;
+    bool current() => !_disposed && generation == _generation && read == _noStoryRead && identical(snapshot, shown);
+    noStoryProblem = null;
+    try {
+      // Revisions are opaque: equality is the only safe proof that both reads describe the same board.
+      for (var attempt = 0; attempt < 3; attempt++) {
+        final reply = await source.listIssues(name);
+        if (!current()) return;
+        if (!reply.reported || reply.revision.isEmpty) {
+          throw const PlanningRefusal(
+            'BadAnswer',
+            {},
+            'The planner did not report a complete issue list and revision.',
+          );
+        }
+        if (reply.revision != shown.revision) continue;
+        _noStory = reply;
+        if (reconcile) _reconcileMoves(shown);
+        _changed();
+        return;
+      }
+      if (mayCatchUp && !saving) {
+        // A list ahead of the shown board cannot catch up by rereading the list alone.
+        _catchingUpNoStory = true;
+        try {
+          await reload();
+        } finally {
+          _catchingUpNoStory = false;
+        }
+        if (!current()) return;
+      }
+      throw const PlanningRefusal(
+        'StaleRevision',
+        {},
+        'The issues in no story could not be read at the board revision.',
+      );
+    } catch (error) {
+      if (!current()) return;
+      _noStory = null;
+      noStoryProblem = planningFailureWords(error);
+      _keepRefusal(error);
+      _changed();
+    }
+  }
+
+  Future<void> _waitForNoStory(int generation, {bool reconcile = true}) async {
+    while (_current(generation)) {
+      // A streamed board held during the save must be included before the caller sees the save finish.
+      final deferred = _deferredSnapshot;
+      _deferredSnapshot = null;
+      if (deferred != null) {
+        _accept(deferred.$1, order: deferred.$2, reconcile: reconcile);
+        deferred.$3();
+      }
+      final reading = _readingNoStory;
+      if (reading == null) return;
+      await reading;
+      if (identical(reading, _readingNoStory) && _deferredSnapshot == null) return;
+    }
+  }
+
+  /// Appends an issue in no story to the story's complete list at the revision currently shown.
+  Future<void> hangIssue(String issue, String story, {String? revision}) async {
+    if (_disposed || _oneAtATime(issue) || _oneAtATime(story)) return;
+    if (actionBusy) {
+      moveProblem = 'Waiting for the planner before changing the story list.';
+      _changed();
+      return;
+    }
+    final target = stories.where((each) => each.id == story).firstOrNull;
+    if (!live ||
+        snapshot?.complete != true ||
+        snapshot!.revision.isEmpty ||
+        revision != null && revision != snapshot!.revision ||
+        target == null ||
+        !target.issuesReported ||
+        !noStory.any((each) => each.id == issue)) {
+      moveProblem = 'The board or the complete issue list changed. Choose the story again.';
+      _changed();
+      return;
+    }
+    final generation = _generation;
+    final source = backend;
+    final name = project;
+    final at = snapshot!.revision;
+    final issues = [for (final each in target.issues) each.id, issue];
+    saving = true;
+    moveProblem = null;
+    moveRefusal = null;
+    moveNotice = null;
+    _changed();
+    var refused = false;
+    try {
+      await source.setStoryIssues(name, story, issues, at);
+      if (!_current(generation)) return;
+      try {
+        final reply = await _read();
+        if (!_current(generation)) return;
+        _acceptNewest(reply.$1, reply.$2);
+        moveNotice = 'Issue changes saved.';
+      } catch (error) {
+        if (_current(generation)) {
+          moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
+        }
+      }
+    } catch (error) {
+      if (!_current(generation)) return;
+      refused = true;
+      moveProblem = planningFailureWords(error);
+      if (error is PlanningRefusal && {'StaleRevision', 'PartlySaved'}.contains(error.name)) {
+        try {
+          final reply = await _read();
+          if (!_current(generation)) return;
+          _acceptNewest(reply.$1, reply.$2, reconcile: error.name != 'PartlySaved');
+        } catch (readError) {
+          if (!_current(generation)) return;
+          moveProblem = '$moveProblem\n${planningFailureWords(readError)}';
+        }
+      }
+      _keepRefusal(error);
+      moveRefusal = error is PlanningRefusal ? error : null;
+    } finally {
+      if (_current(generation)) {
+        await _waitForNoStory(generation, reconcile: !refused);
+        if (_current(generation)) _finishOperation(reconcile: !refused);
+      }
+    }
   }
 
   /// The issues the board left out because their Status is none of the workflow's states, by id.
@@ -1311,8 +1491,15 @@ class PlanningBoard extends ChangeNotifier {
   bool waitsOnItsSave(String id) => _pending.containsKey(id);
 
   String? _reportedState(PlanningSnapshot reply, String key, PendingPlanningMove move) => move.isIssue
-      ? reply.stories.expand((story) => story.issues).where((issue) => 'issue ${issue.id}' == key).firstOrNull?.state
+      ? [
+          ...reply.stories.expand((story) => story.issues),
+          if (_noStory != null && _noStory!.revision == reply.revision) ..._noStory!.issues,
+        ].where((issue) => 'issue ${issue.id}' == key).firstOrNull?.state
       : reply.stories.where((story) => story.id == key).firstOrNull?.state;
+
+  bool _needsNoStory(PlanningSnapshot reply, String key, PendingPlanningMove move) =>
+      move.isIssue &&
+      (move.inNoStory || !reply.stories.any((story) => story.issues.any((issue) => 'issue ${issue.id}' == key)));
 
   Future<void> _moveNow(String key, PlanningMove move, PendingPlanningMove shown, {String? revision}) async {
     _beginAction();
@@ -1464,6 +1651,7 @@ class PlanningBoard extends ChangeNotifier {
   void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
     if (order <= _snapshotOrder) return;
     snapshot = reply;
+    _readingNoStory = _readNoStory(reply, _generation, reconcile: reconcile);
     // A story gone from the board loses its fold, so one saved anew under its id starts open.
     if (reply.storiesReported) {
       final shown = {for (final story in reply.stories) story.id};
@@ -1480,13 +1668,18 @@ class PlanningBoard extends ChangeNotifier {
     workUnsupported.clear();
     unawaited(_readWork(reply, _generation));
     _reconcilePriorities(reply);
-    if (!reply.complete || reply.revision.isEmpty || !reconcile) return;
+    if (reconcile) _reconcileMoves(reply);
+  }
+
+  void _reconcileMoves(PlanningSnapshot reply) {
+    if (!reply.complete || reply.revision.isEmpty) return;
     // Only a save answered too late waits on the board: it landed once the board shows it.
     final landed = <PendingPlanningMove>[];
     for (final entry in _pending.entries.toList()) {
       if (!entry.value.unanswered) continue;
       final reported = _reportedState(reply, entry.key, entry.value);
       if (reported == null && entry.value.isIssue && reply.stories.any((story) => !story.issuesReported)) continue;
+      if (_needsNoStory(reply, entry.key, entry.value) && _noStory?.revision != reply.revision) continue;
       if (reported == null || reported == entry.value.to) {
         _pending.remove(entry.key);
         if (reported != null) landed.add(entry.value);
@@ -1689,6 +1882,13 @@ class PlanningBoard extends ChangeNotifier {
           final reply = await _read();
           if (!_current(generation)) return;
           _acceptNewest(reply.$1, reply.$2);
+          if (shown != null && _needsNoStory(snapshot!, key, shown)) {
+            await _waitForNoStory(generation);
+            if (!_current(generation)) return;
+            if (_noStory?.revision != snapshot?.revision) {
+              throw StateError(noStoryProblem ?? 'The current issue list could not be read.');
+            }
+          }
           final now = shown == null ? null : _reportedState(snapshot!, key, shown);
           if (shown != null && now == shown.to) {
             // Made elsewhere meanwhile: nothing is left to save, and nothing went wrong.
@@ -1735,8 +1935,13 @@ class PlanningBoard extends ChangeNotifier {
       }
     } finally {
       if (!handedOn) {
-        _finishOperation(reconcile: !refused);
-        _awaitUnanswered();
+        if (_current(generation) && shown != null && snapshot != null && _needsNoStory(snapshot!, key, shown)) {
+          await _waitForNoStory(generation, reconcile: !refused);
+        }
+        if (_current(generation)) {
+          _finishOperation(reconcile: !refused);
+          _awaitUnanswered();
+        }
       }
     }
   }
@@ -1895,6 +2100,18 @@ class PlanningBoard extends ChangeNotifier {
   void foldStory(String id) {
     if (!stories.any((story) => story.id == id)) return;
     _toggle(preferences.foldedStories, id);
+  }
+
+  /// Toggles the card of issues in no story for one state.
+  void expandNoStory(String state) {
+    if (preferences.expandedNoStoryStates.contains(state)) preferences.allNoStoryStates.remove(state);
+    _toggle(preferences.expandedNoStoryStates, state);
+  }
+
+  /// Reveals the remaining issues in no story for one state.
+  void showAllNoStory(String state) {
+    preferences.allNoStoryStates.add(state);
+    _changed();
   }
 
   /// Toggles one story's issue list.

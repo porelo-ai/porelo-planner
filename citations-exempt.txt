@@ -3,11 +3,13 @@
 # tests, whose made-up issues need ids of that shape.
 screen/lib/src/fake/planning_data.dart
 screen/test/mock_planning_test.dart
+screen/test/planner_source_test.dart
 screen/test/planning_board_test.dart
 screen/test/planning_board_view_test.dart
 screen/test/planning_contract_regressions_test.dart
 screen/test/planning_detail_test.dart
 screen/test/planning_moves_test.dart
+screen/test/planning_no_story_test.dart
 screen/test/planning_priority_test.dart
 screen/test/reading_decision_test.dart
 screen/test/story_work_lifecycle_test.dart

@@ -271,6 +271,14 @@ class FakePlanningSource implements PlanningSource {
   Future<PlanIssueList> listStoryIssues(String project, String story) async => _notServed('ListStoryIssues');
 
   @override
+  Future<PlanIssueList> listIssues(String project) async =>
+      PlanIssueList.from({'revision': board['revision'], 'issues': board['issues'] ?? <Object>[]});
+
+  @override
+  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async =>
+      _notServed('SetStoryIssues');
+
+  @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');
 
   @override

@@ -1642,6 +1642,81 @@ void main() {
     );
   });
 
+  // Harm: a list read from the wrong path or with fields lost hides issues or changes their meaning.
+  test('issues in no story are requested by query and retain every issue list field', () async {
+    final (planner, source) = await _started();
+    planner.routes['GET /projects/demo/issues'] = () => _Reply(200, {
+      'revision': 'r7',
+      'issues': [
+        {
+          ..._issue('B900', 'Backlog'),
+          'size': 'S',
+          'blockedBy': ['PR1'],
+          'parent': 'PR2',
+          'link': 'https://example.org/issues/B900',
+          'worker': 'AGENT',
+          'rounds': 2,
+          'roundsMost': 4,
+          'atWork': true,
+          'needsYou': true,
+          'readingStopped': true,
+          'noRunHere': false,
+          'attention': 'STOPPED',
+          'findings': [
+            {'number': 1, 'severity': 'BLOCKING', 'text': 'Fix the save', 'file': 'lib/board.dart', 'line': 8},
+          ],
+        },
+        {..._issue('PR3', 'Finished'), 'worker': 'MANUAL'},
+        {..._issue('PR4', 'Building'), 'noRunHere': true},
+      ],
+    });
+    final list = await source.listIssues('demo');
+    expect(planner.targets, contains('GET /projects/demo/issues?story=none'));
+    expect(list.revision, 'r7');
+    expect(list.reported, isTrue);
+    expect(list.supplied, isTrue);
+    expect(list.issues.map((issue) => issue.id), ['B900', 'PR3', 'PR4']);
+    final issue = list.issues.first;
+    expect(issue.repository, 'repo');
+    expect(issue.title, 'Issue B900');
+    expect(issue.state, 'Backlog');
+    expect(issue.size, 'S');
+    expect(issue.blockedBy, ['PR1']);
+    expect(issue.blockedByReported, isTrue);
+    expect(issue.parent, 'PR2');
+    expect(issue.link, 'https://example.org/issues/B900');
+    expect(issue.worker, IssueWorker.agent);
+    expect(issue.rounds, 2);
+    expect(issue.roundsMost, 4);
+    expect(issue.atWork, isTrue);
+    expect(issue.needsYou, isTrue);
+    expect(issue.readingStopped, isTrue);
+    expect(issue.noRunHere, isFalse);
+    expect(list.issues[1].worker, IssueWorker.manual);
+    expect(list.issues[2].noRunHere, isTrue);
+    expect(issue.attention, 'STOPPED');
+    final finding = issue.findings.single;
+    expect(finding.number, 1);
+    expect(finding.severity, 'BLOCKING');
+    expect(finding.text, 'Fix the save');
+    expect(finding.file, 'lib/board.dart');
+    expect(finding.line, 8);
+  });
+
+  // Harm: an append writes a different story or drops the revision that protects its other issues.
+  test('setting a story issue list sends the whole list and board revision to the encoded story path', () async {
+    final (planner, source) = await _started();
+    planner.routes['PUT /projects/demo/stories/repo%237/issues'] = () => _Reply(200, {'revision': 'r2'});
+    expect(await source.setStoryIssues('demo', 'repo#7', ['PR1', 'B900'], 'r1'), 'r2');
+    final call = planner.calls.last;
+    expect(call.method, 'PUT');
+    expect(call.target, '/projects/demo/stories/repo%237/issues');
+    expect(jsonDecode(call.body), {
+      'revision': 'r1',
+      'issues': ['PR1', 'B900'],
+    });
+  });
+
   // Harm: a story, its issues or an issue reach the screen without their text, state or criteria.
   test('a story, its issues and an issue arrive as the screen\'s records', () async {
     final (_, source) = await _started();

@@ -112,6 +112,27 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       ]
     }
   ],
+  "issues": [
+    {
+      "id": "B900",
+      "repository": "porelo",
+      "title": "Planning work in no story",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "parent": null,
+      "link": "https://example.org/issues/B900",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "whatMustBeTrue": "The work meets the issue description.",
+      "subIssues": [],
+      "worker": "AGENT",
+      "atWork": false,
+      "needsYou": false,
+      "readingStopped": false,
+      "noRunHere": false,
+      "attention": "NONE"
+    }
+  ],
   "stories": [
     {
       "id": "ST294",
@@ -2287,22 +2308,49 @@ Map<String, dynamic>? mockPlanningIssue(Map<String, dynamic> board, Object? id) 
     final issue = issues.whereType<Map<String, dynamic>>().where((issue) => issue['id'] == id).firstOrNull;
     if (issue != null) return Map<String, dynamic>.of(issue);
   }
-  return null;
+  return (board['issues'] as List? ?? const [])
+      .whereType<Map<String, dynamic>>()
+      .where((issue) => issue['id'] == id)
+      .firstOrNull;
 }
 
-/// Compact summaries omit the two optional full-detail fields.
+/// Keeps story issues and all their descendants out of the standalone list, as the planner does.
+List<Map<String, dynamic>> mockPlanningNoStoryIssues(Map<String, dynamic> board) {
+  final issues = (board['issues'] as List? ?? const []).whereType<Map<String, dynamic>>().toList();
+  final held = {
+    for (final story in (board['stories'] as List).whereType<Map<String, dynamic>>())
+      for (final issue in (story['issues'] as List? ?? const []).whereType<Map<String, dynamic>>()) issue['id'],
+  };
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (final issue in issues) {
+      if (held.contains(issue['parent']) && held.add(issue['id'])) changed = true;
+    }
+  }
+  return [
+    for (final state in (board['states'] as List).whereType<Map<String, dynamic>>())
+      for (final issue in issues)
+        if (!held.contains(issue['id']) && issue['state'] == state['name']) _planningIssueSummary(issue),
+  ];
+}
+
+Map<String, dynamic> _planningIssueSummary(Map<String, dynamic> issue) => Map<String, dynamic>.of(issue)
+  ..remove('text')
+  ..remove('textFormat')
+  ..remove('whatMustBeTrue')
+  ..remove('subAgents')
+  ..remove('subIssues');
+
+/// Compact summaries omit fields belonging only to the issue's own page.
 Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   'stories': [
     for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
       {
         ...story,
         'description': '',
-        'issues': [
-          for (final issue in (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>())
-            {...issue}
-              ..remove('whatMustBeTrue')
-              ..remove('subAgents'),
-        ],
+        if (story['issues'] case final List<dynamic> issues)
+          'issues': [for (final issue in issues.cast<Map<String, dynamic>>()) _planningIssueSummary(issue)],
       },
   ],
   'revision': board['revision'],

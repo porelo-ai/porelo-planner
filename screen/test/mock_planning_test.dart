@@ -4,7 +4,116 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/fake_planning.dart';
+
 void main() {
+  // Harm: appending an issue refuses a story's existing tracker sub-issues instead of preserving them.
+  test('a mock story keeps an existing parented issue when another issue is appended', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final data = smallBoard();
+    ((data['stories'] as List).first['issues'] as List).first['parent'] = 'S1';
+    source.boards['demo'] = {
+      ...data,
+      'issues': [
+        {'id': 'B900', 'state': 'Backlog'},
+      ],
+    };
+    await source.setStoryIssues('demo', 'S1', ['I1', 'B900'], 'r1');
+    final story = mockPlanningStory(source.board('demo'), 'S1')!;
+    expect((story['issues'] as List).map((dynamic issue) => (issue as Map)['id']), ['I1', 'B900']);
+  });
+
+  // Harm: an unchanged list advances the revision and emits a misleading change event.
+  test('setting the same mock story list keeps the revision and emits no event', () async {
+    final source = MockPlanningSource();
+    source.boards['demo'] = smallBoard();
+    final seen = <PlanningSnapshot>[];
+    final watch = source.watchStories('demo').listen(seen.add);
+    addTearDown(() async {
+      await watch.cancel();
+      await source.end();
+    });
+    await pumpEventQueue();
+    expect(await source.setStoryIssues('demo', 'S1', ['I1'], 'r1'), 'r1');
+    await pumpEventQueue();
+    expect(source.board('demo')['revision'], 'r1');
+    expect(seen.map((reply) => reply.revision), ['r1']);
+  });
+
+  // Harm: mock refusals omit contract fields that the window needs to explain a refused edit.
+  test('mock story list refusals name the issues field and the story with running work', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final data = smallBoard();
+    source.boards['demo'] = {
+      ...data,
+      'issues': [
+        {'id': 'B900', 'parent': 'B899', 'state': 'Backlog'},
+      ],
+    };
+    await expectLater(
+      source.setStoryIssues('demo', 'S1', ['I1', 'B900'], 'r1'),
+      throwsA(
+        isA<PlanningRefusal>()
+            .having((error) => error.name, 'name', 'EditNotAllowed')
+            .having((error) => error.parameters['field'], 'field', 'issues'),
+      ),
+    );
+    ((data['stories'] as List).first['issues'] as List).first['atWork'] = true;
+    await expectLater(
+      source.setStoryIssues('demo', 'S1', [], 'r1'),
+      throwsA(
+        isA<PlanningRefusal>()
+            .having((error) => error.name, 'name', 'WorkRunning')
+            .having((error) => error.parameters['story'], 'story', 'S1'),
+      ),
+    );
+  });
+
+  // Harm: the standalone mock issue opens without its criteria or leaks detail-only fields into list replies.
+  test('the mock standalone issue has full details and its list answer contains only board fields', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final detail = await source.getIssue('demo', 'B900');
+    expect(detail.whatMustBeTrue, ['The work meets the issue description.']);
+    expect(detail.subIssuesReported, isTrue);
+    expect(detail.subIssues, isEmpty);
+    final listed = (await source.listIssues('demo')).issues.single;
+    expect(listed.id, 'B900');
+    expect(listed.whatMustBeTrue, isNull);
+    final raw = mockPlanningNoStoryIssues(source.board('demo')).single;
+    expect(
+      raw.keys.where((key) => ['text', 'textFormat', 'whatMustBeTrue', 'subAgents', 'subIssues'].contains(key)),
+      isEmpty,
+    );
+  });
+
+  // Harm: creating an issue reuses a standalone issue's reference or loses the new issue from the board.
+  test('a mock new issue is numbered after standalone issues and is listed with its saved fields', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final revision = source.board('demo')['revision'] as String;
+    final added = await source.createIssue(
+      'demo',
+      'porelo',
+      'New idea',
+      'It works.',
+      'M',
+      revision,
+      worker: IssueWorker.manual,
+    );
+    expect(added.id, 'B901');
+    final issues = (await source.listIssues('demo')).issues;
+    expect(issues.map((issue) => issue.id), containsAll(['B900', 'B901']));
+    final created = issues.singleWhere((issue) => issue.id == added.id);
+    expect(created.title, 'New idea');
+    expect(created.state, 'Idea');
+    expect(created.size, 'M');
+    expect(created.worker, IssueWorker.manual);
+    expect((await source.getIssue('demo', added.id)).whatMustBeTrue, ['It works.']);
+  });
+
   // Harm: preparing a mock order reports running work or mutates a board before Start confirms anything.
   test('a mock order starts nothing and changes no planning state or revision', () async {
     final source = MockPlanningSource();

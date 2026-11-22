@@ -197,8 +197,7 @@ class MockPlanningSource implements PlanningSource {
   /// New issues asked of it, each with its project, repository, title, what must be true, size, worker and revision.
   final List<Map<String, dynamic>> issueCalls = [];
 
-  /// Adds the issue as the planner does, numbered after its repository's issues on the board, and shows the board at a
-  /// new revision; the mock board lists no issue outside a story, so the new one is not shown.
+  /// Adds an idea outside any story, numbered after its repository's issues, and shows the saved board.
   @override
   Future<PlanningIssueAdded> createIssue(
     String project,
@@ -226,20 +225,48 @@ class MockPlanningSource implements PlanningSource {
     }
     if (moveFailure case final failure?) throw failure;
     final numbers = <String, int>{};
-    for (final story in (current['stories'] as List).cast<Map<String, dynamic>>()) {
-      for (final issue in (story['issues'] as List).cast<Map<String, dynamic>>()) {
-        if (issue['repository'] != repository) continue;
-        final match = RegExp(r'^([A-Z]{1,4})([0-9]{1,5})').firstMatch(issue['id'] as String);
-        if (match == null) continue;
-        final number = int.parse(match.group(2)!);
-        if (number > (numbers[match.group(1)!] ?? 0)) numbers[match.group(1)!] = number;
-      }
+    final issues = [
+      for (final story in (current['stories'] as List).cast<Map<String, dynamic>>())
+        ...(story['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+      ...(current['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+    ];
+    for (final issue in issues) {
+      if (issue['repository'] != repository) continue;
+      final match = RegExp(r'^([A-Z]{1,4})([0-9]{1,5})').firstMatch(issue['id'] as String);
+      if (match == null) continue;
+      final number = int.parse(match.group(2)!);
+      if (number > (numbers[match.group(1)!] ?? 0)) numbers[match.group(1)!] = number;
     }
     if (numbers.isEmpty) throw mockRefusal('IssueNotAllowed', {'field': '', 'reason': 'no prefix for $repository'});
     final prefix = numbers.keys.first;
     final id = '$prefix${(numbers[prefix]! + 1).toString().padLeft(2, '0')}';
     final next = '${current['revision']}:added';
-    push(project, {...current, 'revision': next});
+    push(project, {
+      ...current,
+      'revision': next,
+      'issues': [
+        ...(current['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+        {
+          'id': id,
+          'repository': repository,
+          'title': title,
+          'state': 'Idea',
+          'size': size,
+          'blockedBy': <String>[],
+          'parent': null,
+          'link': 'https://example.org/issues/$id',
+          'worker': worker.wire,
+          'whatMustBeTrue': mustBeTrue,
+          'subIssues': <String>[],
+          'text': '**What must be true.** $mustBeTrue\n',
+          'atWork': false,
+          'needsYou': false,
+          'readingStopped': false,
+          'noRunHere': false,
+          'attention': 'NONE',
+        },
+      ],
+    });
     return PlanningIssueAdded(id: id, revision: next);
   }
 
@@ -309,6 +336,21 @@ class MockPlanningSource implements PlanningSource {
     final record = mockPlanningStory(board(project), story);
     if (record == null) throw mockRefusal('NoSuchStory', {'story': story});
     return PlanIssueList.from({'issues': record['issues'], 'revision': board(project)['revision']});
+  }
+
+  @override
+  Future<PlanIssueList> listIssues(String project) async {
+    final current = board(project);
+    return PlanIssueList.from({'revision': current['revision'], 'issues': mockPlanningNoStoryIssues(current)});
+  }
+
+  @override
+  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async {
+    if (moveFailure case final failure?) throw failure;
+    final current = board(project);
+    final next = applyPlanningStoryIssues(current, story, issues, revision);
+    if (next['revision'] != current['revision']) push(project, next);
+    return next['revision'] as String;
   }
 
   @override

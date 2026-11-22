@@ -55,10 +55,10 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       invalid('Each move must name exactly one item, once.');
     }
     final story = stories.where((story) => story['id'] == id).firstOrNull;
-    final issue = stories
-        .expand((story) => (story['issues'] as List? ?? []).cast<Map<String, dynamic>>())
-        .where((issue) => issue['id'] == id)
-        .firstOrNull;
+    final issue = [
+      ...stories.expand((story) => (story['issues'] as List? ?? []).cast<Map<String, dynamic>>()),
+      ...(board['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+    ].where((issue) => issue['id'] == id).firstOrNull;
     if (isStory && story == null) refuse('NoSuchStory', {'story': id});
     if (!isStory && issue == null) refuse('NoSuchIssue', {'issue': id});
     final from = (isStory ? story! : issue!)['state'];
@@ -206,10 +206,14 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
   String kind(Object? state) => states.where((each) => each['name'] == state).firstOrNull?['kind'] as String? ?? '';
   final stories = (source['stories'] as List).cast<Map<String, dynamic>>();
   final issues = {
+    for (final issue in (source['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+      issue['id'] as String: issue,
     for (final story in stories)
       for (final issue in (story['issues'] as List? ?? []).cast<Map<String, dynamic>>()) issue['id'] as String: issue,
   };
   final issuesAfter = {
+    for (final issue in (after['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+      issue['id'] as String: issue,
     for (final story in (after['stories'] as List).cast<Map<String, dynamic>>())
       for (final issue in (story['issues'] as List? ?? []).cast<Map<String, dynamic>>()) issue['id'] as String: issue,
   };
@@ -308,6 +312,7 @@ Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id,
       .cast<Map<String, dynamic>>()
       .expand((story) => (story['issues'] as List? ?? []).cast<Map<String, dynamic>>())
       .toList();
+  issues.addAll((board['issues'] as List? ?? const []).cast<Map<String, dynamic>>());
   final issue = issues.where((issue) => issue['id'] == id).firstOrNull;
   if (issue == null) refuse('NoSuchIssue', {'issue': id});
   void notAllowed(String reason) => refuse('MoveNotAllowed', {'item': id, 'from': '', 'to': '', 'reason': reason});
@@ -372,4 +377,56 @@ List<Map<String, dynamic>> _leastAdvanced(List<Map<String, dynamic>> states, Lis
     for (final issue in candidates)
       if (place(issue) == earliest) issue,
   ];
+}
+
+/// Checks a whole story list on a copy so a refusal cannot remove any of its issues.
+Map<String, dynamic> applyPlanningStoryIssues(
+  Map<String, dynamic> source,
+  String story,
+  List<String> ids,
+  String revision,
+) {
+  if (revision != source['revision']) throw mockRefusal('StaleRevision', {'revision': source['revision']});
+  final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  final stories = (board['stories'] as List).cast<Map<String, dynamic>>();
+  final target = stories.where((each) => each['id'] == story).firstOrNull;
+  if (target == null) throw mockRefusal('NoSuchStory', {'story': story});
+  void refuse(String why) => throw mockRefusal('EditNotAllowed', {'item': story, 'field': 'issues', 'reason': why});
+  if (target['issues'] is! List || ids.length > 100 || ids.toSet().length != ids.length) {
+    refuse('The complete story list must name each issue once, with at most 100 issues.');
+  }
+  final previous = (target['issues'] as List).cast<Map<String, dynamic>>();
+  if (previous.length == ids.length && ids.indexed.every((entry) => previous[entry.$1]['id'] == entry.$2)) {
+    return source;
+  }
+  final all = {
+    for (final issue in (board['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+      issue['id'] as String: issue,
+    for (final each in stories)
+      for (final issue in (each['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+        issue['id'] as String: issue,
+  };
+  final elsewhere = {
+    for (final each in stories.where((each) => each['id'] != story))
+      for (final issue in (each['issues'] as List? ?? const []).cast<Map<String, dynamic>>()) issue['id'],
+  };
+  for (final id in ids) {
+    if (previous.any((issue) => issue['id'] == id)) continue;
+    final issue = all[id];
+    if (issue == null) throw mockRefusal('NoSuchIssue', {'issue': id});
+    if (elsewhere.contains(id) || issue['parent'] != null) {
+      refuse('An issue belongs to one story and cannot be a sub-issue.');
+    }
+  }
+  for (final issue in previous) {
+    if (!ids.contains(issue['id']) && issue['atWork'] == true) throw mockRefusal('WorkRunning', {'story': story});
+  }
+  target['issues'] = [for (final id in ids) all[id]!];
+  board['issues'] = [
+    for (final entry in all.entries)
+      if (!ids.contains(entry.key) && !elsewhere.contains(entry.key)) entry.value,
+  ];
+  settleStoryStates(board);
+  board['revision'] = '$revision:issues';
+  return board;
 }
