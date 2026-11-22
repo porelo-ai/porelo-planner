@@ -642,6 +642,11 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         /** Keeps a reason with an item as a comment; the item is read and checked unchanged. */
         void closing(final String id, final ItemView item, final Writes.Reason reason) {
+            try {
+                ClosingComment.write(reason);
+            } catch (final IllegalArgumentException e) {
+                throw new StoreException.NotSavable(id, "its reason " + e.getMessage());
+            }
             items.putIfAbsent(id, item);
             closings.put(id, reason);
         }
@@ -1040,7 +1045,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             return holds(
                     token,
                     id,
-                    body -> ClosingComment.keeps(body, reason.state()),
+                    body -> ClosingComment.keeps(body, reason),
                     "it holds more comments than are read to find whether its reason stands");
         }
 

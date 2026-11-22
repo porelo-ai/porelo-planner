@@ -1129,10 +1129,17 @@ class FieldsBoardWriterTest {
                                 Map.of("PL1", BUILT),
                                 Map.of("ST1", BUILT)));
 
-        final String comment = "<!-- porelo:closing Finished -->\nFinished: ` Built as asked. `";
         assertThat(github.commented)
                 .as("one comment on the issue and one on the story")
-                .containsExactly(Map.entry(1, List.of(comment)), Map.entry(2, List.of(comment)));
+                .containsOnlyKeys(1, 2);
+        for (final List<String> written : github.commented.values()) {
+            assertThat(written)
+                    .singleElement()
+                    .asString()
+                    .matches(
+                            "<!-- porelo:closing Finished [0-9a-f]{12} -->\n"
+                                    + "Finished: ` Built as asked. `");
+        }
         assertThat(github.calls.indexOf("createIssueComment"))
                 .as("after the close")
                 .isGreaterThan(github.calls.lastIndexOf("updateIssue"));
@@ -1207,7 +1214,64 @@ class FieldsBoardWriterTest {
                                 Map.of("ST1", new Writes.Reason("Rejected", "Not wanted."))));
 
         assertThat(github.comments)
-                .containsExactly("<!-- porelo:closing Rejected -->\nRejected: ` Not wanted. `");
+                .singleElement()
+                .asString()
+                .matches(
+                        "<!-- porelo:closing Rejected [0-9a-f]{12} -->\nRejected: ` Not wanted. `");
+    }
+
+    @Test
+    void aNewReasonAfterAReopenIsWrittenThoughOneForTheSameStateStands() {
+        // Harm: closed with one reason, reopened and closed with another, the second dropped.
+        final ItemView story = storyItem("ST1", 2);
+        final GitHub github = new GitHub().holding(story);
+        github.standing.add(ClosingComment.write(BUILT));
+
+        github.writer()
+                .save(
+                        snapshot(story),
+                        SHOWN,
+                        closing(
+                                Map.of(),
+                                Map.of(),
+                                Map.of("ST1", new Writes.Reason("Finished", "Built anew."))));
+
+        assertThat(github.comments).singleElement().asString().endsWith("` Built anew. `");
+    }
+
+    @Test
+    void anIssuesCommentThatFailedAfterTheCloseIsWrittenOnceWhenTheMoveIsSentAgain() {
+        // Harm: the issue a story's move closed never gets its reason after the comment failed.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final ItemView story = storyItem("ST1", 2);
+        final GitHub github = new GitHub().holding(one, story);
+        github.failingComment = 1;
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(one, story),
+                                                SHOWN,
+                                                closing(
+                                                        Map.of("PL1", "Finished"),
+                                                        Map.of("PL1", BUILT),
+                                                        Map.of("ST1", BUILT))))
+                .isInstanceOf(StoreException.PartlySaved.class);
+        assertThat(github.commented).as("nothing commented").isEmpty();
+
+        // The issue stands closed now; the same move again hands its reason on for it.
+        final ItemView closed = item("PL1", "example-project", 1, false, "", state("Finished"));
+        github.holding(closed);
+        for (int again = 0; again < 2; again++) {
+            github.writer()
+                    .save(
+                            snapshot(closed, story),
+                            SHOWN,
+                            closing(Map.of(), Map.of("PL1", BUILT), Map.of("ST1", BUILT)));
+        }
+        assertThat(github.commented.get(1)).as("the issue's, written once").hasSize(1);
+        assertThat(github.commented.get(2)).as("the story's, written once").hasSize(1);
     }
 
     @Test

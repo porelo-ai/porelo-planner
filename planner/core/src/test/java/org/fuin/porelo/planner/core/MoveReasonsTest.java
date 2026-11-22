@@ -68,7 +68,7 @@ class MoveReasonsTest {
                 .as("the story, whose shown state the move changes")
                 .containsExactly(Map.entry("ST1", kept));
         assertThat(planned.issueReasons())
-                .as("each issue it closes, its sub-issue too; never PL2 or PL5, closed already")
+                .as("each issue it closes, its sub-issue too; never PL2 or PL5, closed long before")
                 .containsExactly(Map.entry("PL1", kept), Map.entry("PL1.1", kept));
         assertThat(planned.writes().storyReasons()).as("handed to the store").hasSize(1);
         assertThat(planned.writes().issueReasons()).as("handed to the store").hasSize(2);
@@ -88,6 +88,29 @@ class MoveReasonsTest {
                 .as("the least advanced issue the move carries")
                 .containsOnlyKeys("PL3");
         assertThat(planned.storyReasons()).containsOnlyKeys("ST2");
+    }
+
+    @Test
+    void aFirstRejectionGivesNoReasonToAnIssueRejectedLongBefore() {
+        // Harm: an issue rejected long before gets a sentence about another rejection.
+        final Board board =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(STATES, List.of(), CLOSED),
+                        List.of(story("ST5", "Backlog", "PL8", "PL9")),
+                        List.of(issue("PL8", "Backlog", null), issue("PL9", "Rejected", null)),
+                        WORK);
+        final Moves.Planned planned =
+                Moves.check(
+                        board,
+                        List.of(reason(story("ST5", "Rejected"), "Not wanted any more.")),
+                        true,
+                        DERIVE,
+                        NO_RUNS);
+        assertThat(planned.storyReasons()).containsOnlyKeys("ST5");
+        assertThat(planned.issueReasons())
+                .as("the issue the move carries; never PL9, rejected before")
+                .containsOnlyKeys("PL8");
     }
 
     @Test
@@ -172,7 +195,15 @@ class MoveReasonsTest {
                         "iso\u2066late",
                         "zero\u200Bwidth",
                         "joiner\u200Dx",
-                        "mark\uFEFFx")) {
+                        "mark\uFEFFx",
+                        "soft\u00ADhyphen",
+                        "tag\uDB40\uDC41x",
+                        "lone\uD800x",
+                        "private\uE000x",
+                        "unassigned\u0378x",
+                        "braille\u2800blank",
+                        "hangul\u3164filler",
+                        "choseong\u115Ffiller")) {
             assertThat(refused(reason(issue("PL4", "Finished"), bad)))
                     .as("refused: " + bad.codePoints().boxed().toList())
                     .contains("no control");
@@ -208,6 +239,12 @@ class MoveReasonsTest {
                         NO_RUNS);
         assertThat(planned.issues()).as("no state changes").isEmpty();
         assertThat(planned.storyReasons()).containsOnlyKeys("ST3");
+        assertThat(planned.issueReasons())
+                .as("its issue closed by the first try, whose comment failed, keeps it too")
+                .containsOnlyKeys("PL6");
+        assertThat(planned.writes().issueReasons())
+                .as("the store takes a reason for an issue whose state it does not write")
+                .containsOnlyKeys("PL6");
         assertThat(planned.none()).as("still saved, for the reason").isFalse();
         final Moves.Planned rejected =
                 Moves.check(
@@ -218,8 +255,8 @@ class MoveReasonsTest {
                         NO_RUNS);
         assertThat(rejected.storyReasons()).containsOnlyKeys("ST4");
         assertThat(rejected.issueReasons())
-                .as("its issue stood rejected already, so the move closes nothing of it")
-                .isEmpty();
+                .as("its issue standing rejected keeps the reason, for a comment that failed")
+                .containsOnlyKeys("PL7");
     }
 
     @Test

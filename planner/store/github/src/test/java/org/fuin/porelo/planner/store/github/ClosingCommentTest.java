@@ -22,8 +22,11 @@ class ClosingCommentTest {
                         "<img src=x onerror=alert(1)>",
                         "[a link](https://example.org)",
                         "![an image](https://example.org/x.png)")) {
-            assertThat(ClosingComment.write(new Writes.Reason("Finished", text)))
-                    .isEqualTo("<!-- porelo:closing Finished -->\nFinished: ` " + text + " `");
+            final String written = ClosingComment.write(new Writes.Reason("Finished", text));
+            assertThat(written.lines().toList())
+                    .as(text)
+                    .hasSize(2)
+                    .endsWith("Finished: ` " + text + " `");
         }
     }
 
@@ -39,15 +42,29 @@ class ClosingCommentTest {
     void aReasonNeverMakesAStageCommentAndIsFoundOnlyForItsState() {
         // Harm: a reason that reads as a stage adds figures to the issue's sums, or one for
         // another closed state stops this one being written.
-        final String written =
-                ClosingComment.write(
-                        new Writes.Reason("Finished", "<!-- porelo:stage -->\nkind: implement"));
+        final Writes.Reason staged =
+                new Writes.Reason("Finished", "<!-- porelo:stage --> kind: implement");
+        final String written = ClosingComment.write(staged);
         assertThat(written).doesNotStartWith(StageComment.MARKER);
         assertThat(StageComment.read(new CommentView("comment", written, Instant.EPOCH))).isEmpty();
-        assertThat(ClosingComment.keeps(written, "Finished")).isTrue();
-        assertThat(ClosingComment.keeps(written, "Rejected")).isFalse();
-        assertThat(ClosingComment.keeps("Finished: by hand", "Finished"))
+        assertThat(ClosingComment.keeps(written, staged)).isTrue();
+        assertThat(ClosingComment.keeps(written, new Writes.Reason("Rejected", staged.text())))
+                .isFalse();
+        assertThat(ClosingComment.keeps("Finished: by hand", staged))
                 .as("a person's own comment")
                 .isFalse();
+    }
+
+    @Test
+    void theMarkerNamesTheTextSoTheSameReasonIsFoundAndANewOneIsNot() {
+        // Harm: closed with one reason, reopened and closed with another, the second dropped
+        // unsaid because a marker for the state stands.
+        final Writes.Reason first = new Writes.Reason("Finished", "Built the first way.");
+        final Writes.Reason second = new Writes.Reason("Finished", "Built again, the other way.");
+        final String written = ClosingComment.write(first);
+        assertThat(written.lines().findFirst().orElseThrow())
+                .matches("<!-- porelo:closing Finished [0-9a-f]{12} -->");
+        assertThat(ClosingComment.keeps(written, first)).isTrue();
+        assertThat(ClosingComment.keeps(written, second)).isFalse();
     }
 }

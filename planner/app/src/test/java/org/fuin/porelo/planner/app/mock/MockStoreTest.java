@@ -198,7 +198,7 @@ class MockStoreTest {
     }
 
     @Test
-    void aReasonIsKeptWithTheItemOnceAndAResetDropsIt() {
+    void aReasonIsKeptOncePerTextAndAResetDropsIt() {
         // Harm: the window's tests of a reason pass against a mock that drops it, or keeps it
         // twice for the same close.
         final Writes.Reason why = new Writes.Reason("Finished", "Built.");
@@ -232,11 +232,24 @@ class MockStoreTest {
                         Map.of(),
                         Map.of(),
                         Map.of(),
-                        Map.of("ST193", new Writes.Reason("Finished", "Again."))));
+                        Map.of("ST193", why)));
+        final Writes.Reason anew = new Writes.Reason("Finished", "Built anew.");
+        store.save(
+                store.board().revision(),
+                new Writes(
+                        Map.of(),
+                        Map.of(),
+                        List.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of("ST193", anew)));
 
         assertThat(store.keepsReasons()).isTrue();
         assertThat(store.reasons("B542")).containsExactly(why);
-        assertThat(store.reasons("ST193")).as("once per close").containsExactly(why);
+        assertThat(store.reasons("ST193"))
+                .as("the same text once, a new one after a reopen again")
+                .containsExactly(why, anew);
         store.reset();
         assertThat(store.reasons("B542")).isEmpty();
     }

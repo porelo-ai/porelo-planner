@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models.dart';
 import 'refusal.dart';
 
 /// Validates a complete save on a copy, publishing nothing on a refusal.
@@ -215,26 +216,12 @@ const _rejected = 'Rejected';
 String? _reasonRefused(Map<String, dynamic> move, bool closes, bool isStory, bool unchanged) {
   final reason = (move['reason'] as String? ?? '').trim();
   if (reason.isEmpty) return null;
-  if (reason.runes.length > 280) return 'A reason holds at most 280 characters.';
-  if (reason.runes.any(_unshown)) {
-    return 'A reason holds no control, line or paragraph separator, bidirectional control or zero-width character.';
-  }
+  if (planningReasonRefusal(reason) case final refused?) return refused;
   if (move['follow'] == true) return 'A story that follows its issues closes nothing, so it takes no reason.';
   if (!closes) return 'A reason is taken only with a move into a closed state.';
   if (!isStory && unchanged) return 'It is in that state already; a reason goes only with the move that closes it.';
   return null;
 }
-
-bool _unshown(int c) =>
-    c < 0x20 ||
-    (c >= 0x7F && c <= 0x9F) ||
-    c == 0x2028 ||
-    c == 0x2029 ||
-    (c >= 0x200B && c <= 0x200F) ||
-    (c >= 0x202A && c <= 0x202E) ||
-    c == 0x2060 ||
-    (c >= 0x2066 && c <= 0x2069) ||
-    c == 0xFEFF;
 
 String? _lastDone(List<Map<String, dynamic>> states, Object? work) {
   int place(Object? state) => states.indexWhere((each) => each['name'] == state);

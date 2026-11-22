@@ -127,7 +127,7 @@ class _PlanningMoveReasonState extends State<PlanningMoveReason> {
         decoration: InputDecoration(
           labelText: 'Why, in one sentence (optional): what was built, or why not',
           counterText: '$count/$planningMostReason',
-          errorText: widget.question.reasonTooLong ? 'At most $planningMostReason characters.' : null,
+          errorText: widget.question.reasonRefused,
         ),
         onChanged: (value) => widget.question.reason.value = value,
       );
@@ -155,7 +155,7 @@ class PlanningMoveButtons extends StatelessWidget {
           valueListenable: asked.reason,
           builder: (context, _, _) => FilledButton(
             key: const Key('planning-move-confirm'),
-            onPressed: asked.reasonTooLong ? null : () => unawaited(board.confirmMove()),
+            onPressed: asked.reasonRefused != null ? null : () => unawaited(board.confirmMove()),
             child: Text(stops ? 'Stop the tasks and move' : 'Move'),
           ),
         ),

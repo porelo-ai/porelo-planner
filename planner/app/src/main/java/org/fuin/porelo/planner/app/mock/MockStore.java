@@ -297,13 +297,16 @@ public final class MockStore implements PlanningStore {
         return List.copyOf(reasons.getOrDefault(id, List.of()));
     }
 
-    /** Keeps each reason once per item and state, as a store writing comments does. */
+    /**
+     * Keeps each reason once per item, state and text, as a store writing marked comments does: a
+     * new text after a reopen is kept again.
+     */
     private void keep(final Map<String, Writes.Reason> given) {
         given.forEach(
                 (id, reason) -> {
                     final List<Writes.Reason> held =
                             reasons.computeIfAbsent(id, key -> new ArrayList<>());
-                    if (held.stream().noneMatch(each -> each.state().equals(reason.state()))) {
+                    if (!held.contains(reason)) {
                         held.add(reason);
                     }
                 });

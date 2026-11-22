@@ -416,6 +416,7 @@ class MovesEndpointTest {
     @Test
     void aStorysReasonReachesTheStoreForTheStoryAndTheIssueItsMoveCloses() throws Exception {
         // Harm: the wire drops the person's sentence, or gives it to the wrong items.
+        keeps = true;
         current = board("r1", "Review");
         final String body =
                 "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
@@ -433,6 +434,7 @@ class MovesEndpointTest {
     void aReasonOnAMoveIntoAnOpenStateIsRefusedInPreviewAndSaveWithNothingWritten()
             throws Exception {
         // Harm: a sentence for a close written to an open item, or refused only after a write.
+        keeps = true;
         final String body =
                 "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\":"
                         + " \"Review\", \"reason\": \"Why not.\"}], \"confirm\": true}";
@@ -455,6 +457,7 @@ class MovesEndpointTest {
             throws Exception {
         // Harm: a reason whose comment failed after the close can never be written, since the
         // move changes no state any more.
+        keeps = true;
         current = board("r1", "Finished");
         final String body =
                 "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
@@ -465,6 +468,30 @@ class MovesEndpointTest {
         assertThat(saved).as("handed to the store").hasSize(1);
         assertThat(saved.get(0).issues()).as("no state changes").isEmpty();
         assertThat(saved.get(0).storyReasons()).containsOnlyKeys("ST1");
+    }
+
+    @Test
+    void aReasonOnAStoreThatKeepsNoneIsRefusedInPreviewAndBeforeTheDigestOfTheSave()
+            throws Exception {
+        // Harm: a window that offered a reason anyway learns only after the person confirmed.
+        current = board("r1", "Review");
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\":"
+                        + " \"Finished\", \"reason\": \"Built.\"}], \"confirm\": true}";
+
+        preview(body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("MoveNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("AB01"));
+        mvc.perform(
+                        post("/projects/alpha/moves")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(org.hamcrest.Matchers.containsString("keeps no reason")));
+        assertThat(saved).as("nothing written").isEmpty();
     }
 
     @Test

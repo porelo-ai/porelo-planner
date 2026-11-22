@@ -147,7 +147,32 @@ void main() {
     await tester.enterText(find.byKey(const Key('planning-move-reason')), 'a' * 281);
     await tester.pump();
     expect(tester.widget<FilledButton>(move()).onPressed, isNull, reason: '281 characters');
-    expect(find.text('At most 280 characters.'), findsOneWidget);
+    expect(find.text('A reason holds at most 280 characters.'), findsOneWidget);
+  });
+
+  // Harm: a sentence that hides or turns what a reader sees sent, to be refused only by the planner after Move.
+  testWidgets('Move stands disabled while the reason holds a character the planner refuses', (tester) async {
+    final (_, board) = await _shown(tester, _board());
+    await tester.runAsync(() => board.moveIssue('PL1', 'Finished'));
+    await settle(tester);
+
+    Finder move() => find.byKey(const Key('planning-move-confirm'));
+    for (final bad in [
+      'soft\u{00AD}hyphen',
+      'tag\u{E0041}x',
+      'private\u{E000}x',
+      'braille\u{2800}blank',
+      'hangul\u{3164}filler',
+      'choseong\u{115F}filler',
+      'turn\u{202E}it',
+    ]) {
+      await tester.enterText(find.byKey(const Key('planning-move-reason')), bad);
+      await tester.pump();
+      expect(tester.widget<FilledButton>(move()).onPressed, isNull, reason: 'refused: ${bad.runes.toList()}');
+    }
+    await tester.enterText(find.byKey(const Key('planning-move-reason')), 'Plain words, ä and 中文.');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(move()).onPressed, isNotNull, reason: 'letters of any script pass');
   });
 
   // Harm: the sentence typed lost when planning changed under the save and the move is asked about again.
@@ -192,6 +217,9 @@ void main() {
     expect(refused({'issue': 'PL1', 'to': 'Finished', 'reason': 'a' * 281}), contains('at most 280'));
     expect(refused({'issue': 'PL1', 'to': 'Finished', 'reason': 'one\ntwo'}), contains('no control'));
     expect(refused({'issue': 'PL1', 'to': 'Finished', 'reason': 'turn\u202Eit'}), contains('no control'));
+    for (final bad in ['soft\u{00AD}x', 'tag\u{E0041}x', 'lone\uD800x', 'braille\u{2800}x']) {
+      expect(refused({'issue': 'PL1', 'to': 'Finished', 'reason': bad}), contains('no control'));
+    }
     expect(refused({'issue': 'PL1', 'to': 'Review', 'reason': 'Why.'}), contains('closed state'));
     expect(refused({'story': 'ST2', 'to': 'Backlog', 'follow': true, 'reason': 'Why.'}), contains('closes nothing'));
     final closed = save({'issue': 'PL1', 'to': 'Finished'});

@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What one save writes to the store: each issue's new state and worker and each story's new stated
@@ -14,8 +15,9 @@ import java.util.Map;
  * @param unstated the stories whose stated state is removed
  * @param workers the issues' new workers, by id
  * @param priorities the stories' new priorities, by id, each one of {@link Story#PRIORITIES}
- * @param issueReasons the person's reasons kept with the issues the save closes, by id, each one an
- *     issue whose new state this save writes
+ * @param issueReasons the person's reasons kept with the issues the save closes, by id; an issue
+ *     standing closed already keeps one too, so a comment that failed is written when the same move
+ *     is sent again
  * @param storyReasons the person's reasons kept with the stories the save shows closed, by id
  */
 public record Writes(
@@ -33,7 +35,71 @@ public record Writes(
      * @param state the closed state the item is moved to
      * @param text the sentence, trimmed
      */
-    public record Reason(String state, String text) {}
+    public record Reason(String state, String text) {
+
+        /** The most code points a reason holds. */
+        public static final int MOST = 280;
+
+        /**
+         * Checks the text again where it is kept, whatever checked it before.
+         *
+         * @throws IllegalArgumentException for a blank state or a text {@link #refusal(String)}
+         *     refuses
+         */
+        public Reason {
+            if (state.isBlank()) {
+                throw new IllegalArgumentException("A reason names the state it closes into.");
+            }
+            final String refused = refusal(text);
+            if (refused != null) {
+                throw new IllegalArgumentException(refused);
+            }
+        }
+
+        /**
+         * Answers why a text is no reason, or null when it is one: one trimmed, non-blank sentence
+         * of at most {@link #MOST} code points, holding no character that hides or turns what a
+         * reader sees.
+         *
+         * @param text the text, as it would be kept
+         * @return the words of the refusal, or null
+         */
+        public static @Nullable String refusal(final String text) {
+            if (text.isBlank() || !text.equals(text.strip())) {
+                return "A reason is one trimmed sentence.";
+            }
+            if (text.codePointCount(0, text.length()) > MOST) {
+                return "A reason holds at most " + MOST + " characters.";
+            }
+            if (text.codePoints().anyMatch(Reason::unshown)) {
+                return "A reason holds no control, format, line or paragraph separator, private,"
+                        + " unassigned or blank-looking character.";
+            }
+            return null;
+        }
+
+        /**
+         * Whether a character is one a reason may not hold: a control, format, surrogate,
+         * unassigned or private-use character, a line or paragraph separator, or one that shows as
+         * blank without being a space.
+         *
+         * @param c the code point
+         * @return whether it is refused
+         */
+        public static boolean unshown(final int c) {
+            return switch (Character.getType(c)) {
+                case Character.CONTROL,
+                        Character.FORMAT,
+                        Character.SURROGATE,
+                        Character.UNASSIGNED,
+                        Character.PRIVATE_USE,
+                        Character.LINE_SEPARATOR,
+                        Character.PARAGRAPH_SEPARATOR ->
+                        true;
+                default -> c == 0x2800 || c == 0x3164 || c == 0x115F;
+            };
+        }
+    }
 
     /**
      * Checks the ids and the priorities and copies the maps and the list, keeping their order.
@@ -59,12 +125,7 @@ public record Writes(
                     }
                 });
         priorities = Collections.unmodifiableMap(new LinkedHashMap<>(priorities));
-        for (final String id : issueReasons.keySet()) {
-            if (!issues.containsKey(id)) {
-                throw new IllegalArgumentException(
-                        "The reason of " + id + " goes with no state this save writes.");
-            }
-        }
+        issueReasons.keySet().forEach(Ids::issue);
         storyReasons.keySet().forEach(Ids::story);
         issueReasons = Collections.unmodifiableMap(new LinkedHashMap<>(issueReasons));
         storyReasons = Collections.unmodifiableMap(new LinkedHashMap<>(storyReasons));

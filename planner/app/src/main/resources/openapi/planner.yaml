@@ -2558,13 +2558,14 @@ components:
             when the issues give another state now.
         reason:
           type: string
-          maxLength: 280
           description: >-
             The person's one sentence why the item is closed: what was built, or why not. Taken only on a move into a
             closed state and optional there, a blank one counting as none; a story's reason is given to each issue the
-            same move closes, while an issue's own move in the batch keeps its own reason or none. Trimmed, it holds at
-            most 280 code points and no control, line or paragraph separator, bidirectional control or zero-width
-            character; it is refused
+            same move closes; when the story stands in that state already, the same move sent again, each issue of it
+            standing there too keeps it, so a comment that failed is written then; an issue's own move in the batch
+            keeps its own reason or none. It holds at most 280 code points after trimming and no control, format,
+            surrogate, unassigned or private-use character, no line or paragraph separator, and none of U+115F, U+2800
+            or U+3164, which show as blank; it is refused
             (MoveNotAllowed, whose own `reason` parameter is the planner's words, not this text) on a move into a
             state that is not closed, on a `follow` move, on an issue move whose issue stands in that state already,
             and on a store that keeps no reasons, before anything is written.

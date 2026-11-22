@@ -820,6 +820,62 @@ String? planningReason(String? reason) {
 /// The most characters, counted as Unicode code points after trimming, a move's reason holds.
 const planningMostReason = 280;
 
+/// The planner's words refusing [reason]'s text, or null when it may be sent: at most [planningMostReason] code points
+/// after trimming, and no character the planner refuses.
+///
+/// The planner refuses by Unicode category: control, format, surrogate, unassigned and private-use characters and
+/// line and paragraph separators, and U+115F, U+2800 and U+3164, which show as blank. Dart has no category table, so
+/// the screen knows the format characters by their list, and of the unassigned ones only the noncharacters; the
+/// planner's refusal names the rest.
+String? planningReasonRefusal(String reason) {
+  final trimmed = reason.trim();
+  if (trimmed.runes.length > planningMostReason) return 'A reason holds at most $planningMostReason characters.';
+  if (trimmed.runes.any(planningReasonRefuses)) {
+    return 'A reason holds no control, format, line or paragraph separator, private, unassigned or blank-looking '
+        'character.';
+  }
+  return null;
+}
+
+/// Whether a reason may not hold the code point [c], as far as the screen can tell; see [planningReasonRefusal].
+bool planningReasonRefuses(int c) =>
+    c < 0x20 ||
+    (c >= 0x7F && c <= 0x9F) ||
+    // Format characters.
+    c == 0x00AD ||
+    (c >= 0x0600 && c <= 0x0605) ||
+    c == 0x061C ||
+    c == 0x06DD ||
+    c == 0x070F ||
+    c == 0x0890 ||
+    c == 0x0891 ||
+    c == 0x08E2 ||
+    c == 0x180E ||
+    (c >= 0x200B && c <= 0x200F) ||
+    (c >= 0x202A && c <= 0x202E) ||
+    (c >= 0x2060 && c <= 0x2064) ||
+    (c >= 0x2066 && c <= 0x206F) ||
+    c == 0xFEFF ||
+    (c >= 0xFFF9 && c <= 0xFFFB) ||
+    c == 0x110BD ||
+    c == 0x110CD ||
+    (c >= 0x13430 && c <= 0x1343F) ||
+    (c >= 0x1BCA0 && c <= 0x1BCA3) ||
+    (c >= 0x1D173 && c <= 0x1D17A) ||
+    c == 0xE0001 ||
+    (c >= 0xE0020 && c <= 0xE007F) ||
+    // Surrogates, private use and the noncharacters.
+    (c >= 0xD800 && c <= 0xF8FF) ||
+    c >= 0xF0000 ||
+    (c >= 0xFDD0 && c <= 0xFDEF) ||
+    (c & 0xFFFE) == 0xFFFE ||
+    // Line and paragraph separators, and the characters that show as blank.
+    c == 0x2028 ||
+    c == 0x2029 ||
+    c == 0x115F ||
+    c == 0x2800 ||
+    c == 0x3164;
+
 /// One story destination in an atomic board save.
 class PlanningStoryMove extends PlanningMove {
   /// Keeps the daemon's story identifier and destination; [follow] hands a given story back to its issues.

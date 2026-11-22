@@ -206,6 +206,7 @@ public class BoardController {
             throw notAllowed("", "", "The body names no revision.");
         }
         final Projects.Given given = projects.given(name);
+        refuseReasons(given.store(), moves);
         final MovePreview preview;
         try {
             preview = given.work().preview(moves, revision);
@@ -256,6 +257,7 @@ public class BoardController {
             throw notAllowed("", "", "The body names no revision.");
         }
         final Projects.Given given = projects.given(name);
+        refuseReasons(given.store(), moves);
         final String named = body.digest();
         final String digest;
         if (named == null && Boolean.TRUE.equals(body.confirm())) {
@@ -306,6 +308,21 @@ public class BoardController {
                                                 .map(t -> new StoppedTask(t.task(), t.container()))
                                                 .toList()))
                 .toList();
+    }
+
+    /**
+     * Refuses a batch carrying a reason on a store that keeps none, in its preview and before its
+     * save's digest, so a window that offered one anyway learns it before anything is asked.
+     */
+    private static void refuseReasons(final PlanningStore store, final List<Moves.Move> moves) {
+        if (store.keepsReasons()) {
+            return;
+        }
+        for (final Moves.Move move : moves) {
+            if (move.reason() != null) {
+                throw new StoreException.NotSavable(move.id(), "this store keeps no reason");
+            }
+        }
     }
 
     private static Refusal movesNotOffered(final String name) {

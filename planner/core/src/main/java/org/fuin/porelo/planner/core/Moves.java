@@ -30,7 +30,7 @@ public final class Moves {
     private static final String REJECTED = "Rejected";
 
     /** The most code points a move's reason holds. */
-    public static final int MOST_REASON = 280;
+    public static final int MOST_REASON = Writes.Reason.MOST;
 
     private Moves() {}
 
@@ -381,6 +381,22 @@ public final class Moves {
                     }
                 }
                 final String reason = move.reason();
+                if (reason != null
+                        && !move.follow()
+                        && move.to().equals(story(board, move.id()).state())) {
+                    // The same move sent again, the story standing in its target already: an
+                    // issue of it standing there too keeps the reason, so a save whose comment
+                    // failed after the close writes it now; the store writes a comment it finds
+                    // standing only once. On a first move, only the issues it closes keep one.
+                    for (final String id :
+                            Misfits.known(
+                                    withSubIssues(board, story(board, move.id()).issues()),
+                                    onBoard)) {
+                        if (move.to().equals(onBoard.get(id))) {
+                            reasons.putIfAbsent(id, new Writes.Reason(move.to(), reason));
+                        }
+                    }
+                }
                 if (reason != null) {
                     // Also when it stands there already: a save whose comment failed is sent again.
                     storyReasons.put(move.id(), new Writes.Reason(move.to(), reason));
@@ -452,8 +468,6 @@ public final class Moves {
                                 stories.remove(story.id());
                             }
                         });
-        // A carried issue whose head is not written is closed already, so it keeps no reason.
-        reasons.keySet().retainAll(issues.keySet());
         return new Plan(
                 new Planned(issues, stories, unstated, List.copyOf(moved), reasons, storyReasons),
                 states,
@@ -538,12 +552,9 @@ public final class Moves {
             return;
         }
         final String reason;
-        if (given.codePointCount(0, given.length()) > MOST_REASON) {
-            reason = "A reason holds at most " + MOST_REASON + " characters.";
-        } else if (given.codePoints().anyMatch(Moves::unshown)) {
-            reason =
-                    "A reason holds no control, line or paragraph separator, bidirectional control"
-                            + " or zero-width character.";
+        final String refused = Writes.Reason.refusal(given);
+        if (refused != null) {
+            reason = refused;
         } else if (move.follow()) {
             reason = "A story that follows its issues closes nothing, so it takes no reason.";
         } else if (!workflow.closed().contains(move.to())) {
@@ -555,22 +566,6 @@ public final class Moves {
             return;
         }
         throw new Refused("MoveNotAllowed", reason, item(move.id(), from, move.to(), reason));
-    }
-
-    /**
-     * Whether a character is one a reason may not hold: a control character, a line or paragraph
-     * separator, a bidirectional control or a zero-width character, each of which hides or turns
-     * what a reader sees.
-     */
-    static boolean unshown(final int c) {
-        return Character.getType(c) == Character.CONTROL
-                || c == 0x2028
-                || c == 0x2029
-                || (c >= 0x200B && c <= 0x200F)
-                || (c >= 0x202A && c <= 0x202E)
-                || c == 0x2060
-                || (c >= 0x2066 && c <= 0x2069)
-                || c == 0xFEFF;
     }
 
     /**

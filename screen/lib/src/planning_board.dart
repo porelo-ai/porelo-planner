@@ -122,8 +122,8 @@ class PlanningMoveQuestion {
   /// The reason as typed, trimmed when it is sent.
   final ValueNotifier<String> reason;
 
-  /// Whether the typed reason is too long to send: more than [planningMostReason] code points after trimming.
-  bool get reasonTooLong => asksReason && reason.value.trim().runes.length > planningMostReason;
+  /// Why the typed reason cannot be sent, as the planner would refuse it; null when it can.
+  String? get reasonRefused => asksReason ? planningReasonRefusal(reason.value) : null;
 
   /// The move's key in [PlanningBoard.pending].
   final String key;
@@ -1631,7 +1631,7 @@ class PlanningBoard extends ChangeNotifier {
   /// confirms no warning.
   Future<void> confirmMove() async {
     final asked = question;
-    if (_disposed || asked == null || asked.reasonTooLong) return;
+    if (_disposed || asked == null || asked.reasonRefused != null) return;
     question = null;
     _changed();
     for (final warning in asked.warnings) {
