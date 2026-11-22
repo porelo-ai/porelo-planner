@@ -11,7 +11,62 @@
     "size" : "L",
     "link" : "https://example.org/stories/ST294",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST72",
     "title" : "A forge’s calls in a client that knows nothing of Porelo",
@@ -28,6 +83,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PJ74",
@@ -43,6 +99,7 @@
       "title" : "Planning work",
       "state" : "Under estimation",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/FC03",
@@ -58,6 +115,7 @@
       "title" : "Planning work",
       "state" : "Under estimation",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/FC09",
@@ -73,6 +131,7 @@
       "title" : "Planning work",
       "state" : "Under estimation",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/FC10",
@@ -88,6 +147,7 @@
       "title" : "Planning work",
       "state" : "Under estimation",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/FC11",
@@ -103,6 +163,7 @@
       "title" : "Planning work",
       "state" : "Under estimation",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/FC13",
@@ -113,7 +174,65 @@
       "noRunHere" : true,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 5
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 1
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 6
+      } ],
+      "unsized" : 0,
+      "left" : 6,
+      "minutes" : null,
+      "unestimated" : 6,
+      "review" : 0
+    }
   }, {
     "id" : "ST21",
     "title" : "No channel file and no hand-over directory any more",
@@ -125,7 +244,62 @@
     "size" : "M",
     "link" : "https://example.org/stories/ST21",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST11",
     "title" : "porelo-adapters and porelo-ai.github.io each in its own task",
@@ -137,7 +311,62 @@
     "size" : "XL",
     "link" : "https://example.org/stories/ST11",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST13",
     "title" : "porelo and porelo-host each in its task, with a way back",
@@ -149,7 +378,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST13",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST28",
     "title" : "The setup, move and recovery proven together",
@@ -161,7 +445,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST28",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST87",
     "title" : "Invalid machine inputs refused before renting",
@@ -173,7 +512,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST87",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST182",
     "title" : "Review a Bitbucket pull request",
@@ -185,7 +579,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST182",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST114",
     "title" : "A vulnerability has a way in and is answered",
@@ -197,7 +646,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST114",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST111",
     "title" : "Install from the intended package source",
@@ -209,7 +713,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST111",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST144",
     "title" : "Understand where a binding setting came from",
@@ -221,7 +780,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST144",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST14",
     "title" : "The coordinator reads everything and changes only porelo-project",
@@ -238,6 +852,7 @@
       "title" : "Planning work",
       "state" : "Analyzed",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PJ58",
@@ -248,7 +863,65 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 1
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 1,
+      "minutes" : null,
+      "unestimated" : 1,
+      "review" : 0
+    }
   }, {
     "id" : "ST39",
     "title" : "A failed delivery named and kept visible",
@@ -260,7 +933,62 @@
     "size" : "XS",
     "link" : "https://example.org/stories/ST39",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST35",
     "title" : "Refuse an incompatible protocol and a meaningless option",
@@ -272,7 +1000,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST35",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST15",
     "title" : "The website builds in its task",
@@ -289,6 +1072,7 @@
       "title" : "Planning work",
       "state" : "Estimated",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/SI05",
@@ -299,7 +1083,65 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 1
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 1,
+      "minutes" : null,
+      "unestimated" : 1,
+      "review" : 0
+    }
   }, {
     "id" : "ST106",
     "title" : "Make security failures hold the release",
@@ -311,7 +1153,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST106",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST198",
     "title" : "Reach a remote machine from Windows",
@@ -323,7 +1220,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST198",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST291",
     "title" : "The host run by a program of its own, built like porelo",
@@ -340,6 +1292,7 @@
       "title" : "The host tool as a module of porelo",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B540",
@@ -355,6 +1308,7 @@
       "title" : "The host tool reads the organization and a task by its signature",
       "state" : "Implementing",
       "size" : "L",
+      "minutesLeft" : null,
       "blockedBy" : [ "B540" ],
       "parent" : null,
       "link" : "https://example.org/issues/B541",
@@ -370,6 +1324,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B542",
@@ -385,6 +1340,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B543",
@@ -400,6 +1356,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B544",
@@ -415,6 +1372,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B545",
@@ -430,6 +1388,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B546",
@@ -445,6 +1404,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B547",
@@ -460,6 +1420,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B548",
@@ -475,6 +1436,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B549",
@@ -490,6 +1452,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B550",
@@ -505,6 +1468,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B551",
@@ -520,6 +1484,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B552",
@@ -535,6 +1500,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO156",
@@ -550,6 +1516,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO157",
@@ -565,6 +1532,7 @@
       "title" : "The host tool's module builds in the porelo build",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : "B540",
       "link" : "https://example.org/issues/B540.1",
@@ -575,7 +1543,71 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 14
+      }, {
+        "name" : "Implementing",
+        "issues" : 1
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 1,
+      "sizes" : [ {
+        "name" : "S",
+        "issues" : 1
+      }, {
+        "name" : "M",
+        "issues" : 14
+      }, {
+        "name" : "L",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 16,
+      "minutes" : null,
+      "unestimated" : 16,
+      "review" : 0
+    }
   }, {
     "id" : "ST292",
     "title" : "A whole move rehearsed by the agents on a rented server",
@@ -592,6 +1624,7 @@
       "title" : "A move runs without a terminal for a rehearsal",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B553",
@@ -607,6 +1640,7 @@
       "title" : "A forge token’s reach checked against what a move needs",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B554",
@@ -622,6 +1656,7 @@
       "title" : "A move driven through the window against a rented host",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/F444",
@@ -637,6 +1672,7 @@
       "title" : "What a rehearsal cannot drive in the window, stood in for",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ "F444" ],
       "parent" : null,
       "link" : "https://example.org/issues/F445",
@@ -652,6 +1688,7 @@
       "title" : "A move rehearsed on a rented server",
       "state" : "Backlog",
       "size" : "L",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO158",
@@ -667,6 +1704,7 @@
       "title" : "A test person signs in through the gate unattended",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/MX89",
@@ -682,6 +1720,7 @@
       "title" : "The room’s scenarios are rehearsed on a host",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ "MX89" ],
       "parent" : null,
       "link" : "https://example.org/issues/MX90",
@@ -697,6 +1736,7 @@
       "title" : "The rehearsal says a wake was answered",
       "state" : "Backlog",
       "size" : "XS",
+      "minutesLeft" : null,
       "blockedBy" : [ "MX89" ],
       "parent" : null,
       "link" : "https://example.org/issues/MX91",
@@ -707,7 +1747,74 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 5
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 3,
+      "sizes" : [ {
+        "name" : "XS",
+        "issues" : 1
+      }, {
+        "name" : "S",
+        "issues" : 4
+      }, {
+        "name" : "M",
+        "issues" : 2
+      }, {
+        "name" : "L",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 8,
+      "minutes" : null,
+      "unestimated" : 8,
+      "review" : 0
+    }
   }, {
     "id" : "ST293",
     "title" : "Every agent works in a Porelo task, moved one at a time",
@@ -719,7 +1826,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST293",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST23",
     "title" : "The room and the usage records outlive the host",
@@ -736,6 +1898,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/MX24",
@@ -751,6 +1914,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/MX36",
@@ -766,6 +1930,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/MX39",
@@ -781,6 +1946,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO07",
@@ -796,6 +1962,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B231",
@@ -806,7 +1973,65 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 2
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 1
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 2
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 2
+      } ],
+      "unsized" : 0,
+      "left" : 2,
+      "minutes" : null,
+      "unestimated" : 2,
+      "review" : 1
+    }
   }, {
     "id" : "ST6",
     "title" : "porelo-agy and porelo-codex each in its own task",
@@ -818,7 +2043,62 @@
     "size" : "M",
     "link" : "https://example.org/stories/ST6",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST27",
     "title" : "Every workflow runs on the local forge as on the central one",
@@ -835,6 +2115,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/IJ14",
@@ -845,7 +2126,65 @@
       "noRunHere" : true,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 1
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 1,
+      "minutes" : null,
+      "unestimated" : 1,
+      "review" : 0
+    }
   }, {
     "id" : "ST12",
     "title" : "The release and pipeline tools the move rests on",
@@ -862,6 +2201,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT35",
@@ -877,6 +2217,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT36",
@@ -892,6 +2233,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT38",
@@ -907,6 +2249,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT43",
@@ -922,6 +2265,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT44",
@@ -937,6 +2281,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT45",
@@ -952,6 +2297,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT46",
@@ -962,7 +2308,65 @@
       "noRunHere" : true,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 4
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 2
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 1
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 4
+      } ],
+      "unsized" : 0,
+      "left" : 4,
+      "minutes" : null,
+      "unestimated" : 4,
+      "review" : 2
+    }
   }, {
     "id" : "ST5",
     "title" : "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
@@ -979,6 +2383,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PI43",
@@ -994,6 +2399,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/OM44",
@@ -1009,6 +2415,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/CC45",
@@ -1024,6 +2431,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PI39",
@@ -1039,6 +2447,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/OM36",
@@ -1054,6 +2463,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/CC39",
@@ -1064,7 +2474,65 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 3
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 3
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 3
+      } ],
+      "unsized" : 0,
+      "left" : 3,
+      "minutes" : null,
+      "unestimated" : 3,
+      "review" : 3
+    }
   }, {
     "id" : "ST193",
     "title" : "Choose drive areas for each host",
@@ -1081,6 +2549,7 @@
       "title" : "Planning work",
       "state" : "Implementing",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PJ106",
@@ -1091,7 +2560,65 @@
       "noRunHere" : true,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 1
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "M",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 1,
+      "minutes" : null,
+      "unestimated" : 1,
+      "review" : 0
+    }
   }, {
     "id" : "ST127",
     "title" : "Keep container limits on large hosts",
@@ -1103,7 +2630,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST127",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST1",
     "title" : "Builds on the host’s forge resolve snapshots with a read-only token",
@@ -1120,6 +2702,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT42",
@@ -1135,6 +2718,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT39",
@@ -1150,6 +2734,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO52",
@@ -1165,6 +2750,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/SL36",
@@ -1180,6 +2766,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT40",
@@ -1195,6 +2782,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT41",
@@ -1210,6 +2798,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO53",
@@ -1220,7 +2809,62 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 4
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 3
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 4
+    }
   }, {
     "id" : "ST2",
     "title" : "porelo-message-sluice works wholly in its task",
@@ -1237,6 +2881,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/SL35",
@@ -1247,7 +2892,62 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 1
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 1
+    }
   }, {
     "id" : "ST3",
     "title" : "porelo’s Build on the host’s Forgejo",
@@ -1264,6 +2964,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/B306",
@@ -1274,7 +2975,62 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 1
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 1
+    }
   }, {
     "id" : "ST10",
     "title" : "Test machines by kind from the VM pool",
@@ -1291,6 +3047,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/HO12",
@@ -1306,6 +3063,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT24",
@@ -1321,6 +3079,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/BT25",
@@ -1331,7 +3090,62 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 3
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 3
+    }
   }, {
     "id" : "ST295",
     "title" : "Hand the sluice's last checks to a person",
@@ -1348,6 +3162,7 @@
       "title" : "Planning work",
       "state" : "Review",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/SL37",
@@ -1363,6 +3178,7 @@
       "title" : "Planning work",
       "state" : "Backlog",
       "size" : "S",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/SL38",
@@ -1373,7 +3189,65 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 1
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 1
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ {
+        "name" : "S",
+        "issues" : 1
+      } ],
+      "unsized" : 0,
+      "left" : 1,
+      "minutes" : null,
+      "unestimated" : 1,
+      "review" : 1
+    }
   }, {
     "id" : "ST264",
     "title" : "A host prepared with no project or person",
@@ -1385,7 +3259,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST264",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST268",
     "title" : "Each person’s one key and card, kept in the registry",
@@ -1397,7 +3326,62 @@
     "size" : null,
     "link" : "https://example.org/stories/ST268",
     "issues" : [ ],
-    "work" : null
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 0
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
   }, {
     "id" : "ST243",
     "title" : "Both adapters pass one contract suite",
@@ -1414,6 +3398,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/PJ62",
@@ -1429,6 +3414,7 @@
       "title" : "Planning work",
       "state" : "Finished",
       "size" : "M",
+      "minutesLeft" : null,
       "blockedBy" : [ ],
       "parent" : null,
       "link" : "https://example.org/issues/GH18",
@@ -1439,6 +3425,128 @@
       "noRunHere" : false,
       "attention" : "NONE"
     } ],
-    "work" : null
-  } ]
+    "work" : null,
+    "open" : {
+      "states" : [ {
+        "name" : "Idea",
+        "issues" : 0
+      }, {
+        "name" : "Accepted",
+        "issues" : 0
+      }, {
+        "name" : "In analysis",
+        "issues" : 0
+      }, {
+        "name" : "Analyzed",
+        "issues" : 0
+      }, {
+        "name" : "Under estimation",
+        "issues" : 0
+      }, {
+        "name" : "Estimated",
+        "issues" : 0
+      }, {
+        "name" : "Backlog",
+        "issues" : 0
+      }, {
+        "name" : "Implementing",
+        "issues" : 0
+      }, {
+        "name" : "Reading",
+        "issues" : 0
+      }, {
+        "name" : "Review",
+        "issues" : 0
+      }, {
+        "name" : "Rework",
+        "issues" : 0
+      }, {
+        "name" : "Reworking",
+        "issues" : 0
+      }, {
+        "name" : "Finishing",
+        "issues" : 0
+      }, {
+        "name" : "Finished",
+        "issues" : 2
+      }, {
+        "name" : "Rejected",
+        "issues" : 0
+      } ],
+      "blocked" : 0,
+      "sizes" : [ ],
+      "unsized" : 0,
+      "left" : 0,
+      "minutes" : null,
+      "unestimated" : 0,
+      "review" : 0
+    }
+  } ],
+  "open" : {
+    "states" : [ {
+      "name" : "Idea",
+      "issues" : 0
+    }, {
+      "name" : "Accepted",
+      "issues" : 0
+    }, {
+      "name" : "In analysis",
+      "issues" : 0
+    }, {
+      "name" : "Analyzed",
+      "issues" : 1
+    }, {
+      "name" : "Under estimation",
+      "issues" : 5
+    }, {
+      "name" : "Estimated",
+      "issues" : 1
+    }, {
+      "name" : "Backlog",
+      "issues" : 24
+    }, {
+      "name" : "Implementing",
+      "issues" : 10
+    }, {
+      "name" : "Reading",
+      "issues" : 0
+    }, {
+      "name" : "Review",
+      "issues" : 16
+    }, {
+      "name" : "Rework",
+      "issues" : 0
+    }, {
+      "name" : "Reworking",
+      "issues" : 0
+    }, {
+      "name" : "Finishing",
+      "issues" : 0
+    }, {
+      "name" : "Finished",
+      "issues" : 8
+    }, {
+      "name" : "Rejected",
+      "issues" : 0
+    } ],
+    "blocked" : 4,
+    "sizes" : [ {
+      "name" : "XS",
+      "issues" : 1
+    }, {
+      "name" : "S",
+      "issues" : 7
+    }, {
+      "name" : "M",
+      "issues" : 35
+    }, {
+      "name" : "L",
+      "issues" : 2
+    } ],
+    "unsized" : 0,
+    "left" : 45,
+    "minutes" : null,
+    "unestimated" : 45,
+    "review" : 16
+  }
 }

@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.OutsideIssue;
@@ -211,6 +212,11 @@ public final class IssueMapping {
             if (checkSums(id, item, sum, faults)) {
                 rewrite.add(id);
             }
+            // The board shows the comments' sum over a field that disagrees, so its minutes do too;
+            // an issue no stage was measured for and no field names has none.
+            if (sum.stages() > 0 || issues.get(id).minutes() != null) {
+                issues.put(id, withMinutes(issues.get(id), sum.minutes()));
+            }
         }
 
         for (final String id : issues.keySet()) {
@@ -394,7 +400,57 @@ public final class IssueMapping {
                 item.link(),
                 body,
                 worker,
-                risk);
+                risk,
+                figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
+                figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults));
+    }
+
+    /** The most minutes an issue's work is read as having taken, its stages together. */
+    static final double MOST_TAKEN = 10_000_000;
+
+    /**
+     * A number field's minutes between {@code least} and {@code most}, or null when it is empty;
+     * any other value is named as a fault and read as none, so no figure overflows a sum.
+     */
+    private static @Nullable Double figure(
+            final String id,
+            final ItemView item,
+            final String field,
+            final double least,
+            final double most,
+            final List<String> faults) {
+        final String given = item.fields().getOrDefault(field, "").strip();
+        if (given.isEmpty()) {
+            return null;
+        }
+        try {
+            final double value = Double.parseDouble(given);
+            if (value >= least && value <= most) {
+                return value;
+            }
+        } catch (final NumberFormatException e) {
+            // Named below like any other value that is no number of minutes.
+        }
+        faults.add(id + " has no number of minutes in its field " + field + ", read as none");
+        return null;
+    }
+
+    /** The issue with the minutes its stage comments sum to, within the most read. */
+    private static Issue withMinutes(final Issue issue, final double minutes) {
+        return new Issue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.state(),
+                issue.size(),
+                issue.blockedBy(),
+                issue.parent(),
+                issue.link(),
+                issue.text(),
+                issue.worker(),
+                issue.risk(),
+                issue.estimate(),
+                minutes >= 0 && minutes <= MOST_TAKEN ? minutes : issue.minutes());
     }
 
     /** The longest Status a fault names, as a plain option name of a single-select field. */
@@ -577,7 +633,9 @@ public final class IssueMapping {
                             issue.link(),
                             issue.text(),
                             parent.worker(),
-                            Risk.highest(List.of(issue.risk(), parent.risk()))));
+                            Risk.highest(List.of(issue.risk(), parent.risk())),
+                            issue.estimate(),
+                            issue.minutes()));
         }
     }
 

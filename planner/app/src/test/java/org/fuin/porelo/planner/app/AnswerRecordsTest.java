@@ -242,6 +242,9 @@ class AnswerRecordsTest {
         if (raw == String.class) {
             return "text";
         }
+        if (raw == java.math.BigDecimal.class) {
+            return java.math.BigDecimal.ONE;
+        }
         if (raw == Integer.class) {
             return 1;
         }

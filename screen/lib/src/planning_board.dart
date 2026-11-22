@@ -2245,7 +2245,41 @@ class PlanningBoards extends ChangeNotifier {
 
   void _changed() {
     if (_disposed) return;
+    _count();
     notifyListeners();
+  }
+
+  /// The issues waiting for the person's review over every project shown, each from the board its project is shown
+  /// from; null while any project's figures are not known or its board is not live, so a partial or old sum is never
+  /// shown as the whole.
+  ValueListenable<int?> get review => _review;
+
+  /// The issues left to build over every project shown, counted as [review] is.
+  ValueListenable<int?> get open => _open;
+
+  final ValueNotifier<int?> _review = ValueNotifier(null);
+  final ValueNotifier<int?> _open = ValueNotifier(null);
+
+  void _count() {
+    var review = 0;
+    var left = 0;
+    var known = projects.isNotEmpty;
+    for (final project in projects) {
+      // The board the project is shown from, as the working count takes it, so a stale machine's never wins.
+      final board = _provider(project);
+      // A board that stopped answering, or holds a move not yet read back, has figures that no longer say what is open.
+      final figures = board != null && board.live && board.pending.isEmpty && !board.saving
+          ? board.snapshot?.open
+          : null;
+      if (figures == null) {
+        known = false;
+        break;
+      }
+      review += figures.review;
+      left += figures.left;
+    }
+    _review.value = known ? review : null;
+    _open.value = known ? left : null;
   }
 
   /// Boards holding unsaved work, including providers no longer selected.
@@ -2416,6 +2450,8 @@ class PlanningBoards extends ChangeNotifier {
       board.dispose();
     }
     _boards.clear();
+    _review.dispose();
+    _open.dispose();
     super.dispose();
   }
 }

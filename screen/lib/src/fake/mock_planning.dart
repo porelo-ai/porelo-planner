@@ -379,7 +379,11 @@ class MockPlanningSource implements PlanningSource {
   @override
   Future<PlanningSnapshot> stories(String project) async {
     final current = board(project);
-    return PlanningSnapshot.from({'stories': current['stories'], 'revision': current['revision']});
+    return PlanningSnapshot.from({
+      'stories': current['stories'],
+      'revision': current['revision'],
+      'open': current['open'],
+    });
   }
 
   @override

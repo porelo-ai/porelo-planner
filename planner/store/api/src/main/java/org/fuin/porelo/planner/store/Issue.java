@@ -21,6 +21,8 @@ import org.jspecify.annotations.Nullable;
  * @param worker who works it; a head that names none is worked by an agent
  * @param risk how much harm its change can do; a head that names none is ordinary, and a sub-issue
  *     is worked with the higher of its own and its parent's
+ * @param estimate the minutes it is expected to take, if it was estimated
+ * @param minutes the minutes its work took so far, if the store keeps them
  */
 public record Issue(
         String id,
@@ -33,7 +35,9 @@ public record Issue(
         @Nullable URI link,
         String text,
         Worker worker,
-        Risk risk) {
+        Risk risk,
+        @Nullable Double estimate,
+        @Nullable Double minutes) {
 
     /** Checks the ids and the repository's name and copies the list. */
     public Issue {
@@ -56,6 +60,55 @@ public record Issue(
                         "Sub-issue " + id + " does not carry its parent's id " + parent);
             }
         }
+        if (estimate != null && !(estimate >= 0 && Double.isFinite(estimate))) {
+            throw new IllegalArgumentException("Issue " + id + " has no sound estimate");
+        }
+        if (minutes != null && !(minutes >= 0 && Double.isFinite(minutes))) {
+            throw new IllegalArgumentException("Issue " + id + " has no sound minutes");
+        }
+    }
+
+    /**
+     * An issue without figures: no estimate and no minutes kept.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                null,
+                null);
     }
 
     /**

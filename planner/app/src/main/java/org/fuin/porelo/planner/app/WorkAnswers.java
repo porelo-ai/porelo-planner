@@ -1,7 +1,10 @@
 package org.fuin.porelo.planner.app;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -23,6 +26,7 @@ import org.fuin.porelo.planner.app.answers.TaskEnded;
 import org.fuin.porelo.planner.app.answers.TrackedWork;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.OpenWork;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -252,6 +256,23 @@ public final class WorkAnswers {
 
     static org.fuin.porelo.planner.app.answers.Issue issue(
             final Board board, final Issue issue, final WorkRun.Snapshot snapshot) {
+        return issue(board, issue, snapshot, OpenWork.minutesLeft(board));
+    }
+
+    /**
+     * Answers an issue as the board shows it, with its minutes left read from those given.
+     *
+     * @param board the board
+     * @param issue the issue
+     * @param snapshot the runs
+     * @param minutes each issue's minutes left, as {@link OpenWork#minutesLeft(Board)} answers
+     * @return the issue's answer
+     */
+    static org.fuin.porelo.planner.app.answers.Issue issue(
+            final Board board,
+            final Issue issue,
+            final WorkRun.Snapshot snapshot,
+            final Map<String, Double> minutes) {
         // A person's issue needs no agent's choice, whatever a run recorded before the switch.
         final boolean manual = issue.worker() == org.fuin.porelo.planner.store.Worker.MANUAL;
         final NextStep.Progress progress = progress(snapshot, issue.id());
@@ -263,6 +284,7 @@ public final class WorkAnswers {
                 issue.title(),
                 issue.state(),
                 issue.size(),
+                decimal(minutes.get(issue.id())),
                 issue.blockedBy(),
                 issue.parent(),
                 issue.link(),
@@ -276,6 +298,18 @@ public final class WorkAnswers {
                 org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
                         raised && progress != null ? progress.reason() : "NONE"),
                 progress == null ? null : findings(progress.findings()));
+    }
+
+    /**
+     * Minutes as the answer carries them, rounded to one decimal, or null.
+     *
+     * @param minutes the minutes, or null
+     * @return the number, or null
+     */
+    static @Nullable BigDecimal decimal(final @Nullable Double minutes) {
+        return minutes == null
+                ? null
+                : BigDecimal.valueOf(minutes).setScale(1, RoundingMode.HALF_UP);
     }
 
     private static @Nullable TaskEnded ended(final WorkRun.@Nullable Ended ended) {

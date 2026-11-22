@@ -233,7 +233,9 @@ class PlanIssue {
       workerMalformed = source.workerMalformed,
       findings = source.findings,
       whatMustBeTrue = source.whatMustBeTrue,
-      subAgents = source.subAgents;
+      subAgents = source.subAgents,
+      // A moved issue's minutes are the planner's to say again, on the board read after the save.
+      minutesLeft = state == source.state ? source.minutesLeft : null;
 
   /// Reads fields leniently.
   PlanIssue.from(Map<String, dynamic> map)
@@ -257,7 +259,8 @@ class PlanIssue {
       workerMalformed = map.containsKey('worker') && IssueWorker.read(map['worker']) == null,
       findings = _planList(map['findings'], PlanFinding.from),
       whatMustBeTrue = map['whatMustBeTrue'] is String ? map['whatMustBeTrue'] as String : null,
-      subAgents = map['subAgents'] is List ? _planList(map['subAgents'], PlanWorker.from) : null;
+      subAgents = map['subAgents'] is List ? _planList(map['subAgents'], PlanWorker.from) : null,
+      minutesLeft = _planMinutes(map['minutesLeft']);
 
   /// The issue's identifier.
   final String id;
@@ -303,6 +306,10 @@ class PlanIssue {
 
   /// The subAgents reported by the daemon.
   final List<PlanWorker>? subAgents;
+
+  /// For an issue left to build, the minutes expected of it less those its work took so far; null when not left to
+  /// build, when nothing gives an expectation, or when the planner did not say.
+  final double? minutesLeft;
 
   /// Its web link.
   final String link;
@@ -351,7 +358,9 @@ class PlanStory {
       issuesReported = source.issuesReported,
       link = source.link,
       work = source.work,
-      workReported = source.workReported;
+      workReported = source.workReported,
+      // Any move can change a story's figures, a blocker's in another story too, until the board read after it.
+      open = moves.isEmpty && destination == null ? source.open : null;
 
   /// Reads fields leniently and preserves unknown priorities.
   PlanStory.from(Map<String, dynamic> map)
@@ -369,7 +378,8 @@ class PlanStory {
       issuesReported = _planMapsReported(map['issues']),
       link = _planText(map, 'link'),
       work = map['work'] is Map<String, dynamic> ? PlanWork.from(map['work'] as Map<String, dynamic>) : null,
-      workReported = map.containsKey('work');
+      workReported = map.containsKey('work'),
+      open = PlanOpenWork.read(map['open']);
 
   /// Its identifier.
   final String id;
@@ -412,6 +422,9 @@ class PlanStory {
 
   /// Whether the watch supplied work status, including an explicitly absent work record.
   final bool workReported;
+
+  /// What is still open of its issues, as the planner counted it; null when it did not say or a move made it stale.
+  final PlanOpenWork? open;
 
   /// Whether the watch supplied the ended outcome, including an explicitly cleared outcome.
   bool get endedReported => workReported;
@@ -535,6 +548,8 @@ class PlanningSnapshot {
        statesReported = source.statesReported,
        phasesReported = source.phasesReported,
        storiesReported = source.storiesReported,
+       // The board's figures are stale once anything moved, until the board read after the save.
+       open = moves.isEmpty && destinations.isEmpty ? source.open : null,
        stories = [
          for (final story in source.stories)
            PlanStory.withMoves(story, moves, destinations[story.id], followed: followed.contains(story.id)),
@@ -553,7 +568,8 @@ class PlanningSnapshot {
       revision = _planText(map, 'revision'),
       statesReported = _planMapsReported(map['states']),
       phasesReported = _planMapsReported(map['phases']),
-      storiesReported = _planMapsReported(map['stories']);
+      storiesReported = _planMapsReported(map['stories']),
+      open = PlanOpenWork.read(map['open']);
 
   /// Combines the separate workflow and story reads without deriving any states.
   PlanningSnapshot.fromParts(PlanningSnapshot workflow, PlanningSnapshot board)
@@ -569,7 +585,8 @@ class PlanningSnapshot {
       revision = board.revision,
       statesReported = workflow.statesReported,
       phasesReported = workflow.phasesReported,
-      storiesReported = board.storiesReported;
+      storiesReported = board.storiesReported,
+      open = board.open;
 
   /// The work reported by the daemon.
   final List<PlanWorkRule> work;
@@ -610,6 +627,87 @@ class PlanningSnapshot {
 
   /// The daemon's opaque revision.
   final String revision;
+
+  /// What is still open of the whole board, as the planner counted it; null when it did not say.
+  final PlanOpenWork? open;
+}
+
+/// What is still open of a story or a board, as the planner counts it: its issues per state, those an open issue
+/// blocks, the sizes and minutes of what is left to build, and what waits for the person's review.
+class PlanOpenWork {
+  PlanOpenWork._(
+    this.states,
+    this.blocked,
+    this.sizes,
+    this.unsized,
+    this.left,
+    this.minutes,
+    this.unestimated,
+    this.review,
+  );
+
+  /// Reads the figures, or null when [value] is none the planner sends, so no count is ever shown as 0 unknowingly.
+  static PlanOpenWork? read(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final blocked = _planCount(value['blocked']);
+    final unsized = _planCount(value['unsized']);
+    final left = _planCount(value['left']);
+    final unestimated = _planCount(value['unestimated']);
+    final review = _planCount(value['review']);
+    final states = _planCounts(value['states']);
+    final sizes = _planCounts(value['sizes']);
+    if (blocked == null ||
+        unsized == null ||
+        left == null ||
+        unestimated == null ||
+        review == null ||
+        states == null ||
+        sizes == null) {
+      return null;
+    }
+    return PlanOpenWork._(states, blocked, sizes, unsized, left, _planMinutes(value['minutes']), unestimated, review);
+  }
+
+  /// Each state of the workflow, in order, with its issues that are not blocked.
+  final Map<String, int> states;
+
+  /// The issues left to build that an open issue blocks.
+  final int blocked;
+
+  /// Each size of the issues left to build, smallest first, only those that occur.
+  final Map<String, int> sizes;
+
+  /// The issues left to build without a size.
+  final int unsized;
+
+  /// The issues left to build, the blocked ones included.
+  final int left;
+
+  /// The minutes left over the issues left to build that have them; null when none has.
+  final double? minutes;
+
+  /// The issues left to build without minutes.
+  final int unestimated;
+
+  /// The issues waiting for the person's review.
+  final int review;
+}
+
+int? _planCount(Object? value) => value is int && value >= 0 ? value : null;
+
+double? _planMinutes(Object? value) => value is num && value.isFinite && value >= 0 ? value.toDouble() : null;
+
+Map<String, int>? _planCounts(Object? value) {
+  if (value is! List) return null;
+  final counts = <String, int>{};
+  for (final entry in value) {
+    if (entry is! Map<String, dynamic>) return null;
+    final name = entry['name'];
+    final issues = _planCount(entry['issues']);
+    if (name is! String || issues == null || counts.containsKey(name)) return null;
+    counts[name] = issues;
+  }
+  return counts;
 }
 
 /// One destination in an atomic planning save.

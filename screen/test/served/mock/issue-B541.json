@@ -6,6 +6,7 @@
     "title" : "The host tool reads the organization and a task by its signature",
     "state" : "Implementing",
     "size" : "L",
+    "minutesLeft" : null,
     "blockedBy" : [ "B540" ],
     "parent" : null,
     "link" : "https://example.org/issues/B541",

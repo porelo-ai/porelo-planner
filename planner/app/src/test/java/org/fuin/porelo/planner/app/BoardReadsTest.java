@@ -247,6 +247,39 @@ class BoardReadsTest {
     }
 
     @Test
+    void theStoriesAndTheBoardSayWhatIsStillOpenAndWhatWaitsForReview() throws Exception {
+        // Harm: a wrong Needs you count, or a story shown done with work left.
+        given();
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[1].open.left").value(1))
+                .andExpect(jsonPath("$.stories[1].open.review").value(1))
+                .andExpect(jsonPath("$.stories[1].open.blocked").value(0))
+                .andExpect(jsonPath("$.stories[1].open.states[0].name").value("Backlog"))
+                .andExpect(jsonPath("$.stories[1].open.states[0].issues").value(1))
+                .andExpect(jsonPath("$.stories[1].open.states[2].name").value("Review"))
+                .andExpect(jsonPath("$.stories[1].open.states[2].issues").value(1))
+                .andExpect(jsonPath("$.stories[1].open.sizes[0].name").value("S"))
+                .andExpect(jsonPath("$.stories[1].open.minutes").isEmpty())
+                .andExpect(jsonPath("$.stories[1].open.unestimated").value(1))
+                .andExpect(jsonPath("$.stories[1].issues[0].minutesLeft").isEmpty())
+                .andExpect(
+                        jsonPath(
+                                "$.stories[1].issues[0]",
+                                org.hamcrest.Matchers.hasKey("minutesLeft")))
+                // ST1 names AB01 alone; its sub-issue AB01.1 waits for review and counts in it.
+                .andExpect(jsonPath("$.stories[0].open.left").value(1))
+                .andExpect(jsonPath("$.stories[0].open.review").value(1))
+                // The board's figures count every issue once, whatever stories name it.
+                .andExpect(jsonPath("$.open.left").value(1))
+                .andExpect(jsonPath("$.open.review").value(1));
+        mvc.perform(get("/projects/alpha/stories").param("state", "Review"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories.length()").value(1))
+                .andExpect(jsonPath("$.open.review").value(1));
+    }
+
+    @Test
     void theStoriesCarryTheirIssuesAndWhetherTheirStateWasGivenButNoDescription() throws Exception {
         // A story whose state was given by hand must not be moved by its issues' states; a story's
         // size must reach the window as its head gives it, and as null without one.

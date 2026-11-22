@@ -318,7 +318,9 @@ public final class MockStore implements PlanningStore {
                                     issue.link(),
                                     ResultText.withoutHead(issue.text(), written),
                                     issue.worker(),
-                                    issue.risk()));
+                                    issue.risk(),
+                                    issue.estimate(),
+                                    issue.minutes()));
         }
         final Board sized =
                 new Board(
@@ -369,19 +371,27 @@ public final class MockStore implements PlanningStore {
         final List<Issue> issues = new ArrayList<>();
         for (final Issue known : board.issues()) {
             issues.add(
-                    known.id().equals(issue) && fields.named().contains(Fields.Field.SIZE)
+                    known.id().equals(issue)
+                                    && (fields.named().contains(Fields.Field.SIZE)
+                                            || fields.named().contains(Fields.Field.ESTIMATE))
                             ? new Issue(
                                     known.id(),
                                     known.repository(),
                                     known.title(),
                                     known.state(),
-                                    fields.size(),
+                                    fields.named().contains(Fields.Field.SIZE)
+                                            ? fields.size()
+                                            : known.size(),
                                     known.blockedBy(),
                                     known.parent(),
                                     known.link(),
                                     known.text(),
                                     known.worker(),
-                                    known.risk())
+                                    known.risk(),
+                                    fields.named().contains(Fields.Field.ESTIMATE)
+                                            ? estimate(fields.estimateMinutes())
+                                            : known.estimate(),
+                                    known.minutes())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -446,7 +456,9 @@ public final class MockStore implements PlanningStore {
                                     known.link(),
                                     known.text(),
                                     known.worker(),
-                                    known.risk())
+                                    known.risk(),
+                                    known.estimate(),
+                                    known.minutes())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -513,7 +525,9 @@ public final class MockStore implements PlanningStore {
                                     known.link(),
                                     newText,
                                     known.worker(),
-                                    known.risk())
+                                    known.risk(),
+                                    known.estimate(),
+                                    known.minutes())
                             : known);
         }
         current = saved(withItems(board, stories, issues), NOTHING);
@@ -792,7 +806,9 @@ public final class MockStore implements PlanningStore {
                             issue.link(),
                             issue.text(),
                             writes.workers().getOrDefault(issue.id(), issue.worker()),
-                            issue.risk()));
+                            issue.risk(),
+                            issue.estimate(),
+                            issue.minutes()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
@@ -843,5 +859,10 @@ public final class MockStore implements PlanningStore {
                 story.description(),
                 story.link(),
                 story.issuesWhole());
+    }
+
+    /** An estimate in minutes as the board holds it, or none. */
+    private static @Nullable Double estimate(final @Nullable Integer minutes) {
+        return minutes == null ? null : minutes.doubleValue();
     }
 }

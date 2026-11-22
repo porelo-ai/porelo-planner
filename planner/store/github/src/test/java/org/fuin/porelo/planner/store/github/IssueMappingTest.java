@@ -549,6 +549,12 @@ class IssueMappingTest {
         assertThat(mapped.sums().get("example-lib#3").minutes())
                 .as("the comments' sum, not the field")
                 .isEqualTo(15.0);
+        assertThat(mapped.issues())
+                .as("the minutes the board counts are the comments' sum too")
+                .filteredOn(issue -> issue.id().equals("example-lib#3"))
+                .singleElement()
+                .extracting(Issue::minutes)
+                .isEqualTo(15.0);
         assertThat(mapped.rewrite())
                 .as("only the issue whose fields disagree is written again")
                 .containsExactly("example-lib#3");
@@ -924,5 +930,76 @@ class IssueMappingTest {
                         "example-lib#7 is blocked by an issue outside the project and is left out",
                         "example-lib#8 depends on an issue left out and is left out too",
                         "example-lib#9 has a parent outside the project and is left out");
+    }
+
+    @Test
+    void anIssuesEstimateAndMinutesAreReadFromTheirFieldsAndAnUnreadableOneIsNamed() {
+        // Harm: minutes left from another figure than GitHub holds, or a bad one taken silently.
+        final Item story = new Item("example-project", 1).story();
+        final Item estimated =
+                new Item("example-project", 2)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.ESTIMATE, "32.5")
+                        .field(FieldNames.MINUTES, "12");
+        final Item bad =
+                new Item("example-project", 3)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.ESTIMATE, SECRET_BODY);
+        final Item none =
+                new Item("example-project", 4)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog");
+        story.sub(estimated).sub(bad).sub(none);
+
+        final IssueMapping.Mapped mapped = read(story, estimated, bad, none);
+
+        assertThat(mapped.issues())
+                .as("each issue's estimate and minutes")
+                .extracting(Issue::id, Issue::estimate, Issue::minutes)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("example-project#2", 32.5, 12.0),
+                        org.assertj.core.groups.Tuple.tuple("example-project#3", null, null),
+                        org.assertj.core.groups.Tuple.tuple("example-project#4", null, null));
+        assertThat(mapped.faults())
+                .as("the unreadable estimate named by its issue and field, never its value")
+                .containsExactly(
+                        "example-project#3 has no number of minutes in its field Estimate, read as"
+                                + " none");
+    }
+
+    @Test
+    void anEstimateOrMinutesOutOfRangeIsNamedAndReadAsNone() {
+        // Harm: one huge figure on GitHub overflows the sums and fails every stories read.
+        final Item story = new Item("example-project", 1).story();
+        final Item huge =
+                new Item("example-project", 2)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.ESTIMATE, "1e308")
+                        .field(FieldNames.MINUTES, "-3");
+        final Item zero =
+                new Item("example-project", 3)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.ESTIMATE, "0");
+        story.sub(huge).sub(zero);
+
+        final IssueMapping.Mapped mapped = read(story, huge, zero);
+
+        assertThat(mapped.issues())
+                .as("no figure out of its range is taken")
+                .extracting(Issue::estimate, Issue::minutes)
+                .containsOnly(org.assertj.core.groups.Tuple.tuple(null, null));
+        assertThat(mapped.faults())
+                .as("each named by its issue and field")
+                .containsExactly(
+                        "example-project#2 has no number of minutes in its field Estimate, read as"
+                                + " none",
+                        "example-project#2 has no number of minutes in its field Minutes, read as"
+                                + " none",
+                        "example-project#3 has no number of minutes in its field Estimate, read as"
+                                + " none");
     }
 }

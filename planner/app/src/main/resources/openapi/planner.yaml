@@ -2266,7 +2266,7 @@ components:
         The whole board at one revision, as an event of the stream carries it - the workflow, the project's
         repositories and the stories.
       type: object
-      required: [revision, states, phases, work, faults, repositories, stories]
+      required: [revision, states, phases, work, faults, repositories, stories, open]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2313,6 +2313,10 @@ components:
             empty.
           items:
             $ref: '#/components/schemas/OutsideIssue'
+        open:
+          description: What is still open of the whole board, as the story list answers it.
+          allOf:
+            - $ref: '#/components/schemas/OpenWork'
 
     OutsideIssue:
       description: An issue the board left out because its Status is none of the workflow's states.
@@ -2925,7 +2929,7 @@ components:
     StoryList:
       description: Stories at one revision.
       type: object
-      required: [revision, stories]
+      required: [revision, stories, open]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2933,6 +2937,76 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Story'
+        open:
+          description: >-
+            What is still open of the whole board: every issue it holds, in a story or not, whatever stories the
+            filter answers.
+          allOf:
+            - $ref: '#/components/schemas/OpenWork'
+    OpenWork:
+      description: >-
+        What is still open of a story or a board. An issue is left to build while it stands neither in a closed state
+        nor in a review state, a state a work rule's work ends in that is no working state itself. An issue left to
+        build is blocked while an issue it waits on stands on the board and is not closed; it then counts as blocked,
+        not under its state.
+      type: object
+      required: [states, blocked, sizes, unsized, left, minutes, unestimated, review]
+      properties:
+        states:
+          type: array
+          description: >-
+            Each state of the workflow, in workflow order, with the number of its issues that are not blocked; zero
+            included. An issue in a state the workflow lacks is counted in no state, but in every other figure.
+          items:
+            $ref: '#/components/schemas/OpenCount'
+        blocked:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: The issues left to build that an open issue blocks.
+        sizes:
+          type: array
+          description: Each size of the issues left to build, XS to XL, only the sizes that occur.
+          items:
+            $ref: '#/components/schemas/OpenCount'
+        unsized:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: The issues left to build without a size.
+        left:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: The issues left to build, the blocked ones included.
+        minutes:
+          type: [number, 'null']
+          minimum: 0
+          description: >-
+            The sum of `minutesLeft` over the issues left to build that have it, or null when none has; the issues
+            without it are counted in `unestimated`. Summed before rounding, so it may differ from the sum of the
+            rounded `minutesLeft` by a fraction.
+        unestimated:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: The issues left to build without `minutesLeft`.
+        review:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: The issues in a review state, which wait for the person.
+    OpenCount:
+      description: A state's or a size's name with its number of issues.
+      type: object
+      required: [name, issues]
+      properties:
+        name:
+          type: string
+        issues:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
     StoryReply:
       description: One story at one revision.
       type: object
@@ -2945,7 +3019,7 @@ components:
     Story:
       description: One story as the board shows it.
       type: object
-      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work]
+      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -2994,6 +3068,13 @@ components:
             - $ref: '#/components/schemas/PlanWork'
             - type: 'null'
           description: The current recorded run, null without a record.
+        open:
+          oneOf:
+            - $ref: '#/components/schemas/OpenWork'
+            - type: 'null'
+          description: >-
+            What is still open of the story's issues and their sub-issues, each counted once. Null when the board does
+            not hold every issue the story's head names, so nothing is told as if it did.
     StoryDetail:
       description: One story with its description.
       allOf:
@@ -3030,7 +3111,7 @@ components:
     Issue:
       description: One issue on the board.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention]
+      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -3043,6 +3124,15 @@ components:
         size:
           type: [string, 'null']
           description: The issue's size, or null when it has none.
+        minutesLeft:
+          type: [number, 'null']
+          minimum: 0
+          description: >-
+            For an issue left to build, the minutes expected of it less those its work took so far, never below zero;
+            what it took is the sum of its stage comments where they were read, else its Minutes field. Expected is
+            its estimate; without one, the median minutes of the finished issues of its size in its
+            repository; without those, that median over every repository. Null when it is not left to build or
+            nothing gives an expectation.
         blockedBy:
           type: array
           description: The issues blocking it.

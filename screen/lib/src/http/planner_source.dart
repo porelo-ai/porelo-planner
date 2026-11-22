@@ -1029,7 +1029,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     }
     await _stillBound(project, given);
     _readSources[project] = given.source;
-    final snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories']});
+    final snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories'], 'open': board['open']});
     _workersNamed(snapshot.stories.expand((story) => story.issues));
     return snapshot;
   }

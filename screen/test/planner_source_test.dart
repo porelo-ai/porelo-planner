@@ -315,6 +315,29 @@ Future<PlanningRefusal> _refusal(Future<Object?> call) async {
 }
 
 void main() {
+  // Harm: the window's Needs you count unknown, or wrong, though the planner answered it.
+  test('the stories read carries the board\'s open work as the planner answers it', () async {
+    final (planner, source) = await _started();
+    planner.routes['GET /projects/demo/stories'] = () => _Reply(200, {
+      ..._stories(planner.storiesRevision),
+      'open': {
+        'states': [
+          {'name': 'Backlog', 'issues': 1},
+        ],
+        'blocked': 0,
+        'sizes': <Object>[],
+        'unsized': 1,
+        'left': 1,
+        'minutes': null,
+        'unestimated': 1,
+        'review': 4,
+      },
+    });
+    final snapshot = await source.stories('demo');
+    expect(snapshot.open?.review, 4, reason: 'the board\'s review count');
+    expect(snapshot.open?.left, 1, reason: 'the issues left to build');
+  });
+
   // Harm: an old proposal is rebound to another repository that happens to share its revision.
   test('a known proposal cannot be submitted against a newly read project binding', () async {
     var repository = const PlannerProject('https://example.org/first.git');

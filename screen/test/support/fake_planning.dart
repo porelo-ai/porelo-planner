@@ -86,6 +86,7 @@ class FakePlanningSource implements PlanningSource {
     'stories': board['stories'],
     'revision': board['revision'],
     'repositories': ?board['repositories'],
+    'open': ?board['open'],
   });
 
   /// Replaces the board, as another person's change would, and tells every watch.

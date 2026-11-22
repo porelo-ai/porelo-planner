@@ -747,7 +747,9 @@
       "link": "https://example.org/issues/B900",
       "text": "**What must be true.** The work meets the issue description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PJ74",
@@ -760,7 +762,9 @@
       "link": "https://example.org/issues/PJ74",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "FC03",
@@ -773,7 +777,9 @@
       "link": "https://example.org/issues/FC03",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "FC09",
@@ -786,7 +792,9 @@
       "link": "https://example.org/issues/FC09",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "FC10",
@@ -799,7 +807,9 @@
       "link": "https://example.org/issues/FC10",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "FC11",
@@ -812,7 +822,9 @@
       "link": "https://example.org/issues/FC11",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "FC13",
@@ -825,7 +837,9 @@
       "link": "https://example.org/issues/FC13",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PJ58",
@@ -838,7 +852,9 @@
       "link": "https://example.org/issues/PJ58",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "SI05",
@@ -851,7 +867,9 @@
       "link": "https://example.org/issues/SI05",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B540",
@@ -864,7 +882,9 @@
       "link": "https://example.org/issues/B540",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B540.1",
@@ -877,7 +897,9 @@
       "link": "https://example.org/issues/B540.1",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B541",
@@ -892,7 +914,9 @@
       "link": "https://example.org/issues/B541",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B542",
@@ -905,7 +929,9 @@
       "link": "https://example.org/issues/B542",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B543",
@@ -918,7 +944,9 @@
       "link": "https://example.org/issues/B543",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B544",
@@ -931,7 +959,9 @@
       "link": "https://example.org/issues/B544",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B545",
@@ -944,7 +974,9 @@
       "link": "https://example.org/issues/B545",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B546",
@@ -957,7 +989,9 @@
       "link": "https://example.org/issues/B546",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B547",
@@ -970,7 +1004,9 @@
       "link": "https://example.org/issues/B547",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B548",
@@ -983,7 +1019,9 @@
       "link": "https://example.org/issues/B548",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B549",
@@ -996,7 +1034,9 @@
       "link": "https://example.org/issues/B549",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B550",
@@ -1009,7 +1049,9 @@
       "link": "https://example.org/issues/B550",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B551",
@@ -1022,7 +1064,9 @@
       "link": "https://example.org/issues/B551",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B552",
@@ -1035,7 +1079,9 @@
       "link": "https://example.org/issues/B552",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO156",
@@ -1048,7 +1094,9 @@
       "link": "https://example.org/issues/HO156",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO157",
@@ -1061,7 +1109,9 @@
       "link": "https://example.org/issues/HO157",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B553",
@@ -1074,7 +1124,9 @@
       "link": "https://example.org/issues/B553",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B554",
@@ -1087,7 +1139,9 @@
       "link": "https://example.org/issues/B554",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "F444",
@@ -1100,7 +1154,9 @@
       "link": "https://example.org/issues/F444",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "F445",
@@ -1115,7 +1171,9 @@
       "link": "https://example.org/issues/F445",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO158",
@@ -1128,7 +1186,9 @@
       "link": "https://example.org/issues/HO158",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX89",
@@ -1141,7 +1201,9 @@
       "link": "https://example.org/issues/MX89",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX90",
@@ -1156,7 +1218,9 @@
       "link": "https://example.org/issues/MX90",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX91",
@@ -1171,7 +1235,9 @@
       "link": "https://example.org/issues/MX91",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX24",
@@ -1184,7 +1250,9 @@
       "link": "https://example.org/issues/MX24",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX36",
@@ -1197,7 +1265,9 @@
       "link": "https://example.org/issues/MX36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "MX39",
@@ -1210,7 +1280,9 @@
       "link": "https://example.org/issues/MX39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO07",
@@ -1223,7 +1295,9 @@
       "link": "https://example.org/issues/HO07",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B231",
@@ -1236,7 +1310,9 @@
       "link": "https://example.org/issues/B231",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "IJ14",
@@ -1249,7 +1325,9 @@
       "link": "https://example.org/issues/IJ14",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT35",
@@ -1262,7 +1340,9 @@
       "link": "https://example.org/issues/BT35",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT36",
@@ -1275,7 +1355,9 @@
       "link": "https://example.org/issues/BT36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT38",
@@ -1288,7 +1370,9 @@
       "link": "https://example.org/issues/BT38",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT43",
@@ -1301,7 +1385,9 @@
       "link": "https://example.org/issues/BT43",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT44",
@@ -1314,7 +1400,9 @@
       "link": "https://example.org/issues/BT44",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT45",
@@ -1327,7 +1415,9 @@
       "link": "https://example.org/issues/BT45",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT46",
@@ -1340,7 +1430,9 @@
       "link": "https://example.org/issues/BT46",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PI43",
@@ -1353,7 +1445,9 @@
       "link": "https://example.org/issues/PI43",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "OM44",
@@ -1366,7 +1460,9 @@
       "link": "https://example.org/issues/OM44",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "CC45",
@@ -1379,7 +1475,9 @@
       "link": "https://example.org/issues/CC45",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PI39",
@@ -1392,7 +1490,9 @@
       "link": "https://example.org/issues/PI39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "OM36",
@@ -1405,7 +1505,9 @@
       "link": "https://example.org/issues/OM36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "CC39",
@@ -1418,7 +1520,9 @@
       "link": "https://example.org/issues/CC39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PJ106",
@@ -1431,7 +1535,9 @@
       "link": "https://example.org/issues/PJ106",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT42",
@@ -1444,7 +1550,9 @@
       "link": "https://example.org/issues/BT42",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT39",
@@ -1457,7 +1565,9 @@
       "link": "https://example.org/issues/BT39",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO52",
@@ -1470,7 +1580,9 @@
       "link": "https://example.org/issues/HO52",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "SL36",
@@ -1483,7 +1595,9 @@
       "link": "https://example.org/issues/SL36",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT40",
@@ -1496,7 +1610,9 @@
       "link": "https://example.org/issues/BT40",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT41",
@@ -1509,7 +1625,9 @@
       "link": "https://example.org/issues/BT41",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO53",
@@ -1522,7 +1640,9 @@
       "link": "https://example.org/issues/HO53",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "SL35",
@@ -1535,7 +1655,9 @@
       "link": "https://example.org/issues/SL35",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "MANUAL",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "SL37",
@@ -1548,7 +1670,9 @@
       "link": "https://example.org/issues/SL37",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "SL38",
@@ -1561,7 +1685,9 @@
       "link": "https://example.org/issues/SL38",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "B306",
@@ -1574,7 +1700,9 @@
       "link": "https://example.org/issues/B306",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "HO12",
@@ -1587,7 +1715,9 @@
       "link": "https://example.org/issues/HO12",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT24",
@@ -1600,7 +1730,9 @@
       "link": "https://example.org/issues/BT24",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "BT25",
@@ -1613,7 +1745,9 @@
       "link": "https://example.org/issues/BT25",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "PJ62",
@@ -1626,7 +1760,9 @@
       "link": "https://example.org/issues/PJ62",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     },
     {
       "id": "GH18",
@@ -1639,7 +1775,9 @@
       "link": "https://example.org/issues/GH18",
       "text": "**What must be true.** The work meets the story description.\n",
       "worker": "AGENT",
-      "risk": "ORDINARY"
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null
     }
   ]
 }

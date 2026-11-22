@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.app.answers.MoveWarning;
 import org.fuin.porelo.planner.app.answers.Moved;
 import org.fuin.porelo.planner.app.answers.MovedIssue;
 import org.fuin.porelo.planner.app.answers.MovedStory;
+import org.fuin.porelo.planner.app.answers.OpenCount;
 import org.fuin.porelo.planner.app.answers.Phase;
 import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.PrioritySaved;
@@ -46,6 +47,7 @@ import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
+import org.fuin.porelo.planner.core.OpenWork;
 import org.fuin.porelo.planner.core.Priorities;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -812,6 +814,7 @@ public class BoardController {
     static org.fuin.porelo.planner.app.answers.Board boardOf(
             final Board board, final WorkRun.Snapshot snapshot, final Moves.StoryState derive) {
         final org.fuin.porelo.planner.app.answers.Workflow workflow = workflowOf(board);
+        final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new org.fuin.porelo.planner.app.answers.Board(
                 workflow.revision(),
                 board.repositories(),
@@ -820,9 +823,10 @@ public class BoardController {
                 workflow.work(),
                 workflow.faults(),
                 board.stories().stream()
-                        .map(story -> story(board, story, snapshot, derive))
+                        .map(story -> story(board, story, snapshot, derive, counter))
                         .toList(),
-                board.outside().stream().map(BoardController::outsideIssue).toList());
+                board.outside().stream().map(BoardController::outsideIssue).toList(),
+                open(counter.board()));
     }
 
     /** Maps an issue the board left out of its workflow, which the window offers to move. */
@@ -850,17 +854,27 @@ public class BoardController {
             @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
         final WorkRun work = projects.work(name(project));
         return work.lockedView(
-                (board, snapshot) ->
-                        new StoryList(
-                                board.revision().value(),
-                                board.stories().stream()
-                                        .filter(
-                                                story ->
-                                                        states == null
-                                                                || states.isEmpty()
-                                                                || states.contains(story.state()))
-                                        .map(story -> story(board, story, snapshot, work.derive()))
-                                        .toList()));
+                (board, snapshot) -> {
+                    final OpenWork.Counter counter = new OpenWork.Counter(board);
+                    return new StoryList(
+                            board.revision().value(),
+                            board.stories().stream()
+                                    .filter(
+                                            story ->
+                                                    states == null
+                                                            || states.isEmpty()
+                                                            || states.contains(story.state()))
+                                    .map(
+                                            story ->
+                                                    story(
+                                                            board,
+                                                            story,
+                                                            snapshot,
+                                                            work.derive(),
+                                                            counter))
+                                    .toList(),
+                            open(counter.board()));
+                });
     }
 
     /**
@@ -888,6 +902,7 @@ public class BoardController {
             final Moves.StoryState derive,
             final String format) {
         final Story story = found(board, checked);
+        final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new StoryReply(
                 board.revision().value(),
                 new StoryDetail(
@@ -900,8 +915,9 @@ public class BoardController {
                         story.priority(),
                         story.size(),
                         story.link(),
-                        issues(board, story, snapshot),
+                        issues(board, story, snapshot, counter.minutes()),
                         WorkAnswers.work(board, snapshot.runs().get(story.id())),
+                        storyOpen(counter.story(story)),
                         story.description(),
                         format));
     }
@@ -922,7 +938,11 @@ public class BoardController {
                         (board, snapshot) ->
                                 new IssueList(
                                         board.revision().value(),
-                                        issues(board, found(board, checked), snapshot)));
+                                        issues(
+                                                board,
+                                                found(board, checked),
+                                                snapshot,
+                                                OpenWork.minutesLeft(board))));
     }
 
     /**
@@ -945,6 +965,7 @@ public class BoardController {
                 .view(
                         (board, snapshot) -> {
                             final Set<String> assigned = issuesInStories(board);
+                            final Map<String, Double> minutes = OpenWork.minutesLeft(board);
                             return new IssueList(
                                     board.revision().value(),
                                     board.issues().stream()
@@ -957,7 +978,11 @@ public class BoardController {
                                                                             .states()
                                                                             .indexOf(
                                                                                     issue.state())))
-                                            .map(issue -> issue(board, issue, snapshot))
+                                            .map(
+                                                    issue ->
+                                                            WorkAnswers.issue(
+                                                                    board, issue, snapshot,
+                                                                    minutes))
                                             .toList());
                         });
     }
@@ -1047,6 +1072,7 @@ public class BoardController {
                         issue.title(),
                         issue.state(),
                         issue.size(),
+                        view.minutesLeft(),
                         issue.blockedBy(),
                         issue.parent(),
                         issue.link(),
@@ -1387,7 +1413,8 @@ public class BoardController {
             final Board board,
             final Story story,
             final WorkRun.Snapshot snapshot,
-            final Moves.StoryState derive) {
+            final Moves.StoryState derive,
+            final OpenWork.Counter counter) {
         return new org.fuin.porelo.planner.app.answers.Story(
                 story.id(),
                 story.title(),
@@ -1398,15 +1425,43 @@ public class BoardController {
                 story.priority(),
                 story.size(),
                 story.link(),
-                issues(board, story, snapshot),
-                WorkAnswers.work(board, snapshot.runs().get(story.id())));
+                issues(board, story, snapshot, counter.minutes()),
+                WorkAnswers.work(board, snapshot.runs().get(story.id())),
+                storyOpen(counter.story(story)));
+    }
+
+    private static org.fuin.porelo.planner.app.answers.@Nullable OpenWork storyOpen(
+            final @Nullable OpenWork open) {
+        return open == null ? null : open(open);
+    }
+
+    private static org.fuin.porelo.planner.app.answers.OpenWork open(final OpenWork open) {
+        return new org.fuin.porelo.planner.app.answers.OpenWork(
+                open.states().stream().map(BoardController::count).toList(),
+                open.blocked(),
+                open.sizes().stream().map(BoardController::count).toList(),
+                open.unsized(),
+                open.left(),
+                WorkAnswers.decimal(open.minutes()),
+                open.unestimated(),
+                open.review());
+    }
+
+    private static OpenCount count(final OpenWork.Count count) {
+        return new OpenCount(count.name(), count.issues());
     }
 
     private static List<org.fuin.porelo.planner.app.answers.Issue> issues(
-            final Board board, final Story story, final WorkRun.Snapshot snapshot) {
+            final Board board,
+            final Story story,
+            final WorkRun.Snapshot snapshot,
+            final Map<String, Double> minutes) {
         final List<org.fuin.porelo.planner.app.answers.Issue> issues = new ArrayList<>();
         for (final String id : story.issues()) {
-            board.issue(id).ifPresent(issue -> issues.add(issue(board, issue, snapshot)));
+            board.issue(id)
+                    .ifPresent(
+                            issue ->
+                                    issues.add(WorkAnswers.issue(board, issue, snapshot, minutes)));
         }
         return issues;
     }

@@ -367,12 +367,17 @@ class MockStoreTest {
                         new org.fuin.porelo.planner.store.Fields(
                                 java.util.Set.of(
                                         org.fuin.porelo.planner.store.Fields.Field.SIZE,
+                                        org.fuin.porelo.planner.store.Fields.Field.ESTIMATE,
                                         org.fuin.porelo.planner.store.Fields.Field.RANK),
                                 "XL",
-                                null,
+                                40,
                                 null,
                                 7));
         assertThat(sized.issue(issue.id()).orElseThrow().size()).as("the size set").isEqualTo("XL");
+        // The window's planning tests read the minutes left from the estimate the mock holds.
+        assertThat(sized.issue(issue.id()).orElseThrow().estimate())
+                .as("the estimate set")
+                .isEqualTo(40.0);
         assertThat(store.kept(issue.id()))
                 .as("the rank kept beside the board")
                 .containsEntry(org.fuin.porelo.planner.store.Fields.Field.RANK, 7);
