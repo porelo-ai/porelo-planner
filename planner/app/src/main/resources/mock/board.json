@@ -774,7 +774,7 @@
       "title": "Items the planner could not fully read",
       "state": "Backlog",
       "stateGiven": true,
-      "issuesWhole": true,
+      "issuesWhole": false,
       "warnings": [],
       "priority": "Medium",
       "size": null,

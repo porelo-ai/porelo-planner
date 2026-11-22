@@ -106,21 +106,29 @@ are added, as the Markdown store's stage records count them; a pause and a perso
   the list last read for it and is named as a fault. A new or retitled one changes the board's revision.
 - Only an item without a valid reference, one of another owner and one of a repository `project.yml` does not name
   are left out and named as a fault; an item without an issue is left out unnamed.
-- Every other item a person edited into something the board cannot hold is shown, with a warning that holds work on
-  it back, and the issues under it stay under it: an item labeled `story` outside the project's own repository is an
-  issue; a parent in another repository, a parent whose parents lead back to the issue, and a parent that is a
-  sub-issue itself are cut; a story as a blocker is dropped; and a link to an issue the board does not place - an
-  archived one, one listed apart, or one whose id names two items - is cut.
-- Two items whose ids are one, as two repositories named alike in other capitals give, are both shown, each warned;
-  neither is worked nor moved until one id changes.
+- Every other item a person edited into something the board cannot hold is shown, and the issues under it stay
+  under it. Most are warned so that no work, move or edit starts on them: an item labeled `story` outside the
+  project's own repository is an issue; a parent outside the project, a parent in another repository, a parent whose
+  parents lead back to the issue, and a parent that is a sub-issue itself are cut; a story as a blocker is dropped;
+  and a link to an issue the board does not place - an archived one GitHub has open, an archived parent, one listed
+  apart, or one whose id names two items - is cut. A story under another issue is shown without that parent and
+  named as a fault only.
+- A blocker GitHub has closed and archived, as its own "Auto-archive items" workflow does with finished work, is a
+  wait that is done, as a closed blocker outside the project is.
+- Should two items ever give one id, both are shown, each warned, and neither is worked, moved or edited until one
+  id changes. GitHub keeps one repository name per owner whatever its case, so this is a guard, not a case a person
+  is expected to make. An archived item of an id a live item holds is no second copy: the board and every write take
+  the live one.
+- No edit adds an issue held back to a story or as a blocker, nor takes one out; one kept in a story's list may still
+  be reordered.
 - An item with more sub-issues, blockers, labels or field values than one page of GitHub's answer carries is shown
   as far as it was read, warned, and its story says that an issue of it may be missing.
 - An issue without a `Status` stands in the workflow's first state, unwarned; no save writes its `Status` until it is
   moved. An issue whose `Status` alone is outside the workflow is listed apart, for a move back into a state of the
   board; one with a warning besides stays on the board, warned for both. A story whose `Status` is outside the
   workflow is shown in that state, warned, with its issues.
-- The board's revision is made of the items as GitHub holds them and of the faults, never of the warnings, which
-  follow from the items alone.
+- The board's revision is made of the items as GitHub holds them, whether their labels or field values lie past one
+  page among them, and of the faults, never of the warnings, which follow from the items alone.
 - A blocker the project does not hold leaves its issue on the board, waiting on it: `waitsOn` names it as
   `owner/repository#number` with whether it is done and its link. A blocker the person's token cannot read is named
   as a wait on something not readable, never as done; so is each blocker GitHub counts but leaves out of the ones it

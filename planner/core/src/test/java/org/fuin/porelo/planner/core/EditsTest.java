@@ -450,6 +450,51 @@ class EditsTest {
                 .isEqualTo("AB2: " + Warning.parentOutsideProject().text());
     }
 
+    @Test
+    void anEditThatAddsOrRemovesAHeldIssueIsRefusedWithItsWords() {
+        // Harm: a story's list or an issue's blockers written over an issue held back, so the
+        // planner's own link builds on a hand edit it cannot hold, against the contract.
+        final Board held =
+                HeldBoards.warned(
+                        HeldBoards.warned(
+                                HeldBoards.warned(board, "AB2", Warning.dependsOnUnplaced()),
+                                "AB4",
+                                Warning.stateOutsideWorkflow()),
+                        "AB5",
+                        Warning.blockedByStory());
+        final List<Map.Entry<String, Runnable>> edits =
+                List.of(
+                        Map.entry(
+                                "AB5", () -> Edits.storyIssues(held, "r1", "ST3", List.of("AB5"))),
+                        Map.entry(
+                                "AB2", () -> Edits.storyIssues(held, "r1", "ST1", List.of("AB1"))),
+                        Map.entry("AB5", () -> Edits.blockedBy(held, "r1", "AB1", List.of("AB5"))),
+                        Map.entry("AB4", () -> Edits.blockedBy(held, "r1", "AB3", List.of())));
+        for (final Map.Entry<String, Runnable> edit : edits) {
+            final String id = edit.getKey();
+            final Moves.Refused refused = refusal(edit.getValue());
+            assertThat(refused.name()).as("the edit naming " + id).isEqualTo(Edits.REFUSED);
+            assertThat(refused.getMessage())
+                    .as("the held issue's warning, for " + id)
+                    .isEqualTo(id + ": " + held.issue(id).orElseThrow().warnings().get(0).text());
+        }
+        assertThat(Edits.storyIssues(held, "r1", "ST1", List.of("AB2", "AB1")))
+                .as("a held issue kept in the list, only reordered, is neither added nor removed")
+                .isTrue();
+    }
+
+    @Test
+    void anEditOfAnIssueCarryingAnyKindTheGitHubStoreWarnsWithIsRefused() {
+        // Harm: a hand edit GitHub's store shows warned - a story label in another repository, a
+        // cut parent or blocker, an item read in part - built on by the planner's own write.
+        for (final Warning warning : HeldBoards.HAND_EDITS) {
+            final Board held = HeldBoards.warned(board, "AB5", warning);
+            assertThat(refusal(() -> Edits.fields(held, "r1", "AB5", SIZE)).getMessage())
+                    .as("an edit of an issue warned " + warning.kind())
+                    .isEqualTo("AB5: " + warning.text());
+        }
+    }
+
     private static Moves.Refused refusal(final Runnable edit) {
         final Moves.Refused refused = catchThrowableOfType(Moves.Refused.class, edit::run);
         assertThat(refused).as("the edit is refused").isNotNull();

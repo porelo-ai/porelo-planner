@@ -829,6 +829,31 @@ class WorkProposalTest {
     }
 
     @Test
+    void anIssueCarryingAnyKindTheGitHubStoreWarnsWithIsHeldWhileTheOthersAreProposed() {
+        // Harm: work starts on an issue a person edited by hand into what the board cannot hold -
+        // a story label in another repository, a cut parent or blocker, an item read in part.
+        for (final Warning warning : HeldBoards.HAND_EDITS) {
+            final WorkProposal proposal =
+                    WorkProposal.propose(
+                            warned(
+                                    board(WorkRule.Per.REPOSITORY),
+                                    Map.of("BB1", warning),
+                                    Map.of()),
+                            "ST1",
+                            "Building");
+            assertThat(proposal.repositories())
+                    .as("only alpha's issues are worked beside an issue warned " + warning.kind())
+                    .extracting(
+                            WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1", "AA1.1")));
+            assertThat(proposal.held())
+                    .as("the issue warned " + warning.kind() + ", named with its warning")
+                    .containsExactly(new WorkProposal.Held("BB1", "BB1: " + warning.text()));
+        }
+    }
+
+    @Test
     void anIssueWithoutAPriorityIsStillProposed() {
         // A warning that touches nothing a work rule reads must not stop the work.
         final WorkProposal proposal =

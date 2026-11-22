@@ -427,7 +427,8 @@ paths:
         is no longer the story's, an issue hung in becomes the story's, and the order is the one sent. Each issue is
         named once and is one of the board's; an issue that is a sub-issue of another issue, or that another story
         holds, is refused (EditNotAllowed), since an issue belongs to one story; so is a list for a story the board
-        shows only in part, since a list written whole would drop the issue not shown. An issue a started task works,
+        shows only in part, since a list written whole would drop the issue not shown, and a list that hangs in or
+        takes out an issue a warning holds back; one kept in the list may be reordered. An issue a started task works,
         or one of its sub-issues, is not taken out (WorkRunning). On GitHub an issue becomes the story's sub-issue,
         and one the story's body names under Also needs keeps its place after the sub-issues and is not taken out by
         this call. A list equal to the story's saves nothing and answers the current revision. The JSON body is at most 65536 bytes. The changes stream announces
@@ -869,8 +870,8 @@ paths:
       description: >-
         Writes the issue's whole list of blockers against the board at the given revision: a blocker taken out no
         longer blocks it, one added does. Each blocker is named once, is one of the board's issues and is not the
-        issue itself; a list that would make an issue wait on itself through its blockers is refused
-        (EditNotAllowed) before anything is written. A list equal to the issue's saves nothing and answers the
+        issue itself; a list that would make an issue wait on itself through its blockers, or that adds or takes out
+        a blocker a warning holds back, is refused (EditNotAllowed) before anything is written. A list equal to the issue's saves nothing and answers the
         current revision. The JSON body is at most 65536 bytes. The changes stream announces the new board as it does
         after any save.
       tags: [board]
@@ -3348,8 +3349,9 @@ components:
     ItemWarning:
       description: >-
         What a store could not read in a story or an issue it still shows. A warning about the item's state, parent,
-        blockers, id or kind holds it back: no work starts on it, and neither an edit nor a move names it, but for a move
-        out of a state the workflow does not know, which sets it right.
+        blockers, id or kind holds it back: no work starts on it, no edit changes it or adds it to a story or as a
+        blocker or takes it out, and no move names it, but for a move out of a state the workflow does not know, which
+        sets it right.
       type: object
       required: [kind, text, holds]
       properties:

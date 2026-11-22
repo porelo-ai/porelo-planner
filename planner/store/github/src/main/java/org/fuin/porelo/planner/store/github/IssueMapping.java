@@ -105,8 +105,9 @@ public final class IssueMapping {
     }
 
     /**
-     * Maps the items, each known by its tracker reference. Archived items and those named left out
-     * are not on the board, and a story or issue that needs one of those left out is told so.
+     * Maps the items, each known by its tracker reference. Archived items are not on the board; an
+     * item read past one page is shown warned, and a link to an item the board does not place is
+     * cut and warned, or, to an archived issue GitHub has closed, a wait that is done.
      *
      * @param items every item of the project
      * @param pastPage the item ids of items read past one page of GitHub's answer, each shown
@@ -234,17 +235,22 @@ public final class IssueMapping {
                 // Its Status alone is outside the workflow: listed apart, for a move back.
                 unplaced.put(id, Objects.requireNonNull(issues.remove(id)));
             } else {
-                issues.put(
-                        id,
-                        relinked(
-                                issue,
-                                issue.parent(),
-                                issue.blockedBy(),
-                                List.of(Warning.stateOutsideWorkflow())));
+                issues.put(id, outsideWorkflow(issue, workflow));
             }
         }
         // A board issue never hangs on one listed apart: that link is cut and warned.
         cutDangling(issues, unplaced::containsKey);
+        // A copy of an id named twice takes the same steps: it stands under no issue and none
+        // under it, so no circle or deeper chain runs through it, but its state and its links are
+        // warned and cut as any issue's are.
+        final Set<String> placed = Set.copyOf(issues.keySet());
+        twiceIssues.replaceAll(
+                entry ->
+                        Map.entry(
+                                outsideWorkflow(
+                                        cutDangling(entry.getKey(), id -> !placed.contains(id)),
+                                        workflow),
+                                entry.getValue()));
         unplaced.values().forEach(issue -> faults.add(outsideFault(issue.id(), issue.state())));
         final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
         final List<String> rewrite = new ArrayList<>();
@@ -532,6 +538,23 @@ public final class IssueMapping {
                 waitsOn.add(wait(item, blocker, context.waits, context.config.forge()));
             } else if (context.storyOf(blocking)) {
                 warnings = withAdded(warnings, Warning.blockedByStory());
+            } else if (blocking.archived()) {
+                if (blocking.open()) {
+                    // Open work archived by hand: the board cannot place it, so the link is cut.
+                    warnings = withAdded(warnings, Warning.dependsOnUnplaced());
+                } else {
+                    // Closed and archived, as GitHub archives finished work on its own: a done
+                    // wait, as a closed blocker outside the project is.
+                    waitsOn.add(
+                            new Wait(
+                                    context.config.project().owner()
+                                            + "/"
+                                            + blocking.repository()
+                                            + "#"
+                                            + blocking.number(),
+                                    true,
+                                    blocking.link()));
+                }
             } else if (context.twice.contains(blocking.issueId())) {
                 warnings = withAdded(warnings, Warning.dependsOnUnplaced());
             } else {
@@ -755,7 +778,11 @@ public final class IssueMapping {
                     own.add(neededId);
                 }
             } else {
-                faults.add(id + " also needs " + neededId + ", which the board left out");
+                faults.add(
+                        id
+                                + " also needs "
+                                + neededId
+                                + ", which the board does not show as one issue");
                 whole = false;
             }
         }
@@ -928,18 +955,34 @@ public final class IssueMapping {
     private static void cutDangling(
             final Map<String, Issue> issues, final java.util.function.Predicate<String> gone) {
         for (final Issue issue : List.copyOf(issues.values())) {
-            final boolean parentGone = issue.parent() != null && gone.test(issue.parent());
-            final List<String> blockers = issue.blockedBy().stream().filter(gone.negate()).toList();
-            if (parentGone || blockers.size() != issue.blockedBy().size()) {
-                issues.put(
-                        issue.id(),
-                        relinked(
-                                issue,
-                                parentGone ? null : issue.parent(),
-                                blockers,
-                                List.of(Warning.dependsOnUnplaced())));
-            }
+            issues.put(issue.id(), cutDangling(issue, gone));
         }
+    }
+
+    /** The issue without its links to issues the board does not place, warned when any is cut. */
+    private static Issue cutDangling(
+            final Issue issue, final java.util.function.Predicate<String> gone) {
+        final boolean parentGone = issue.parent() != null && gone.test(issue.parent());
+        final List<String> blockers = issue.blockedBy().stream().filter(gone.negate()).toList();
+        if (!parentGone && blockers.size() == issue.blockedBy().size()) {
+            return issue;
+        }
+        return relinked(
+                issue,
+                parentGone ? null : issue.parent(),
+                blockers,
+                List.of(Warning.dependsOnUnplaced()));
+    }
+
+    /** The issue warned when its state is none of the workflow's, so the board takes the state. */
+    private static Issue outsideWorkflow(final Issue issue, final Workflow workflow) {
+        return workflow.states().contains(issue.state())
+                ? issue
+                : relinked(
+                        issue,
+                        issue.parent(),
+                        issue.blockedBy(),
+                        List.of(Warning.stateOutsideWorkflow()));
     }
 
     /**

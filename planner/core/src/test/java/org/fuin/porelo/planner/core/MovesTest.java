@@ -1097,6 +1097,21 @@ class MovesTest {
     }
 
     @Test
+    void aMoveOfAnIssueCarryingAnyKindTheGitHubStoreWarnsWithIsRefusedWithTheWarning() {
+        // Harm: a move closes or reopens an issue a person edited by hand into what the board
+        // cannot hold, a story label in another repository or a cut link among them.
+        for (final Warning warning : HeldBoards.HAND_EDITS) {
+            final Board board =
+                    warnedBoard(
+                            story("ST1", "Backlog", false, "PL1"),
+                            issue("PL1", "Backlog", null).withWarnings(List.of(warning)));
+            assertThat(refused(board, List.of(issue("PL1", "Finished"))).getMessage())
+                    .as("a move of an issue warned " + warning.kind())
+                    .isEqualTo("PL1: " + warning.text());
+        }
+    }
+
+    @Test
     void aMoveOfAnIssueWarnedAboutItsParentIsRefusedWithTheWarning() {
         // A move into a closed state would close an issue whose parent the planner cannot see.
         final Board board =

@@ -1411,9 +1411,139 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void aCopyOfOneReferenceOutsideTheWorkflowAndBlockedByAnIssueListedApartLeavesTheBoardRead() {
+        // Harm: two items of one reference, one of them in a Status the workflow lacks, take the
+        // whole board down for everyone; or a copy keeps a link to an issue the board does not
+        // hold.
+        final ProjectItem apart =
+                new ProjectItem(
+                        "PVTI_lib_5",
+                        false,
+                        issue(OWNER + "/example-lib", 5, List.of(), null, refs(false)),
+                        List.of(option("F_status", "Parked")),
+                        new GitHubGraphQl.PageInfo(false, null));
+        final ProjectItem onHold =
+                new ProjectItem(
+                        "PVTI_capitals",
+                        false,
+                        issue(
+                                OWNER + "/Example-Lib",
+                                3,
+                                List.of(),
+                                null,
+                                refs(false),
+                                refs(false, node(OWNER + "/example-lib", 5))),
+                        List.of(option("F_status", "On hold")),
+                        new GitHubGraphQl.PageInfo(false, null));
+
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                null, story("High", LIB_3), libIssue(3, refs(false)), onHold, apart)
+                        .read();
+
+        assertThat(snapshot.board().issues())
+                .as("both copies, the one on hold warned for its state and its cut blocker too")
+                .extracting(
+                        Issue::id, Issue::state, Issue::blockedBy, i -> Set.copyOf(i.warnings()))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "example-lib#3",
+                                "Backlog",
+                                List.of(),
+                                Set.of(org.fuin.porelo.planner.store.Warning.idTwice())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "example-lib#3",
+                                "On hold",
+                                List.of(),
+                                Set.of(
+                                        org.fuin.porelo.planner.store.Warning.idTwice(),
+                                        org.fuin.porelo.planner.store.Warning
+                                                .stateOutsideWorkflow(),
+                                        org.fuin.porelo.planner.store.Warning
+                                                .dependsOnUnplaced())));
+        assertThat(snapshot.board().holdsWork("example-lib#3"))
+                .as("neither copy worked")
+                .isPresent();
+    }
+
+    @Test
+    void anArchivedItemOfAReferenceALiveItemHoldsGivesTheWriterTheLiveOne() {
+        // Harm: a move checked against the live issue sets the Status of an archived item that
+        // GitHub listed first under the same reference.
+        final ProjectItem archived =
+                new ProjectItem(
+                        "PVTI_archived",
+                        true,
+                        issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
+                        List.of(option("F_status", "Finished")),
+                        new GitHubGraphQl.PageInfo(false, null));
+
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), archived, libIssue(3, refs(false)))
+                        .read();
+
+        assertThat(snapshot.board().issue("example-lib#3"))
+                .as("the live issue, on the board once")
+                .isPresent();
+        assertThat(snapshot.items().get("example-lib#3").itemId())
+                .as("the item a write of the reference goes to")
+                .isEqualTo("PVTI_lib_3");
+    }
+
+    @Test
+    void aSecondPageOfFieldValuesComingOrGoingAloneChangesTheRevision() {
+        // Harm: an item's warning that it was read in part comes or goes while the revision stays,
+        // so the window keeps showing work held, or free, that no longer is.
+        final ProjectItem whole = libIssue(3, refs(false));
+        final ProjectItem partial =
+                new ProjectItem(
+                        whole.id(),
+                        whole.archived(),
+                        whole.issue(),
+                        whole.values(),
+                        new GitHubGraphQl.PageInfo(true, "values-2"));
+        final Snapshot read =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), whole)
+                        .read();
+        final Snapshot cut =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), partial)
+                        .boardItems(partial)
+                        .read();
+
+        assertThat(cut.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue read in part, warned")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(cut.board().revision())
+                .as("the same values with a page past them")
+                .isNotEqualTo(read.board().revision());
+        final ProjectItem labelsCut = withLabels(whole, List.of(), "labels-2");
+        final Snapshot labels =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), labelsCut)
+                        .boardItems(labelsCut)
+                        .read();
+        assertThat(labels.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue whose labels were read in part, warned")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(labels.board().revision())
+                .as("the same labels with a page past them")
+                .isNotEqualTo(read.board().revision());
+    }
+
+    @Test
     void anItemOfTheOwnersRepositoryTheProjectDoesNotPlanIsAFaultAndTheBoardIsRead() {
         // Harm: one issue of a repository project.yml does not name, added to the project by
-        // hand, takes the whole board down for everyone.
+        // hand, takes the whole board down for everyone. A guard of behavior the parent commit
+        // already had: the same check left this item out as a fault before.
         final ProjectItem elsewhere =
                 new ProjectItem(
                         "PVTI_elsewhere",

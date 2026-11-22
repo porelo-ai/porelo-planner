@@ -861,6 +861,55 @@ class IssueMappingTest {
     }
 
     @Test
+    void anIssueBlockedByAClosedArchivedIssueWaitsOnItAsDoneAndIsNotHeld() {
+        // Harm: GitHub archives a finished, closed issue on its own, and every issue it blocked is
+        // held for good, while a closed blocker outside the project would have let it start.
+        final Item done =
+                new Item("example-lib", 3).field(FieldNames.STATUS, "Finished").closed().archived();
+        final Item blocked =
+                new Item("example-lib", 4).field(FieldNames.STATUS, "Backlog").blockedBy(done);
+
+        final IssueMapping.Mapped mapped = read(done, blocked);
+
+        assertThat(mapped.issues())
+                .as("the blocked issue, unwarned, waiting on its blocker as done")
+                .extracting(Issue::id, Issue::blockedBy, Issue::waitsOn, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-lib#4",
+                                List.of(),
+                                List.of(
+                                        new Wait(
+                                                "example-org/example-lib#3",
+                                                true,
+                                                URI.create(
+                                                        "https://github.com/example-org/example-lib/issues/3"))),
+                                List.of()));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
+    }
+
+    @Test
+    void anIssueBlockedByAnOpenArchivedIssueIsShownWithoutThatBlockerAndHeld() {
+        // Harm: an issue blocked by open work someone archived starts as if that work were done.
+        final Item open = new Item("example-lib", 3).field(FieldNames.STATUS, "Backlog").archived();
+        final Item blocked =
+                new Item("example-lib", 4).field(FieldNames.STATUS, "Backlog").blockedBy(open);
+
+        final IssueMapping.Mapped mapped = read(open, blocked);
+
+        assertThat(mapped.issues())
+                .as("the blocked issue without the link, warned, and no wait")
+                .extracting(Issue::id, Issue::blockedBy, Issue::waitsOn, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-lib#4",
+                                List.of(),
+                                List.of(),
+                                List.of(Warning.dependsOnUnplaced())));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
+    }
+
+    @Test
     void anIssueBlockedByAnIssueOutsideTheProjectStandsOnTheBoardWaitingOnIt() {
         // Harm: an issue waiting on another repository's vanishes from the board with everything
         // under it and everything blocked by it, so nobody sees the work at all.

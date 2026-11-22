@@ -9,6 +9,20 @@ import org.fuin.porelo.planner.store.Warning;
 /** Boards a store gives when it could not fully read an issue, for the routes' tests. */
 final class HeldBoards {
 
+    /**
+     * The warnings GitHub's store gives an item a person edited by hand into what the board cannot
+     * hold, each of which holds the item back.
+     */
+    static final List<Warning> HAND_EDITS =
+            List.of(
+                    Warning.storyOutsideOwnRepository(),
+                    Warning.parentInOtherRepository(),
+                    Warning.blockedByStory(),
+                    Warning.parentCircle(),
+                    Warning.subIssueOfSubIssue(),
+                    Warning.pastOnePage(),
+                    Warning.dependsOnUnplaced());
+
     private HeldBoards() {}
 
     /** The board with one issue warned. */

@@ -841,8 +841,10 @@ public final class ItemsBoardReader implements BoardReader {
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         for (final ItemView view : current.views()) {
             final String id = IssueMapping.idOf(view);
-            if (id != null) {
-                byId.putIfAbsent(id, view);
+            final ItemView before = id == null ? null : byId.get(id);
+            // An archived item of an id a live item holds too never takes the live one's writes.
+            if (id != null && (before == null || before.archived() && !view.archived())) {
+                byId.put(id, view);
             }
         }
         return new Snapshot(
@@ -1494,10 +1496,11 @@ public final class ItemsBoardReader implements BoardReader {
 
     /**
      * Digests, in a fixed order, the commit of the project's files, the board's faults, and every
-     * item's node id, issue, repository, number, title, body, labels, change time, open and
-     * archived state and its reason, parent, sub-issues, blockers and field values, and every open
-     * issue outside the project the board names with its title and kind, so a change of any of
-     * them, a field's alone or a fault's included, gives another revision.
+     * item's node id, issue, repository, number, title, body, labels, whether labels or field
+     * values lie past one page, change time, open and archived state and its reason, parent,
+     * sub-issues, blockers and field values, and every open issue outside the project the board
+     * names with its title and kind, so a change of any of them, a field's alone or a fault's
+     * included, gives another revision.
      */
     private static Revision revision(
             final String commit,
@@ -1542,6 +1545,9 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, issue.title());
             addNullable(digest, issue.body());
             add(digest, issue.labels());
+            // Whether labels or values lie past one page decides a warning on its own.
+            add(digest, String.valueOf(Boolean.TRUE.equals(issue.labelsPage().hasNextPage())));
+            add(digest, String.valueOf(Boolean.TRUE.equals(item.valuesPage().hasNextPage())));
             add(digest, issue.updatedAt().toString());
             add(digest, issue.state());
             addNullable(digest, issue.stateReason());

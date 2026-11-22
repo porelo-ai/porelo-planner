@@ -89,7 +89,8 @@ public final class Edits {
 
     /**
      * Checks a story's new issue list: every issue named once, on the board, held by no other story
-     * and no sub-issue of an issue, since an issue belongs to one story.
+     * and no sub-issue of an issue, since an issue belongs to one story; an issue hung in or taken
+     * out is held back by nothing.
      *
      * @param board the board the store holds
      * @param revision the revision the caller read
@@ -121,6 +122,12 @@ public final class Edits {
                 other.issues().forEach(id -> holder.putIfAbsent(id, other.id()));
             }
         }
+        for (final String id : found.issues()) {
+            if (!issues.contains(id)) {
+                // Taken out, it would lose its story on GitHub, a write on an item held back.
+                notHeld(board, id, story, "issues");
+            }
+        }
         final Set<String> named = new HashSet<>();
         for (final String id : issues) {
             final Issue issue = known(board, id);
@@ -130,6 +137,7 @@ public final class Edits {
             if (found.issues().contains(id)) {
                 continue;
             }
+            notHeld(board, id, story, "issues");
             final String other = holder.get(id);
             if (other != null) {
                 throw refused(
@@ -148,8 +156,9 @@ public final class Edits {
     }
 
     /**
-     * Checks an issue's new blockers: each named once, on the board, not the issue itself, and none
-     * leading back to the issue through the blockers the board holds.
+     * Checks an issue's new blockers: each named once, on the board, not the issue itself, none
+     * leading back to the issue through the blockers the board holds, and none added or taken out
+     * held back.
      *
      * @param board the board the store holds
      * @param revision the revision the caller read
@@ -191,6 +200,14 @@ public final class Edits {
             }
             if (id.equals(issue)) {
                 throw refused(issue, "blockedBy", "An issue does not block itself.");
+            }
+            if (!found.blockedBy().contains(id)) {
+                notHeld(board, id, issue, "blockedBy");
+            }
+        }
+        for (final String id : found.blockedBy()) {
+            if (!named.contains(id)) {
+                notHeld(board, id, issue, "blockedBy");
             }
         }
         final Map<String, List<String>> waits = new LinkedHashMap<>();
@@ -329,6 +346,18 @@ public final class Edits {
         final Optional<String> held = board.holdsWork(id);
         if (held.isPresent()) {
             throw refused(id, "", held.get());
+        }
+    }
+
+    /**
+     * Refuses an edit of another item's list that adds or takes out an item held back, which a
+     * write would link or unlink on GitHub; one kept in the list is neither.
+     */
+    private static void notHeld(
+            final Board board, final String id, final String edited, final String field) {
+        final Optional<String> held = board.holdsWork(id);
+        if (held.isPresent()) {
+            throw refused(edited, field, held.get());
         }
     }
 

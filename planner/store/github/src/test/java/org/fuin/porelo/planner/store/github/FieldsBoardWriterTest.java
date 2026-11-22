@@ -609,7 +609,8 @@ class FieldsBoardWriterTest {
     @Test
     void anIssueWithoutAStatusIsNotGivenOneByASaveBesideIt() {
         // Harm: a save of other items writes the state the board shows for an issue that states
-        // none, so a person's empty Status turns into one they never chose.
+        // none, so a person's empty Status turns into one they never chose. A guard of behavior
+        // the writer already had: it never wrote a field of an item it was not given.
         final ItemView moved = item("PL1", "example-project", 1, true, "", state("Idea"));
         final ItemView unstated = item("LB3", "example-lib", 3, true, "", Map.of());
         final GitHub github = new GitHub().holding(moved, unstated);

@@ -134,6 +134,7 @@ Future<(_Source, PlanningBoard)> _opened({bool automatic = false}) async {
 
 void main() {
   // Harm: an issue the planner now shows warned, its parent cut, is dropped from the no-story area, so it is on no card.
+  // A guard of behavior the screen already had: the no-story area showed such an issue before it was warned.
   test('an issue in no story that carries a warning is shown there', () async {
     final source = _Source();
     final warned = {
