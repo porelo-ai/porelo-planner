@@ -492,7 +492,7 @@ class GitHubChangesTest {
                                 issue.repository(),
                                 issue.labels(),
                                 issue.parentId(),
-                                new TrackedItem.Links(List.of(), true, "next", 0),
+                                new TrackedItem.Links(List.of(), true, "next", 1),
                                 issue.blockedBy()),
                         partial.values(),
                         partial.updatedAt(),
@@ -747,6 +747,88 @@ class GitHubChangesTest {
                                 twoPages(),
                                 known(
                                         BoardCopyMapping.tracked(read),
+                                        held("PVTI_2"),
+                                        held("PVTI_3")),
+                                FIELDS)
+                        .orElseThrow();
+
+        assertThat(changed.changed()).isEmpty();
+    }
+
+    /** An item whose blockers GitHub counts as {@code total}, listing the two given. */
+    private static GitHubGraphQl.ProjectItem blockedItem(final boolean more, final int total) {
+        final GitHubGraphQl.PageInfo none = new GitHubGraphQl.PageInfo(false, null);
+        final GitHubGraphQl.BoardIssue open = boardIssue("I_PVTI_1");
+        return new GitHubGraphQl.ProjectItem(
+                "PVTI_1",
+                false,
+                new GitHubGraphQl.BoardIssue(
+                        open.id(),
+                        open.databaseId(),
+                        open.number(),
+                        open.title(),
+                        open.body(),
+                        open.state(),
+                        open.stateReason(),
+                        open.updatedAt(),
+                        open.repository(),
+                        open.labels(),
+                        open.parentId(),
+                        open.subIssues(),
+                        new GitHubGraphQl.IssueRefs(
+                                List.of(
+                                        new GitHubGraphQl.IssueRef(
+                                                "I_open", 21L, 21, OWNER + "/example-project"),
+                                        new GitHubGraphQl.IssueRef(
+                                                "I_other", 22L, 22, OWNER + "/example-project")),
+                                new GitHubGraphQl.PageInfo(more, more ? "c" : null),
+                                total),
+                        none,
+                        null),
+                List.of(new GitHubGraphQl.ItemValue(STATUS, "opt-idea", "Idea", null, null)),
+                none);
+    }
+
+    @Test
+    void aCopyKeepsGitHubsCountOfALongListThroughItsWayBackAndOut() {
+        // Harm: a board started from its copy holds the count of the issues it lists in place
+        // of GitHub's, so a look compares GitHub's count with the wrong one.
+        final TrackedItem copied = BoardCopyMapping.tracked(blockedItem(true, 3));
+
+        final TrackedItem again = BoardCopyMapping.tracked(BoardCopyMapping.item(copied));
+
+        assertThat(copied.issue().blockedBy().total()).as("the count kept").isEqualTo(3);
+        assertThat(again.issue().blockedBy().total())
+                .as("the count kept through the copy and back")
+                .isEqualTo(3);
+        assertThat(again.issue().blockedBy().links()).as("the two listed").hasSize(2);
+    }
+
+    @Test
+    void aWholeListWhoseCountGitHubGivesAboveItsListedIssuesIsNotNamedAtEveryLook() {
+        // Harm: an issue whose blockers GitHub counts beyond those it lists, such as one the
+        // person cannot read, is read again at every look, for ever.
+        final ProjectItemSummary listed =
+                new ProjectItemSummary(
+                        "PVTI_1",
+                        THEN,
+                        false,
+                        "Issue",
+                        new ProjectItemSummary.IssueSummary(
+                                "I_PVTI_1", OWNER + "/example-project", 1, THEN, "open", 0, 3),
+                        List.of(
+                                new ProjectItemSummary.ValueSummary(
+                                        STATUS_ID, "single_select", "opt-idea", null, null)));
+        final GitHub github = unchanged().page(null, "\"a2\"", "c2", listed, listed("PVTI_2"));
+
+        final TrackerChanges.Changed changed =
+                github.changes()
+                        .since(
+                                CONFIG,
+                                TOKEN,
+                                twoPages(),
+                                known(
+                                        BoardCopyMapping.tracked(blockedItem(false, 3)),
                                         held("PVTI_2"),
                                         held("PVTI_3")),
                                 FIELDS)

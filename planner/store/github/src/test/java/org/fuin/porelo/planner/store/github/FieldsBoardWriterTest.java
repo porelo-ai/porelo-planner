@@ -1790,7 +1790,8 @@ class FieldsBoardWriterTest {
         for (final String id : ids) {
             nodes.add(new IssueRef(id, 1L, 1, OWNER + "/example-project"));
         }
-        return new IssueRefs(nodes, new PageInfo(more, null), nodes.size());
+        // A list that goes on counts at least one more than this page lists.
+        return new IssueRefs(nodes, new PageInfo(more, null), nodes.size() + (more ? 1 : 0));
     }
 
     private static ItemView closedAs(final ItemView item, final String reason) {

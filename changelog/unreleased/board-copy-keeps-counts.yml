@@ -1,0 +1,2 @@
+title: "The GitHub store keeps GitHub's count of an issue's sub-issues and blockers through its board copy, so an issue whose list GitHub counts other than the issues it lists is no longer read again at every look."
+type: fixed
