@@ -31,6 +31,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /** The add of an issue made outside the project as the window sends it, mapped to HTTP. */
 class ListIssueEndpointTest {
 
+    /** The link of the issue made outside the project, a fixture of an invented repository. */
+    private static final String MADE_LINK =
+            "https://github.com/porelo-ai/porelo-lib/issues/7"; // not-a-citation
+
     private static final String MADE = "porelo-lib#7";
 
     /** What the store was asked to add, with the revision it was asked against. */
@@ -75,8 +79,7 @@ class ListIssueEndpointTest {
                                         "porelo-lib",
                                         "A secret title",
                                         UnlistedIssue.Kind.ISSUE,
-                                        URI.create(
-                                                "https://github.com/porelo-ai/porelo-lib/issues/7")))
+                                        URI.create(MADE_LINK)))
                         : List.of());
     }
 

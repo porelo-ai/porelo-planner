@@ -22,6 +22,10 @@ import org.junit.jupiter.api.Test;
 /** The edits a person keeps the board with, checked against the board the caller read. */
 class EditsTest {
 
+    /** The link of an issue made outside the project, a fixture of an invented repository. */
+    private static final String MADE_LINK =
+            "https://github.com/porelo-ai/porelo-store/issues/7"; // not-a-citation
+
     /**
      * ST1 holds AB1 and AB2, ST2 holds AB3; AB1.1 is a sub-issue of AB1; AB2 waits on AB3, which
      * waits on AB4.
@@ -505,7 +509,7 @@ class EditsTest {
                         "porelo-store",
                         "Made by hand",
                         org.fuin.porelo.planner.store.UnlistedIssue.Kind.ISSUE,
-                        java.net.URI.create("https://github.com/porelo-ai/porelo-store/issues/7"));
+                        java.net.URI.create(MADE_LINK));
         final Board offering =
                 new Board(
                         new Revision("r1"),
