@@ -1540,6 +1540,49 @@ void main() {
     },
   );
 
+  // Harm: a board from a planner that sends no list of the issues outside the project is not read, a story made by
+  // hand is shown as an issue, or one named into another repository is shown by that name.
+  test('a streamed board\'s issues outside the project are read by kind, a board without them reads none, and one '
+      'named into another repository ends the watch', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    Map<String, Object?> unlisted(String id, String kind) => {
+      'unlisted': [
+        {
+          'id': id,
+          'repository': 'porelo-project',
+          'title': 'Made by hand',
+          'kind': kind,
+          'link': 'https://github.com/porelo-ai/porelo-project/issues/9',
+        },
+      ],
+    };
+    final without = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    streams.opened.last.add(_event('r1'));
+    expect((await without).unlisted, isEmpty, reason: 'a board without the list reads none');
+
+    final story = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 1, 'the second stream');
+    streams.opened.last.add(_event('r1', more: unlisted('porelo-project#9', 'story')));
+    final read = (await story).unlisted.single;
+    expect(read.id, 'porelo-project#9');
+    expect(read.repository, 'porelo-project');
+    expect(read.title, 'Made by hand');
+    expect(read.story, isTrue, reason: 'its kind is story');
+    expect(read.link, 'https://github.com/porelo-ai/porelo-project/issues/9');
+
+    final unknown = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 2, 'the third stream');
+    streams.opened.last.add(_event('r1', more: unlisted('porelo-project#9', 'epic')));
+    expect((await unknown).unlisted.single.story, isFalse, reason: 'a kind it does not know reads as an issue');
+
+    final bad = source.watchStories('demo').first;
+    await _until(() => streams.opened.length > 3, 'the fourth stream');
+    streams.opened.last.add(_event('r1', more: unlisted('porelo-other#9', 'issue')));
+    expect((await _refusal(bad)).name, 'BadAnswer');
+  });
+
   // Harm: an id past its bound would go back to the planner as an endless header.
   test('an event id longer than 200 characters ends the watch', () async {
     final (planner, source) = await _started();

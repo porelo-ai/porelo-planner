@@ -2878,7 +2878,7 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   if (board['open'] case final Map<String, dynamic> open) 'open': open,
   if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
   // A planner's event is a whole board, so the screen takes changed rules from it.
-  for (final part in const ['states', 'phases', 'work', 'faults', 'outside', 'rules'])
+  for (final part in const ['states', 'phases', 'work', 'faults', 'outside', 'unlisted', 'rules'])
     if (board[part] case final List<dynamic> value) part: value,
   if (board['reasons'] case final bool reasons) 'reasons': reasons,
 };

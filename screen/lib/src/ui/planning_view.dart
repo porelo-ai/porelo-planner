@@ -1110,6 +1110,7 @@ class _BoardViewState extends State<_BoardView> {
                                   if (board.statesIn(phase).isNotEmpty) _phase(context, at),
                                 if (_shownUnplaced().isNotEmpty) _unplaced(context),
                                 if (board.outside.isNotEmpty) _outside(context),
+                                if (board.unlisted.isNotEmpty) _unlisted(context),
                               ],
                             ),
                           ),
@@ -1339,6 +1340,62 @@ class _BoardViewState extends State<_BoardView> {
                       ),
                       Text(issue.status.isEmpty ? 'No Status' : 'Status: ${_line(issue.status)}'),
                       if (issue.story.isNotEmpty) Text('Story: ${_line(issue.story)}'),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The open issues of the project's repositories that are no items of the project, each with its tracker link;
+  /// the title is shown as plain text, and only an HTTPS link opens.
+  Widget _unlisted(BuildContext context) {
+    final issues = board.unlisted;
+    return SizedBox(
+      key: const Key('planning-unlisted'),
+      width: PlanningStyle.column,
+      child: CustomScrollView(
+        slivers: [
+          const SliverToBoxAdapter(child: Text('Issues not on the project')),
+          SliverList.builder(
+            itemCount: issues.length,
+            itemBuilder: (context, index) {
+              final issue = issues[index];
+              final open = planningWebAction(
+                'Open ${issue.story ? 'story' : 'issue'} ${issue.id} in browser',
+                issue.link,
+                widget.host.openLink,
+                onError: board.reportActionProblem,
+              );
+              return Card(
+                key: Key('planning-unlisted ${issue.id}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(Space.small),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_line(issue.id)}  ${_line(issue.title)}',
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            key: Key('planning-unlisted-open ${issue.id}'),
+                            tooltip: open.available ? open.label : open.unavailable,
+                            onPressed: open.available ? open.run : null,
+                            icon: const Icon(Icons.open_in_new, size: PlanningStyle.rowIcon),
+                          ),
+                        ],
+                      ),
+                      Text(issue.story ? 'Story' : 'Issue'),
                     ],
                   ),
                 ),

@@ -2341,6 +2341,15 @@ components:
             empty.
           items:
             $ref: '#/components/schemas/OutsideIssue'
+        unlisted:
+          type: array
+          description: >-
+            The open issues of the project's repositories that are no items of the project, as one made by hand on
+            the tracker is, in the order of the repositories. None of them is on the board or in `outside`. Empty
+            when there are none; a store without a tracker answers it empty, and a window reads an answer without it
+            as empty.
+          items:
+            $ref: '#/components/schemas/UnlistedIssue'
         open:
           description: What is still open of the whole board, as the story list answers it.
           allOf:
@@ -2400,6 +2409,30 @@ components:
           type: string
           format: uri
           description: The issue on the tracker.
+
+    UnlistedIssue:
+      description: >-
+        An open issue of one of the project's repositories that is no item of the project. Its title is the
+        tracker's text, shown as plain text.
+      type: object
+      required: [id, repository, title, kind, link]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+        kind:
+          type: string
+          description: >-
+            story when the tracker's issue type is Story and the issue is in the project's own repository, else
+            issue.
+          enum: [issue, story]
+        link:
+          type: string
+          format: uri
+          description: The issue on the tracker, built from its repository and number.
 
     Moves:
       description: >-

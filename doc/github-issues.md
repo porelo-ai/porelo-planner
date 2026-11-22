@@ -90,6 +90,13 @@ stage records count them; a pause and a person's move are shown, not summed.
   id. An old id, of an item carried over from Markdown, is matched to nothing: old commits, velocity rows and task
   records stay under it.
 - An issue labeled `story` is a story; every other issue of the project is an issue.
+- An open issue of a repository `project.yml` names that is no item of the project, as one made by hand on GitHub is,
+  is answered in the board's `unlisted`, apart from the stories and from `outside`, and the window shows it under
+  "Issues not on the project", its title as plain text and its link, built from its repository and number, opened
+  only when it is HTTPS. It is a story when its issue type is `Story` and it is in the project's own repository, and
+  an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, at most
+  50 pages of 100 across all repositories within 20 s; a repository not reached, or one GitHub refuses to list, keeps
+  the list last read for it and is named as a fault. A new or retitled one changes the board's revision.
 - An item a person edited into something the board cannot hold - an item of a repository `project.yml` does not
   name, a `Status` outside the workflow, a parent outside the project, a story as a blocker, a sub-issue in another
   repository than its parent or under another sub-issue - is left out with every issue under it and named as a

@@ -1702,6 +1702,18 @@ class _Watch {
           'the planner streamed an issue outside the workflow it cannot name',
         );
       }
+      if (snapshot.unlisted.any(
+        (issue) =>
+            !HttpPlanningSource._issueId.hasMatch(issue.id) ||
+            !HttpPlanningSource._name.hasMatch(issue.repository) ||
+            !issue.id.startsWith('${issue.repository}#'),
+      )) {
+        throw const PlanningRefusal(
+          'BadAnswer',
+          {},
+          'the planner streamed an issue outside the project it cannot name',
+        );
+      }
       HttpPlanningSource._workersNamed(snapshot.stories.expand((story) => story.issues));
       if (!snapshot.repositoriesReported ||
           snapshot.repositories.any((name) => !HttpPlanningSource._name.hasMatch(name))) {

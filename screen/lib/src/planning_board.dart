@@ -1682,6 +1682,9 @@ class PlanningBoard extends ChangeNotifier {
   /// The issues the board left out because their Status is none of the workflow's states, by id.
   List<PlanOutsideIssue> get outside => snapshot?.outside ?? const [];
 
+  /// The open issues of the project's repositories that are no items of the project, which the screen only shows.
+  List<PlanUnlistedIssue> get unlisted => snapshot?.unlisted ?? const [];
+
   /// Each breach of the stories' rules the last whole board named; only shown, it holds no move back.
   List<PlanRuleBreach> get rules => snapshot?.rules ?? const [];
 

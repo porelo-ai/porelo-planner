@@ -12,6 +12,7 @@ import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -108,6 +109,66 @@ class BoardFaultsTest {
                                 + "\"story\":\"porelo-store#1\",\"link\":"
                                 + "\"https://github.com/example-org/porelo-store/issues/2\"}]");
         assertThat(mapper().valueToTree(boardOf(git)).path("outside").toString())
+                .as("a Git-kept board's, sent empty")
+                .isEqualTo("[]");
+    }
+
+    @Test
+    void theBoardEventCarriesTheIssuesOutsideTheProjectByKindAndAGitBoardNone() {
+        // Harm: the window never shows an issue made by hand on the tracker, shows a story as an
+        // issue, or reads a missing list as an old planner's answer.
+        final Workflow workflow =
+                new Workflow(
+                        List.of("Idea", "Finished"),
+                        List.of(new Workflow.Phase("All", List.of("Idea", "Finished"))),
+                        List.of("Finished"));
+        final Board tracked =
+                new Board(
+                        new Revision("a".repeat(64)),
+                        workflow,
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of()),
+                        List.of("porelo-store", "porelo-other"),
+                        List.of(),
+                        "example-org",
+                        List.of(),
+                        List.of(
+                                new UnlistedIssue(
+                                        "porelo-store#4",
+                                        "porelo-store",
+                                        "A story by hand",
+                                        UnlistedIssue.Kind.STORY,
+                                        URI.create(
+                                                "https://github.com/example-org/porelo-store/issues/4")),
+                                new UnlistedIssue(
+                                        "porelo-other#2",
+                                        "porelo-other",
+                                        "An issue by hand",
+                                        UnlistedIssue.Kind.ISSUE,
+                                        URI.create(
+                                                "https://github.com/example-org/porelo-other/issues/2"))));
+        final Board git =
+                new Board(
+                        new Revision("b".repeat(64)),
+                        workflow,
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of()),
+                        List.of("porelo-store"));
+
+        final JsonNode event = mapper().valueToTree(boardOf(tracked));
+
+        assertThat(event.path("unlisted").toString())
+                .as("the issues outside the project as the event's data carries them, in order")
+                .isEqualTo(
+                        "[{\"id\":\"porelo-store#4\",\"repository\":\"porelo-store\","
+                                + "\"title\":\"A story by hand\",\"kind\":\"story\",\"link\":"
+                                + "\"https://github.com/example-org/porelo-store/issues/4\"},"
+                                + "{\"id\":\"porelo-other#2\",\"repository\":\"porelo-other\","
+                                + "\"title\":\"An issue by hand\",\"kind\":\"issue\",\"link\":"
+                                + "\"https://github.com/example-org/porelo-other/issues/2\"}]");
+        assertThat(mapper().valueToTree(boardOf(git)).path("unlisted").toString())
                 .as("a Git-kept board's, sent empty")
                 .isEqualTo("[]");
     }

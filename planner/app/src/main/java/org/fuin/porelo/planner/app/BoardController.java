@@ -62,6 +62,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -889,6 +890,7 @@ public class BoardController {
                         .map(story -> story(board, story, snapshot, derive, counter))
                         .toList(),
                 board.outside().stream().map(BoardController::outsideIssue).toList(),
+                board.unlisted().stream().map(BoardController::unlistedIssue).toList(),
                 open(counter.board()),
                 StoryRules.of(board, derive).stream()
                         .map(
@@ -910,6 +912,19 @@ public class BoardController {
                 issue.title(),
                 issue.status(),
                 issue.story(),
+                issue.link());
+    }
+
+    /** Maps an open issue that is no item of the project, which the window only shows. */
+    private static org.fuin.porelo.planner.app.answers.UnlistedIssue unlistedIssue(
+            final UnlistedIssue issue) {
+        return new org.fuin.porelo.planner.app.answers.UnlistedIssue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.kind() == UnlistedIssue.Kind.STORY
+                        ? org.fuin.porelo.planner.app.answers.UnlistedIssue.KindEnum.STORY
+                        : org.fuin.porelo.planner.app.answers.UnlistedIssue.KindEnum.ISSUE,
                 issue.link());
     }
 

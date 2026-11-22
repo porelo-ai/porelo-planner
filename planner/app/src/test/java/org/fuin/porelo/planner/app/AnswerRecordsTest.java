@@ -47,7 +47,7 @@ class AnswerRecordsTest {
      * window reads a board from a planner without them, and the generated record writes them as
      * given, so nothing here ever passes null for one.
      */
-    static final Set<String> SENT_THOUGH_OPTIONAL = Set.of("Board.outside");
+    static final Set<String> SENT_THOUGH_OPTIONAL = Set.of("Board.outside", "Board.unlisted");
 
     @BeforeAll
     static void read() throws Exception {

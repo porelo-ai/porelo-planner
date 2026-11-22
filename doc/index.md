@@ -9,6 +9,9 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
   each repository, in the states of the project's workflow.
 - **It writes state changes straight to the store**, committed and pushed with the person's own Git login, and keeps
   the stories index as the project's tools write it.
+- **It answers the open issues that are no items of a GitHub-tracked project**, as one made by hand on GitHub is, in
+  the board's `unlisted`, which the window shows apart from the board; the Git store and the mock mode answer it
+  empty.
 - **It tells the window of changes** over Server-Sent Events, whether the planner made them or someone else pushed
   them.
 

@@ -135,6 +135,13 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           for (final wait in issue.waitsHolding) ?wait.reference: wait.link ?? '',
     }.entries)
       planningWebAction('Open ${wait.key} in browser', wait.value, host.openLink, onError: board.reportActionProblem),
+    for (final issue in board.unlisted)
+      planningWebAction(
+        'Open ${issue.story ? 'story' : 'issue'} ${issue.id} in browser',
+        issue.link,
+        host.openLink,
+        onError: board.reportActionProblem,
+      ),
   ],
 ];
 

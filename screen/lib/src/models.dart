@@ -544,6 +544,33 @@ class PlanOutsideIssue {
   final String link;
 }
 
+/// An open issue of one of the project's repositories that is no item of the project, as one made by hand on the
+/// tracker is; the screen only shows it.
+class PlanUnlistedIssue {
+  /// Reads the fields the planner reports.
+  PlanUnlistedIssue.from(Map<String, dynamic> map)
+    : id = _planText(map, 'id'),
+      repository = _planText(map, 'repository'),
+      title = _planText(map, 'title'),
+      story = _planText(map, 'kind') == 'story',
+      link = _planText(map, 'link');
+
+  /// Its tracker reference, `<repository>#<number>`.
+  final String id;
+
+  /// Its repository.
+  final String repository;
+
+  /// Its title, the tracker's text, shown as plain text.
+  final String title;
+
+  /// Whether the planner names it a story; any other kind reads as an issue.
+  final bool story;
+
+  /// Its web link; empty when none was reported.
+  final String link;
+}
+
 /// One breach of the stories' rules a whole board names: shown to the person, never holding a move back.
 class PlanRuleBreach {
   /// Reads the fields the planner reports.
@@ -580,6 +607,7 @@ class PlanningSnapshot {
          for (final issue in source.outside)
            if (!moves.containsKey(issue.id)) issue,
        ],
+       unlisted = source.unlisted,
        repositories = source.repositories,
        repositoriesReported = source.repositoriesReported,
        // A save may mend or break a rule; none is shown until the next whole board names them anew.
@@ -601,6 +629,7 @@ class PlanningSnapshot {
     : work = _planList(map['work'], PlanWorkRule.from),
       faults = _planStrings(map['faults']),
       outside = _planList(map['outside'], PlanOutsideIssue.from),
+      unlisted = _planList(map['unlisted'], PlanUnlistedIssue.from),
       rules = [
         for (final breach in _planList(map['rules'], PlanRuleBreach.from))
           if (breach.item.isNotEmpty && breach.words.isNotEmpty) breach,
@@ -624,6 +653,7 @@ class PlanningSnapshot {
       faults = workflow.faults,
       // A whole board names them; a story list leaves the last whole board's standing.
       outside = board.statesReported ? board.outside : workflow.outside,
+      unlisted = board.statesReported ? board.unlisted : workflow.unlisted,
       repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
       repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
       // Only a whole board names the breaches; a story list read beside the workflow names none.
@@ -645,6 +675,7 @@ class PlanningSnapshot {
     : work = source.work,
       faults = source.faults,
       outside = source.outside,
+      unlisted = source.unlisted,
       repositories = source.repositories,
       repositoriesReported = source.repositoriesReported,
       rules = whole.rules,
@@ -668,6 +699,9 @@ class PlanningSnapshot {
   /// The issues left out of the board because their Status is none of the workflow's states; empty when none were
   /// reported.
   final List<PlanOutsideIssue> outside;
+
+  /// The open issues of the project's repositories that are no items of the project; empty when none were reported.
+  final List<PlanUnlistedIssue> unlisted;
 
   /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
   final List<String> repositories;
