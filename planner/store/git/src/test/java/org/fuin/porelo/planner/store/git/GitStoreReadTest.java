@@ -251,8 +251,7 @@ class GitStoreReadTest {
     }
 
     @Test
-    void aStoryNamingAnIssueUnderAnotherRepositoryIsAFaultAndTheStoryIsShownWithout()
-            throws Exception {
+    void aStoryNamingAnIssueUnderAnotherRepositoryIsWarnedOfAndShownWithoutIt() throws Exception {
         // Read by its number alone, the story would show another repository's issue as its own.
         repositories.repository(
                 "porelo-store",
@@ -265,10 +264,11 @@ class GitStoreReadTest {
                                 "\"porelo-other#AB01\", \"porelo-other#CD01\"")));
         final Board board = store(null).board();
         assertThat(board.faults())
-                .as("the reference is named and left out")
-                .contains(
-                        "ST3: porelo-other#AB01 is no issue of the project's repositories, and"
-                                + " is left out");
+                .as("the reference is no fault of the board")
+                .noneMatch(fault -> fault.contains("ST3"));
+        assertThat(board.story("ST3").orElseThrow().warnings())
+                .as("the story says it names an issue outside the project")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.issueOutsideProject());
         assertThat(board.stories())
                 .as("the story keeps its sound references, and the other stories stand")
                 .extracting(Story::id, Story::issues)
@@ -356,8 +356,9 @@ class GitStoreReadTest {
     }
 
     @Test
-    void twoFilesOfOneIdAreAFaultAndBothAreLeftOut() throws Exception {
-        // Kept as one, a move would write whichever file was read last.
+    void twoFilesOfOneIdAreBothShownWarnedOfAndNeitherIsAFault() throws Exception {
+        // Kept as one, a move would write whichever file was read last; left out, both vanish
+        // from the person's board.
         repositories.repository(
                 "porelo-store",
                 Map.of(
@@ -367,21 +368,29 @@ class GitStoreReadTest {
                         issue("AB01", "Copy", "Backlog", "")));
         final Board board = store(null).board();
         assertThat(board.faults())
-                .as("each id read from two files is named")
-                .anyMatch(fault -> fault.contains("ST1") && fault.contains("two files"))
-                .anyMatch(fault -> fault.contains("AB01") && fault.contains("two files"));
+                .as("no id read from two files is a fault")
+                .noneMatch(fault -> fault.contains("two files"));
         assertThat(board.stories())
-                .as("neither copy of the story is shown")
-                .extracting(Story::id)
-                .doesNotContain("ST1");
+                .as("both copies of the story, each warned of")
+                .filteredOn(story -> story.id().equals("ST1"))
+                .hasSize(2)
+                .allSatisfy(
+                        story ->
+                                assertThat(story.warnings())
+                                        .contains(org.fuin.porelo.planner.store.Warning.idTwice()));
         assertThat(board.issues())
-                .as("neither copy of the issue is shown")
-                .extracting(Issue::id)
-                .doesNotContain("AB01");
+                .as("both copies of the issue, each warned of")
+                .filteredOn(issue -> issue.id().equals("AB01"))
+                .hasSize(2)
+                .allSatisfy(
+                        issue ->
+                                assertThat(issue.warnings())
+                                        .contains(org.fuin.porelo.planner.store.Warning.idTwice()));
+        assertThat(board.twice("AB01")).as("the id names neither copy for a move").isPresent();
     }
 
     @Test
-    void anIssueInAStateTheBoardDoesNotKnowIsAFault() throws Exception {
+    void anIssueInAStateTheBoardDoesNotKnowIsShownWarnedOfAndIsNoFault() throws Exception {
         repositories.repository(
                 "porelo-other",
                 Map.of(
@@ -391,8 +400,14 @@ class GitStoreReadTest {
                         issue("CD02", "Waiting", "Waiting", "")));
         final Board board = store(null).board();
         assertThat(board.faults())
-                .as("the issue and its state are named")
-                .anyMatch(fault -> fault.contains("CD02") && fault.contains("Waiting"));
+                .as("the issue is no fault of the board")
+                .noneMatch(fault -> fault.contains("CD02"));
+        assertThat(board.issue("CD02").orElseThrow())
+                .as("the issue stands in its own state, warned of")
+                .extracting(Issue::state, Issue::warnings)
+                .containsExactly(
+                        "Waiting",
+                        List.of(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()));
         assertThat(board.issues()).as("the others stand").extracting(Issue::id).contains("CD01");
     }
 
@@ -411,13 +426,18 @@ class GitStoreReadTest {
                         issue("CD03", "Planned", "Backlog", "")));
         final Board board = store(null).board();
         assertThat(board.faults())
-                .as("the issue in a state only the repository's own workflow names is a fault")
-                .anyMatch(fault -> fault.contains("CD02") && fault.contains("Waiting"))
-                .noneMatch(fault -> fault.contains("CD03"));
+                .as("neither issue is a fault")
+                .noneMatch(fault -> fault.contains("CD02") || fault.contains("CD03"));
         assertThat(board.issues())
-                .as("the board is served, with the issue in a state of the project's workflow")
-                .extracting(Issue::id)
-                .containsExactlyInAnyOrder("AB01", "AB01.1", "CD01", "CD03");
+                .as("the issue in a state only the repository's own workflow names is warned of")
+                .extracting(Issue::id, Issue::warnings)
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "CD02",
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning
+                                                .stateOutsideWorkflow())),
+                        org.assertj.core.groups.Tuple.tuple("CD03", List.of()));
     }
 
     @Test

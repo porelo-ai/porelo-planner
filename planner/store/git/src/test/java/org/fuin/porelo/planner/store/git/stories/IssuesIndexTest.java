@@ -228,6 +228,66 @@ class IssuesIndexTest {
                 .contains("never edited by hand");
     }
 
+    // Prevents one hand-edited issue, in a state the workflow lacks or under an id another file
+    // carries, from refusing every save of the board; the issues command still refuses it.
+    @Test
+    void forTheBoardAnIssueItWarnsAboutGetsNoRowAndIsNoFaultWhileTheCommandStillRefusesIt()
+            throws IOException {
+        IssuesIndex.convert(issues);
+        IssuesIndex.write(issues);
+        final Workflow workflow = Workflow.read(issues.resolve("workflow.yml"));
+        final Path fourteen = issues.resolve("EX14-Fourteen.md");
+        Files.writeString(
+                fourteen,
+                Files.readString(fourteen)
+                        .replace("\"state\": \"Backlog\"", "\"state\": \"Parked\""));
+        final Path twelve = issues.resolve("EX12-Twelve.md");
+        final Path again = issues.resolve("EX12-Again.md");
+        Files.writeString(again, Files.readString(twelve));
+        final Map<Path, String> before = texts();
+
+        final IssuesIndex.Result written = IssuesIndex.writeForBoard(issues, workflow);
+
+        assertThat(written.faults()).as("no fault for the warned issues").isEmpty();
+        final String index = Files.readString(issues.resolve("README.md"));
+        assertThat(index)
+                .as("no row for an issue the board warns about, the others kept")
+                .doesNotContain("<a id=\"ex14\">")
+                .doesNotContain("<a id=\"ex12\">")
+                .contains("<a id=\"ex10\">");
+        final Map<Path, String> after = texts();
+        after.remove(issues.resolve("README.md"));
+        before.remove(issues.resolve("README.md"));
+        assertThat(after).as("every issue file as it stood").isEqualTo(before);
+        assertThat(IssuesIndex.writeForBoard(issues, workflow).written())
+                .as("a second write changes nothing")
+                .isEmpty();
+        assertThat(IssuesIndex.write(issues, workflow).faults())
+                .as("the command's write still refuses both, with its own lines")
+                .hasSize(2)
+                .contains("EX12-Twelve.md: id EX12 also stands in EX12-Again.md")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .startsWith("EX14-Fourteen.md: /state: ")
+                                        .endsWith("unknown state: Parked"));
+    }
+
+    // Prevents the board's write from writing a clean repository's index otherwise than the
+    // issues command does.
+    @Test
+    void forTheBoardACleanRepositorysIndexIsWrittenAsTheCommandWritesIt() throws IOException {
+        IssuesIndex.convert(issues);
+        final Workflow workflow = Workflow.read(issues.resolve("workflow.yml"));
+        IssuesIndex.write(issues, workflow);
+        final Map<Path, String> command = texts();
+        Files.writeString(issues.resolve("README.md"), INDEX);
+
+        assertThat(IssuesIndex.writeForBoard(issues, workflow).faults()).isEmpty();
+
+        assertThat(texts()).as("the same files, byte for byte").isEqualTo(command);
+    }
+
     // Prevents a wait or a parent on nothing, or a head another heading contradicts, from passing.
     @Test
     void refusesWhatAHeadNamesThatIsNotThere() throws IOException {

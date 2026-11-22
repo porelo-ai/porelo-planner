@@ -54,8 +54,27 @@ public record Story(
      *     "; "}
      */
     public static Story read(String text, Workflow workflow) {
+        return read(text, workflow, false);
+    }
+
+    /**
+     * Reads a story as the board shows it: a stated state the workflow does not know is read as it
+     * stands, for the board to warn about; every other fault refuses it as {@link #read(String,
+     * Workflow)} does.
+     *
+     * @param text the story file's text
+     * @param workflow the states a story may be in
+     * @return the story
+     * @throws IllegalArgumentException when the index would refuse the story's head for anything
+     *     but its state
+     */
+    public static Story readForBoard(String text, Workflow workflow) {
+        return read(text, workflow, true);
+    }
+
+    private static Story read(String text, Workflow workflow, boolean anyState) {
         final List<String> faults = new ArrayList<>();
-        final Heads.Parsed parsed = Heads.parse(text, faults, workflow);
+        final Heads.Parsed parsed = Heads.parse(text, faults, workflow, anyState);
         if (parsed == null || !faults.isEmpty())
             throw new IllegalArgumentException(String.join("; ", faults));
         final JsonNode data = parsed.data();

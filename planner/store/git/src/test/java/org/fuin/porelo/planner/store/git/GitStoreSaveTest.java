@@ -636,6 +636,77 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aSaveBesideAnIssueAndAStoryTheBoardWarnsAboutIsMadeAndLeavesTheirFilesAsTheyStood()
+            throws Exception {
+        // One hand-edited file, refused by the index writers, would refuse every save of the
+        // project until someone mends it outside the planner.
+        final String parked = issue("AB03", "Parked");
+        final String naming = story("ST4", "", "\"porelo-store#AB03\"");
+        repositories.repository(
+                OWN, Map.of("issues/AB03-Parked.md", parked, "stories/ST4-Warned.md", naming));
+        final GitStore store = store();
+        final Board board = store.board();
+        assertThat(board.issue("AB03").orElseThrow().warnings())
+                .as("the hand-edited issue stands on the board, warned of")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow());
+
+        final Board saved =
+                store.save(board.revision(), writes(Map.of("AB01", "Review"), Map.of(), List.of()));
+
+        assertThat(saved.issue("AB01").orElseThrow().state())
+                .as("the move beside it is saved")
+                .isEqualTo("Review");
+        assertThat(read(OWN, "issues/AB03-Parked.md"))
+                .as("the warned issue's file as it stood")
+                .isEqualTo(parked);
+        assertThat(read(OWN, "stories/ST4-Warned.md"))
+                .as("the story naming it, as it stood")
+                .isEqualTo(naming);
+        assertThat(read(OWN, "issues/README.md"))
+                .as("the warned issue has no row")
+                .doesNotContain("<a id=\"ab03\">");
+        assertThat(read(OWN, "stories/README.md"))
+                .as("nor has the story naming it")
+                .doesNotContain("[ST4]");
+        assertThat(saved.story("ST4")).as("the board still shows the story").isPresent();
+    }
+
+    @Test
+    void aStoryWithoutAStateTheBoardCanTellIsGivenTheStateItIsMovedTo() throws Exception {
+        // Written as an empty state, the move would leave the story without one still, and a
+        // head the index refuses.
+        repositories.repository(
+                OWN,
+                Map.of(
+                        "issues/AB03-Parked.md",
+                        issue("AB03", "Parked"),
+                        "stories/ST5-Bare.md",
+                        story("ST5", "", "\"porelo-store#AB03\"")));
+        final GitStore store = store();
+        final Board board = store.board();
+        assertThat(board.story("ST5").orElseThrow())
+                .as("no state the board can tell, warned of")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly("", List.of(org.fuin.porelo.planner.store.Warning.noState()));
+
+        final Board saved =
+                store.save(board.revision(), writes(Map.of(), Map.of("ST5", "Idea"), List.of()));
+
+        assertThat(read(OWN, "stories/ST5-Bare.md"))
+                .as("the head carries the state the story was moved to")
+                .contains("\"state\": \"Idea\"");
+        assertThat(saved.story("ST5").orElseThrow())
+                .as("the story stands in that state, given, and no longer without one")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::stateGiven,
+                        org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly("Idea", true, List.of());
+    }
+
+    @Test
     void aStorysStatedStateIsWrittenAndRemovedInItsHead() throws Exception {
         // A stated state left behind would hold the story where its issues no longer stand.
         final GitStore store = store();

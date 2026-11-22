@@ -41,6 +41,7 @@ import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -495,7 +496,10 @@ public final class GitStore implements PlanningStore {
         if (workflow == null) {
             throw new IllegalStateException("No board was read yet");
         }
-        return workflow.storyState(null, issueStates);
+        // An issue in a state the workflow does not know gives a story none.
+        final List<String> known =
+                issueStates.stream().filter(state -> workflow.states().contains(state)).toList();
+        return known.isEmpty() ? null : workflow.storyState(null, known);
     }
 
     /** Each written issue's file and new state, by repository; every issue checked savable. */
@@ -767,7 +771,8 @@ public final class GitStore implements PlanningStore {
             final org.fuin.porelo.planner.store.git.stories.StoriesIndex.Result index;
             try {
                 index =
-                        org.fuin.porelo.planner.store.git.stories.StoriesIndex.write(
+                        // As the board reads the stories, so one it warns about refuses no save.
+                        org.fuin.porelo.planner.store.git.stories.StoriesIndex.writeForBoard(
                                 ownRoot.resolve("stories"),
                                 org.fuin.porelo.planner.store.git.stories.IssueSource.local(
                                         ownRoot, project(of(snapshot.parts(), own))));
@@ -1135,7 +1140,8 @@ public final class GitStore implements PlanningStore {
         final org.fuin.porelo.planner.store.git.stories.IssuesIndex.Result index;
         try {
             index =
-                    org.fuin.porelo.planner.store.git.stories.IssuesIndex.write(
+                    // As the board reads the heads, so an issue it warns about refuses no save.
+                    org.fuin.porelo.planner.store.git.stories.IssuesIndex.writeForBoard(
                             root.resolve("issues"),
                             project(of(snapshot.parts(), repositories.get(0).name())));
         } catch (final IOException | UncheckedIOException e) {
@@ -1565,30 +1571,32 @@ public final class GitStore implements PlanningStore {
             throw new StoreException.WorkflowMissing(own);
         }
         final List<String> faults = new ArrayList<>();
-        final Map<String, Issue> known = new LinkedHashMap<>();
-        final Set<String> twice = new HashSet<>();
+        final List<Issue> found = new ArrayList<>();
         for (final Repository repository : repositories) {
             faults.addAll(of(parts, repository.name()).faults());
-            for (final Issue issue : of(parts, repository.name()).issues()) {
-                if (!read.states().contains(issue.state())) {
-                    faults.add(
-                            issue.repository()
-                                    + "#"
-                                    + issue.id()
-                                    + " is in "
-                                    + issue.state()
-                                    + ", which the board's workflow does not know, and is left out");
-                } else if (known.containsKey(issue.id()) || twice.contains(issue.id())) {
-                    twice.add(issue.id());
-                    known.remove(issue.id());
-                    faults.add(issue.id() + " is in two repositories, and is left out");
-                } else {
-                    known.put(issue.id(), issue);
-                }
-            }
+            found.addAll(of(parts, repository.name()).issues());
         }
         faults.addAll(pushFaults(parts));
-        final List<Issue> issues = new ArrayList<>(known.values());
+        // Every issue read is shown: one the planner cannot place carries why, never left out.
+        final Map<String, Long> ids =
+                found.stream()
+                        .collect(
+                                java.util.stream.Collectors.groupingBy(
+                                        Issue::id, java.util.stream.Collectors.counting()));
+        final List<Issue> issues = new ArrayList<>();
+        for (final Issue issue : found) {
+            final List<Warning> warnings = new ArrayList<>(issue.warnings());
+            if (!read.states().contains(issue.state())) {
+                warnings.add(Warning.stateOutsideWorkflow());
+            }
+            if (ids.getOrDefault(issue.id(), 0L) > 1) {
+                warnings.add(Warning.idTwice());
+            }
+            issues.add(
+                    warnings.size() == issue.warnings().size()
+                            ? issue
+                            : issue.withWarnings(warnings));
+        }
         final Revision revision = new Revision(revision(commits));
         try {
             final Workflow workflow =
@@ -1598,16 +1606,25 @@ public final class GitStore implements PlanningStore {
                                     .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
                                     .toList(),
                             read.states().stream().filter(read::closed).toList());
-            final Map<String, Issue> byId = new LinkedHashMap<>();
-            issues.forEach(issue -> byId.put(issue.id(), issue));
+            // By repository and id, so a second issue of one id never hides the first.
+            final Map<String, List<Issue>> byReference = new LinkedHashMap<>();
+            issues.forEach(
+                    issue ->
+                            byReference
+                                    .computeIfAbsent(
+                                            issue.repository() + "#" + issue.id(),
+                                            key -> new ArrayList<>())
+                                    .add(issue));
+            final Map<String, Long> storyIds =
+                    ownPart.stories().stream()
+                            .collect(
+                                    java.util.stream.Collectors.groupingBy(
+                                            org.fuin.porelo.planner.store.git.stories.Story::id,
+                                            java.util.stream.Collectors.counting()));
             final List<Story> stories = new ArrayList<>();
             for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
-                try {
-                    stories.add(story(story, byId, read, faults));
-                } catch (final IllegalArgumentException e) {
-                    // A story whose state cannot be told is left out, not the project's board.
-                    faults.add(e.getMessage() + ", and the story is left out");
-                }
+                stories.add(
+                        story(story, byReference, read, storyIds.getOrDefault(story.id(), 0L) > 1));
             }
             final Work work = ownPart.work();
             return new Board(
@@ -1624,46 +1641,57 @@ public final class GitStore implements PlanningStore {
     }
 
     /**
-     * A story as the board shows it: its issues by id, and its state as the stories index gives it.
+     * A story as the board shows it: its issues by repository and id, and its state as the stories
+     * index gives it from its issues in states the workflow knows. What cannot be read in it is
+     * named by its warnings, never by leaving it out.
      */
     private Story story(
             final org.fuin.porelo.planner.store.git.stories.Story story,
-            final Map<String, Issue> issues,
+            final Map<String, List<Issue>> issues,
             final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
-            final List<String> faults) {
+            final boolean twice) {
+        final List<Warning> warnings = new ArrayList<>();
         final List<String> ids = new ArrayList<>();
         final List<String> states = new ArrayList<>();
         boolean dropped = false;
         for (final String reference : story.issues()) {
             final int hash = reference.indexOf('#');
-            final String repository = reference.substring(0, Math.max(hash, 0));
-            final Issue issue = issues.get(reference.substring(hash + 1));
-            if (issue == null || !issue.repository().equals(repository)) {
+            final List<Issue> found = issues.getOrDefault(reference, List.of());
+            if (hash <= 0 || found.isEmpty()) {
                 // Read by its number alone, the story would show another repository's issue.
-                faults.add(
-                        story.id()
-                                + ": "
-                                + reference
-                                + " is no issue of the project's repositories, and is left out");
                 dropped = true;
                 continue;
             }
-            ids.add(issue.id());
-            states.add(issue.state());
+            final String id = found.getFirst().id();
+            if (!ids.contains(id)) {
+                ids.add(id);
+            }
+            for (final Issue issue : found) {
+                if (workflow.states().contains(issue.state())) {
+                    states.add(issue.state());
+                }
+            }
+        }
+        if (dropped) {
+            warnings.add(Warning.issueOutsideProject());
+        }
+        if (twice) {
+            warnings.add(Warning.idTwice());
         }
         final String stated = story.state();
-        if (stated == null && states.isEmpty()) {
-            throw new IllegalArgumentException(
-                    story.id()
-                            + (dropped
-                                    ? " states no state and none of its issues is there"
-                                    : " states no state and names no issue"));
-        }
-        // With issues the rule reads only their states, never the stated one.
-        final String state = stated != null ? stated : workflow.storyState(null, states);
-        if (state == null) {
-            throw new IllegalArgumentException(
-                    story.id() + ": no state follows from its issues' states " + states);
+        final String state;
+        if (stated != null) {
+            state = stated;
+            if (!workflow.states().contains(stated)) {
+                warnings.add(Warning.stateOutsideWorkflow());
+            }
+        } else if (states.isEmpty()) {
+            // Its issues give no state the workflow knows, and it states none.
+            state = "";
+            warnings.add(Warning.noState());
+        } else {
+            // With issues the rule reads only their states, never the stated one.
+            state = java.util.Objects.requireNonNull(workflow.storyState(null, states));
         }
         return new Story(
                 story.id(),
@@ -1675,7 +1703,8 @@ public final class GitStore implements PlanningStore {
                 ids,
                 story.body(),
                 null,
-                !dropped);
+                !dropped,
+                warnings);
     }
 
     private static <T> T of(final Map<String, T> map, final String repository) {

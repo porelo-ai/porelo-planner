@@ -51,7 +51,18 @@ public final class StoriesIndex {
     private final List<String> notes = new ArrayList<>();
     private final Map<String, Map<String, IssueIndex>> indexes = new LinkedHashMap<>();
 
+    /**
+     * Whether the index is written as the board reads the stories: a story the board shows with a
+     * warning gets no row, its file is left as it stands, and it is no fault.
+     */
+    private final boolean forBoard;
+
     private StoriesIndex(IssueSource source, Path storiesDir) throws IOException {
+        this(source, storiesDir, false);
+    }
+
+    private StoriesIndex(IssueSource source, Path storiesDir, boolean forBoard) throws IOException {
+        this.forBoard = forBoard;
         refuseSymlink(storiesDir);
         refuseSymlink(storiesDir.resolve("workflow.yml"));
         this.workflow = Workflow.read(storiesDir.resolve("workflow.yml"));
@@ -106,6 +117,23 @@ public final class StoriesIndex {
         return new StoriesIndex(source, storiesDir).write(storiesDir);
     }
 
+    /**
+     * Writes as {@link #write(Path, IssueSource)} does, but as the board reads the stories: a story
+     * whose stated state the workflow does not know, whose id two files carry, whose state cannot
+     * be told, or that names an issue with no row in its repository's index, which an issue the
+     * board warns about has none of, gets no row and is no fault, and its file is left as it
+     * stands. The stories command and the commit check never write this way.
+     *
+     * @param storiesDir the stories directory below a project.yml
+     * @param source the only source of issue indexes
+     * @return faults or the changed and created paths actually written
+     * @throws IllegalArgumentException when project configuration or an issue state is invalid
+     * @throws IOException when an input cannot be read or an output cannot be written
+     */
+    public static Result writeForBoard(Path storiesDir, IssueSource source) throws IOException {
+        return new StoriesIndex(source, storiesDir, true).write(storiesDir);
+    }
+
     private Map<String, IssueIndex> index(String repository) throws IOException {
         Map<String, IssueIndex> rows = indexes.get(repository);
         if (rows == null) {
@@ -125,6 +153,12 @@ public final class StoriesIndex {
      */
     static Map<String, Heads.Head> read(Path dir, List<String> faults, Workflow workflow)
             throws IOException {
+        return read(dir, faults, workflow, false);
+    }
+
+    /** Reads every story's head; for the board, one whose id two files carry is left out. */
+    static Map<String, Heads.Head> read(
+            Path dir, List<String> faults, Workflow workflow, boolean forBoard) throws IOException {
         refuseSymlink(dir);
         if (!Files.isDirectory(dir)) {
             throw new IOException("no such directory");
@@ -138,9 +172,10 @@ public final class StoriesIndex {
         }
         for (final Path file : files) refuseSymlink(file);
         final Map<String, Heads.Head> heads = new LinkedHashMap<>();
+        final java.util.Set<String> twice = new java.util.HashSet<>();
         for (final Path file : files) {
             if (file.getFileName().toString().equals(INDEX)) continue;
-            final Heads.Head head = Heads.read(file, faults, workflow);
+            final Heads.Head head = Heads.read(file, faults, workflow, forBoard);
             if (head == null) {
                 continue;
             }
@@ -152,9 +187,15 @@ public final class StoriesIndex {
             }
             final Heads.Head before = heads.putIfAbsent(id, head);
             if (before != null) {
-                faults.add(name + ": id " + id + " also stands in " + before.file().getFileName());
+                if (forBoard) {
+                    twice.add(id);
+                } else {
+                    faults.add(
+                            name + ": id " + id + " also stands in " + before.file().getFileName());
+                }
             }
         }
+        twice.forEach(heads::remove);
         return heads;
     }
 
@@ -241,7 +282,7 @@ public final class StoriesIndex {
      * otherwise a story takes the earliest open issue state in board order.
      */
     private Generated generate(Path dir, List<String> faults) throws IOException {
-        final Map<String, Heads.Head> heads = read(dir, faults, workflow);
+        final Map<String, Heads.Head> heads = read(dir, faults, workflow, forBoard);
         if (!faults.isEmpty()) {
             return new Generated("", Map.of(), heads.size());
         }
@@ -252,6 +293,9 @@ public final class StoriesIndex {
         for (final Heads.Head head : heads.values()) {
             final String name = head.file().getFileName().toString();
             final String stated = head.data().path("state").asText();
+            if (forBoard && !stated.isEmpty() && !workflow.states().contains(stated)) {
+                continue;
+            }
             final JsonNode tested = head.data().get("tested");
             if (!tested.isNull() && !isDay(tested.asText())) {
                 faults.add(name + ": /tested: " + tested.asText() + " is no day");
@@ -264,12 +308,15 @@ public final class StoriesIndex {
                 final String repository = issue.substring(0, issue.indexOf('#'));
                 final String number = issue.substring(issue.indexOf('#') + 1);
                 if (!project.repositories().containsKey(repository)) {
-                    faults.add(name + ": " + issue + " names a repository project.yml does not");
+                    if (!forBoard)
+                        faults.add(
+                                name + ": " + issue + " names a repository project.yml does not");
                     continue;
                 }
                 final IssueIndex row = index(repository).get(number);
                 if (row == null) {
-                    faults.add(name + ": " + issue + " is in no issue index of " + repository);
+                    if (!forBoard)
+                        faults.add(name + ": " + issue + " is in no issue index of " + repository);
                     continue;
                 }
                 issues.add(
@@ -285,6 +332,8 @@ public final class StoriesIndex {
             }
 
             if (issueStates.size() != head.data().get("issues").size()) continue;
+            // A story whose state cannot be told stands on the board without one, not here.
+            if (forBoard && issueStates.isEmpty() && stated.isEmpty()) continue;
             // A legacy head's state beside issues is no one's word: the migration drops it.
             final boolean given = head.data().has("$schema") && head.data().has("state");
             // A stated state is given, so the rule gives one too.

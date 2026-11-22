@@ -112,13 +112,26 @@ public final class IssuesIndex {
     /** Where each repository's pages are, by name, as the project's {@code project.yml} says. */
     private final Map<String, String> webs;
 
+    /**
+     * Whether the index is written as the board reads the heads: an issue whose state the workflow
+     * does not know, or whose id two files carry, gets no row and is no fault, so one hand-edited
+     * file refuses no other save.
+     */
+    private final boolean forBoard;
+
     private IssuesIndex(Path root, Workflow workflow) throws IOException {
+        this(root, workflow, false);
+    }
+
+    private IssuesIndex(Path root, Workflow workflow, boolean forBoard) throws IOException {
         this.root = root;
         this.workflow = workflow;
+        this.forBoard = forBoard;
         final Path parent = root.toAbsolutePath().normalize().getParent();
         this.project =
                 parent != null && Files.isRegularFile(parent.resolve("stories/workflow.yml"));
         scan();
+        if (forBoard) leaveOutWarned();
         this.webs =
                 project && parent != null && waitsElsewhere()
                         ? webs(parent.resolve("project.yml"))
@@ -200,6 +213,46 @@ public final class IssuesIndex {
         StoriesIndex.refuseSymlink(root);
         if (!Files.isDirectory(root)) throw new IOException(root + ": no such directory");
         return write(new IssuesIndex(root, workflow));
+    }
+
+    /**
+     * Writes each directory's index as {@link #write(Path, Workflow)} does, but as the board reads
+     * the heads: an issue whose state the workflow does not know, or whose id two files carry, the
+     * board shows with a warning, so it gets no row here and refuses nothing, and its file is left
+     * as it stands. The issues command and the commit check never write this way.
+     *
+     * @param root the issues directory
+     * @param workflow the project's workflow
+     * @return the faults, or the indexes written
+     * @throws IOException when an input cannot be read or an index cannot be written
+     * @throws IllegalArgumentException when an index has a heading the workflow does not name
+     */
+    public static Result writeForBoard(Path root, Workflow workflow) throws IOException {
+        StoriesIndex.refuseSymlink(root);
+        if (!Files.isDirectory(root)) throw new IOException(root + ": no such directory");
+        return write(new IssuesIndex(root, workflow, true));
+    }
+
+    /**
+     * Takes the head from each issue the board warns about, so it is read as a file without a head
+     * yet: known as an issue of the repository, but given no row.
+     */
+    private void leaveOutWarned() {
+        final Map<String, Integer> ids = new HashMap<>();
+        for (final Issue issue : all())
+            if (issue.head() != null) ids.merge(issue.head().head().id(), 1, Integer::sum);
+        for (final Map.Entry<Path, List<Issue>> dir : issues.entrySet()) {
+            final List<Issue> kept = new ArrayList<>();
+            for (final Issue issue : dir.getValue()) {
+                final IssueHead.Located located = issue.head();
+                final boolean warned =
+                        located != null
+                                && (!workflow.states().contains(located.head().state())
+                                        || ids.getOrDefault(located.head().id(), 0) > 1);
+                kept.add(warned ? new Issue(issue.file(), issue.id(), issue.text(), null) : issue);
+            }
+            dir.setValue(kept);
+        }
     }
 
     private static Result write(IssuesIndex index) throws IOException {
@@ -310,7 +363,7 @@ public final class IssuesIndex {
             IssueHead.Located head = null;
             if (IssueHead.present(text)) {
                 final List<String> faults = new ArrayList<>();
-                head = IssueHead.locate(text, workflow, faults);
+                head = IssueHead.locate(text, workflow, faults, forBoard);
                 for (final String fault : faults) headFaults.add(relative(path) + ": " + fault);
             }
             issues.computeIfAbsent(dir, key -> new ArrayList<>())

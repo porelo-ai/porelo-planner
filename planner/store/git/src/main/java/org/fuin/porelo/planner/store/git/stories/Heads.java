@@ -71,10 +71,16 @@ final class Heads {
      */
     static @Nullable Head read(Path file, List<String> faults, Workflow workflow)
             throws IOException {
+        return read(file, faults, workflow, false);
+    }
+
+    /** Reads a file's head; with {@code anyState} a state the workflow lacks is no fault. */
+    static @Nullable Head read(Path file, List<String> faults, Workflow workflow, boolean anyState)
+            throws IOException {
         final String name = String.valueOf(file.getFileName());
         final List<String> found = new ArrayList<>();
         final Parsed parsed =
-                parse(Files.readString(file, StandardCharsets.UTF_8), found, workflow);
+                parse(Files.readString(file, StandardCharsets.UTF_8), found, workflow, anyState);
         for (final String fault : found) faults.add(name + ": " + fault);
         return parsed == null
                 ? null
@@ -97,6 +103,15 @@ final class Heads {
      *     whose heading differs is returned with that fault added
      */
     static @Nullable Parsed parse(String text, List<String> faults, Workflow workflow) {
+        return parse(text, faults, workflow, false);
+    }
+
+    /**
+     * Reads a story's head as {@link #parse(String, List, Workflow)} does; with {@code anyState} a
+     * stated state the workflow does not know is no fault.
+     */
+    static @Nullable Parsed parse(
+            String text, List<String> faults, Workflow workflow, boolean anyState) {
         final List<String> lines = List.of(text.split("\n", -1));
         if (!lines.getFirst().startsWith("# ")) {
             faults.add("the first line is no heading");
@@ -129,7 +144,8 @@ final class Heads {
             return null;
         }
         final List<String> errors = StorySchema.faults(data);
-        if (data.path("state").isTextual()
+        if (!anyState
+                && data.path("state").isTextual()
                 && !workflow.states().contains(data.path("state").asText())) {
             try {
                 workflow.order(data.path("state").asText());

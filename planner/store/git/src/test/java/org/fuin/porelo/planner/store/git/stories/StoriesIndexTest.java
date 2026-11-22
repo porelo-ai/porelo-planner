@@ -148,6 +148,100 @@ class StoriesIndexTest {
                 .doesNotContain("github.com");
     }
 
+    private static String story(String id, String state, String issues) {
+        return "# "
+                + id
+                + " — A title\n\n## Data\n\n```json\n{\"$schema\":\"story-2.json\",\"id\":\""
+                + id
+                + "\",\"title\":\"A title\","
+                + state
+                + "\"priority\":\"High\",\"gain\":\"A gain.\",\"test\":\"A test.\",\"issues\":["
+                + issues
+                + "],\"tested\":null}\n```\n";
+    }
+
+    // Prevents one hand-edited story, or a story naming an issue the board warns about, from
+    // refusing every save of the board; the stories command still refuses it.
+    @Test
+    void forTheBoardAStoryItWarnsAboutGetsNoRowAndIsNoFaultWhileTheCommandStillRefusesIt()
+            throws IOException {
+        final Path dir = fixture("warned");
+        Files.writeString(
+                dir.getParent().resolve("project.yml"),
+                """
+                project:
+                  central: "git@github.com:porelo-ai/porelo-project.git"
+                repositories:
+                  widget:
+                    central: "git@github.com:porelo-ai/porelo-widget.git"
+                    issues: [AB]
+                """);
+        final IssueSource source =
+                repository ->
+                        repository.equals("porelo-widget")
+                                ? "# Issues\n\n## Review\n| AB01 | S | - | A widget. |\n"
+                                : "# Issues\n";
+        Files.writeString(dir.resolve("ST1.md"), story("ST1", "", "\"porelo-widget#AB01\""));
+        Files.writeString(dir.resolve("ST2.md"), story("ST2", "\"state\":\"Parked\",", ""));
+        Files.writeString(dir.resolve("ST3.md"), story("ST3", "\"state\":\"Idea\",", ""));
+        Files.writeString(dir.resolve("ST3-Copy.md"), story("ST3", "\"state\":\"Idea\",", ""));
+        Files.writeString(dir.resolve("ST4.md"), story("ST4", "", "\"porelo-widget#AB02\""));
+        Files.writeString(dir.resolve("ST5.md"), story("ST5", "", "\"porelo-other#CD01\""));
+        final java.util.Map<String, String> before = new java.util.TreeMap<>();
+        for (final String name :
+                new String[] {"ST2.md", "ST3.md", "ST3-Copy.md", "ST4.md", "ST5.md"})
+            before.put(name, Files.readString(dir.resolve(name)));
+
+        assertThat(StoriesIndex.writeForBoard(dir, source).faults())
+                .as("no fault for the warned stories")
+                .isEmpty();
+
+        assertThat(Files.readString(dir.resolve("README.md")))
+                .as("a row for the story the board shows without a warning alone")
+                .contains("[ST1]")
+                .doesNotContain("[ST2]", "[ST3]", "[ST4]", "[ST5]");
+        final java.util.Map<String, String> after = new java.util.TreeMap<>();
+        for (final String name : before.keySet())
+            after.put(name, Files.readString(dir.resolve(name)));
+        assertThat(after).as("every warned story's file as it stood").isEqualTo(before);
+        assertThat(StoriesIndex.writeForBoard(dir, source).written())
+                .as("a second write changes nothing")
+                .isEmpty();
+        assertThat(StoriesIndex.write(dir, source).faults())
+                .as("the command's write still refuses each, with its own lines")
+                .hasSize(2)
+                .contains("ST3.md: id ST3 also stands in ST3-Copy.md")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .startsWith("ST2.md: /state: ")
+                                        .endsWith("unknown state: Parked"));
+        // The command reads every head before it gives any story a row.
+        for (final String name : new String[] {"ST2.md", "ST3.md", "ST3-Copy.md"})
+            Files.delete(dir.resolve(name));
+        assertThat(StoriesIndex.write(dir, source).faults())
+                .as("the command's write still refuses the stories naming no indexed issue")
+                .containsExactly(
+                        "ST4.md: porelo-widget#AB02 is in no issue index of porelo-widget",
+                        "ST5.md: porelo-other#CD01 names a repository project.yml does not");
+    }
+
+    // Prevents the board's write from writing a clean project's stories otherwise than the
+    // stories command does.
+    @Test
+    void forTheBoardACleanProjectsStoriesAreWrittenAsTheCommandWritesThem() throws IOException {
+        final Path command = fixture("command");
+        final Path board = fixture("board");
+
+        assertThat(StoriesIndex.write(command, SOURCE).faults()).isEmpty();
+        assertThat(StoriesIndex.writeForBoard(board, SOURCE).faults()).isEmpty();
+
+        for (final String name : new String[] {"README.md", "ST1.md"})
+            assertThat(Files.readString(board.resolve(name)))
+                    .as("%s byte for byte", name)
+                    .isEqualTo(Files.readString(command.resolve(name)));
+    }
+
     // Prevents a writer from truncating content held by an existing reader or hard link.
     @Test
     void replacesChangedFilesWithoutChangingTheirPreviousInodes() throws IOException {

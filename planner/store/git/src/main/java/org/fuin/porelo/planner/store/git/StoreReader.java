@@ -98,7 +98,8 @@ public final class StoreReader implements PartReader {
         if (!issueFiles.isEmpty() || !pages.isEmpty()) {
             // An issue whose file is there but cannot be read is never taken from its index row.
             final Set<String> headed = new HashSet<>();
-            final Map<String, Issue> byId = new LinkedHashMap<>();
+            // An id two files carry keeps both, for the board to warn about; neither gets a path,
+            // so no save writes either.
             final Set<String> twice = new HashSet<>();
             // Each page read, kept for the reading of how the pages cite an issue.
             final Map<String, String> texts = new LinkedHashMap<>();
@@ -116,25 +117,14 @@ public final class StoreReader implements PartReader {
                     continue;
                 }
                 headed.add(issue.id());
-                if (byId.containsKey(issue.id()) || twice.contains(issue.id())) {
+                if (paths.containsKey(issue.id()) || twice.contains(issue.id())) {
                     twice.add(issue.id());
-                    faults.add(
-                            name
-                                    + ": "
-                                    + issue.id()
-                                    + " is read from two files, "
-                                    + paths.getOrDefault(issue.id(), "")
-                                    + " and "
-                                    + file
-                                    + ", and is left out");
-                    byId.remove(issue.id());
-                    continue;
+                } else {
+                    paths.put(issue.id(), file);
                 }
-                byId.put(issue.id(), issue);
-                paths.put(issue.id(), file);
+                read.add(issue);
             }
             twice.forEach(paths::remove);
-            read.addAll(byId.values());
             // A finished or rejected issue's file is deleted; its index row is all that is left.
             final Map<String, Map<String, IssueIndex>> parsed = new LinkedHashMap<>();
             final Set<String> settled = new java.util.TreeSet<>();
@@ -166,40 +156,31 @@ public final class StoreReader implements PartReader {
         if (!own) {
             return new Part(null, List.of(), issues, null, paths, faults);
         }
-        final Map<String, Story> stories = new LinkedHashMap<>();
+        final List<Story> stories = new ArrayList<>();
         final Set<String> twice = new HashSet<>();
         for (final String file : bounded(remote.list(name, commit, "stories"))) {
             if (STORY_FILE.matcher(file.substring(file.lastIndexOf('/') + 1)).matches()) {
                 final Story story;
                 try {
-                    story = Story.read(text(name, commit, file), workflow);
+                    story = Story.readForBoard(text(name, commit, file), workflow);
                 } catch (final IllegalArgumentException e) {
                     faults.add(name + ": " + file + ": " + e.getMessage());
                     continue;
                 }
-                if (stories.containsKey(story.id()) || twice.contains(story.id())) {
-                    // Kept as one, a move would write whichever file was read last.
+                // Both copies are kept for the board to warn about; neither gets a path, so a move
+                // never writes whichever file was read last.
+                if (paths.containsKey(Part.story(story.id())) || twice.contains(story.id())) {
                     twice.add(story.id());
-                    faults.add(
-                            name
-                                    + ": "
-                                    + story.id()
-                                    + " is read from two files, "
-                                    + paths.getOrDefault(Part.story(story.id()), "")
-                                    + " and "
-                                    + file
-                                    + ", and is left out");
-                    stories.remove(story.id());
-                    continue;
+                } else {
+                    paths.put(Part.story(story.id()), file);
                 }
-                stories.put(story.id(), story);
-                paths.put(Part.story(story.id()), file);
+                stories.add(story);
             }
         }
         twice.forEach(id -> paths.remove(Part.story(id)));
         return new Part(
                 workflow,
-                List.copyOf(stories.values()),
+                List.copyOf(stories),
                 issues,
                 WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
                 paths,
@@ -414,7 +395,8 @@ public final class StoreReader implements PartReader {
     }
 
     private Issue issue(final String repository, final String text, final Workflow workflow) {
-        final IssueHead head = IssueHead.read(text, workflow);
+        // A state the workflow does not know is read as it stands, for the board to warn about.
+        final IssueHead head = IssueHead.readForBoard(text, workflow);
         if (head == null) {
             throw new IllegalArgumentException("it has no JSON head");
         }

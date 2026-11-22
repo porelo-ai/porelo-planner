@@ -196,6 +196,151 @@ class GitStoreTest {
         return board.issue(id).orElseThrow().title();
     }
 
+    /**
+     * A store over parts the test gives: the own repository's stories and issues, the other's
+     * issues.
+     */
+    private GitStore store(
+            final List<org.fuin.porelo.planner.store.git.stories.Story> stories,
+            final List<Issue> own,
+            final List<Issue> other) {
+        return new GitStore(
+                List.of(OWN, OTHER),
+                remote,
+                (repository, commit, project) ->
+                        project == null
+                                ? new Part(WORKFLOW, stories, own, null)
+                                : new Part(null, List.of(), other, null),
+                inProcess(),
+                clock,
+                Duration.ofSeconds(10),
+                4,
+                queue);
+    }
+
+    private static Issue issue(final String id, final String repository, final String state) {
+        return new Issue(id, repository, "Issue " + id, state, null, List.of(), null, null, "");
+    }
+
+    private static org.fuin.porelo.planner.store.git.stories.Story story(
+            final String id, final @Nullable String state, final String... issues) {
+        return new org.fuin.porelo.planner.store.git.stories.Story(
+                id, "Story " + id, state, "High", null, List.of(issues), "");
+    }
+
+    @Test
+    void anIssueTheBoardCannotPlaceIsShownWithWhyAndLeftOutOfNoBoard() {
+        // A hand edit that puts an issue in a state the workflow lacks, or gives two repositories
+        // one id, would otherwise hide that issue from the person, who then cannot set it right.
+        final Board board =
+                store(
+                                List.of(),
+                                List.of(
+                                        issue("XY1", "store", "Parked"),
+                                        issue("XY2", "store", "Idea")),
+                                List.of(issue("XY2", "other", "Backlog")))
+                        .board();
+
+        assertThat(board.faults()).as("nothing named as left out").isEmpty();
+        assertThat(board.issues())
+                .as("every issue read, each with what is wrong with it")
+                .extracting(Issue::id, Issue::repository, Issue::state, Issue::warnings)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY1",
+                                "store",
+                                "Parked",
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning
+                                                .stateOutsideWorkflow())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY2",
+                                "store",
+                                "Idea",
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY2",
+                                "other",
+                                "Backlog",
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())));
+        assertThat(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow().text())
+                .as("the words the person reads")
+                .isEqualTo("Its state is none of the workflow's states, so no work starts on it.");
+    }
+
+    @Test
+    void aStoryTheBoardCannotFullyReadIsShownWithWhyAndItsStateFromItsKnownIssues() {
+        // A story left out of the board takes its issues' context away from the person; one that
+        // took a state from an issue in doubt would stand in a column no one chose.
+        final Board board =
+                store(
+                                List.of(
+                                        story("ST1", null, "store#XY1", "store#XY2"),
+                                        story("ST2", null, "store#XY1"),
+                                        story("ST3", null, "store#XY2", "store#ZZ9"),
+                                        story("ST4", "Parked"),
+                                        story("ST5", "Idea"),
+                                        story("ST5", "Idea")),
+                                List.of(
+                                        issue("XY1", "store", "Parked"),
+                                        issue("XY2", "store", "Backlog")),
+                                List.of())
+                        .board();
+
+        assertThat(board.faults()).as("nothing named as left out").isEmpty();
+        assertThat(board.stories())
+                .as("every story, its state from its known issues, each with why")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::id,
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::stateGiven,
+                        org.fuin.porelo.planner.store.Story::issues,
+                        org.fuin.porelo.planner.store.Story::issuesWhole,
+                        org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST1", "Backlog", false, List.of("XY1", "XY2"), true, List.of()),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST2",
+                                "",
+                                false,
+                                List.of("XY1"),
+                                true,
+                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST3",
+                                "Backlog",
+                                false,
+                                List.of("XY2"),
+                                false,
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning
+                                                .issueOutsideProject())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST4",
+                                "Parked",
+                                true,
+                                List.of(),
+                                true,
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning
+                                                .stateOutsideWorkflow())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST5",
+                                "Idea",
+                                true,
+                                List.of(),
+                                true,
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST5",
+                                "Idea",
+                                true,
+                                List.of(),
+                                true,
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())));
+    }
+
     @Test
     void aDroppedSaveThatAddedAStoryWithoutATitleNamesTheStory() {
         // Prevents a story added as ST<n>.md and dropped by a push from being told by a path

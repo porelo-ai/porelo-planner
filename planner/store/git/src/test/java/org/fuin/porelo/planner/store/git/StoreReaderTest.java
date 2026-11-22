@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store.git;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.util.HashMap;
 import java.util.List;
@@ -220,6 +221,40 @@ class StoreReaderTest {
     }
 
     @Test
+    void anIdTwoFilesCarryKeepsBothCopiesWithoutAPathAndAStoryInAStateTheWorkflowLacksIsRead() {
+        // Left out, a copy vanishes from the person's board; given a path, a save would write
+        // whichever file was read last.
+        final Tree tree = new Tree();
+        tree.files.put("stories/workflow.yml", WORKFLOW);
+        tree.files.put("issues/XY01-One.md", issue("XY01", "Idea"));
+        tree.files.put("issues/XY01-Again.md", issue("XY01", "Idea"));
+        tree.files.put("issues/XY02-Two.md", issue("XY02", "Idea"));
+        tree.files.put("stories/ST7.md", story("ST7"));
+        tree.files.put("stories/ST7-Copy.md", story("ST7"));
+        tree.files.put(
+                "stories/ST9.md",
+                story("ST9").replace("\"state\": \"Idea\"", "\"state\": \"Parked\""));
+
+        final Part part = new StoreReader(tree, 100).read(OWN, "c1", null);
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("both copies of XY01 and XY02")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("XY01", "XY01", "XY02");
+        assertThat(part.stories())
+                .as("both copies of ST7, and ST9 in the state its head states")
+                .extracting(Story::id, Story::state)
+                .containsExactlyInAnyOrder(
+                        tuple("ST7", "Idea"), tuple("ST7", "Idea"), tuple("ST9", "Parked"));
+        assertThat(part.paths())
+                .as("no path for an id two files carry")
+                .doesNotContainKeys("XY01", Part.story("ST7"))
+                .containsEntry("XY02", "issues/XY02-Two.md")
+                .containsEntry(Part.story("ST9"), "stories/ST9.md");
+    }
+
+    @Test
     void theOwnRepositorysIssuesAreCheckedAgainstTheProjectsWorkflowAndNotAnIssuesWorkflow() {
         // A second workflow beside the project's would let the own issues stand in other states.
         final Tree tree = new Tree();
@@ -235,8 +270,10 @@ class StoreReaderTest {
     }
 
     @Test
-    void anotherRepositorysIssuesAreCheckedAgainstTheProjectsWorkflowAlone() {
-        // The repository's own workflow files are not read, so they cannot widen what it holds.
+    void anotherRepositorysIssueInAStateOnlyItsOwnWorkflowNamesIsReadAsItStands() {
+        // The repository's own workflow files are not read, so they cannot widen what it holds;
+        // an issue in a state only they name is read as it stands, for the board to warn about,
+        // not hidden from the person.
         final Tree tree = new Tree();
         tree.files.put("issues/workflow.yml", WORKFLOW.replace("Idea", "Thought"));
         tree.files.put("stories/workflow.yml", WORKFLOW.replace("Idea", "Thought"));
@@ -244,14 +281,10 @@ class StoreReaderTest {
         tree.files.put("issues/XY02-Two.md", issue("XY02", "Thought"));
         final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
         assertThat(part.issues())
-                .as("only the issue in a state of the project's workflow")
-                .extracting(Issue::id)
-                .containsExactly("XY01");
-        assertThat(part.faults())
-                .as("the other is left out, named with its file")
-                .singleElement()
-                .asString()
-                .startsWith("porelo-other: issues/XY02-Two.md: ");
+                .as("both issues, each in the state its head states")
+                .extracting(Issue::id, Issue::state)
+                .containsExactly(tuple("XY01", "Idea"), tuple("XY02", "Thought"));
+        assertThat(part.faults()).as("nothing left out").isEmpty();
     }
 
     @Test

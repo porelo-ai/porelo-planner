@@ -130,9 +130,29 @@ public record IssueHead(
      *     naming each fault
      */
     public static @Nullable IssueHead read(String text, Workflow workflow) {
+        return read(text, workflow, false);
+    }
+
+    /**
+     * Reads the head of an issue's text as the board shows it: a state the workflow does not know
+     * is read as it stands, for the board to warn about, while every other fault refuses the head
+     * as {@link #read(String, Workflow)} does. The commit check and the index commands never read
+     * this way.
+     *
+     * @param text the issue file's text
+     * @param workflow the project's states
+     * @return the head, or null when the text has none
+     * @throws IllegalArgumentException when the text has a head the schema refuses, naming each
+     *     fault
+     */
+    public static @Nullable IssueHead readForBoard(String text, Workflow workflow) {
+        return read(text, workflow, true);
+    }
+
+    private static @Nullable IssueHead read(String text, Workflow workflow, boolean anyState) {
         if (!present(text)) return null;
         final List<String> faults = new ArrayList<>();
-        final Located located = locate(text, workflow, faults);
+        final Located located = locate(text, workflow, faults, anyState);
         if (located == null) throw new IllegalArgumentException("issue head: " + faults);
         return located.head();
     }
@@ -224,6 +244,17 @@ public record IssueHead(
      * @return the head, or null when it could not be read or a fault was found
      */
     static @Nullable Located locate(String text, Workflow workflow, List<String> faults) {
+        return locate(text, workflow, faults, false);
+    }
+
+    /**
+     * Reads and checks a head, adding each fault without the file's name; with {@code anyState} a
+     * state the workflow does not know is no fault.
+     *
+     * @return the head, or null when it could not be read or a fault was found
+     */
+    static @Nullable Located locate(
+            String text, Workflow workflow, List<String> faults, boolean anyState) {
         final List<String> lines = List.of(text.replace("\r\n", "\n").split("\n", -1));
         int open = 1;
         while (open < lines.size() && lines.get(open).isBlank()) open++;
@@ -249,7 +280,7 @@ public record IssueHead(
             return null;
         }
         final List<String> errors = IssueSchema.faults(data);
-        if (data.path("state").isTextual()) {
+        if (!anyState && data.path("state").isTextual()) {
             try {
                 workflow.order(data.path("state").asText());
             } catch (IllegalArgumentException ex) {
