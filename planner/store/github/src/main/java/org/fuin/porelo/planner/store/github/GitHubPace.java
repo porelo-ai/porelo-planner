@@ -194,6 +194,21 @@ public final class GitHubPace implements Pace {
             }
 
             @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final int first,
+                    final GitHubGraphQl.ItemLimits limits) {
+                try {
+                    return queries.projectItems(token, owner, number, after, first, limits);
+                } catch (final GitHubException e) {
+                    throw noted(e);
+                }
+            }
+
+            @Override
             public GitHubGraphQl.IssueBoard issueBoard(
                     final String token, final List<String> issueIds, final String projectId) {
                 try {

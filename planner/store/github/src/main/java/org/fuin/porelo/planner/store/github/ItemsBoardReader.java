@@ -68,6 +68,10 @@ public final class ItemsBoardReader implements BoardReader {
     /** The smallest page asked for after GitHub found pages too costly. */
     static final int SMALLEST_PAGE = 12;
 
+    // Small nested lists reduce page cost; 30 values leave room for built-in and planner fields.
+    private static final GitHubGraphQl.ItemLimits ITEM_LIMITS =
+            new GitHubGraphQl.ItemLimits(10, 20, 10, 30);
+
     /** The page size the last read ended with, where the next one starts. */
     private volatile int lastSize = PAGE_SIZE;
 
@@ -529,18 +533,13 @@ public final class ItemsBoardReader implements BoardReader {
                         call.of(
                                 "the project items",
                                 () ->
-                                        first == PAGE_SIZE
-                                                ? queries.projectItems(
-                                                        token,
-                                                        read.project().owner(),
-                                                        read.project().number(),
-                                                        cursor)
-                                                : queries.projectItems(
-                                                        token,
-                                                        read.project().owner(),
-                                                        read.project().number(),
-                                                        cursor,
-                                                        first));
+                                        queries.projectItems(
+                                                token,
+                                                read.project().owner(),
+                                                read.project().number(),
+                                                cursor,
+                                                first,
+                                                ITEM_LIMITS));
             } catch (final RuntimeException e) {
                 // GitHub refuses a page whose items cost too much to answer; a smaller page of
                 // the same items fits, read from the same cursor.
@@ -590,9 +589,86 @@ public final class ItemsBoardReader implements BoardReader {
                 break;
             }
         }
+        completeItems(call, read, items);
         // The last answer may come after the deadline as well.
         call.inTime();
         return mapped(items, read, fieldNames);
+    }
+
+    private void completeItems(
+            final Call call,
+            final ProjectConfig read,
+            final Map<String, GitHubGraphQl.ProjectItem> items) {
+        final Set<String> nodes = new LinkedHashSet<>();
+        final Map<String, List<GitHubGraphQl.ProjectItem>> keptByIssue = new LinkedHashMap<>();
+        for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue != null) {
+                keptByIssue.computeIfAbsent(issue.id(), ignored -> new ArrayList<>()).add(item);
+                if (incomplete(item, issue)) {
+                    nodes.add(issue.id());
+                }
+            }
+        }
+        final List<String> all = List.copyOf(nodes);
+        int size = GitHubGraphQl.MAX_ISSUES;
+        for (int from = 0; from < all.size(); ) {
+            final List<String> chunk = all.subList(from, Math.min(all.size(), from + size));
+            final GitHubGraphQl.IssueBoard answer;
+            try {
+                answer =
+                        call.of(
+                                "the items with incomplete lists",
+                                () -> queries.issueBoard(call.token, chunk, read.projectId()));
+            } catch (final RuntimeException e) {
+                if (chunk.size() > SMALLEST_PAGE && tooCostly(e)) {
+                    size = Math.max(SMALLEST_PAGE, chunk.size() / 2);
+                    LOG.info(
+                            "GitHub found a batch of {} issues too costly; it is asked for {}",
+                            chunk.size(),
+                            size);
+                    continue;
+                }
+                throw e;
+            }
+            for (int at = 0; at < chunk.size(); at++) {
+                final List<GitHubGraphQl.ProjectItem> kept =
+                        Objects.requireNonNull(keptByIssue.get(chunk.get(at)));
+                final GitHubGraphQl.IssueOnBoard on =
+                        at < answer.issues().size() ? answer.issues().get(at) : null;
+                final String itemId = on == null ? null : on.itemId();
+                for (final GitHubGraphQl.ProjectItem item : kept) {
+                    if (on == null || on.issue() == null || !item.id().equals(itemId)) {
+                        items.remove(item.id());
+                    }
+                }
+                if (on != null && on.issue() != null && itemId != null) {
+                    // Only the page tells whether an item is archived.
+                    final GitHubGraphQl.ProjectItem listed =
+                            kept.stream()
+                                    .filter(item -> item.id().equals(itemId))
+                                    .findFirst()
+                                    .orElse(kept.get(0));
+                    items.put(
+                            itemId,
+                            new GitHubGraphQl.ProjectItem(
+                                    itemId,
+                                    listed.archived(),
+                                    on.issue(),
+                                    on.values(),
+                                    on.valuesPage()));
+                }
+            }
+            from += chunk.size();
+        }
+    }
+
+    private static boolean incomplete(
+            final GitHubGraphQl.ProjectItem item, final GitHubGraphQl.BoardIssue issue) {
+        return Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
+                || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage())
+                || Boolean.TRUE.equals(issue.labelsPage().hasNextPage())
+                || Boolean.TRUE.equals(item.valuesPage().hasNextPage());
     }
 
     /** Maps the project's items, as read or as held, to the board's stories and issues. */

@@ -1,0 +1,2 @@
+title: A GitHub board's items are read with smaller nested lists, and an item whose labels, field values, sub-issues or blockers run past them is read whole by itself instead of left out.
+type: fixed

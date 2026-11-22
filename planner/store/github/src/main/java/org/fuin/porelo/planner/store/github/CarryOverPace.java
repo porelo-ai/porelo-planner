@@ -523,6 +523,33 @@ public final class CarryOverPace {
             }
 
             @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final int first) {
+                return call(
+                        "reading the project's items",
+                        Kind.READ,
+                        () -> queries.projectItems(token, owner, number, after, first));
+            }
+
+            @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final int first,
+                    final GitHubGraphQl.ItemLimits limits) {
+                return call(
+                        "reading the project's items",
+                        Kind.READ,
+                        () -> queries.projectItems(token, owner, number, after, first, limits));
+            }
+
+            @Override
             public GitHubGraphQl.IssueBoard issueBoard(
                     final String token, final List<String> issueIds, final String projectId) {
                 return call(

@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.util.List;
+import java.util.Objects;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.jspecify.annotations.Nullable;
 
@@ -58,6 +59,29 @@ public interface ProjectQueries {
     }
 
     /**
+     * Reads one page with limits on each item's nested lists. Sources without list limits use their
+     * sized read.
+     *
+     * @param token the person's token
+     * @param owner the organization that owns the project
+     * @param number the project's number
+     * @param after the cursor of the page before, or null for the first
+     * @param first the items asked for, 1 to 100
+     * @param limits the limits on labels, sub-issues, blockers and field values
+     * @return the page
+     */
+    default GitHubGraphQl.ProjectItems projectItems(
+            final String token,
+            final String owner,
+            final int number,
+            final @Nullable String after,
+            final int first,
+            final GitHubGraphQl.ItemLimits limits) {
+        Objects.requireNonNull(limits, "limits");
+        return projectItems(token, owner, number, after, first);
+    }
+
+    /**
      * Reads issues by their node ids, each with its item and field values in the project.
      *
      * @param token the person's token
@@ -101,6 +125,17 @@ public interface ProjectQueries {
                     final @Nullable String after,
                     final int first) {
                 return client.projectItems(token, owner, number, after, first);
+            }
+
+            @Override
+            public GitHubGraphQl.ProjectItems projectItems(
+                    final String token,
+                    final String owner,
+                    final int number,
+                    final @Nullable String after,
+                    final int first,
+                    final GitHubGraphQl.ItemLimits limits) {
+                return client.projectItems(token, owner, number, after, first, limits);
             }
 
             @Override

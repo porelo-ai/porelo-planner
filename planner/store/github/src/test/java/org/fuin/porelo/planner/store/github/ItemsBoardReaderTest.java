@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GitHubGraphQl.BoardIssue;
@@ -97,6 +98,8 @@ class ItemsBoardReaderTest {
         private final Deque<Supplier<ProjectItems>> items = new ArrayDeque<>();
         private final Deque<Supplier<IssueBoard>> boards = new ArrayDeque<>();
         private final List<String> calls = new ArrayList<>();
+        private final List<GitHubGraphQl.ItemLimits> limits = new ArrayList<>();
+        private final List<List<String>> issueBatches = new ArrayList<>();
         private final List<Duration> pauses = new ArrayList<>();
         private final AtomicInteger tokenAsks = new AtomicInteger();
 
@@ -139,6 +142,26 @@ class ItemsBoardReaderTest {
             return this;
         }
 
+        private GitHub boardPage(final @Nullable IssueOnBoard... issues) {
+            boards.add(() -> new IssueBoard(Arrays.asList(issues), COST));
+            return this;
+        }
+
+        private GitHub boardItems(final ProjectItem... items) {
+            return boardPage(
+                    Arrays.stream(items)
+                            .map(ItemsBoardReaderTest::onBoard)
+                            .toArray(IssueOnBoard[]::new));
+        }
+
+        private GitHub boardFailure(final RuntimeException failure) {
+            boards.add(
+                    () -> {
+                        throw failure;
+                    });
+            return this;
+        }
+
         private GitHub itemsFailure(final RuntimeException failure) {
             items.add(
                     () -> {
@@ -159,7 +182,10 @@ class ItemsBoardReaderTest {
                             (proxy, method, args) -> {
                                 if (method.getName().equals("issueBoard")) {
                                     calls.add("issueBoard of " + args[1] + " in " + args[2]);
-                                } else if (args.length > 4) {
+                                    issueBatches.add(
+                                            ((List<?>) args[1])
+                                                    .stream().map(String.class::cast).toList());
+                                } else if (args.length > 4 && (int) args[4] != 100) {
                                     calls.add(
                                             method.getName()
                                                     + " after "
@@ -168,6 +194,12 @@ class ItemsBoardReaderTest {
                                                     + args[4]);
                                 } else {
                                     calls.add(method.getName() + " after " + args[3]);
+                                }
+                                if (method.getName().equals("projectItems")) {
+                                    limits.add(
+                                            args.length == 6
+                                                    ? (GitHubGraphQl.ItemLimits) args[5]
+                                                    : GitHubGraphQl.ItemLimits.DEFAULT);
                                 }
                                 assertThat(args[0])
                                         .as("the token the read asked for")
@@ -326,6 +358,485 @@ class ItemsBoardReaderTest {
 
     private static final String LIB_3 = node(OWNER + "/example-lib", 3);
 
+    private static IssueOnBoard onBoard(final ProjectItem item) {
+        return new IssueOnBoard(item.issue(), item.id(), item.values(), item.valuesPage());
+    }
+
+    private static ProjectItem partialValues(final ProjectItem item) {
+        return new ProjectItem(
+                item.id(), item.archived(), item.issue(), item.values(), info("values-2"));
+    }
+
+    private static ProjectItem withLabels(
+            final ProjectItem item, final List<String> labels, final @Nullable String next) {
+        final BoardIssue issue = java.util.Objects.requireNonNull(item.issue());
+        return new ProjectItem(
+                item.id(),
+                item.archived(),
+                new BoardIssue(
+                        issue.id(),
+                        issue.databaseId(),
+                        issue.number(),
+                        issue.title(),
+                        issue.body(),
+                        issue.state(),
+                        issue.stateReason(),
+                        issue.updatedAt(),
+                        issue.repository(),
+                        labels,
+                        issue.parentId(),
+                        issue.subIssues(),
+                        issue.blockedBy(),
+                        info(next)),
+                item.values(),
+                item.valuesPage());
+    }
+
+    @Test
+    void anItemsPageAsksForSmallerListsEvenAfterACostlyPage() {
+        // Harm: GitHub refuses an entire board page because its nested lists cost too much.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage("next", story("High"))
+                        .itemsFailure(
+                                new IllegalStateException(
+                                        "Resource limits for this query exceeded."))
+                        .itemsPage(null);
+
+        github.read();
+
+        assertThat(github.limits)
+                .as("small lists on every page and retry")
+                .containsExactly(
+                        new GitHubGraphQl.ItemLimits(10, 20, 10, 30),
+                        new GitHubGraphQl.ItemLimits(10, 20, 10, 30),
+                        new GitHubGraphQl.ItemLimits(10, 20, 10, 30));
+    }
+
+    @Test
+    void pacedItemsReadsKeepTheirListLimitsWhenThePageIsHalved() {
+        // Harm: a pacing wrapper drops list limits and makes a smaller retry too costly again.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                new IllegalStateException(
+                                        "Resource limits for this query exceeded."))
+                        .itemsPage(null, story("High"));
+        final InstantSource clock = InstantSource.fixed(Instant.EPOCH);
+        final ProjectQueries paced =
+                new CarryOverPace(clock, wait -> {}, line -> {})
+                        .queries(new GitHubPace(clock).watching(github.queries()));
+        final ItemsBoardReader reader =
+                new ItemsBoardReader(
+                        paced,
+                        origin -> TOKEN,
+                        AccessRefusals.DEFAULT,
+                        FIRST_OPEN,
+                        clock,
+                        ItemsBoardReader.DEADLINE);
+
+        final Snapshot snapshot = reader.read(CONFIG);
+
+        assertThat(snapshot.board().stories()).as("a board read through both wrappers").hasSize(1);
+        assertThat(github.limits)
+                .as("both wrappers preserve the requested nested limits")
+                .containsExactly(
+                        new GitHubGraphQl.ItemLimits(10, 20, 10, 30),
+                        new GitHubGraphQl.ItemLimits(10, 20, 10, 30));
+        assertThat(github.calls)
+                .as("the smaller page size also reaches the source")
+                .containsSubsequence("projectItems after null", "projectItems after null of 50");
+    }
+
+    @Test
+    void aCompletedItemKeepsItsArchiveFlagUnderTheItemIdGitHubAnswers() {
+        // Harm: the rest-read resurrects archived work or retains a stale project item id.
+        final ProjectItem original = story(true, "High");
+        final ProjectItem whole =
+                new ProjectItem(
+                        "PVTI_replaced", true, original.issue(), original.values(), info(null));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, partialValues(original))
+                        .boardItems(whole);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(snapshot.raw())
+                .as("only the current item id remains")
+                .containsOnlyKeys(whole.id());
+        assertThat(snapshot.raw().get(whole.id()))
+                .as("the items page owns the archive flag")
+                .isEqualTo(whole);
+        assertThat(snapshot.board().stories()).as("archived work stays off the board").isEmpty();
+    }
+
+    @Test
+    void aReplacementItemKeepsItsOwnArchiveFlagWhenBothIdsWereListed() {
+        // Harm: a stale item's archive flag hides active work after the project item is replaced.
+        final ProjectItem old = story(true, "High");
+        final ProjectItem current =
+                new ProjectItem("PVTI_current", false, old.issue(), old.values(), info(null));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage("next", partialValues(old))
+                        .itemsPage(null, partialValues(current))
+                        .boardItems(current);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.issueBatches)
+                .as("one issue asked once despite its two item ids")
+                .containsExactly(List.of(java.util.Objects.requireNonNull(current.issue()).id()));
+        assertThat(snapshot.raw())
+                .as("only the current project item remains")
+                .containsOnlyKeys(current.id());
+        assertThat(snapshot.raw().get(current.id()))
+                .as("the current item's observed archive flag")
+                .isEqualTo(current);
+        assertThat(snapshot.board().stories()).as("active work remains visible").hasSize(1);
+    }
+
+    @Test
+    void anIssueWithMoreBlockersIsReadWholeAndItsStoryStaysWhole() {
+        // Harm: an issue and its story's completeness are lost when the first blockers page ends.
+        final ProjectItem partial =
+                new ProjectItem(
+                        "PVTI_lib_3",
+                        false,
+                        issue(
+                                OWNER + "/example-lib",
+                                3,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false),
+                                refs(true, node(OWNER + "/example-lib", 4))),
+                        libIssue(3, refs(false)).values(),
+                        info(null));
+        final ProjectItem whole =
+                new ProjectItem(
+                        partial.id(),
+                        false,
+                        issue(
+                                OWNER + "/example-lib",
+                                3,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false),
+                                refs(
+                                        false,
+                                        node(OWNER + "/example-lib", 4),
+                                        node(OWNER + "/example-lib", 5))),
+                        partial.values(),
+                        info(null));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                null,
+                                story("High", LIB_3),
+                                partial,
+                                libIssue(4, refs(false)),
+                                libIssue(5, refs(false)))
+                        .boardItems(whole);
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+
+        final Snapshot snapshot = reader.read(CONFIG);
+
+        assertThat(github.issueBatches)
+                .as("only the incomplete issue read again")
+                .containsExactly(List.of(LIB_3));
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().blockedBy())
+                .as("every blocker from the complete answer")
+                .containsExactly("example-lib#4", "example-lib#5");
+        assertThat(snapshot.board().stories().get(0).issuesWhole())
+                .as("the story is whole")
+                .isTrue();
+        assertThat(snapshot.raw().get(partial.id()))
+                .as("the whole item retained for later saves")
+                .isEqualTo(whole);
+        final BoardCopy copy = reader.toCopy(snapshot, ChangeCursor.NONE, List.of());
+        assertThat(copy).as("the board copy").isNotNull();
+        assertThat(copy.items())
+                .as("the recovered item is complete in the copy")
+                .filteredOn(item -> item.id().equals(whole.id()))
+                .allSatisfy(item -> assertThat(item.partial()).as("complete lists").isFalse())
+                .hasSize(1);
+        assertThat(reader.fromCopy(copy, CONFIG))
+                .as("the copy rebuilds the whole snapshot locally")
+                .isEqualTo(snapshot);
+        assertThat(github.issueBatches)
+                .as("loading a copy asks no GitHub reads")
+                .containsExactly(List.of(LIB_3));
+    }
+
+    @Test
+    void aStoryWithMoreLabelsIsReadWholeBeforeItIsMapped() {
+        // Harm: a story label beyond the first page hides the story and all its planning work.
+        final ProjectItem whole = story("High");
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, withLabels(whole, List.of("other"), "labels-2"))
+                        .boardItems(whole);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.issueBatches)
+                .as("the issue with incomplete labels")
+                .containsExactly(List.of(java.util.Objects.requireNonNull(whole.issue()).id()));
+        assertThat(snapshot.board().stories()).as("the recovered story label is used").hasSize(1);
+        assertThat(snapshot.raw().get(whole.id()))
+                .as("all labels kept in the raw item")
+                .isEqualTo(whole);
+        assertThat(snapshot.board().faults()).as("no false overflow fault").isEmpty();
+    }
+
+    @Test
+    void moreSubIssuesAreReadBeforeStoryCompletenessIsCalculated() {
+        // Harm: work beyond a story's first sub-issues page disappears from its completeness.
+        final ProjectItem whole = story("High", LIB_3);
+        final ProjectItem partial =
+                new ProjectItem(
+                        whole.id(),
+                        false,
+                        issue(
+                                OWNER + "/example-project",
+                                1,
+                                List.of(IssueMapping.STORY_LABEL),
+                                null,
+                                refs(true)),
+                        whole.values(),
+                        info(null));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, partial, libIssue(3, refs(false)))
+                        .boardItems(whole);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(snapshot.board().stories().get(0).issues())
+                .as("all the story's work")
+                .containsExactly("example-lib#3");
+        assertThat(snapshot.board().stories().get(0).issuesWhole()).as("a complete story").isTrue();
+        assertThat(snapshot.raw().get(whole.id()))
+                .as("complete sub-issues retained")
+                .isEqualTo(whole);
+    }
+
+    @Test
+    void theRestOfFieldValuesChangesTheBoardAndItsRevision() {
+        // Harm: a priority beyond the first values page is lost and later changes are never shown.
+        final ProjectItem before = story("High");
+        final ProjectItem whole = story("Low");
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, partialValues(before))
+                        .boardItems(whole);
+        final Snapshot baseline =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, before).read();
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(snapshot.board().stories().get(0).priority())
+                .as("the reread priority")
+                .isEqualTo("Low");
+        assertThat(snapshot.raw().get(whole.id())).as("whole values retained").isEqualTo(whole);
+        assertThat(snapshot.board().revision())
+                .as("completed values participate in the revision")
+                .isNotEqualTo(baseline.board().revision());
+    }
+
+    @Test
+    void anIssueGoneBeforeTheRestReadLeavesTheBoardWithoutACrash() {
+        // Harm: an issue removed during pagination crashes every board read.
+        final ProjectItem whole = libIssue(3, refs(false));
+        for (final @Nullable IssueOnBoard gone :
+                Arrays.asList(
+                        null, new IssueOnBoard(whole.issue(), null, whole.values(), info(null)))) {
+            final GitHub github =
+                    new GitHub()
+                            .fieldsPage(FIELDS, null)
+                            .itemsPage(null, partialValues(whole))
+                            .boardPage(gone);
+
+            final Snapshot snapshot = github.read();
+
+            assertThat(github.issueBatches)
+                    .as("the vanished issue was checked")
+                    .containsExactly(List.of(LIB_3));
+            assertThat(snapshot.raw()).as("no stale item retained").isEmpty();
+            assertThat(snapshot.board().issues()).as("the vanished issue is absent").isEmpty();
+        }
+    }
+
+    @Test
+    void anIncompleteItemNamedOnTwoPagesIsReadAgainOnceAfterTheLastPage() {
+        // Harm: repeated node ids make GitHub reject the rest-read and block the whole board.
+        final ProjectItem whole = libIssue(3, refs(false));
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage("next", partialValues(whole))
+                        .itemsPage(null, partialValues(whole))
+                        .boardItems(whole);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.calls)
+                .as("rest-read happens after pagination")
+                .containsExactly(
+                        "projectFields after null",
+                        "projectItems after null",
+                        "projectItems after next",
+                        "issueBoard of [" + LIB_3 + "] in PVT_1");
+        assertThat(github.issueBatches).as("one distinct issue id").containsExactly(List.of(LIB_3));
+        assertThat(snapshot.raw()).as("one complete item").containsOnlyKeys(whole.id());
+        assertThat(snapshot.raw().get(whole.id()))
+                .as("the full answer replaces the partial one")
+                .isEqualTo(whole);
+    }
+
+    @Test
+    void restReadsAreBatchedWithinGitHubsIssueLimit() {
+        // Harm: a board with many incomplete items exceeds GitHub's batch limit and cannot load.
+        final ProjectItem[] whole =
+                java.util.stream.IntStream.rangeClosed(1, GitHubGraphQl.MAX_ISSUES + 1)
+                        .mapToObj(number -> libIssue(number, refs(false)))
+                        .toArray(ProjectItem[]::new);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                "next",
+                                Arrays.stream(whole)
+                                        .limit(GitHubGraphQl.MAX_ISSUES)
+                                        .map(ItemsBoardReaderTest::partialValues)
+                                        .toArray(ProjectItem[]::new))
+                        .itemsPage(null, partialValues(whole[GitHubGraphQl.MAX_ISSUES]))
+                        .boardItems(Arrays.copyOf(whole, GitHubGraphQl.MAX_ISSUES))
+                        .boardItems(whole[GitHubGraphQl.MAX_ISSUES]);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.issueBatches)
+                .as("bounded batches in item order")
+                .containsExactly(
+                        Arrays.stream(whole)
+                                .limit(GitHubGraphQl.MAX_ISSUES)
+                                .map(item -> java.util.Objects.requireNonNull(item.issue()).id())
+                                .toList(),
+                        List.of(
+                                java.util.Objects.requireNonNull(
+                                                whole[GitHubGraphQl.MAX_ISSUES].issue())
+                                        .id()));
+        assertThat(snapshot.raw().values()).as("every item completed").containsExactly(whole);
+    }
+
+    @Test
+    void aCostlyRestReadIsHalvedWithoutLosingAnyItems() {
+        // Harm: a costly rest-read makes a recoverable board unavailable or silently loses work.
+        final ProjectItem[] whole =
+                java.util.stream.IntStream.rangeClosed(1, 24)
+                        .mapToObj(number -> libIssue(number, refs(false)))
+                        .toArray(ProjectItem[]::new);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                null,
+                                Arrays.stream(whole)
+                                        .map(ItemsBoardReaderTest::partialValues)
+                                        .toArray(ProjectItem[]::new))
+                        .boardFailure(
+                                new IllegalStateException(
+                                        "Resource limits for this query exceeded."))
+                        .boardItems(Arrays.copyOfRange(whole, 0, 12))
+                        .boardItems(Arrays.copyOfRange(whole, 12, 24));
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.issueBatches)
+                .as("same prefix retried at half size, then the remainder")
+                .containsExactly(
+                        Arrays.stream(whole)
+                                .map(item -> java.util.Objects.requireNonNull(item.issue()).id())
+                                .toList(),
+                        Arrays.stream(whole)
+                                .limit(12)
+                                .map(item -> java.util.Objects.requireNonNull(item.issue()).id())
+                                .toList(),
+                        Arrays.stream(whole)
+                                .skip(12)
+                                .map(item -> java.util.Objects.requireNonNull(item.issue()).id())
+                                .toList());
+        assertThat(snapshot.raw().values()).as("every completed item").containsExactly(whole);
+    }
+
+    @Test
+    void aRestReadStillTooCostlyAtTheSmallestSizeFailsLoudly() {
+        // Harm: endlessly halving a refused rest-read hangs the board or silently drops its work.
+        final ProjectItem[] partial =
+                java.util.stream.IntStream.rangeClosed(1, 13)
+                        .mapToObj(number -> partialValues(libIssue(number, refs(false))))
+                        .toArray(ProjectItem[]::new);
+        final RuntimeException refused =
+                new IllegalStateException("Resource limits for this query exceeded.");
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, partial)
+                        .boardFailure(refused)
+                        .boardFailure(refused);
+
+        assertThatThrownBy(github::read)
+                .as("the last refusal reaches the caller")
+                .isInstanceOf(StoreException.class)
+                .hasMessageContaining(refused.getMessage());
+        assertThat(github.issueBatches)
+                .as("bounded shrinking stops at twelve")
+                .extracting(List::size)
+                .containsExactly(13, 12);
+    }
+
+    @Test
+    void aRestReadRefusalKeepsGitHubsWordsAndStatus() {
+        // Harm: a GitHub refusal is hidden as a missing issue and the caller trusts a cut board.
+        final GitHubException refused = GitHubExceptions.refused(403, "The project cannot be read");
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, partialValues(libIssue(3, refs(false))))
+                        .boardFailure(refused);
+        final AtomicInteger refusals = new AtomicInteger();
+        final StoreException answer =
+                new StoreException.Unreachable(CONFIG.own(), refused.getMessage());
+        final ItemsBoardReader reader =
+                github.reader(
+                        (repository, failure, token) -> {
+                            refusals.incrementAndGet();
+                            assertThat(failure)
+                                    .as("GitHub's original refusal passed to the refusal mapping")
+                                    .isSameAs(refused);
+                            assertThat(((GitHubException) failure).status())
+                                    .as("GitHub's HTTP status")
+                                    .isEqualTo(403);
+                            return answer;
+                        });
+
+        assertThatThrownBy(() -> reader.read(CONFIG))
+                .as("a refusal cannot turn into a partial board")
+                .isSameAs(answer)
+                .hasMessageContaining("The project cannot be read");
+        assertThat(refusals).as("the refusal was passed on once").hasValue(1);
+    }
+
     @Test
     void twoPagesOfItemsWithTheirFieldValuesBecomeTheBoardAndTheFieldIdsAreKept() {
         // Harm: a project of more than one page shows only its first, a field's value is lost on
@@ -440,6 +951,7 @@ class ItemsBoardReaderTest {
                 new GitHub()
                         .fieldsPage(FIELDS, null)
                         .itemsPage(null, story("High", LIB_3), libIssue(3, refs(true, "I_part")))
+                        .boardItems(libIssue(3, refs(true, "I_part")))
                         .read();
 
         assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
@@ -467,10 +979,12 @@ class ItemsBoardReaderTest {
                 new GitHub()
                         .fieldsPage(FIELDS, null)
                         .itemsPage(null, story("High", LIB_3), partial)
+                        .boardItems(partial)
                         .read();
 
         assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
         assertThat(snapshot.board().faults())
+                .as("the fault keeps an incomplete item off the board")
                 .containsExactly(
                         "Item example-org/example-lib#3 has more labels or field values than one"
                                 + " page carries and is left out");
@@ -508,6 +1022,7 @@ class ItemsBoardReaderTest {
                                 story("High", LIB_3),
                                 libIssue(3, refs(true, "I_part")),
                                 blocked)
+                        .boardItems(libIssue(3, refs(true, "I_part")))
                         .read();
 
         assertThat(snapshot.board().issues()).as("neither issue on the board").isEmpty();
@@ -1290,6 +1805,8 @@ class ItemsBoardReaderTest {
         final List<ProjectField> fields = new ArrayList<>(FIELDS);
         // A second field of one name: its values are still read by the field's id.
         fields.add(field("F_rank_new", FieldNames.RANK, "NUMBER"));
+        // An item more than one page carries, asked again and still more, stays a fault.
+        final ProjectItem overflowing = libIssue(4, refs(true, "I_part"));
         final GitHub github =
                 new GitHub()
                         .fieldsPage(fields, null)
@@ -1297,13 +1814,14 @@ class ItemsBoardReaderTest {
                                 null,
                                 story("High", LIB_3, node(OWNER + "/example-lib", 4)),
                                 libIssue(3, refs(false)),
-                                libIssue(4, refs(true, "I_part")),
+                                overflowing,
                                 new ProjectItem(
                                         "PVTI_draft",
                                         true,
                                         null,
                                         List.of(),
-                                        new GitHubGraphQl.PageInfo(false, null)));
+                                        new GitHubGraphQl.PageInfo(false, null)))
+                        .boardPage(onBoard(overflowing));
         final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
         final Snapshot read = reader.read(CONFIG);
 
@@ -1320,7 +1838,10 @@ class ItemsBoardReaderTest {
         assertThat(loaded).as("the whole snapshot from the copy").isEqualTo(read);
         assertThat(github.calls)
                 .as("GitHub asked only by the read itself")
-                .containsExactly("projectFields after null", "projectItems after null");
+                .containsExactly(
+                        "projectFields after null",
+                        "projectItems after null",
+                        "issueBoard of [" + overflowing.issue().id() + "] in PVT_1");
     }
 
     @Test
