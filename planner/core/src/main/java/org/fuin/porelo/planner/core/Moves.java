@@ -66,6 +66,20 @@ public final class Moves {
         @Nullable String of(List<String> issueStates);
     }
 
+    /** Answers whether this planner's work record holds a run over an issue or its stories. */
+    @FunctionalInterface
+    public interface Runs {
+
+        /**
+         * Answers whether a run works the issue, by itself or through a story that holds it.
+         *
+         * @param issue the issue's id
+         * @param stories the stories holding the issue, directly or as a sub-issue
+         * @return whether the work record holds such a run
+         */
+        boolean over(String issue, Set<String> stories);
+    }
+
     /**
      * What a checked batch writes.
      *
@@ -139,6 +153,7 @@ public final class Moves {
      * @param moves the moves, in the order sent
      * @param confirm whether a story may stand where its issues do not fit
      * @param derive derives a story's state from its issues
+     * @param runs answers the runs of this planner over an issue an agent works
      * @return what saving the batch writes
      * @throws Refused when any move is refused; nothing is written then
      */
@@ -146,8 +161,9 @@ public final class Moves {
             final Board board,
             final List<Move> moves,
             final boolean confirm,
-            final StoryState derive) {
-        return plan(board, moves, confirm, derive).planned();
+            final StoryState derive,
+            final Runs runs) {
+        return plan(board, moves, confirm, derive, runs).planned();
     }
 
     /**
@@ -157,6 +173,7 @@ public final class Moves {
      * @param moves the moves, in the order sent
      * @param derive derives a story's state from its issues
      * @param running answers the work running over the items the batch touches
+     * @param runs answers the runs of this planner over an issue an agent works
      * @return the preview
      * @throws Refused when the save would refuse the batch for anything but a story that does not
      *     fit its issues, which is a warning here
@@ -165,8 +182,9 @@ public final class Moves {
             final Board board,
             final List<Move> moves,
             final StoryState derive,
-            final MovePreview.Running running) {
-        return MovePreview.of(board, moves, plan(board, moves, true, derive), running);
+            final MovePreview.Running running,
+            final Runs runs) {
+        return MovePreview.of(board, moves, plan(board, moves, true, derive, runs), running);
     }
 
     /**
@@ -253,7 +271,8 @@ public final class Moves {
             final Board board,
             final List<Move> moves,
             final boolean confirm,
-            final StoryState derive) {
+            final StoryState derive,
+            final Runs runs) {
         final Workflow workflow = board.workflow();
         if (!board.work().faults().isEmpty()) {
             // A working state whose rule could not be read would be entered without its work.
@@ -264,7 +283,7 @@ public final class Moves {
         final Set<String> working = board.work().rules().keySet();
         final Set<String> seen = new HashSet<>();
         for (final Move move : moves) {
-            checkOne(board, working, move, seen);
+            checkOne(board, working, move, seen, runs);
         }
         if (moves.size() > 1 && moves.stream().anyMatch(Move::follow)) {
             // Judged with other moves, the state its issues give would be the batch's, not the
@@ -362,7 +381,11 @@ public final class Moves {
     }
 
     private static void checkOne(
-            final Board board, final Set<String> working, final Move move, final Set<String> seen) {
+            final Board board,
+            final Set<String> working,
+            final Move move,
+            final Set<String> seen,
+            final Runs runs) {
         final String kind = move.story() ? "story" : "issue";
         if (move.id().isEmpty() || !seen.add(kind + " " + move.id())) {
             throw new Refused(
@@ -409,20 +432,38 @@ public final class Moves {
         // A story that follows its issues takes their state, a working one too, without starting
         // work.
         if (working.contains(move.to()) && !manual && !move.follow()) {
-            final Map<String, String> parameters = new LinkedHashMap<>();
-            parameters.put("item", move.id());
-            parameters.put("to", move.to());
-            throw new Refused(
-                    "EnteredOnlyByWork",
-                    move.to()
-                            + " is entered only by starting its work; only an issue a person"
-                            + " works is moved there by hand.",
-                    parameters);
+            checkWorkElsewhere(board, move, runs);
         }
         if (!board.workflow().states().contains(move.to())) {
             final String reason = "The destination must be a configured waiting or closed state.";
             throw new Refused("StateNotAllowed", reason, item(move.id(), from, move.to(), reason));
         }
+    }
+
+    /**
+     * An agent's issue enters a working state by hand only as work started elsewhere, while no run
+     * of this planner works it or its story, so a hand move never stands beside a task of a run; a
+     * story enters one only by starting its work.
+     */
+    private static void checkWorkElsewhere(final Board board, final Move move, final Runs runs) {
+        final String reason;
+        if (move.story()) {
+            reason =
+                    move.to()
+                            + " is entered only by starting its work; a story is never moved there"
+                            + " by hand.";
+        } else if (runs.over(move.id(), stories(board, List.of(move)))) {
+            reason =
+                    move.to()
+                            + " is entered only by its work while a run of this planner works the"
+                            + " issue or its story.";
+        } else {
+            return;
+        }
+        final Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("item", move.id());
+        parameters.put("to", move.to());
+        throw new Refused("EnteredOnlyByWork", reason, parameters);
     }
 
     /**

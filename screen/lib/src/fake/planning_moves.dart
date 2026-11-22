@@ -79,7 +79,8 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       continue;
     }
     final target = states.where((state) => state['name'] == to).firstOrNull;
-    final byHand = !isStory && issue!['worker'] == 'MANUAL';
+    // An agent's issue no run works enters work by hand as work started elsewhere, as the planner allows it.
+    final byHand = !isStory && (issue!['worker'] == 'MANUAL' || !_runHolds(stories, issue));
     if (target?['kind'] == 'WORKING' && !byHand) refuse('EnteredOnlyByWork', {'item': id, 'to': to});
     if (target == null || !{'WAITING', 'CLOSED', if (byHand) 'WORKING'}.contains(target['kind'])) {
       refuse('StateNotAllowed', {
@@ -356,6 +357,18 @@ void settleStoryStates(Map<String, dynamic> board) {
   }
 }
 
+/// Whether a run works [issue], at work on it or recorded for a story holding it or its parent, as the planner's work
+/// record holds runs per story.
+bool _runHolds(List<Map<String, dynamic>> stories, Map<String, dynamic> issue) =>
+    issue['atWork'] == true ||
+    stories.any(
+      (story) =>
+          _working(story['work']) &&
+          (story['issues'] as List? ?? const []).whereType<Map<dynamic, dynamic>>().any(
+            (each) => each['id'] == issue['id'] || issue['parent'] is String && each['id'] == issue['parent'],
+          ),
+    );
+
 /// The state a story's issues give, or null when it has none or one stands in a state outside the workflow, as the
 /// planner reads it.
 String? _derived(List<Map<String, dynamic>> states, Map<String, dynamic> story) {
@@ -430,3 +443,9 @@ Map<String, dynamic> applyPlanningStoryIssues(
   board['revision'] = '$revision:issues';
   return board;
 }
+
+/// Whether a story's run has a task at work or not ended, as the planner holds a run that works now.
+bool _working(Object? work) =>
+    work is Map &&
+    (work['atWork'] != false ||
+        (work['tasks'] as List? ?? const []).whereType<Map<dynamic, dynamic>>().any((task) => task['ended'] == null));

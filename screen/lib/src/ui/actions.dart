@@ -116,7 +116,7 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           host.openLink,
           onError: board.reportActionProblem,
         ),
-        for (final state in board.states.where((state) => PlanningBoard.issueMayEnter(issue, state)))
+        for (final state in board.states.where((state) => board.issueMayEnter(issue, state)))
           movePlanningIssueAction(board, issue, state.name),
       ],
     ],

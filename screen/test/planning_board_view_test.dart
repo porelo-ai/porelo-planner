@@ -333,7 +333,7 @@ void main() {
     expect(find.byKey(const Key('planning-no-story Ready')), findsNothing);
   });
 
-  // Harm: an issue in no story cannot be moved from its row, or is offered an agent-only working state.
+  // Harm: an issue in no story cannot be moved from its row, or work begun on it elsewhere cannot be shown.
   testWidgets('a row offers the permitted states and moves its issue through the board save', (tester) async {
     final (backend, boards) = await _showBoard(tester);
     backend.push('checkout', {
@@ -356,7 +356,11 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Move to…'));
     await settle(tester);
-    expect(find.byKey(const Key('planning-move-to B900 Building')), findsNothing);
+    expect(
+      find.byKey(const Key('planning-move-to B900 Building')),
+      findsOneWidget,
+      reason: 'no run holds an issue in no story',
+    );
     await tester.tap(find.byKey(const Key('planning-move-to B900 Done')));
     await settle(tester);
     expect(backend.moveCalls.single['moves'], [
@@ -541,16 +545,16 @@ void main() {
     expect(story.issues.single.state, 'Ready', reason: 'it stands under its story again');
   });
 
-  // Harm: an outside issue moved into a state only work enters shows as moved, or its refusal is said otherwise than a
-  // board issue's.
-  testWidgets('an outside issue moved into a working state is refused as only work enters it, and stays listed', (
-    tester,
-  ) async {
+  // Harm: an outside issue moved into a working state beside its story's run shows as moved, or its refusal is said
+  // otherwise than a board issue's.
+  testWidgets('an outside issue moved into a working state beside a run is refused as only work enters it, and stays '
+      'listed', (tester) async {
     final (backend, boards) = await _showBoard(tester);
     final data = backend.boards['checkout']!;
     data['outside'] = [
       {'id': 'own#7', 'repository': 'own', 'title': 'A lost issue', 'status': 'Accepted', 'story': 'StoryOne'},
     ];
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = servedWork();
     backend.push('checkout', data);
     await settle(tester);
 
@@ -561,7 +565,11 @@ void main() {
     await settle(tester);
 
     expect(backend.moveCalls, isEmpty, reason: 'refused at the preview, nothing saved');
-    expect(boards.selected!.moveProblem, 'own#7 was not moved: Building can be entered only by work.');
+    expect(
+      boards.selected!.moveProblem,
+      'own#7 was not moved: ${planningFailureWords(const PlanningRefusal('EnteredOnlyByWork', {'to': 'Building'}))}',
+      reason: 'said as a board issue\'s refusal is',
+    );
     expect(find.byKey(const Key('planning-outside own#7')), findsOneWidget, reason: 'still outside the workflow');
     expect(boards.selected!.waitsOnItsSave('issue own#7'), isFalse, reason: 'it may be moved again');
   });

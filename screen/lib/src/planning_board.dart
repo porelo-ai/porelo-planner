@@ -1237,9 +1237,23 @@ class PlanningBoard extends ChangeNotifier {
   };
 
   /// Whether a person may move [issue] into [target]: a waiting or closed state, or a working one for an issue a
-  /// person works, which no task enters for it.
-  static bool issueMayEnter(PlanIssue issue, PlanState? target) =>
-      target != null && {'WAITING', 'CLOSED', if (issue.byHand) 'WORKING'}.contains(target.kind);
+  /// person works, or for an agent's issue no run of this planner works, which shows work started elsewhere.
+  bool issueMayEnter(PlanIssue issue, PlanState? target) =>
+      target != null && {'WAITING', 'CLOSED', if (issue.byHand || !runHolds(issue)) 'WORKING'}.contains(target.kind);
+
+  /// Whether a run of this planner works [issue] now: at work on it, or a run of a story holding it or its parent
+  /// with a task at work or not ended. A story whose work was not reported counts as one, so no move goes beside a
+  /// run the screen cannot see; the planner's refusal is the last word on offers the screen does not show.
+  bool runHolds(PlanIssue issue) =>
+      issue.atWork == true ||
+      stories.any(
+        (story) =>
+            (!story.workReported || _working(workOf(story))) &&
+            story.issues.any((each) => each.id == issue.id || issue.parent != null && each.id == issue.parent),
+      );
+
+  static bool _working(PlanWork? work) =>
+      work != null && (work.atWork != false || work.tasks.any((task) => task.ended == null));
 
   /// Whether every issue of [story] in a working state is one a person works, so no run is missing for it.
   bool workedByHand(PlanStory story) {
@@ -2475,7 +2489,9 @@ String _failureWords(Object error) {
     if (error.name == 'PlanningAdapterError') {
       return '${error.parameters['error']}: ${error.parameters['parameters']}';
     }
-    if (error.name == 'EnteredOnlyByWork') return '${error.parameters['to']} can be entered only by work.';
+    if (error.name == 'EnteredOnlyByWork') {
+      return '${error.parameters['to']} is entered by hand only by an issue no run of this planner works.';
+    }
     if (error.name == 'PartlySaved') {
       final pushed = error.parameters['pushed'];
       final failed = error.parameters['failed'];

@@ -465,6 +465,8 @@ void main() {
   // Harm: a refused issue batch leaves earlier issue changes published.
   test('issue batches remain atomic and reject stale or working destinations', () {
     final source = _fixture();
+    // A run of its story keeps the working state to the work.
+    ((source['stories'] as List<dynamic>).first as Map<String, dynamic>)['work'] = <String, dynamic>{};
     expect(
       () => applyPlanningMove(source, {
         'revision': 'initial',

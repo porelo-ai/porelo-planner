@@ -68,7 +68,7 @@ class PlanningDetail extends ChangeNotifier {
 
   /// States that a person may request for [issue], in the configured workflow order.
   List<PlanState> moveStatesOf(PlanIssue issue) =>
-      board.states.where((state) => state.name.isNotEmpty && PlanningBoard.issueMayEnter(issue, state)).toList();
+      board.states.where((state) => state.name.isNotEmpty && board.issueMayEnter(issue, state)).toList();
 
   /// Why an issue cannot be moved now.
   String? get moveUnavailable => saving || board.holdsMoves

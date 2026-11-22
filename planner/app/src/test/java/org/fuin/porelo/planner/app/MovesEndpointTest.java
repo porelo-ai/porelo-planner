@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -193,6 +194,25 @@ class MovesEndpointTest {
                 .andExpect(jsonPath("$.parameters.item").value("ST1"))
                 .andExpect(jsonPath("$.parameters.to").value("Building"));
         assertThat(saved).as("nothing saved").isEmpty();
+    }
+
+    @Test
+    void anAgentsIssueNoRunWorksIsMovedIntoAWorkingStateAndReadsAsWorkStartedElsewhere()
+            throws Exception {
+        // Harm: work begun outside this planner kept off the board, or shown as this planner's.
+        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Building\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"))
+                .andExpect(jsonPath("$.moved[0]").value("AB01"));
+        assertThat(saved).as("one save").hasSize(1);
+        assertThat(saved.get(0).issues())
+                .as("the issue's new state")
+                .containsExactly(Map.entry("AB01", "Building"));
+
+        mvc.perform(get("/projects/alpha/stories/ST1/issues"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issues[0].state").value("Building"))
+                .andExpect(jsonPath("$.issues[0].noRunHere").value(true));
     }
 
     @Test

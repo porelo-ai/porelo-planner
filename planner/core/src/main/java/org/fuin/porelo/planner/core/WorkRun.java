@@ -1489,6 +1489,18 @@ public final class WorkRun {
     }
 
     /**
+     * Serializes a store write that touches no run but must not stand beside one, such as a new
+     * issue placed in a working state, with the runs' saves.
+     *
+     * @param save the write, given the runs the record holds under the lock
+     * @param <T> what the write answers
+     * @return what the write answered
+     */
+    public <T> T withRuns(final Function<Moves.Runs, T> save) {
+        return record.locked(session -> save.apply(held(read(session))));
+    }
+
+    /**
      * Saves a new story under the record's lock: checks it against the board read under the lock
      * first, then drops every run whose story is gone, so a story saved under a gone story's id
      * never takes its run over and a refused story writes nothing.
@@ -1879,7 +1891,9 @@ public final class WorkRun {
                     if (!board.revision().value().equals(revision)) {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
-                    return Moves.preview(board, moves, store::storyState, owners(read(session)));
+                    final Snapshot snapshot = read(session);
+                    return Moves.preview(
+                            board, moves, store::storyState, owners(snapshot), held(snapshot));
                 });
     }
 
@@ -1936,7 +1950,7 @@ public final class WorkRun {
      * @param confirm whether the person confirmed the preview's warnings
      * @param repository the project's own repository, which the digest covers
      * @param branch its branch, or null
-     * @param save the save
+     * @param save the save, given the runs the record holds under the lock
      * @param <T> what the save answers
      * @return what the save answered and the runs it stopped
      * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
@@ -1950,7 +1964,7 @@ public final class WorkRun {
             final boolean confirm,
             final String repository,
             final @Nullable String branch,
-            final Supplier<T> save) {
+            final Function<Moves.Runs, T> save) {
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
@@ -1959,7 +1973,12 @@ public final class WorkRun {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
                     final String now =
-                            Moves.preview(board, moves, store::storyState, owners(snapshot))
+                            Moves.preview(
+                                            board,
+                                            moves,
+                                            store::storyState,
+                                            owners(snapshot),
+                                            held(snapshot))
                                     .digest(repository, branch);
                     if (!MessageDigest.isEqual(
                             now.getBytes(StandardCharsets.UTF_8),
@@ -1973,7 +1992,8 @@ public final class WorkRun {
                     }
                     final List<StoppedRun> stopped = new ArrayList<>();
                     final Snapshot stopping = stopOwners(snapshot, affected, stories, stopped);
-                    final T saved = save.get();
+                    // Judged on the record before this save stops a run, as its preview was.
+                    final T saved = save.apply(held(snapshot));
                     final Board after = store.board();
                     affected.removeIf(id -> manual(board, id) || !stateChanged(board, after, id));
                     if (stopping != snapshot) {
@@ -2046,6 +2066,34 @@ public final class WorkRun {
             }
             return owned;
         };
+    }
+
+    /**
+     * The runs of the record that work an issue now: a run of a story holding it, or one whose
+     * offer names it, with a task offered or started. A run whose tasks all ended or stopped holds
+     * nothing, so its story's issues can be moved by hand again.
+     *
+     * @param snapshot the work record
+     * @return the runs that hold an issue now
+     */
+    public static Moves.Runs held(final Snapshot snapshot) {
+        return (issue, stories) ->
+                snapshot.runs().values().stream()
+                        .anyMatch(
+                                run ->
+                                        run.offers().stream()
+                                                .filter(WorkRun::working)
+                                                .anyMatch(
+                                                        o ->
+                                                                stories.contains(run.story())
+                                                                        || o.binding()
+                                                                                .issues()
+                                                                                .contains(issue)));
+    }
+
+    /** Whether an offer's task is offered or at work, so a hand move would stand beside it. */
+    private static boolean working(final Offer offer) {
+        return offer.status().equals("OFFERED") || offer.status().equals("STARTED");
     }
 
     private static boolean owns(

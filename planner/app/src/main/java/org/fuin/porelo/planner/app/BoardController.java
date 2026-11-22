@@ -266,7 +266,7 @@ public class BoardController {
                                     Boolean.TRUE.equals(body.confirm()),
                                     given.repository(),
                                     given.branch(),
-                                    () -> saveMoves(name, given.store(), body, moves));
+                                    runs -> saveMoves(name, given.store(), body, moves, runs));
             final Moved moved = saved.saved();
             return new Moved(moved.revision(), moved.moved(), stopped(saved.stopped()));
         } catch (final UnsupportedOperationException e) {
@@ -302,7 +302,8 @@ public class BoardController {
             final String name,
             final PlanningStore store,
             final MovesBody body,
-            final List<Moves.Move> moves) {
+            final List<Moves.Move> moves,
+            final Moves.Runs runs) {
         final String revision = String.valueOf(body.revision());
         final Board board = store.board();
         if (!board.revision().value().equals(revision)) {
@@ -313,7 +314,11 @@ public class BoardController {
         try {
             planned =
                     Moves.check(
-                            board, moves, Boolean.TRUE.equals(body.confirm()), store::storyState);
+                            board,
+                            moves,
+                            Boolean.TRUE.equals(body.confirm()),
+                            store::storyState,
+                            runs);
             if (planned.issues().isEmpty()
                     && planned.stories().isEmpty()
                     && planned.unstated().isEmpty()) {
@@ -370,7 +375,7 @@ public class BoardController {
         }
         final NewIssue.Added added;
         try {
-            added = projects.work(name).alone(() -> createIssue(name, revision, body));
+            added = projects.work(name).withRuns(runs -> createIssue(name, revision, body, runs));
         } catch (final StoreException.NotSavable e) {
             throw NewIssues.refused("", String.valueOf(e.getMessage()));
         } catch (final UnsupportedOperationException e) {
@@ -387,7 +392,10 @@ public class BoardController {
     }
 
     private NewIssue.Added createIssue(
-            final String name, final String revision, final WorkRequests.IssueRequest body) {
+            final String name,
+            final String revision,
+            final WorkRequests.IssueRequest body,
+            final Moves.Runs runs) {
         final PlanningStore store = projects.store(name);
         final Board board = store.board();
         if (!board.revision().value().equals(revision)) {
@@ -417,7 +425,7 @@ public class BoardController {
         }
         final boolean createsInState = store.createsInState();
         if (createsInState) {
-            checkInitialState(board, issue, story, state, body.confirm(), store);
+            checkInitialState(board, issue, story, state, body.confirm(), store, runs);
         }
         final NewIssue.Added added =
                 store.createIssue(
@@ -452,7 +460,8 @@ public class BoardController {
                             made,
                             List.of(new Moves.Move(false, added.id(), state, false)),
                             body.confirm(),
-                            store::storyState);
+                            store::storyState,
+                            runs);
             moved =
                     store.save(
                             made.revision(),
@@ -500,7 +509,8 @@ public class BoardController {
             final @Nullable String storyId,
             final @Nullable String state,
             final boolean confirm,
-            final PlanningStore store) {
+            final PlanningStore store,
+            final Moves.Runs runs) {
         final String first = board.workflow().states().get(0);
         if (state == null) {
             return;
@@ -573,7 +583,8 @@ public class BoardController {
                     withNew,
                     List.of(new Moves.Move(false, placeholder, state)),
                     confirm,
-                    store::storyState);
+                    store::storyState,
+                    runs);
         } catch (final Moves.Refused refused) {
             final Map<String, String> parameters = new LinkedHashMap<>(refused.parameters());
             parameters.put("item", "");

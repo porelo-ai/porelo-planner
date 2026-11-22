@@ -141,7 +141,7 @@ class PlanningNoStoryCard extends StatelessWidget {
           title: const Text('Move to…'),
           children: [
             for (final target in board.states)
-              if (target.name != issue.state && PlanningBoard.issueMayEnter(issue, target))
+              if (target.name != issue.state && board.issueMayEnter(issue, target))
                 SimpleDialogOption(
                   key: Key('planning-move-to ${issue.id} ${target.name}'),
                   onPressed: () => Navigator.pop(context, target.name),

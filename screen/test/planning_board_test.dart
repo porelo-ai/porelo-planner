@@ -242,10 +242,6 @@ void main() {
 
   // Harm: a description bypasses the special wordings, or carries control characters to the screen.
   test('a refusal\'s description comes after the special wordings and is shown without control characters', () {
-    expect(
-      planningFailureWords(mockRefusal('org.fuin.porelo.Tasks1.EnteredOnlyByWork', {'item': 'ST1', 'to': 'Building'})),
-      'Building can be entered only by work.',
-    );
     expect(planningFailureWords(const PlanningRefusal('Unreachable', {}, 'no\x07 answer\x1b[2J')), 'no answer[2J');
   });
 

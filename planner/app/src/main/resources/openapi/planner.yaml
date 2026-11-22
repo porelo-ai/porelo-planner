@@ -1051,7 +1051,9 @@ paths:
         advanced issues, but a story moved to the completed state (closed, not Rejected) takes no issue along and is
         refused (MoveNotAllowed) unless each of its issues stands in Review, the state the last work leads to, or
         closed after the batch; a working state is entered only by work, except by an issue a person works (worker
-        MANUAL), which a person moves into and through the working states by hand. The body carries the digest of
+        MANUAL), which a person moves into and through the working states by hand, and by an issue an agent works
+        while no run in this planner's record works it or a story holding it, which then reads noRunHere as work
+        started elsewhere; a story enters one only by its work. The body carries the digest of
         the batch's preview: under the writer lock, before anything is written, the preview is computed again, and a
         batch whose preview answers another digest is refused (PreviewChanged), so a confirmation counts only for the
         batch, the repository and the work the person was shown. A batch over running work - a story it moves or moves an
@@ -1190,7 +1192,8 @@ paths:
         lacks is refused with StateNotAllowed (422) before anything is created, and is never repeated. For a GitHub
         store, the requested state and fields are written in the create's single save, with one revision, and the
         state is checked as a move is before anything is created: a closed state is refused with StateNotAllowed
-        (422), a state entered only by work with EnteredOnlyByWork (422), and other move checks answer 422 with the
+        (422), a working state while a run in this planner's record works the issue's story with EnteredOnlyByWork
+        (422), and other move checks answer 422 with the
         move's refusal, never PartlySaved; the item parameter is empty because no issue exists yet. A store without
         creation in a state keeps the create followed by a move, whose failure is PartlySaved. The changes stream
         announces the new board as it does after any save.
@@ -1771,8 +1774,9 @@ components:
                   issues: 'PL2:Review'
     MoveRefused:
       description: >-
-        A move is refused: its state is entered only by work and the item is a story or an issue an agent works
-        (EnteredOnlyByWork), is no waiting or closed state
+        A move is refused: its state is entered only by work and the item is a story, or an issue an agent works
+        while a run in this planner's record works it or a story holding it (EnteredOnlyByWork), is no waiting or
+        closed state
         (StateNotAllowed), or the move is not allowed (MoveNotAllowed): it names no item or one twice, closes a parent
         over an open sub-issue, completes a story while an issue of it stands neither in Review nor closed (its reason
         naming each such issue with its state), the work rules have faults, the body cannot be read, or the item cannot be saved in its
@@ -1788,8 +1792,7 @@ components:
                 title: EnteredOnlyByWork
                 status: 422
                 detail: >-
-                  Building is entered only by starting its work; only an issue a person works is moved there by
-                  hand.
+                  Building is entered only by its work while a run of this planner works the issue or its story.
                 parameters:
                   item: PL1
                   to: Building
@@ -1899,7 +1902,8 @@ components:
         empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, revision, task,
         priority, story or confirm), or the store cannot write it in its repository, such as a repository whose
         issues give no prefix (field empty). A GitHub create's initial placement is refused before creation with
-        StateNotAllowed for an unknown or closed state, EnteredOnlyByWork for an agent entering a working state, or
+        StateNotAllowed for an unknown or closed state, EnteredOnlyByWork for an agent's issue entering a working
+        state while a run in this planner's record works its story, or
         MoveNotAllowed for another move refusal; item is empty. A state the workflow lacks is refused with
         StateNotAllowed on every store before anything is created. What was sent is never repeated.
       content:
@@ -2490,7 +2494,8 @@ components:
         issue:
           description: >-
             An issue of the board, or one of the board's `outside` issues; an outside issue moves from no state, under
-            the same rules as a board issue (a working state only for an issue a person works), and its preview
+            the same rules as a board issue (a working state only for an issue a person works or one no run in this
+            planner's record works), and its preview
             names no state it leaves.
           allOf:
             - $ref: '#/components/schemas/IssueId'
@@ -3174,8 +3179,9 @@ components:
         noRunHere:
           type: boolean
           description: >-
-            Whether an issue an agent works stands in a working state with no run in this planner's record, such as
-            work started elsewhere or set by a commit; it is shown, not raised.
+            Whether an issue an agent works stands in a working state while no run of this planner works it or a story
+            holding it now, with a task offered or started, and no run raised it, such as work started elsewhere, set
+            by a commit or moved by hand beside a run that ended; it is shown, not raised.
         attention:
           type: string
           enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]

@@ -168,11 +168,61 @@ class WorkAnswersTest {
                 .isEqualTo("NONE");
     }
 
+    // Harm: an issue moved by hand beside a run that ended shown as that run's work, not as work
+    // started elsewhere.
+    @Test
+    void anIssueBesideARunThatHoldsNothingNowReadsAsWorkStartedElsewhere() {
+        final org.fuin.porelo.planner.app.answers.Issue answered =
+                WorkAnswers.issue(
+                        board(),
+                        AGENTS,
+                        run(new NextStep.Progress(rounds(), List.of(), false, "NONE", "")));
+
+        assertThat(answered.noRunHere())
+                .as("the story's run has no task offered or started")
+                .isTrue();
+        assertThat(
+                        WorkAnswers.issue(
+                                        board(),
+                                        AGENTS,
+                                        run(
+                                                new NextStep.Progress(
+                                                        rounds(), List.of(), false, "NONE", ""),
+                                                List.of(offer("STARTED"))))
+                                .noRunHere())
+                .as("a task of the story's run is at work")
+                .isFalse();
+    }
+
+    private static WorkRun.Offer offer(final String status) {
+        final WorkRule rule = board().work().rules().get("Building");
+        return new WorkRun.Offer(
+                "00000000-0000-0000-0000-000000000002",
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build"),
+                new NextStep.Binding("ST1", "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                status,
+                "task",
+                "box",
+                null,
+                null,
+                null,
+                "",
+                List.of(),
+                List.of(),
+                null);
+    }
+
     private static ReadingCycle.Rounds rounds() {
         return new ReadingCycle.Rounds(0, 2, false);
     }
 
     private static WorkRun.Snapshot run(final NextStep.Progress progress) {
+        return run(progress, List.of());
+    }
+
+    private static WorkRun.Snapshot run(
+            final NextStep.Progress progress, final List<WorkRun.Offer> offers) {
         return new WorkRun.Snapshot(
                 1,
                 Map.of(
@@ -188,7 +238,7 @@ class WorkAnswersTest {
                                 List.of(),
                                 List.of(),
                                 "2026-01-01T00:00:00Z",
-                                List.of(),
+                                offers,
                                 Map.of("AA1", progress),
                                 true,
                                 false,

@@ -201,7 +201,7 @@ class IssuesEndpointTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Working", "Finished", "token123secret"})
+    @ValueSource(strings = {"Finished", "token123secret"})
     void aForbiddenInitialStateIsRefusedBeforeAnythingIsCreated(final String state)
             throws Exception {
         // Harm: a refused placement leaves a newly made issue in the wrong state or leaks input.
@@ -209,13 +209,7 @@ class IssuesEndpointTest {
         final String answer =
                 issueInState(state)
                         .andExpect(status().isUnprocessableContent())
-                        .andExpect(
-                                jsonPath("$.type")
-                                        .value(
-                                                "urn:porelo-planner:"
-                                                        + (state.equals("Working")
-                                                                ? "EnteredOnlyByWork"
-                                                                : "StateNotAllowed")))
+                        .andExpect(jsonPath("$.type").value("urn:porelo-planner:StateNotAllowed"))
                         .andExpect(jsonPath("$.parameters.item").value(""))
                         .andReturn()
                         .getResponse()
@@ -280,6 +274,21 @@ class IssuesEndpointTest {
 
         assertThat(current.issue("CD03").orElseThrow().state())
                 .as("the person's saved placement")
+                .isEqualTo("Working");
+        assertThat(moves).as("no move after creation").isEmpty();
+    }
+
+    @Test
+    void anAgentsIssueNoRunWorksMayBeCreatedInAWorkingStateInOneSave() throws Exception {
+        // Harm: work begun outside this planner cannot be recorded where it stands.
+        createsInState = true;
+
+        issueInState("Working")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(current.issue("CD03").orElseThrow().state())
+                .as("the agent's issue saved in the working state")
                 .isEqualTo("Working");
         assertThat(moves).as("no move after creation").isEmpty();
     }

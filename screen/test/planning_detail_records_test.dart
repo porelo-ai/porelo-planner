@@ -224,6 +224,7 @@ void main() {
             {'id': 'first', 'state': 'Working'},
             {'id': 'second', 'state': 'Working'},
           ],
+          'work': <String, dynamic>{},
         },
       ],
     };

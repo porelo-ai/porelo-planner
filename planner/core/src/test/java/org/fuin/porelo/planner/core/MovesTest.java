@@ -37,6 +37,12 @@ class MovesTest {
     /** The rule the stories index applies: the earliest open state, else the earliest closed. */
     private static final Moves.StoryState DERIVE = MovesTest::derive;
 
+    /** The work record holds no run of this planner. */
+    private static final Moves.Runs NO_RUNS = (issue, stories) -> false;
+
+    /** The work record holds a run of ST1, as it keeps one run per story. */
+    private static final Moves.Runs ST1_RUNS = (issue, stories) -> stories.contains("ST1");
+
     private final Board board = board(WORK);
 
     private static Board board(final Work work) {
@@ -67,7 +73,7 @@ class MovesTest {
     void aStoryMovesItsLeastAdvancedIssuesAndLeavesThoseFurtherOn() {
         // A story move that moved every issue would undo work already in Review.
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST1", "Review")), false, DERIVE);
+                Moves.check(board, List.of(story("ST1", "Review")), false, DERIVE, NO_RUNS);
         assertThat(planned.issues())
                 .as("only the issue in Backlog")
                 .containsExactly(entry("PL1", "Review"));
@@ -88,7 +94,7 @@ class MovesTest {
                         entry("issues", "PL2:Review"));
 
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE);
+                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE, NO_RUNS);
         assertThat(planned.issues())
                 .as("the Backlog issue")
                 .containsExactly(entry("PL1", "Rejected"));
@@ -102,7 +108,7 @@ class MovesTest {
         // Harm: the board's mark and the move's refusal naming different issues for one story.
         final Moves.Refused refused = refused(List.of(story("ST1", "Rejected")), false);
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE);
+                Moves.check(board, List.of(story("ST1", "Rejected")), true, DERIVE, NO_RUNS);
         final Story saved =
                 new Story(
                         "ST1",
@@ -156,7 +162,7 @@ class MovesTest {
                         List.of(issue("PL1", "Backlog", null)),
                         WORK);
         final Moves.Planned planned =
-                Moves.check(elsewhere, List.of(story("ST1", "Review")), false, DERIVE);
+                Moves.check(elsewhere, List.of(story("ST1", "Review")), false, DERIVE, NO_RUNS);
         assertThat(planned.stories())
                 .as("taken as for a story without issues")
                 .containsExactly(entry("ST1", "Review"));
@@ -166,20 +172,60 @@ class MovesTest {
     @Test
     void aStoryWithoutIssuesTakesTheStateItself() {
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST2", "Idea")), false, DERIVE);
+                Moves.check(board, List.of(story("ST2", "Idea")), false, DERIVE, NO_RUNS);
         assertThat(planned.stories()).containsExactly(entry("ST2", "Idea"));
         assertThat(planned.issues()).isEmpty();
     }
 
     @Test
-    void aMoveIntoAWorkingStateIsRefusedSoTheWindowOffersTheWork() {
-        // Building entered without its work would show a story in work that nobody does.
-        final Moves.Refused refused = refused(List.of(issue("PL1", "Building")), false);
-        assertThat(refused.name()).isEqualTo("EnteredOnlyByWork");
+    void anAgentsIssueNoRunWorksIsMovedIntoAWorkingStateByHandAsWorkStartedElsewhere() {
+        // An agent's issue held out of the working states hides work begun outside this planner.
+        assertThat(
+                        Moves.check(
+                                        board,
+                                        List.of(issue("PL1", "Building")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
+                .as("into the working state, with no run of its story")
+                .containsExactly(entry("PL1", "Building"));
+        final Board building = board(WORK, "Building");
+        assertThat(
+                        Moves.check(
+                                        building,
+                                        List.of(issue("PL1", "Reading")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
+                .as("on to the next working state")
+                .containsExactly(entry("PL1", "Reading"));
+    }
+
+    @Test
+    void anAgentsIssueIsRefusedAWorkingStateWhileARunOfThisPlannerWorksItOrItsStory() {
+        // Harm: a hand move beside a running task, two workers on one issue.
+        final Moves.Refused refused = refused(board, List.of(issue("PL1", "Building")), ST1_RUNS);
+        assertThat(refused.name())
+                .as("refused while a run works its story")
+                .isEqualTo("EnteredOnlyByWork");
         assertThat(refused.parameters())
+                .as("the item and its target")
                 .containsExactly(entry("item", "PL1"), entry("to", "Building"));
+        assertThat(refused.getMessage())
+                .as("the reason names the run")
+                .contains("a run of this planner works the issue or its story");
+        assertThat(
+                        refused(
+                                        board,
+                                        List.of(issue("PL4.1", "Building")),
+                                        (issue, stories) -> issue.equals("PL4.1"))
+                                .name())
+                .as("refused while a run works the issue itself")
+                .isEqualTo("EnteredOnlyByWork");
         assertThat(refused(List.of(story("ST2", "Reading")), false).name())
-                .as("a story too")
+                .as("a story with no run is still refused")
                 .isEqualTo("EnteredOnlyByWork");
     }
 
@@ -188,24 +234,45 @@ class MovesTest {
         // A person's issue held out of the working states could never show its work on the board.
         final Board manual = ManualIssues.of(board, "PL1");
 
-        assertThat(Moves.check(manual, List.of(issue("PL1", "Building")), false, DERIVE).issues())
+        assertThat(
+                        Moves.check(
+                                        manual,
+                                        List.of(issue("PL1", "Building")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
                 .as("into the working state")
                 .containsExactly(entry("PL1", "Building"));
         final Board building = ManualIssues.of(board(WORK, "Building"), "PL1");
-        assertThat(Moves.check(building, List.of(issue("PL1", "Reading")), false, DERIVE).issues())
+        assertThat(
+                        Moves.check(
+                                        building,
+                                        List.of(issue("PL1", "Reading")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
                 .as("on to the next working state")
                 .containsExactly(entry("PL1", "Reading"));
-        assertThat(Moves.check(building, List.of(issue("PL1", "Review")), false, DERIVE).issues())
+        assertThat(
+                        Moves.check(
+                                        building,
+                                        List.of(issue("PL1", "Review")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
                 .as("and out of the work")
                 .containsExactly(entry("PL1", "Review"));
     }
 
     @Test
-    void anAgentsIssueAndAStoryStillEnterAWorkingStateOnlyByWork() {
+    void anAgentsIssueBesideARunAndAStoryStillEnterAWorkingStateOnlyByWork() {
         // A hand move into Building would show work begun that no agent's task does.
         final Board manual = ManualIssues.of(board, "PL1");
 
-        final Moves.Refused agents = refused(manual, List.of(issue("PL2", "Building")));
+        final Moves.Refused agents = refused(manual, List.of(issue("PL2", "Building")), ST1_RUNS);
         assertThat(agents.name()).as("an agent's issue").isEqualTo("EnteredOnlyByWork");
         assertThat(refused(manual, List.of(story("ST1", "Building"))).name())
                 .as("a story, even one with a person's issue")
@@ -253,7 +320,8 @@ class MovesTest {
                         board,
                         List.of(issue("PL4", "Finished"), issue("PL4.1", "Rejected")),
                         false,
-                        DERIVE);
+                        DERIVE,
+                        NO_RUNS);
         assertThat(planned.issues())
                 .as("closed together in one batch")
                 .containsExactly(entry("PL4", "Finished"), entry("PL4.1", "Rejected"));
@@ -267,7 +335,8 @@ class MovesTest {
                         board,
                         List.of(issue("PL1", "Rejected"), story("ST1", "Review")),
                         true,
-                        DERIVE);
+                        DERIVE,
+                        NO_RUNS);
         assertThat(planned.issues())
                 .as("the issue's own move wins")
                 .containsEntry("PL1", "Rejected");
@@ -278,7 +347,7 @@ class MovesTest {
     void aRefusedBatchPlansNothing() {
         // One refused move must leave every other move of the batch unsaved.
         final Moves.Refused refused =
-                refused(List.of(issue("PL1", "Review"), issue("PL2", "Building")), false);
+                refused(board, List.of(issue("PL1", "Review"), issue("PL2", "Building")), ST1_RUNS);
         assertThat(refused.name()).isEqualTo("EnteredOnlyByWork");
     }
 
@@ -300,7 +369,13 @@ class MovesTest {
         final Moves.Refused refused =
                 catchThrowableOfType(
                         Moves.Refused.class,
-                        () -> Moves.check(faulty, List.of(issue("PL1", "Review")), false, DERIVE));
+                        () ->
+                                Moves.check(
+                                        faulty,
+                                        List.of(issue("PL1", "Review")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS));
         assertThat(refused).as("refused").isNotNull();
         assertThat(refused.name()).isEqualTo("MoveNotAllowed");
         assertThat(refused.getMessage()).contains("stories/work.yml: not YAML");
@@ -310,7 +385,7 @@ class MovesTest {
     void aStoryWithIssuesThatFitsItsTargetAgainLosesItsStatedState() {
         // A stated state left behind would hold the story where its issues no longer are.
         final Moves.Planned planned =
-                Moves.check(board, List.of(story("ST3", "Rejected")), false, DERIVE);
+                Moves.check(board, List.of(story("ST3", "Rejected")), false, DERIVE, NO_RUNS);
         assertThat(planned.issues()).containsExactly(entry("PL3", "Rejected"));
         assertThat(planned.stories()).as("no stated state").isEmpty();
         assertThat(planned.unstated()).containsExactly("ST3");
@@ -347,7 +422,7 @@ class MovesTest {
                                 issue("PL5", "Finished", null)),
                         WORK);
         final Moves.Planned planned =
-                Moves.check(ready, List.of(story("ST1", "Finished")), false, DERIVE);
+                Moves.check(ready, List.of(story("ST1", "Finished")), false, DERIVE, NO_RUNS);
         assertThat(planned.issues())
                 .as("the issue in Review and its sub-issue in Review finish with the story")
                 .containsExactly(entry("PL1", "Finished"), entry("PL1.1", "Finished"));
@@ -363,7 +438,8 @@ class MovesTest {
                         ready,
                         List.of(story("ST1", "Finished")),
                         DERIVE,
-                        (issues, stories) -> List.of());
+                        (issues, stories) -> List.of(),
+                        NO_RUNS);
         assertThat(preview.warnings())
                 .as("only the issues carried along are asked about, no misfit")
                 .extracting(MovePreview.Warning::kind)
@@ -392,7 +468,8 @@ class MovesTest {
                         shared,
                         List.of(story("ST1", "Finished")),
                         DERIVE,
-                        (issues, stories) -> List.of());
+                        (issues, stories) -> List.of(),
+                        NO_RUNS);
         assertThat(preview.warnings())
                 .as("the carried issue is named for ST1's move")
                 .filteredOn(warning -> MovePreview.ISSUES_ALONG.equals(warning.kind()))
@@ -523,7 +600,13 @@ class MovesTest {
                         List.of(issue("PL1", "Review", null), issue("PL1.1", "Backlog", "PL1")),
                         WORK);
         assertThatThrownBy(
-                        () -> Moves.check(nested, List.of(story("ST1", "Finished")), true, DERIVE))
+                        () ->
+                                Moves.check(
+                                        nested,
+                                        List.of(story("ST1", "Finished")),
+                                        true,
+                                        DERIVE,
+                                        NO_RUNS))
                 .as("the sub-issue keeps the story open")
                 .isInstanceOf(Moves.Refused.class)
                 .satisfies(
@@ -541,7 +624,8 @@ class MovesTest {
                         board,
                         List.of(issue("PL2", "Review"), story("ST1", "Review")),
                         false,
-                        DERIVE);
+                        DERIVE,
+                        NO_RUNS);
         assertThat(planned.issues())
                 .as("PL2 stays in Review")
                 .containsExactly(entry("PL1", "Review"));
@@ -577,7 +661,8 @@ class MovesTest {
                             given(),
                             List.of(new Moves.Move(true, story.getKey(), story.getValue(), true)),
                             false,
-                            DERIVE);
+                            DERIVE,
+                            NO_RUNS);
             assertThat(planned.unstated())
                     .as("%s's given state goes, to a working state or its own", story.getKey())
                     .containsExactly(story.getKey());
@@ -589,7 +674,8 @@ class MovesTest {
                         given(),
                         List.of(new Moves.Move(true, "ST4", "Building", true)),
                         DERIVE,
-                        (issues, stories) -> List.of());
+                        (issues, stories) -> List.of(),
+                        NO_RUNS);
         assertThat(preview.warnings()).as("nothing to confirm, so one click does it").isEmpty();
     }
 
@@ -690,7 +776,7 @@ class MovesTest {
                         outside("PL8", null, null, Worker.MANUAL));
 
         final Moves.Planned planned =
-                Moves.check(outside, List.of(issue("PL7", "Backlog")), false, DERIVE);
+                Moves.check(outside, List.of(issue("PL7", "Backlog")), false, DERIVE, NO_RUNS);
         assertThat(planned.issues())
                 .as("its state written")
                 .containsExactly(entry("PL7", "Backlog"));
@@ -700,7 +786,8 @@ class MovesTest {
                         outside,
                         List.of(issue("PL7", "Backlog")),
                         DERIVE,
-                        (issues, stories) -> List.of());
+                        (issues, stories) -> List.of(),
+                        NO_RUNS);
         assertThat(preview.issues())
                 .as("the preview moves it from no state")
                 .containsExactly(
@@ -709,14 +796,22 @@ class MovesTest {
                 .as("its story's running work is the work it moves under")
                 .containsExactly("ST1");
 
-        final Moves.Refused agents = refused(outside, List.of(issue("PL7", "Building")));
+        final Moves.Refused agents = refused(outside, List.of(issue("PL7", "Building")), ST1_RUNS);
         assertThat(agents.name())
-                .as("an agent's issue enters a working state only by work, as on the board")
+                .as("an agent's issue beside its story's run is refused, as on the board")
                 .isEqualTo("EnteredOnlyByWork");
         assertThat(agents.getMessage())
                 .as("with the words a board issue is refused with")
-                .isEqualTo(refused(List.of(issue("PL1", "Building")), false).getMessage());
-        assertThat(Moves.check(outside, List.of(issue("PL8", "Building")), false, DERIVE).issues())
+                .isEqualTo(
+                        refused(board, List.of(issue("PL1", "Building")), ST1_RUNS).getMessage());
+        assertThat(
+                        Moves.check(
+                                        outside,
+                                        List.of(issue("PL8", "Building")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
                 .as("a person's issue moved into a working state by hand")
                 .containsExactly(entry("PL8", "Building"));
         assertThat(refused(outside, List.of(issue("PL9", "Backlog"))).name())
@@ -734,7 +829,12 @@ class MovesTest {
         assertThat(refused.name()).isEqualTo("MoveNotAllowed");
         assertThat(refused.parameters()).containsEntry("item", "PL5");
         assertThat(
-                        Moves.check(outside, List.of(issue("PL5.2", "Finished")), false, DERIVE)
+                        Moves.check(
+                                        outside,
+                                        List.of(issue("PL5.2", "Finished")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
                                 .issues())
                 .as("closed beside its parent")
                 .containsExactly(entry("PL5.2", "Finished"));
@@ -782,7 +882,14 @@ class MovesTest {
         assertThat(refused(outside, List.of(story("ST3", "Backlog"), issue("PL7", "Idea"))).name())
                 .as("a story stated where its issue brought back does not fit")
                 .isEqualTo("StoryStateMismatch");
-        assertThat(Moves.check(outside, List.of(story("ST3", "Finished")), false, DERIVE).issues())
+        assertThat(
+                        Moves.check(
+                                        outside,
+                                        List.of(story("ST3", "Finished")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
                 .as("an issue left outside is not judged")
                 .containsExactly(entry("PL3", "Finished"));
     }
@@ -819,9 +926,23 @@ class MovesTest {
 
     private static Moves.Refused refused(
             final Board board, final List<Moves.Move> moves, final boolean confirm) {
+        return refused(board, moves, confirm, NO_RUNS);
+    }
+
+    private static Moves.Refused refused(
+            final Board board, final List<Moves.Move> moves, final Moves.Runs runs) {
+        return refused(board, moves, false, runs);
+    }
+
+    private static Moves.Refused refused(
+            final Board board,
+            final List<Moves.Move> moves,
+            final boolean confirm,
+            final Moves.Runs runs) {
         final Moves.Refused refused =
                 catchThrowableOfType(
-                        Moves.Refused.class, () -> Moves.check(board, moves, confirm, DERIVE));
+                        Moves.Refused.class,
+                        () -> Moves.check(board, moves, confirm, DERIVE, runs));
         assertThat(refused).as("refused: " + moves).isNotNull();
         return refused;
     }

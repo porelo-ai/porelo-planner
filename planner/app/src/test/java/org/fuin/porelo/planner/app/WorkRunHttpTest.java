@@ -160,6 +160,25 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void anIssueOfAStoryWhoseTaskIsOfferedIsNotMovedIntoAWorkingStateByHand() throws Exception {
+        // Harm: a hand move let into work beside a task the window is about to start, past the
+        // save's own check.
+        offerWork("ST1");
+        final String revision = store.board().revision().value();
+        final String move =
+                "{\"revision\":\""
+                        + revision
+                        + "\",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Building\"}],\"digest\":\""
+                        + Previewed.NO_DIGEST
+                        + "\"}";
+
+        assertThat(call("/moves", move, 422).path("type").asString())
+                .as("the save refuses the move itself")
+                .endsWith(":EnteredOnlyByWork");
+        assertThat(store.board().revision().value()).as("nothing saved").isEqualTo(revision);
+    }
+
+    @Test
     void aWorkerChangeOfAnIssueARunningTaskOwnsIsRefusedAndSavesNothing() throws Exception {
         // A worker changed under a running task would hand a person an issue an agent still works.
         final String offer = offerWork("ST1").at("/tasks/0/offer").asString();

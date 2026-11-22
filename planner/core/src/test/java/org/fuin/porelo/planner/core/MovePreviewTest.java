@@ -40,6 +40,9 @@ class MovePreviewTest {
 
     private static final MovePreview.Running NOTHING_RUNS = (issues, stories) -> List.of();
 
+    /** The work record holds no run of this planner. */
+    private static final Moves.Runs NO_RUNS = (issue, stories) -> false;
+
     private static final String OWN = "porelo-planner";
 
     private static final String OTHER = "porelo-frontend";
@@ -154,6 +157,43 @@ class MovePreviewTest {
     }
 
     @Test
+    void anAgentsIssueIsPreviewedIntoAWorkingStateOnlyWhileNoRunWorksItsStory() {
+        // Harm: a hand move confirmed beside a running task, which the save then stops.
+        final List<Moves.Move> moves = List.of(issue("PL2", "Implementing"));
+        final List<Set<String>> asked = new ArrayList<>();
+
+        assertThat(
+                        Moves.preview(
+                                        board,
+                                        moves,
+                                        DERIVE,
+                                        NOTHING_RUNS,
+                                        (issue, stories) -> {
+                                            asked.add(Set.of(issue));
+                                            asked.add(stories);
+                                            return false;
+                                        })
+                                .issues())
+                .as("previewed into the working state with no run")
+                .containsExactly(new MovePreview.MovedIssue("PL2", OWN, "Backlog", "Implementing"));
+        assertThat(asked)
+                .as("the issue and its story are asked about")
+                .containsExactly(Set.of("PL2"), Set.of("ST2"));
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () ->
+                                Moves.preview(
+                                        board,
+                                        moves,
+                                        DERIVE,
+                                        NOTHING_RUNS,
+                                        (issue, stories) -> stories.contains("ST2")));
+        assertThat(refused).as("refused while a run works its story").isNotNull();
+        assertThat(refused.name()).as("the refusal").isEqualTo("EnteredOnlyByWork");
+    }
+
+    @Test
     void theDigestChangesWithEverythingThePreviewShowedAndWhereTheSaveGoes() {
         // Harm: a confirmation counted for another batch, repository, branch or work.
         final MovePreview preview = preview(List.of(story("ST1", "Review")), NOTHING_RUNS);
@@ -187,7 +227,7 @@ class MovePreviewTest {
     }
 
     private MovePreview preview(final List<Moves.Move> moves, final MovePreview.Running running) {
-        return Moves.preview(board, moves, DERIVE, running);
+        return Moves.preview(board, moves, DERIVE, running, NO_RUNS);
     }
 
     private static List<String> kinds(final MovePreview preview) {

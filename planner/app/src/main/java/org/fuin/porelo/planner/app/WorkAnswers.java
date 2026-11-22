@@ -250,8 +250,14 @@ public final class WorkAnswers {
                                                 || issue.parent() != null
                                                         && s.issues().contains(issue.parent()))
                         .toList();
-        // Runs are kept per story, so an issue in no story can have none here.
-        return mine.isEmpty() || mine.stream().anyMatch(s -> !snapshot.runs().containsKey(s.id()));
+        // The rule a hand move is let in by, so an issue moved beside an ended run reads as
+        // elsewhere.
+        return !WorkRun.held(snapshot)
+                .over(
+                        issue.id(),
+                        mine.stream()
+                                .map(org.fuin.porelo.planner.store.Story::id)
+                                .collect(java.util.stream.Collectors.toSet()));
     }
 
     static org.fuin.porelo.planner.app.answers.Issue issue(
@@ -294,7 +300,8 @@ public final class WorkAnswers {
                 atWork(snapshot, issue.id()),
                 raised,
                 !manual && progress != null && progress.rounds().stopped(),
-                progress == null && lost(board, snapshot, issue),
+                // A run that raised the issue is this planner's, whatever its offers say.
+                !raised && lost(board, snapshot, issue),
                 org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
                         raised && progress != null ? progress.reason() : "NONE"),
                 progress == null ? null : findings(progress.findings()));

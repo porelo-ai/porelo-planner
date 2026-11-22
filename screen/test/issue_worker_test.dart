@@ -115,11 +115,11 @@ String _stateOf(MockPlanningSource source, String id) =>
     mockPlanningIssue(source.boards['demo']!, id)!['state'] as String;
 
 void main() {
-  // Harm: a person cannot move the issue they work through the work, or an agent's issue enters work without a task.
-  testWidgets('an issue a person works is offered and saved into a working state, an agent\'s is not offered', (
+  // Harm: a person cannot move the issue they work through the work, or an agent's issue enters work beside a run.
+  testWidgets('an issue a person works is offered and saved into a working state, an agent\'s beside a run is not', (
     tester,
   ) async {
-    final (source, board) = await _open(tester, _board());
+    final (source, board) = await _open(tester, _board(work: servedWork()));
     await _show(tester, board);
 
     await tester.tap(find.byKey(const Key('planning-move PL1')));
@@ -161,9 +161,39 @@ void main() {
     expect(source.work.calls, isEmpty, reason: 'nothing starts before the dialog confirms');
   });
 
-  // Harm: the stand-in the window's planning tests run on lets an agent's issue into work, or keeps a person's out.
-  test('the stand-in moves only an issue a person works into a working state', () {
-    final data = _board();
+  // Harm: work begun outside this planner kept off the board, or a hand move offered beside a run of its story.
+  testWidgets('an agent\'s issue no run works is offered and saved into a working state by hand', (tester) async {
+    final (source, board) = await _open(tester, _board());
+    await _show(tester, board);
+
+    await tester.tap(find.byKey(const Key('planning-move PL1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-move-to PL1 Implementing')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await settle(tester);
+    expect(_stateOf(source, 'PL1'), 'Implementing', reason: 'saved by hand as work started elsewhere');
+    expect(source.work.calls, isEmpty, reason: 'no work was started for it');
+  });
+
+  // Harm: a story that once had a run keeps its issues from being set working by hand for good.
+  testWidgets('an agent\'s issue whose story\'s run has nothing at work is offered and saved into a working state', (
+    tester,
+  ) async {
+    final (source, board) = await _open(tester, _board(work: servedWork(atWork: false)));
+    await _show(tester, board);
+
+    await tester.tap(find.byKey(const Key('planning-move PL1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-move-to PL1 Implementing')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await settle(tester);
+    expect(_stateOf(source, 'PL1'), 'Implementing', reason: 'saved by hand beside a run that works nothing');
+  });
+
+  // Harm: the stand-in the window's planning tests run on lets an agent's issue into work beside a run, or keeps a
+  // person's or one no run works out.
+  test('the stand-in moves an agent\'s issue into a working state only while no run works its story', () {
+    final data = _board(work: servedWork());
     Map<String, dynamic> move(String issue) => applyPlanningMove(data, {
       'revision': 'r1',
       'moves': [
@@ -173,7 +203,7 @@ void main() {
     expect(
       () => move('PL1'),
       throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'EnteredOnlyByWork')),
-      reason: 'an agent\'s issue enters only by its work',
+      reason: 'an agent\'s issue beside its story\'s run enters only by its work',
     );
     expect(mockPlanningIssue(move('PL2'), 'PL2')!['state'], 'Implementing', reason: 'a person\'s issue is moved');
     expect(
@@ -185,6 +215,19 @@ void main() {
       }),
       throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'EnteredOnlyByWork')),
       reason: 'a story enters only by its work',
+    );
+    expect(
+      mockPlanningIssue(
+        applyPlanningMove(_board(), {
+          'revision': 'r1',
+          'moves': [
+            {'issue': 'PL1', 'to': 'Implementing'},
+          ],
+        }),
+        'PL1',
+      )!['state'],
+      'Implementing',
+      reason: 'an agent\'s issue no run works is moved',
     );
   });
 

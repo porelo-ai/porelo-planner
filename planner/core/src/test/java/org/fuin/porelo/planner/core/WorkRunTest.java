@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -4503,7 +4504,7 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/new.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
         assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
@@ -4540,7 +4541,7 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
         assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
@@ -4575,7 +4576,7 @@ class WorkRunTest {
                                         true,
                                         "https://example.org/own.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
         assertThat(conflictOf(refused)).isEqualTo("PreviewChanged");
@@ -4607,7 +4608,7 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
         assertThat(conflictOf(unconfirmed)).as("unconfirmed").isEqualTo("WorkRunning");
         assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
                 .as("an unconfirmed save stops nothing")
@@ -4621,7 +4622,7 @@ class WorkRunTest {
                         true,
                         "https://example.org/own.git",
                         null,
-                        () -> saved.getAndSet(true));
+                        runs -> saved.getAndSet(true));
 
         assertThat(saved).as("the move is saved").isTrue();
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
@@ -4657,7 +4658,7 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
         assertThat(conflictOf(refused)).as("as running work").isEqualTo("WorkRunning");
@@ -4675,6 +4676,85 @@ class WorkRunTest {
         moved(f.run, List.of(new Moves.Move(false, "AA3", "Review")), () -> saved.getAndSet(true));
 
         assertThat(saved).as("the move is saved").isTrue();
+    }
+
+    @Test
+    void anAgentsIssueIsMovedIntoAWorkingStateByHandOnlyInAStoryNoRunOfThisPlannerWorks() {
+        // Harm: a hand move beside a running task of this planner, two workers on one issue.
+        final Fixture f = new Fixture();
+        f.start(role(f.order().tasks(), "MAIN"));
+        withSecondIssueAndOtherStory(f);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () ->
+                                moved(
+                                        f.run,
+                                        List.of(new Moves.Move(false, "AA2", "Building")),
+                                        () -> saved.getAndSet(true)));
+        assertThat(refused).as("refused beside the run of its story").isNotNull();
+        assertThat(refused.name()).as("the refusal").isEqualTo("EnteredOnlyByWork");
+        assertThat(saved).as("nothing reaches the store").isFalse();
+
+        moved(
+                f.run,
+                List.of(new Moves.Move(false, "AA3", "Building")),
+                () -> saved.getAndSet(true));
+        assertThat(saved).as("saved in the story no run works").isTrue();
+    }
+
+    @Test
+    void anAgentsIssueIsMovedIntoAWorkingStateByHandOnceTheRunOfItsStoryStopped() {
+        // Harm: a story that once had a run here keeps its issues from being set working for good.
+        final Fixture f = new Fixture();
+        for (final WorkRun.Offered offer : f.order().tasks()) {
+            f.start(offer);
+            f.run.report(
+                    "task",
+                    new WorkRun.Report(
+                            offer.offer(), WorkRun.Event.STOPPED, "box", "workstation", null));
+        }
+        assertThat(f.run.snapshot().runs().get("ST1").offers())
+                .as("no task of the story's run is offered or at work")
+                .allSatisfy(o -> assertThat(o.status()).isNotIn("OFFERED", "STARTED"));
+        withSecondIssueAndOtherStory(f);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        moved(
+                f.run,
+                List.of(new Moves.Move(false, "AA2", "Building")),
+                () -> saved.getAndSet(true));
+
+        assertThat(saved).as("saved once no task of the story's run works").isTrue();
+    }
+
+    @Test
+    void aRunHoldsAnIssueWhileATaskIsOfferedOrStartedThroughItsStoryOrItsOffer() {
+        // Harm: a hand move let in beside a task not yet started, or beside one working an issue
+        // its story does not hold.
+        final Fixture f = new Fixture();
+        final List<WorkRun.Offered> offered = f.order().tasks();
+        final String bound =
+                f.run.snapshot().runs().get("ST1").offers().get(0).binding().issues().get(0);
+
+        assertThat(WorkRun.held(f.run.snapshot()).over("AA9", Set.of("ST1")))
+                .as("an issue of the story while its task is only offered")
+                .isTrue();
+        assertThat(WorkRun.held(f.run.snapshot()).over(bound, Set.of()))
+                .as("the issue an offer names, held by no story")
+                .isTrue();
+        assertThat(WorkRun.held(f.run.snapshot()).over("AA9", Set.of("ST2")))
+                .as("an issue of another story")
+                .isFalse();
+
+        for (final WorkRun.Offered offer : offered) {
+            f.start(offer);
+        }
+        assertThat(WorkRun.held(f.run.snapshot()).over("AA9", Set.of("ST1")))
+                .as("while its task is at work")
+                .isTrue();
     }
 
     /** ST1 gains AA2, which its started task was not given, and ST2 without a run holds AA3. */
@@ -4754,7 +4834,7 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
-                                        () -> saved.getAndSet(true)));
+                                        runs -> saved.getAndSet(true)));
 
         assertThat(refused).isInstanceOf(StoreException.StaleRevision.class);
         assertThat(saved).as("nothing reaches the store").isFalse();
@@ -4774,7 +4854,7 @@ class WorkRunTest {
                         false,
                         "https://example.org/own.git",
                         null,
-                        save)
+                        runs -> save.get())
                 .saved();
     }
 
