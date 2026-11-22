@@ -4074,7 +4074,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "StoryOutsideOwnRepository",
-        "text" : "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it."
+        "text" : "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it.",
+        "holds" : true
       } ]
     }, {
       "id" : "B878",
@@ -4096,7 +4097,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "ParentInOtherRepository",
-        "text" : "Its parent is in another repository, so it is shown without its parent."
+        "text" : "Its parent is in another repository, so it is shown without its parent.",
+        "holds" : true
       } ]
     }, {
       "id" : "B879",
@@ -4118,7 +4120,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "BlockedByStory",
-        "text" : "It is blocked by a story, which only an issue can block, so it is shown without that blocker."
+        "text" : "It is blocked by a story, which only an issue can block, so it is shown without that blocker.",
+        "holds" : true
       } ]
     }, {
       "id" : "B880",
@@ -4140,7 +4143,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "ParentCircle",
-        "text" : "Its parents lead back to it, so it is shown without its parent."
+        "text" : "Its parents lead back to it, so it is shown without its parent.",
+        "holds" : true
       } ]
     }, {
       "id" : "B881",
@@ -4162,7 +4166,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "SubIssueOfSubIssue",
-        "text" : "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent."
+        "text" : "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent.",
+        "holds" : true
       } ]
     }, {
       "id" : "B882",
@@ -4184,7 +4189,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "PastOnePage",
-        "text" : "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read."
+        "text" : "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read.",
+        "holds" : true
       } ]
     }, {
       "id" : "B883",
@@ -4206,7 +4212,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "DependsOnUnplaced",
-        "text" : "An issue it stands under or waits on is not placed on the board, so it is shown without that link."
+        "text" : "An issue it stands under or waits on is not placed on the board, so it is shown without that link.",
+        "holds" : true
       } ]
     } ],
     "work" : null,
