@@ -1,2 +1,2 @@
-title: The board's screen marks each warned story and issue with what is wrong in its tooltip, shows a column for each state outside the workflow and one for No state at its end, and shows two items of one id each on its own.
+title: The board's screen marks each warned story and issue with what is wrong in its tooltip, shows a column for each state outside the workflow and one for No state at its end, shows two items of one id each on its own, and offers no work, priority or move on an item that a warning holds, as each warning's new holds field says.
 type: added

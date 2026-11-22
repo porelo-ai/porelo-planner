@@ -1164,8 +1164,9 @@ paths:
       summary: List the issues in no story
       description: >-
         Answers the board's issues that no story names and that are not sub-issues, at any depth, of an issue a
-        story names. An issue outside the workflow is not listed, since it is on no board. Issues follow the
-        board's order of states, then the order in which the store supplies the board's issues. The story query parameter is required and accepts only none; a missing or other value is refused
+        story names. An issue in a state the workflow does not have is listed too, with its warning, after those in
+        the workflow's states. Issues follow the board's order of states, then the order in which the store
+        supplies the board's issues. The story query parameter is required and accepts only none; a missing or other value is refused
         before any board or work record is read (InvalidName).
       tags: [board]
       parameters:
@@ -3350,7 +3351,7 @@ components:
         blockers or id holds it back: no work starts on it, and neither an edit nor a move names it, but for a move
         out of a state the workflow does not know, which sets it right.
       type: object
-      required: [kind, text]
+      required: [kind, text, holds]
       properties:
         kind:
           type: string
@@ -3362,6 +3363,12 @@ components:
         text:
           type: string
           description: One fixed sentence saying what is wrong, for a tooltip; it never repeats a person's words.
+        holds:
+          type: boolean
+          description: >-
+            Whether the planner holds back the item for this warning: no work starts on it, and neither an edit nor
+            a move names it, but for a move out of a state the workflow does not know. Since kinds are open, a window
+            tells by this field which warning holds an item.
     HeldIssue:
       description: An open issue of the story no task of the proposal names, since the board holds it back.
       type: object

@@ -15,12 +15,12 @@ bool _planStringsReported(Object? value) =>
 List<T> _planList<T>(Object? value, T Function(Map<String, dynamic>) read) =>
     value is List ? value.whereType<Map<String, dynamic>>().map(read).toList() : <T>[];
 
-/// Removes directional and control characters only for display; wire records remain unchanged.
+/// Removes directional, control and invisible format characters only for display; wire records remain unchanged.
 String planningShown(String text, {bool multiline = true}) => text.replaceAll(
   RegExp(
     multiline
-        ? r'[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]'
-        : r'[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]',
+        ? r'[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]'
+        : r'[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\u2028\u2029]',
   ),
   '',
 );
@@ -30,16 +30,32 @@ String planningShown(String text, {bool multiline = true}) => text.replaceAll(
 @immutable
 class PlanWarning {
   /// Takes a warning's parts.
-  const PlanWarning(this.kind, this.text);
+  const PlanWarning(this.kind, this.text, {this.holds = false});
 
-  /// Reads one warning; a field that is no text reads as empty.
-  PlanWarning.from(Map<String, dynamic> map) : kind = _planText(map, 'kind'), text = _planText(map, 'text');
+  /// Reads one warning; a field that is no text reads as empty, and a hold that is not true as none.
+  PlanWarning.from(Map<String, dynamic> map)
+    : kind = _planText(map, 'kind'),
+      text = _planText(map, 'text'),
+      holds = map['holds'] == true;
+
+  /// The kind of an id that names another item too, whose own page no read by that id finds.
+  static const idTwice = 'IdTwice';
 
   /// The planner's name of what is wrong, such as StateOutsideWorkflow; one the window does not know is shown as any.
   final String kind;
 
   /// The sentence the person reads, empty when unsaid.
   final String text;
+
+  /// Whether the planner holds work, edits and moves on the item for it, but a move out of a state the workflow does
+  /// not have.
+  final bool holds;
+
+  /// Whether one of [warnings] holds its item.
+  static bool holding(List<PlanWarning> warnings) => warnings.any((warning) => warning.holds);
+
+  /// Whether one of [warnings] says the item's id names another item too.
+  static bool namesTwice(List<PlanWarning> warnings) => warnings.any((warning) => warning.kind == idTwice);
 
   /// The warnings of an item, none when the planner named none, as an older one does.
   static List<PlanWarning> read(Object? value) => [

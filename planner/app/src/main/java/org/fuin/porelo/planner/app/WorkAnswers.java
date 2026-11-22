@@ -82,7 +82,8 @@ public final class WorkAnswers {
     }
 
     /**
-     * Answers an item's warnings as the board shows them.
+     * Answers an item's warnings as the board shows them, each saying whether it holds the item
+     * back.
      *
      * @param warnings the store's warnings on the item
      * @return them, in order
@@ -93,7 +94,7 @@ public final class WorkAnswers {
                 .map(
                         warning ->
                                 new org.fuin.porelo.planner.app.answers.ItemWarning(
-                                        warning.kind(), warning.text()))
+                                        warning.kind(), warning.text(), warning.holdsWork()))
                 .toList();
     }
 

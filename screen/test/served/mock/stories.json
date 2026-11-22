@@ -3750,7 +3750,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "StateOutsideWorkflow",
-        "text" : "Its state is none of the workflow's states, so no work starts on it."
+        "text" : "Its state is none of the workflow's states, so no work starts on it.",
+        "holds" : true
       } ]
     }, {
       "id" : "B871",
@@ -3771,7 +3772,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "NoPriority",
-        "text" : "It has no priority, so it is sorted as Medium."
+        "text" : "It has no priority, so it is sorted as Medium.",
+        "holds" : false
       } ]
     }, {
       "id" : "B872",
@@ -3793,7 +3795,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "IdTwice",
-        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
+        "holds" : true
       } ]
     }, {
       "id" : "B872",
@@ -3815,7 +3818,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "IdTwice",
-        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
+        "holds" : true
       } ]
     }, {
       "id" : "B873",
@@ -3837,7 +3841,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "ParentOutsideProject",
-        "text" : "Its parent is outside the project and is not shown."
+        "text" : "Its parent is outside the project and is not shown.",
+        "holds" : true
       } ]
     }, {
       "id" : "B874",
@@ -3859,7 +3864,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "BlockerOutsideProject",
-        "text" : "An issue it waits on is outside the project and is not shown."
+        "text" : "An issue it waits on is outside the project and is not shown.",
+        "holds" : true
       } ]
     }, {
       "id" : "B875",
@@ -3881,7 +3887,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "WrongParent",
-        "text" : "It stands under another parent than its id names."
+        "text" : "It stands under another parent than its id names.",
+        "holds" : true
       } ]
     }, {
       "id" : "B876",
@@ -3903,7 +3910,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "BodyNotSectioned",
-        "text" : "Its text has no sections the planner can read; it is shown as it stands."
+        "text" : "Its text has no sections the planner can read; it is shown as it stands.",
+        "holds" : false
       } ]
     } ],
     "work" : null,
@@ -3978,7 +3986,8 @@
     },
     "warnings" : [ {
       "kind" : "NoState",
-      "text" : "No state can be told for it: it states none, and its issues give none."
+      "text" : "No state can be told for it: it states none, and its issues give none.",
+      "holds" : true
     } ]
   }, {
     "id" : "ST298",
@@ -3995,7 +4004,8 @@
     "open" : null,
     "warnings" : [ {
       "kind" : "IssueOutsideProject",
-      "text" : "It names an issue that is no issue of the project's repositories, which is not shown."
+      "text" : "It names an issue that is no issue of the project's repositories, which is not shown.",
+      "holds" : false
     } ]
   } ],
   "open" : {

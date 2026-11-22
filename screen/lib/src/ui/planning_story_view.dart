@@ -125,6 +125,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
               ?planningGivenMark(story, onFollow: (to) => unawaited(detail.board.followIssues(story.id, to))),
+              ?planningWarningMark(story.warnings, key: Key('planning-warned ${story.id}')),
             ],
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),
@@ -384,10 +385,17 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     ];
     final small = Theme.of(context).textTheme.bodySmall;
     final cells = <Widget>[
-      TextButton(
-        key: Key('planning-issue ${issue.id}'),
-        onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
-        child: Text(planningValue(issue.id)),
+      Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton(
+            key: Key('planning-issue ${issue.id}'),
+            // An id that names another issue too opens no page, since no read by that id finds one.
+            onPressed: issue.id.isEmpty || PlanWarning.namesTwice(issue.warnings) ? null : () => onIssue(issue.id),
+            child: Text(planningValue(issue.id)),
+          ),
+          ?planningWarningMark(issue.warnings, key: Key('planning-warned-issue ${issue.id}')),
+        ],
       ),
       Text(planningValue(issue.title)),
       Text(planningValue(issue.repository)),
@@ -600,7 +608,9 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           : null);
 
   /// The working states an agent's issue may be started toward; a person's issue is moved there by hand instead.
-  List<PlanState> _startStatesOf(PlanIssue issue) => onStartIssue == null || issue.byHand
+  /// An issue the planner holds starts toward none.
+  List<PlanState> _startStatesOf(PlanIssue issue) =>
+      onStartIssue == null || issue.byHand || PlanWarning.holding(issue.warnings)
       ? const []
       : detail.board.states.where((state) => state.kind == 'WORKING' && state.name != issue.state).toList();
 

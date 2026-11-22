@@ -320,6 +320,10 @@ class _BoardViewState extends State<_BoardView> {
 
   /// Each phase's own vertical scroll, by phase name, starting where the person left it.
   final Map<String, ScrollController> _phaseScrolls = {};
+
+  /// Each column at the board's end for a state no phase shows, by the state's value; a map of its own, so no phase's
+  /// name can share a column's scroll.
+  final Map<String, ScrollController> _unplacedScrolls = {};
   late final _horizontal = ScrollController(
     initialScrollOffset: board.preferences.horizontalOffset,
     keepScrollOffset: false,
@@ -343,6 +347,16 @@ class _BoardViewState extends State<_BoardView> {
           });
         return controller;
       });
+
+  /// The vertical scroll of the column for [state], a state no phase shows, which remembers its offset by the value.
+  ScrollController _unplacedScroll(String state) => _unplacedScrolls.putIfAbsent(state, () {
+    late final ScrollController controller;
+    controller = _RememberedScroll(() => board.preferences.unplacedOffsets[state] ?? 0)
+      ..addListener(() {
+        if (controller.hasClients) board.preferences.unplacedOffsets[state] = controller.offset;
+      });
+    return controller;
+  });
 
   /// The key name of the phase at [index]: its name, and for a later phase of a name already shown its index too, so
   /// no two columns share a key or a scroll.
@@ -371,14 +385,13 @@ class _BoardViewState extends State<_BoardView> {
       ];
       final index = shown.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
       if (index < 0) continue;
-      _reveal(_phaseId(at), folded, shown, index, generation);
+      _reveal(() => _phaseScrolls[folded ? '${_phaseId(at)} folded' : _phaseId(at)], shown, index, generation);
       return;
     }
-    for (final state in _unplacedStates()) {
-      final unplaced = _shownUnplacedIn(state);
-      final index = unplaced.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
+    for (final column in _unplacedColumns()) {
+      final index = column.stories.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
       if (index >= 0) {
-        _reveal('unplaced $state', false, unplaced, index, generation);
+        _reveal(() => _unplacedScrolls[column.state], column.stories, index, generation);
         return;
       }
     }
@@ -388,20 +401,21 @@ class _BoardViewState extends State<_BoardView> {
   /// Each search's number, so a scroll toward an older search's card stops once a newer search began.
   int _searches = 0;
 
-  /// Brings the card at [index] of the column [id]'s [stories] into view, unless it is the card the search showed last.
-  void _reveal(String id, bool folded, List<PlanStory> stories, int index, int generation) {
-    final key = Key('planning-card ${stories[index].id}');
+  /// Brings the card at [index] of the column's [stories] into view, the column's scroll found by [scroll], unless it
+  /// is the card the search showed last.
+  void _reveal(ScrollController? Function() scroll, List<PlanStory> stories, int index, int generation) {
+    final key = Key(_cardKey(stories[index]));
     // The same first card again is left where the person scrolled it.
     if (key == _shownFound) return;
-    final cards = [for (final story in stories) Key('planning-card ${story.id}')];
-    WidgetsBinding.instance.addPostFrameCallback((_) => _step(id, folded, cards, index, generation, 0));
+    final cards = [for (final story in stories) Key(_cardKey(story))];
+    WidgetsBinding.instance.addPostFrameCallback((_) => _step(scroll, cards, index, generation, 0));
   }
 
   /// Scrolls the column toward the card at [index] of its [cards], frame by frame, until the card stands in view; a
   /// column builds only the cards near its view, and their heights differ, so one jump rarely lands.
-  void _step(String id, bool folded, List<Key> cards, int index, int generation, int tries) {
+  void _step(ScrollController? Function() scroll, List<Key> cards, int index, int generation, int tries) {
     if (!mounted || generation != _searches || tries > 60) return;
-    final controller = _phaseScrolls[folded ? '$id folded' : id];
+    final controller = scroll();
     if (controller == null || !controller.hasClients) return;
     final position = controller.position;
     final viewport = position.context.notificationContext?.findRenderObject();
@@ -435,7 +449,7 @@ class _BoardViewState extends State<_BoardView> {
     final next = (position.pixels + target - Space.normal).clamp(position.minScrollExtent, position.maxScrollExtent);
     if (next == position.pixels) return;
     controller.jumpTo(next);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _step(id, folded, cards, index, generation, tries + 1));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _step(scroll, cards, index, generation, tries + 1));
     WidgetsBinding.instance.scheduleFrame();
   }
 
@@ -461,7 +475,7 @@ class _BoardViewState extends State<_BoardView> {
 
   @override
   void dispose() {
-    for (final controller in _phaseScrolls.values) {
+    for (final controller in [..._phaseScrolls.values, ..._unplacedScrolls.values]) {
       controller.dispose();
     }
     _hovered.dispose();
@@ -508,25 +522,20 @@ class _BoardViewState extends State<_BoardView> {
     return shown;
   }
 
-  /// The stories outside the reported workflow the applied filter keeps.
-  List<PlanStory> _shownUnplaced() => [
-    for (final story in board.unplaced)
-      if (_filters.keeps(story, _applied)) story,
-  ];
-
-  /// The states outside the reported workflow that the shown stories stand in, each a column at the board's end:
-  /// by name, and no state last.
-  List<String> _unplacedStates() {
-    final states = {for (final story in _shownUnplaced()) board.displayedState(story)}.toList()
-      ..sort((a, b) => a.isEmpty != b.isEmpty ? (a.isEmpty ? 1 : -1) : a.compareTo(b));
-    return states;
+  /// The columns at the board's end, one for each state no phase shows that a story the applied filter keeps, or an
+  /// issue in no story, stands in: by the state's value, and no state last; each with its stories.
+  List<({String state, List<PlanStory> stories})> _unplacedColumns() {
+    final stories = <String, List<PlanStory>>{};
+    for (final story in board.unplaced) {
+      if (_filters.keeps(story, _applied)) (stories[board.displayedState(story)] ??= []).add(story);
+    }
+    final states = {
+      ...stories.keys,
+      for (final state in board.noStoryUnplaced)
+        if (_noStoryShown(state)) state,
+    }.toList()..sort((a, b) => a.isEmpty != b.isEmpty ? (a.isEmpty ? 1 : -1) : a.compareTo(b));
+    return [for (final state in states) (state: state, stories: stories[state] ?? const [])];
   }
-
-  /// The shown stories outside the reported workflow that stand in [state].
-  List<PlanStory> _shownUnplacedIn(String state) => [
-    for (final story in _shownUnplaced())
-      if (board.displayedState(story) == state) story,
-  ];
 
   /// Whether the card of issues in no story stands in the state [name]: under a filter only in the states it keeps,
   /// since those issues have no story whose figures could match.
@@ -1124,7 +1133,8 @@ class _BoardViewState extends State<_BoardView> {
                               children: [
                                 for (final (at, phase) in board.phases.indexed)
                                   if (board.statesIn(phase).isNotEmpty) _phase(context, at),
-                                for (final state in _unplacedStates()) _unplaced(context, state),
+                                for (final column in _unplacedColumns())
+                                  _unplaced(context, column.state, column.stories),
                                 if (board.outside.isNotEmpty) _outside(context),
                                 if (board.unlisted.isNotEmpty) _unlisted(context),
                               ],
@@ -1285,29 +1295,50 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  /// The stories in [state], which the workflow does not report, in a column of their own named after the value, or
-  /// No state, that takes no drop.
-  Widget _unplaced(BuildContext context, String state) {
-    final stories = _shownUnplacedIn(state);
-    return SizedBox(
+  /// The [stories] and the issues in no story in [state], which no phase shows, in a column of their own named after
+  /// the value, or No state, that takes no drop.
+  Widget _unplaced(BuildContext context, String state, List<PlanStory> stories) {
+    final controller = _unplacedScroll(state);
+    final noStory = _noStoryShown(state) && board.noStoryIn(state).isNotEmpty;
+    return Container(
       key: Key(state.isEmpty ? 'planning-no-state' : 'planning-unknown-state $state'),
       width: PlanningStyle.column,
-      child: CustomScrollView(
-        controller: _phaseScroll('unplaced $state', remember: 'unplaced $state'),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Tooltip(
-              message: state.isEmpty
-                  ? 'Stories whose state cannot be told'
-                  : 'Stories in a state the workflow does not have',
-              child: Text(state.isEmpty ? 'No state' : _line(state)),
+      margin: const EdgeInsets.only(right: Space.normal),
+      padding: const EdgeInsets.all(Space.small),
+      decoration: BoxDecoration(
+        color: PlanningStyle.phase(Theme.of(context).colorScheme),
+        borderRadius: BorderRadius.circular(PlanningStyle.radiusMedium),
+      ),
+      child: Scrollbar(
+        controller: controller,
+        child: CustomScrollView(
+          controller: controller,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Tooltip(
+                message: state.isEmpty
+                    ? 'Stories whose state cannot be told'
+                    : board.state(state) != null
+                    ? 'Stories and issues in a state of the workflow that no phase shows'
+                    : 'Stories and issues in a state the workflow does not have',
+                child: Text(state.isEmpty ? 'No state' : _line(state), style: Theme.of(context).textTheme.labelLarge),
+              ),
             ),
-          ),
-          SliverList.builder(
-            itemCount: stories.length,
-            itemBuilder: (context, index) => _card(context, stories[index]),
-          ),
-        ],
+            SliverList.builder(
+              itemCount: stories.length,
+              itemBuilder: (context, index) => _card(context, stories[index]),
+            ),
+            if (noStory)
+              SliverToBoxAdapter(
+                child: PlanningNoStoryCard(
+                  board: board,
+                  state: state,
+                  onIssue: (id) => widget.onIssue('', id),
+                  sizeBadge: (issue) => _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1432,9 +1463,11 @@ class _BoardViewState extends State<_BoardView> {
   bool _accepts(PlanState state, _CardDrag drag) =>
       // A move made while another card's save is out is queued behind it.
       !board.waitsOnItsSave(drag.story) &&
-      {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
       board.takesMoves &&
-      board.stories.any((story) => story.id == drag.story && board.displayedState(story) != state.name);
+      board.stories.any(
+        (story) =>
+            story.id == drag.story && board.displayedState(story) != state.name && board.storyMayEnter(story, state),
+      );
 
   void _dropped(PlanState state, _CardDrag drag) {
     _hovered.value = null;
@@ -1583,11 +1616,11 @@ class _BoardViewState extends State<_BoardView> {
       story,
       InkWell(
         key: Key('planning-story ${story.id}'),
-        onTap: story.id.isEmpty ? null : () => widget.onStory(story.id),
+        onTap: _opens(story) ? () => widget.onStory(story.id) : null,
         child: Tooltip(
           message: _line('${story.id} — ${story.title} (${story.priority})'),
           child: Container(
-            key: Key('planning-card ${story.id}'),
+            key: Key(_cardKey(story)),
             padding: const EdgeInsets.all(Space.tight),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1629,7 +1662,9 @@ class _BoardViewState extends State<_BoardView> {
     data: (story: story.id, revision: board.snapshot?.revision ?? ''),
     // A card under the pointer may leave the view while it is dragged, and its target then says nothing.
     onDragEnd: (_) => _hovered.value = null,
-    maxSimultaneousDrags: board.waitsOnItsSave(story.id) || !board.takesMoves ? 0 : 1,
+    // A story the planner holds where it stands takes no drag; one held in a state the workflow lacks may leave it.
+    maxSimultaneousDrags:
+        board.waitsOnItsSave(story.id) || !board.takesMoves || board.heldInPlace(story.state, story.warnings) ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
       child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
@@ -1850,6 +1885,34 @@ class _BoardViewState extends State<_BoardView> {
 
   String? _stopUnavailable(PlanStory story) => board.stopUnavailable(story);
 
+  /// Whether [story]'s card leads to its page: not without an id, nor for an id that names another story too, whose
+  /// page no read by that id finds.
+  static bool _opens(PlanStory story) => story.id.isNotEmpty && !PlanWarning.namesTwice(story.warnings);
+
+  /// Each story's place among the board's stories, by identity, for an id the board names more than once; made once
+  /// per board read.
+  (List<PlanStory>, Map<PlanStory, int>)? _copies;
+
+  /// The key of [story]'s card: by its id, and for an id the board names more than once by its place among the
+  /// board's stories too, so no two cards share a key and the search brings the copy it found into view.
+  String _cardKey(PlanStory story) {
+    final stories = board.stories;
+    var copies = _copies;
+    if (copies == null || !identical(copies.$1, stories)) {
+      final counts = <String, int>{};
+      for (final each in stories) {
+        counts[each.id] = (counts[each.id] ?? 0) + 1;
+      }
+      final places = Map<PlanStory, int>.identity();
+      for (final (index, each) in stories.indexed) {
+        if (counts[each.id]! > 1) places[each] = index;
+      }
+      copies = _copies = (stories, places);
+    }
+    final place = copies.$2[story];
+    return place == null ? 'planning-card ${story.id}' : 'planning-card ${story.id} $place';
+  }
+
   /// Each card as last built, with what it was built from; a board of hundreds of cards is not built anew on
   /// every change, only the cards whose inputs changed.
   final Map<String, (List<Object?>, Widget)> _cards = {};
@@ -1908,11 +1971,11 @@ class _BoardViewState extends State<_BoardView> {
     return _drag(
       story,
       Card(
-        key: Key('planning-card ${story.id}'),
+        key: Key(_cardKey(story)),
         margin: const EdgeInsets.only(bottom: Space.small),
         child: InkWell(
           key: Key('planning-story ${story.id}'),
-          onTap: story.id.isEmpty ? null : () => widget.onStory(story.id),
+          onTap: _opens(story) ? () => widget.onStory(story.id) : null,
           child: Padding(
             padding: const EdgeInsets.all(Space.normal),
             child: Column(

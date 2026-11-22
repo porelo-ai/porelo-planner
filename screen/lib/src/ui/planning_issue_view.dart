@@ -116,6 +116,7 @@ class PlanningIssueView extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Chip(key: const Key('planning-issue-state'), label: Text(planningValue(issue.state))),
+            ?planningWarningMark(issue.warnings, key: const Key('planning-issue-warned')),
             Chip(label: Text('Size ${planningValue(issue.size)}')),
             Chip(
               key: const Key('planning-issue-worker'),

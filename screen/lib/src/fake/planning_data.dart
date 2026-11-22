@@ -2293,7 +2293,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "StateOutsideWorkflow",
-              "text": "Its state is none of the workflow's states, so no work starts on it."
+              "text": "Its state is none of the workflow's states, so no work starts on it.",
+              "holds": true
             }
           ]
         },
@@ -2320,7 +2321,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "NoPriority",
-              "text": "It has no priority, so it is sorted as Medium."
+              "text": "It has no priority, so it is sorted as Medium.",
+              "holds": false
             }
           ]
         },
@@ -2348,7 +2350,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "IdTwice",
-              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
+              "holds": true
             }
           ]
         },
@@ -2376,7 +2379,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "IdTwice",
-              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed."
+              "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
+              "holds": true
             }
           ]
         },
@@ -2404,7 +2408,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "ParentOutsideProject",
-              "text": "Its parent is outside the project and is not shown."
+              "text": "Its parent is outside the project and is not shown.",
+              "holds": true
             }
           ]
         },
@@ -2432,7 +2437,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "BlockerOutsideProject",
-              "text": "An issue it waits on is outside the project and is not shown."
+              "text": "An issue it waits on is outside the project and is not shown.",
+              "holds": true
             }
           ]
         },
@@ -2460,7 +2466,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "WrongParent",
-              "text": "It stands under another parent than its id names."
+              "text": "It stands under another parent than its id names.",
+              "holds": true
             }
           ]
         },
@@ -2488,7 +2495,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "warnings": [
             {
               "kind": "BodyNotSectioned",
-              "text": "Its text has no sections the planner can read; it is shown as it stands."
+              "text": "Its text has no sections the planner can read; it is shown as it stands.",
+              "holds": false
             }
           ]
         }
@@ -2510,7 +2518,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "warnings": [
         {
           "kind": "NoState",
-          "text": "No state can be told for it: it states none, and its issues give none."
+          "text": "No state can be told for it: it states none, and its issues give none.",
+          "holds": true
         }
       ]
     },
@@ -2527,7 +2536,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "warnings": [
         {
           "kind": "IssueOutsideProject",
-          "text": "It names an issue that is no issue of the project's repositories, which is not shown."
+          "text": "It names an issue that is no issue of the project's repositories, which is not shown.",
+          "holds": false
         }
       ]
     }
@@ -2849,10 +2859,14 @@ List<Map<String, dynamic>> mockPlanningNoStoryIssues(Map<String, dynamic> board)
       if (held.contains(issue['parent']) && held.add(issue['id'])) changed = true;
     }
   }
+  final states = [for (final state in (board['states'] as List).whereType<Map<String, dynamic>>()) state['name']];
+  // As the planner answers: by the workflow's order of states, and one in a state the workflow lacks after them.
   return [
-    for (final state in (board['states'] as List).whereType<Map<String, dynamic>>())
+    for (final state in states)
       for (final issue in issues)
-        if (!held.contains(issue['id']) && issue['state'] == state['name']) _planningIssueSummary(issue),
+        if (!held.contains(issue['id']) && issue['state'] == state) _planningIssueSummary(issue),
+    for (final issue in issues)
+      if (!held.contains(issue['id']) && !states.contains(issue['state'])) _planningIssueSummary(issue),
   ];
 }
 

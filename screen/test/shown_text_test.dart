@@ -103,6 +103,14 @@ class _Source extends MockPlanningSource {
 }
 
 void main() {
+  // Harm: an invisible character splits or joins what the person reads, so an id or a title that looks like another
+  // is taken for it.
+  test('a shown text drops zero-width and invisible format characters', () {
+    const hidden = 'a\u200b\u200c\u200db\u2060\u2061\u2062\u2063\u2064c\u206a\u206b\u206c\u206d\u206e\u206fd\ufeff';
+    expect(planningShown(hidden), 'abcd');
+    expect(planningShown(hidden, multiline: false), 'abcd');
+  });
+
   // Harm: a text that reorders what the person reads, such as a title that reads as harmless and is not.
   testWidgets('the board shows its cards, issues and tooltips without control or bidirectional characters', (
     tester,

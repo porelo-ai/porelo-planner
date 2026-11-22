@@ -47,6 +47,10 @@ class PlanningPreferences {
   /// its own.
   final Map<String, double> phaseOffsets = {};
 
+  /// Each column at the board's end for a state no phase shows, its last vertical position by the state's value;
+  /// apart from [phaseOffsets], so no phase's name can stand for one of them.
+  final Map<String, double> unplacedOffsets = {};
+
   /// The last horizontal board position, retained across provider replacements.
   double horizontalOffset = 0;
 
@@ -800,6 +804,7 @@ class PlanningBoard extends ChangeNotifier {
     }
     if (_disposed || !live || snapshot?.complete != true) return 'the planning board is not live and complete';
     if (snapshot!.revision.isEmpty) return 'the planning revision was not reported';
+    if (heldBy(story.warnings) case final words?) return words;
     final kind = state(story.state)?.kind;
     if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(kind)) return 'the story state does not permit starting work';
     if (_needsWorkRead(story) && !identical(_workSnapshots[story.id], snapshot)) {
@@ -1101,7 +1106,7 @@ class PlanningBoard extends ChangeNotifier {
           ? 'waiting for the planner'
           : story.isEmpty || !snapshot!.stories.any((reported) => reported.id == story)
           ? 'the story is not on the board'
-          : null);
+          : heldBy(snapshot!.stories.firstWhere((reported) => reported.id == story).warnings));
 
   /// Sets [story]'s priority, one of [planningPriorities], against the revision the board shows; the choice stays
   /// pending until a board carries it. Answers whether the planner took it; a refusal's words stand in
@@ -1420,6 +1425,7 @@ class PlanningBoard extends ChangeNotifier {
     final target = state(to);
     if (story == null || target == null) return;
     if (!{'WAITING', 'CLOSED'}.contains(target.kind)) return;
+    if (!storyMayEnter(story, target)) return refuseMove(id, heldBy(story.warnings)!);
     if (snapshot!.revision.isEmpty) {
       moveProblem = 'The planner did not report a planning revision. Reload planning before moving stories.';
       _changed();
@@ -1460,8 +1466,46 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Whether a person may move [issue] into [target]: a waiting or closed state, or a working one for an issue a
   /// person works, or for an agent's issue no run of this planner works, which shows work started elsewhere.
+  /// An issue a warning holds may only leave a state the workflow does not have, as [storyMayEnter] says.
   bool issueMayEnter(PlanIssue issue, PlanState? target) =>
-      target != null && {'WAITING', 'CLOSED', if (issue.byHand || !runHolds(issue)) 'WORKING'}.contains(target.kind);
+      target != null &&
+      (PlanWarning.holding(issue.warnings)
+          ? _heldMayEnter(issue.state, issue.warnings, target)
+          : {'WAITING', 'CLOSED', if (issue.byHand || !runHolds(issue)) 'WORKING'}.contains(target.kind));
+
+  /// Whether a person may drop [story] on [target]: a waiting or closed state moves it, a working one starts it. A
+  /// story a warning holds may only leave a state the workflow does not have, into a waiting or closed state, which
+  /// sets it right; the planner refuses it every other move.
+  bool storyMayEnter(PlanStory story, PlanState? target) =>
+      target != null &&
+      (PlanWarning.holding(story.warnings)
+          ? _heldMayEnter(story.state, story.warnings, target)
+          : {'WAITING', 'WORKING', 'CLOSED'}.contains(target.kind));
+
+  /// Whether an item standing in [from] that one of its [warnings] holds may still enter [target]: only into a waiting
+  /// or closed state, since a working one would start its work, and only out of a state the workflow does not have
+  /// that its one holding warning is about; a second holding warning, such as an id named twice, holds the move too.
+  bool _heldMayEnter(String from, List<PlanWarning> warnings, PlanState target) =>
+      _leaves(from, warnings) && {'WAITING', 'CLOSED'}.contains(target.kind);
+
+  /// Whether an item standing in [from] may move out of it although its [warnings] hold it: its state is none of the
+  /// workflow's, and only one warning holds it, the one about that state.
+  bool _leaves(String from, List<PlanWarning> warnings) =>
+      state(from) == null && warnings.where((warning) => warning.holds).length == 1;
+
+  /// Whether an item standing in [from] is held where it stands: one of its [warnings] holds it, and no move out of a
+  /// state the workflow does not have is open to it, so it takes no drag.
+  bool heldInPlace(String from, List<PlanWarning> warnings) =>
+      PlanWarning.holding(warnings) && !_leaves(from, warnings);
+
+  /// Why the planner holds back an item with [warnings], in the words of those that hold it; null when none does.
+  static String? heldBy(List<PlanWarning> warnings) {
+    final words = [
+      for (final warning in warnings)
+        if (warning.holds) planningShown(warning.text.isEmpty ? warning.kind : warning.text, multiline: false),
+    ];
+    return words.isEmpty ? null : 'the planner holds it: ${words.join(' ')}';
+  }
 
   /// Whether a run of this planner works [issue] now: at work on it, or a run of a story holding it or its parent
   /// with a task at work or not ended. A story whose work was not reported counts as one, so no move goes beside a
@@ -1507,7 +1551,12 @@ class PlanningBoard extends ChangeNotifier {
     if (seen != null && seen != issue.state) return refuseMove(id, 'it now stands in ${issue.state}; choose again.');
     final target = state(to);
     if (to == (_shownMove('issue $id')?.to ?? issue.state)) return;
-    if (!issueMayEnter(issue, target)) return refuseMove(id, 'it may not enter $to from ${issue.state}.');
+    if (!issueMayEnter(issue, target)) {
+      return refuseMove(
+        id,
+        PlanWarning.holding(issue.warnings) ? heldBy(issue.warnings)! : 'it may not enter $to from ${issue.state}.',
+      );
+    }
     await _moveNow(
       'issue $id',
       PlanningIssueMove(id, to),
@@ -2479,13 +2528,39 @@ class PlanningBoard extends ChangeNotifier {
     return sorted[name] ?? const [];
   }
 
+  /// What the stories outside the phases were sorted from, and the stories; sorted once per change, as [cards] are.
+  (List<Object?>, List<PlanStory>)? _unplaced;
+
   /// Stories whose state is missing from the column configuration, kept visible with an explanation.
-  List<PlanStory> get unplaced => _sort(
-    stories.where(
-      (story) =>
-          state(displayedState(story)) == null || !phases.any((phase) => phase.states.contains(displayedState(story))),
-    ),
-  );
+  List<PlanStory> get unplaced {
+    final inputs = <Object?>[
+      snapshot,
+      preferences.search,
+      preferences.priority,
+      for (final move in _pending.entries) ...[move.key, move.value.to],
+    ];
+    final known = _unplaced;
+    if (known != null && listEquals(known.$1, inputs)) return known.$2;
+    final placed = {for (final phase in phases) ...phase.states};
+    final sorted = List<PlanStory>.unmodifiable(
+      _sort(stories.where((story) => state(displayedState(story)) == null || !placed.contains(displayedState(story)))),
+    );
+    _unplaced = (inputs, sorted);
+    return sorted;
+  }
+
+  /// The states outside every phase that issues in no story stand in, under the board's search and priority filter.
+  Set<String> get noStoryUnplaced {
+    final placed = {for (final phase in phases) ...phase.states};
+    final states = {
+      for (final issue in noStory)
+        if (!placed.contains(issue.state)) issue.state,
+    };
+    return {
+      for (final state in states)
+        if (noStoryIn(state).isNotEmpty) state,
+    };
+  }
 
   /// Updates the priority filter.
   void filter(PlanningPriority priority) {

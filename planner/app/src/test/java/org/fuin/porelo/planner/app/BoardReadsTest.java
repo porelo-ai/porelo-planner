@@ -611,15 +611,16 @@ class BoardReadsTest {
                         .withWarnings(List.of(Warning.stateOutsideWorkflow())));
         issues.add(
                 new Issue(
-                        "AB07",
-                        "porelo-store",
-                        "Waiting",
-                        "Backlog",
-                        "S",
-                        List.of(),
-                        null,
-                        null,
-                        ""));
+                                "AB07",
+                                "porelo-store",
+                                "Waiting",
+                                "Backlog",
+                                "S",
+                                List.of(),
+                                null,
+                                null,
+                                "")
+                        .withWarnings(List.of(Warning.noPriority())));
         final List<Story> stories = new ArrayList<>(base.stories());
         stories.add(
                 new Story(
@@ -707,6 +708,33 @@ class BoardReadsTest {
         assertThat(none.path("issues").get(1).path("warnings").get(0).path("text").asString())
                 .as("with its warning's text")
                 .isEqualTo(Warning.stateOutsideWorkflow().text());
+    }
+
+    @Test
+    void eachWarningSaysWhetherItHoldsItsItem() throws Exception {
+        // Harm: the kinds are open, so a window that cannot read which warning holds an item
+        // offers work, edits and moves on it that the planner refuses.
+        supplied = warnedBoard();
+        given();
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[2].warnings[0].kind").value("StateOutsideWorkflow"))
+                .andExpect(jsonPath("$.stories[2].warnings[0].holds").value(true))
+                .andExpect(jsonPath("$.stories[2].issues[1].warnings[0].kind").value("IdTwice"))
+                .andExpect(jsonPath("$.stories[2].issues[1].warnings[0].holds").value(true));
+        final JsonNode none = issuesInNoStory();
+        assertThat(none.path("issues").get(0).path("warnings").get(0).path("kind").asString())
+                .as("the issue in no story without a priority")
+                .isEqualTo("NoPriority");
+        assertThat(none.path("issues").get(0).path("warnings").get(0).path("holds").isBoolean())
+                .as("a warning that holds nothing says so")
+                .isTrue();
+        assertThat(none.path("issues").get(0).path("warnings").get(0).path("holds").asBoolean())
+                .as("a missing priority holds nothing back")
+                .isFalse();
+        assertThat(none.path("issues").get(1).path("warnings").get(0).path("holds").asBoolean())
+                .as("a state the workflow lacks holds the issue")
+                .isTrue();
         mvc.perform(get("/projects/alpha/issues/AB05"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchIssue"));

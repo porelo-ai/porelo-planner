@@ -43,7 +43,8 @@ class PlanningIssueRow extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: TextButton(
                 key: Key('planning-issue ${issue.id}'),
-                onPressed: issue.id.isEmpty ? null : onOpen,
+                // An id that names another issue too opens no page, since no read by that id finds one.
+                onPressed: issue.id.isEmpty || PlanWarning.namesTwice(issue.warnings) ? null : onOpen,
                 child: Text(planningShown('${issue.id} · ${issue.repository}', multiline: false)),
               ),
             ),
