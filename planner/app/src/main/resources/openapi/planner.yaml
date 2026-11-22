@@ -2024,7 +2024,7 @@ components:
                 status: 409
                 detail: The issue belongs to another story; an issue has one story.
                 parameters:
-                  issue: PL12
+                  issue: porelo-lib#12
                   story: ST3
                   field: existing[0]
     IssueRefused:
