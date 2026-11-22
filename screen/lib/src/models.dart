@@ -25,6 +25,29 @@ String planningShown(String text, {bool multiline = true}) => text.replaceAll(
   '',
 );
 
+/// What the store could not read in a story or an issue it still shows: an open [kind] and one sentence saying what
+/// is wrong.
+@immutable
+class PlanWarning {
+  /// Takes a warning's parts.
+  const PlanWarning(this.kind, this.text);
+
+  /// Reads one warning; a field that is no text reads as empty.
+  PlanWarning.from(Map<String, dynamic> map) : kind = _planText(map, 'kind'), text = _planText(map, 'text');
+
+  /// The planner's name of what is wrong, such as StateOutsideWorkflow; one the window does not know is shown as any.
+  final String kind;
+
+  /// The sentence the person reads, empty when unsaid.
+  final String text;
+
+  /// The warnings of an item, none when the planner named none, as an older one does.
+  static List<PlanWarning> read(Object? value) => [
+    for (final warning in _planList(value, PlanWarning.from))
+      if (warning.kind.isNotEmpty || warning.text.isNotEmpty) warning,
+  ];
+}
+
 /// One state, with the machine's kind preserved even when unknown.
 class PlanState {
   /// Reads the configured state and preserves unknown kinds for display.
@@ -236,6 +259,7 @@ class PlanIssue {
       findings = source.findings,
       whatMustBeTrue = source.whatMustBeTrue,
       subAgents = source.subAgents,
+      warnings = source.warnings,
       // A moved issue's minutes are the planner's to say again, on the board read after the save.
       minutesLeft = state == source.state ? source.minutesLeft : null;
 
@@ -264,6 +288,7 @@ class PlanIssue {
       findings = _planList(map['findings'], PlanFinding.from),
       whatMustBeTrue = map['whatMustBeTrue'] is String ? map['whatMustBeTrue'] as String : null,
       subAgents = map['subAgents'] is List ? _planList(map['subAgents'], PlanWorker.from) : null,
+      warnings = PlanWarning.read(map['warnings']),
       minutesLeft = _planMinutes(map['minutesLeft']);
 
   /// The issue's identifier.
@@ -320,6 +345,9 @@ class PlanIssue {
   /// The subAgents reported by the daemon.
   final List<PlanWorker>? subAgents;
 
+  /// What the store could not read in it, which its row shows; none when the planner named none.
+  final List<PlanWarning> warnings;
+
   /// For an issue left to build, the minutes expected of it less those its work took so far; null when not left to
   /// build, when nothing gives an expectation, or when the planner did not say.
   final double? minutesLeft;
@@ -372,6 +400,7 @@ class PlanStory {
       link = source.link,
       work = source.work,
       workReported = source.workReported,
+      warnings = source.warnings,
       // The figures known before the move stay shown until the planner's read after the save replaces them.
       open = source.open;
 
@@ -392,6 +421,7 @@ class PlanStory {
       link = _planText(map, 'link'),
       work = map['work'] is Map<String, dynamic> ? PlanWork.from(map['work'] as Map<String, dynamic>) : null,
       workReported = map.containsKey('work'),
+      warnings = PlanWarning.read(map['warnings']),
       open = PlanOpenWork.read(map['open']);
 
   /// Its identifier.
@@ -438,6 +468,9 @@ class PlanStory {
 
   /// What is still open of its issues, as the planner counted it; null when it did not say or a move made it stale.
   final PlanOpenWork? open;
+
+  /// What the store could not read in it, which its card shows; none when the planner named none.
+  final List<PlanWarning> warnings;
 
   /// Whether the watch supplied the ended outcome, including an explicitly cleared outcome.
   bool get endedReported => workReported;

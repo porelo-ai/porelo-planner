@@ -374,11 +374,13 @@ class _BoardViewState extends State<_BoardView> {
       _reveal(_phaseId(at), folded, shown, index, generation);
       return;
     }
-    final unplaced = _shownUnplaced();
-    final index = unplaced.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
-    if (index >= 0) {
-      _reveal('', false, unplaced, index, generation);
-      return;
+    for (final state in _unplacedStates()) {
+      final unplaced = _shownUnplacedIn(state);
+      final index = unplaced.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
+      if (index >= 0) {
+        _reveal('unplaced $state', false, unplaced, index, generation);
+        return;
+      }
     }
     _shownFound = null;
   }
@@ -510,6 +512,20 @@ class _BoardViewState extends State<_BoardView> {
   List<PlanStory> _shownUnplaced() => [
     for (final story in board.unplaced)
       if (_filters.keeps(story, _applied)) story,
+  ];
+
+  /// The states outside the reported workflow that the shown stories stand in, each a column at the board's end:
+  /// by name, and no state last.
+  List<String> _unplacedStates() {
+    final states = {for (final story in _shownUnplaced()) board.displayedState(story)}.toList()
+      ..sort((a, b) => a.isEmpty != b.isEmpty ? (a.isEmpty ? 1 : -1) : a.compareTo(b));
+    return states;
+  }
+
+  /// The shown stories outside the reported workflow that stand in [state].
+  List<PlanStory> _shownUnplacedIn(String state) => [
+    for (final story in _shownUnplaced())
+      if (board.displayedState(story) == state) story,
   ];
 
   /// Whether the card of issues in no story stands in the state [name]: under a filter only in the states it keeps,
@@ -1108,7 +1124,7 @@ class _BoardViewState extends State<_BoardView> {
                               children: [
                                 for (final (at, phase) in board.phases.indexed)
                                   if (board.statesIn(phase).isNotEmpty) _phase(context, at),
-                                if (_shownUnplaced().isNotEmpty) _unplaced(context),
+                                for (final state in _unplacedStates()) _unplaced(context, state),
                                 if (board.outside.isNotEmpty) _outside(context),
                                 if (board.unlisted.isNotEmpty) _unlisted(context),
                               ],
@@ -1269,24 +1285,27 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  /// The stories whose state the workflow does not report, in a column of their own that takes no drop.
-  Widget _unplaced(BuildContext context) {
-    final stories = _shownUnplaced();
+  /// The stories in [state], which the workflow does not report, in a column of their own named after the value, or
+  /// No state, that takes no drop.
+  Widget _unplaced(BuildContext context, String state) {
+    final stories = _shownUnplacedIn(state);
     return SizedBox(
+      key: Key(state.isEmpty ? 'planning-no-state' : 'planning-unknown-state $state'),
       width: PlanningStyle.column,
       child: CustomScrollView(
-        controller: _phaseScroll('', remember: ''),
+        controller: _phaseScroll('unplaced $state', remember: 'unplaced $state'),
         slivers: [
-          const SliverToBoxAdapter(child: Text('Stories outside the reported workflow')),
+          SliverToBoxAdapter(
+            child: Tooltip(
+              message: state.isEmpty
+                  ? 'Stories whose state cannot be told'
+                  : 'Stories in a state the workflow does not have',
+              child: Text(state.isEmpty ? 'No state' : _line(state)),
+            ),
+          ),
           SliverList.builder(
             itemCount: stories.length,
-            itemBuilder: (context, index) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('State: ${stories[index].state.isEmpty ? 'not reported' : _line(stories[index].state)}'),
-                _card(context, stories[index]),
-              ],
-            ),
+            itemBuilder: (context, index) => _card(context, stories[index]),
           ),
         ],
       ),
@@ -1911,6 +1930,7 @@ class _BoardViewState extends State<_BoardView> {
                           _priority(context, story.priority ?? ''),
                           ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
                           ?planningRuleMark(board.rulesOf(story.id), key: Key('planning-rule ${story.id}')),
+                          ?planningWarningMark(story.warnings, key: Key('planning-warned ${story.id}')),
                           ?_size(context, story.size, key: 'planning-size ${story.id}'),
                         ],
                       ),
@@ -1975,9 +1995,9 @@ class _BoardViewState extends State<_BoardView> {
                     ),
                   if (story.issuesReported && story.completedIssues == null) const Text('Issue progress not reported'),
                   if (open)
-                    for (final issue in story.issues)
+                    for (final (index, issue) in story.issues.indexed)
                       Padding(
-                        key: Key('planning-issue ${story.id} ${issue.id}'),
+                        key: Key(_issueKey(story, index)),
                         padding: const EdgeInsets.only(top: Space.small),
                         child: _markFound(
                           context,
@@ -1998,6 +2018,15 @@ class _BoardViewState extends State<_BoardView> {
       ),
     );
   }
+}
+
+/// The key of [story]'s issue row at [index]: by its id, and for an id the list holds twice by its repository and
+/// place too, so no two rows share a key.
+String _issueKey(PlanStory story, int index) {
+  final issue = story.issues[index];
+  return story.issues.where((other) => other.id == issue.id).length > 1
+      ? 'planning-issue ${story.id} ${issue.id} ${issue.repository} $index'
+      : 'planning-issue ${story.id} ${issue.id}';
 }
 
 /// Marks the row of the issue [found] by the search with a highlighted background; any other row stays as it is.

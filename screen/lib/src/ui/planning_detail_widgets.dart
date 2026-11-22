@@ -214,6 +214,17 @@ Widget? planningGivenMark(PlanStory story, {ValueChanged<String>? onFollow}) {
   );
 }
 
+/// The mark of an item the store could not fully read, each warning's sentence a line of its tooltip; null when it
+/// has none.
+Widget? planningWarningMark(List<PlanWarning> warnings, {Key? key}) => warnings.isEmpty
+    ? null
+    : Tooltip(
+        message: planningShown(
+          warnings.map((warning) => warning.text.isEmpty ? warning.kind : warning.text).join('\n'),
+        ),
+        child: Icon(Icons.report_problem_outlined, key: key, size: PlanningStyle.rowIcon),
+      );
+
 /// The mark of an item breaking the stories' rules, its words in the tooltip; null when it breaks none.
 Widget? planningRuleMark(List<String> words, {Key? key}) => words.isEmpty
     ? null

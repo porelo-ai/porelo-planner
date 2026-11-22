@@ -57,6 +57,7 @@ class PlanningIssueRow extends StatelessWidget {
         children: [
           if (issue.state.isNotEmpty) Text(planningShown(issue.state, multiline: false)),
           ?sizeBadge,
+          ?planningWarningMark(issue.warnings, key: Key('planning-warned-issue ${issue.id}')),
           if (issue.worker case final worker?) Text(planningWorker(worker)),
           if (issue.noRunHere) Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
         ],
