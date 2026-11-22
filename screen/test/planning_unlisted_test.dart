@@ -304,7 +304,11 @@ void main() {
   testWidgets('an offered story is added as a story, and partly saved it is said to lack its priority and rank', (
     tester,
   ) async {
-    final backend = await _showBoard(tester, TestHost(), unlisted: [_issue('own#4', 'A story by hand', kind: 'story')]);
+    final (backend, _) = await _showBoard(
+      tester,
+      TestHost(),
+      unlisted: [_issue('own#4', 'A story by hand', kind: 'story')],
+    );
 
     await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
     await settle(tester);

@@ -912,12 +912,14 @@ public final class ItemsBoardReader implements BoardReader {
             }
             final boolean story = IssueMapping.STORY_TYPE.equals(issue.type());
             if (story && !repository.equals(read.own())) {
-                // The board leaves such a story out once added, so it is not offered either.
+                // Once a project item, such a story stands on the board as a warned issue no work
+                // starts on, so it is not offered for an add.
                 faults.add(
                         "The open issue "
                                 + id
                                 + " outside the project is a story outside the project's own"
-                                + " repository and is left out");
+                                + " repository; as a project item it stands on the board as a warned"
+                                + " issue, so it is not offered");
                 continue;
             }
             unlisted.add(

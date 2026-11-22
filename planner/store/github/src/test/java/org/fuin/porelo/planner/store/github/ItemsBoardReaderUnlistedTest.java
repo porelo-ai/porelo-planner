@@ -277,14 +277,15 @@ class ItemsBoardReaderUnlistedTest {
                         org.assertj.core.groups.Tuple.tuple(OWN + "#14", UnlistedIssue.Kind.ISSUE),
                         org.assertj.core.groups.Tuple.tuple(OWN + "#15", UnlistedIssue.Kind.ISSUE));
         // Harm: a story of another repository was offered as an issue whose Add is always refused,
-        // while the board leaves such a story out with a fault.
+        // while as a project item it stands on the board only as a warned issue.
         assertThat(board.faults())
-                .as("the story of another repository, left out")
+                .as("the story of another repository, not offered")
                 .contains(
                         "The open issue "
                                 + LIB
                                 + "#16 outside the project is a story outside the project's own"
-                                + " repository and is left out");
+                                + " repository; as a project item it stands on the board as a warned"
+                                + " issue, so it is not offered");
     }
 
     @Test

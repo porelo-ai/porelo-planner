@@ -1262,8 +1262,9 @@ paths:
         its workflow among them, or one the tracker no longer holds, answers NotUnlisted, and the window reads the
         board again. On GitHub the issue is read again right before the write: one a person added to the project,
         closed or moved since the board was read is refused (StaleRevision, naming the issue), and one the board
-        could not show once added - a story outside the project's own repository, an issue under an issue that is no
-        item of the project or under an issue of another repository, an issue blocked by a story - is refused
+        could not place once added - a story outside the project's own repository, which it shows only as a warned
+        issue, an issue under an issue that is no item of the project or under an issue of another repository, an
+        issue blocked by a story - is refused
         (EditNotAllowed, field issue, naming what to repair), each before anything is written. A refusal never
         repeats the tracker's title or text. A failure after GitHub added the issue is PartlySaved, and the issue
         then stands outside the workflow until its state is moved. The JSON body is at most 65536 bytes. The changes

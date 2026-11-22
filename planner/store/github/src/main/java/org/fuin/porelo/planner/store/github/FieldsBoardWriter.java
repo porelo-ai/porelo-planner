@@ -202,8 +202,9 @@ public final class FieldsBoardWriter implements BoardWriter {
      * Reads the issue by its node id right before the write and refuses it, writing nothing, when
      * the board read after the add would not show it: GitHub holds it on the project already, it is
      * gone, closed, or moved to another repository, it is a story outside the project's own
-     * repository, it hangs under an issue that is no item of the project or under one of another
-     * repository, or it is blocked by a story. Then it is added and given its values.
+     * repository, which the board would show only as a warned issue, it hangs under an issue that
+     * is no item of the project or under one of another repository, or it is blocked by a story.
+     * Then it is added and given its values.
      */
     @Override
     public void addUnlistedIssue(
@@ -248,8 +249,8 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (story && !repository.equals(current.config().own())) {
             throw new StoreException.NotSavable(
                     issue,
-                    "It is of the issue type Story outside the project's own repository, which the"
-                            + " board does not hold.");
+                    "It is of the issue type Story outside the project's own repository, so the"
+                            + " board would show it as a warned issue no work starts on.");
         }
         checkParent(current, issue, repository, story, read.parentId());
         checkBlockers(current, issue, read.blockedBy());

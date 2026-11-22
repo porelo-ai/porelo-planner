@@ -283,6 +283,7 @@ class UnlistedAddTest {
                 item.updatedAt(),
                 item.archived(),
                 item.blockers(),
+                item.unseenBlockers(),
                 item.issueType());
     }
 
@@ -407,15 +408,16 @@ class UnlistedAddTest {
 
     @Test
     void anIssueTypedStoryOutsideTheOwnRepositoryIsRefusedBeforeAnyWrite() {
-        // Harm: the issue is added, then the board leaves it out as a story outside the own
-        // repository, and it vanishes from both lists while the window is told it was saved.
+        // Harm: the issue is added, then the board shows it only as a warned issue no work starts
+        // on, as a story outside the own repository, while the window is told it was added.
         final GitHub github = new GitHub();
         github.type = IssueMapping.STORY_TYPE;
 
         assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a story the board cannot hold")
                 .isInstanceOf(StoreException.NotSavable.class)
-                .hasMessageContaining("Story outside the project's own repository");
+                .hasMessageContaining(
+                        "Story outside the project's own repository, so the board would show it as a warned issue");
         assertThat(github.calls).as("only the read").containsExactly("issueBoard");
     }
 
