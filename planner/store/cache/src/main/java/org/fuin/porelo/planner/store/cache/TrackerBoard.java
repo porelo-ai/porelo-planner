@@ -16,7 +16,8 @@ import java.util.Objects;
  * @param fieldNames the names of every field by its id, a second field of one name included, so its
  *     values are read as the tracker's own read of the board reads them
  * @param optionIds each option field's options, their ids by name
- * @param faults what was found wrong with the board's fields, in the planner's words
+ * @param faults what was found wrong with the board's fields, and which of its repositories' issue
+ *     lists could not be read, in the planner's words
  * @param restFieldIds the fields' second, numeric ids by their ids, which the tracker's REST item
  *     list takes to name the fields whose values it gives
  */

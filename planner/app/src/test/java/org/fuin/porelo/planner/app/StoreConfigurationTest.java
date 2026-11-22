@@ -12,17 +12,34 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 
 /** The sources the planner refuses before it touches Git or the cache. */
 class StoreConfigurationTest {
 
     private final Projects projects =
             StoreConfiguration.fromGit(StoreConfiguration.gitProjects(Map.of()));
+
+    @Test
+    void theNativeImageKeepsEveryRecordACopyIsMadeOf() throws NoSuchMethodException {
+        // Harm: a copy the native executable cannot read or write, found only on a person's
+        // computer, since Fory makes a record the image does not reflect on in the JVM alone.
+        final RegisterReflectionForBinding hints =
+                StoreConfiguration.class
+                        .getDeclaredMethod("gitProjects")
+                        .getAnnotation(RegisterReflectionForBinding.class);
+
+        assertThat(hints).as("the native hints").isNotNull();
+        assertThat(Stream.concat(Stream.of(hints.value()), Stream.of(hints.classes())).toList())
+                .as("the records the native image reflects on")
+                .containsAll(BoardCopies.records());
+    }
 
     @Test
     void aSourceThatIsNoCloneUrlIsRefusedByName() {

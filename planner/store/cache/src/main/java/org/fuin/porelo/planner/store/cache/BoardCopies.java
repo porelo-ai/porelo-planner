@@ -15,6 +15,7 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -186,6 +187,18 @@ public final class BoardCopies {
     private static Optional<BoardCopy> ignored(final Path file, final String why) {
         LOG.warn("The board's copy {} is not used, since {}", file.getFileName(), why);
         return Optional.empty();
+    }
+
+    /**
+     * Every record a copy is made of, found through the components of {@link BoardCopy}: what its
+     * encoding and a native image's reflection must both know.
+     *
+     * @return the records, the copy's own first
+     */
+    public static Set<Class<?>> records() {
+        final Set<Class<?>> seen = new LinkedHashSet<>();
+        describe(BoardCopy.class, new StringBuilder(), seen);
+        return Collections.unmodifiableSet(seen);
     }
 
     /** The digest of a record's tree of components, as {@link #FORMAT} describes it. */

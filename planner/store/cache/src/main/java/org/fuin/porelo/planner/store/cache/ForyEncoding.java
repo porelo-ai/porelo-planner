@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store.cache;
 
+import java.util.List;
 import org.apache.fory.Fory;
 import org.apache.fory.config.Language;
 import org.apache.fory.logging.LogLevel;
@@ -31,6 +32,25 @@ public final class ForyEncoding implements CopyEncoding {
      */
     static final long MOST_GRAPH_BYTES = 2L * BoardCopies.MOST_BYTES;
 
+    /**
+     * Every record a copy is made of, registered in this order: a record's number in the file is
+     * its place here.
+     */
+    static final List<Class<?>> RECORDS =
+            List.of(
+                    BoardCopy.class,
+                    BoardCopy.Project.class,
+                    TrackerBoard.class,
+                    TrackedItem.class,
+                    TrackedItem.Issue.class,
+                    TrackedItem.Links.class,
+                    TrackedItem.Link.class,
+                    TrackedItem.Value.class,
+                    ChangeCursor.class,
+                    ChangeCursor.Page.class,
+                    TrackedWait.class,
+                    TrackedUnlisted.class);
+
     /** The one Fory of the planner, made when the class is initialized. */
     private static final Fory FORY = make();
 
@@ -53,18 +73,7 @@ public final class ForyEncoding implements CopyEncoding {
                         .withMaxTypeFields(MOST_FIELDS)
                         .withMaxGraphMemoryBytes(MOST_GRAPH_BYTES)
                         .build();
-        // Registered in a fixed order: a record's number in the file is its place here.
-        fory.register(BoardCopy.class);
-        fory.register(BoardCopy.Project.class);
-        fory.register(TrackerBoard.class);
-        fory.register(TrackedItem.class);
-        fory.register(TrackedItem.Issue.class);
-        fory.register(TrackedItem.Links.class);
-        fory.register(TrackedItem.Link.class);
-        fory.register(TrackedItem.Value.class);
-        fory.register(ChangeCursor.class);
-        fory.register(ChangeCursor.Page.class);
-        fory.register(TrackedWait.class);
+        RECORDS.forEach(fory::register);
         fory.ensureSerializersCompiled();
         return fory;
     }

@@ -95,6 +95,8 @@ public final class GitHubStoreOpener implements TrackedStores {
      * @param queries the GraphQL reads of a project
      * @param writes the calls a write to a project is made of
      * @param conditional the conditional reads that ask whether a project changed
+     * @param issuePages the pages of a repository's open issues, read so the board names those that
+     *     are no items of the project
      * @param executor runs a project's conditional reads side by side, and a look after a read or
      *     save beside the caller
      * @param clock tells the time a wait of GitHub's ends by
@@ -105,10 +107,19 @@ public final class GitHubStoreOpener implements TrackedStores {
             final ProjectQueries queries,
             final ProjectWrites writes,
             final ConditionalReads conditional,
+            final RepositoryIssues.Pages issuePages,
             final Executor executor,
             final InstantSource clock,
             final Duration lockWait) {
-        this(tokens, queries, writes, conditional, executor, new GitHubPace(clock), lockWait);
+        this(
+                tokens,
+                queries,
+                writes,
+                conditional,
+                issuePages,
+                executor,
+                new GitHubPace(clock),
+                lockWait);
     }
 
     private GitHubStoreOpener(
@@ -116,6 +127,7 @@ public final class GitHubStoreOpener implements TrackedStores {
             final ProjectQueries queries,
             final ProjectWrites writes,
             final ConditionalReads conditional,
+            final RepositoryIssues.Pages issuePages,
             final Executor executor,
             final GitHubPace pace,
             final Duration lockWait) {
@@ -124,6 +136,7 @@ public final class GitHubStoreOpener implements TrackedStores {
                 states ->
                         new ItemsBoardReader(
                                 pace.watching(queries),
+                                pace.watching(issuePages),
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 states),

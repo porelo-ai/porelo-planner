@@ -10,8 +10,10 @@ import org.fuin.porelo.forge.github.Conditional;
 import org.fuin.porelo.forge.github.CursorPage;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.ProjectItemSummary;
 import org.fuin.porelo.forge.github.RateLimit;
+import org.fuin.porelo.forge.github.model.Issue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -232,6 +234,29 @@ public final class GitHubPace implements Pace {
             final Conditional<CursorPage<ProjectItemSummary>> answer;
             try {
                 answer = pages.page(token, owner, number, after, perPage, fieldIds, etag);
+            } catch (final GitHubException e) {
+                throw noted(e);
+            }
+            final RateLimit limit = answer.rateLimit();
+            if (limit != null) {
+                seen(limit.remaining(), limit.limit());
+            }
+            return answer;
+        };
+    }
+
+    /**
+     * Wraps the pages of a repository's open issues so a spent rate limit they meet holds every
+     * look, and the limit each answer names paces the looks, as the other reads do.
+     *
+     * @param pages the pages
+     * @return the same pages, noting the rate limit
+     */
+    public RepositoryIssues.Pages watching(final RepositoryIssues.Pages pages) {
+        return (token, owner, repository, page, etag) -> {
+            final Conditional<Page<Issue>> answer;
+            try {
+                answer = pages.page(token, owner, repository, page, etag);
             } catch (final GitHubException e) {
                 throw noted(e);
             }

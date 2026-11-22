@@ -833,6 +833,16 @@ class ConditionalChangeProbeTest {
                                                     "A read called " + method.getName());
                                         }),
                         github,
+                        // Every repository holds no open issue outside the project.
+                        (token, owner, repository, page, etag) ->
+                                new org.fuin.porelo.forge.github.Conditional<>(
+                                        new org.fuin.porelo.forge.github.Page<
+                                                org.fuin.porelo.forge.github.model.Issue>(
+                                                List.of(), false),
+                                        null,
+                                        true,
+                                        null,
+                                        Instant.EPOCH),
                         Runnable::run,
                         clock,
                         Duration.ofMillis(500));

@@ -3009,7 +3009,8 @@ public final class WorkRun {
                 board.repositories(),
                 board.faults(),
                 board.owner(),
-                board.outside());
+                board.outside(),
+                board.unlisted());
     }
 
     /** Checks opaque and display labels before they can occur in any refusal. */

@@ -30,6 +30,7 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
@@ -97,6 +98,9 @@ public final class ItemsBoardReader implements BoardReader {
         return false;
     }
 
+    /** The name of the issue type a story made outside the project bears, matched exactly. */
+    static final String STORY_TYPE = "Story";
+
     /** An owner's or a repository's name as GitHub allows it in an address. */
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
 
@@ -122,6 +126,12 @@ public final class ItemsBoardReader implements BoardReader {
     private final Duration deadline;
 
     private final Pause pause;
+
+    /** The pages of each repository's open issues, or null when they are not read. */
+    private final RepositoryIssues.@Nullable Pages issuePages;
+
+    /** Each repository's open issues as last read, with the tags of their pages. */
+    private final RepositoryIssues unlisted = new RepositoryIssues();
 
     /** How far the whole read under way has come, or null while none runs. */
     private volatile org.fuin.porelo.planner.store.@Nullable ReadProgress progress;
@@ -156,6 +166,33 @@ public final class ItemsBoardReader implements BoardReader {
             final AccessRefusals refusals,
             final StoryStates states) {
         this(queries, tokens, refusals, states, InstantSource.system(), DEADLINE);
+    }
+
+    /**
+     * Makes the reader that also reads the open issues of the project's repositories, so the board
+     * names those that are no items of the project.
+     *
+     * @param queries the project's two reads
+     * @param issuePages the pages of a repository's open issues
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     */
+    public ItemsBoardReader(
+            final ProjectQueries queries,
+            final RepositoryIssues.Pages issuePages,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states) {
+        this(
+                queries,
+                tokens,
+                refusals,
+                states,
+                InstantSource.system(),
+                DEADLINE,
+                Thread::sleep,
+                issuePages);
     }
 
     /**
@@ -197,6 +234,32 @@ public final class ItemsBoardReader implements BoardReader {
             final InstantSource clock,
             final Duration deadline,
             final Pause pause) {
+        this(queries, tokens, refusals, states, clock, deadline, pause, null);
+    }
+
+    /**
+     * Makes the reader with its own clock, deadline and pause, reading the open issues of the
+     * project's repositories when it is given their pages.
+     *
+     * @param queries the project's reads
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param clock tells the time the deadlines are measured by
+     * @param deadline how long one read of the project may take
+     * @param pause waits before the item list is read again
+     * @param issuePages the pages of a repository's open issues, or null when none are read
+     */
+    ItemsBoardReader(
+            final ProjectQueries queries,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final InstantSource clock,
+            final Duration deadline,
+            final Pause pause,
+            final RepositoryIssues.@Nullable Pages issuePages) {
+        this.issuePages = issuePages;
         this.queries = queries;
         this.tokens = tokens;
         this.refusals = refusals;
@@ -227,8 +290,11 @@ public final class ItemsBoardReader implements BoardReader {
 
     private Snapshot readWhole(final ProjectConfig config) {
         final String token = tokens.token(config.forge());
-        final Call call = new Call(config, token, clock.instant().plus(deadline));
         final List<String> faults = new ArrayList<>();
+        // Read before the project's items, so an issue added to the project meanwhile is an item
+        // of this read and never shown as outside it; its own budget leaves the project's whole.
+        final List<Snapshot.Unlisted> repositoryIssues = readUnlisted(config, token, faults);
+        final Call call = new Call(config, token, clock.instant().plus(deadline));
 
         final Map<String, String> fieldIds = new LinkedHashMap<>();
         final Map<String, Map<String, String>> optionIds = new LinkedHashMap<>();
@@ -308,7 +374,39 @@ public final class ItemsBoardReader implements BoardReader {
                 faults,
                 mapped(current.items(), read, fieldNames, waits),
                 fieldNames,
-                restFieldIds);
+                restFieldIds,
+                repositoryIssues);
+    }
+
+    /**
+     * Reads the open issues of the project's repositories within their own budget, adding to the
+     * faults each repository whose list could not be read; a reader without their pages reads none.
+     */
+    private List<Snapshot.Unlisted> readUnlisted(
+            final ProjectConfig config, final String token, final List<String> faults) {
+        final RepositoryIssues.Pages pages = issuePages;
+        if (pages == null) {
+            return List.of();
+        }
+        final Call call = new Call(config, token, clock.instant().plus(deadline));
+        final String owner = config.project().owner();
+        final RepositoryIssues.Read read =
+                unlisted.read(
+                        config.repositories(),
+                        (repository, page, etag) ->
+                                call.of(
+                                        "the open issues of " + repository,
+                                        () -> pages.page(token, owner, repository, page, etag),
+                                        true),
+                        clock);
+        LOG.info(
+                "Read the open issues of {} repositories in {} requests, {} of them answered"
+                        + " unchanged",
+                config.repositories().size(),
+                read.requests(),
+                read.unchanged());
+        faults.addAll(read.faults());
+        return read.issues();
     }
 
     /**
@@ -420,7 +518,8 @@ public final class ItemsBoardReader implements BoardReader {
                 held.fieldFaults(),
                 mapped(items, read, held.fieldNames(), ordered(blockers, waits)),
                 held.fieldNames(),
-                held.restFieldIds());
+                held.restFieldIds(),
+                held.unlisted());
     }
 
     @Override
@@ -443,7 +542,8 @@ public final class ItemsBoardReader implements BoardReader {
                 held.fieldFaults(),
                 mapped(items, read, held.fieldNames(), waits),
                 held.fieldNames(),
-                held.restFieldIds());
+                held.restFieldIds(),
+                held.unlisted());
     }
 
     @Override
@@ -678,12 +778,26 @@ public final class ItemsBoardReader implements BoardReader {
                     wait.id(),
                     new Snapshot.Waited(wait.repository(), wait.number(), wait.closed()));
         }
+        final List<Snapshot.Unlisted> repositoryIssues =
+                copy.unlisted().stream()
+                        .map(
+                                issue ->
+                                        new Snapshot.Unlisted(
+                                                issue.id(),
+                                                issue.repository(),
+                                                issue.number(),
+                                                issue.title(),
+                                                issue.type()))
+                        .toList();
+        // A repository the next read cannot list keeps what the copy held of it.
+        unlisted.keep(repositoryIssues);
         return snapshot(
                 read,
                 board.faults(),
                 mapped(items, read, board.fieldNames(), waits),
                 board.fieldNames(),
-                board.restFieldIds());
+                board.restFieldIds(),
+                repositoryIssues);
     }
 
     /** Maps the items read to the board and the snapshot that holds it. */
@@ -692,10 +806,13 @@ public final class ItemsBoardReader implements BoardReader {
             final List<String> faults,
             final ItemsRead current,
             final Map<String, String> fieldNames,
-            final Map<String, Long> restFieldIds) {
+            final Map<String, Long> restFieldIds,
+            final List<Snapshot.Unlisted> repositoryIssues) {
         final List<String> allFaults = new ArrayList<>(faults);
         allFaults.addAll(current.faults());
         final IssueMapping.Mapped mapped = current.mapped();
+        final List<UnlistedIssue> unlistedIssues =
+                unlisted(read, current.items(), mapped, repositoryIssues, allFaults);
         final Board board =
                 new Board(
                         revision(
@@ -703,7 +820,8 @@ public final class ItemsBoardReader implements BoardReader {
                                 current.items().values(),
                                 fieldNames,
                                 allFaults,
-                                current.waits()),
+                                current.waits(),
+                                unlistedIssues),
                         read.workflow(),
                         mapped.stories(),
                         mapped.issues(),
@@ -711,7 +829,8 @@ public final class ItemsBoardReader implements BoardReader {
                         read.repositories(),
                         allFaults,
                         read.project().owner(),
-                        mapped.outsideWorkflow());
+                        mapped.outsideWorkflow(),
+                        unlistedIssues);
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         for (final ItemView view : current.views()) {
             final String id = IssueMapping.idOf(view);
@@ -727,7 +846,82 @@ public final class ItemsBoardReader implements BoardReader {
                 faults,
                 fieldNames,
                 restFieldIds,
-                current.waits());
+                current.waits(),
+                repositoryIssues);
+    }
+
+    /**
+     * The repositories' open issues that are no items of the project, archived items included: each
+     * named by its reference within one of the project's repositories, never by an id the board
+     * already holds. One that cannot be named so is a fault and left out, so it never fails the
+     * board.
+     */
+    private static List<UnlistedIssue> unlisted(
+            final ProjectConfig read,
+            final Map<String, GitHubGraphQl.ProjectItem> items,
+            final IssueMapping.Mapped mapped,
+            final List<Snapshot.Unlisted> repositoryIssues,
+            final List<String> faults) {
+        if (repositoryIssues.isEmpty()) {
+            return List.of();
+        }
+        final Set<String> itemIssues = new HashSet<>();
+        for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue != null) {
+                itemIssues.add(issue.id());
+            }
+        }
+        final Set<String> taken = new HashSet<>();
+        mapped.stories().forEach(story -> taken.add(story.id()));
+        mapped.issues().forEach(issue -> taken.add(issue.id()));
+        mapped.outsideWorkflow().forEach(issue -> taken.add(issue.id()));
+        final Set<String> nodes = new HashSet<>();
+        final List<UnlistedIssue> unlisted = new ArrayList<>();
+        for (final Snapshot.Unlisted issue : repositoryIssues) {
+            if (itemIssues.contains(issue.nodeId()) || !nodes.add(issue.nodeId())) {
+                continue;
+            }
+            final String repository = issue.repository();
+            final String id = repository + "#" + issue.number();
+            // A repository's name reaches a fault only in a form an address can have.
+            final String where =
+                    REPOSITORY_PART.matcher(repository).matches()
+                            ? "An open issue of " + repository
+                            : "An open issue";
+            if (!Ids.isReference(id) || !read.repositories().contains(repository)) {
+                faults.add(
+                        where
+                                + " outside the project has no reference into its repositories"
+                                + " and is left out");
+                continue;
+            }
+            if (!taken.add(id)) {
+                faults.add(
+                        "The open issue "
+                                + id
+                                + " outside the project bears the reference of another issue and"
+                                + " is left out");
+                continue;
+            }
+            unlisted.add(
+                    new UnlistedIssue(
+                            id,
+                            repository,
+                            issue.title(),
+                            STORY_TYPE.equals(issue.type()) && repository.equals(read.own())
+                                    ? UnlistedIssue.Kind.STORY
+                                    : UnlistedIssue.Kind.ISSUE,
+                            URI.create(
+                                    read.forge()
+                                            + "/"
+                                            + read.project().owner()
+                                            + "/"
+                                            + repository
+                                            + "/issues/"
+                                            + issue.number())));
+        }
+        return unlisted;
     }
 
     /**
@@ -1001,6 +1195,18 @@ public final class ItemsBoardReader implements BoardReader {
         }
 
         <T> T of(final String what, final Supplier<T> read) {
+            return of(what, read, false);
+        }
+
+        /**
+         * Answers a read, sent once more after a failure on GitHub's side or on the way.
+         *
+         * @param what the read, named for the log
+         * @param read the read
+         * @param repositoryRefusals whether GitHub's refusal of one repository's list is handed
+         *     back as GitHub gave it, for the caller to keep that repository's list
+         */
+        <T> T of(final String what, final Supplier<T> read, final boolean repositoryRefusals) {
             inTime();
             try {
                 try {
@@ -1023,6 +1229,9 @@ public final class ItemsBoardReader implements BoardReader {
             } catch (final StoreException | UnsupportedOperationException e) {
                 throw e;
             } catch (final GitHubException e) {
+                if (repositoryRefusals && RepositoryIssues.refusedFor(e)) {
+                    throw e;
+                }
                 LOG.warn(
                         "GitHub's read of {} failed (HTTP {}, {}, rate limited {})",
                         what,
@@ -1263,15 +1472,17 @@ public final class ItemsBoardReader implements BoardReader {
     /**
      * Digests, in a fixed order, the commit of the project's files, the board's faults, and every
      * item's node id, issue, repository, number, title, body, labels, change time, open and
-     * archived state and its reason, parent, sub-issues, blockers and field values, so a change of
-     * any of them, a field's alone or a fault's included, gives another revision.
+     * archived state and its reason, parent, sub-issues, blockers and field values, and every open
+     * issue outside the project the board names with its title and kind, so a change of any of
+     * them, a field's alone or a fault's included, gives another revision.
      */
     private static Revision revision(
             final String commit,
             final Iterable<GitHubGraphQl.ProjectItem> items,
             final Map<String, String> fieldNames,
             final List<String> faults,
-            final Map<String, Snapshot.Waited> waits) {
+            final Map<String, Snapshot.Waited> waits,
+            final List<UnlistedIssue> unlisted) {
         final MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -1321,6 +1532,15 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, wait.getValue().repository());
             add(digest, Integer.toString(wait.getValue().number()));
             addNullable(digest, String.valueOf(wait.getValue().closed()));
+        }
+        // An issue made outside the project, or a new title of one, is told to the window too.
+        final Map<String, UnlistedIssue> sortedUnlisted = new TreeMap<>();
+        unlisted.forEach(issue -> sortedUnlisted.put(issue.id(), issue));
+        add(digest, Integer.toString(sortedUnlisted.size()));
+        for (final UnlistedIssue issue : sortedUnlisted.values()) {
+            add(digest, issue.id());
+            add(digest, issue.title());
+            add(digest, issue.kind().name());
         }
         return new Revision(HexFormat.of().formatHex(digest.digest()));
     }

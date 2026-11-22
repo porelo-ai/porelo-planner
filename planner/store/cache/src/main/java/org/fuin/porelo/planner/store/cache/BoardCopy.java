@@ -17,6 +17,8 @@ import java.util.Objects;
  *     ChangeCursor#NONE} when no look was made
  * @param held the planner's own saves that the tracker's list may not show yet
  * @param waits the issues the board's issues wait on that are no items of it, with their state
+ * @param unlisted the open issues of the project's repositories that were no items of it, as each
+ *     repository's list last gave them, so a repository the next read cannot list keeps them
  */
 public record BoardCopy(
         Project project,
@@ -27,7 +29,8 @@ public record BoardCopy(
         List<TrackedItem> items,
         ChangeCursor cursor,
         List<TrackedItem> held,
-        List<TrackedWait> waits) {
+        List<TrackedWait> waits,
+        List<TrackedUnlisted> unlisted) {
 
     /** Requires every part and copies the lists. */
     public BoardCopy {
@@ -40,6 +43,43 @@ public record BoardCopy(
         Objects.requireNonNull(cursor, "cursor");
         held = List.copyOf(held);
         waits = List.copyOf(waits);
+        unlisted = List.copyOf(unlisted);
+    }
+
+    /**
+     * A copy of a board that knows no open issue outside it.
+     *
+     * @param project the project it is the board of
+     * @param filesCommit the commit the project's files were read from when the board was held
+     * @param repositories the project's repositories, in their order
+     * @param takenAt when the planner held this board
+     * @param board what the board is written with
+     * @param items the board's items, in the tracker's order
+     * @param cursor where the tracker's look for changes stood when the board was held
+     * @param held the planner's own saves that the tracker's list may not show yet
+     * @param waits the issues the board's issues wait on that are no items of it, with their state
+     */
+    public BoardCopy(
+            final Project project,
+            final String filesCommit,
+            final List<String> repositories,
+            final Instant takenAt,
+            final TrackerBoard board,
+            final List<TrackedItem> items,
+            final ChangeCursor cursor,
+            final List<TrackedItem> held,
+            final List<TrackedWait> waits) {
+        this(
+                project,
+                filesCommit,
+                repositories,
+                takenAt,
+                board,
+                items,
+                cursor,
+                held,
+                waits,
+                List.of());
     }
 
     /**

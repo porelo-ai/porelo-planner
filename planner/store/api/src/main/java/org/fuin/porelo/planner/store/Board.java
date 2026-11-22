@@ -30,6 +30,8 @@ import org.jspecify.annotations.Nullable;
  *     for the project; null for a board the project's own files hold
  * @param outside the issues left out because their Status is none of the workflow's states, each
  *     named among the faults too and none on the board; empty for a store without a tracker
+ * @param unlisted the open issues of the project's repositories that are no items of the project,
+ *     none on the board or outside its workflow; empty for a store without a tracker
  */
 public record Board(
         Revision revision,
@@ -40,9 +42,47 @@ public record Board(
         List<String> repositories,
         List<String> faults,
         @Nullable String owner,
-        List<OutsideIssue> outside) {
+        List<OutsideIssue> outside,
+        List<UnlistedIssue> unlisted) {
 
     private static final Pattern OWNER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
+
+    /**
+     * A board that knows no open issue outside the project.
+     *
+     * @param revision the commits it was read from
+     * @param workflow the states and phases
+     * @param stories every story
+     * @param issues every issue of every repository
+     * @param work the work rules and what could not be read of them
+     * @param repositories the project's repositories, its own first
+     * @param faults what has no place on the board at all, naming it and why
+     * @param owner the owner of the tracker that keeps the stories and issues; null for a board the
+     *     project's own files hold
+     * @param outside the issues left out because their Status is none of the workflow's states
+     */
+    public Board(
+            final Revision revision,
+            final Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final Work work,
+            final List<String> repositories,
+            final List<String> faults,
+            final @Nullable String owner,
+            final List<OutsideIssue> outside) {
+        this(
+                revision,
+                workflow,
+                stories,
+                issues,
+                work,
+                repositories,
+                faults,
+                owner,
+                outside,
+                List.of());
+    }
 
     /**
      * A board with no issue left out of its workflow.
@@ -142,6 +182,7 @@ public record Board(
         repositories = List.copyOf(repositories);
         faults = List.copyOf(faults);
         outside = List.copyOf(outside);
+        unlisted = List.copyOf(unlisted);
         repositories.forEach(Ids::name);
         if (new HashSet<>(repositories).size() != repositories.size()) {
             throw new IllegalArgumentException("A board names a repository twice");
@@ -195,6 +236,20 @@ public record Board(
                     && !outsideIds.contains(left.parent())) {
                 throw new IllegalArgumentException(
                         "Issue " + left.id() + " stands under an issue the board does not hold");
+            }
+        }
+        final Set<String> unlistedIds = new HashSet<>();
+        for (final UnlistedIssue made : unlisted) {
+            // An add names it by its id alone, so one id must name one issue.
+            if (issueIds.containsKey(made.id())
+                    || storyIds.containsKey(made.id())
+                    || outsideIds.contains(made.id())
+                    || !unlistedIds.add(made.id())) {
+                throw new IllegalArgumentException("Issue " + made.id() + " is on the board twice");
+            }
+            if (!repositories.contains(made.repository())) {
+                throw new IllegalArgumentException(
+                        "An issue names a repository outside the project");
             }
         }
     }

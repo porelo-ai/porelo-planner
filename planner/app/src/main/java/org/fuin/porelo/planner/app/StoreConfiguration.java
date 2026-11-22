@@ -18,6 +18,7 @@ import org.fuin.porelo.forge.github.model.IntegrationPermissions;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
+import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.IssuesAddBlockedByDependencyRequest;
 import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
@@ -40,6 +41,8 @@ import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
+import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
@@ -50,6 +53,7 @@ import org.fuin.porelo.planner.store.github.GitHubChanges;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
+import org.fuin.porelo.planner.store.github.RepositoryIssues;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -85,6 +89,8 @@ public class StoreConfiguration {
         IssuesUpdateRequest.class,
         IssuesUpdate200Response.class,
         Issue.class,
+        // A story made outside the project is told by its issue type alone.
+        IssueType.class,
         Integration.class,
         IntegrationPermissions.class,
         Enterprise.class,
@@ -108,7 +114,9 @@ public class StoreConfiguration {
         TrackedItem.Link.class,
         TrackedItem.Value.class,
         ChangeCursor.class,
-        ChangeCursor.Page.class
+        ChangeCursor.Page.class,
+        TrackedWait.class,
+        TrackedUnlisted.class
     })
     public GitProjects gitProjects() {
         return gitProjects(System.getenv());
@@ -158,6 +166,7 @@ public class StoreConfiguration {
                         ProjectQueries.over(graphQl),
                         ProjectWrites.over(graphQl, rest),
                         ConditionalReads.over(rest),
+                        RepositoryIssues.Pages.over(rest),
                         task -> Thread.ofVirtual().name("github-probe").start(task),
                         Clock.systemUTC(),
                         // A save waits for a whole read under way rather than being refused as

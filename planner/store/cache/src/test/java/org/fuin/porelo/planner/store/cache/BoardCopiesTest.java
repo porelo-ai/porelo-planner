@@ -115,7 +115,10 @@ class BoardCopiesTest {
                 List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false)),
                 List.of(
                         new TrackedWait("I_far", "other-org/elsewhere", 7, false),
-                        new TrackedWait("I_hidden", "other-org/private", 8, null)));
+                        new TrackedWait("I_hidden", "other-org/private", 8, null)),
+                List.of(
+                        new TrackedUnlisted("I_made", "porelo-planner", 4, "Made by hand", "Story"),
+                        new TrackedUnlisted("I_plain", "porelo-planner", 5, "Plain", null)));
     }
 
     @Test
@@ -126,6 +129,18 @@ class BoardCopiesTest {
 
         assertThat(copies().read(PROJECT, "c0ffee0")).as("the copy read back").contains(written);
         assertThat(checked).as("files checked as the account's own").isNotEmpty();
+    }
+
+    @Test
+    void foryKnowsEveryRecordACopyIsMadeOf() {
+        // Harm: a record added to the copy that Fory refuses, so no copy is written again and
+        // every start reads the board whole.
+        assertThat(ForyEncoding.RECORDS)
+                .as("the records Fory registers")
+                .containsExactlyInAnyOrderElementsOf(BoardCopies.records());
+        assertThat(BoardCopies.records())
+                .as("the records found from the copy")
+                .contains(BoardCopy.class, TrackedUnlisted.class, TrackedWait.class);
     }
 
     @Test

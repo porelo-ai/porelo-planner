@@ -612,7 +612,8 @@ public class BoardController {
                         board.repositories(),
                         board.faults(),
                         board.owner(),
-                        board.outside());
+                        board.outside(),
+                        board.unlisted());
         try {
             Moves.check(
                     withNew,

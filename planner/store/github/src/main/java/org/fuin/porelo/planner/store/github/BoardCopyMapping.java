@@ -7,6 +7,7 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.jspecify.annotations.Nullable;
@@ -84,6 +85,16 @@ final class BoardCopyMapping {
                                                 wait.getValue().repository(),
                                                 wait.getValue().number(),
                                                 wait.getValue().closed()))
+                        .toList(),
+                snapshot.unlisted().stream()
+                        .map(
+                                issue ->
+                                        new TrackedUnlisted(
+                                                issue.nodeId(),
+                                                issue.repository(),
+                                                issue.number(),
+                                                issue.title(),
+                                                issue.type()))
                         .toList());
     }
 

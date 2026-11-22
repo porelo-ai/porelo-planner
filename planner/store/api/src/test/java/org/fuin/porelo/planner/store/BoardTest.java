@@ -148,6 +148,65 @@ class BoardTest {
     }
 
     @Test
+    void anIssueOutsideTheProjectNamesOneIssueWithinItsRepositories() {
+        // Harm: an add that names by one id two issues, or one in a repository outside the
+        // project.
+        final Issue onBoard =
+                new Issue(
+                        "porelo-planner#3",
+                        "porelo-planner",
+                        "An issue",
+                        "Idea",
+                        "S",
+                        List.of(),
+                        null,
+                        null,
+                        "Text");
+        final UnlistedIssue made = unlisted("porelo-planner", 4);
+
+        assertThat(withUnlisted(List.of(onBoard), List.of(made)).unlisted())
+                .as("an issue outside the project")
+                .containsExactly(made);
+        assertThatThrownBy(
+                        () ->
+                                withUnlisted(
+                                        List.of(onBoard), List.of(unlisted("porelo-planner", 3))))
+                .as("an id on the board")
+                .hasMessage("Issue porelo-planner#3 is on the board twice");
+        assertThatThrownBy(() -> withUnlisted(List.of(), List.of(made, made)))
+                .as("an id twice outside the project")
+                .hasMessage("Issue porelo-planner#4 is on the board twice");
+        assertThatThrownBy(() -> withUnlisted(List.of(), List.of(unlisted("elsewhere", 4))))
+                .as("a repository outside the project")
+                .hasMessage("An issue names a repository outside the project");
+    }
+
+    private static UnlistedIssue unlisted(final String repository, final int number) {
+        return new UnlistedIssue(
+                repository + "#" + number,
+                repository,
+                "Made by hand",
+                UnlistedIssue.Kind.ISSUE,
+                java.net.URI.create(
+                        "https://github.com/porelo-ai/" + repository + "/issues/" + number));
+    }
+
+    private static Board withUnlisted(
+            final List<Issue> issues, final List<UnlistedIssue> unlisted) {
+        return new Board(
+                new Revision("r"),
+                WORKFLOW,
+                List.of(),
+                issues,
+                new Work(Map.of(), List.of()),
+                List.of("porelo-planner"),
+                List.of(),
+                "porelo-ai",
+                List.of(),
+                unlisted);
+    }
+
+    @Test
     void aStateTheWorkflowDoesNotKnowIsRefused() {
         // A state outside the workflow has no place on the board and no move out of it.
         assertThatThrownBy(
