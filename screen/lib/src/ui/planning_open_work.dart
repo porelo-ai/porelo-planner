@@ -151,6 +151,9 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
   /// The most descriptions read at once, so a long list does not flood the planner.
   static const _atOnce = 8;
 
+  /// How long one description read may take before it counts as refused.
+  static const _readTime = Duration(seconds: 30);
+
   /// Reads the descriptions not yet read of the listed stories: the first alone, so a planner that refuses is asked
   /// once, then the rest at most [_atOnce] at a time. The column shows them once all are in, never a part of them.
   Future<void> _readHolds(List<String> stories) async {
@@ -165,7 +168,8 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
     Future<void> readOne(String id) async {
       _asked.add(id);
       try {
-        final reply = await board.backend.getStory(board.project, id);
+        // A read that never answers would hold the column at Reading for good, so it counts as refused.
+        final reply = await board.backend.getStory(board.project, id).timeout(_readTime);
         final story = reply.story;
         if (story == null || story.id != id) throw const FormatException('The planner did not return the story.');
         read[id] = planningFirstParagraph(story.description, story.descriptionFormat);
@@ -410,9 +414,10 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
         : '≈ ${planningMinutes(minutes)}${open.unestimated > 0 ? '+' : ''}';
     final holds = _holds[story.id];
     final unread = _unread[story.id];
-    final hint = _reading ? '' : unread ?? holds ?? '';
+    // While a batch is read, the texts already read stay and the rows being read show nothing until all are in.
+    final hint = holds ?? (_reading ? '' : unread ?? '');
     final holdsText = Text(
-      _reading ? '' : holds ?? (unread != null ? 'Not read' : ''),
+      holds ?? (_reading || unread == null ? '' : 'Not read'),
       key: Key('planning-open-work-holds ${story.id}'),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,

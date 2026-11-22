@@ -406,4 +406,36 @@ void main() {
     expect(reads, 1, reason: 'one refusal stops the reads');
     expect(find.text('Not read'), findsOneWidget, reason: 'the refused story says so');
   });
+
+  // Harm: a planner that refused once asked again on every frame, or never again after the board changed.
+  testWidgets('a refused read is asked again once, after the board changes', (tester) async {
+    final asked = <String>[];
+    final (source, _) = await _show(
+      tester,
+      setUp: (source) => source.readStory = (project, story) async {
+        asked.add(story);
+        throw StateError('refused');
+      },
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(asked, hasLength(1), reason: 'the same board asks no more');
+
+    source.push('demo', {..._board(), 'revision': 'r2'});
+    await tester.pumpAndSettle();
+
+    expect(asked, [asked.first, asked.first], reason: 'the refused story read once again on the changed board');
+  });
+
+  // Harm: a read that never answers holds the column at Reading for good, so no description shows again.
+  testWidgets('a read that never answers counts as refused after its time', (tester) async {
+    await _show(tester, setUp: (source) => source.readStory = (project, story) => Completer<PlanStoryDetail>().future);
+    expect(find.textContaining('Reading'), findsOneWidget, reason: 'the read is under way');
+
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Reading'), findsNothing, reason: 'the hung read gave up');
+    expect(find.text('Not read'), findsOneWidget, reason: 'the hung story says so');
+  });
 }
