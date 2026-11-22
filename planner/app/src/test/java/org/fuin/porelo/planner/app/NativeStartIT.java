@@ -589,11 +589,12 @@ class NativeStartIT {
             final Path runtime, final Process planner, final Path output, final int calls)
             throws Exception {
         final Path file = runtime.resolve(AddressFile.DIRECTORY).resolve(AddressFile.FILE);
-        // On Windows each call may take its whole limit before the planner refuses to start itself,
-        // so the planner's own verdict, not this bound, ends a slow start.
+        // On Windows each call may take its whole limit twice, a silent one started once more,
+        // before the planner refuses to start itself, so the planner's own verdict, not this
+        // bound, ends a slow start.
         final Duration bound =
                 RuntimeDirectories.WINDOWS
-                        ? POWERSHELL_LIMIT.multipliedBy(calls).plus(Duration.ofSeconds(30))
+                        ? POWERSHELL_LIMIT.multipliedBy(2L * calls).plus(Duration.ofSeconds(30))
                         : START;
         final long end = System.nanoTime() + bound.toNanos();
         while (System.nanoTime() < end && planner.isAlive()) {

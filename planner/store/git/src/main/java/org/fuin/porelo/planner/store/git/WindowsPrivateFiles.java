@@ -292,7 +292,45 @@ final class WindowsPrivateFiles implements PrivateFiles {
     private static String powershell(
             final Map<String, String> environment, final String protect, final String paths) {
         final ProcessBuilder builder = powershellCall(environment, protect, paths);
-        return answer(builder, builder.command().getFirst(), LIMIT);
+        return answerOnceMore(builder, builder.command().getFirst(), LIMIT);
+    }
+
+    /**
+     * Runs a program as {@link #answer} does, and once more when it printed nothing at all within
+     * the limit: a Windows PowerShell has been seen to hang silently on start where the same call
+     * answers in a fraction of a second. A second silence, or any other failure, is refused.
+     *
+     * @param builder the program, ready to start
+     * @param program its name for a refusal
+     * @param limit how long each start may take
+     * @return its standard output
+     */
+    static String answerOnceMore(
+            final ProcessBuilder builder, final String program, final Duration limit) {
+        try {
+            return answer(builder, program, limit);
+        } catch (final Silent e) {
+            LOG.info(
+                    "{} printed nothing within {} s; started once more",
+                    program,
+                    limit.toSeconds());
+            try {
+                return answer(builder, program, limit);
+            } catch (final RuntimeException again) {
+                again.addSuppressed(e);
+                throw again;
+            }
+        }
+    }
+
+    /** A program that printed nothing at all before its limit ran out. */
+    static final class Silent extends IllegalStateException {
+
+        private static final long serialVersionUID = 1L;
+
+        Silent(final String message) {
+            super(message);
+        }
     }
 
     /**
@@ -352,14 +390,17 @@ final class WindowsPrivateFiles implements PrivateFiles {
             final Output err = new Output(process.getErrorStream(), "errors");
             final long deadline = System.nanoTime() + limit.toNanos();
             if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
-                throw new IllegalStateException(
+                final String late =
                         program
                                 + " did not answer within "
                                 + limit.toSeconds()
                                 + " s; "
                                 + out.sofar()
                                 + ", "
-                                + err.sofar());
+                                + err.sofar();
+                throw out.silent() && err.silent()
+                        ? new Silent(late)
+                        : new IllegalStateException(late);
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(
@@ -419,6 +460,11 @@ final class WindowsPrivateFiles implements PrivateFiles {
                                 return read.toString(StandardCharsets.UTF_8);
                             });
             Thread.ofPlatform().daemon().name("powershell-" + name).start(task);
+        }
+
+        /** Whether nothing was read so far. */
+        boolean silent() {
+            return bytes.get() <= 0;
         }
 
         /** How much was read so far, in words: never what was read, which may name a path. */

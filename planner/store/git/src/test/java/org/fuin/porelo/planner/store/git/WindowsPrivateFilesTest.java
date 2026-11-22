@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
@@ -205,6 +206,46 @@ class WindowsPrivateFilesTest {
                 .hasMessageContaining("did not answer within 2 s")
                 .hasMessageContaining("0 bytes of its output")
                 .hasMessageContaining("1000 bytes of its errors");
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void aProgramSilentUntilItsLimitIsStartedOnceMoreAndASecondSilenceIsRefused(
+            @org.junit.jupiter.api.io.TempDir final Path dir) {
+        // Harm: a planner that will not start because one PowerShell hung silently on its start,
+        // or one that waits for ever on a PowerShell that never answers.
+        final Path first = dir.resolve("first");
+        final ProcessBuilder once =
+                new ProcessBuilder(
+                        "sh",
+                        "-c",
+                        "if [ -e \"$0\" ]; then echo answered; else : > \"$0\"; sleep 30; fi",
+                        first.toString());
+
+        assertThat(WindowsPrivateFiles.answerOnceMore(once, "sh", Duration.ofSeconds(2)))
+                .as("the second start's answer")
+                .isEqualTo("answered\n");
+        assertThatThrownBy(
+                        () ->
+                                WindowsPrivateFiles.answerOnceMore(
+                                        new ProcessBuilder("sleep", "30"),
+                                        "sleep",
+                                        Duration.ofSeconds(1)))
+                .as("silent twice")
+                .hasMessageContaining("did not answer within 1 s");
+        assertThatThrownBy(
+                        () ->
+                                WindowsPrivateFiles.answerOnceMore(
+                                        new ProcessBuilder(
+                                                "sh",
+                                                "-c",
+                                                "if [ -e \"$0\" ]; then echo answered; else echo"
+                                                        + " started; : > \"$0\"; sleep 30; fi",
+                                                dir.resolve("second").toString()),
+                                        "sh",
+                                        Duration.ofSeconds(2)))
+                .as("a program that printed something is not started again")
+                .hasMessageContaining("did not answer within 2 s");
     }
 
     @Test

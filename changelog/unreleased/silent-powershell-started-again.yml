@@ -1,0 +1,2 @@
+title: On Windows the planner starts a PowerShell check once more when the first start printed nothing within its limit, so one silent hang no longer stops the planner from starting.
+type: fixed
