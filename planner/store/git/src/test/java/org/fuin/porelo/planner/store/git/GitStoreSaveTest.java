@@ -648,6 +648,7 @@ class GitStoreSaveTest {
         final Board board = store.board();
         assertThat(board.issue("AB03").orElseThrow().warnings())
                 .as("the hand-edited issue stands on the board, warned of")
+                .extracting(warning -> warning.offering(null))
                 .containsExactly(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow());
 
         final Board saved =
@@ -716,7 +717,7 @@ class GitStoreSaveTest {
                 .as("no state the board can tell, warned of")
                 .extracting(
                         org.fuin.porelo.planner.store.Story::state,
-                        org.fuin.porelo.planner.store.Story::warnings)
+                        story -> story.warnings().stream().map(w -> w.offering(null)).toList())
                 .containsExactly("", List.of(org.fuin.porelo.planner.store.Warning.noState()));
 
         final Board saved =
@@ -749,6 +750,90 @@ class GitStoreSaveTest {
         board = store.save(board.revision(), writes(Map.of(), Map.of(), List.of("ST1")));
         assertThat(board.story("ST1").orElseThrow().stateGiven()).as("unstated again").isFalse();
         assertThat(read(OWN, "stories/ST1-Served.md")).doesNotContain("\"state\"");
+    }
+
+    @Test
+    void aStorysStateCorrectedChangesItsStateLineAloneMovesNoIssueAndIsIndexed() throws Exception {
+        // Harm: correcting a hand-edited story state moves its issues along, or rewrites more of
+        // the person's file than its state.
+        final String parked = story("ST4", "  \"state\": \"Parked\",\n", "\"porelo-store#AB01\"");
+        repositories.repository(OWN, Map.of("stories/ST4-Parked.md", parked));
+        final GitStore store = store();
+        final Board board = store.board();
+        assertThat(board.story("ST4").orElseThrow().warnings())
+                .as("warned of, with the correction offered")
+                .singleElement()
+                .satisfies(
+                        warning ->
+                                assertThat(warning.correction())
+                                        .extracting(org.fuin.porelo.planner.store.Correction::kind)
+                                        .isEqualTo(
+                                                org.fuin.porelo.planner.store.Correction
+                                                        .STATE_STATED));
+        final String issue = read(OWN, "issues/AB01-Own.md");
+
+        final Board saved =
+                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+
+        assertThat(read(OWN, "stories/ST4-Parked.md"))
+                .as("only the state line differs")
+                .isEqualTo(parked.replace("\"state\": \"Parked\"", "\"state\": \"Idea\""));
+        assertThat(read(OWN, "issues/AB01-Own.md")).as("its issue as it stood").isEqualTo(issue);
+        assertThat(saved.story("ST4").orElseThrow())
+                .as("in the state picked, the warning gone")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly("Idea", List.of());
+        assertThat(read(OWN, "stories/README.md")).as("now indexed").contains("[ST4]");
+    }
+
+    @Test
+    void aStoryWhoseStateIsWrittenByHandOtherwiseIsRefusedAndGivenNoSecondState() throws Exception {
+        // Harm: a second state inserted beside the hand-written one leaves a head no reader
+        // takes, and the story drops off every board.
+        final String hand = story("ST4", "  \"state\" : \"Parked\",\n", "");
+        repositories.repository(OWN, Map.of("stories/ST4-Hand.md", hand));
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        writes(Map.of(), Map.of("ST4", "Idea"), List.of())));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.subject()).as("naming the story").isEqualTo("ST4");
+        assertThat(read(OWN, "stories/ST4-Hand.md")).as("its file as it stood").isEqualTo(hand);
+        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
+    }
+
+    @Test
+    void aSaveNamingAnIdTwoFilesCarryWritesNeitherFile() throws Exception {
+        // Harm: the write lands on whichever file was read, not the copy the person meant.
+        final String copy = issue("AB01", "Backlog").replace("An issue", "A copy");
+        repositories.repository(OWN, Map.of("issues/AB01-Copy.md", copy));
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String first = read(OWN, "issues/AB01-Own.md");
+
+        final Throwable refused =
+                org.assertj.core.api.Assertions.catchThrowable(
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        writes(Map.of("AB01", "Review"), Map.of(), List.of())));
+
+        assertThat(refused).as("refused").isInstanceOf(StoreException.NoSuchIssue.class);
+        assertThat(board.twice("AB01")).as("with words naming both").isPresent();
+        assertThat(read(OWN, "issues/AB01-Own.md")).as("the first as it stood").isEqualTo(first);
+        assertThat(read(OWN, "issues/AB01-Copy.md")).as("the copy as it stood").isEqualTo(copy);
+        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
     }
 
     @Test

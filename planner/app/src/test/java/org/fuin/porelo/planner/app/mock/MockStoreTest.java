@@ -789,10 +789,61 @@ class MockStoreTest {
                                                 .flatMap(story -> story.warnings().stream()),
                                         board.issues().stream()
                                                 .flatMap(issue -> issue.warnings().stream()))
+                                .map(warning -> warning.offering(null))
                                 .distinct()
                                 .toList())
                 .as("each as the store API words it")
                 .containsExactlyInAnyOrderElementsOf(factories);
+    }
+
+    @Test
+    void theMockBoardOffersACorrectionForAStateAloneAsTheGitStoreDoes() {
+        // Harm: the window's planning tests offer a correction the Git store never offers, or
+        // miss the one it does.
+        final Board board = store.board();
+        final List<String> open =
+                board.workflow().states().stream()
+                        .filter(
+                                state ->
+                                        !board.workflow().closed().contains(state)
+                                                && !board.work().rules().containsKey(state))
+                        .toList();
+        final java.util.Map<String, org.fuin.porelo.planner.store.Correction> offered =
+                new java.util.TreeMap<>();
+        board.stories()
+                .forEach(
+                        story ->
+                                story.warnings().stream()
+                                        .filter(warning -> warning.correction() != null)
+                                        .forEach(
+                                                warning ->
+                                                        offered.put(
+                                                                "story " + warning.kind(),
+                                                                warning.correction())));
+        board.issues()
+                .forEach(
+                        issue ->
+                                issue.warnings().stream()
+                                        .filter(warning -> warning.correction() != null)
+                                        .forEach(
+                                                warning ->
+                                                        offered.put(
+                                                                "issue " + warning.kind(),
+                                                                warning.correction())));
+
+        assertThat(open).as("the open states no work alone enters").isNotEmpty();
+        assertThat(offered)
+                .as("a state set right by a move or a stated state, nothing else offered")
+                .containsExactly(
+                        java.util.Map.entry(
+                                "issue StateOutsideWorkflow",
+                                new org.fuin.porelo.planner.store.Correction(
+                                        org.fuin.porelo.planner.store.Correction.MOVE, open)),
+                        java.util.Map.entry(
+                                "story NoState",
+                                new org.fuin.porelo.planner.store.Correction(
+                                        org.fuin.porelo.planner.store.Correction.STATE_STATED,
+                                        open)));
     }
 
     /**
@@ -807,8 +858,12 @@ class MockStoreTest {
                     org.fuin.porelo.planner.store.Warning.class.getMethods()) {
                 if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
                         && method.getReturnType()
-                                .equals(org.fuin.porelo.planner.store.Warning.class)) {
-                    // A warning naming a field is made as the mock names it, for Minutes.
+                                .equals(org.fuin.porelo.planner.store.Warning.class)
+                        && (method.getParameterCount() == 0
+                                || List.of(method.getParameterTypes())
+                                        .equals(List.of(String.class)))) {
+                    // A warning naming a field is made as the mock names it, for Minutes; one
+                    // naming places is the same kind as its factory without them.
                     made.add(
                             (org.fuin.porelo.planner.store.Warning)
                                     (method.getParameterCount() == 0

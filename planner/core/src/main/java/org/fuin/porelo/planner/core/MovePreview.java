@@ -330,7 +330,7 @@ public record MovePreview(
     }
 
     /** Feeds length-prefixed fields to SHA-256, so no two different previews read alike. */
-    private static final class Digest {
+    static final class Digest {
 
         private final MessageDigest sha;
 

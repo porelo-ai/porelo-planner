@@ -94,8 +94,19 @@ public final class WorkAnswers {
                 .map(
                         warning ->
                                 new org.fuin.porelo.planner.app.answers.ItemWarning(
-                                        warning.kind(), warning.text(), warning.holdsWork()))
+                                        warning.kind(),
+                                        warning.text(),
+                                        warning.holdsWork(),
+                                        correction(warning.correction())))
                 .toList();
+    }
+
+    private static org.fuin.porelo.planner.app.answers.@Nullable Correction correction(
+            final org.fuin.porelo.planner.store.@Nullable Correction correction) {
+        return correction == null
+                ? null
+                : new org.fuin.porelo.planner.app.answers.Correction(
+                        correction.kind(), correction.states());
     }
 
     static StoryWorkOrder order(final WorkRun.Order order) {

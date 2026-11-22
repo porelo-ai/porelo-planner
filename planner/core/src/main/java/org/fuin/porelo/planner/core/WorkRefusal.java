@@ -95,6 +95,19 @@ public final class WorkRefusal extends RuntimeException {
     }
 
     /**
+     * Refuses a correction whose preview, computed again before the save, answers another digest
+     * than the one the person confirmed.
+     *
+     * @return the refusal
+     */
+    public static WorkRefusal correctionChanged() {
+        return new WorkRefusal(
+                "PreviewChanged",
+                "What the correction would do changed since its preview; preview it again.",
+                Map.of());
+    }
+
+    /**
      * Refuses a Start or a Stop naming a run, or a reason of it, that is not the one standing.
      *
      * @param story the checked story

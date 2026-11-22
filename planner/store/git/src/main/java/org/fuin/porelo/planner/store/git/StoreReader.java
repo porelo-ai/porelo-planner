@@ -95,6 +95,8 @@ public final class StoreReader implements PartReader {
         }
         final List<Issue> read = new ArrayList<>();
         final Map<String, String> paths = new LinkedHashMap<>();
+        // Each file by the id it carries, of which only the ids carried twice are kept.
+        final Map<String, List<String>> copies = new LinkedHashMap<>();
         final List<String> faults = new ArrayList<>();
         if (!issueFiles.isEmpty() || !pages.isEmpty()) {
             // An issue whose file is there but cannot be read is never taken from its index row.
@@ -123,6 +125,7 @@ public final class StoreReader implements PartReader {
                 } else {
                     paths.put(issue.id(), file);
                 }
+                copies.computeIfAbsent(issue.id(), id -> new ArrayList<>()).add(file);
                 read.add(issue);
             }
             twice.forEach(paths::remove);
@@ -155,7 +158,7 @@ public final class StoreReader implements PartReader {
         final List<Issue> issues = parentsWorkers(read);
         faults.addAll(records(name, commit, workflow));
         if (!own) {
-            return new Part(null, List.of(), issues, null, paths, faults);
+            return new Part(null, List.of(), issues, null, paths, faults, twice(copies));
         }
         final List<Story> stories = new ArrayList<>();
         final Set<String> twice = new HashSet<>();
@@ -175,6 +178,7 @@ public final class StoreReader implements PartReader {
                 } else {
                     paths.put(Part.story(story.id()), file);
                 }
+                copies.computeIfAbsent(Part.story(story.id()), id -> new ArrayList<>()).add(file);
                 stories.add(story);
             }
         }
@@ -185,7 +189,20 @@ public final class StoreReader implements PartReader {
                 issues,
                 WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
                 paths,
-                faults);
+                faults,
+                twice(copies));
+    }
+
+    /** The files of each id two or more files carry. */
+    private static Map<String, List<String>> twice(final Map<String, List<String>> copies) {
+        final Map<String, List<String>> twice = new LinkedHashMap<>();
+        copies.forEach(
+                (key, files) -> {
+                    if (files.size() > 1) {
+                        twice.put(key, files);
+                    }
+                });
+        return twice;
     }
 
     /**

@@ -1176,6 +1176,95 @@ paths:
         '504':
           $ref: '#/components/responses/Unreachable'
 
+  /projects/{project}/corrections/preview:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: previewCorrection
+      summary: Answer what the correction of one warning would write, writing nothing
+      description: >-
+        Checks the correction a warning's `correction` offers, other than a Move, against the board at the given
+        revision, with the state the person picked among its `states`, and answers what it would write and the
+        digest the save sends back. A StateStated correction writes the story's stated state alone and moves none
+        of its issues. Nothing is written or pushed. The digest covers the revision, the project's repository and
+        branch, the item, the warning's kind, its state now and the state picked. A Move is previewed and saved
+        through /moves/preview and /moves, as any move of the issue.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+      responses:
+        '200':
+          description: What the correction would write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionPreview'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/CorrectionConflict'
+        '422':
+          $ref: '#/components/responses/CorrectionRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+
+  /projects/{project}/corrections:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: saveCorrection
+      summary: Save the correction of one warning whose preview the person confirmed
+      description: >-
+        Saves the correction its preview showed, as a move is saved: one commit in the planner's own clone, pushed
+        after the answer under the person's own Git login, or nothing at all. Under the writer lock, before anything
+        is written, the correction is checked again on the board as it stands: the board must stand at the given
+        revision (StaleRevision), the warning must still stand on the item and no other warning may hold the item
+        back (CorrectionRefused), and the preview, computed again, must answer the digest sent (PreviewChanged). A
+        stale, changed or repeated confirm so writes nothing. Only the warning corrected is lifted, only for this
+        write; any other warning holds the item as before.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionConfirm'
+      responses:
+        '200':
+          description: The correction is saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/CorrectionConflict'
+        '422':
+          $ref: '#/components/responses/CorrectionRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
   /projects/{project}/issues:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1889,6 +1978,50 @@ components:
                   story: ST1
                   to: Rejected
                   issues: 'PL2:Review'
+    CorrectionConflict:
+      description: >-
+        The board moved since the given revision (StaleRevision, naming the current one), or the correction's
+        preview, computed again, answers another digest than the one sent (PreviewChanged). A preview answers only
+        StaleRevision.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            StaleRevision:
+              value:
+                type: urn:porelo-planner:StaleRevision
+                title: StaleRevision
+                status: 409
+                detail: The board moved since that revision.
+                parameters:
+                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+            PreviewChanged:
+              value:
+                type: urn:porelo-planner:PreviewChanged
+                title: PreviewChanged
+                status: 409
+                detail: What the correction would do changed since its preview; preview it again.
+                parameters: {}
+    CorrectionRefused:
+      description: >-
+        A correction is refused (CorrectionRefused): the warning no longer stands on the item, another warning holds
+        the item back (its words), the item's id names two items, the state is none of those the correction offers,
+        or the correction is a Move, which /moves carries out. A body that cannot be read is refused as a move's is
+        (MoveNotAllowed), and so is an item that cannot be saved in its repository.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:CorrectionRefused
+            title: CorrectionRefused
+            status: 422
+            detail: The warning no longer stands on it.
+            parameters:
+              item: ST4
+              warning: StateOutsideWorkflow
+              reason: The warning no longer stands on it.
     MoveRefused:
       description: >-
         A move is refused: its state is entered only by work and the item is a story, or an issue an agent works
@@ -2177,9 +2310,10 @@ components:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
         stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment,
-        adds no issue made outside the project or saves no stage's result; the mock mode previews and saves moves,
-        saves workers, adds ideas and stories and takes the edits by hand into its in-memory board, but adds no issues,
-        adds no issue made outside the project and saves no priorities (NotOffered).
+        adds no issue made outside the project, saves no stage's result or offers no correction of the warning named;
+        the mock mode previews and saves moves, saves workers, adds ideas and stories and takes the edits by hand into
+        its in-memory board, but adds no issues, adds no issue made outside the project and saves no priorities
+        (NotOffered).
       content:
         application/problem+json:
           schema:
@@ -3490,7 +3624,7 @@ components:
         warning about the state alone still lets the item move, since a move into a state of the workflow sets it right,
         and lets each issue under it move too.
       type: object
-      required: [kind, text, holds]
+      required: [kind, text, holds, correction]
       properties:
         kind:
           type: string
@@ -3504,13 +3638,118 @@ components:
             UnreadableNumber, ClosedUnderOpenState and OpenUnderClosedState.
         text:
           type: string
-          description: One fixed sentence saying what is wrong, for a tooltip; it never repeats a person's words.
+          description: >-
+            Fixed words saying what is wrong, for a tooltip; they never repeat a person's words. Where a store sets
+            nothing right itself, they name where the item is kept, so the person sets it right by hand there: the
+            Git store names each copy's file and repository for IdTwice, and the story's for IssueOutsideProject.
         holds:
           type: boolean
           description: >-
             Whether the planner holds back the item for this warning: no work starts on it, and neither an edit nor
             a move names it, but for a move out of a state the workflow does not know. Since kinds are open, a window
             tells by this field which warning holds an item.
+        correction:
+          description: >-
+            The one change the store offers to set the warning right, or null when it offers none: the store decides
+            it when it reads the board, and offers none while another warning holds the item back. The Git store
+            offers one for StateOutsideWorkflow and NoState alone.
+          oneOf:
+            - $ref: '#/components/schemas/Correction'
+            - type: 'null'
+    Correction:
+      description: >-
+        The one change that sets a warning right, which the person picks and confirms on the board.
+      type: object
+      required: [kind, states]
+      properties:
+        kind:
+          type: string
+          pattern: '^[A-Z][A-Za-z]{0,63}$'
+          description: >-
+            An open name of the change; a window offers a kind it does not know as none. Known kinds are Move - the
+            issue moved into the state picked, previewed and saved through /moves/preview and /moves as any move of
+            it - and StateStated - the story's stated state set to the state picked, writing none of its issues,
+            previewed and saved through /corrections/preview and /corrections.
+        states:
+          type: array
+          minItems: 1
+          description: >-
+            The states the person picks from, in the workflow's order: its open states that no work alone enters, so
+            a correction neither closes the item nor starts work on it.
+          items:
+            type: string
+    CorrectionRequest:
+      description: The correction of one warning on one story or issue, with the state the person picked.
+      type: object
+      required: [revision, warning, state]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        story:
+          $ref: '#/components/schemas/StoryId'
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        warning:
+          type: string
+          pattern: '^[A-Z][A-Za-z]{0,63}$'
+          description: The kind of the warning it sets right.
+        state:
+          type: string
+          description: The state picked among the correction's `states`.
+    CorrectionConfirm:
+      description: >-
+        A correction the person confirmed, with the digest of its preview; it names exactly one story or one issue.
+      type: object
+      required: [revision, warning, state, digest]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        story:
+          $ref: '#/components/schemas/StoryId'
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        warning:
+          type: string
+          pattern: '^[A-Z][A-Za-z]{0,63}$'
+        state:
+          type: string
+        digest:
+          $ref: '#/components/schemas/PreviewDigest'
+    CorrectionPreview:
+      description: What a correction would write, and the digest its save sends back.
+      type: object
+      required: [revision, digest, story, issue, warning, from, to]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        digest:
+          $ref: '#/components/schemas/PreviewDigest'
+        story:
+          description: The story it writes, or null.
+          oneOf:
+            - $ref: '#/components/schemas/StoryId'
+            - type: 'null'
+        issue:
+          description: The issue it writes, or null.
+          oneOf:
+            - $ref: '#/components/schemas/IssueId'
+            - type: 'null'
+        warning:
+          type: string
+          description: The kind of the warning it sets right.
+        from:
+          type: string
+          description: The item's state now, empty when none is told.
+        to:
+          type: string
+          description: The state it is written with.
+    CorrectionSaved:
+      description: The board's revision after a correction was saved.
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
     HeldIssue:
       description: An open issue of the story no task of the proposal names, since the board holds it back.
       type: object

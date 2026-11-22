@@ -268,7 +268,9 @@ class GitStoreReadTest {
                 .noneMatch(fault -> fault.contains("ST3"));
         assertThat(board.story("ST3").orElseThrow().warnings())
                 .as("the story says it names an issue outside the project")
-                .containsExactly(org.fuin.porelo.planner.store.Warning.issueOutsideProject());
+                .containsExactly(
+                        org.fuin.porelo.planner.store.Warning.issueOutsideProject(
+                                List.of("stories/ST3-Wrong.md of porelo-store")));
         assertThat(board.stories())
                 .as("the story keeps its sound references, and the other stories stand")
                 .extracting(Story::id, Story::issues)
@@ -377,7 +379,13 @@ class GitStoreReadTest {
                 .allSatisfy(
                         story ->
                                 assertThat(story.warnings())
-                                        .contains(org.fuin.porelo.planner.store.Warning.idTwice()));
+                                        .contains(
+                                                org.fuin.porelo.planner.store.Warning.idTwice(
+                                                        List.of(
+                                                                "stories/ST1-Copy.md of"
+                                                                        + " porelo-store",
+                                                                "stories/ST1-Stated.md of"
+                                                                        + " porelo-store"))));
         assertThat(board.issues())
                 .as("both copies of the issue, each warned of")
                 .filteredOn(issue -> issue.id().equals("AB01"))
@@ -385,7 +393,13 @@ class GitStoreReadTest {
                 .allSatisfy(
                         issue ->
                                 assertThat(issue.warnings())
-                                        .contains(org.fuin.porelo.planner.store.Warning.idTwice()));
+                                        .contains(
+                                                org.fuin.porelo.planner.store.Warning.idTwice(
+                                                        List.of(
+                                                                "issues/AB01-Copy.md of"
+                                                                        + " porelo-store",
+                                                                "issues/AB01-Parent.md of"
+                                                                        + " porelo-store"))));
         assertThat(board.twice("AB01")).as("the id names neither copy for a move").isPresent();
     }
 
@@ -404,7 +418,9 @@ class GitStoreReadTest {
                 .noneMatch(fault -> fault.contains("CD02"));
         assertThat(board.issue("CD02").orElseThrow())
                 .as("the issue stands in its own state, warned of")
-                .extracting(Issue::state, Issue::warnings)
+                .extracting(
+                        Issue::state,
+                        issue -> issue.warnings().stream().map(w -> w.offering(null)).toList())
                 .containsExactly(
                         "Waiting",
                         List.of(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()));

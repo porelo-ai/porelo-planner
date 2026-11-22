@@ -788,7 +788,7 @@
       "state": "",
       "stateGiven": false,
       "issuesWhole": true,
-      "warnings": [{"kind": "NoState", "text": "No state can be told for it: it states none, and its issues give none.", "concerns": ["STATE"]}],
+      "warnings": [{"kind": "NoState", "text": "No state can be told for it: it states none, and its issues give none.", "concerns": ["STATE"], "correction": null}],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -801,7 +801,7 @@
       "state": "Idea",
       "stateGiven": true,
       "issuesWhole": false,
-      "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown.", "concerns": ["ISSUES"]}],
+      "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown.", "concerns": ["ISSUES"], "correction": null}],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -814,7 +814,7 @@
       "state": "Idea",
       "stateGiven": true,
       "issuesWhole": false,
-      "warnings": [{"kind": "StoryUnderIssue", "text": "It stands under an issue, which a story never does, so it is shown without it.", "concerns": ["STORY_PARENT"]}, {"kind": "AlsoNeedsNotOnBoard", "text": "A line under Also needs names no issue the board shows, so it is shown without it.", "concerns": ["ISSUES"]}, {"kind": "NoPriority", "text": "It has no priority, so it is sorted as Medium.", "concerns": ["PRIORITY"]}],
+      "warnings": [{"kind": "StoryUnderIssue", "text": "It stands under an issue, which a story never does, so it is shown without it.", "concerns": ["STORY_PARENT"], "correction": null}, {"kind": "AlsoNeedsNotOnBoard", "text": "A line under Also needs names no issue the board shows, so it is shown without it.", "concerns": ["ISSUES"], "correction": null}, {"kind": "NoPriority", "text": "It has no priority, so it is sorted as Medium.", "concerns": ["PRIORITY"], "correction": null}],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -2089,7 +2089,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "StateOutsideWorkflow", "text": "Its state is none of the workflow's states, so no work starts on it.", "concerns": ["STATE"]}]
+      "warnings": [{"kind": "StateOutsideWorkflow", "text": "Its state is none of the workflow's states, so no work starts on it.", "concerns": ["STATE"], "correction": null}]
     },
     {
       "id": "B871",
@@ -2107,7 +2107,7 @@
       "estimate": null,
       "minutes": null,
       "priority": null,
-      "warnings": [{"kind": "UnknownPriority", "text": "Its priority is none the planner knows, so it is sorted as Medium.", "concerns": ["PRIORITY"]}]
+      "warnings": [{"kind": "UnknownPriority", "text": "Its priority is none the planner knows, so it is sorted as Medium.", "concerns": ["PRIORITY"], "correction": null}]
     },
     {
       "id": "B872",
@@ -2125,7 +2125,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"]}]
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"], "correction": null}]
     },
     {
       "id": "B873",
@@ -2143,7 +2143,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "ParentOutsideProject", "text": "Its parent is outside the project and is not shown.", "concerns": ["PARENT"]}]
+      "warnings": [{"kind": "ParentOutsideProject", "text": "Its parent is outside the project and is not shown.", "concerns": ["PARENT"], "correction": null}]
     },
     {
       "id": "B874",
@@ -2161,7 +2161,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "BlockerOutsideProject", "text": "An issue it waits on is outside the project and is not shown.", "concerns": ["BLOCKERS"]}]
+      "warnings": [{"kind": "BlockerOutsideProject", "text": "An issue it waits on is outside the project and is not shown.", "concerns": ["BLOCKERS"], "correction": null}]
     },
     {
       "id": "B875",
@@ -2179,7 +2179,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "WrongParent", "text": "It stands under another parent than its id names.", "concerns": ["PARENT"]}]
+      "warnings": [{"kind": "WrongParent", "text": "It stands under another parent than its id names.", "concerns": ["PARENT"], "correction": null}]
     },
     {
       "id": "B876",
@@ -2197,7 +2197,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "BodyNotSectioned", "text": "Its text has no sections the planner can read; it is shown as it stands.", "concerns": ["TEXT"]}]
+      "warnings": [{"kind": "BodyNotSectioned", "text": "Its text has no sections the planner can read; it is shown as it stands.", "concerns": ["TEXT"], "correction": null}]
     },
     {
       "id": "B872",
@@ -2215,7 +2215,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"]}]
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"], "correction": null}]
     },
     {
       "id": "B877",
@@ -2233,7 +2233,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "StoryOutsideOwnRepository", "text": "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it.", "concerns": ["KIND"]}]
+      "warnings": [{"kind": "StoryOutsideOwnRepository", "text": "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it.", "concerns": ["KIND"], "correction": null}]
     },
     {
       "id": "B878",
@@ -2251,7 +2251,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "ParentInOtherRepository", "text": "Its parent is in another repository, so it is shown without its parent.", "concerns": ["PARENT"]}]
+      "warnings": [{"kind": "ParentInOtherRepository", "text": "Its parent is in another repository, so it is shown without its parent.", "concerns": ["PARENT"], "correction": null}]
     },
     {
       "id": "B879",
@@ -2269,7 +2269,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "BlockedByStory", "text": "It is blocked by a story, which only an issue can block, so it is shown without that blocker.", "concerns": ["BLOCKERS"]}]
+      "warnings": [{"kind": "BlockedByStory", "text": "It is blocked by a story, which only an issue can block, so it is shown without that blocker.", "concerns": ["BLOCKERS"], "correction": null}]
     },
     {
       "id": "B880",
@@ -2287,7 +2287,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "ParentCircle", "text": "Its parents lead back to it, so it is shown without its parent.", "concerns": ["PARENT"]}]
+      "warnings": [{"kind": "ParentCircle", "text": "Its parents lead back to it, so it is shown without its parent.", "concerns": ["PARENT"], "correction": null}]
     },
     {
       "id": "B881",
@@ -2305,7 +2305,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "SubIssueOfSubIssue", "text": "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent.", "concerns": ["PARENT"]}]
+      "warnings": [{"kind": "SubIssueOfSubIssue", "text": "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent.", "concerns": ["PARENT"], "correction": null}]
     },
     {
       "id": "B882",
@@ -2323,7 +2323,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "PastOnePage", "text": "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read.", "concerns": ["STATE", "BLOCKERS", "ISSUES"]}]
+      "warnings": [{"kind": "PastOnePage", "text": "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read.", "concerns": ["STATE", "BLOCKERS", "ISSUES"], "correction": null}]
     },
     {
       "id": "B883",
@@ -2341,7 +2341,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "DependsOnUnplaced", "text": "An issue it stands under or waits on is not placed on the board, so it is shown without that link.", "concerns": ["PARENT", "BLOCKERS"]}]
+      "warnings": [{"kind": "DependsOnUnplaced", "text": "An issue it stands under or waits on is not placed on the board, so it is shown without that link.", "concerns": ["PARENT", "BLOCKERS"], "correction": null}]
     },
     {
       "id": "B884",
@@ -2359,7 +2359,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "BodyTooLong", "text": "Its text is longer than GitHub takes, so it is shown without it.", "concerns": ["TEXT"]}]
+      "warnings": [{"kind": "BodyTooLong", "text": "Its text is longer than GitHub takes, so it is shown without it.", "concerns": ["TEXT"], "correction": null}]
     },
     {
       "id": "B885",
@@ -2377,7 +2377,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "UnknownSize", "text": "Its size is none the planner knows, so it is shown without one.", "concerns": ["SIZE"]}]
+      "warnings": [{"kind": "UnknownSize", "text": "Its size is none the planner knows, so it is shown without one.", "concerns": ["SIZE"], "correction": null}]
     },
     {
       "id": "B886",
@@ -2395,7 +2395,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "UnreadableNumber", "text": "Its field Minutes holds no number in the range the planner reads, so the board counts it as none and saves no stage over it.", "concerns": ["FIGURES"]}]
+      "warnings": [{"kind": "UnreadableNumber", "text": "Its field Minutes holds no number in the range the planner reads, so the board counts it as none and saves no stage over it.", "concerns": ["FIGURES"], "correction": null}]
     },
     {
       "id": "B887",
@@ -2413,7 +2413,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "ClosedUnderOpenState", "text": "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it.", "concerns": ["CLOSED"]}]
+      "warnings": [{"kind": "ClosedUnderOpenState", "text": "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it.", "concerns": ["CLOSED"], "correction": null}]
     },
     {
       "id": "B888",
@@ -2431,7 +2431,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "OpenUnderClosedState", "text": "It is open on GitHub while its state is a closed one; the board goes by its state.", "concerns": ["OPEN"]}]
+      "warnings": [{"kind": "OpenUnderClosedState", "text": "It is open on GitHub while its state is a closed one; the board goes by its state.", "concerns": ["OPEN"], "correction": null}]
     },
     {
       "id": "B889",
@@ -2449,7 +2449,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "UnknownWorker", "text": "Its worker is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["WORKER"]}]
+      "warnings": [{"kind": "UnknownWorker", "text": "Its worker is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["WORKER"], "correction": null}]
     },
     {
       "id": "B890",
@@ -2467,7 +2467,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "UnknownRisk", "text": "Its risk is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["RISK"]}]
+      "warnings": [{"kind": "UnknownRisk", "text": "Its risk is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["RISK"], "correction": null}]
     },
     {
       "id": "B889.1",

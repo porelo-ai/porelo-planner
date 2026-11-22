@@ -186,13 +186,47 @@ public final class MockStore implements PlanningStore {
         }
         final Map<String, WorkRule> rules = new LinkedHashMap<>();
         file.work().forEach((state, rule) -> rules.put(state, rule(state, rule)));
+        // Corrections are offered as the Git store offers them: for a state alone.
+        final org.fuin.porelo.planner.store.Correction move =
+                org.fuin.porelo.planner.store.Correction.ofState(
+                        false, file.workflow(), rules.keySet());
+        final org.fuin.porelo.planner.store.Correction stated =
+                org.fuin.porelo.planner.store.Correction.ofState(
+                        true, file.workflow(), rules.keySet());
         return new Board(
                 new Revision(file.revision()),
                 file.workflow(),
-                file.stories(),
-                file.issues(),
+                file.stories().stream()
+                        .map(story -> story.withWarnings(offering(story.warnings(), stated)))
+                        .toList(),
+                file.issues().stream()
+                        .map(issue -> issue.withWarnings(offering(issue.warnings(), move)))
+                        .toList(),
                 new Work(rules, file.faults()),
                 file.repositories());
+    }
+
+    /** Each warning about the state alone with the correction given, the others with none. */
+    private static List<org.fuin.porelo.planner.store.Warning> offering(
+            final List<org.fuin.porelo.planner.store.Warning> warnings,
+            final org.fuin.porelo.planner.store.@Nullable Correction correction) {
+        return warnings.stream()
+                .map(
+                        warning ->
+                                warning.offering(
+                                        warning.kind()
+                                                                .equals(
+                                                                        org.fuin.porelo.planner
+                                                                                .store.Warning
+                                                                                .STATE_OUTSIDE_WORKFLOW)
+                                                        || warning.kind()
+                                                                .equals(
+                                                                        org.fuin.porelo.planner
+                                                                                .store.Warning
+                                                                                .NO_STATE)
+                                                ? correction
+                                                : null))
+                .toList();
     }
 
     private static WorkRule rule(final String state, final RuleFile rule) {

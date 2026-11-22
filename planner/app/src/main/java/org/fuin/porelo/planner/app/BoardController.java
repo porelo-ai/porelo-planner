@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.app;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,6 +13,8 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.app.answers.CorrectionPreview;
+import org.fuin.porelo.planner.app.answers.CorrectionSaved;
 import org.fuin.porelo.planner.app.answers.IdeaAdded;
 import org.fuin.porelo.planner.app.answers.IssueAdded;
 import org.fuin.porelo.planner.app.answers.IssueDetail;
@@ -39,6 +42,7 @@ import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.StoryWorkReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.answers.WorkerSaved;
+import org.fuin.porelo.planner.core.Corrections;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.Misfits;
@@ -97,6 +101,9 @@ public class BoardController {
 
     /** The most moves one batch may hold. */
     private static final int MOST_MOVES = 200;
+
+    /** A warning's kind as a store names one. */
+    private static final Pattern WARNING_KIND = Pattern.compile("[A-Z][A-Za-z]{0,63}");
 
     /** A state's name as a refusal may repeat it; anything else is never echoed. */
     private static final Pattern STATE = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
@@ -323,6 +330,157 @@ public class BoardController {
                 throw new StoreException.NotSavable(move.id(), "this store keeps no reason");
             }
         }
+    }
+
+    /**
+     * The correction of one warning, as the window sends it to preview.
+     *
+     * @param revision the revision the window shows
+     * @param story the story's id, or null
+     * @param issue the issue's id, or null
+     * @param warning the kind of the warning it sets right
+     * @param state the state the person picked
+     */
+    public record CorrectionRequest(
+            @Nullable String revision,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
+            @Nullable String warning,
+            @Nullable String state) {}
+
+    /**
+     * A correction the person confirmed, as the window sends it to save.
+     *
+     * @param revision the revision its preview was answered for
+     * @param story the story's id, or null
+     * @param issue the issue's id, or null
+     * @param warning the kind of the warning it sets right
+     * @param state the state the person picked
+     * @param digest the preview's digest
+     */
+    public record CorrectionConfirm(
+            @Nullable String revision,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
+            @Nullable String warning,
+            @Nullable String state,
+            @Nullable String digest) {}
+
+    /**
+     * Answers what the correction of one warning would write, writing nothing.
+     *
+     * @param project the project's name
+     * @param body the correction
+     * @return the preview with its digest
+     */
+    @PostMapping("/projects/{project}/corrections/preview")
+    public CorrectionPreview previewCorrection(
+            @PathVariable("project") final String project,
+            @RequestBody final CorrectionRequest body) {
+        final String name = name(project);
+        final Corrections.Asked asked =
+                asked(name, body.story(), body.issue(), body.warning(), body.state());
+        final String revision = body.revision();
+        if (revision == null) {
+            throw notAllowed(asked.id(), "", "The body names no revision.");
+        }
+        final Projects.Given given = projects.given(name);
+        final Corrections.Preview preview;
+        try {
+            preview = Corrections.preview(given.store(), asked, revision);
+        } catch (final UnsupportedOperationException e) {
+            throw correctionNotOffered(name);
+        }
+        return new CorrectionPreview(
+                preview.revision(),
+                preview.digest(given.repository(), given.branch()),
+                asked.story() ? asked.id() : null,
+                asked.story() ? null : asked.id(),
+                asked.warning(),
+                preview.from(),
+                asked.state());
+    }
+
+    /**
+     * Saves the correction of one warning whose preview the person confirmed, under the project's
+     * writer lock, writing nothing for a stale, changed or repeated confirm.
+     *
+     * @param project the project's name
+     * @param body the confirmed correction
+     * @return the revision after the save
+     */
+    @PostMapping("/projects/{project}/corrections")
+    public CorrectionSaved saveCorrection(
+            @PathVariable("project") final String project,
+            @RequestBody final CorrectionConfirm body) {
+        final String name = name(project);
+        final Corrections.Asked asked =
+                asked(name, body.story(), body.issue(), body.warning(), body.state());
+        final String revision = body.revision();
+        if (revision == null) {
+            throw notAllowed(asked.id(), "", "The body names no revision.");
+        }
+        final String digest = body.digest();
+        if (digest == null || !DIGEST.matcher(digest).matches()) {
+            throw notAllowed(asked.id(), "", "The body names no preview's digest.");
+        }
+        final Projects.Given given = projects.given(name);
+        try {
+            final Board saved =
+                    given.work()
+                            .alone(
+                                    () ->
+                                            Corrections.save(
+                                                    given.store(),
+                                                    asked,
+                                                    revision,
+                                                    digest,
+                                                    given.repository(),
+                                                    given.branch()));
+            LOG.info(
+                    "Saved a correction of {} in project {} as revision {}",
+                    LogText.of(asked.id()),
+                    LogText.of(name),
+                    LogText.of(saved.revision().value()));
+            return new CorrectionSaved(saved.revision().value());
+        } catch (final StoreException.NotSavable e) {
+            throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()), asked.state());
+        } catch (final UnsupportedOperationException e) {
+            throw correctionNotOffered(name);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    /** A correction's body checked: exactly one item, a warning's kind and a state's name. */
+    private static Corrections.Asked asked(
+            final String project,
+            final @Nullable String story,
+            final @Nullable String issue,
+            final @Nullable String warning,
+            final @Nullable String state) {
+        if ((story == null) == (issue == null)) {
+            throw notAllowed("", "", "A correction must name exactly one story or one issue.");
+        }
+        final String id =
+                story != null
+                        ? checked(project, () -> Ids.story(story), "story")
+                        : checked(project, () -> Ids.issue(String.valueOf(issue)), "issue");
+        if (warning == null || !WARNING_KIND.matcher(warning).matches()) {
+            throw notAllowed(id, "", "The body names no warning's kind.");
+        }
+        if (state == null || !STATE.matcher(state).matches()) {
+            throw notAllowed(id, "", "The state must be a state's name.");
+        }
+        return new Corrections.Asked(story != null, id, warning, state);
+    }
+
+    private static Refusal correctionNotOffered(final String name) {
+        return new Refusal(
+                "NotOffered",
+                HttpStatus.NOT_IMPLEMENTED,
+                "This planner offers no such correction of the warning.",
+                Map.of("project", name));
     }
 
     private static Refusal movesNotOffered(final String name) {

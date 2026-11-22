@@ -21,7 +21,8 @@ import org.jspecify.annotations.Nullable;
  * @param issuesWhole whether {@code issues} holds every issue its head names; false when the store
  *     left one out, so nothing is read from its issues as if they were all
  * @param warnings what the store could not read in it; its state may be none of the workflow's, or
- *     empty, only with a warning about the state
+ *     empty, only with a warning about the state; a warning's correction stands only while no other
+ *     of them holds the story back
  */
 public record Story(
         String id,
@@ -45,7 +46,7 @@ public record Story(
         Ids.story(id);
         issues = List.copyOf(issues);
         issues.forEach(Ids::issue);
-        warnings = List.copyOf(warnings);
+        warnings = Warning.offerable(warnings);
     }
 
     /**

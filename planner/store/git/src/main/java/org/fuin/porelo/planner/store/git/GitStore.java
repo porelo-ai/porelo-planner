@@ -31,6 +31,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Correction;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
@@ -1588,13 +1589,24 @@ public final class GitStore implements PlanningStore {
                                 java.util.stream.Collectors.groupingBy(
                                         Issue::id, java.util.stream.Collectors.counting()));
         final List<Issue> issues = new ArrayList<>();
+        final Work work = ownPart.work();
+        final Workflow workflow;
+        try {
+            workflow = workflow(read);
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
+        }
+        // A state is set right by a move into a state the person picks; an id twice only by hand.
+        final Correction move =
+                Correction.ofState(
+                        false, workflow, work != null ? work.rules().keySet() : Set.of());
         for (final Issue issue : found) {
             final List<Warning> warnings = new ArrayList<>(issue.warnings());
             if (!read.states().contains(issue.state())) {
-                warnings.add(Warning.stateOutsideWorkflow());
+                warnings.add(Warning.stateOutsideWorkflow().offering(move));
             }
             if (ids.getOrDefault(issue.id(), 0L) > 1) {
-                warnings.add(Warning.idTwice());
+                warnings.add(Warning.idTwice(places(parts, issue.id())));
             }
             issues.add(
                     warnings.size() == issue.warnings().size()
@@ -1603,13 +1615,6 @@ public final class GitStore implements PlanningStore {
         }
         final Revision revision = new Revision(revision(commits));
         try {
-            final Workflow workflow =
-                    new Workflow(
-                            read.states(),
-                            read.phases().stream()
-                                    .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
-                                    .toList(),
-                            read.states().stream().filter(read::closed).toList());
             // By repository and id, so a second issue of one id never hides the first.
             final Map<String, List<Issue>> byReference = new LinkedHashMap<>();
             issues.forEach(
@@ -1626,11 +1631,19 @@ public final class GitStore implements PlanningStore {
                                             org.fuin.porelo.planner.store.git.stories.Story::id,
                                             java.util.stream.Collectors.counting()));
             final List<Story> stories = new ArrayList<>();
+            final Correction stated =
+                    Correction.ofState(
+                            true, workflow, work != null ? work.rules().keySet() : Set.of());
             for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
                 stories.add(
-                        story(story, byReference, read, storyIds.getOrDefault(story.id(), 0L) > 1));
+                        story(
+                                story,
+                                byReference,
+                                read,
+                                storyIds.getOrDefault(story.id(), 0L) > 1,
+                                stated,
+                                places(ownPart, own, Part.story(story.id()))));
             }
-            final Work work = ownPart.work();
             return new Board(
                     revision,
                     workflow,
@@ -1644,6 +1657,37 @@ public final class GitStore implements PlanningStore {
         }
     }
 
+    private static Workflow workflow(
+            final org.fuin.porelo.planner.store.git.stories.Workflow read) {
+        return new Workflow(
+                read.states(),
+                read.phases().stream()
+                        .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
+                        .toList(),
+                read.states().stream().filter(read::closed).toList());
+    }
+
+    /** Where each copy of an issue's id is kept, in the project's order of repositories. */
+    private List<String> places(final Map<String, Part> parts, final String id) {
+        final List<String> places = new ArrayList<>();
+        for (final Repository repository : repositories) {
+            final Part part = of(parts, repository.name());
+            final long read = part.issues().stream().filter(i -> i.id().equals(id)).count();
+            final List<String> files = part.files(id);
+            files.forEach(file -> places.add(Warning.place(file, repository.name())));
+            // A copy only its index row holds has no file of its own.
+            for (long row = files.size(); row < read; row++) {
+                places.add(Warning.place(null, repository.name()));
+            }
+        }
+        return places;
+    }
+
+    /** Where each file of a story is kept. */
+    private static List<String> places(final Part own, final String name, final String key) {
+        return own.files(key).stream().map(file -> Warning.place(file, name)).toList();
+    }
+
     /**
      * A story as the board shows it: its issues by repository and id, and its state as the stories
      * index gives it from its issues in states the workflow knows. What cannot be read in it is
@@ -1653,7 +1697,9 @@ public final class GitStore implements PlanningStore {
             final org.fuin.porelo.planner.store.git.stories.Story story,
             final Map<String, List<Issue>> issues,
             final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
-            final boolean twice) {
+            final boolean twice,
+            final @Nullable Correction correction,
+            final List<String> places) {
         final List<Warning> warnings = new ArrayList<>();
         final List<String> ids = new ArrayList<>();
         final List<String> states = new ArrayList<>();
@@ -1680,23 +1726,24 @@ public final class GitStore implements PlanningStore {
             }
         }
         if (dropped) {
-            warnings.add(Warning.issueOutsideProject());
+            // Removing the reference would lose the person's link; it is set right by hand.
+            warnings.add(Warning.issueOutsideProject(places));
         }
         if (twice) {
-            warnings.add(Warning.idTwice());
+            warnings.add(Warning.idTwice(places));
         }
-        final String stated = story.state();
+        final String given = story.state();
         final String state;
-        if (stated != null) {
-            state = stated;
-            if (!workflow.states().contains(stated)) {
-                warnings.add(Warning.stateOutsideWorkflow());
+        if (given != null) {
+            state = given;
+            if (!workflow.states().contains(given)) {
+                warnings.add(Warning.stateOutsideWorkflow().offering(correction));
             }
         } else if (states.isEmpty() || outside && states.stream().allMatch(workflow::closed)) {
             // Its issues give no state the workflow knows, and it states none; or the ones that
             // do are all closed while another stands outside the workflow, which counts as open.
             state = "";
-            warnings.add(Warning.noState());
+            warnings.add(Warning.noState().offering(correction));
         } else {
             // With issues the rule reads only their states, never the stated one.
             final String derived =
@@ -1708,7 +1755,7 @@ public final class GitStore implements PlanningStore {
                 story.id(),
                 story.title(),
                 state,
-                stated != null,
+                given != null,
                 story.priority(),
                 story.size(),
                 ids,

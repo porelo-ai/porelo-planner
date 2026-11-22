@@ -1,9 +1,11 @@
 package org.fuin.porelo.planner.store;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a store could not read in a story or an issue it still hands on: the board shows the item,
@@ -13,8 +15,10 @@ import java.util.regex.Pattern;
  *     may name a kind of its own
  * @param text one fixed sentence saying what is wrong, which never repeats a person's words
  * @param concerns what of the item it is about, which decides whether work may start on it
+ * @param correction the one change the store offers to set it right, or null when it offers none
  */
-public record Warning(String kind, String text, Set<Concern> concerns) {
+public record Warning(
+        String kind, String text, Set<Concern> concerns, @Nullable Correction correction) {
 
     private static final Pattern KIND = Pattern.compile("[A-Z][A-Za-z]{0,63}");
 
@@ -87,6 +91,47 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
             throw new IllegalArgumentException("A warning " + kind + " is about nothing");
         }
         concerns = Set.copyOf(concerns);
+    }
+
+    /**
+     * A warning without a correction.
+     *
+     * @param kind an open name of what is wrong
+     * @param text one fixed sentence saying what is wrong
+     * @param concerns what of the item it is about
+     */
+    public Warning(final String kind, final String text, final Set<Concern> concerns) {
+        this(kind, text, concerns, null);
+    }
+
+    /**
+     * This warning with the correction a store offers for it.
+     *
+     * @param offered the correction, or null for none
+     * @return the warning
+     */
+    public Warning offering(final @Nullable Correction offered) {
+        return new Warning(kind, text, concerns, offered);
+    }
+
+    /**
+     * An item's warnings as the board shows them: a correction stands only while no other warning
+     * of the item holds it back, since that one would refuse the correction's write.
+     *
+     * @param warnings an item's warnings
+     * @return them, in order, a correction left out where another warning holds the item
+     */
+    static List<Warning> offerable(final List<Warning> warnings) {
+        final List<Warning> shown = new ArrayList<>(warnings.size());
+        for (int at = 0; at < warnings.size(); at++) {
+            final Warning warning = warnings.get(at);
+            boolean held = false;
+            for (int other = 0; other < warnings.size(); other++) {
+                held |= other != at && warnings.get(other).holdsWork();
+            }
+            shown.add(warning.correction() != null && held ? warning.offering(null) : warning);
+        }
+        return List.copyOf(shown);
     }
 
     /**
@@ -248,6 +293,26 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
     }
 
     /**
+     * An item whose id names another item too, naming where each copy is kept, so the person
+     * changes one id by hand there.
+     *
+     * @param places each copy's file and repository, as words; none gives {@link #idTwice()}
+     * @return the warning
+     */
+    public static Warning idTwice(final List<String> places) {
+        if (places.isEmpty()) {
+            return idTwice();
+        }
+        return new Warning(
+                ID_TWICE,
+                "Its id names another item too, so it can be neither worked nor moved until one id"
+                        + " is changed by hand; it is kept in "
+                        + spoken(places)
+                        + ".",
+                Set.of(Concern.ID));
+    }
+
+    /**
      * An issue whose parent is outside the project, dropped from it.
      *
      * @return the warning
@@ -282,6 +347,46 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
                 "It names an issue that is no issue of the project's repositories, which is not"
                         + " shown.",
                 Set.of(Concern.ISSUES));
+    }
+
+    /**
+     * A story naming an issue that is no issue of the project's repositories, naming where the
+     * story is kept, so the person removes or mends the reference by hand there.
+     *
+     * @param places the story's file and repository, as words, for each file of its id; none gives
+     *     {@link #issueOutsideProject()}
+     * @return the warning
+     */
+    public static Warning issueOutsideProject(final List<String> places) {
+        if (places.isEmpty()) {
+            return issueOutsideProject();
+        }
+        return new Warning(
+                ISSUE_OUTSIDE_PROJECT,
+                "It names an issue that is no issue of the project's repositories, which is not"
+                        + " shown; it is set right by hand in "
+                        + spoken(places)
+                        + ".",
+                Set.of(Concern.ISSUES));
+    }
+
+    /**
+     * Where a store keeps an item, as a warning names it.
+     *
+     * @param path the item's file, relative to its repository, or null when it has none
+     * @param repository the repository's name
+     * @return the words
+     */
+    public static String place(final @Nullable String path, final String repository) {
+        return path == null ? "the index of " + repository : path + " of " + repository;
+    }
+
+    /** Names joined as words: {@code A and B}, {@code A, B and C}. */
+    private static String spoken(final List<String> names) {
+        if (names.size() < 2) {
+            return String.join("", names);
+        }
+        return String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.getLast();
     }
 
     /**

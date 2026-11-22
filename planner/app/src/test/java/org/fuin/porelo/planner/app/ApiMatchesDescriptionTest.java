@@ -64,6 +64,15 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Wait", org.fuin.porelo.planner.app.answers.Wait.class),
                     Map.entry("IssueDetail", org.fuin.porelo.planner.app.answers.IssueDetail.class),
                     Map.entry("ItemWarning", org.fuin.porelo.planner.app.answers.ItemWarning.class),
+                    Map.entry("Correction", org.fuin.porelo.planner.app.answers.Correction.class),
+                    Map.entry(
+                            "CorrectionPreview",
+                            org.fuin.porelo.planner.app.answers.CorrectionPreview.class),
+                    Map.entry(
+                            "CorrectionSaved",
+                            org.fuin.porelo.planner.app.answers.CorrectionSaved.class),
+                    Map.entry("CorrectionRequest", BoardController.CorrectionRequest.class),
+                    Map.entry("CorrectionConfirm", BoardController.CorrectionConfirm.class),
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
                     Map.entry(

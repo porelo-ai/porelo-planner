@@ -26,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  * @param priority its priority, one of {@link Story#PRIORITIES}, or null when the store holds none
  *     or one outside them
  * @param warnings what the store could not read in it; its state may be none of the workflow's only
- *     with a warning about the state
+ *     with a warning about the state; a warning's correction stands only while no other of them
+ *     holds the issue back
  * @param waitsOn the issues it waits on that the board does not hold, such as those of another
  *     repository; empty for a store that knows none
  */
@@ -80,7 +81,7 @@ public record Issue(
             throw new IllegalArgumentException(
                     "The priority of " + id + " is none of " + Story.PRIORITIES);
         }
-        warnings = List.copyOf(warnings);
+        warnings = Warning.offerable(warnings);
     }
 
     /**

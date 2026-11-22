@@ -40,6 +40,20 @@ class GitStoreTest {
     private static final Repository OTHER =
             new Repository("other", new CloneUrl("https://git.example.org/other"), null);
 
+    /** An issue's state set right by a move into an open state, none entered by work alone. */
+    private static final org.fuin.porelo.planner.store.Correction MOVE =
+            new org.fuin.porelo.planner.store.Correction(
+                    org.fuin.porelo.planner.store.Correction.MOVE, List.of("Idea", "Backlog"));
+
+    /** A story's state set right by its stated state alone. */
+    private static final org.fuin.porelo.planner.store.Correction STATED =
+            new org.fuin.porelo.planner.store.Correction(
+                    org.fuin.porelo.planner.store.Correction.STATE_STATED,
+                    List.of("Idea", "Backlog"));
+
+    /** Where the copies of an id stand that the parts give no file for. */
+    private static final List<String> ROWS = List.of("the index of store", "the index of other");
+
     /** A remote whose branches the test moves, counting what the store asks of it. */
     private static final class FakeRemote implements Remote {
         final Map<String, String> heads =
@@ -251,18 +265,18 @@ class GitStoreTest {
                                 "store",
                                 "Parked",
                                 List.of(
-                                        org.fuin.porelo.planner.store.Warning
-                                                .stateOutsideWorkflow())),
+                                        org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()
+                                                .offering(MOVE))),
                         org.assertj.core.groups.Tuple.tuple(
                                 "XY2",
                                 "store",
                                 "Idea",
-                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())),
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice(ROWS))),
                         org.assertj.core.groups.Tuple.tuple(
                                 "XY2",
                                 "other",
                                 "Backlog",
-                                List.of(org.fuin.porelo.planner.store.Warning.idTwice())));
+                                List.of(org.fuin.porelo.planner.store.Warning.idTwice(ROWS))));
         assertThat(org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow().text())
                 .as("the words the person reads")
                 .isEqualTo("Its state is none of the workflow's states, so no work starts on it.");
@@ -330,7 +344,9 @@ class GitStoreTest {
                                 false,
                                 List.of("XY1"),
                                 true,
-                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning.noState()
+                                                .offering(STATED))),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST3",
                                 "Backlog",
@@ -347,8 +363,8 @@ class GitStoreTest {
                                 List.of(),
                                 true,
                                 List.of(
-                                        org.fuin.porelo.planner.store.Warning
-                                                .stateOutsideWorkflow())),
+                                        org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()
+                                                .offering(STATED))),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST5",
                                 "Idea",
@@ -391,8 +407,100 @@ class GitStoreTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST1",
                                 "",
-                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
+                                List.of(
+                                        org.fuin.porelo.planner.store.Warning.noState()
+                                                .offering(STATED))),
                         org.assertj.core.groups.Tuple.tuple("ST2", "Backlog", List.of()));
+    }
+
+    @Test
+    void anIdTwiceOrAnIssueOutsideTheProjectIsOfferedNoCorrectionAndNamesWhereToMendItByHand() {
+        // Harm: the person picks a copy and the write lands on the other file, or a reference is
+        // removed along with the person's link; set right by hand, the place must be named.
+        final GitStore store =
+                new GitStore(
+                        List.of(OWN, OTHER),
+                        remote,
+                        (repository, commit, project) ->
+                                project == null
+                                        ? new Part(
+                                                WORKFLOW,
+                                                List.of(
+                                                        story("ST3", "Idea", "store#ZZ9"),
+                                                        story("ST5", "Idea"),
+                                                        story("ST5", "Idea")),
+                                                List.of(
+                                                        issue("XY2", "store", "Idea"),
+                                                        issue("XY2", "store", "Parked")),
+                                                null,
+                                                Map.of(Part.story("ST3"), "stories/ST3-Named.md"),
+                                                List.of(),
+                                                Map.of(
+                                                        "XY2",
+                                                        List.of(
+                                                                "issues/XY2-a.md",
+                                                                "issues/XY2-b.md"),
+                                                        Part.story("ST5"),
+                                                        List.of(
+                                                                "stories/ST5-a.md",
+                                                                "stories/ST5-b.md")))
+                                        : new Part(
+                                                null,
+                                                List.of(),
+                                                List.of(issue("XY2", "other", "Backlog")),
+                                                null,
+                                                Map.of("XY2", "issues/XY2-c.md")),
+                        inProcess(),
+                        clock,
+                        Duration.ofSeconds(10),
+                        4,
+                        queue);
+        final Board board = store.board();
+        final org.fuin.porelo.planner.store.Warning twice =
+                org.fuin.porelo.planner.store.Warning.idTwice(
+                        List.of(
+                                "issues/XY2-a.md of store",
+                                "issues/XY2-b.md of store",
+                                "issues/XY2-c.md of other"));
+
+        assertThat(board.issues())
+                .as("each copy names every file of the id and offers nothing")
+                .extracting(Issue::warnings)
+                .containsExactly(
+                        List.of(twice),
+                        List.of(
+                                org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow(),
+                                twice),
+                        List.of(twice));
+        assertThat(twice.text())
+                .as("the words the person reads")
+                .isEqualTo(
+                        "Its id names another item too, so it can be neither worked nor moved"
+                                + " until one id is changed by hand; it is kept in issues/XY2-a.md"
+                                + " of store, issues/XY2-b.md of store and issues/XY2-c.md of"
+                                + " other.");
+        assertThat(board.stories())
+                .as("a story naming an issue outside, and one named twice, each by its files")
+                .extracting(org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly(
+                        List.of(
+                                org.fuin.porelo.planner.store.Warning.issueOutsideProject(
+                                        List.of("stories/ST3-Named.md of store"))),
+                        List.of(
+                                org.fuin.porelo.planner.store.Warning.idTwice(
+                                        List.of(
+                                                "stories/ST5-a.md of store",
+                                                "stories/ST5-b.md of store"))),
+                        List.of(
+                                org.fuin.porelo.planner.store.Warning.idTwice(
+                                        List.of(
+                                                "stories/ST5-a.md of store",
+                                                "stories/ST5-b.md of store"))));
+        assertThat(board.stories().getFirst().warnings().getFirst().text())
+                .isEqualTo(
+                        "It names an issue that is no issue of the project's repositories, which is"
+                                + " not shown; it is set right by hand in stories/ST3-Named.md of"
+                                + " store.");
     }
 
     @Test

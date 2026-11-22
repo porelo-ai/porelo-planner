@@ -108,6 +108,27 @@ class HeadEditTest {
     }
 
     @Test
+    void aStoryHeadWhoseStateIsWrittenOtherwiseIsRefusedAndNeverGivenASecondState() {
+        // Harm: a second state member inserted beside one edited by hand gives a head no reader
+        // takes, and the story drops off the board.
+        for (final String loose :
+                List.of(
+                        "  \"state\" : \"Parked\",\n",
+                        "\t\"state\": \"Parked\",\n",
+                        "  \"state\": \"Par\\\"ked\",\n",
+                        "  \"state\": null,\n")) {
+            final String hand = STORY.replace("  \"issues\"", loose + "  \"issues\"");
+            assertThatThrownBy(() -> HeadEdit.storyState(hand, "Review"))
+                    .as("a state written as %s", loose.strip())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("state member not written as the heads are");
+            assertThatThrownBy(() -> HeadEdit.storyState(hand, null))
+                    .as("nor removed beside it")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void aStoryWithoutItsDataSectionIsRefused() {
         assertThatThrownBy(() -> HeadEdit.storyState(STORY.replace("## Data\n\n", ""), "Rejected"))
                 .isInstanceOf(IllegalArgumentException.class);
