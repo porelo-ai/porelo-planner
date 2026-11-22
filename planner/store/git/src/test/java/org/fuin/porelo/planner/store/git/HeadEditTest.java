@@ -116,7 +116,8 @@ class HeadEditTest {
                         "  \"state\" : \"Parked\",\n",
                         "\t\"state\": \"Parked\",\n",
                         "  \"state\": \"Par\\\"ked\",\n",
-                        "  \"state\": null,\n")) {
+                        "  \"state\": null,\n",
+                        "  \"size\": \"S\", \"state\": \"Parked\",\n")) {
             final String hand = STORY.replace("  \"issues\"", loose + "  \"issues\"");
             assertThatThrownBy(() -> HeadEdit.storyState(hand, "Review"))
                     .as("a state written as %s", loose.strip())

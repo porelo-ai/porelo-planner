@@ -801,7 +801,7 @@
       "state": "Idea",
       "stateGiven": true,
       "issuesWhole": false,
-      "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown.", "concerns": ["ISSUES"], "correction": null}],
+      "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown; it is set right by hand in stories/ST298-A-story-naming-an-issue-outside-the-project.md of porelo-project.", "concerns": ["ISSUES"], "correction": null}],
       "priority": "Medium",
       "size": null,
       "issues": [],
@@ -2125,7 +2125,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"], "correction": null}]
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed by hand; it is kept in issues/B872-An-issue-whose-id-stands-twice.md of porelo and issues/B872-The-other-issue-whose-id-stands-twice.md of porelo-host.", "concerns": ["ID"], "correction": null}]
     },
     {
       "id": "B873",
@@ -2215,7 +2215,7 @@
       "estimate": null,
       "minutes": null,
       "priority": "Medium",
-      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed.", "concerns": ["ID"], "correction": null}]
+      "warnings": [{"kind": "IdTwice", "text": "Its id names another item too, so it can be neither worked nor moved until one id is changed by hand; it is kept in issues/B872-An-issue-whose-id-stands-twice.md of porelo and issues/B872-The-other-issue-whose-id-stands-twice.md of porelo-host.", "concerns": ["ID"], "correction": null}]
     },
     {
       "id": "B877",

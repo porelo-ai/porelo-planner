@@ -187,12 +187,11 @@ public final class MockStore implements PlanningStore {
         final Map<String, WorkRule> rules = new LinkedHashMap<>();
         file.work().forEach((state, rule) -> rules.put(state, rule(state, rule)));
         // Corrections are offered as the Git store offers them: for a state alone.
+        final Work work = new Work(rules, file.faults());
         final org.fuin.porelo.planner.store.Correction move =
-                org.fuin.porelo.planner.store.Correction.ofState(
-                        false, file.workflow(), rules.keySet());
+                org.fuin.porelo.planner.store.Correction.ofState(false, file.workflow(), work);
         final org.fuin.porelo.planner.store.Correction stated =
-                org.fuin.porelo.planner.store.Correction.ofState(
-                        true, file.workflow(), rules.keySet());
+                org.fuin.porelo.planner.store.Correction.ofState(true, file.workflow(), work);
         return new Board(
                 new Revision(file.revision()),
                 file.workflow(),
@@ -202,7 +201,7 @@ public final class MockStore implements PlanningStore {
                 file.issues().stream()
                         .map(issue -> issue.withWarnings(offering(issue.warnings(), move)))
                         .toList(),
-                new Work(rules, file.faults()),
+                work,
                 file.repositories());
     }
 

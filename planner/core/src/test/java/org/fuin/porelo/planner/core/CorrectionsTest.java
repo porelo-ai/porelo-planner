@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Correction;
 import org.fuin.porelo.planner.store.Issue;
@@ -42,6 +41,15 @@ class CorrectionsTest {
         @Override
         public Board refresh() {
             return board;
+        }
+
+        /** A story stands where the least of its issues stands, in the workflow's order. */
+        @Override
+        public @org.jspecify.annotations.Nullable String storyState(final List<String> states) {
+            return board.workflow().states().stream()
+                    .filter(states::contains)
+                    .findFirst()
+                    .orElse(null);
         }
 
         @Override
@@ -120,13 +128,27 @@ class CorrectionsTest {
         return new Corrections.Asked(true, id, warning, to);
     }
 
+    private static final java.time.Clock CLOCK =
+            java.time.Clock.fixed(
+                    java.time.Instant.parse("2026-01-01T00:00:00Z"), java.time.ZoneOffset.UTC);
+
+    /** A run with no work at hand, over the store. */
+    private static WorkRun run(final CountingStore store) {
+        return new WorkRun(store, new WorkRunTest.Memory(), CLOCK);
+    }
+
+    private static Corrections.Preview preview(
+            final CountingStore store, final Corrections.Asked asked) {
+        return run(store).correctionPreview(asked, "board@1");
+    }
+
     private static Board save(
             final CountingStore store, final Corrections.Asked asked, final String digest) {
-        return Corrections.save(store, asked, "board@1", digest, REPOSITORY, null);
+        return run(store).correction(asked, "board@1", digest, false, REPOSITORY, null).saved();
     }
 
     private static String digest(final CountingStore store, final Corrections.Asked asked) {
-        return Corrections.preview(store, asked, "board@1").digest(REPOSITORY, null);
+        return preview(store, asked).digest(REPOSITORY, null);
     }
 
     @Test
@@ -136,7 +158,7 @@ class CorrectionsTest {
         final CountingStore store = new CountingStore(board());
         final Corrections.Asked asked = asked("ST1", Warning.STATE_OUTSIDE_WORKFLOW, "Review");
 
-        final Corrections.Preview preview = Corrections.preview(store, asked, "board@1");
+        final Corrections.Preview preview = preview(store, asked);
         assertThat(preview.from()).as("the state it stands in now").isEqualTo("Parked");
         assertThat(preview.writes())
                 .as("only the story's stated state")
@@ -149,6 +171,94 @@ class CorrectionsTest {
                 .as("its issue stays where it stood")
                 .isEqualTo("Backlog");
         assertThat(saved.story("ST1").orElseThrow().warnings()).as("the warning is gone").isEmpty();
+    }
+
+    @Test
+    void aStatedStateItsIssuesDoNotFitNamesThoseIssuesAndTheDigestCoversThem() {
+        // Harm: a story pinned out of step with its issues, and the person never told; or a
+        // confirm saved after an issue moved, over misfits the person was never shown.
+        final CountingStore store = new CountingStore(board());
+        final Corrections.Asked asked = asked("ST1", Warning.STATE_OUTSIDE_WORKFLOW, "Review");
+
+        final Corrections.Preview preview = preview(store, asked);
+
+        assertThat(preview.warnings())
+                .as("AA1 in Backlog does not fit Review, and keeps its state")
+                .containsExactly(
+                        new MovePreview.Warning(
+                                MovePreview.STORY_MISMATCH,
+                                "ST1",
+                                "Parked",
+                                "Review",
+                                null,
+                                List.of(),
+                                List.of(),
+                                List.of(
+                                        new MovePreview.MovedIssue(
+                                                "AA1", "alpha", "Backlog", "Backlog")),
+                                List.of()));
+        assertThat(
+                        preview(store, asked("ST1", Warning.STATE_OUTSIDE_WORKFLOW, "Backlog"))
+                                .warnings())
+                .as("none where its issues give the state")
+                .isEmpty();
+        final String digest = preview.digest(REPOSITORY, null);
+        final Board before = store.board;
+        store.board =
+                board(
+                        before.revision(),
+                        before.stories(),
+                        List.of(
+                                WorkProposalTest.issue("AA1", "alpha", "Built", "Review", null, ""),
+                                before.issues().get(1)));
+        assertThat(preview(store, asked).warnings())
+                .as("no misfit once AA1 is in Review")
+                .isEmpty();
+        assertThat(catchThrowable(() -> save(store, asked, digest)))
+                .as("the misfits shown changed at the same revision")
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(e -> assertThat(((WorkRefusal) e).name()).isEqualTo("PreviewChanged"));
+        assertThat(store.saves).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void whileTheWorkRulesHaveFaultsNoStateCorrectionIsOfferedAndAConfirmIsRefused() {
+        // Harm: a story put into a working state whose rule could not be read, which a move would
+        // have refused, so it stands where work runs without its work.
+        final Board read = board();
+        final org.fuin.porelo.planner.store.Work faulty =
+                new org.fuin.porelo.planner.store.Work(
+                        read.work().rules(), List.of("work.yml: Building is no rule"));
+        assertThat(Correction.ofState(true, read.workflow(), faulty))
+                .as("not offered while the rules have faults")
+                .isNull();
+        assertThat(Correction.ofState(false, read.workflow(), faulty))
+                .as("an issue's move neither")
+                .isNull();
+        final CountingStore store = new CountingStore(board());
+        final Corrections.Asked asked = asked("ST1", Warning.STATE_OUTSIDE_WORKFLOW, "Backlog");
+        final String digest = digest(store, asked);
+        // The board read before the fault still offered it; the confirm meets the fault.
+        store.board =
+                new Board(
+                        read.revision(),
+                        read.workflow(),
+                        read.stories(),
+                        read.issues(),
+                        faulty,
+                        read.repositories());
+
+        for (final Throwable refused :
+                List.of(
+                        catchThrowable(() -> preview(store, asked)),
+                        catchThrowable(() -> save(store, asked, digest)))) {
+            assertThat(refused)
+                    .as("refused with the faults")
+                    .isInstanceOf(Moves.Refused.class)
+                    .hasMessage("The work rules have faults: work.yml: Building is no rule");
+            assertThat(((Moves.Refused) refused).name()).isEqualTo(Corrections.REFUSED);
+        }
+        assertThat(store.saves).as("nothing written").isEmpty();
     }
 
     @Test
@@ -166,11 +276,7 @@ class CorrectionsTest {
                     .hasMessage("The state is none of those the correction offers.");
             assertThat(((Moves.Refused) refused).name()).isEqualTo(Corrections.REFUSED);
         }
-        assertThat(
-                        Corrections.preview(
-                                        store, asked("ST2", Warning.NO_STATE, "Backlog"), "board@1")
-                                .writes()
-                                .stories())
+        assertThat(preview(store, asked("ST2", Warning.NO_STATE, "Backlog")).writes().stories())
                 .as("an offered state is written")
                 .containsExactly(Map.entry("ST2", "Backlog"));
         assertThat(store.saves).as("nothing written").isEmpty();
@@ -185,7 +291,7 @@ class CorrectionsTest {
         assertThat(Correction.openStates(board.workflow(), board.work().rules().keySet()))
                 .as("Backlog and Review, never Building nor Finished")
                 .containsExactly("Backlog", "Review");
-        assertThat(Correction.ofState(false, board.workflow(), board.work().rules().keySet()))
+        assertThat(Correction.ofState(false, board.workflow(), board.work()))
                 .as("an issue's is a move")
                 .isEqualTo(new Correction(Correction.MOVE, List.of("Backlog", "Review")));
         assertThat(
@@ -195,7 +301,7 @@ class CorrectionsTest {
                                         List.of("Building", "Finished"),
                                         List.of(),
                                         List.of("Finished")),
-                                Set.of("Building")))
+                                board.work()))
                 .as("none where the workflow offers no such state")
                 .isNull();
     }
@@ -208,14 +314,13 @@ class CorrectionsTest {
         final Throwable refused =
                 catchThrowable(
                         () ->
-                                Corrections.preview(
+                                preview(
                                         store,
                                         new Corrections.Asked(
                                                 false,
                                                 "AA2",
                                                 Warning.STATE_OUTSIDE_WORKFLOW,
-                                                "Review"),
-                                        "board@1"));
+                                                "Review")));
         assertThat(refused)
                 .as("sent to the move")
                 .isInstanceOf(Moves.Refused.class)
@@ -325,13 +430,12 @@ class CorrectionsTest {
         assertThat(
                         catchThrowable(
                                 () ->
-                                        Corrections.preview(
+                                        preview(
                                                 store,
                                                 asked(
                                                         "ST1",
                                                         Warning.ISSUE_OUTSIDE_PROJECT,
-                                                        "Backlog"),
-                                                "board@1")))
+                                                        "Backlog"))))
                 .as("not offered")
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage(PlanningStore.NOT_OFFERED);

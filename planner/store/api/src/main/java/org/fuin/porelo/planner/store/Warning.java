@@ -13,7 +13,9 @@ import org.jspecify.annotations.Nullable;
  *
  * @param kind an open name of what is wrong, such as {@code StateOutsideWorkflow}; a later store
  *     may name a kind of its own
- * @param text one fixed sentence saying what is wrong, which never repeats a person's words
+ * @param text one sentence saying what is wrong, fixed but for the places a store names: file paths
+ *     relative to their repository, which may hold a person's words, cleaned and capped by {@link
+ *     #place(String, String)}; shown as plain text
  * @param concerns what of the item it is about, which decides whether work may start on it
  * @param correction the one change the store offers to set it right, or null when it offers none
  */
@@ -296,7 +298,8 @@ public record Warning(
      * An item whose id names another item too, naming where each copy is kept, so the person
      * changes one id by hand there.
      *
-     * @param places each copy's file and repository, as words; none gives {@link #idTwice()}
+     * @param places each copy's file and repository, as {@link #place} words them; none gives
+     *     {@link #idTwice()}
      * @return the warning
      */
     public static Warning idTwice(final List<String> places) {
@@ -353,8 +356,8 @@ public record Warning(
      * A story naming an issue that is no issue of the project's repositories, naming where the
      * story is kept, so the person removes or mends the reference by hand there.
      *
-     * @param places the story's file and repository, as words, for each file of its id; none gives
-     *     {@link #issueOutsideProject()}
+     * @param places the story's file and repository, as {@link #place} words them, for each file of
+     *     its id; none gives {@link #issueOutsideProject()}
      * @return the warning
      */
     public static Warning issueOutsideProject(final List<String> places) {
@@ -370,15 +373,38 @@ public record Warning(
                 Set.of(Concern.ISSUES));
     }
 
+    /** The most characters a place names of a path, its ellipsis counted. */
+    public static final int MOST_PATH = 200;
+
     /**
-     * Where a store keeps an item, as a warning names it.
+     * Where a store keeps an item, as a warning names it: the path without control, format, bidi or
+     * zero-width characters, which would break or reorder the sentence, and capped at {@link
+     * #MOST_PATH} characters with an ellipsis.
      *
      * @param path the item's file, relative to its repository, or null when it has none
      * @param repository the repository's name
      * @return the words
      */
     public static String place(final @Nullable String path, final String repository) {
-        return path == null ? "the index of " + repository : path + " of " + repository;
+        return path == null ? "the index of " + repository : shown(path) + " of " + repository;
+    }
+
+    private static String shown(final String path) {
+        final StringBuilder kept = new StringBuilder(Math.min(path.length(), MOST_PATH));
+        path.codePoints()
+                .filter(
+                        c -> {
+                            final int type = Character.getType(c);
+                            return type != Character.CONTROL
+                                    && type != Character.FORMAT
+                                    && type != Character.LINE_SEPARATOR
+                                    && type != Character.PARAGRAPH_SEPARATOR;
+                        })
+                .forEach(kept::appendCodePoint);
+        if (kept.codePointCount(0, kept.length()) <= MOST_PATH) {
+            return kept.toString();
+        }
+        return kept.substring(0, kept.offsetByCodePoints(0, MOST_PATH - 1)) + "\u2026";
     }
 
     /** Names joined as words: {@code A and B}, {@code A, B and C}. */

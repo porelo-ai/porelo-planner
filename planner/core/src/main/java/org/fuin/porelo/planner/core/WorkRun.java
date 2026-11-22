@@ -2059,6 +2059,87 @@ public final class WorkRun {
     }
 
     /**
+     * Answers what the correction of one warning would write and what it can do harm by, read with
+     * the work under the writer lock, writing nothing.
+     *
+     * @param asked the correction
+     * @param revision the revision the window shows
+     * @return the preview
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws Moves.Refused when the correction is refused, as {@link Corrections} checks it
+     * @throws UnsupportedOperationException when the store offers no correction of the warning
+     */
+    public Corrections.Preview correctionPreview(
+            final Corrections.Asked asked, final String revision) {
+        return record.locked(
+                session -> {
+                    final Board board = store.board();
+                    if (!board.revision().value().equals(revision)) {
+                        throw new StoreException.StaleRevision(board.revision().value());
+                    }
+                    return Corrections.check(
+                            board, asked, store::storyState, owners(read(session)));
+                });
+    }
+
+    /**
+     * Saves a correction whose preview the person confirmed, as a move is saved: checked again on
+     * the board and the work as they stand, before anything is stopped or written, its digest must
+     * be the one sent, so a stale, changed or repeated confirm writes nothing. A confirmed save
+     * stops each run with tasks at work on the story, which the preview named and the digest
+     * covers, and records the stop with the save; an unconfirmed one is refused while such a run
+     * stands.
+     *
+     * @param asked the correction
+     * @param revision the revision its preview was answered for
+     * @param digest the preview's digest the window sends back
+     * @param confirm whether the person confirmed the preview's warnings
+     * @param repository the project's own repository, which the digest covers
+     * @param branch its branch, or null
+     * @return the board after the save and the runs it stopped
+     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now, or
+     *     {@code WorkRunning} while a run has tasks at work on the story and the save is not
+     *     confirmed
+     * @throws Moves.Refused as {@link #correctionPreview} refuses it
+     * @throws UnsupportedOperationException when the store offers no correction of the warning
+     */
+    public MoveSaved<Board> correction(
+            final Corrections.Asked asked,
+            final String revision,
+            final String digest,
+            final boolean confirm,
+            final String repository,
+            final @Nullable String branch) {
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Board board = store.board();
+                    if (!board.revision().value().equals(revision)) {
+                        throw new StoreException.StaleRevision(board.revision().value());
+                    }
+                    final Corrections.Preview preview =
+                            Corrections.check(board, asked, store::storyState, owners(snapshot));
+                    if (!MessageDigest.isEqual(
+                            preview.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
+                            digest.getBytes(StandardCharsets.UTF_8))) {
+                        throw WorkRefusal.correctionChanged();
+                    }
+                    final Set<String> stories = Set.of(asked.id());
+                    if (!confirm) {
+                        refuseOwned(snapshot, Set.of(), stories);
+                    }
+                    final List<StoppedRun> stopped = new ArrayList<>();
+                    final Snapshot stopping = stopOwners(snapshot, Set.of(), stories, stopped);
+                    final Board saved = store.save(board.revision(), preview.writes());
+                    if (stopping != snapshot) {
+                        session.write(stopping);
+                    }
+                    return new MoveSaved<>(saved, stopped);
+                });
+    }
+
+    /**
      * Stops, as the story's Stop does, each run with tasks at work over what a confirmed batch
      * touches, collecting its tasks at work; nothing is written here.
      */

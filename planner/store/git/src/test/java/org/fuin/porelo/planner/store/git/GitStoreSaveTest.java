@@ -789,6 +789,70 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aStorysCorrectionCommitsItsFileAndTheIndexAloneAndItsRepeatChangesNothing()
+            throws Exception {
+        // Harm: a correction rewrites other files of the person's repository, or a confirm sent
+        // again after a lost answer commits a second time.
+        final String parked = story("ST4", "  \"state\": \"Parked\",\n", "\"porelo-store#AB01\"");
+        repositories.repository(OWN, Map.of("stories/ST4-Parked.md", parked));
+        final GitStore store = store();
+        final Board board = store.board();
+        final String before = head(OWN);
+        final String headOther = head(OTHER);
+
+        final Board saved =
+                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+
+        final String after = head(OWN);
+        assertThat(git(OWN, "rev-list", "--count", before + ".." + after).strip())
+                .as("one commit")
+                .isEqualTo("1");
+        assertThat(names(OWN, after))
+                .as("the story's file and the stories index, nothing else")
+                .containsExactlyInAnyOrder("stories/ST4-Parked.md", "stories/README.md");
+        assertThat(head(OTHER)).as("the other repository untouched").isEqualTo(headOther);
+
+        store.save(saved.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+
+        assertThat(head(OWN)).as("the same correction again commits nothing").isEqualTo(after);
+    }
+
+    @Test
+    void aStoryWithoutAStateCorrectedGetsItsStateLineAloneAndKeepsEveryOtherByte()
+            throws Exception {
+        // Harm: giving a story without a state its state rewrites more of the person's head than
+        // the one line it adds.
+        final String bare = story("ST5", "", "\"porelo-store#AB01\"");
+        repositories.repository(OWN, Map.of("stories/ST5-Bare.md", bare));
+        final GitStore store = store();
+        final Board board = store.board();
+        assertThat(board.story("ST5").orElseThrow().warnings())
+                .as("warned of, with the correction offered")
+                .singleElement()
+                .satisfies(
+                        warning ->
+                                assertThat(warning.kind())
+                                        .isEqualTo(org.fuin.porelo.planner.store.Warning.NO_STATE))
+                .satisfies(
+                        warning ->
+                                assertThat(warning.correction())
+                                        .extracting(org.fuin.porelo.planner.store.Correction::kind)
+                                        .isEqualTo(
+                                                org.fuin.porelo.planner.store.Correction
+                                                        .STATE_STATED));
+
+        store.save(board.revision(), writes(Map.of(), Map.of("ST5", "Idea"), List.of()));
+
+        final String now = read(OWN, "stories/ST5-Bare.md");
+        final List<String> added = new java.util.ArrayList<>(now.lines().toList());
+        assertThat(added.remove("  \"state\": \"Idea\",")).as("one state line added").isTrue();
+        assertThat(added).as("every other line as it stood").isEqualTo(bare.lines().toList());
+        assertThat(now.endsWith("\n"))
+                .as("its last line break kept")
+                .isEqualTo(bare.endsWith("\n"));
+    }
+
+    @Test
     void aStoryWhoseStateIsWrittenByHandOtherwiseIsRefusedAndGivenNoSecondState() throws Exception {
         // Harm: a second state inserted beside the hand-written one leaves a head no reader
         // takes, and the story drops off every board.

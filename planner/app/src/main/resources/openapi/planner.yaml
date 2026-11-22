@@ -1184,11 +1184,14 @@ paths:
       summary: Answer what the correction of one warning would write, writing nothing
       description: >-
         Checks the correction a warning's `correction` offers, other than a Move, against the board at the given
-        revision, with the state the person picked among its `states`, and answers what it would write and the
-        digest the save sends back. A StateStated correction writes the story's stated state alone and moves none
-        of its issues. Nothing is written or pushed. The digest covers the revision, the project's repository and
-        branch, the item, the warning's kind, its state now and the state picked. A Move is previewed and saved
-        through /moves/preview and /moves, as any move of the issue.
+        revision and the work at hand, with the state the person picked among its `states`, and answers what it
+        would write, what it can do harm by and the digest the save sends back. A StateStated correction writes the
+        story's stated state alone and moves none of its issues; its warnings name, as a move's preview does, each
+        run with tasks at work on the story (RUNNING_WORK) and the story's issues the state picked does not fit
+        (STORY_MISMATCH). Nothing is written or pushed. The digest covers the revision, the project's repository and
+        branch, the item, the warning's kind, its state now, the state picked and every warning. While the work
+        rules have faults no correction is offered and one asked for is refused (CorrectionRefused). A Move is
+        previewed and saved through /moves/preview and /moves, as any move of the issue.
       tags: [board]
       requestBody:
         required: true
@@ -1228,10 +1231,12 @@ paths:
         Saves the correction its preview showed, as a move is saved: one commit in the planner's own clone, pushed
         after the answer under the person's own Git login, or nothing at all. Under the writer lock, before anything
         is written, the correction is checked again on the board as it stands: the board must stand at the given
-        revision (StaleRevision), the warning must still stand on the item and no other warning may hold the item
-        back (CorrectionRefused), and the preview, computed again, must answer the digest sent (PreviewChanged). A
-        stale, changed or repeated confirm so writes nothing. Only the warning corrected is lifted, only for this
-        write; any other warning holds the item as before.
+        revision (StaleRevision), the warning must still stand on the item, no other warning may hold the item
+        back and the work rules may have no faults (CorrectionRefused), and the preview, computed again with the
+        work at hand, must answer the digest sent (PreviewChanged). A stale, changed or repeated confirm so writes
+        nothing. While a run has tasks at work on the story, a save not confirmed is refused (WorkRunning) and a
+        confirmed one stops the run with the save and answers its tasks the window must end, as a move's does. Only
+        the warning corrected is lifted, only for this write; any other warning holds the item as before.
       tags: [board]
       requestBody:
         required: true
@@ -1980,9 +1985,9 @@ components:
                   issues: 'PL2:Review'
     CorrectionConflict:
       description: >-
-        The board moved since the given revision (StaleRevision, naming the current one), or the correction's
-        preview, computed again, answers another digest than the one sent (PreviewChanged). A preview answers only
-        StaleRevision.
+        The board moved since the given revision (StaleRevision, naming the current one), the correction's preview,
+        computed again, answers another digest than the one sent (PreviewChanged), or a run has tasks at work on the
+        story and the save was not confirmed (WorkRunning(story,tasks[])). A preview answers only StaleRevision.
       content:
         application/problem+json:
           schema:
@@ -2003,12 +2008,23 @@ components:
                 status: 409
                 detail: What the correction would do changed since its preview; preview it again.
                 parameters: {}
+            WorkRunning:
+              value:
+                type: urn:porelo-planner:WorkRunning
+                title: WorkRunning
+                status: 409
+                detail: The story already has active work.
+                parameters:
+                  story: ST1
+                  tasks: [porelo-st1-main]
     CorrectionRefused:
       description: >-
         A correction is refused (CorrectionRefused): the warning no longer stands on the item, another warning holds
-        the item back (its words), the item's id names two items, the state is none of those the correction offers,
-        or the correction is a Move, which /moves carries out. A body that cannot be read is refused as a move's is
-        (MoveNotAllowed), and so is an item that cannot be saved in its repository.
+        the item back (its words), the item's id names two items, the work rules have faults (their words), the
+        state is none of those the correction offers, or the correction is a Move, which /moves carries out. A body
+        that cannot be read is refused as a move's is (MoveNotAllowed, "The body is no correction."), and so is an
+        item that cannot be saved in its repository: an offered correction is still refused so when its head
+        cannot be edited, and nothing is written.
       content:
         application/problem+json:
           schema:
@@ -3622,7 +3638,7 @@ components:
         blockers, id, kind, worker or risk holds it back, and every issue under it at any depth: no work starts on
         them, no edit changes them or adds them to a story or as a blocker or takes them out, and no move names them. A
         warning about the state alone still lets the item move, since a move into a state of the workflow sets it right,
-        and lets each issue under it move too.
+        and lets each issue under it move too; so does the correction a store offers for it.
       type: object
       required: [kind, text, holds, correction]
       properties:
@@ -3639,9 +3655,12 @@ components:
         text:
           type: string
           description: >-
-            Fixed words saying what is wrong, for a tooltip; they never repeat a person's words. Where a store sets
-            nothing right itself, they name where the item is kept, so the person sets it right by hand there: the
-            Git store names each copy's file and repository for IdTwice, and the story's for IssueOutsideProject.
+            Words saying what is wrong, for a tooltip, shown as plain text. They are fixed but for the places a
+            store names: where a store sets nothing right itself, they name where the item is kept, so the person
+            sets it right by hand there. The Git store names each copy's file and repository for IdTwice, and the
+            story's for IssueOutsideProject; a file's path is relative to its repository and may hold a person's
+            words, so it is named without control, format, bidi or zero-width characters and capped at 200
+            characters with an ellipsis.
         holds:
           type: boolean
           description: >-
@@ -3651,8 +3670,8 @@ components:
         correction:
           description: >-
             The one change the store offers to set the warning right, or null when it offers none: the store decides
-            it when it reads the board, and offers none while another warning holds the item back. The Git store
-            offers one for StateOutsideWorkflow and NoState alone.
+            it when it reads the board, and offers none while another warning holds the item back or the work rules
+            have faults. The Git store offers one for StateOutsideWorkflow and NoState alone.
           oneOf:
             - $ref: '#/components/schemas/Correction'
             - type: 'null'
@@ -3675,11 +3694,15 @@ components:
           minItems: 1
           description: >-
             The states the person picks from, in the workflow's order: its open states that no work alone enters, so
-            a correction neither closes the item nor starts work on it.
+            a correction neither closes the item nor starts work on it. They are what the window offers: a Move is
+            judged as any move by /moves, which may move the issue into any state of the workflow, a closed one
+            too.
           items:
             type: string
     CorrectionRequest:
-      description: The correction of one warning on one story or issue, with the state the person picked.
+      description: >-
+        The correction of one warning on one story or issue, with the state the person picked; it names exactly one
+        story or one issue.
       type: object
       required: [revision, warning, state]
       properties:
@@ -3695,6 +3718,7 @@ components:
           description: The kind of the warning it sets right.
         state:
           type: string
+          pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
           description: The state picked among the correction's `states`.
     CorrectionConfirm:
       description: >-
@@ -3713,12 +3737,19 @@ components:
           pattern: '^[A-Z][A-Za-z]{0,63}$'
         state:
           type: string
+          pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         digest:
           $ref: '#/components/schemas/PreviewDigest'
+        confirm:
+          type: boolean
+          default: false
+          description: >-
+            Whether the person confirmed the preview's warnings: each run its RUNNING_WORK warning named is stopped
+            with the save.
     CorrectionPreview:
       description: What a correction would write, and the digest its save sends back.
       type: object
-      required: [revision, digest, story, issue, warning, from, to]
+      required: [revision, digest, story, issue, warning, from, to, warnings]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -3743,13 +3774,26 @@ components:
         to:
           type: string
           description: The state it is written with.
+        warnings:
+          type: array
+          description: >-
+            What the correction can do harm by, as a move's preview names it: RUNNING_WORK for each run with tasks at
+            work on the story, and STORY_MISMATCH naming each issue of the story the state picked does not fit, with
+            its state, which it keeps. Empty when it is saved without asking.
+          items:
+            $ref: '#/components/schemas/MoveWarning'
     CorrectionSaved:
-      description: The board's revision after a correction was saved.
+      description: The board's revision after a correction was saved, and every run a confirmed save stopped.
       type: object
-      required: [revision]
+      required: [revision, stopped]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        stopped:
+          type: array
+          description: Each run the save stopped; empty when it stopped none.
+          items:
+            $ref: '#/components/schemas/StoppedRun'
     HeldIssue:
       description: An open issue of the story no task of the proposal names, since the board holds it back.
       type: object

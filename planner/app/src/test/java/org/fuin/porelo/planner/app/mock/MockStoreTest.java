@@ -792,8 +792,67 @@ class MockStoreTest {
                                 .map(warning -> warning.offering(null))
                                 .distinct()
                                 .toList())
-                .as("each as the store API words it")
-                .containsExactlyInAnyOrderElementsOf(factories);
+                .as("each as the store API words it, naming places as the Git store does")
+                .containsExactlyInAnyOrderElementsOf(
+                        factories.stream().map(MockStoreTest::placed).toList());
+    }
+
+    /** A warning that names where an item is kept, worded with the mock's places. */
+    private static org.fuin.porelo.planner.store.Warning placed(
+            final org.fuin.porelo.planner.store.Warning warning) {
+        return switch (warning.kind()) {
+            case org.fuin.porelo.planner.store.Warning.ID_TWICE ->
+                    org.fuin.porelo.planner.store.Warning.idTwice(
+                            List.of(
+                                    org.fuin.porelo.planner.store.Warning.place(
+                                            "issues/B872-An-issue-whose-id-stands-twice.md",
+                                            "porelo"),
+                                    org.fuin.porelo.planner.store.Warning.place(
+                                            "issues/B872-The-other-issue-whose-id-stands-twice.md",
+                                            "porelo-host")));
+            case org.fuin.porelo.planner.store.Warning.ISSUE_OUTSIDE_PROJECT ->
+                    org.fuin.porelo.planner.store.Warning.issueOutsideProject(
+                            List.of(
+                                    org.fuin.porelo.planner.store.Warning.place(
+                                            "stories/ST298-A-story-naming-an-issue-outside-the"
+                                                    + "-project.md",
+                                            "porelo-project")));
+            default -> warning;
+        };
+    }
+
+    @Test
+    void whileItsWorkRulesHaveFaultsTheMockOffersNoCorrection() throws Exception {
+        // Harm: the window's planning tests offer a correction the Git store would withhold, into
+        // a working state whose rule could not be read.
+        final String json;
+        try (java.io.InputStream in =
+                MockStore.class.getClassLoader().getResourceAsStream(MockStore.BOARD)) {
+            json =
+                    new String(
+                                    java.util.Objects.requireNonNull(in).readAllBytes(),
+                                    java.nio.charset.StandardCharsets.UTF_8)
+                            .replace(
+                                    "\"faults\": [],",
+                                    "\"faults\": [\"stories/work.yml: Building is no rule\"],");
+        }
+        final Board faulty =
+                MockStore.read(
+                        new java.io.ByteArrayInputStream(
+                                json.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        assertThat(faulty.work().faults()).as("the fault read").hasSize(1);
+        assertThat(
+                        java.util.stream.Stream.concat(
+                                        faulty.stories().stream()
+                                                .flatMap(s -> s.warnings().stream()),
+                                        faulty.issues().stream()
+                                                .flatMap(i -> i.warnings().stream()))
+                                .map(org.fuin.porelo.planner.store.Warning::correction)
+                                .toList())
+                .as("no correction offered")
+                .isNotEmpty()
+                .containsOnlyNulls();
     }
 
     @Test

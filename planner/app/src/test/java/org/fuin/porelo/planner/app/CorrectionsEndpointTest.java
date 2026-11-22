@@ -41,6 +41,9 @@ class CorrectionsEndpointTest {
 
     private final List<Writes> saved = new ArrayList<>();
 
+    /** What the store's next save refuses with, or null. */
+    private org.fuin.porelo.planner.store.@org.jspecify.annotations.Nullable StoreException refusal;
+
     private Board current = board("r1", "Parked", Warning.stateOutsideWorkflow().offering(STATED));
 
     private MockMvc mvc;
@@ -112,7 +115,16 @@ class CorrectionsEndpointTest {
                     }
 
                     @Override
+                    public String storyState(final List<String> states) {
+                        return states.isEmpty() ? "Backlog" : states.getFirst();
+                    }
+
+                    @Override
                     public Board save(final Revision revision, final Writes writes) {
+                        final var refused = refusal;
+                        if (refused != null) {
+                            throw refused;
+                        }
                         saved.add(writes);
                         current =
                                 CorrectionsEndpointTest.board(
@@ -288,5 +300,109 @@ class CorrectionsEndpointTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.parameters.to").value(""));
         assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void anUnreadableBodyIsRefusedAsAMovesIsWithFixedWords() throws Exception {
+        // Harm: the window reads an answer the contract does not describe, or the parser's
+        // words repeat what the body held.
+        for (final String path : List.of("corrections/preview", "corrections")) {
+            post(path, "{\"revision\": 1")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                    .andExpect(jsonPath("$.detail").value("The body is no correction."));
+        }
+        assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void anIssuesMoveAnUnknownStoryAndAHeadTheStoreCannotEditAreRefusedAndWriteNothing()
+            throws Exception {
+        // Harm: an issue's state set right past the move's rules, a correction written for an
+        // item the board does not hold, or one half written where its head cannot be edited.
+        final Board plain = board("r1", "Parked", Warning.stateOutsideWorkflow().offering(STATED));
+        final Issue issue = plain.issues().getFirst();
+        current =
+                new Board(
+                        plain.revision(),
+                        plain.workflow(),
+                        plain.stories(),
+                        List.of(
+                                issue.withWarnings(
+                                        List.of(
+                                                Warning.stateOutsideWorkflow()
+                                                        .offering(
+                                                                new Correction(
+                                                                        Correction.MOVE,
+                                                                        List.of(
+                                                                                "Backlog",
+                                                                                "Review")))))),
+                        plain.work(),
+                        plain.repositories());
+        post(
+                        "corrections/preview",
+                        "{\"revision\": \"r1\", \"issue\": \"AB01\", \"warning\":"
+                                + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        "It is set right by a move of it, previewed and saved as"
+                                                + " any move."));
+        current = plain;
+        post(
+                        "corrections/preview",
+                        "{\"revision\": \"r1\", \"story\": \"ST9\", \"warning\":"
+                                + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"));
+        final String digest = digest("Review");
+        refusal =
+                new org.fuin.porelo.planner.store.StoreException.NotSavable(
+                        "ST1", "the JSON head holds a state member not written as the heads are");
+        confirm("r1", "Review", digest)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("ST1"));
+        assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void whileTheWorkRulesHaveFaultsAConfirmIsRefusedWithThemAndWritesNothing() throws Exception {
+        // Harm: a story put into a working state whose rule could not be read, from a board
+        // read before the fault.
+        final String digest = digest("Review");
+        final Board read = current;
+        current =
+                new Board(
+                        read.revision(),
+                        read.workflow(),
+                        read.stories(),
+                        read.issues(),
+                        new Work(read.work().rules(), List.of("work.yml: Review is no rule")),
+                        read.repositories());
+
+        confirm("r1", "Review", digest)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value("The work rules have faults: work.yml: Review is no rule"));
+        assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aStatedStateItsIssuesDoNotFitIsPreviewedWithThem() throws Exception {
+        // Harm: a story pinned out of step with its issues, and the person never told.
+        post("corrections/preview", asked("r1", "Review") + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.warnings[0].kind").value("STORY_MISMATCH"))
+                .andExpect(jsonPath("$.warnings[0].issues[0].id").value("AB01"))
+                .andExpect(jsonPath("$.warnings[0].issues[0].from").value("Backlog"))
+                .andExpect(jsonPath("$.warnings[0].issues[0].to").value("Backlog"));
+        post("corrections/preview", asked("r1", "Backlog") + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.warnings").isEmpty());
     }
 }

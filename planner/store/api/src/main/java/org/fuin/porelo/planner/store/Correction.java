@@ -52,16 +52,20 @@ public record Correction(String kind, List<String> states) {
     /**
      * The correction of a state none of the workflow's, or of none told: for an issue a move into
      * one of the open states, for a story its stated state set to one of them; none when the
-     * workflow has no such state.
+     * workflow has no such state, or while the work rules have faults, since a working state whose
+     * rule could not be read would then be offered as open.
      *
      * @param story whether it corrects a story
      * @param workflow the board's workflow
-     * @param working the states entered only by work
+     * @param work the board's work rules
      * @return the correction, or null when nothing can be offered
      */
     public static @org.jspecify.annotations.Nullable Correction ofState(
-            final boolean story, final Workflow workflow, final Set<String> working) {
-        final List<String> states = openStates(workflow, working);
+            final boolean story, final Workflow workflow, final Work work) {
+        if (!work.faults().isEmpty()) {
+            return null;
+        }
+        final List<String> states = openStates(workflow, work.rules().keySet());
         return states.isEmpty() ? null : new Correction(story ? STATE_STATED : MOVE, states);
     }
 }

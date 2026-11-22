@@ -20,8 +20,8 @@ final class HeadEdit {
     /** A top-level state member, as the heads are written: two spaces, one member a line. */
     private static final Pattern STATE = Pattern.compile("  \"state\": \"[^\"\\\\]*\",?");
 
-    /** A state member written in any other way than the heads are written. */
-    private static final Pattern ANY_STATE = Pattern.compile("\\s*\"state\"\\s*:.*");
+    /** A state member anywhere on a line, its name's quote not escaped. */
+    private static final Pattern ANY_STATE = Pattern.compile("(?<!\\\\)\"state\"\\s*:");
 
     /** A top-level worker member, as the heads are written. */
     private static final Pattern WORKER = Pattern.compile("  \"worker\": \"[^\"\\\\]*\",?");
@@ -262,7 +262,7 @@ final class HeadEdit {
         for (int line = fence + 2; line < end - 1; line++) {
             if (STATE.matcher(lines[line]).matches()) {
                 found.add(line);
-            } else if (ANY_STATE.matcher(lines[line]).matches()) {
+            } else if (ANY_STATE.matcher(lines[line]).find()) {
                 loose = true;
             }
             if (lines[line].startsWith("  \"issues\":")) {
@@ -270,7 +270,7 @@ final class HeadEdit {
             }
         }
         if (loose) {
-            // Edited beside it, or written as a second member, it would leave two states.
+            // A state not alone on its own line: edited beside it, or a second written, two stand.
             throw new IllegalArgumentException(
                     "the JSON head holds a state member not written as the heads are");
         }

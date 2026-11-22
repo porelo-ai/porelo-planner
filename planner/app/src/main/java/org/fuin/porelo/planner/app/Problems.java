@@ -95,9 +95,14 @@ public class Problems {
                 request.getAttribute(
                         HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE,
                         RequestAttributes.SCOPE_REQUEST);
-        if ("/projects/{project}/moves".equals(pattern)) {
+        if ("/projects/{project}/moves".equals(pattern)
+                || "/projects/{project}/corrections".equals(pattern)
+                || "/projects/{project}/corrections/preview".equals(pattern)) {
             // Fixed words: the parser's text would repeat whatever the body held.
-            final String reason = "The body is no batch of moves.";
+            final String reason =
+                    "/projects/{project}/moves".equals(pattern)
+                            ? "The body is no batch of moves."
+                            : "The body is no correction.";
             final Map<String, String> fields = new java.util.LinkedHashMap<>();
             fields.put("item", "");
             fields.put("from", "");

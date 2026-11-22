@@ -357,6 +357,7 @@ public class BoardController {
      * @param warning the kind of the warning it sets right
      * @param state the state the person picked
      * @param digest the preview's digest
+     * @param confirm whether the person confirmed the preview's warnings
      */
     public record CorrectionConfirm(
             @Nullable String revision,
@@ -364,7 +365,8 @@ public class BoardController {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
             @Nullable String warning,
             @Nullable String state,
-            @Nullable String digest) {}
+            @Nullable String digest,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Boolean confirm) {}
 
     /**
      * Answers what the correction of one warning would write, writing nothing.
@@ -387,7 +389,7 @@ public class BoardController {
         final Projects.Given given = projects.given(name);
         final Corrections.Preview preview;
         try {
-            preview = Corrections.preview(given.store(), asked, revision);
+            preview = given.work().correctionPreview(asked, revision);
         } catch (final UnsupportedOperationException e) {
             throw correctionNotOffered(name);
         }
@@ -398,16 +400,18 @@ public class BoardController {
                 asked.story() ? null : asked.id(),
                 asked.warning(),
                 preview.from(),
-                asked.state());
+                asked.state(),
+                preview.warnings().stream().map(BoardController::warning).toList());
     }
 
     /**
      * Saves the correction of one warning whose preview the person confirmed, under the project's
-     * writer lock, writing nothing for a stale, changed or repeated confirm.
+     * writer lock, writing nothing for a stale, changed or repeated confirm; a confirmed one stops
+     * each run at work on the story, as a move's does.
      *
      * @param project the project's name
      * @param body the confirmed correction
-     * @return the revision after the save
+     * @return the revision after the save and the runs it stopped
      */
     @PostMapping("/projects/{project}/corrections")
     public CorrectionSaved saveCorrection(
@@ -426,23 +430,22 @@ public class BoardController {
         }
         final Projects.Given given = projects.given(name);
         try {
-            final Board saved =
+            final WorkRun.MoveSaved<Board> answer =
                     given.work()
-                            .alone(
-                                    () ->
-                                            Corrections.save(
-                                                    given.store(),
-                                                    asked,
-                                                    revision,
-                                                    digest,
-                                                    given.repository(),
-                                                    given.branch()));
+                            .correction(
+                                    asked,
+                                    revision,
+                                    digest,
+                                    Boolean.TRUE.equals(body.confirm()),
+                                    given.repository(),
+                                    given.branch());
+            final Board saved = answer.saved();
             LOG.info(
                     "Saved a correction of {} in project {} as revision {}",
                     LogText.of(asked.id()),
                     LogText.of(name),
                     LogText.of(saved.revision().value()));
-            return new CorrectionSaved(saved.revision().value());
+            return new CorrectionSaved(saved.revision().value(), stopped(answer.stopped()));
         } catch (final StoreException.NotSavable e) {
             throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()), asked.state());
         } catch (final UnsupportedOperationException e) {

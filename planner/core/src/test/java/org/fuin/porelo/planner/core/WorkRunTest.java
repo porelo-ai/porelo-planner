@@ -4855,6 +4855,97 @@ class WorkRunTest {
     }
 
     @Test
+    void aStorysStateCorrectionOverRunningWorkIsNamedRefusedUnconfirmedAndStopsItsRunConfirmed() {
+        // Harm: a story's stated state set by hand while a run's agents work on it, unstopped and
+        // unrecorded, though the same change as a move would have warned and stopped the run.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered main = role(f.order().tasks(), "MAIN");
+        f.start(main);
+        final Board board = f.store.board();
+        final Story st1 = board.story("ST1").orElseThrow();
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        List.of(
+                                new Story(
+                                                "ST1",
+                                                st1.title(),
+                                                "Parked",
+                                                true,
+                                                st1.priority(),
+                                                null,
+                                                st1.issues(),
+                                                st1.description(),
+                                                st1.link())
+                                        .withWarnings(
+                                                List.of(
+                                                        org.fuin.porelo.planner.store.Warning
+                                                                .stateOutsideWorkflow()
+                                                                .offering(
+                                                                        new org.fuin.porelo.planner
+                                                                                .store.Correction(
+                                                                                org.fuin.porelo
+                                                                                        .planner
+                                                                                        .store
+                                                                                        .Correction
+                                                                                        .STATE_STATED,
+                                                                                List.of(
+                                                                                        "Backlog",
+                                                                                        "Review")))))),
+                        board.issues(),
+                        board.work(),
+                        board.repositories());
+        final Corrections.Asked asked =
+                new Corrections.Asked(
+                        true,
+                        "ST1",
+                        org.fuin.porelo.planner.store.Warning.STATE_OUTSIDE_WORKFLOW,
+                        "Review");
+        final String revision = board.revision().value();
+        final int saves = f.store.saves;
+
+        final Corrections.Preview preview = f.run.correctionPreview(asked, revision);
+        assertThat(preview.warnings())
+                .as("the run at work on the story is named before the save")
+                .filteredOn(w -> w.kind().equals(MovePreview.RUNNING_WORK))
+                .singleElement()
+                .satisfies(w -> assertThat(w.item()).isEqualTo("ST1"))
+                .satisfies(w -> assertThat(w.tasks()).containsExactly("task"));
+        final String digest = preview.digest("https://example.org/own.git", null);
+
+        final Throwable unconfirmed =
+                catchThrowable(
+                        () ->
+                                f.run.correction(
+                                        asked,
+                                        revision,
+                                        digest,
+                                        false,
+                                        "https://example.org/own.git",
+                                        null));
+        assertThat(unconfirmed).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(unconfirmed)).as("as running work").isEqualTo("WorkRunning");
+        assertThat(f.store.saves).as("nothing reaches the store").isEqualTo(saves);
+        assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
+                .as("an unconfirmed save stops nothing")
+                .isFalse();
+
+        final WorkRun.MoveSaved<Board> answer =
+                f.run.correction(
+                        asked, revision, digest, true, "https://example.org/own.git", null);
+
+        assertThat(f.store.saves).as("the correction is saved once").isEqualTo(saves + 1);
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.stopped()).as("the run is recorded stopped with the save").isTrue();
+        assertThat(answer.stopped())
+                .as("the run stopped and the task the window must end, with its container")
+                .containsExactly(
+                        new WorkRun.StoppedRun(
+                                "ST1", run.id(), List.of(new WorkRun.StoppedTask("task", "box"))));
+    }
+
+    @Test
     void anIssueMoveInAStoryWhoseRunHasAStartedTaskIsRefusedAsWorkRunning() {
         // Harm: work moved under a running agent, through an issue its task was not given.
         final Fixture f = new Fixture();

@@ -277,6 +277,12 @@ public record MovePreview(
             digest.add(story.from());
             digest.add(story.to());
         }
+        warnings(digest, warnings);
+        return digest.hex();
+    }
+
+    /** Adds each warning to a digest, every field of it. */
+    static void warnings(final Digest digest, final List<Warning> warnings) {
         digest.count(warnings.size());
         for (final Warning warning : warnings) {
             digest.add(warning.kind());
@@ -290,7 +296,6 @@ public record MovePreview(
             warning.issues().forEach(digest::issue);
             digest.list(warning.skipped());
         }
-        return digest.hex();
     }
 
     /** The waiting states a move forward into an open state passes; none for any other move. */

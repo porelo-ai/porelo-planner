@@ -218,12 +218,22 @@ class GitStoreTest {
             final List<org.fuin.porelo.planner.store.git.stories.Story> stories,
             final List<Issue> own,
             final List<Issue> other) {
+        return store(
+                stories, own, other, new org.fuin.porelo.planner.store.Work(Map.of(), List.of()));
+    }
+
+    /** As {@link #store(List, List, List)}, the own part read with the work rules given. */
+    private GitStore store(
+            final List<org.fuin.porelo.planner.store.git.stories.Story> stories,
+            final List<Issue> own,
+            final List<Issue> other,
+            final org.fuin.porelo.planner.store.Work work) {
         return new GitStore(
                 List.of(OWN, OTHER),
                 remote,
                 (repository, commit, project) ->
                         project == null
-                                ? new Part(WORKFLOW, stories, own, null)
+                                ? new Part(WORKFLOW, stories, own, work)
                                 : new Part(null, List.of(), other, null),
                 inProcess(),
                 clock,
@@ -240,6 +250,34 @@ class GitStoreTest {
             final String id, final @Nullable String state, final String... issues) {
         return new org.fuin.porelo.planner.store.git.stories.Story(
                 id, "Story " + id, state, "High", null, List.of(issues), "");
+    }
+
+    @Test
+    void whileTheWorkRulesHaveFaultsNoStateIsOfferedASetRight() {
+        // Harm: a correction into a working state whose rule could not be read, offered as an
+        // open one, which a move would refuse.
+        final Board board =
+                store(
+                                List.of(story("ST2", null, "XY1"), story("ST4", "Parked")),
+                                List.of(issue("XY1", "store", "Parked")),
+                                List.of(),
+                                new org.fuin.porelo.planner.store.Work(
+                                        Map.of(), List.of("stories/work.yml: Backlog is no rule")))
+                        .board();
+        final List<org.fuin.porelo.planner.store.Warning> warnings = new java.util.ArrayList<>();
+        board.stories().forEach(story -> warnings.addAll(story.warnings()));
+        board.issues().forEach(issue -> warnings.addAll(issue.warnings()));
+
+        assertThat(warnings)
+                .as("the warnings stand")
+                .extracting(org.fuin.porelo.planner.store.Warning::kind)
+                .contains(
+                        org.fuin.porelo.planner.store.Warning.NO_STATE,
+                        org.fuin.porelo.planner.store.Warning.STATE_OUTSIDE_WORKFLOW);
+        assertThat(warnings)
+                .as("none with a correction")
+                .extracting(org.fuin.porelo.planner.store.Warning::correction)
+                .containsOnlyNulls();
     }
 
     @Test

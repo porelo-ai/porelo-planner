@@ -831,7 +831,7 @@ public final class Moves {
      * Whether a story's move may carry the issue or judge its fit by it: it is held back by
      * nothing, and its state is one of the workflow's.
      */
-    private static boolean placed(final Board board, final Issue issue) {
+    static boolean placed(final Board board, final Issue issue) {
         return board.workflow().states().contains(issue.state())
                 && board.holdsWork(issue.id()).isEmpty();
     }

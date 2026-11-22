@@ -1589,7 +1589,8 @@ public final class GitStore implements PlanningStore {
                                 java.util.stream.Collectors.groupingBy(
                                         Issue::id, java.util.stream.Collectors.counting()));
         final List<Issue> issues = new ArrayList<>();
-        final Work work = ownPart.work();
+        final Work given = ownPart.work();
+        final Work work = given != null ? given : WorkReader.read(null);
         final Workflow workflow;
         try {
             workflow = workflow(read);
@@ -1597,9 +1598,7 @@ public final class GitStore implements PlanningStore {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
         }
         // A state is set right by a move into a state the person picks; an id twice only by hand.
-        final Correction move =
-                Correction.ofState(
-                        false, workflow, work != null ? work.rules().keySet() : Set.of());
+        final Correction move = Correction.ofState(false, workflow, work);
         for (final Issue issue : found) {
             final List<Warning> warnings = new ArrayList<>(issue.warnings());
             if (!read.states().contains(issue.state())) {
@@ -1631,9 +1630,7 @@ public final class GitStore implements PlanningStore {
                                             org.fuin.porelo.planner.store.git.stories.Story::id,
                                             java.util.stream.Collectors.counting()));
             final List<Story> stories = new ArrayList<>();
-            final Correction stated =
-                    Correction.ofState(
-                            true, workflow, work != null ? work.rules().keySet() : Set.of());
+            final Correction stated = Correction.ofState(true, workflow, work);
             for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
                 stories.add(
                         story(
@@ -1649,7 +1646,7 @@ public final class GitStore implements PlanningStore {
                     workflow,
                     stories,
                     issues,
-                    work != null ? work : WorkReader.read(null),
+                    work,
                     repositories.stream().map(Repository::name).toList(),
                     faults);
         } catch (final IllegalArgumentException e) {
