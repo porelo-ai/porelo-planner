@@ -160,7 +160,7 @@ class ItemsBoardReaderUnlistedTest {
             final int number,
             final boolean archived,
             final @Nullable String type) {
-        final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), LAST);
+        final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), LAST, 0);
         return new GitHubGraphQl.ProjectItem(
                 "PVTI_" + repository + "_" + number,
                 archived,

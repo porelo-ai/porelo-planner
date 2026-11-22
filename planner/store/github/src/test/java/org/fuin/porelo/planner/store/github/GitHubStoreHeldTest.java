@@ -221,7 +221,7 @@ class GitHubStoreHeldTest {
                 final String title,
                 final Instant at,
                 final @Nullable String type) {
-            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE);
+            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE, 0);
             return new GitHubGraphQl.ProjectItem(
                     itemId,
                     false,

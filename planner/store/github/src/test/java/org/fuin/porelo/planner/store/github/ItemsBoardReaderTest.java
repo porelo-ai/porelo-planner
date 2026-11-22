@@ -282,7 +282,8 @@ class ItemsBoardReaderTest {
                 Arrays.stream(ids)
                         .map(id -> new IssueRef(id, 1L, 1, OWNER + "/example-lib"))
                         .toList(),
-                new PageInfo(more, more ? "more" : null));
+                new PageInfo(more, more ? "more" : null),
+                ids.length);
     }
 
     private static BoardIssue issue(
@@ -1019,7 +1020,8 @@ class ItemsBoardReaderTest {
                                 was.parentId(),
                                 was.subIssues(),
                                 was.blockedBy(),
-                                was.labelsPage()),
+                                was.labelsPage(),
+                                null),
                         open.values(),
                         open.valuesPage());
 
@@ -2217,7 +2219,7 @@ class ItemsBoardReaderTest {
                         List.of(),
                         issue.parentId(),
                         refs(false),
-                        new IssueRefs(List.of(blockers), new PageInfo(false, null))),
+                        new IssueRefs(List.of(blockers), new PageInfo(false, null), 1)),
                 plain.values(),
                 plain.valuesPage());
     }
@@ -2255,7 +2257,8 @@ class ItemsBoardReaderTest {
                         issue.parentId(),
                         issue.subIssues(),
                         blockers,
-                        issue.labelsPage()),
+                        issue.labelsPage(),
+                        null),
                 plain.values(),
                 plain.valuesPage());
     }
@@ -2277,7 +2280,8 @@ class ItemsBoardReaderTest {
                         null,
                         refs(false),
                         refs(false),
-                        new GitHubGraphQl.PageInfo(false, null)),
+                        new GitHubGraphQl.PageInfo(false, null),
+                        null),
                 null,
                 List.of(),
                 new GitHubGraphQl.PageInfo(false, null));

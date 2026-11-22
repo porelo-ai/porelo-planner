@@ -294,7 +294,7 @@ class GitHubStoreLookTest {
         }
 
         private GitHubGraphQl.ProjectItem item(final Held held) {
-            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE);
+            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE, 0);
             final List<GitHubGraphQl.IssueRef> subs = new ArrayList<>();
             for (final String sub : held.subs) {
                 final Held child = Objects.requireNonNull(issues.get(sub));
@@ -327,7 +327,7 @@ class GitHubStoreLookTest {
                             REPOSITORY,
                             List.of(),
                             held.parent,
-                            new GitHubGraphQl.IssueRefs(subs, NONE),
+                            new GitHubGraphQl.IssueRefs(subs, NONE, subs.size()),
                             none,
                             NONE,
                             held.story ? IssueMapping.STORY_TYPE : null),

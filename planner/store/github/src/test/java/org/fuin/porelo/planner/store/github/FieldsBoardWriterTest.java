@@ -218,7 +218,7 @@ class FieldsBoardWriterTest {
                                 values.add(new ItemValue(fieldId, null, null, value, null));
                             }
                         });
-        final IssueRefs none = new IssueRefs(List.<IssueRef>of(), new PageInfo(false, null));
+        final IssueRefs none = new IssueRefs(List.<IssueRef>of(), new PageInfo(false, null), 0);
         return new IssueOnBoard(
                 new BoardIssue(
                         item.issueId(),
@@ -236,7 +236,8 @@ class FieldsBoardWriterTest {
                                 item.subIssueIds().stream()
                                         .map(id -> new IssueRef(id, 0L, 0, ""))
                                         .toList(),
-                                new PageInfo(false, null)),
+                                new PageInfo(false, null),
+                                item.subIssueIds().size()),
                         none,
                         new GitHubGraphQl.PageInfo(false, null),
                         item.issueType()),
@@ -1789,7 +1790,7 @@ class FieldsBoardWriterTest {
         for (final String id : ids) {
             nodes.add(new IssueRef(id, 1L, 1, OWNER + "/example-project"));
         }
-        return new IssueRefs(nodes, new PageInfo(more, null));
+        return new IssueRefs(nodes, new PageInfo(more, null), nodes.size());
     }
 
     private static ItemView closedAs(final ItemView item, final String reason) {

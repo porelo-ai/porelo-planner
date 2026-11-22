@@ -152,9 +152,10 @@ class GitHubChangesTest {
                 OWNER + "/example-project",
                 List.of(),
                 null,
-                new GitHubGraphQl.IssueRefs(List.of(), none),
-                new GitHubGraphQl.IssueRefs(List.of(), none),
-                none);
+                new GitHubGraphQl.IssueRefs(List.of(), none, 0),
+                new GitHubGraphQl.IssueRefs(List.of(), none, 0),
+                none,
+                null);
     }
 
     /** An item as the copy holds it: open, in status Idea, with no links. */
@@ -564,7 +565,8 @@ class GitHubChangesTest {
                                         "I_open", 21L, 21, OWNER + "/example-project"),
                                 new GitHubGraphQl.IssueRef(
                                         "I_closed", 22L, 22, OWNER + "/example-project")),
-                        none);
+                        none,
+                        2);
         final GitHubGraphQl.ProjectItem read =
                 new GitHubGraphQl.ProjectItem(
                         "PVTI_1",
@@ -583,7 +585,8 @@ class GitHubChangesTest {
                                 open.parentId(),
                                 open.subIssues(),
                                 blockers,
-                                none),
+                                none,
+                                null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
@@ -650,7 +653,8 @@ class GitHubChangesTest {
                                 open.parentId(),
                                 open.subIssues(),
                                 blockers,
-                                none),
+                                none,
+                                null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
@@ -716,7 +720,8 @@ class GitHubChangesTest {
                                 open.parentId(),
                                 open.subIssues(),
                                 blockers,
-                                none),
+                                none,
+                                null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),

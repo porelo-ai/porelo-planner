@@ -264,7 +264,8 @@ class FieldsBoardWriterEditsTest {
         private static IssueRefs refs(final List<String> nodes) {
             return new IssueRefs(
                     nodes.stream().map(n -> new IssueRef(n, 0L, 0, "")).toList(),
-                    new PageInfo(false, null));
+                    new PageInfo(false, null),
+                    nodes.size());
         }
 
         @Override

@@ -122,13 +122,14 @@ class UnlistedAddTest {
                                                 repository,
                                                 labels,
                                                 parentId,
-                                                new GitHubGraphQl.IssueRefs(List.of(), LAST),
+                                                new GitHubGraphQl.IssueRefs(List.of(), LAST, 0),
                                                 new GitHubGraphQl.IssueRefs(
                                                         blockers,
                                                         moreBlockers
                                                                 ? new GitHubGraphQl.PageInfo(
                                                                         true, "next")
-                                                                : LAST),
+                                                                : LAST,
+                                                        blockers.size()),
                                                 LAST,
                                                 type),
                                         itemId,

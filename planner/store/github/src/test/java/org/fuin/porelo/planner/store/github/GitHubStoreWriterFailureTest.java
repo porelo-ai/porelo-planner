@@ -225,7 +225,7 @@ class GitHubStoreWriterFailureTest {
                             .map(Map.Entry::getKey)
                             .findFirst()
                             .orElseThrow();
-            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE);
+            final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), NONE, 0);
             return new GitHubGraphQl.ProjectItem(
                     "PVTI_" + number,
                     false,
@@ -243,7 +243,8 @@ class GitHubStoreWriterFailureTest {
                             null,
                             none,
                             none,
-                            NONE),
+                            NONE,
+                            null),
                     List.of(new GitHubGraphQl.ItemValue("F_status", option, state, null, null)),
                     NONE);
         }

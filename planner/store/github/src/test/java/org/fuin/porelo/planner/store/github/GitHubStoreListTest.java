@@ -195,7 +195,7 @@ class GitHubStoreListTest {
             final int number,
             final String title,
             final @Nullable String type) {
-        final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), LAST);
+        final GitHubGraphQl.IssueRefs none = new GitHubGraphQl.IssueRefs(List.of(), LAST, 0);
         return new GitHubGraphQl.BoardIssue(
                 OpenIssues.nodeOf(repository, number),
                 900L + number,

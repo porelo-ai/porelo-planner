@@ -148,7 +148,8 @@ class GitHubStoreCopyTest {
         /** The project's one item, a story. */
         private GitHubGraphQl.ProjectItem item() {
             final GitHubGraphQl.IssueRefs none =
-                    new GitHubGraphQl.IssueRefs(List.of(), new GitHubGraphQl.PageInfo(false, null));
+                    new GitHubGraphQl.IssueRefs(
+                            List.of(), new GitHubGraphQl.PageInfo(false, null), 0);
             return new GitHubGraphQl.ProjectItem(
                     "PVTI_1",
                     false,
