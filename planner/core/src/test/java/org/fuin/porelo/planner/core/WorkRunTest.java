@@ -33,6 +33,39 @@ import org.junit.jupiter.api.Test;
 class WorkRunTest {
 
     @Test
+    void aStartReadsTheWaitsAgainAndRefusesAWaitOpenSinceTheBoardWasRead() {
+        // Harm: a start on an issue whose blocker in another repository opened again after the
+        // board was read, so an agent builds on work that is not there.
+        final Fixture f = new Fixture();
+        final String issue = f.store.board().issues().getFirst().id();
+        f.store.waitsNow =
+                Map.of(
+                        issue,
+                        List.of(
+                                new org.fuin.porelo.planner.store.Wait(
+                                        "other-org/elsewhere#7", false, null)));
+
+        assertThatThrownBy(f::order)
+                .as("the start")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining(issue + " waits on other-org/elsewhere#7");
+        assertThat(f.run.work("ST1")).as("no run recorded").isNull();
+
+        f.store.waitsNow =
+                Map.of(
+                        issue,
+                        List.of(
+                                new org.fuin.porelo.planner.store.Wait(
+                                        "other-org/elsewhere#7", true, null)));
+        f.order();
+        f.store.waitsNow = Map.of(issue, List.of(org.fuin.porelo.planner.store.Wait.unreadable()));
+
+        final WorkRun.Run started = f.run.work("ST1");
+        assertThat(started).as("the run started while the wait was done").isNotNull();
+        assertThat(started.stopped()).as("not stopped by a wait that opened since").isFalse();
+    }
+
+    @Test
     void aDetailReadAnswersWithTheLastWrittenGenerationWhileASaveHoldsTheRecord() throws Exception {
         // Prevents the window waiting up to 30 seconds with an empty page during a save.
         final Fixture f = new Fixture();
@@ -5247,6 +5280,16 @@ class WorkRunTest {
         Board current;
         int saves;
         @Nullable StoreException failure;
+
+        /** What the tracker answers now of the issues' waits, or null for the board's. */
+        java.util.@Nullable Map<String, List<org.fuin.porelo.planner.store.Wait>> waitsNow;
+
+        @Override
+        public java.util.Map<String, List<org.fuin.porelo.planner.store.Wait>> waitsNow(
+                final java.util.Collection<String> issues) {
+            final var now = waitsNow;
+            return now != null ? now : PlanningStore.super.waitsNow(issues);
+        }
 
         /** Commits another writer makes right before each next save, as a moving repository. */
         final java.util.ArrayDeque<java.util.function.UnaryOperator<Board>> moves =

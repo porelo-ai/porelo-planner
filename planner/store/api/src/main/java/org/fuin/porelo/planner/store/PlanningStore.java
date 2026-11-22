@@ -251,6 +251,25 @@ public interface PlanningStore {
     }
 
     /**
+     * Reads now what the issues named wait on outside the board, as a start reads it before it
+     * offers work on them: a wait the board holds as done may have opened again since.
+     *
+     * @param issues the issues' ids
+     * @return each issue's waits by its id, an issue the board lacks left out; a store that keeps
+     *     no tracker answers the board's
+     * @throws StoreException.Unreachable if the tracker cannot be asked
+     */
+    default java.util.Map<String, java.util.List<Wait>> waitsNow(
+            final java.util.Collection<String> issues) {
+        final Board board = board();
+        final java.util.Map<String, java.util.List<Wait>> waits = new java.util.LinkedHashMap<>();
+        for (final String id : issues) {
+            board.issue(id).ifPresent(issue -> waits.put(id, issue.waitsOn()));
+        }
+        return waits;
+    }
+
+    /**
      * Derives a story's state from its issues' states, as the store's stories index does.
      *
      * @param issueStates the states of the story's issues

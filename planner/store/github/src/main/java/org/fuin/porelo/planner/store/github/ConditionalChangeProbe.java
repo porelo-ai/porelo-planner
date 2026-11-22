@@ -2,10 +2,15 @@ package org.fuin.porelo.planner.store.github;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -94,6 +99,30 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
     static final Duration ADOPT_FOR = Duration.ofSeconds(20);
 
     /**
+     * The most repositories outside the project a look asks about for the issues the board waits
+     * on; with more, the waits are read again instead, once each {@link #WAITS_EVERY}.
+     */
+    static final int MOST_WAIT_REPOSITORIES = 10;
+
+    /**
+     * How often the waits are read again while a look cannot ask about each of their repositories:
+     * too many of them, out of time or a failed ask.
+     */
+    static final Duration WAITS_EVERY = Duration.ofMinutes(1);
+
+    /** When the waits were last read, on the monotonic clock; guarded by this probe. */
+    private long waitsReadAt;
+
+    /** Each repository outside the project the waits stand in, by its name with its owner. */
+    private final Map<String, @Nullable String> waitTags = new HashMap<>();
+
+    /** The tags a look saw changed, taken once the waits were read again. */
+    private final Map<String, @Nullable String> waitTagsSeen = new HashMap<>();
+
+    /** The repositories the person's token cannot read, left to the next whole read. */
+    private final Set<String> unreadable = new HashSet<>();
+
+    /**
      * Makes the probe of one project.
      *
      * @param reads the conditional reads
@@ -134,6 +163,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         this.deadline = deadline;
         this.nanos = nanos;
         this.adoptUntil = nanos.getAsLong();
+        this.waitsReadAt = nanos.getAsLong() - WAITS_EVERY.toNanos();
     }
 
     @Override
@@ -208,6 +238,105 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
     }
 
     @Override
+    public boolean waitsChanged(final Snapshot current) {
+        final ProjectConfig config = current.config();
+        final Set<String> repositories = new TreeSet<>();
+        for (final Snapshot.Waited wait : current.waits().values()) {
+            // A name GitHub gave in no form of an address is a wait the board holds as unknown.
+            if (wait.repository().indexOf('/') > 0 && !planned(wait.repository(), config)) {
+                repositories.add(wait.repository());
+            }
+        }
+        if (repositories.isEmpty()) {
+            return false;
+        }
+        if (repositories.size() > MOST_WAIT_REPOSITORIES) {
+            // Too many to ask about each look: the waits are read again, never left as they were.
+            return waitsDue();
+        }
+        final Map<String, @Nullable String> known;
+        synchronized (this) {
+            repositories.removeAll(unreadable);
+            known = new HashMap<>(waitTags);
+        }
+        final String token = tokens.token(config.forge());
+        final long end = nanos.getAsLong() + deadline.toNanos();
+        boolean changed = false;
+        final Map<String, @Nullable String> seen = new HashMap<>();
+        final Set<String> refused = new HashSet<>();
+        for (final String repository : repositories) {
+            if (nanos.getAsLong() - end > 0) {
+                // Out of time: the waits are read again rather than taken as unchanged.
+                return waitsDue();
+            }
+            final int slash = repository.indexOf('/');
+            final String sent = known.get(repository);
+            final ConditionalReads.Answer answer;
+            try {
+                answer =
+                        reads.issues(
+                                token,
+                                repository.substring(0, slash),
+                                repository.substring(slash + 1),
+                                sent);
+            } catch (final GitHubException e) {
+                if (e.rateLimited()) {
+                    throw new StoreException.Unreachable(config.own(), pace.refused(e.delay()));
+                }
+                if (e.status() == 403 || e.status() == 404) {
+                    // The token cannot read it: its waits stay unknown until the next whole read.
+                    refused.add(repository);
+                    continue;
+                }
+                return waitsDue();
+            }
+            pace.seen(answer.remaining(), answer.limit());
+            if (answer.changed()) {
+                changed = true;
+                seen.put(repository, answer.etag());
+            } else {
+                seen.put(repository, kept(answer, sent));
+            }
+        }
+        synchronized (this) {
+            unreadable.addAll(refused);
+            if (changed) {
+                waitTagsSeen.clear();
+                waitTagsSeen.putAll(seen);
+            } else {
+                waitTags.putAll(seen);
+            }
+        }
+        return changed;
+    }
+
+    @Override
+    public synchronized void waitsRead() {
+        waitTags.putAll(waitTagsSeen);
+        waitTagsSeen.clear();
+        waitsReadAt = nanos.getAsLong();
+    }
+
+    /** Whether the waits were read longer ago than {@link #WAITS_EVERY}. */
+    private synchronized boolean waitsDue() {
+        return nanos.getAsLong() - waitsReadAt >= WAITS_EVERY.toNanos();
+    }
+
+    @Override
+    public synchronized void readWhole() {
+        unreadable.clear();
+    }
+
+    /** Whether GitHub's name of a repository is one of the project's, under its owner. */
+    private static boolean planned(final String nameWithOwner, final ProjectConfig config) {
+        final int slash = nameWithOwner.indexOf('/');
+        return slash > 0
+                && nameWithOwner.substring(0, slash).equalsIgnoreCase(config.project().owner())
+                && config.repositories()
+                        .contains(nameWithOwner.substring(slash + 1).toLowerCase(Locale.ROOT));
+    }
+
+    @Override
     public synchronized void adoptNext() {
         adopt = true;
     }
@@ -220,6 +349,9 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
 
     @Override
     public synchronized void forget() {
+        waitTags.clear();
+        waitTagsSeen.clear();
+        unreadable.clear();
         confirmed = Tags.NONE;
         pending = null;
         pendingFor = null;

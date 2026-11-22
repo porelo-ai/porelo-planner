@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
@@ -518,6 +519,7 @@ public final class WorkRun {
                     final WorkOrder order = WorkOrder.accept(board, storyId, to, decision, again);
                     final WorkProposal proposal =
                             WorkProposal.propose(board, storyId, to, again, decision.issues());
+                    waitsNow(board, storyId, to, proposal);
                     final WorkRule rule =
                             WorkProposal.rule(
                                     board,
@@ -2905,6 +2907,35 @@ public final class WorkRun {
         }
     }
 
+    /**
+     * Refuses a start whose offered issues wait, as the tracker answers now, on an issue not done:
+     * a wait the board holds as done may have opened again since it was read.
+     */
+    private void waitsNow(
+            final Board board, final String story, final String to, final WorkProposal proposal) {
+        final List<String> offered = new ArrayList<>();
+        proposal.repositories().forEach(repository -> offered.addAll(repository.issues()));
+        final Map<String, List<Wait>> now = store.waitsNow(offered);
+        final List<Issue> waiting = new ArrayList<>();
+        for (final String id : offered) {
+            final Issue issue = board.issue(id).orElseThrow();
+            final List<Wait> waits = now.get(id);
+            if (waits == null) {
+                // An issue the tracker named no waits for is judged by what the board holds.
+                continue;
+            }
+            if (waits.stream().anyMatch(Wait::holds)) {
+                waiting.add(issue.withWaits(waits));
+            }
+        }
+        if (!waiting.isEmpty()) {
+            throw WorkRefusal.notAllowed(
+                    WorkProposal.story(board, story).state(),
+                    to,
+                    WorkProposal.waiting(board, waiting));
+        }
+    }
+
     private static Offer offer(final NextStep.Planned planned, final String story) {
         final WorkOrder.Task task = planned.task();
         if (task.agent().length() > 128
@@ -2973,7 +3004,8 @@ public final class WorkRun {
                                                 i.estimate(),
                                                 i.minutes(),
                                                 i.priority(),
-                                                i.warnings()))
+                                                i.warnings(),
+                                                i.waitsOn()))
                         .toList(),
                 board.work(),
                 board.repositories(),

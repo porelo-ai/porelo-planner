@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -61,6 +62,7 @@ class IssueMappingTest {
         private final List<String> labels = new ArrayList<>();
         private final List<String> subs = new ArrayList<>();
         private final List<String> blockers = new ArrayList<>();
+        private final List<ItemView.Blocker> named = new ArrayList<>();
         private @Nullable String parent;
         private boolean open = true;
         private boolean archived;
@@ -112,6 +114,14 @@ class IssueMappingTest {
 
         private Item blockedByNode(final String node) {
             blockers.add(node);
+            return this;
+        }
+
+        /** Blocked by an issue GitHub names by its repository and number, as a read gives it. */
+        private Item blockedByElsewhere(
+                final String node, final String repository, final int number) {
+            blockers.add(node);
+            named.add(new ItemView.Blocker(node, repository, number));
             return this;
         }
 
@@ -168,13 +178,24 @@ class IssueMappingTest {
                     URI.create(
                             "https://github.com/example-org/" + repository + "/issues/" + number),
                     Instant.parse("2026-01-01T00:00:00Z"),
-                    archived);
+                    archived,
+                    named);
         }
     }
 
     private static IssueMapping.Mapped read(final Item... items) {
         return IssueMapping.read(
                 java.util.Arrays.stream(items).map(Item::view).toList(), CONFIG, FIRST_OPEN);
+    }
+
+    private static IssueMapping.Mapped read(
+            final Map<String, Snapshot.Waited> waits, final Item... items) {
+        return IssueMapping.read(
+                java.util.Arrays.stream(items).map(Item::view).toList(),
+                java.util.Set.of(),
+                CONFIG,
+                FIRST_OPEN,
+                waits);
     }
 
     @Test
@@ -795,20 +816,103 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssueBlockedByAnItemOutsideTheProjectIsLeftOut() {
-        // Harm: work started while an issue it waits on, which the board cannot see, is open.
+    void anIssueBlockedByAnIssueOutsideTheProjectStandsOnTheBoardWaitingOnIt() {
+        // Harm: an issue waiting on another repository's vanishes from the board with everything
+        // under it and everything blocked by it, so nobody sees the work at all.
+        final Item story = new Item("example-project", 1).story();
         final Item blocked =
-                new Item("example-lib", 1)
-                        .field(FieldNames.STATUS, "Idea")
-                        .blockedByNode("I_elsewhere_9");
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Backlog")
+                        .blockedByElsewhere("I_far_7", "other-org/elsewhere", 7)
+                        .blockedByElsewhere("I_far_8", "other-org/elsewhere", 8);
+        final Item part = new Item("example-lib", 3).field(FieldNames.STATUS, "Backlog");
+        final Item after =
+                new Item("example-lib", 4).field(FieldNames.STATUS, "Backlog").blockedBy(blocked);
+        story.sub(blocked).sub(after);
+        blocked.sub(part);
 
-        final IssueMapping.Mapped mapped = read(blocked);
+        final IssueMapping.Mapped mapped =
+                read(
+                        Map.of(
+                                "I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, false),
+                                "I_far_8", new Snapshot.Waited("other-org/elsewhere", 8, true)),
+                        story,
+                        blocked,
+                        part,
+                        after);
 
-        assertThat(mapped.issues()).as("left out").isEmpty();
+        assertThat(mapped.faults()).as("no fault for a wait").isEmpty();
+        assertThat(mapped.issues())
+                .as("the waiting issue, its part and the issue blocked by it")
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("example-lib#2", "example-lib#3", "example-lib#4");
+        final Issue waiting =
+                mapped.issues().stream()
+                        .filter(i -> i.id().equals("example-lib#2"))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(waiting.blockedBy()).as("no blocker of the board").isEmpty();
+        assertThat(waiting.waitsOn())
+                .as("each wait, open and done, with its link")
+                .containsExactly(
+                        new Wait(
+                                "other-org/elsewhere#7",
+                                false,
+                                URI.create("https://github.com/other-org/elsewhere/issues/7")),
+                        new Wait(
+                                "other-org/elsewhere#8",
+                                true,
+                                URI.create("https://github.com/other-org/elsewhere/issues/8")));
+        assertThat(
+                        mapped.issues().stream()
+                                .filter(i -> i.id().equals("example-lib#4"))
+                                .findFirst()
+                                .orElseThrow()
+                                .blockedBy())
+                .as("the issue blocked by the waiting one keeps it as its board blocker")
+                .containsExactly("example-lib#2");
+    }
+
+    @Test
+    void aWaitWhoseStateWasNotReadIsNotKnownDoneAndOneGitHubNamesBadlyIsNotReadable() {
+        // Harm: a wait the person's token cannot read taken as done, so its issue is offered.
+        final Item blocked =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Backlog")
+                        .blockedByElsewhere("I_far_7", "other-org/private", 7)
+                        .blockedByElsewhere("I_odd", "no owner", 3);
+
+        final IssueMapping.Mapped mapped =
+                read(Map.of("I_far_7", new Snapshot.Waited("other-org/private", 7, null)), blocked);
+
+        assertThat(mapped.issues().getFirst().waitsOn())
+                .as("the unread state unknown, the odd name not readable")
+                .containsExactly(
+                        new Wait(
+                                "other-org/private#7",
+                                null,
+                                URI.create("https://github.com/other-org/private/issues/7")),
+                        Wait.unreadable());
+    }
+
+    @Test
+    void anIssueBlockedByAStoryIsLeftOutWithEverythingUnderIt() {
+        // Harm: a story taken as a work wait, so an issue waits on a whole story's issues unseen;
+        // this fault stays meant, and the issue's part goes with it, as with every issue left out.
+        final Item story = new Item("example-project", 1).story();
+        final Item blocked =
+                new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog").blockedBy(story);
+        final Item part = new Item("example-lib", 3).field(FieldNames.STATUS, "Backlog");
+        blocked.sub(part);
+
+        final IssueMapping.Mapped mapped = read(story, blocked, part);
+
+        assertThat(mapped.issues()).as("the issue and its part left out").isEmpty();
         assertThat(mapped.faults())
                 .as("named")
-                .containsExactly(
-                        "example-lib#1 is blocked by an issue outside the project and is left out");
+                .containsExactlyInAnyOrder(
+                        "example-lib#2 is blocked by a story and is left out",
+                        "example-lib#3 depends on an issue left out and is left out too");
     }
 
     @Test
@@ -886,10 +990,9 @@ class IssueMappingTest {
     void anIssueOutsideTheWorkflowWithAnotherFaultIsLeftOutForThatFaultAlone() {
         // Harm: an issue offered for a move back onto the board that the next read leaves out
         // again, or worked as a parent of another repository.
+        final Item story = new Item("example-project", 10).story();
         final Item blockedElsewhere =
-                new Item("example-lib", 1)
-                        .field(FieldNames.STATUS, "Accepted")
-                        .blockedByNode("I_elsewhere_9");
+                new Item("example-lib", 1).field(FieldNames.STATUS, "Accepted").blockedBy(story);
         final Item otherRepository =
                 new Item("example-project", 2)
                         .field(FieldNames.STATUS, "Idea")
@@ -902,9 +1005,7 @@ class IssueMappingTest {
         top.sub(middle);
         middle.sub(deep);
         final Item leftOut =
-                new Item("example-lib", 7)
-                        .field(FieldNames.STATUS, "Idea")
-                        .blockedByNode("I_elsewhere_8");
+                new Item("example-lib", 7).field(FieldNames.STATUS, "Idea").blockedBy(story);
         final Item dangling =
                 new Item("example-lib", 8).field(FieldNames.STATUS, "Accepted").blockedBy(leftOut);
         final Item orphan = new Item("example-lib", 9).field(FieldNames.STATUS, "Accepted");
@@ -912,6 +1013,7 @@ class IssueMappingTest {
 
         final IssueMapping.Mapped mapped =
                 read(
+                        story,
                         blockedElsewhere,
                         otherRepository,
                         crossing,
@@ -926,11 +1028,11 @@ class IssueMappingTest {
         assertThat(mapped.faults())
                 .as("each named for its other fault alone, as a board issue with it is")
                 .containsExactlyInAnyOrder(
-                        "example-lib#1 is blocked by an issue outside the project and is left out",
+                        "example-lib#1 is blocked by a story and is left out",
                         "example-lib#3 stands in another repository than its parent and is left"
                                 + " out",
                         "example-lib#6 is a sub-issue of a sub-issue and is left out",
-                        "example-lib#7 is blocked by an issue outside the project and is left out",
+                        "example-lib#7 is blocked by a story and is left out",
                         "example-lib#8 depends on an issue left out and is left out too",
                         "example-lib#9 has a parent outside the project and is left out");
     }

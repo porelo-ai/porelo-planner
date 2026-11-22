@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
@@ -232,6 +233,7 @@ public record WorkProposal(
         WorkRefusal.unlessFree(board, story.id(), story.state(), to);
         final WorkRule rule = picked == null ? rule(board, story, to) : target(board, story, to);
         bounded(story, to, rule.order());
+        // An issue held back, by a warning or by a blocker not done, is offered on no path.
         final List<Held> held = new ArrayList<>();
         final List<Issue> open = free(board, issues(board, story, to, held), held);
         if (picked != null) {
@@ -463,6 +465,53 @@ public record WorkProposal(
                 .isPresent();
     }
 
+    /**
+     * What holds an issue back from work, in a person's words: each blocker on the board that does
+     * not stand in a closed state, or that the board lacks, and each wait outside the board not
+     * known to be done; empty when nothing does.
+     *
+     * @param board the board
+     * @param issue the issue
+     * @return what it waits on, the board's blockers first
+     */
+    public static List<String> openBlockers(final Board board, final Issue issue) {
+        final List<String> held = new ArrayList<>();
+        for (final String blocker : issue.blockedBy()) {
+            final boolean done =
+                    board.issue(blocker)
+                            .map(found -> board.workflow().closed().contains(found.state()))
+                            .orElse(false);
+            if (!done) {
+                held.add(blocker);
+            }
+        }
+        for (final Wait wait : issue.waitsOn()) {
+            if (wait.holds()) {
+                held.add(wait.spoken());
+            }
+        }
+        return held;
+    }
+
+    /**
+     * Why issues are not offered, for example {@code AA2 waits on AA1 and other-org/lib#7. Work on
+     * it starts once that is done.}
+     *
+     * @param board the board
+     * @param issues the issues held back
+     * @return the words
+     */
+    static String waiting(final Board board, final List<Issue> issues) {
+        final List<String> named =
+                issues.stream()
+                        .limit(MOST_NAMED)
+                        .map(i -> i.id() + " waits on " + spoken(openBlockers(board, i)))
+                        .toList();
+        final String more =
+                issues.size() > MOST_NAMED ? " and " + (issues.size() - MOST_NAMED) + " more" : "";
+        return String.join("; ", named) + more + ". Work on it starts once that is done.";
+    }
+
     /** How many open issues a refusal names before it only counts the rest, to keep it short. */
     private static final int MOST_NAMED = 10;
 
@@ -509,7 +558,14 @@ public record WorkProposal(
             final Board board, final List<Issue> open, final @Nullable List<Held> held) {
         final List<Issue> free = new ArrayList<>();
         for (final Issue issue : open) {
-            final java.util.Optional<String> reason = board.holdsWork(issue.id());
+            final java.util.Optional<String> reason =
+                    board.holdsWork(issue.id())
+                            .or(
+                                    () ->
+                                            openBlockers(board, issue).isEmpty()
+                                                    ? java.util.Optional.empty()
+                                                    : java.util.Optional.of(
+                                                            waiting(board, List.of(issue))));
             if (reason.isEmpty()) {
                 free.add(issue);
             } else if (held != null) {

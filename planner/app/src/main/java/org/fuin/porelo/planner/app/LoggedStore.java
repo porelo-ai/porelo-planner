@@ -47,6 +47,12 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public java.util.Map<String, java.util.List<org.fuin.porelo.planner.store.Wait>> waitsNow(
+            final java.util.Collection<String> issues) {
+        return store.waitsNow(issues);
+    }
+
+    @Override
     public Issue issue(final String id) {
         return store.issue(id);
     }

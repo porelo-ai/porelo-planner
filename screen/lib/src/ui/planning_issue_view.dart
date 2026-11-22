@@ -332,6 +332,26 @@ class PlanningIssueView extends StatelessWidget {
               ),
         ],
       ),
+      (
+        'Waits on',
+        [
+          if (!issue.waitsOnReported)
+            const Text('Not reported')
+          else if (issue.waitsOn.isEmpty)
+            const Text('None')
+          else
+            for (final wait in issue.waitsOn)
+              Wrap(
+                spacing: Space.small,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(planningShown(wait.spoken, multiline: false), key: Key('planning-waits-on ${wait.spoken}')),
+                  Text(wait.stateSpoken, style: theme.textTheme.bodySmall),
+                  if (wait.link case final link?) PlanningWebLink(link: link, label: 'Open', openLink: openLink),
+                ],
+              ),
+        ],
+      ),
       // An id has one dot at most, so a sub-issue has no sub-issues of its own; its parent stands in their place.
       if (issue.parent case final parent?)
         ('Parent', [link(parent, openIssue(parent), key: Key('planning-parent $parent'))])

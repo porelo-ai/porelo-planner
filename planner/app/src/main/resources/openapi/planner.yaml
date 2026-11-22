@@ -3160,7 +3160,7 @@ components:
         One issue on the board. Two issues share an id only when each carries the warning IdTwice; neither is then
         worked, moved or edited, and a read of the issue by that id answers NoSuchIssue.
       type: object
-      required: [id, repository, title, state, size, blockedBy, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings]
+      required: [id, repository, title, state, size, blockedBy, waitsOn, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -3193,9 +3193,24 @@ components:
             nothing gives an expectation.
         blockedBy:
           type: array
-          description: The issues blocking it.
+          description: The issues of the board blocking it.
           items:
             $ref: '#/components/schemas/IssueId'
+        waitsOn:
+          type: array
+          description: >-
+            The issues blocking it that the board does not hold, such as those of a repository outside the project.
+            No work is offered for it while any of them, or any of its board blockers, is not done; work already
+            started goes on. Empty when there are none.
+          items:
+            $ref: '#/components/schemas/Wait'
+          example:
+            - reference: other-org/elsewhere#7
+              done: false
+              link: https://github.com/other-org/elsewhere/issues/7
+            - reference: null
+              done: null
+              link: null
         parent:
           description: The issue this one is a sub-issue of, or null.
           oneOf:
@@ -3282,7 +3297,25 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          description: Why, in the words of its warnings, or of its id that names two issues.
+          description: Why, in the words of its warnings, of its id that names two issues, or of the blockers it waits on.
+    Wait:
+      description: An issue an issue of the board waits on that the board does not hold.
+      type: object
+      required: [reference, done, link]
+      properties:
+        reference:
+          type: [string, 'null']
+          description: >-
+            The issue as owner/repository#number, or null when the tracker names a blocker the person's login cannot
+            read.
+        done:
+          type: [boolean, 'null']
+          description: Whether it is done; null when it could not be read, which holds the issue back as not done.
+        link:
+          type: [string, 'null']
+          format: uri
+          description: Where a person reads it on the tracker, or null when not known.
+
     IssueDetail:
       description: One issue with its text and sub-issues.
       allOf:

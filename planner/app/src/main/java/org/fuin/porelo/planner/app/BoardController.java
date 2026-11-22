@@ -1069,6 +1069,7 @@ public class BoardController {
                         issue.priority(),
                         view.minutesLeft(),
                         issue.blockedBy(),
+                        view.waitsOn(),
                         issue.parent(),
                         issue.link(),
                         view.worker(),

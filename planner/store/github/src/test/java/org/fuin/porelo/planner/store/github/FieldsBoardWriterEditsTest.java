@@ -152,7 +152,11 @@ class FieldsBoardWriterEditsTest {
                                 each.title(),
                                 "Idea",
                                 each.fields().get(FieldNames.SIZE),
-                                each.blockedByIds().stream().map(idOf::get).toList(),
+                                // A blocker no item holds is a wait, never a blocker of the board.
+                                each.blockedByIds().stream()
+                                        .map(idOf::get)
+                                        .filter(java.util.Objects::nonNull)
+                                        .toList(),
                                 null,
                                 each.link(),
                                 ""));
@@ -1018,6 +1022,28 @@ class FieldsBoardWriterEditsTest {
         assertThat(github.writer().setBlockedBy(board(), SHOWN, TWO, List.of(ONE)))
                 .as("the blockers it has")
                 .isFalse();
+    }
+
+    @Test
+    void anEditOfTheBoardsBlockersLeavesAWaitOutsideTheBoardAsItIs() {
+        // Harm: an edit of an issue's blockers silently drops a person's link to an issue of
+        // another repository, so its issue is offered before that issue is done.
+        final ItemView waiting =
+                item(TWO, Map.of(FieldNames.SIZE, "M"), STORY, List.of(), List.of(ONE, "far#7"));
+        final Snapshot board = snapshot(List.of(ONE, TWO), story, one, waiting, three);
+        final GitHub github = new GitHub().holding(story, one, waiting, three);
+
+        github.writer().setBlockedBy(board, SHOWN, TWO, List.of(THREE));
+        github.writer().setBlockedBy(board, SHOWN, TWO, List.of());
+
+        assertThat(github.calls)
+                .as("only the board's blocker taken out and the new one added, each time")
+                .containsExactly(
+                        "issueBoard",
+                        "removeBlockedBy example-lib#2 1001",
+                        "addBlockedBy example-lib#2 1003",
+                        "issueBoard",
+                        "removeBlockedBy example-lib#2 1001");
     }
 
     @Test

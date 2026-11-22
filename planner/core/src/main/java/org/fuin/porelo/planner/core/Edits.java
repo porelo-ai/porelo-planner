@@ -168,9 +168,20 @@ public final class Edits {
         fresh(board, revision);
         final Issue found = known(board, issue);
         notHeld(board, issue);
-        if (blockedBy.size() > MOST_BLOCKERS) {
+        // GitHub counts the issues it waits on outside the board among its blockers too.
+        final int outside = found.waitsOn().size();
+        if (blockedBy.size() + outside > MOST_BLOCKERS) {
             throw refused(
-                    issue, "blockedBy", "An issue has at most " + MOST_BLOCKERS + " blockers.");
+                    issue,
+                    "blockedBy",
+                    "An issue has at most "
+                            + MOST_BLOCKERS
+                            + " blockers"
+                            + (outside == 0
+                                    ? "."
+                                    : ", the "
+                                            + outside
+                                            + " it waits on outside the board included."));
         }
         final Set<String> named = new HashSet<>();
         for (final String id : blockedBy) {

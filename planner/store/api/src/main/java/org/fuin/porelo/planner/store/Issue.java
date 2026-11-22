@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * @param title its title
  * @param state its state, one of the workflow's
  * @param size its size, if it has one yet
- * @param blockedBy the ids of the issues of its repository it waits on
+ * @param blockedBy the ids of the issues of the board it waits on
  * @param parent its parent's id, for a sub-issue
  * @param link where a person reads it on the forge, if known
  * @param text its whole text in the store's format, its title and head included; empty when its
@@ -27,6 +27,8 @@ import org.jspecify.annotations.Nullable;
  *     or one outside them
  * @param warnings what the store could not read in it; its state may be none of the workflow's only
  *     with a warning about the state
+ * @param waitsOn the issues it waits on that the board does not hold, such as those of another
+ *     repository; empty for a store that knows none
  */
 public record Issue(
         String id,
@@ -43,14 +45,16 @@ public record Issue(
         @Nullable Double estimate,
         @Nullable Double minutes,
         @Nullable String priority,
-        List<Warning> warnings) {
+        List<Warning> warnings,
+        List<Wait> waitsOn) {
 
-    /** Checks the ids, the repository's name and the priority and copies the list. */
+    /** Checks the ids, the repository's name and the priority and copies the lists. */
     public Issue {
         Ids.issue(id);
         Ids.name(repository);
         blockedBy = List.copyOf(blockedBy);
         blockedBy.forEach(Ids::issue);
+        waitsOn = List.copyOf(waitsOn);
         final boolean reference = Ids.isReference(id);
         // A reference into another repository would read or write an issue there.
         if (reference && !Ids.repositoryOf(id).equals(repository)) {
@@ -80,14 +84,68 @@ public record Issue(
     }
 
     /**
-     * An issue without warnings.
+     * An issue that waits on nothing outside the board.
      *
      * @param id the issue's id
      * @param repository the name of the repository that holds it
      * @param title its title
      * @param state its state
      * @param size its size, if it has one yet
-     * @param blockedBy the ids of the issues it waits on
+     * @param blockedBy the ids of the issues of the board it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     * @param estimate the minutes it is expected to take, if estimated
+     * @param minutes the minutes its work took so far, if kept
+     * @param priority its priority, or null when the store holds none
+     * @param warnings what the store could not read in it
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk,
+            final @Nullable Double estimate,
+            final @Nullable Double minutes,
+            final @Nullable String priority,
+            final List<Warning> warnings) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                List.of());
+    }
+
+    /**
+     * An issue without warnings that waits on nothing outside the board.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues of the board it waits on
      * @param parent its parent's id, for a sub-issue
      * @param link where a person reads it on the forge, if known
      * @param text its whole text, title and head included
@@ -152,7 +210,34 @@ public record Issue(
                 estimate,
                 minutes,
                 priority,
-                warnings);
+                warnings,
+                waitsOn);
+    }
+
+    /**
+     * This issue waiting on other issues outside the board.
+     *
+     * @param waits what it waits on outside the board
+     * @return the issue
+     */
+    public Issue withWaits(final List<Wait> waits) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waits);
     }
 
     /**
@@ -163,7 +248,7 @@ public record Issue(
      * @param title its title
      * @param state its state
      * @param size its size, if it has one yet
-     * @param blockedBy the ids of the issues it waits on
+     * @param blockedBy the ids of the issues of the board it waits on
      * @param parent its parent's id, for a sub-issue
      * @param link where a person reads it on the forge, if known
      * @param text its whole text, title and head included

@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store.github;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -21,6 +22,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -114,6 +116,26 @@ public final class IssueMapping {
             final Set<String> leftOut,
             final ProjectConfig config,
             final StoryStates states) {
+        return read(items, leftOut, config, states, Map.of());
+    }
+
+    /**
+     * Maps the items as {@link #read(Collection, Set, ProjectConfig, StoryStates)} does; an issue
+     * blocked by an issue that is no item of the project waits on it, with its state as read.
+     *
+     * @param items every item of the project
+     * @param leftOut the item ids of items the board leaves out, already named in a fault
+     * @param config the project's repositories and workflow
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param waits the blockers that are no items of the project, by their node ids, as last read
+     * @return the stories, the issues and the faults
+     */
+    public static Mapped read(
+            final Collection<ItemView> items,
+            final Set<String> leftOut,
+            final ProjectConfig config,
+            final StoryStates states,
+            final Map<String, Snapshot.Waited> waits) {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
         final Map<String, ItemView> byIssueId = new HashMap<>();
@@ -175,7 +197,15 @@ public final class IssueMapping {
         final Set<String> unstated = new HashSet<>();
         for (final Map.Entry<String, ItemView> entry : issueItems.entrySet()) {
             final Issue issue =
-                    issue(entry.getKey(), entry.getValue(), workflow, byIssueId, idOf, faults);
+                    issue(
+                            entry.getKey(),
+                            entry.getValue(),
+                            workflow,
+                            byIssueId,
+                            idOf,
+                            waits,
+                            config.forge(),
+                            faults);
             if (issue != null) {
                 issues.put(issue.id(), issue);
                 if (!workflow.states().contains(issue.state())) {
@@ -346,6 +376,8 @@ public final class IssueMapping {
             final Workflow workflow,
             final Map<String, ItemView> byIssueId,
             final Map<String, String> idOf,
+            final Map<String, Snapshot.Waited> waits,
+            final URI forge,
             final List<String> faults) {
         final String state = item.fields().getOrDefault(FieldNames.STATUS, "");
         // An issue outside the workflow has no open state to check against it.
@@ -371,11 +403,17 @@ public final class IssueMapping {
             }
         }
         final List<String> blockedBy = new ArrayList<>();
+        final List<Wait> waitsOn = new ArrayList<>();
         for (final String blocker : item.blockedByIds()) {
             final ItemView blocking = byIssueId.get(blocker);
-            final String blockerId = blocking == null ? null : idOf.get(blocking.issueId());
+            if (blocking == null) {
+                // No item of the project: the issue stays on the board and waits on it.
+                waitsOn.add(wait(item, blocker, waits, forge));
+                continue;
+            }
+            final String blockerId = idOf.get(blocking.issueId());
             if (blockerId == null || isStory(blocking)) {
-                faults.add(id + " is blocked by an issue outside the project and is left out");
+                faults.add(id + " is blocked by a story and is left out");
                 return null;
             }
             blockedBy.add(blockerId);
@@ -403,7 +441,48 @@ public final class IssueMapping {
                 risk,
                 figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
                 figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
-                choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults));
+                choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults),
+                List.of(),
+                waitsOn);
+    }
+
+    /** An owner's or a repository's name as GitHub allows it in an address. */
+    private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
+
+    /**
+     * The wait on a blocker that is no item of the project: named as GitHub names it, done when
+     * GitHub has it closed, and unknown when it could not be read; a blocker GitHub names in no
+     * form an address can have is a wait on something not readable.
+     */
+    static Wait wait(
+            final ItemView item,
+            final String blocker,
+            final Map<String, Snapshot.Waited> waits,
+            final URI forge) {
+        final Snapshot.Waited read = waits.get(blocker);
+        String repository = read == null ? null : read.repository();
+        int number = read == null ? 0 : read.number();
+        if (repository == null) {
+            for (final ItemView.Blocker named : item.blockers()) {
+                if (named.issueId().equals(blocker)) {
+                    repository = named.repository();
+                    number = named.number();
+                    break;
+                }
+            }
+        }
+        final int slash = repository == null ? -1 : repository.indexOf('/');
+        if (repository == null
+                || number < 1
+                || slash < 1
+                || !REPOSITORY_PART.matcher(repository.substring(0, slash)).matches()
+                || !REPOSITORY_PART.matcher(repository.substring(slash + 1)).matches()) {
+            return Wait.unreadable();
+        }
+        return new Wait(
+                repository + "#" + number,
+                read == null ? null : read.closed(),
+                URI.create(forge + "/" + repository + "/issues/" + number));
     }
 
     /** The most minutes an issue's work is read as having taken, its stages together. */
@@ -452,7 +531,9 @@ public final class IssueMapping {
                 issue.risk(),
                 issue.estimate(),
                 minutes >= 0 && minutes <= MOST_TAKEN ? minutes : issue.minutes(),
-                issue.priority());
+                issue.priority(),
+                issue.warnings(),
+                issue.waitsOn());
     }
 
     /** The longest Status a fault names, as a plain option name of a single-select field. */
@@ -638,7 +719,9 @@ public final class IssueMapping {
                             Risk.highest(List.of(issue.risk(), parent.risk())),
                             issue.estimate(),
                             issue.minutes(),
-                            issue.priority()));
+                            issue.priority(),
+                            issue.warnings(),
+                            issue.waitsOn()));
         }
     }
 

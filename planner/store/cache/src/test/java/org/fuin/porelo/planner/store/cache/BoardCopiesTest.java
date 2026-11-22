@@ -112,7 +112,10 @@ class BoardCopiesTest {
                                 new ChangeCursor.Page(
                                         null, "W/\"etag-1\"", true, List.of("PVTI_one")),
                                 new ChangeCursor.Page("c1", null, false, List.of()))),
-                List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false)));
+                List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false)),
+                List.of(
+                        new TrackedWait("I_far", "other-org/elsewhere", 7, false),
+                        new TrackedWait("I_hidden", "other-org/private", 8, null)));
     }
 
     @Test
@@ -158,6 +161,26 @@ class BoardCopiesTest {
         Files.write(file, bytes);
 
         assertThat(copies().read(PROJECT, "c0ffee0")).as("a copy of another format").isEmpty();
+    }
+
+    @Test
+    void aCopyWrittenBeforeWaitsWereKeptIsNotRead() throws IOException {
+        // Harm: an older copy read with no waits, so an issue waiting on another repository's is
+        // offered for work at the next start.
+        copies().write(copy(PROJECT, "c0ffee0"));
+        final Path file = directory.resolve(PROJECT.file());
+        final byte[] bytes = Files.readAllBytes(file);
+        final byte[] head = head("fory").getBytes(StandardCharsets.US_ASCII);
+        final byte[] older =
+                head("fory")
+                        .replace(BoardCopies.FORMAT, "cc2d665c0746ef84")
+                        .getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(older, 0, bytes, 0, head.length);
+        Files.write(file, bytes);
+
+        assertThat(copies().read(PROJECT, "c0ffee0"))
+                .as("a copy of the format before waits were kept")
+                .isEmpty();
     }
 
     @Test

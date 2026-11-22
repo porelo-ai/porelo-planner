@@ -32,6 +32,8 @@ import org.jspecify.annotations.Nullable;
  * @param link where a person reads it
  * @param updatedAt when GitHub last changed it
  * @param archived whether the item is archived in the project
+ * @param blockers the issues it is blocked by, each with its repository and number, in the order of
+ *     {@code blockedByIds}; empty when the read named only their ids
  */
 public record ItemView(
         String itemId,
@@ -50,7 +52,17 @@ public record ItemView(
         @Nullable List<CommentView> comments,
         URI link,
         Instant updatedAt,
-        boolean archived) {
+        boolean archived,
+        List<Blocker> blockers) {
+
+    /**
+     * An issue that blocks the item's, as GitHub names it.
+     *
+     * @param issueId its node id
+     * @param repository its repository with its owner, as GitHub names it
+     * @param number its number in its repository
+     */
+    public record Blocker(String issueId, String repository, int number) {}
 
     /** Copies the map and the lists, keeping their order. */
     public ItemView {
@@ -59,5 +71,66 @@ public record ItemView(
         subIssueIds = List.copyOf(subIssueIds);
         blockedByIds = List.copyOf(blockedByIds);
         comments = comments == null ? null : List.copyOf(comments);
+        blockers = List.copyOf(blockers);
+    }
+
+    /**
+     * An item whose blockers are known by their ids alone.
+     *
+     * @param itemId the project item's node id
+     * @param issueId the issue's node id
+     * @param repository the name of the repository that holds the issue
+     * @param number the issue's number in its repository
+     * @param title its title
+     * @param body its body
+     * @param open whether GitHub has it open
+     * @param stateReason why GitHub closed it, or null while open
+     * @param fields the project's field values by field name
+     * @param labels its labels' names
+     * @param parentIssueId the node id of its GitHub parent issue, or null
+     * @param subIssueIds the node ids of its GitHub sub-issues
+     * @param blockedByIds the node ids of the issues it is blocked by
+     * @param comments its comments, or null when they were not read
+     * @param link where a person reads it
+     * @param updatedAt when GitHub last changed it
+     * @param archived whether the item is archived in the project
+     */
+    public ItemView(
+            final String itemId,
+            final String issueId,
+            final String repository,
+            final int number,
+            final String title,
+            final String body,
+            final boolean open,
+            final @Nullable String stateReason,
+            final Map<String, String> fields,
+            final List<String> labels,
+            final @Nullable String parentIssueId,
+            final List<String> subIssueIds,
+            final List<String> blockedByIds,
+            final @Nullable List<CommentView> comments,
+            final URI link,
+            final Instant updatedAt,
+            final boolean archived) {
+        this(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                comments,
+                link,
+                updatedAt,
+                archived,
+                List.of());
     }
 }

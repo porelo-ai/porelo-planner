@@ -315,6 +315,7 @@ public final class WorkAnswers {
                 issue.priority(),
                 decimal(minutes.get(issue.id())),
                 issue.blockedBy(),
+                waits(issue),
                 issue.parent(),
                 issue.link(),
                 org.fuin.porelo.planner.app.answers.Worker.fromValue(issue.worker().name()),
@@ -329,6 +330,21 @@ public final class WorkAnswers {
                         raised && progress != null ? progress.reason() : "NONE"),
                 progress == null ? null : findings(progress.findings()),
                 warnings(issue.warnings()));
+    }
+
+    /**
+     * What an issue waits on outside the board, as the answer carries it.
+     *
+     * @param issue the issue
+     * @return its waits, in the store's order
+     */
+    static List<org.fuin.porelo.planner.app.answers.Wait> waits(final Issue issue) {
+        return issue.waitsOn().stream()
+                .map(
+                        wait ->
+                                new org.fuin.porelo.planner.app.answers.Wait(
+                                        wait.reference(), wait.done(), wait.link()))
+                .toList();
     }
 
     /**

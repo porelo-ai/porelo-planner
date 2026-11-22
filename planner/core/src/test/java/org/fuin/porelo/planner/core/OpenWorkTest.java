@@ -10,6 +10,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -49,6 +50,45 @@ class OpenWorkTest {
         assertThat(free.blocked()).as("its blocker closed").isZero();
         assertThat(count(free.states(), "Backlog")).as("counted under its state").isEqualTo(1);
         assertThat(free.left()).as("only the free one is left").isEqualTo(1);
+    }
+
+    // An issue waiting on another repository's counted under its plain state would show a story
+    // as ready to build on while nothing of it may start.
+    @Test
+    void anIssueWaitingOutsideTheBoardCountsAsBlockedUntilItsWaitIsDone() {
+        for (final Boolean done : new Boolean[] {false, null}) {
+            issues.clear();
+            issues.add(waitingOn("own#1", done));
+            assertThat(story().blocked())
+                    .as("an issue whose wait is %s", done == null ? "not read" : "open")
+                    .isEqualTo(1);
+        }
+        issues.clear();
+        issues.add(waitingOn("own#1", true));
+        final OpenWork free = story();
+
+        assertThat(free.blocked()).as("its wait done").isZero();
+        assertThat(count(free.states(), "Backlog")).as("counted under its state").isEqualTo(1);
+    }
+
+    private static Issue waitingOn(final String id, final @Nullable Boolean done) {
+        return new Issue(
+                id,
+                "own",
+                "An issue",
+                "Backlog",
+                "S",
+                List.of(),
+                null,
+                null,
+                "",
+                Worker.AGENT,
+                Risk.ORDINARY,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(new Wait("other-org/elsewhere#7", done, null)));
     }
 
     // A review issue counted as work to build would hide what waits for the person.

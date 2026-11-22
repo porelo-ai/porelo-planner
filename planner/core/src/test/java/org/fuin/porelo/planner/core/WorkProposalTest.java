@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -924,6 +925,189 @@ class WorkProposalTest {
                                 "BB1",
                                 "BB1 names an issue in beta and alpha; it can be neither worked"
                                         + " nor moved until one id is changed."));
+    }
+
+    /** The board with one issue's blockers on the board and waits outside it set. */
+    static Board waiting(
+            final Board board,
+            final String id,
+            final List<String> blockedBy,
+            final List<Wait> waitsOn) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        !i.id().equals(id)
+                                                ? i
+                                                : new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        i.title(),
+                                                        i.state(),
+                                                        i.size(),
+                                                        blockedBy,
+                                                        i.parent(),
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        i.risk(),
+                                                        i.estimate(),
+                                                        i.minutes(),
+                                                        i.priority(),
+                                                        i.warnings(),
+                                                        waitsOn))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    private static final java.net.URI FAR_LINK =
+            java.net.URI.create("https://github.com/other-org/elsewhere/issues/7");
+
+    private static List<Wait> far(final @Nullable Boolean done) {
+        return List.of(new Wait("other-org/elsewhere#7", done, FAR_LINK));
+    }
+
+    private static List<String> offered(final WorkProposal proposal) {
+        return proposal.repositories().stream()
+                .flatMap(repository -> repository.issues().stream())
+                .toList();
+    }
+
+    @Test
+    void anIssueBlockedByAnOpenIssueOfTheBoardIsNotOfferedUntilItsBlockerCloses() {
+        // Harm: an agent builds on work that is not there yet, its blocker still open beside it.
+        final Board blocked =
+                waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of("AA1"), List.of());
+
+        final WorkProposal proposal = WorkProposal.propose(blocked, "ST1", "Building");
+        assertThat(offered(proposal))
+                .as("the blocked issue held back, the rest offered")
+                .containsExactly("AA1", "AA1.1");
+        assertThat(proposal.held())
+                .as("the held issue named with what it waits on")
+                .containsExactly(
+                        new WorkProposal.Held(
+                                "BB1", "BB1 waits on AA1. Work on it starts once that is done."));
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        with(blocked, Map.of("AA1", "Finished")),
+                                        "ST1",
+                                        "Building")))
+                .as("offered once its blocker closed")
+                .containsExactly("AA1.1", "BB1");
+    }
+
+    @Test
+    void anIssueWaitingOutsideTheBoardIsOfferedOnlyWhileItsWaitIsDone() {
+        // Harm: work starts on an issue whose blocker in another repository is open or unknown,
+        // or a blocker reopened since the last board is taken as still done.
+        final Board board = board(WorkRule.Per.REPOSITORY);
+
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        waiting(board, "BB1", List.of(), far(true)),
+                                        "ST1",
+                                        "Building")))
+                .as("a done wait")
+                .contains("BB1");
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        waiting(board, "BB1", List.of(), far(false)),
+                                        "ST1",
+                                        "Building")))
+                .as("the same wait open again on the next board")
+                .doesNotContain("BB1");
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        waiting(board, "BB1", List.of(), far(null)),
+                                        "ST1",
+                                        "Building")))
+                .as("a wait not read")
+                .doesNotContain("BB1");
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        waiting(
+                                                board,
+                                                "BB1",
+                                                List.of(),
+                                                List.of(Wait.unreadable())),
+                                        "ST1",
+                                        "Building")))
+                .as("a wait on an issue not readable")
+                .doesNotContain("BB1");
+    }
+
+    @Test
+    void aStoryWhoseIssuesAllWaitIsRefusedNamingWhatEachWaitsOn() {
+        // Harm: a refusal that names no wait leaves the person guessing why nothing starts.
+        Board board = board(WorkRule.Per.REPOSITORY);
+        board = waiting(board, "AA1", List.of("BB1"), List.of());
+        board = waiting(board, "AA1.1", List.of(), far(false));
+        board = waiting(board, "BB1", List.of(), List.of(Wait.unreadable()));
+        final Board all = board;
+
+        assertThatThrownBy(() -> WorkProposal.propose(all, "ST1", "Building"))
+                .as("nothing offered")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1 waits on BB1")
+                .hasMessageContaining("AA1.1 waits on other-org/elsewhere#7")
+                .hasMessageContaining("BB1 waits on something not readable");
+    }
+
+    @Test
+    void aWaitingIssueANamedListOrAReadingNamesIsRefused() {
+        // Harm: a person's own list or a reading started by hand passes the hold, so an agent
+        // works an issue whose blocker is not done.
+        final Board board = waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of(), far(false));
+
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        story -> List.of(),
+                                        List.of("BB1")))
+                .as("the named list")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("BB1 waits on other-org/elsewhere#7");
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        story -> List.of(),
+                                        List.of("AA1"))))
+                .as("a list naming only a free issue")
+                .containsExactly("AA1");
+        final Board review =
+                reading(
+                        waiting(
+                                with(board(WorkRule.Per.REPOSITORY), Map.of("BB1", "Review")),
+                                "BB1",
+                                List.of(),
+                                far(false)));
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        review,
+                                        "ST1",
+                                        "Reading",
+                                        story -> List.of(),
+                                        List.of("BB1")))
+                .as("a reading by hand")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("BB1 waits on other-org/elsewhere#7");
     }
 
     /** The board with the given issues moved to the given states. */

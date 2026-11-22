@@ -454,6 +454,59 @@ class BoardReadsTest {
                 .isEqualTo("The issue needs a repair.");
     }
 
+    @Test
+    void anIssueSaysWhatItWaitsOnOutsideTheBoardDoneOpenOrNotReadable() throws Exception {
+        // Harm: the window shows an issue free whose blocker in another repository is open or
+        // could not be read, and the person starts work that cannot be built yet.
+        final Issue waiting =
+                new Issue(
+                        "porelo-store#2",
+                        "porelo-store",
+                        "Waiting",
+                        "Backlog",
+                        "S",
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        Worker.AGENT,
+                        org.fuin.porelo.planner.store.Risk.ORDINARY,
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        List.of(
+                                new org.fuin.porelo.planner.store.Wait(
+                                        "other-org/done#1",
+                                        true,
+                                        URI.create("https://github.com/other-org/done/issues/1")),
+                                new org.fuin.porelo.planner.store.Wait(
+                                        "other-org/open#2", false, null),
+                                org.fuin.porelo.planner.store.Wait.unreadable()));
+        supplied = issueBoard(List.of("porelo-store#2"), List.of(waiting));
+        given();
+
+        for (final String path :
+                List.of(
+                        "/projects/alpha/stories/ST1/issues",
+                        "/projects/alpha/issues/porelo-store%232")) {
+            final String at = path.endsWith("issues") ? "$.issues[0]" : "$.issue";
+            mvc.perform(get(URI.create(path)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(at + ".blockedBy").isEmpty())
+                    .andExpect(jsonPath(at + ".waitsOn[0].reference").value("other-org/done#1"))
+                    .andExpect(jsonPath(at + ".waitsOn[0].done").value(true))
+                    .andExpect(
+                            jsonPath(at + ".waitsOn[0].link")
+                                    .value("https://github.com/other-org/done/issues/1"))
+                    .andExpect(jsonPath(at + ".waitsOn[1].done").value(false))
+                    .andExpect(jsonPath(at + ".waitsOn[1].link").isEmpty())
+                    .andExpect(jsonPath(at + ".waitsOn[2].reference").isEmpty())
+                    .andExpect(jsonPath(at + ".waitsOn[2]", org.hamcrest.Matchers.hasKey("done")))
+                    .andExpect(jsonPath(at + ".waitsOn[2].done").isEmpty());
+        }
+    }
+
     private void givenReadingProgress() {
         final NextStep.Progress progress =
                 new NextStep.Progress(

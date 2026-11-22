@@ -45,6 +45,30 @@ public interface ChangeProbe {
     }
 
     /**
+     * Answers whether an issue the board's issues wait on may have changed in a repository the
+     * project does not plan, so the waits are read again; a probe that cannot tell answers true
+     * whenever the board waits on any.
+     *
+     * @param current the snapshot the store holds
+     * @return whether the waits are to be read again
+     */
+    default boolean waitsChanged(final Snapshot current) {
+        return !current.waits().isEmpty();
+    }
+
+    /** Takes the answers of the last {@link #waitsChanged} as read, once the waits were read. */
+    default void waitsRead() {
+        // A probe that keeps nothing has nothing to take.
+    }
+
+    /**
+     * Notes that the store read the project whole, so a repository found unreadable is asked again.
+     */
+    default void readWhole() {
+        // A probe that keeps nothing has nothing to note.
+    }
+
+    /**
      * Takes every change a look sees for a while as the store's own save, which GitHub's lists show
      * only a moment after it was written.
      */

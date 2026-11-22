@@ -33,6 +33,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
@@ -461,6 +462,47 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
+    public Map<String, List<Wait>> waitsNow(final java.util.Collection<String> issues) {
+        final Snapshot held = current();
+        final Map<String, ItemView> named = new LinkedHashMap<>();
+        for (final String id : issues) {
+            final ItemView item = held.items().get(id);
+            if (item != null && held.board().issue(id).isPresent()) {
+                named.put(id, item);
+            }
+        }
+        final Map<String, Snapshot.Waited> read;
+        try {
+            read =
+                    parts.reader()
+                            .waitsOf(
+                                    configNow(),
+                                    held,
+                                    named.values().stream()
+                                            .map(ItemView::issueId)
+                                            .collect(java.util.stream.Collectors.toSet()));
+        } catch (final RuntimeException e) {
+            throw refused(e);
+        }
+        final Map<String, List<Wait>> waits = new LinkedHashMap<>();
+        for (final Map.Entry<String, ItemView> each : named.entrySet()) {
+            final List<Wait> fresh = new ArrayList<>();
+            for (final String blocker : each.getValue().blockedByIds()) {
+                if (held.waits().containsKey(blocker)) {
+                    fresh.add(
+                            IssueMapping.wait(
+                                    each.getValue(), blocker, read, held.config().forge()));
+                }
+            }
+            // A wait the board holds that the read named none for, such as one not readable, stays.
+            final List<Wait> board = held.board().issue(each.getKey()).orElseThrow().waitsOn();
+            board.stream().filter(wait -> wait.reference() == null).forEach(fresh::add);
+            waits.put(each.getKey(), fresh);
+        }
+        return waits;
+    }
+
+    @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         final String[] id = new String[1];
         final Snapshot after =
@@ -610,12 +652,12 @@ public final class GitHubStore implements PlanningStore {
                         // board, so the next poll asks it from here.
                         parts.probe().adoptNext();
                         parts.probe().unchanged(looked.board());
-                        return looked.board();
+                        return waitsBesideSaves(now, looked.board());
                     }
                     // The item list carries only the board's items: an issue of the project's
                     // repositories it lacks changes only the probe's answer, and is read whole.
                     return parts.probe().unchanged(looked.board())
-                            ? looked.board()
+                            ? waitsBesideSaves(now, looked.board())
                             : wholeBesideSaves(now, false, WholeRead.UNLISTED);
                 }
                 // A tracker that cannot tell what changed has the board read whole, never the probe
@@ -628,7 +670,40 @@ public final class GitHubStore implements PlanningStore {
             throw refused(e);
         }
         // The probe saw the change and keeps its tags for the board this read gives.
-        return same ? current : wholeBesideSaves(now, false, WholeRead.PROBED);
+        return same
+                ? waitsBesideSaves(now, current)
+                : wholeBesideSaves(now, false, WholeRead.PROBED);
+    }
+
+    /**
+     * Reads again the state of the issues the board waits on outside the project when the probe
+     * says one of their repositories changed, so a blocker closed there offers its issue at this
+     * look; the board is the one given when nothing waits or nothing changed.
+     */
+    private Snapshot waitsBesideSaves(final ProjectConfig now, final Snapshot board) {
+        try {
+            if (board.waits().isEmpty() || !parts.probe().waitsChanged(board)) {
+                return board;
+            }
+        } catch (final RuntimeException e) {
+            throw refused(e);
+        }
+        final Snapshot read =
+                locked(
+                        () -> {
+                            final Snapshot base = snapshot;
+                            if (base == null || base != board) {
+                                // A save or a read replaced the board meanwhile, with its waits.
+                                return base == null ? board : base;
+                            }
+                            final Snapshot fresh = parts.reader().rewait(now, base);
+                            if (fresh != base) {
+                                hold(fresh, false);
+                            }
+                            return fresh;
+                        });
+        parts.probe().waitsRead();
+        return read;
     }
 
     /** The items of a board, as the copy holds them, by their ids, the saves held laid over. */
@@ -768,7 +843,8 @@ public final class GitHubStore implements PlanningStore {
                                             kept,
                                             base.fieldFaults(),
                                             base.fieldNames(),
-                                            base.restFieldIds());
+                                            base.restFieldIds(),
+                                            base.waits());
                             final Set<String> items = new LinkedHashSet<>(changed.changed());
                             final Set<String> issues = new LinkedHashSet<>(added.values());
                             issues.addAll(HeldSaves.issuesOf(base, items));
@@ -997,6 +1073,7 @@ public final class GitHubStore implements PlanningStore {
                 parts.probe().forget();
             }
             final Snapshot read = parts.reader().read(now);
+            parts.probe().readWhole();
             LOG.info(
                     "Read the board whole in {} ms: {}",
                     millis(started, System.nanoTime()),

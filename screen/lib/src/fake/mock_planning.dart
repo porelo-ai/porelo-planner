@@ -253,6 +253,7 @@ class MockPlanningSource implements PlanningSource {
           'state': 'Idea',
           'size': size,
           'blockedBy': <String>[],
+          'waitsOn': <Map<String, dynamic>>[],
           'parent': null,
           'link': 'https://example.org/issues/$id',
           'worker': worker.wire,

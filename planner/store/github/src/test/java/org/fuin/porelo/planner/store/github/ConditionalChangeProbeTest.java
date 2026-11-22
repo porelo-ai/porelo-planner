@@ -970,4 +970,127 @@ class ConditionalChangeProbeTest {
             return new Answer(true, current, next, remaining, 5000L, full);
         }
     }
+
+    /** GitHub's issue lists of repositories outside the project, by their names with owners. */
+    private static final class WaitedRepositories implements ConditionalReads {
+
+        private final Map<String, String> tags = new ConcurrentHashMap<>();
+
+        private final Map<String, RuntimeException> failures = new ConcurrentHashMap<>();
+
+        private final List<String> asked = new CopyOnWriteArrayList<>();
+
+        @Override
+        public Answer issues(
+                final String token,
+                final String owner,
+                final String repository,
+                final @Nullable String etag) {
+            assertThat(token).as("the token sent").isEqualTo(TOKEN);
+            asked.add(owner + "/" + repository + " " + etag);
+            final RuntimeException refused = failures.get(owner + "/" + repository);
+            if (refused != null) {
+                throw refused;
+            }
+            final String tag = tags.get(owner + "/" + repository);
+            return new Answer(tag == null || !tag.equals(etag), tag, null, 4900L, 5000L);
+        }
+
+        @Override
+        public Answer projectItems(
+                final String token,
+                final String owner,
+                final int number,
+                final @Nullable String after,
+                final @Nullable String etag) {
+            throw new AssertionError("A look at the waits asked the project's items");
+        }
+    }
+
+    /** A board whose issues wait on issues of the repositories named, with their owners. */
+    private static Snapshot waitingOn(final String... repositories) {
+        final Map<String, Snapshot.Waited> waits = new java.util.LinkedHashMap<>();
+        for (int at = 0; at < repositories.length; at++) {
+            waits.put("I_wait_" + at, new Snapshot.Waited(repositories[at], at + 1, false));
+        }
+        final Snapshot plain = snapshot("waiting");
+        return new Snapshot(
+                plain.board(),
+                plain.items(),
+                plain.config(),
+                plain.raw(),
+                plain.fieldFaults(),
+                plain.fieldNames(),
+                plain.restFieldIds(),
+                waits);
+    }
+
+    @Test
+    void eachRepositoryOutsideTheProjectAWaitStandsInIsAskedOnceALookWithItsTag() {
+        // Harm: a blocker closed in another repository is never seen, so its issue is never
+        // offered; or every look reads the waits again though nothing there changed.
+        final WaitedRepositories waited = new WaitedRepositories();
+        waited.tags.put("other-org/elsewhere", "\"e-1\"");
+        final ConditionalChangeProbe probe = probe(waited);
+        final Snapshot board =
+                waitingOn("other-org/elsewhere", "other-org/elsewhere", "example-org/example-two");
+
+        assertThat(probe.waitsChanged(board)).as("the first answer, with no tag").isTrue();
+        probe.waitsRead();
+        assertThat(probe.waitsChanged(board)).as("answered 304").isFalse();
+        waited.tags.put("other-org/elsewhere", "\"e-2\"");
+        assertThat(probe.waitsChanged(board)).as("changed there").isTrue();
+        assertThat(probe.waitsChanged(board))
+                .as("asked again while the waits were not read after the change")
+                .isTrue();
+        probe.waitsRead();
+        assertThat(probe.waitsChanged(board)).as("read after the change").isFalse();
+        assertThat(waited.asked)
+                .as("one ask a look, never one for a repository of the project")
+                .containsExactly(
+                        "other-org/elsewhere null",
+                        "other-org/elsewhere \"e-1\"",
+                        "other-org/elsewhere \"e-1\"",
+                        "other-org/elsewhere \"e-1\"",
+                        "other-org/elsewhere \"e-2\"");
+    }
+
+    @Test
+    void moreRepositoriesThanALookAsksAboutReadTheWaitsAgainOnceAMinute() {
+        // Harm: a look that asks about only some repositories takes the rest as unchanged, or
+        // every look reads every wait and spends the person's rate limit.
+        final WaitedRepositories waited = new WaitedRepositories();
+        final String[] many = new String[ConditionalChangeProbe.MOST_WAIT_REPOSITORIES + 1];
+        for (int at = 0; at < many.length; at++) {
+            many[at] = "other-org/lib-" + at;
+        }
+        final ConditionalChangeProbe probe = probe(waited);
+        final Snapshot board = waitingOn(many);
+
+        assertThat(probe.waitsChanged(board)).as("the waits read again").isTrue();
+        probe.waitsRead();
+        nanos.addAndGet(ConditionalChangeProbe.WAITS_EVERY.toNanos() - 1);
+        assertThat(probe.waitsChanged(board)).as("not again within the minute").isFalse();
+        nanos.addAndGet(1);
+        assertThat(probe.waitsChanged(board)).as("again once the minute passed").isTrue();
+        assertThat(waited.asked).as("no repository asked").isEmpty();
+    }
+
+    @Test
+    void aRepositoryTheTokenCannotReadIsAskedOnceAWholeReadAndIsNoChange() {
+        // Harm: a repository the person cannot read seen as changed at every look, so every look
+        // reads the waits again, or a failed look.
+        final WaitedRepositories waited = new WaitedRepositories();
+        waited.failures.put("other-org/private", GitHubExceptions.refused(404, "Not Found"));
+        final ConditionalChangeProbe probe = probe(waited);
+        final Snapshot board = waitingOn("other-org/private");
+
+        assertThat(probe.waitsChanged(board)).as("the first look").isFalse();
+        assertThat(probe.waitsChanged(board)).as("the next look").isFalse();
+        probe.readWhole();
+        assertThat(probe.waitsChanged(board)).as("the look after a whole read").isFalse();
+        assertThat(waited.asked)
+                .as("asked once, then again after the whole read")
+                .containsExactly("other-org/private null", "other-org/private null");
+    }
 }

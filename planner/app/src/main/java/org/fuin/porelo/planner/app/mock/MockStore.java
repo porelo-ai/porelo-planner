@@ -320,7 +320,8 @@ public final class MockStore implements PlanningStore {
                                     issue.estimate(),
                                     issue.minutes(),
                                     issue.priority(),
-                                    issue.warnings()));
+                                    issue.warnings(),
+                                    issue.waitsOn()));
         }
         final Board sized =
                 new Board(
@@ -398,7 +399,8 @@ public final class MockStore implements PlanningStore {
                                     fields.named().contains(Fields.Field.PRIORITY)
                                                     && fields.priority() != null
                                             ? prioritized(known.warnings())
-                                            : known.warnings())
+                                            : known.warnings(),
+                                    known.waitsOn())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -465,7 +467,8 @@ public final class MockStore implements PlanningStore {
                                     known.estimate(),
                                     known.minutes(),
                                     known.priority(),
-                                    known.warnings())
+                                    known.warnings(),
+                                    known.waitsOn())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -535,7 +538,8 @@ public final class MockStore implements PlanningStore {
                                     known.estimate(),
                                     known.minutes(),
                                     known.priority(),
-                                    known.warnings())
+                                    known.warnings(),
+                                    known.waitsOn())
                             : known);
         }
         current = saved(withItems(board, stories, issues), NOTHING);
@@ -848,7 +852,8 @@ public final class MockStore implements PlanningStore {
                             issue.estimate(),
                             issue.minutes(),
                             issue.priority(),
-                            settled(issue.warnings(), writes.issues().containsKey(issue.id()))));
+                            settled(issue.warnings(), writes.issues().containsKey(issue.id())),
+                            issue.waitsOn()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {

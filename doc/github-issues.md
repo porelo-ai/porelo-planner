@@ -12,7 +12,8 @@ the work rules stay files in the project's own repository.
 | A story's issues | Its sub-issues, in their own repositories, in the story's order |
 | An issue in a second story | Listed under *Also needs* in that story's body; GitHub allows one parent |
 | A Porelo sub-issue | A sub-issue of its issue, in the issue's repository, with its own number; never under another sub-issue |
-| `blockedBy` | GitHub's issue dependency, "blocked by", across repositories |
+| `blockedBy` | GitHub's issue dependency, "blocked by", on an issue of the project |
+| `waitsOn` | GitHub's "blocked by" on an issue the project does not hold, such as one of another owner's repository |
 | The id | The tracker reference alone, `<repository>#<number>`: the repository the issue lives in, lowercased, and GitHub's number |
 | The state | The project's own field `Status`, whose options are the workflow's states in order |
 | Priority, size, risk, worker | The single-select fields `Priority`, `Size`, `Risk`, `Worker` |
@@ -79,9 +80,19 @@ stage records count them; a pause and a person's move are shown, not summed.
   records stay under it.
 - An issue labeled `story` is a story; every other issue of the project is an issue.
 - An item a person edited into something the board cannot hold - an item of a repository `project.yml` does not
-  name, a `Status` outside the workflow, a parent or a blocker outside the project, a sub-issue in another
-  repository than its parent or under another sub-issue - is left out and named as a fault, and the story it belongs
-  to says that an issue of it is missing. A fault names the item by its repository and number, never by its title or
+  name, a `Status` outside the workflow, a parent outside the project, a story as a blocker, a sub-issue in another
+  repository than its parent or under another sub-issue - is left out with every issue under it and named as a
+  fault, and the story it belongs to says that an issue of it is missing.
+- A blocker the project does not hold leaves its issue on the board, waiting on it: `waitsOn` names it as
+  `owner/repository#number` with whether it is done and its link. A blocker the person's token cannot read is named
+  as a wait on something not readable, never as done.
+- Work never starts on an issue while a blocker of it is open: a blocker on the board in an open state, a wait not
+  done, or a wait whose state could not be read. A start reads the offered issues' waits once more and refuses on an
+  open or unread one; a run already started goes on when a wait opens again.
+- A look at the board asks each repository outside the project that a wait stands in, up to 10, whether its issues
+  changed, and reads only the waits again when one did; with more of them, or when a look runs out of time, the waits
+  are read again once a minute. A repository the token cannot read is asked once after each whole read. A blocker
+  counts toward GitHub's 50 blockers of an issue whether the board holds it or not. A fault names the item by its repository and number, never by its title or
   body.
 - A story's sub-issue the project's item list lacks is looked up once, by its own project items: when they name the
   project, GitHub's list is taken to lag an add, and the list is read again up to three times a second apart before

@@ -64,6 +64,7 @@ public final class ForyEncoding implements CopyEncoding {
         fory.register(TrackedItem.Value.class);
         fory.register(ChangeCursor.class);
         fory.register(ChangeCursor.Page.class);
+        fory.register(TrackedWait.class);
         fory.ensureSerializersCompiled();
         return fory;
     }

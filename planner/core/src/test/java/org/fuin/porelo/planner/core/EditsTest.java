@@ -167,6 +167,53 @@ class EditsTest {
     }
 
     @Test
+    void theIssuesAnIssueWaitsOnOutsideTheBoardCountTowardItsMostBlockers() {
+        // Harm: a list GitHub refuses past its limit passes the check, and the write fails after
+        // some of its links were written.
+        final List<Issue> issues = new java.util.ArrayList<>();
+        final List<String> blockers = new java.util.ArrayList<>();
+        for (int number = 10; number < 10 + Edits.MOST_BLOCKERS - 1; number++) {
+            issues.add(issue("AB" + number, null, List.of()));
+            blockers.add("AB" + number);
+        }
+        issues.add(
+                new Issue(
+                        "AB1",
+                        "porelo-store",
+                        "Issue AB1",
+                        "Idea",
+                        null,
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        org.fuin.porelo.planner.store.Worker.AGENT,
+                        org.fuin.porelo.planner.store.Risk.ORDINARY,
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        List.of(
+                                new org.fuin.porelo.planner.store.Wait(
+                                        "other-org/elsewhere#7", false, null),
+                                org.fuin.porelo.planner.store.Wait.unreadable())));
+        final Board waiting =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
+                        List.of(),
+                        issues,
+                        new Work(Map.of(), List.of()));
+
+        final Moves.Refused refused =
+                refusal(() -> Edits.blockedBy(waiting, "r1", "AB1", blockers));
+        assertThat(refused.name()).as("one more than GitHub takes").isEqualTo(Edits.REFUSED);
+        assertThat(Edits.blockedBy(waiting, "r1", "AB1", blockers.subList(1, blockers.size())))
+                .as("as many as GitHub takes, the waits included")
+                .isTrue();
+    }
+
+    @Test
     void aBlankOrTooLongCommentIsRefused() {
         // A blank comment adds noise; one past GitHub's limit fails after the check passed.
         assertThat(refusal(() -> Edits.comment(board, "AB1", " \n")).name())

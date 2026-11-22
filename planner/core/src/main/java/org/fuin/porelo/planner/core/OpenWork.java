@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
@@ -167,7 +168,9 @@ public record OpenWork(
                     waiting++;
                 }
                 final boolean building = leftToBuild(board, review, issue);
-                if (building && issue.blockedBy().stream().anyMatch(open::contains)) {
+                if (building
+                        && (issue.blockedBy().stream().anyMatch(open::contains)
+                                || issue.waitsOn().stream().anyMatch(Wait::holds))) {
                     blocked++;
                 } else {
                     // A state the workflow lacks is shown outside it, not counted here.

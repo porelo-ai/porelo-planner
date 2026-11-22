@@ -55,6 +55,13 @@ class PlanningIssueRow extends StatelessWidget {
         const Text('Blockers not reported')
       else if (issue.blockedBy.isNotEmpty)
         Text(planningShown('Blocked by ${issue.blockedBy.join(', ')}', multiline: false)),
+      if (!issue.waitsOnReported)
+        const Text('Waits not reported')
+      else if (issue.waitsHolding.isNotEmpty)
+        Text(
+          planningShown('Waits on ${issue.waitsHolding.map((wait) => wait.spoken).join(', ')}', multiline: false),
+          key: Key('planning-waits ${issue.id}'),
+        ),
     ],
   );
 }

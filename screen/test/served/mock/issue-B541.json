@@ -9,6 +9,7 @@
     "priority" : "Highest",
     "minutesLeft" : null,
     "blockedBy" : [ "B540" ],
+    "waitsOn" : [ ],
     "parent" : null,
     "link" : "https://example.org/issues/B541",
     "worker" : "AGENT",

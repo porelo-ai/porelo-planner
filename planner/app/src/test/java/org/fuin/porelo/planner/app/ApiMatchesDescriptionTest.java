@@ -61,6 +61,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueList", org.fuin.porelo.planner.app.answers.IssueList.class),
                     Map.entry("IssueReply", org.fuin.porelo.planner.app.answers.IssueReply.class),
                     Map.entry("Issue", org.fuin.porelo.planner.app.answers.Issue.class),
+                    Map.entry("Wait", org.fuin.porelo.planner.app.answers.Wait.class),
                     Map.entry("IssueDetail", org.fuin.porelo.planner.app.answers.IssueDetail.class),
                     Map.entry("ItemWarning", org.fuin.porelo.planner.app.answers.ItemWarning.class),
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),

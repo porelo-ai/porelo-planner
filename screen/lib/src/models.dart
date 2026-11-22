@@ -220,6 +220,8 @@ class PlanIssue {
       size = source.size,
       blockedBy = source.blockedBy,
       blockedByReported = source.blockedByReported,
+      waitsOn = source.waitsOn,
+      waitsOnReported = source.waitsOnReported,
       link = source.link,
       parent = source.parent,
       rounds = source.rounds,
@@ -246,6 +248,8 @@ class PlanIssue {
       size = _planText(map, 'size'),
       blockedBy = _planStrings(map['blockedBy']),
       blockedByReported = _planStringsReported(map['blockedBy']),
+      waitsOn = _planList(map['waitsOn'], PlanWait.from),
+      waitsOnReported = _planMapsReported(map['waitsOn']),
       link = _planText(map, 'link'),
       parent = map['parent'] is String && (map['parent'] as String).isNotEmpty ? map['parent'] as String : null,
       rounds = validRound(map['rounds']) ? map['rounds'] as int : null,
@@ -282,6 +286,15 @@ class PlanIssue {
 
   /// Whether blockers were actually reported.
   final bool blockedByReported;
+
+  /// The issues it waits on that the board does not hold, such as those of another repository.
+  final List<PlanWait> waitsOn;
+
+  /// Whether the planner said what it waits on; an older planner says nothing, which is not "nothing".
+  final bool waitsOnReported;
+
+  /// The waits that still hold it back: not known to be done.
+  List<PlanWait> get waitsHolding => waitsOn.where((wait) => wait.done != true).toList();
 
   /// The atWork, needsYou reported by the daemon.
   final bool? atWork, needsYou;
@@ -1041,6 +1054,36 @@ class PlanningWorkerSaved {
 
 /// Whether an issue's durable [reason] asks for a person: `NONE` does not, nor `MANUAL`, an issue a person works.
 bool planReasonNeedsAttention(String reason) => reason.isNotEmpty && reason != 'NONE' && reason != 'MANUAL';
+
+/// An issue an issue waits on that the board does not hold.
+class PlanWait {
+  /// Reads fields leniently: anything but a reference, a flag or a link is taken as unsaid.
+  PlanWait.from(Map<String, dynamic> map)
+    : reference = map['reference'] is String && (map['reference'] as String).trim().isNotEmpty
+          ? map['reference'] as String
+          : null,
+      done = map['done'] is bool ? map['done'] as bool : null,
+      link = map['link'] is String ? map['link'] as String : null;
+
+  /// The issue as `owner/repository#number`, or null when the person may not read it.
+  final String? reference;
+
+  /// Whether it is done, or null when it could not be read.
+  final bool? done;
+
+  /// Where a person reads it, or null when not known.
+  final String? link;
+
+  /// The wait in a person's words.
+  String get spoken => reference ?? 'something not readable';
+
+  /// Its state in a person's words.
+  String get stateSpoken => switch (done) {
+    true => 'done',
+    false => 'open',
+    null => 'not read',
+  };
+}
 
 /// One finding from the reader's last report, preserving unknown severities.
 class PlanFinding {

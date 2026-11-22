@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubException;
@@ -39,6 +40,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -1903,5 +1905,186 @@ class ItemsBoardReaderTest {
                                 .toCopy(made, ChangeCursor.NONE, List.of()))
                 .as("the copy of a snapshot not read from GitHub")
                 .isNull();
+    }
+
+    /** An issue of the library, under the story, blocked by the issues named. */
+    private static ProjectItem waiting(final int number, final IssueRef... blockers) {
+        final ProjectItem plain = libIssue(number, refs(false));
+        final BoardIssue issue = java.util.Objects.requireNonNull(plain.issue());
+        return new ProjectItem(
+                plain.id(),
+                false,
+                issue(
+                        issue.repository(),
+                        number,
+                        List.of(),
+                        issue.parentId(),
+                        refs(false),
+                        new IssueRefs(List.of(blockers), new PageInfo(false, null))),
+                plain.values(),
+                plain.valuesPage());
+    }
+
+    /** An issue of another owner's repository as GitHub answers it by its id. */
+    private static IssueOnBoard elsewhere(final IssueRef ref, final String state) {
+        return new IssueOnBoard(
+                new BoardIssue(
+                        ref.id(),
+                        ref.databaseId(),
+                        ref.number(),
+                        "Not the project's",
+                        "",
+                        state,
+                        null,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        ref.repository(),
+                        List.of(),
+                        null,
+                        refs(false),
+                        refs(false),
+                        new GitHubGraphQl.PageInfo(false, null)),
+                null,
+                List.of(),
+                new GitHubGraphQl.PageInfo(false, null));
+    }
+
+    private static final IssueRef FAR = new IssueRef("I_far_7", 70L, 7, "other-org/elsewhere");
+
+    private static final IssueRef HIDDEN = new IssueRef("I_far_8", 80L, 8, "other-org/private");
+
+    @Test
+    void aBlockerNoItemHoldsIsReadByItsIdAndOneTheTokenCannotReadIsNotKnownDone() {
+        // Harm: a wait the person's token cannot read, or one never read, taken as done, so work
+        // starts on an issue whose blocker is still open.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR, HIDDEN))
+                        .boardPage(elsewhere(FAR, "CLOSED"), null);
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(github.calls)
+                .as("the item list, then the blockers no item holds, in one read")
+                .containsExactly(
+                        "projectFields after null",
+                        "projectItems after null",
+                        "issueBoard of [I_far_7, I_far_8] in PVT_1");
+        assertThat(snapshot.board().faults()).as("no fault for a wait").isEmpty();
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("the closed blocker done, the unreadable one unknown")
+                .extracting(Wait::reference, Wait::done)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("other-org/elsewhere#7", true),
+                        org.assertj.core.groups.Tuple.tuple("other-org/private#8", null));
+    }
+
+    @Test
+    void aWaitOpenAgainGivesAnotherRevision() {
+        // Harm: a blocker reopened outside the project that the window is never told of, so it
+        // still shows its issue free.
+        final Snapshot done =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR))
+                        .boardPage(elsewhere(FAR, "CLOSED"))
+                        .read();
+        final Snapshot open =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR))
+                        .boardPage(elsewhere(FAR, "OPEN"))
+                        .read();
+
+        assertThat(open.board().revision())
+                .as("the revision once the wait opened again")
+                .isNotEqualTo(done.board().revision());
+    }
+
+    @Test
+    void aReadAfterASaveReadsOnlyTheTouchedIssuesBlockersAgain() {
+        // Harm: every save pays a read of every wait on the board, so a busy board spends the
+        // person's rate limit on what did not change.
+        final ProjectItem three = waiting(3, FAR);
+        final ProjectItem four = waiting(4, HIDDEN);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), three, four)
+                        .boardPage(elsewhere(FAR, "OPEN"), elsewhere(HIDDEN, "OPEN"))
+                        .boardItems(three)
+                        .boardPage(elsewhere(FAR, "CLOSED"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+
+        final Snapshot after =
+                reader.reread(
+                        CONFIG, held, new Touched.Ids(Set.of(LIB_3), Set.of(), Set.of(), Set.of()));
+
+        assertThat(github.issueBatches)
+                .as("the touched issue, then its blocker alone")
+                .containsExactly(List.of("I_far_7", "I_far_8"), List.of(LIB_3), List.of("I_far_7"));
+        assertThat(after.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("the touched issue's wait read again")
+                .extracting(Wait::done)
+                .containsExactly(true);
+        assertThat(after.board().issue("example-lib#4").orElseThrow().waitsOn())
+                .as("the other issue's wait kept as held")
+                .extracting(Wait::done)
+                .containsExactly(false);
+    }
+
+    @Test
+    void aReadOfTheWaitsAloneReadsEveryWaitAndKeepsTheBoardWhenNoneChanged() {
+        // Harm: a blocker closed in another repository that the board never takes in, so its
+        // issue is never offered; or a board replaced on every look though nothing changed.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR, HIDDEN))
+                        .boardPage(elsewhere(FAR, "OPEN"), elsewhere(HIDDEN, "OPEN"))
+                        .boardPage(elsewhere(FAR, "OPEN"), elsewhere(HIDDEN, "OPEN"))
+                        .boardPage(elsewhere(FAR, "CLOSED"), elsewhere(HIDDEN, "OPEN"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+
+        assertThat(reader.rewait(CONFIG, held)).as("nothing changed").isSameAs(held);
+        final Snapshot closed = reader.rewait(CONFIG, held);
+
+        assertThat(closed.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("the closed one done")
+                .extracting(Wait::done)
+                .containsExactly(true, false);
+        assertThat(closed.board().revision())
+                .as("a new revision")
+                .isNotEqualTo(held.board().revision());
+        assertThat(github.issueBatches)
+                .as("every wait read each time, in one read")
+                .containsExactly(
+                        List.of("I_far_7", "I_far_8"),
+                        List.of("I_far_7", "I_far_8"),
+                        List.of("I_far_7", "I_far_8"));
+    }
+
+    @Test
+    void aCopyKeepsTheWaitsAndTheirState() {
+        // Harm: a board shown at start from its copy whose waiting issue is offered, its wait lost.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR, HIDDEN))
+                        .boardPage(elsewhere(FAR, "OPEN"), null);
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot read = reader.read(CONFIG);
+
+        final BoardCopy copy = reader.toCopy(read, ChangeCursor.NONE, List.of());
+        assertThat(copy).as("the copy").isNotNull();
+        final Snapshot loaded = reader.fromCopy(copy, CONFIG);
+
+        assertThat(loaded).as("the snapshot from the copy, waits included").isEqualTo(read);
+        assertThat(loaded.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("both waits still holding")
+                .extracting(Wait::done)
+                .containsExactly(false, null);
     }
 }

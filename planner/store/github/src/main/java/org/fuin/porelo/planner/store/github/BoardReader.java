@@ -57,6 +57,33 @@ public interface BoardReader {
     }
 
     /**
+     * Reads again the state of the issues the board's issues wait on that are no items of it, and
+     * maps the board anew from the snapshot held; a reader that cannot reads the whole project.
+     *
+     * @param config what to read with, as the project's files name it now
+     * @param held the snapshot whose waits are read again
+     * @return the snapshot, the one held when no wait changed
+     */
+    default Snapshot rewait(final ProjectConfig config, final Snapshot held) {
+        return read(config);
+    }
+
+    /**
+     * Reads now the state of the issues the issues named wait on that are no items of the board, as
+     * a start reads them before it offers work on them.
+     *
+     * @param config what to read with, as the project's files name it now
+     * @param held the snapshot that names the waits
+     * @param issueIds the node ids of the issues whose waits are read
+     * @return the waits read, by the node ids of the issues waited on; a reader that cannot read
+     *     them answers the snapshot's
+     */
+    default java.util.Map<String, Snapshot.Waited> waitsOf(
+            final ProjectConfig config, final Snapshot held, final java.util.Set<String> issueIds) {
+        return held.waits();
+    }
+
+    /**
      * Answers the board's copy to keep on disk, in the copy's own terms.
      *
      * @param held the snapshot

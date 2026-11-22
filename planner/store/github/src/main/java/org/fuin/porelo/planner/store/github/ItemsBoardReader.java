@@ -33,6 +33,7 @@ import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -300,7 +301,14 @@ public final class ItemsBoardReader implements BoardReader {
                     reads,
                     current.lacksAny(lagging) ? "still lacked them" : "then held them");
         }
-        return snapshot(read, faults, current, fieldNames, restFieldIds);
+        final Map<String, Snapshot.Waited> waits =
+                readWaits(call, read, offBoard(current.items(), read));
+        return snapshot(
+                read,
+                faults,
+                mapped(current.items(), read, fieldNames, waits),
+                fieldNames,
+                restFieldIds);
     }
 
     /**
@@ -387,12 +395,166 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
         LOG.info("Read {} issues again after a save, in place of the whole project", all.size());
+        final Map<String, GitHubGraphQl.IssueRef> blockers = offBoard(items, read);
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>();
+        final Map<String, GitHubGraphQl.IssueRef> unread = new LinkedHashMap<>();
+        final Set<String> named = new HashSet<>();
+        for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue != null && nodes.contains(issue.id())) {
+                issue.blockedBy().nodes().forEach(ref -> named.add(ref.id()));
+            }
+        }
+        for (final Map.Entry<String, GitHubGraphQl.IssueRef> blocker : blockers.entrySet()) {
+            final Snapshot.Waited kept = held.waits().get(blocker.getKey());
+            // Only the touched issues' blockers are read again; one first seen is read too.
+            if (kept == null || named.contains(blocker.getKey())) {
+                unread.put(blocker.getKey(), blocker.getValue());
+            } else {
+                waits.put(blocker.getKey(), kept);
+            }
+        }
+        waits.putAll(readWaits(call, read, unread));
         return snapshot(
                 read,
                 held.fieldFaults(),
-                mapped(items, read, held.fieldNames()),
+                mapped(items, read, held.fieldNames(), ordered(blockers, waits)),
                 held.fieldNames(),
                 held.restFieldIds());
+    }
+
+    @Override
+    public Snapshot rewait(final ProjectConfig config, final Snapshot held) {
+        final ProjectConfig read = held.config();
+        if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
+            return read(config);
+        }
+        final Call call =
+                new Call(config, tokens.token(config.forge()), clock.instant().plus(deadline));
+        final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>(held.raw());
+        final Map<String, GitHubGraphQl.IssueRef> blockers = offBoard(items, read);
+        final Map<String, Snapshot.Waited> waits = readWaits(call, read, blockers);
+        if (waits.equals(held.waits())) {
+            return held;
+        }
+        LOG.info("Read again the state of {} issues the board's issues wait on", waits.size());
+        return snapshot(
+                read,
+                held.fieldFaults(),
+                mapped(items, read, held.fieldNames(), waits),
+                held.fieldNames(),
+                held.restFieldIds());
+    }
+
+    @Override
+    public Map<String, Snapshot.Waited> waitsOf(
+            final ProjectConfig config, final Snapshot held, final Set<String> issueIds) {
+        final Map<String, GitHubGraphQl.IssueRef> blockers = offBoard(held.raw(), held.config());
+        final Map<String, GitHubGraphQl.IssueRef> wanted = new LinkedHashMap<>();
+        for (final ItemView item : held.items().values()) {
+            if (issueIds.contains(item.issueId())) {
+                for (final String blocker : item.blockedByIds()) {
+                    final GitHubGraphQl.IssueRef ref = blockers.get(blocker);
+                    if (ref != null) {
+                        wanted.put(blocker, ref);
+                    }
+                }
+            }
+        }
+        if (wanted.isEmpty()) {
+            return Map.of();
+        }
+        final Call call =
+                new Call(config, tokens.token(config.forge()), clock.instant().plus(deadline));
+        return readWaits(call, held.config(), wanted);
+    }
+
+    /**
+     * The blockers of the items' issues that are no issues of items in the project's repositories,
+     * by their node ids, each once in the order the items name them.
+     */
+    static Map<String, GitHubGraphQl.IssueRef> offBoard(
+            final Map<String, GitHubGraphQl.ProjectItem> items, final ProjectConfig config) {
+        final Set<String> onBoard = new HashSet<>();
+        for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue != null && planned(issue.repository(), config)) {
+                onBoard.add(issue.id());
+            }
+        }
+        final Map<String, GitHubGraphQl.IssueRef> blockers = new LinkedHashMap<>();
+        for (final GitHubGraphQl.ProjectItem item : items.values()) {
+            final GitHubGraphQl.BoardIssue issue = item.issue();
+            if (issue == null) {
+                continue;
+            }
+            for (final GitHubGraphQl.IssueRef ref : issue.blockedBy().nodes()) {
+                if (!onBoard.contains(ref.id())) {
+                    blockers.putIfAbsent(ref.id(), ref);
+                }
+            }
+        }
+        return blockers;
+    }
+
+    /** Whether GitHub's name of a repository is one of the project's, under its owner. */
+    private static boolean planned(final String nameWithOwner, final ProjectConfig config) {
+        final int slash = nameWithOwner.indexOf('/');
+        return slash > 0
+                && nameWithOwner.substring(0, slash).equalsIgnoreCase(config.project().owner())
+                && config.repositories()
+                        .contains(nameWithOwner.substring(slash + 1).toLowerCase(Locale.ROOT));
+    }
+
+    /** The waits in the order the blockers are named. */
+    private static Map<String, Snapshot.Waited> ordered(
+            final Map<String, GitHubGraphQl.IssueRef> blockers,
+            final Map<String, Snapshot.Waited> waits) {
+        final Map<String, Snapshot.Waited> ordered = new LinkedHashMap<>();
+        for (final String id : blockers.keySet()) {
+            final Snapshot.Waited wait = waits.get(id);
+            if (wait != null) {
+                ordered.put(id, wait);
+            }
+        }
+        return ordered;
+    }
+
+    /**
+     * Reads the state of the blockers given, in one read of each hundred; one GitHub answers
+     * nothing for, as for an issue the person's token cannot read, is held with no state, so it
+     * holds its issue back.
+     */
+    private Map<String, Snapshot.Waited> readWaits(
+            final Call call,
+            final ProjectConfig read,
+            final Map<String, GitHubGraphQl.IssueRef> blockers) {
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>();
+        final List<String> all = List.copyOf(blockers.keySet());
+        for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
+            final List<String> chunk =
+                    all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
+            final GitHubGraphQl.IssueBoard answer =
+                    call.of(
+                            "the issues the board's issues wait on",
+                            () -> queries.issueBoard(call.token, chunk, read.projectId()));
+            for (int at = 0; at < chunk.size(); at++) {
+                final GitHubGraphQl.IssueRef ref =
+                        Objects.requireNonNull(blockers.get(chunk.get(at)));
+                final GitHubGraphQl.IssueOnBoard on =
+                        at < answer.issues().size() ? answer.issues().get(at) : null;
+                final GitHubGraphQl.BoardIssue issue = on == null ? null : on.issue();
+                waits.put(
+                        chunk.get(at),
+                        issue == null || !issue.id().equals(chunk.get(at))
+                                ? new Snapshot.Waited(ref.repository(), ref.number(), null)
+                                : new Snapshot.Waited(
+                                        issue.repository(),
+                                        issue.number(),
+                                        !"OPEN".equals(issue.state())));
+            }
+        }
+        return waits;
     }
 
     /**
@@ -455,10 +617,16 @@ public final class ItemsBoardReader implements BoardReader {
         for (final TrackedItem item : copy.items()) {
             items.putIfAbsent(item.id(), BoardCopyMapping.item(item));
         }
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>();
+        for (final TrackedWait wait : copy.waits()) {
+            waits.put(
+                    wait.id(),
+                    new Snapshot.Waited(wait.repository(), wait.number(), wait.closed()));
+        }
         return snapshot(
                 read,
                 board.faults(),
-                mapped(items, read, board.fieldNames()),
+                mapped(items, read, board.fieldNames(), waits),
                 board.fieldNames(),
                 board.restFieldIds());
     }
@@ -475,7 +643,12 @@ public final class ItemsBoardReader implements BoardReader {
         final IssueMapping.Mapped mapped = current.mapped();
         final Board board =
                 new Board(
-                        revision(read.commit(), current.items().values(), fieldNames, allFaults),
+                        revision(
+                                read.commit(),
+                                current.items().values(),
+                                fieldNames,
+                                allFaults,
+                                current.waits()),
                         read.workflow(),
                         mapped.stories(),
                         mapped.issues(),
@@ -491,7 +664,15 @@ public final class ItemsBoardReader implements BoardReader {
                 byId.putIfAbsent(id, view);
             }
         }
-        return new Snapshot(board, byId, read, current.items(), faults, fieldNames, restFieldIds);
+        return new Snapshot(
+                board,
+                byId,
+                read,
+                current.items(),
+                faults,
+                fieldNames,
+                restFieldIds,
+                current.waits());
     }
 
     /**
@@ -503,13 +684,15 @@ public final class ItemsBoardReader implements BoardReader {
      * @param mapped the stories and issues
      * @param missing the node ids of sub-issues named outside the project that no item of the list
      *     holds
+     * @param waits the blockers that are no items of the board, by their node ids, as last read
      */
     private record ItemsRead(
             Map<String, GitHubGraphQl.ProjectItem> items,
             List<ItemView> views,
             List<String> faults,
             IssueMapping.Mapped mapped,
-            Set<String> missing) {
+            Set<String> missing,
+            Map<String, Snapshot.Waited> waits) {
 
         /** Whether the list still lacks one of the issues given. */
         boolean lacksAny(final Set<String> issueIds) {
@@ -592,7 +775,7 @@ public final class ItemsBoardReader implements BoardReader {
         completeItems(call, read, items);
         // The last answer may come after the deadline as well.
         call.inTime();
-        return mapped(items, read, fieldNames);
+        return mapped(items, read, fieldNames, Map.of());
     }
 
     private void completeItems(
@@ -675,7 +858,8 @@ public final class ItemsBoardReader implements BoardReader {
     private ItemsRead mapped(
             final Map<String, GitHubGraphQl.ProjectItem> items,
             final ProjectConfig read,
-            final Map<String, String> fieldNames) {
+            final Map<String, String> fieldNames,
+            final Map<String, Snapshot.Waited> waits) {
         final List<String> faults = new ArrayList<>();
         final List<ItemView> views = new ArrayList<>();
         final Set<String> overflowing = new HashSet<>();
@@ -690,12 +874,13 @@ public final class ItemsBoardReader implements BoardReader {
                 views.add(view);
             }
         }
-        final IssueMapping.Mapped mapped = IssueMapping.read(views, overflowing, read, states);
+        final IssueMapping.Mapped mapped =
+                IssueMapping.read(views, overflowing, read, states, waits);
         faults.addAll(mapped.faults());
         // A sub-issue the list holds lies in a repository the project does not plan: no lag.
         final Set<String> missing = new LinkedHashSet<>(mapped.outside());
         missing.removeAll(listed);
-        return new ItemsRead(items, views, faults, mapped, missing);
+        return new ItemsRead(items, views, faults, mapped, missing, waits);
     }
 
     /**
@@ -967,7 +1152,10 @@ public final class ItemsBoardReader implements BoardReader {
                                 + "/issues/"
                                 + issue.number()),
                 issue.updatedAt(),
-                item.archived());
+                item.archived(),
+                issue.blockedBy().nodes().stream()
+                        .map(ref -> new ItemView.Blocker(ref.id(), ref.repository(), ref.number()))
+                        .toList());
     }
 
     /**
@@ -1027,7 +1215,8 @@ public final class ItemsBoardReader implements BoardReader {
             final String commit,
             final Iterable<GitHubGraphQl.ProjectItem> items,
             final Map<String, String> fieldNames,
-            final List<String> faults) {
+            final List<String> faults,
+            final Map<String, Snapshot.Waited> waits) {
         final MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -1068,6 +1257,15 @@ public final class ItemsBoardReader implements BoardReader {
                 add(digest, value.getKey());
                 add(digest, value.getValue());
             }
+        }
+        // A wait's state changes the board's, as a blocker on it closing offers its issue.
+        final Map<String, Snapshot.Waited> sortedWaits = new TreeMap<>(waits);
+        add(digest, Integer.toString(sortedWaits.size()));
+        for (final Map.Entry<String, Snapshot.Waited> wait : sortedWaits.entrySet()) {
+            add(digest, wait.getKey());
+            add(digest, wait.getValue().repository());
+            add(digest, Integer.toString(wait.getValue().number()));
+            addNullable(digest, String.valueOf(wait.getValue().closed()));
         }
         return new Revision(HexFormat.of().formatHex(digest.digest()));
     }
