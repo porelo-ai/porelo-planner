@@ -362,13 +362,26 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
   DataRow _row(BuildContext context, StoryIssueGroup group, StoryIssueRow row, List<double> widths) {
     final issue = row.issue;
     final error = Theme.of(context).colorScheme.error;
+    // A wait the board also holds as a blocker is shown once, as the blocker.
+    bool onBoard(PlanWait wait) => row.blockers.any(
+      (blocker) => blocker.id == wait.reference || (blocker.link.isNotEmpty && blocker.link == wait.link),
+    );
     final waits = [
       for (final blocker in row.blockers)
-        _waitMark(issue.id, blocker.id, planningValue(blocker.state), blocker.link, error),
+        _waitMark(issue.id, blocker.id, blocker.id, planningValue(blocker.state), blocker.link, error),
       if (issue.waitsOnReported)
-        for (final wait in issue.waitsHolding)
-          _waitMark(issue.id, wait.spoken, wait.stateSpoken, wait.link ?? '', error),
+        for (final (index, wait) in issue.waitsHolding.indexed)
+          if (!onBoard(wait))
+            _waitMark(
+              issue.id,
+              wait.reference ?? 'unreadable $index',
+              wait.spoken,
+              wait.stateSpoken,
+              wait.link ?? '',
+              error,
+            ),
     ];
+    final small = Theme.of(context).textTheme.bodySmall;
     final cells = <Widget>[
       TextButton(
         key: Key('planning-issue ${issue.id}'),
@@ -384,6 +397,10 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (!issue.blockedByReported)
+            Text('Blockers not reported', key: Key('planning-blockers-unreported ${issue.id}'), style: small),
+          if (!issue.waitsOnReported)
+            Text('Waits not reported', key: Key('planning-waits-unreported ${issue.id}'), style: small),
           if (waits.isNotEmpty) Wrap(children: waits),
           if (group.kind == StoryGroupKind.review) const Text('Your review'),
           _issueState(context, issue),
@@ -393,28 +410,31 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     return DataRow(cells: [for (final (index, cell) in cells.indexed) DataCell(_cell(widths[index], cell))]);
   }
 
-  /// A wait of [issue] on [waited], as an icon: its tooltip names [waited] and its [state], and a click opens [link]
-  /// in the browser, an HTTPS link only; without one it is the tooltip alone.
-  Widget _waitMark(String issue, String waited, String state, String link, Color color) {
+  /// A wait of [issue] on [waited], as an icon whose tooltip and semantics name [waited] and its [state]; a click
+  /// opens [link] in the browser, an HTTPS link only. Without one it opens nothing but stays focusable, so its words
+  /// are reached by keyboard too. [key] names it apart from the row's other waits.
+  Widget _waitMark(String issue, String key, String waited, String state, String link, Color color) {
     final open = planningWebAction(
       'Open $waited in browser',
       link,
       openLink,
       onError: detail.board.reportActionProblem,
     );
-    return Tooltip(
-      message: 'Waits on ${planningShown(waited, multiline: false)} (${planningShown(state, multiline: false)})',
+    final words = 'Waits on ${planningShown(waited, multiline: false)} (${planningShown(state, multiline: false)})';
+    return Semantics(
+      label: open.available ? '$words, opens in the browser' : words,
       child: IconButton(
-        key: Key('planning-wait $issue $waited'),
-        onPressed: open.available ? open.run : null,
+        key: Key('planning-wait $issue $key'),
+        tooltip: words,
+        onPressed: open.available ? open.run : () {},
         icon: const Icon(Icons.hourglass_top, size: PlanningStyle.rowIcon),
         color: color,
-        disabledColor: color,
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
           minimumSize: const Size.square(PlanningStyle.denseButton),
           fixedSize: const Size.square(PlanningStyle.denseButton),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          enabledMouseCursor: open.available ? SystemMouseCursors.click : SystemMouseCursors.basic,
         ),
       ),
     );

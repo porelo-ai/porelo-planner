@@ -6,13 +6,14 @@ import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 import 'package:porelo_planning/src/story_groups.dart';
 
+import 'support/fake_planning.dart';
 import 'support/story_work_support.dart';
 
 Map<String, dynamic> _issue(
   String id,
   String state, {
-  List<String> blockedBy = const [],
-  List<Map<String, dynamic>> waitsOn = const [],
+  Object blockedBy = const <String>[],
+  Object waitsOn = const <Map<String, dynamic>>[],
 }) => {
   'id': id,
   'repository': 'repo',
@@ -48,7 +49,12 @@ final _count = {
 };
 
 /// Story ST1 with one issue blocked by an issue of story ST2 and one in review; [open] is ST1's count, if any.
-Map<String, dynamic> _board({Map<String, dynamic>? open, List<Map<String, dynamic>> waitsOn = const []}) => {
+Map<String, dynamic> _board({
+  Map<String, dynamic>? open,
+  Object waitsOn = const <Map<String, dynamic>>[],
+  Object blockedBy = const <String>[],
+  Object blockerWaitsOn = const <Map<String, dynamic>>[],
+}) => {
   'states': [
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Implementing', 'kind': 'WORKING'},
@@ -77,8 +83,8 @@ Map<String, dynamic> _board({Map<String, dynamic>? open, List<Map<String, dynami
       'priority': 'High',
       'link': 'https://example.org/stories/ST1',
       'issues': [
-        _issue('PL1', 'Backlog', blockedBy: ['PL9']),
-        _issue('PL2', 'Review', waitsOn: waitsOn),
+        _issue('PL1', 'Backlog', blockedBy: ['PL9'], waitsOn: blockerWaitsOn),
+        _issue('PL2', 'Review', blockedBy: blockedBy, waitsOn: waitsOn),
       ],
       'open': ?open,
     },
@@ -215,11 +221,21 @@ void main() {
           {'reference': 'other/file#2', 'done': false, 'link': 'file:///etc/passwd'},
           {'reference': 'other/script#3', 'done': false, 'link': 'javascript:alert(1)'},
           {'reference': 'other/none#4', 'done': null, 'link': null},
+          {'reference': 'other/plain#5', 'done': false, 'link': 'http://example.org/other/plain/5'},
+          {'reference': 'other/hostless#6', 'done': false, 'link': 'https:///other/hostless/6'},
+          {'reference': 'other/done#7', 'done': true, 'link': 'https://example.org/other/done/7'},
+          {'reference': null, 'done': null, 'link': null},
         ],
       ),
     );
     final opened = <Uri>[];
     await _show(tester, board, openLink: (link) async => opened.add(link));
+
+    await tester.tap(find.byKey(const Key('planning-wait PL2 other/none#4')));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await settle(tester);
+    expect(opened, isEmpty, reason: 'a wait without a link stands and opens nothing');
+    expect(find.byKey(const Key('planning-wait PL2 other/done#7')), findsNothing, reason: 'a done wait holds nothing');
 
     expect(find.byTooltip('Waits on other/file#2 (open)'), findsOneWidget, reason: 'the hover names it and its state');
     expect(find.byTooltip('Waits on other/none#4 (not read)'), findsOneWidget);
@@ -228,7 +244,9 @@ void main() {
       'planning-wait PL2 other/web#1',
       'planning-wait PL2 other/file#2',
       'planning-wait PL2 other/script#3',
-      'planning-wait PL2 other/none#4',
+      'planning-wait PL2 other/plain#5',
+      'planning-wait PL2 other/hostless#6',
+      'planning-wait PL2 unreadable 6',
     ]) {
       await tester.tap(find.byKey(Key(key)));
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -239,5 +257,78 @@ void main() {
       Uri.parse('https://example.org/issues/PL9'),
       Uri.parse('https://example.org/other/web/1'),
     ], reason: 'only the HTTPS links reach the browser');
+  });
+
+  // Harm: a malformed blocker or wait list reads as nothing to wait on, so the person takes a held issue as free.
+  testWidgets('a row says when its blockers or waits were not reported', (tester) async {
+    final (_, board) = await _open(tester, _board(open: _count, waitsOn: 'none', blockedBy: 'PL9'));
+    await _show(tester, board);
+
+    expect(find.byKey(const Key('planning-waits-unreported PL2')), findsOneWidget);
+    expect(find.byKey(const Key('planning-blockers-unreported PL2')), findsOneWidget);
+    expect(find.byKey(const Key('planning-waits-unreported PL1')), findsNothing, reason: 'PL1 reported its waits');
+    expect(find.byKey(const Key('planning-blockers-unreported PL1')), findsNothing);
+  });
+
+  // Harm: one issue a row waits on is shown twice, as a blocker and as an outside wait, and two unreadable waits
+  // share one key, so the second cannot be reached or the row fails to draw.
+  testWidgets('a wait on a board blocker is shown once, and each unreadable wait apart', (tester) async {
+    final (_, board) = await _open(
+      tester,
+      _board(
+        open: _count,
+        blockerWaitsOn: [
+          {'reference': 'PL9', 'done': false, 'link': null},
+          {'reference': 'example/repo#9', 'done': false, 'link': 'https://example.org/issues/PL9'},
+          {'reference': 'other/web#1', 'done': false, 'link': 'https://example.org/other/web/1'},
+        ],
+        waitsOn: [
+          {'reference': null, 'done': false, 'link': null},
+          {'reference': null, 'done': null, 'link': null},
+        ],
+      ),
+    );
+    await _show(tester, board);
+
+    expect(find.byTooltip('Waits on PL9 (Implementing)'), findsOneWidget, reason: 'the blocker');
+    expect(find.byTooltip('Waits on PL9 (open)'), findsNothing, reason: 'the same issue by its id');
+    expect(find.byTooltip('Waits on example/repo#9 (open)'), findsNothing, reason: 'the same issue by its link');
+    expect(find.byTooltip('Waits on other/web#1 (open)'), findsOneWidget, reason: 'another issue stays');
+    expect(find.byKey(const Key('planning-wait PL2 unreadable 0')), findsOneWidget);
+    expect(find.byKey(const Key('planning-wait PL2 unreadable 1')), findsOneWidget);
+  });
+
+  // Harm: a wait's link is reachable only by pointer, so the window's command palette cannot open it.
+  testWidgets('the planning actions open a wait outside the board in the browser, an HTTPS link only', (tester) async {
+    final source = MockPlanningSource()
+      ..boards['demo'] = _board(
+        waitsOn: [
+          {'reference': 'other/web#1', 'done': false, 'link': 'https://example.org/other/web/1'},
+          {'reference': 'other/file#2', 'done': false, 'link': 'file:///etc/passwd'},
+        ],
+      );
+    final host = TestHost();
+    final boards = PlanningBoards(FakePlanningClient([provider('local', source)]));
+    addTearDown(() async {
+      boards.dispose();
+      await tester.runAsync(source.end);
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: planningView(boards: boards, host: host),
+        ),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await settle(tester);
+
+    final actions = {for (final action in planningActions(boards, host)) action.label: action};
+    expect(actions['Open other/file#2 in browser']?.available, isFalse, reason: 'no HTTPS link');
+    final web = actions['Open other/web#1 in browser'];
+    expect(web?.available, isTrue);
+    web!.run();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    expect(host.opened, [Uri.parse('https://example.org/other/web/1')]);
   });
 }

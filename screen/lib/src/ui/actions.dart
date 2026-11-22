@@ -128,6 +128,13 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           movePlanningIssueAction(board, issue, state.name),
       ],
     ],
+    // A wait outside the board, once however many issues wait on it.
+    for (final wait in {
+      for (final story in board.stories)
+        for (final issue in story.issues)
+          for (final wait in issue.waitsHolding) ?wait.reference: wait.link ?? '',
+    }.entries)
+      planningWebAction('Open ${wait.key} in browser', wait.value, host.openLink, onError: board.reportActionProblem),
   ],
 ];
 
