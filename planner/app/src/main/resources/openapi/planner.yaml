@@ -2425,10 +2425,11 @@ components:
           type: string
         kind:
           type: string
+          pattern: '^[a-z][A-Za-z]{0,63}$'
           description: >-
-            story when the tracker's issue type is Story and the issue is in the project's own repository, else
-            issue.
-          enum: [issue, story]
+            An open name of what the issue is; a window shows a kind it does not know as an issue. Known kinds are
+            story, when the tracker's issue type is Story and the issue is in the project's own repository, and
+            issue otherwise.
         link:
           type: string
           format: uri

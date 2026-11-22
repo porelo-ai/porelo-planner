@@ -922,9 +922,7 @@ public class BoardController {
                 issue.id(),
                 issue.repository(),
                 issue.title(),
-                issue.kind() == UnlistedIssue.Kind.STORY
-                        ? org.fuin.porelo.planner.app.answers.UnlistedIssue.KindEnum.STORY
-                        : org.fuin.porelo.planner.app.answers.UnlistedIssue.KindEnum.ISSUE,
+                issue.kind() == UnlistedIssue.Kind.STORY ? "story" : "issue",
                 issue.link());
     }
 

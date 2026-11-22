@@ -135,7 +135,7 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
           for (final wait in issue.waitsHolding) ?wait.reference: wait.link ?? '',
     }.entries)
       planningWebAction('Open ${wait.key} in browser', wait.value, host.openLink, onError: board.reportActionProblem),
-    for (final issue in board.unlisted)
+    for (final issue in board.unlisted.take(planningUnlistedActions))
       planningWebAction(
         'Open ${issue.story ? 'story' : 'issue'} ${issue.id} in browser',
         issue.link,
@@ -144,6 +144,9 @@ List<PlanningAction> planningActions(PlanningBoards boards, PlanningHost host) =
       ),
   ],
 ];
+
+/// The most issues outside the project the actions name, one each: the tracker may hold thousands.
+const planningUnlistedActions = 200;
 
 /// A reported HTTPS address is the sole web destination offered for an item.
 PlanningAction planningWebAction(

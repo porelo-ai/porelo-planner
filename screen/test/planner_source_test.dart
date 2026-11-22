@@ -1583,6 +1583,73 @@ void main() {
     expect((await _refusal(bad)).name, 'BadAnswer');
   });
 
+  // Harm: an issue outside the project shown twice, or shown beside the story, issue or issue outside the workflow
+  // the board already holds by its id, so the person cannot tell which one they act on.
+  test('a streamed board\'s issue outside the project named twice or already on the board ends the watch', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    Map<String, Object?> unlisted(String id) => {
+      'id': id,
+      'repository': 'porelo-project',
+      'title': 'Made by hand',
+      'kind': 'issue',
+      'link': 'https://github.com/porelo-ai/porelo-project/issues/9',
+    };
+    final stories = [
+      {
+        ..._story('porelo-project#1', 'Backlog'),
+        'issues': [_issue('porelo-project#2', 'Backlog')],
+      },
+    ];
+    final outside = [
+      {
+        'id': 'porelo-project#7',
+        'repository': 'porelo-project',
+        'title': 'Lost',
+        'status': 'Accepted',
+        'story': 'porelo-project#1',
+      },
+    ];
+    final boards = <String, Map<String, Object?>>{
+      'named twice': {
+        'unlisted': [unlisted('porelo-project#9'), unlisted('porelo-project#9')],
+      },
+      'a story': {
+        'stories': stories,
+        'unlisted': [unlisted('porelo-project#1')],
+      },
+      'an issue of a story': {
+        'stories': stories,
+        'unlisted': [unlisted('porelo-project#2')],
+      },
+      'an issue outside the workflow': {
+        'stories': stories,
+        'outside': outside,
+        'unlisted': [unlisted('porelo-project#7')],
+      },
+    };
+    final read = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    streams.opened.last.add(
+      _event(
+        'r1',
+        more: {
+          'stories': stories,
+          'outside': outside,
+          'unlisted': [unlisted('porelo-project#9')],
+        },
+      ),
+    );
+    expect((await read).unlisted.single.id, 'porelo-project#9', reason: 'an issue the board holds nowhere else');
+    for (final MapEntry(key: name, value: more) in boards.entries) {
+      final opened = streams.opened.length;
+      final bad = source.watchStories('demo').first;
+      await _until(() => streams.opened.length > opened, 'the stream for $name');
+      streams.opened.last.add(_event('r1', more: more));
+      expect((await _refusal(bad)).name, 'BadAnswer', reason: name);
+    }
+  });
+
   // Harm: an id past its bound would go back to the planner as an endless header.
   test('an event id longer than 200 characters ends the watch', () async {
     final (planner, source) = await _started();

@@ -1702,11 +1702,19 @@ class _Watch {
           'the planner streamed an issue outside the workflow it cannot name',
         );
       }
+      // An issue outside the project is named once, and by no id the board holds otherwise.
+      final held = {
+        for (final story in snapshot.stories) ...[story.id, for (final issue in story.issues) issue.id],
+        for (final issue in snapshot.outside) issue.id,
+      };
+      final named = <String>{};
       if (snapshot.unlisted.any(
         (issue) =>
             !HttpPlanningSource._issueId.hasMatch(issue.id) ||
             !HttpPlanningSource._name.hasMatch(issue.repository) ||
-            !issue.id.startsWith('${issue.repository}#'),
+            !issue.id.startsWith('${issue.repository}#') ||
+            held.contains(issue.id) ||
+            !named.add(issue.id),
       )) {
         throw const PlanningRefusal(
           'BadAnswer',

@@ -5,8 +5,9 @@ import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/story_work_support.dart';
 
-/// A board of one story whose planner names [unlisted] as the issues outside the project, shown through [host].
-Future<MockPlanningSource> _showBoard(
+/// A board of one story whose planner names [unlisted] as the issues outside the project, shown through [host]; its
+/// source and boards.
+Future<(MockPlanningSource, PlanningBoards)> _showBoard(
   WidgetTester tester,
   TestHost host, {
   List<Map<String, Object?>>? unlisted,
@@ -51,7 +52,7 @@ Future<MockPlanningSource> _showBoard(
     ),
   );
   await settle(tester);
-  return backend;
+  return (backend, boards);
 }
 
 Map<String, Object?> _issue(String id, String title, {String kind = 'issue', String? link}) => {
@@ -69,7 +70,7 @@ void main() {
     tester,
   ) async {
     final host = TestHost();
-    final backend = await _showBoard(
+    final (backend, _) = await _showBoard(
       tester,
       host,
       unlisted: [
@@ -101,6 +102,16 @@ void main() {
     await settle(tester);
 
     expect(find.byKey(const Key('planning-unlisted')), findsNothing, reason: 'an empty list shows no section');
+
+    data['unlisted'] = [_issue('other#5', 'Made later by hand')];
+    backend.push('checkout', data);
+    await settle(tester);
+
+    expect(
+      find.byKey(const Key('planning-unlisted other#5')),
+      findsOneWidget,
+      reason: 'a list a later board names is shown',
+    );
   });
 
   // Harm: a board from a planner that sends no list shows an empty section, or fails to show.
@@ -149,5 +160,20 @@ void main() {
       final button = tester.widget<IconButton>(find.byKey(Key('planning-unlisted-open $id')));
       expect(button.onPressed, isNull, reason: '$id is offered greyed');
     }
+  });
+
+  // Harm: a tracker with thousands of open issues outside the project makes as many actions, built anew on every
+  // change, so the window slows on each one.
+  testWidgets('the actions name at most a fixed number of issues outside the project', (tester) async {
+    final host = TestHost();
+    final (_, boards) = await _showBoard(
+      tester,
+      host,
+      unlisted: [for (var n = 1; n <= planningUnlistedActions + 50; n++) _issue('own#$n', 'By hand $n')],
+    );
+
+    final named = planningActions(boards, host).where((action) => action.label.startsWith('Open issue own#'));
+    expect(named, hasLength(planningUnlistedActions));
+    expect(named.first.label, 'Open issue own#1 in browser', reason: 'the first ones in the planner\'s order');
   });
 }
