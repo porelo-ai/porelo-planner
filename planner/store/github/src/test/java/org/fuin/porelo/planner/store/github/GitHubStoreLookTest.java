@@ -152,6 +152,15 @@ class GitHubStoreLookTest {
         /** GitHub's failure of the REST list, or null while it answers. */
         private @Nullable RuntimeException listFailure;
 
+        /** GitHub's failure of a read by id of the issue #2, or null while it answers. */
+        private @Nullable RuntimeException boardFailure;
+
+        /** The reads by id of the issue #2 answered before the failure. */
+        private int boardCallsBeforeFailure;
+
+        /** The items the REST list does not carry yet, as GitHub's list lags an item just made. */
+        private final java.util.Set<String> unlisted = new java.util.HashSet<>();
+
         /** Run as the list is asked, before it answers. */
         private Runnable onList = () -> {};
 
@@ -209,6 +218,11 @@ class GitHubStoreLookTest {
         public GitHubGraphQl.IssueBoard issueBoard(
                 final String token, final List<String> issueIds, final String projectId) {
             calls.add("issueBoard of " + issueIds);
+            if (boardFailure != null
+                    && issueIds.contains("I_2")
+                    && boardCallsBeforeFailure-- <= 0) {
+                throw boardFailure;
+            }
             assertThat(projectId).as("the project's node id").isEqualTo("PVT_7");
             final List<GitHubGraphQl.@Nullable IssueOnBoard> on = new ArrayList<>();
             for (final String id : issueIds) {
@@ -249,7 +263,7 @@ class GitHubStoreLookTest {
 
         private List<ProjectItemSummary> summaries() {
             return issues.values().stream()
-                    .filter(held -> held.onProject)
+                    .filter(held -> held.onProject && !unlisted.contains(held.item))
                     .map(
                             held ->
                                     new ProjectItemSummary(
@@ -707,5 +721,85 @@ class GitHubStoreLookTest {
                 .as("the order after a whole read whose list lags")
                 .containsExactly("example-project#3", "example-project#2");
         assertThat(heldInCopy()).as("the save after the whole read").isEmpty();
+    }
+
+    @Test
+    void aSaveOfAnItemTheListDoesNotCarryYetIsReadByIdAtTheNextLook() {
+        // Harm: a change GitHub took to an issue the planner just saved stays hidden behind the
+        // save until a whole read, since the lagging list neither names nor shows that issue.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(
+                        writes -> {
+                            writes.updateIssue(
+                                    TOKEN, OWNER, "example-project", 2, "Saved", null, null);
+                            final Held made = Objects.requireNonNull(github.issues.get("I_2"));
+                            made.title = "Saved";
+                            made.at = SAVED;
+                        });
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        store.poll();
+        // The list from before the new issue, which GitHub's list shows only a moment later.
+        github.lagList();
+        github.add(2, false, "Two");
+        store.refresh();
+        save(store);
+        assertThat(heldInCopy()).as("the save of the issue the list lacks").contains("PVTI_2");
+
+        final Held two = Objects.requireNonNull(github.issues.get("I_2"));
+        two.title = "Changed on GitHub";
+        two.at = LATER;
+        github.calls.clear();
+        final Board polled = store.poll();
+
+        assertThat(Objects.requireNonNull(issue(polled, 2)).title())
+                .as("the issue after the look")
+                .isEqualTo("Changed on GitHub");
+        assertThat(github.calls)
+                .as("the look's read by id of the save the list lacks")
+                .anyMatch(call -> call.startsWith("issueBoard") && call.contains("I_2"));
+        assertThat(heldInCopy())
+                .as("the save after the look, until the list shows it")
+                .contains("PVTI_2");
+    }
+
+    @Test
+    void aFailedReadByIdOfASaveKeepsWhatTheLookNamed() {
+        // Harm: the look's cursor moves past a change it named, so the change is never shown until
+        // a whole read, because the read by id of a held save failed after it.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(3, false, "Three");
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(
+                        writes -> {
+                            writes.updateIssue(
+                                    TOKEN, OWNER, "example-project", 2, "Saved", null, null);
+                            final Held made = Objects.requireNonNull(github.issues.get("I_2"));
+                            made.title = "Saved";
+                            made.at = SAVED;
+                        });
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        store.poll();
+        github.add(2, false, "Two");
+        github.unlisted.add("PVTI_2");
+        store.refresh();
+        save(store);
+        other.option = "O_finished";
+        other.itemAt = LATER;
+        // The look's own question whether the unlisted issue is gone is answered; the read again
+        // fails.
+        github.boardFailure = GitHubExceptions.refused(502, "Bad gateway");
+        github.boardCallsBeforeFailure = 1;
+
+        final Board polled = store.poll();
+
+        assertThat(Objects.requireNonNull(issue(polled, 3)).state())
+                .as("the change the look named")
+                .isEqualTo("Finished");
+        assertThat(heldInCopy()).as("the save whose read by id failed").contains("PVTI_2");
     }
 }

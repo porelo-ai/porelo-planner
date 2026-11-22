@@ -745,10 +745,11 @@ public final class GitHubStore implements PlanningStore {
                                 cursor = changed.next();
                                 saves.looked(changed, base, saved, listed);
                                 moved |= tookTimes(base, listed);
-                                if (moved) {
-                                    hold(base, false);
+                                final Snapshot read = readUnshown(now, base, saved);
+                                if (moved || read != base) {
+                                    hold(read, false);
                                 }
-                                return base;
+                                return read;
                             }
                             final Map<String, GitHubGraphQl.ProjectItem> kept =
                                     new LinkedHashMap<>(base.raw());
@@ -809,6 +810,7 @@ public final class GitHubStore implements PlanningStore {
                             cursor = changed.next();
                             saves.looked(changed, folded, saved, listed);
                             tookTimes(folded, listed);
+                            folded = readUnshown(now, folded, saved);
                             hold(folded, false);
                             LOG.info(
                                     "Took {} changed, {} new and {} gone items since the last look into"
@@ -890,6 +892,44 @@ public final class GitHubStore implements PlanningStore {
             issue.subIssues().nodes().forEach(ref -> children.add(ref.id()));
         }
         return children;
+    }
+
+    /**
+     * Reads again by id the saves held of items a look's list does not carry yet, so the board
+     * takes GitHub's answer for them at the look instead of at the next whole read; runs under the
+     * lock.
+     */
+    private Snapshot readUnshown(
+            final ProjectConfig now, final Snapshot board, final List<Touched.Ids> during) {
+        final Map<String, String> unshown = saves.unshown(cursor, during);
+        if (unshown.isEmpty()) {
+            return board;
+        }
+        final Snapshot read;
+        try {
+            read =
+                    parts.reader()
+                            .reread(
+                                    now,
+                                    board,
+                                    new Touched.Ids(
+                                            new LinkedHashSet<>(unshown.keySet()),
+                                            Set.of(),
+                                            Set.of(),
+                                            Set.of()));
+        } catch (final RuntimeException e) {
+            // The look's own changes are folded and its cursor taken; only these saves wait.
+            LOG.warn(
+                    "Could not read {} own saves again by id; they stay held: {}",
+                    unshown.size(),
+                    refused(e).getMessage());
+            return board;
+        }
+        saves.refreshed(read, unshown.values(), cursor);
+        LOG.info(
+                "Read {} own saves again by id that GitHub's list does not carry yet",
+                unshown.size());
+        return read;
     }
 
     /**

@@ -27,8 +27,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A save that changed only an issue's links - its parent, its sub-issues, its blockers or their
  * order - changes nothing the REST list compares; it is released by the next whole read, after the
- * item is read again by id, or by a look that names the item, which reads it again by id. A save is
- * dropped otherwise only when GitHub says the item is gone or the write failed.
+ * item is read again by id, or by a look that names the item, which reads it again by id. A look
+ * reads by id a save of an item no page of the list carries yet, such as one just made, so GitHub's
+ * own later changes to it are seen; that save stays held until the list shows it. A save is dropped
+ * otherwise only when GitHub says the item is gone or the write failed.
  */
 final class HeldSaves {
 
@@ -44,6 +46,14 @@ final class HeldSaves {
     private record Held(TrackedItem item, @Nullable String tag, boolean linksOnly) {}
 
     private final Map<String, Held> held = new LinkedHashMap<>();
+
+    /**
+     * How often a look read each save again by id; a list that never carries it stops the reads.
+     */
+    private final Map<String, Integer> readById = new LinkedHashMap<>();
+
+    /** The most reads by id one save gets from looks; a whole read still reads it after. */
+    static final int MOST_READS_BY_ID = 3;
 
     /**
      * Takes the saves a board's copy kept, each with the tag its page had in the copy's cursor.
@@ -283,6 +293,36 @@ final class HeldSaves {
             return true;
         }
         return issueTime != null && !issueTime.isBefore(issue.updatedAt());
+    }
+
+    /**
+     * Answers the saves of items no page of a look's list carries yet, to be read again by id: the
+     * list cannot show GitHub's own later changes to them. A save of only links is left out, since
+     * a read by id releases it and a whole read whose list lags would then put its links back; a
+     * save made while the look ran is left for the next look, which tells something of it.
+     *
+     * @param cursor where the look stands now
+     * @param during what the saves made while the look ran touched
+     * @return the items' ids of those saves, by their issues' node ids
+     */
+    synchronized Map<String, String> unshown(
+            final ChangeCursor cursor, final List<Touched.Ids> during) {
+        final Map<String, String> unshown = new LinkedHashMap<>();
+        readById.keySet().retainAll(held.keySet());
+        for (final Held save : held.values()) {
+            final TrackedItem.Issue issue = save.item().issue();
+            if (issue == null
+                    || during.stream().anyMatch(touched -> matches(save.item(), touched))) {
+                continue;
+            }
+            if (!save.linksOnly()
+                    && pageTag(cursor, save.item().id()) == null
+                    && readById.getOrDefault(save.item().id(), 0) < MOST_READS_BY_ID) {
+                unshown.put(issue.id(), save.item().id());
+                readById.merge(save.item().id(), 1, Integer::sum);
+            }
+        }
+        return unshown;
     }
 
     /** The tag of the page of a cursor that lists an item, or null when none does. */
