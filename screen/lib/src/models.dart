@@ -585,6 +585,7 @@ class PlanningSnapshot {
        // A save may mend or break a rule; none is shown until the next whole board names them anew.
        rules = const [],
        rulesReported = false,
+       reasons = source.reasons,
        statesReported = source.statesReported,
        phasesReported = source.phasesReported,
        storiesReported = source.storiesReported,
@@ -605,6 +606,7 @@ class PlanningSnapshot {
           if (breach.item.isNotEmpty && breach.words.isNotEmpty) breach,
       ],
       rulesReported = map['rules'] is List,
+      reasons = map['reasons'] == true,
       repositories = _planStrings(map['repositories']),
       repositoriesReported = _planStringsReported(map['repositories']),
       states = _planList(map['states'], PlanState.from),
@@ -627,6 +629,8 @@ class PlanningSnapshot {
       // Only a whole board names the breaches; a story list read beside the workflow names none.
       rules = board.rules,
       rulesReported = board.rulesReported,
+      // The workflow says whether its store keeps reasons; a story list does not.
+      reasons = board.statesReported ? board.reasons : workflow.reasons,
       states = workflow.states,
       phases = workflow.phases,
       stories = board.stories,
@@ -645,6 +649,7 @@ class PlanningSnapshot {
       repositoriesReported = source.repositoriesReported,
       rules = whole.rules,
       rulesReported = whole.rulesReported,
+      reasons = source.reasons,
       states = source.states,
       phases = source.phases,
       stories = source.stories,
@@ -672,6 +677,9 @@ class PlanningSnapshot {
 
   /// Whether a whole board named the breaches, so [rules] says what this revision breaks.
   final bool rulesReported;
+
+  /// Whether the store keeps a move's reason with the item it closes; false when the planner did not say.
+  final bool reasons;
 
   /// Whether the planner sent the repository list, which a streamed whole board must carry.
   final bool repositoriesReported;
@@ -793,14 +801,36 @@ sealed class PlanningMove {
   /// The requested state.
   String get to;
 
+  /// The person's one sentence why the item is closed, sent only on a move into a closed state; null for none.
+  String? get reason;
+
+  /// This move with [reason], or with none for null or a blank one.
+  PlanningMove withReason(String? reason);
+
   /// The wire fields identifying the kind of work.
   Map<String, dynamic> toMap();
 }
 
+/// The reason as it is sent: trimmed, and none when blank.
+String? planningReason(String? reason) {
+  final trimmed = reason?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// The most characters, counted as Unicode code points after trimming, a move's reason holds.
+const planningMostReason = 280;
+
 /// One story destination in an atomic board save.
 class PlanningStoryMove extends PlanningMove {
   /// Keeps the daemon's story identifier and destination; [follow] hands a given story back to its issues.
-  const PlanningStoryMove(this.story, this.to, {this.follow = false});
+  const PlanningStoryMove(this.story, this.to, {this.follow = false, this.reason});
+
+  @override
+  final String? reason;
+
+  @override
+  PlanningStoryMove withReason(String? reason) =>
+      PlanningStoryMove(story, to, follow: follow, reason: planningReason(reason));
 
   /// Whether the story gives up its given state for [to], the state its issues give.
   final bool follow;
@@ -820,13 +850,24 @@ class PlanningStoryMove extends PlanningMove {
   /// The wire fields.
   @override
   /// Serializes the complete record with its stable identity.
-  Map<String, dynamic> toMap() => {'story': story, 'to': to, if (follow) 'follow': true};
+  Map<String, dynamic> toMap() => {
+    'story': story,
+    'to': to,
+    if (follow) 'follow': true,
+    'reason': ?planningReason(reason),
+  };
 }
 
 /// One issue destination sent as part of an atomic issue move.
 class PlanningIssueMove extends PlanningMove {
   /// Keeps the daemon's issue identifier and destination.
-  const PlanningIssueMove(this.issue, this.to);
+  const PlanningIssueMove(this.issue, this.to, {this.reason});
+
+  @override
+  final String? reason;
+
+  @override
+  PlanningIssueMove withReason(String? reason) => PlanningIssueMove(issue, to, reason: planningReason(reason));
 
   /// The issue to move.
   final String issue;
@@ -843,7 +884,7 @@ class PlanningIssueMove extends PlanningMove {
   /// The wire fields.
   @override
   /// Serializes the complete record with its stable identity.
-  Map<String, dynamic> toMap() => {'issue': issue, 'to': to};
+  Map<String, dynamic> toMap() => {'issue': issue, 'to': to, 'reason': ?planningReason(reason)};
 }
 
 /// The daemon's confirmation, without inventing a missing result or revision.

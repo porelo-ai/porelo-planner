@@ -108,10 +108,22 @@ class _StoryStart {
   bool confirmed = false;
 }
 
-/// A move whose preview warned: it waits for the person's Confirm or Cancel, and nothing is saved before.
+/// A move whose preview warned, or one into a closed state whose store keeps a reason: it waits for the person's
+/// Confirm or Cancel, and nothing is saved before.
 class PlanningMoveQuestion {
-  /// Takes the move, its preview and the revision the preview was answered for.
-  PlanningMoveQuestion(this.key, this.move, this.preview, this.revision, {this.again = false});
+  /// Takes the move, its preview and the revision the preview was answered for; [asksReason] offers the reason, which
+  /// starts as the one the move carries, so a move asked about again keeps what was typed.
+  PlanningMoveQuestion(this.key, this.move, this.preview, this.revision, {this.again = false, this.asksReason = false})
+    : reason = ValueNotifier(move.reason ?? '');
+
+  /// Whether the person may give a reason why the item is closed, which may stay empty.
+  final bool asksReason;
+
+  /// The reason as typed, trimmed when it is sent.
+  final ValueNotifier<String> reason;
+
+  /// Whether the typed reason is too long to send: more than [planningMostReason] code points after trimming.
+  bool get reasonTooLong => asksReason && reason.value.trim().runes.length > planningMostReason;
 
   /// The move's key in [PlanningBoard.pending].
   final String key;
@@ -1580,13 +1592,19 @@ class PlanningBoard extends ChangeNotifier {
     }
     if (!_current(generation)) return;
     final shown = preview.withWarnings(_localWarnings(move, preview));
-    if (shown.warnings.isEmpty && !again) {
+    final asksReason = _asksReason(move);
+    if (shown.warnings.isEmpty && !again && !asksReason) {
       await _save(key, move, shown, revision, generation, source, name);
       return;
     }
-    question = PlanningMoveQuestion(key, move, shown, revision, again: again);
+    question = PlanningMoveQuestion(key, move, shown, revision, again: again, asksReason: asksReason);
     _changed();
   }
+
+  /// Whether a move closes its item on a store that keeps the person's reason, so it is asked about first; a story
+  /// that follows its issues closes nothing itself.
+  bool _asksReason(PlanningMove move) =>
+      snapshot?.reasons == true && state(move.to)?.kind == 'CLOSED' && !(move is PlanningStoryMove && move.follow);
 
   /// A start this window handed to Porelo that the planner does not report yet, a story's own or a follow-up task's,
   /// which no digest covers.
@@ -1608,15 +1626,28 @@ class PlanningBoard extends ChangeNotifier {
   /// Saves the move asked about, confirmed: the planner stops the running work it named with the save, after the
   /// preview's digest matched, and the window ends exactly the tasks the save names; a start this window handed on
   /// that the planner does not report yet is cancelled here.
+  ///
+  /// The reason typed goes with the move, trimmed, or none when it is empty; a question that asked only for the reason
+  /// confirms no warning.
   Future<void> confirmMove() async {
     final asked = question;
-    if (_disposed || asked == null) return;
+    if (_disposed || asked == null || asked.reasonTooLong) return;
     question = null;
     _changed();
     for (final warning in asked.warnings) {
       if (warning.kind == PlanningMoveWarning.runningWork && warning.local) runOf(warning.item).cancel();
     }
-    await _save(asked.key, asked.move, asked.preview, asked.revision, _generation, backend, project, confirmed: true);
+    final move = asked.asksReason ? asked.move.withReason(asked.reason.value) : asked.move;
+    await _save(
+      asked.key,
+      move,
+      asked.preview,
+      asked.revision,
+      _generation,
+      backend,
+      project,
+      confirmed: asked.warnings.isNotEmpty || asked.again,
+    );
   }
 
   /// Drops the move asked about; nothing was sent, so its card stands where the planner reports it.

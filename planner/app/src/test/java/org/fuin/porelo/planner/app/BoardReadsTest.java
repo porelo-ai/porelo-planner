@@ -320,7 +320,10 @@ class BoardReadsTest {
         // Harm: a window following the stream losing the mark the board's read showed.
         final org.fuin.porelo.planner.app.answers.Board streamed =
                 BoardController.boardOf(
-                        board(), new WorkRun.Snapshot(0, Map.of()), BoardReadsTest::storyState);
+                        board(),
+                        new WorkRun.Snapshot(0, Map.of()),
+                        BoardReadsTest::storyState,
+                        false);
         assertThat(streamed.stories())
                 .as("ST1 given Review over AB01 in Backlog; ST2 by its issues")
                 .extracting(org.fuin.porelo.planner.app.answers.Story::misfits)

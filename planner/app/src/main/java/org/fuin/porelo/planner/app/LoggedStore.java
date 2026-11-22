@@ -90,6 +90,11 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public boolean keepsReasons() {
+        return store.keepsReasons();
+    }
+
+    @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         return store.createIssue(revision, issue);
     }

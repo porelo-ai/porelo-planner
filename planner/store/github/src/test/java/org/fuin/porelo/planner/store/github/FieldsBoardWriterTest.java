@@ -249,6 +249,14 @@ class FieldsBoardWriterTest {
         private final List<String> updates = new ArrayList<>();
         private final Map<Integer, String> bodies = new LinkedHashMap<>();
         private final List<String> comments = new ArrayList<>();
+
+        /** The comments written, by the issue's number, which a later read of them finds. */
+        private final Map<Integer, List<String>> commented = new LinkedHashMap<>();
+
+        /** The comment written that fails, counted from 1, and how many were tried; 0 for none. */
+        private int failingComment;
+
+        private int commentsTried;
         private final List<String> standing = new ArrayList<>();
         private final List<String> calls = new ArrayList<>();
         private final Map<String, List<Found>> made = new LinkedHashMap<>();
@@ -536,7 +544,9 @@ class FieldsBoardWriterTest {
             if (endless || page <= pagesBefore) {
                 return new CommentsPage(List.of(), true);
             }
-            return new CommentsPage(page == pagesBefore + 1 ? standing : List.of(), false);
+            final List<String> found = new ArrayList<>(standing);
+            found.addAll(commented.getOrDefault(number, List.of()));
+            return new CommentsPage(page == pagesBefore + 1 ? found : List.of(), false);
         }
 
         @Override
@@ -548,7 +558,11 @@ class FieldsBoardWriterTest {
                 final String body) {
             calls.add("createIssueComment");
             assertThat(token).as("the comment written with the person's token").isEqualTo(TOKEN);
+            if (++commentsTried == failingComment) {
+                throw GitHubExceptions.refused(502, "bad gateway");
+            }
             comments.add(body);
+            commented.computeIfAbsent(number, key -> new ArrayList<>()).add(body);
         }
     }
 
@@ -1064,6 +1078,136 @@ class FieldsBoardWriterTest {
                 .as("the values written")
                 .extracting(FieldValue::fieldId)
                 .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
+    }
+
+    private static final Writes.Reason BUILT = new Writes.Reason("Finished", "Built as asked.");
+
+    /** A story's item, as the board reads one by its label. */
+    private static ItemView storyItem(final String id, final int number) {
+        final ItemView plain = item(id, "example-project", number, true, "", Map.of());
+        return new ItemView(
+                plain.itemId(),
+                plain.issueId(),
+                plain.repository(),
+                plain.number(),
+                plain.title(),
+                plain.body(),
+                plain.open(),
+                plain.stateReason(),
+                plain.fields(),
+                List.of(IssueMapping.STORY_LABEL),
+                plain.parentIssueId(),
+                plain.subIssueIds(),
+                plain.blockedByIds(),
+                plain.comments(),
+                plain.link(),
+                plain.updatedAt(),
+                plain.archived());
+    }
+
+    private static Writes closing(
+            final Map<String, String> issues,
+            final Map<String, Writes.Reason> issueReasons,
+            final Map<String, Writes.Reason> storyReasons) {
+        return new Writes(
+                issues, Map.of(), List.of(), Map.of(), Map.of(), issueReasons, storyReasons);
+    }
+
+    @Test
+    void aReasonIsKeptAsAMarkedCommentOnEachItemAfterTheItemIsClosed() {
+        // Harm: the person's sentence lost, or written to an item GitHub still shows open.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final ItemView story = storyItem("ST1", 2);
+        final GitHub github = new GitHub().holding(one, story);
+
+        github.writer()
+                .save(
+                        snapshot(one, story),
+                        SHOWN,
+                        closing(
+                                Map.of("PL1", "Finished"),
+                                Map.of("PL1", BUILT),
+                                Map.of("ST1", BUILT)));
+
+        final String comment = "<!-- porelo:closing Finished -->\nFinished: ` Built as asked. `";
+        assertThat(github.commented)
+                .as("one comment on the issue and one on the story")
+                .containsExactly(Map.entry(1, List.of(comment)), Map.entry(2, List.of(comment)));
+        assertThat(github.calls.indexOf("createIssueComment"))
+                .as("after the close")
+                .isGreaterThan(github.calls.lastIndexOf("updateIssue"));
+    }
+
+    @Test
+    void aMoveWithoutAReasonWritesNoCommentAndReadsNone() {
+        // Harm: an empty or stray comment on every close.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(one);
+
+        github.writer()
+                .save(
+                        snapshot(one),
+                        SHOWN,
+                        new Writes(Map.of("PL1", "Finished"), Map.of(), List.of()));
+
+        assertThat(github.calls).doesNotContain("createIssueComment", "issueComments");
+    }
+
+    @Test
+    void aCommentThatFailsAfterTheCloseIsPartlySavedAndTheSameMoveAgainWritesWhatIsMissingOnce() {
+        // Harm: a close answered as refused while it stands, or a reason never written, or
+        // written twice, after a comment GitHub refused.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final ItemView story = storyItem("ST1", 2);
+        final GitHub github = new GitHub().holding(one, story);
+        // The issue's comment goes first and stands; the story's fails.
+        github.failingComment = 2;
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(one, story),
+                                                SHOWN,
+                                                closing(
+                                                        Map.of("PL1", "Finished"),
+                                                        Map.of("PL1", BUILT),
+                                                        Map.of("ST1", BUILT))))
+                .isInstanceOf(StoreException.PartlySaved.class);
+        assertThat(github.commented).as("the issue's comment stands").containsOnlyKeys(1);
+
+        // The board now shows the issue closed, so the same story move again keeps the story's.
+        final ItemView closed = item("PL1", "example-project", 1, false, "", state("Finished"));
+        github.holding(closed);
+        for (int again = 0; again < 2; again++) {
+            github.writer()
+                    .save(
+                            snapshot(closed, story),
+                            SHOWN,
+                            closing(Map.of(), Map.of(), Map.of("ST1", BUILT)));
+        }
+        assertThat(github.commented.get(2)).as("written once, not twice").hasSize(1);
+        assertThat(github.commented.get(1)).as("the issue's not again").hasSize(1);
+    }
+
+    @Test
+    void aReasonForAnotherClosedStateIsNotTakenForTheOneStanding() {
+        // Harm: a rejection's sentence skipped since a Finished one stands from before.
+        final ItemView story = storyItem("ST1", 2);
+        final GitHub github = new GitHub().holding(story);
+        github.standing.add(ClosingComment.write(BUILT));
+
+        github.writer()
+                .save(
+                        snapshot(story),
+                        SHOWN,
+                        closing(
+                                Map.of(),
+                                Map.of(),
+                                Map.of("ST1", new Writes.Reason("Rejected", "Not wanted."))));
+
+        assertThat(github.comments)
+                .containsExactly("<!-- porelo:closing Rejected -->\nRejected: ` Not wanted. `");
     }
 
     @Test

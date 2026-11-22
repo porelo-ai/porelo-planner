@@ -604,6 +604,38 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aSaveKeepingAReasonIsRefusedBeforeAnythingIsWrittenSinceTheGitStoreKeepsNone()
+            throws Exception {
+        // Harm: the person's sentence dropped unsaid while the close is committed and pushed.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        assertThat(store.keepsReasons()).as("the window offers no reason here").isFalse();
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                store.save(
+                                        board.revision(),
+                                        new Writes(
+                                                Map.of("AB02", "Finished"),
+                                                Map.of(),
+                                                List.of(),
+                                                Map.of(),
+                                                Map.of(),
+                                                Map.of(
+                                                        "AB02",
+                                                        new Writes.Reason("Finished", "Built.")),
+                                                Map.of())));
+
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.subject()).isEqualTo("AB02");
+        assertThat(head(OWN)).as("nothing pushed").isEqualTo(own);
+        assertThat(store.board().revision()).as("nothing committed").isEqualTo(board.revision());
+    }
+
+    @Test
     void aStorysStatedStateIsWrittenAndRemovedInItsHead() throws Exception {
         // A stated state left behind would hold the story where its issues no longer stand.
         final GitStore store = store();

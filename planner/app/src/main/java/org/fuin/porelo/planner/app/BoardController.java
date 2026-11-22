@@ -148,12 +148,31 @@ public class BoardController {
      * @param issue the issue's id, or null
      * @param to the state it moves to
      * @param follow for a story, true when it gives up its given state for the one its issues give
+     * @param reason the person's one sentence why the item is closed, or null
      */
     public record MoveBody(
             @Nullable String story,
             @Nullable String issue,
             @Nullable String to,
-            @Nullable Boolean follow) {
+            @Nullable Boolean follow,
+            @Nullable String reason) {
+
+        /**
+         * One move without a reason.
+         *
+         * @param story the story's id, or null
+         * @param issue the issue's id, or null
+         * @param to the state it moves to
+         * @param follow for a story, true when it gives up its given state for the one its issues
+         *     give
+         */
+        public MoveBody(
+                final @Nullable String story,
+                final @Nullable String issue,
+                final @Nullable String to,
+                final @Nullable Boolean follow) {
+            this(story, issue, to, follow, null);
+        }
 
         /**
          * One plain move.
@@ -166,7 +185,7 @@ public class BoardController {
                 final @Nullable String story,
                 final @Nullable String issue,
                 final @Nullable String to) {
-            this(story, issue, to, null);
+            this(story, issue, to, null, null);
         }
     }
 
@@ -318,16 +337,11 @@ public class BoardController {
                             Boolean.TRUE.equals(body.confirm()),
                             store::storyState,
                             runs);
-            if (planned.issues().isEmpty()
-                    && planned.stories().isEmpty()
-                    && planned.unstated().isEmpty()) {
+            if (planned.none()) {
                 // Nothing changes, so no repository is locked or asked.
                 return new Moved(board.revision().value(), planned.moved(), List.of());
             }
-            saved =
-                    store.save(
-                            board.revision(),
-                            new Writes(planned.issues(), planned.stories(), planned.unstated()));
+            saved = store.save(board.revision(), planned.writes());
         } catch (final StoreException.PartlySaved e) {
             // The repositories pushed first hold the save, and every window shows what they hold.
             throw e;
@@ -724,7 +738,13 @@ public class BoardController {
             if (to == null || !STATE.matcher(to).matches()) {
                 throw notAllowed(id, "", "The destination must be a state's name.");
             }
-            moves.add(new Moves.Move(story != null, id, to, Boolean.TRUE.equals(move.follow())));
+            moves.add(
+                    new Moves.Move(
+                            story != null,
+                            id,
+                            to,
+                            Boolean.TRUE.equals(move.follow()),
+                            move.reason()));
         }
         return moves;
     }
@@ -786,16 +806,19 @@ public class BoardController {
     @GetMapping("/projects/{project}/workflow")
     public org.fuin.porelo.planner.app.answers.Workflow workflow(
             @PathVariable("project") final String project) {
-        return workflowOf(board(project));
+        final PlanningStore store = projects.store(name(project));
+        return workflowOf(store.board(), store.keepsReasons());
     }
 
     /**
      * Maps a board's workflow, with its states' kinds and its sound work rules.
      *
      * @param board the board
+     * @param reasons whether the board's store keeps a move's reason
      * @return the workflow's answer
      */
-    static org.fuin.porelo.planner.app.answers.Workflow workflowOf(final Board board) {
+    static org.fuin.porelo.planner.app.answers.Workflow workflowOf(
+            final Board board, final boolean reasons) {
         final Workflow workflow = board.workflow();
         final WorkRules.Checked checked = WorkRules.check(workflow, board.work());
         final List<org.fuin.porelo.planner.app.answers.WorkRule> work = new ArrayList<>();
@@ -814,7 +837,8 @@ public class BoardController {
                         .map(phase -> new Phase(phase.name(), phase.states()))
                         .toList(),
                 work,
-                Stream.concat(board.faults().stream(), checked.faults().stream()).toList());
+                Stream.concat(board.faults().stream(), checked.faults().stream()).toList(),
+                reasons);
     }
 
     /**
@@ -823,11 +847,15 @@ public class BoardController {
      * @param board the board
      * @param snapshot the local work generation
      * @param derive derives a story's state from its issues, as the board's store does
+     * @param reasons whether the board's store keeps a move's reason
      * @return the workflow's answer and every story in one
      */
     static org.fuin.porelo.planner.app.answers.Board boardOf(
-            final Board board, final WorkRun.Snapshot snapshot, final Moves.StoryState derive) {
-        final org.fuin.porelo.planner.app.answers.Workflow workflow = workflowOf(board);
+            final Board board,
+            final WorkRun.Snapshot snapshot,
+            final Moves.StoryState derive,
+            final boolean reasons) {
+        final org.fuin.porelo.planner.app.answers.Workflow workflow = workflowOf(board, reasons);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new org.fuin.porelo.planner.app.answers.Board(
                 workflow.revision(),
@@ -836,6 +864,7 @@ public class BoardController {
                 workflow.phases(),
                 workflow.work(),
                 workflow.faults(),
+                reasons,
                 board.stories().stream()
                         .map(story -> story(board, story, snapshot, derive, counter))
                         .toList(),

@@ -67,6 +67,9 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       // A story hands its given state back to its issues only to the state they give now, as the planner checks.
       if (!isStory) invalid('Only a story follows its issues.');
       if (!states.any((state) => state['name'] == to)) refuse('StateNotAllowed', {'item': id, 'from': from, 'to': to});
+      if (_reasonRefused(move, true, true, from == to) case final reason?) {
+        refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
+      }
       if (batch.length > 1) invalid('A story follows its issues in a batch of its own.');
       void refused(String reason) => refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
       final derived = _derived(states, story!);
@@ -90,6 +93,9 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
         'to': to,
         'reason': 'The destination must be a configured waiting or closed state.',
       });
+    }
+    if (_reasonRefused(move, target['kind'] == 'CLOSED', isStory, from == to) case final reason?) {
+      refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
     }
     if (isStory) {
       final issues = (story!['issues'] as List? ?? []).cast<Map<String, dynamic>>();
@@ -204,6 +210,32 @@ const _rejected = 'Rejected';
 
 /// The state the last work of the board's rules leads to, where finished work waits for the person's test; null when
 /// the board has no work rules.
+/// The planner's words refusing a move's reason, or null when it has none or may keep it: at most 280 code points
+/// after trimming, none that hides or turns text, and only with a move that closes its item; a blank one is none.
+String? _reasonRefused(Map<String, dynamic> move, bool closes, bool isStory, bool unchanged) {
+  final reason = (move['reason'] as String? ?? '').trim();
+  if (reason.isEmpty) return null;
+  if (reason.runes.length > 280) return 'A reason holds at most 280 characters.';
+  if (reason.runes.any(_unshown)) {
+    return 'A reason holds no control, line or paragraph separator, bidirectional control or zero-width character.';
+  }
+  if (move['follow'] == true) return 'A story that follows its issues closes nothing, so it takes no reason.';
+  if (!closes) return 'A reason is taken only with a move into a closed state.';
+  if (!isStory && unchanged) return 'It is in that state already; a reason goes only with the move that closes it.';
+  return null;
+}
+
+bool _unshown(int c) =>
+    c < 0x20 ||
+    (c >= 0x7F && c <= 0x9F) ||
+    c == 0x2028 ||
+    c == 0x2029 ||
+    (c >= 0x200B && c <= 0x200F) ||
+    (c >= 0x202A && c <= 0x202E) ||
+    c == 0x2060 ||
+    (c >= 0x2066 && c <= 0x2069) ||
+    c == 0xFEFF;
+
 String? _lastDone(List<Map<String, dynamic>> states, Object? work) {
   int place(Object? state) => states.indexWhere((each) => each['name'] == state);
   String? last;
@@ -298,7 +330,14 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
   final revision = source['revision'] as String;
   return {
     'revision': revision,
-    'digest': _digest(jsonEncode([revision, batch, warnings])),
+    // The reason decides no item, so the planner's digest leaves it out and a reason typed after the preview saves.
+    'digest': _digest(
+      jsonEncode([
+        revision,
+        [for (final move in batch) Map.of(move)..remove('reason')],
+        warnings,
+      ]),
+    ),
     'issues': [for (final id in (after['moved'] as List).cast<String>()) moved(id)],
     'stories': [
       for (final move in batch)

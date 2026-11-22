@@ -58,6 +58,14 @@ A stage ends at the comment's `createdAt`, the second GitHub wrote it, and start
 is stored. A person's move is no comment: GitHub's timeline shows each `Status` change with its time, its actor and
 the states before and after.
 
+A move into a closed state may carry the person's one sentence why: what was built, or why not. It is written as a
+comment after the close, on the story whose shown state the move makes closed and on each issue the move closes; an
+issue's own move in the same batch keeps its own sentence or none. The comment's first line is
+`<!-- porelo:closing <state> -->`, then `<state>: ` and the sentence as one code span, so nothing in it mentions a
+person, references an issue or shows a link, an image or HTML. The marker is read before the write, so the same move
+sent again after a comment that failed writes only what is missing, and never one twice. The Git store keeps no
+reason and refuses a save that carries one before anything is written.
+
 The comments are the course of the work and the number fields its sums. A stage's save adds its minutes, VM minutes,
 new tokens and one stage to the fields as they stand right before the write, in the same call as its state, and
 writes its comment beside. A field without a value counts as 0, and a value a person set stays the base later stages

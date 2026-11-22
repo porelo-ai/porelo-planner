@@ -374,6 +374,7 @@ class MockPlanningSource implements PlanningSource {
       'phases': current['phases'],
       'work': current['work'] ?? <dynamic>[],
       'faults': current['faults'] ?? <dynamic>[],
+      'reasons': current['reasons'] ?? false,
     });
   }
 

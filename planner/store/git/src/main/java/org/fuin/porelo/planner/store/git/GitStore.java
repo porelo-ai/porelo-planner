@@ -276,6 +276,14 @@ public final class GitStore implements PlanningStore {
      */
     @Override
     public Board save(final Revision revision, final Writes writes) {
+        if (writes.reasons()) {
+            // An issue file has no place for the person's sentence, so it is never dropped unsaid.
+            final String item =
+                    writes.issueReasons().keySet().stream()
+                            .findFirst()
+                            .orElseGet(() -> writes.storyReasons().keySet().iterator().next());
+            throw new StoreException.NotSavable(item, "the Git store keeps no reason");
+        }
         return saved(revision, writes, List.of(), null, null).board();
     }
 

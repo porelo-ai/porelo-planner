@@ -43,6 +43,8 @@ class MovesEndpointTest {
 
     private boolean derives = true;
 
+    private boolean keeps;
+
     private Board current = board("r1", "Backlog");
 
     private MockMvc mvc;
@@ -129,6 +131,11 @@ class MovesEndpointTest {
                                 MovesEndpointTest.board(
                                         "r2", writes.issues().getOrDefault("AB01", "Backlog"));
                         return current;
+                    }
+
+                    @Override
+                    public boolean keepsReasons() {
+                        return keeps;
                     }
 
                     @Override
@@ -404,6 +411,72 @@ class MovesEndpointTest {
 
         assertThat(saved).as("the move saved as any other").hasSize(1);
         assertThat(saved.get(0).issues()).containsExactly(Map.entry("AB01", "Review"));
+    }
+
+    @Test
+    void aStorysReasonReachesTheStoreForTheStoryAndTheIssueItsMoveCloses() throws Exception {
+        // Harm: the wire drops the person's sentence, or gives it to the wrong items.
+        current = board("r1", "Review");
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
+                        + " \"Finished\", \"reason\": \" Built as asked. \"}]}";
+
+        moves(body).andExpect(status().isOk());
+
+        final Writes.Reason kept = new Writes.Reason("Finished", "Built as asked.");
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).storyReasons()).containsExactly(Map.entry("ST1", kept));
+        assertThat(saved.get(0).issueReasons()).containsExactly(Map.entry("AB01", kept));
+    }
+
+    @Test
+    void aReasonOnAMoveIntoAnOpenStateIsRefusedInPreviewAndSaveWithNothingWritten()
+            throws Exception {
+        // Harm: a sentence for a close written to an open item, or refused only after a write.
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\":"
+                        + " \"Review\", \"reason\": \"Why not.\"}], \"confirm\": true}";
+
+        preview(body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("MoveNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("AB01"));
+        mvc.perform(
+                        post("/projects/alpha/moves")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("MoveNotAllowed"));
+        assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aStoryShownClosedAlreadyStillHandsItsReasonToTheStoreSoAFailedCommentIsWritten()
+            throws Exception {
+        // Harm: a reason whose comment failed after the close can never be written, since the
+        // move changes no state any more.
+        current = board("r1", "Finished");
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
+                        + " \"Finished\", \"reason\": \"Built.\"}]}";
+
+        moves(body).andExpect(status().isOk());
+
+        assertThat(saved).as("handed to the store").hasSize(1);
+        assertThat(saved.get(0).issues()).as("no state changes").isEmpty();
+        assertThat(saved.get(0).storyReasons()).containsOnlyKeys("ST1");
+    }
+
+    @Test
+    void theWorkflowSaysWhetherItsStoreKeepsAReason() throws Exception {
+        // Harm: a window asking for a sentence its store drops, or never asking where it is kept.
+        mvc.perform(get("/projects/alpha/workflow"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reasons").value(false));
+        keeps = true;
+        mvc.perform(get("/projects/alpha/workflow"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reasons").value(true));
     }
 
     /** The board with its story's priority and its issue's, the story ranked as given. */

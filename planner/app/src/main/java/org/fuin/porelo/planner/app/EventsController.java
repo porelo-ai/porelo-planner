@@ -310,7 +310,10 @@ public class EventsController {
                         .id(frame.board().revision().value())
                         .data(
                                 BoardController.boardOf(
-                                        frame.board(), frame.work(), frame.derive()),
+                                        frame.board(),
+                                        frame.work(),
+                                        frame.derive(),
+                                        frame.reasons()),
                                 MediaType.APPLICATION_JSON));
     }
 }

@@ -138,5 +138,6 @@
       "claude" : "claude-opus-5-5"
     }
   } ],
-  "faults" : [ ]
+  "faults" : [ ],
+  "reasons" : true
 }

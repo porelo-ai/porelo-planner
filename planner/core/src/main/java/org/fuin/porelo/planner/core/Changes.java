@@ -50,8 +50,10 @@ public final class Changes {
      * @param board the board
      * @param work the local work generation
      * @param derive derives a story's state from its issues, as the board's store does
+     * @param reasons whether the board's store keeps a move's reason
      */
-    public record Frame(Board board, WorkRun.Snapshot work, Moves.StoryState derive) {}
+    public record Frame(
+            Board board, WorkRun.Snapshot work, Moves.StoryState derive, boolean reasons) {}
 
     private Frame frame() {
         final WorkRun run = work;
@@ -59,9 +61,12 @@ public final class Changes {
                 ? new Frame(
                         store.board(),
                         new WorkRun.Snapshot(0, java.util.Map.of()),
-                        store::storyState)
+                        store::storyState,
+                        store.keepsReasons())
                 : run.lockedView(
-                        (board, snapshot) -> new Frame(board, snapshot, store::storyState));
+                        (board, snapshot) ->
+                                new Frame(
+                                        board, snapshot, store::storyState, store.keepsReasons()));
     }
 
     /**

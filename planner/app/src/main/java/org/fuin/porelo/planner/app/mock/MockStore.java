@@ -124,6 +124,9 @@ public final class MockStore implements PlanningStore {
     /** The fields of each issue the board does not show, as set; guarded by the monitor. */
     private final Map<String, Map<Fields.Field, Object>> kept = new java.util.HashMap<>();
 
+    /** The reasons kept with each closed item, in the order saved; guarded by the monitor. */
+    private final Map<String, List<Writes.Reason>> reasons = new java.util.HashMap<>();
+
     private static final Writes NOTHING = new Writes(Map.of(), Map.of(), List.of());
 
     private static final Pattern ID = Pattern.compile("([A-Z]+)([0-9]+)");
@@ -273,7 +276,37 @@ public final class MockStore implements PlanningStore {
                             + PARTLY_SAVED);
         }
         current = saved(board, writes);
+        keep(writes.issueReasons());
+        keep(writes.storyReasons());
         return current;
+    }
+
+    /** Whether a move's reason is kept: in memory, with the item it closes. */
+    @Override
+    public boolean keepsReasons() {
+        return true;
+    }
+
+    /**
+     * Answers the reasons kept with an item.
+     *
+     * @param id the story's or the issue's id
+     * @return its reasons, in the order saved
+     */
+    synchronized List<Writes.Reason> reasons(final String id) {
+        return List.copyOf(reasons.getOrDefault(id, List.of()));
+    }
+
+    /** Keeps each reason once per item and state, as a store writing comments does. */
+    private void keep(final Map<String, Writes.Reason> given) {
+        given.forEach(
+                (id, reason) -> {
+                    final List<Writes.Reason> held =
+                            reasons.computeIfAbsent(id, key -> new ArrayList<>());
+                    if (held.stream().noneMatch(each -> each.state().equals(reason.state()))) {
+                        held.add(reason);
+                    }
+                });
     }
 
     /**
@@ -746,6 +779,7 @@ public final class MockStore implements PlanningStore {
         current = initial;
         saves = 0;
         kept.clear();
+        reasons.clear();
     }
 
     /** The repositories a save writes, in the order the Git store pushes them: the own one last. */

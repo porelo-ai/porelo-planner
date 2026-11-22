@@ -140,6 +140,7 @@
     }
   } ],
   "faults" : [ ],
+  "reasons" : true,
   "stories" : [ {
     "id" : "ST294",
     "title" : "Plan the stories on a board in the window",

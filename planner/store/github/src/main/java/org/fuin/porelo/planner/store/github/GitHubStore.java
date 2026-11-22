@@ -461,6 +461,12 @@ public final class GitHubStore implements PlanningStore {
         return true;
     }
 
+    /** Whether a move's reason is kept: as a comment on each item it closes. */
+    @Override
+    public boolean keepsReasons() {
+        return true;
+    }
+
     @Override
     public Map<String, List<Wait>> waitsNow(final java.util.Collection<String> issues) {
         final Snapshot held = current();

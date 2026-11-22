@@ -137,6 +137,10 @@ public final class FieldsBoardWriter implements BoardWriter {
                         (id, priority) ->
                                 plan.option(
                                         id, storyItem(current, id), FieldNames.PRIORITY, priority));
+        writes.issueReasons()
+                .forEach((id, reason) -> plan.closing(id, movedItem(current, id), reason));
+        writes.storyReasons()
+                .forEach((id, reason) -> plan.closing(id, storyItem(current, id), reason));
         final String token = tokens.token(current.config().forge());
         plan.write(token);
     }
@@ -506,6 +510,9 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         private @Nullable Stage stage;
 
+        /** The reasons to keep as comments, by item, after every other change but the stage. */
+        private final Map<String, Writes.Reason> closings = new LinkedHashMap<>();
+
         /** The links to change, in their order, after every field value. */
         private final List<Link> links = new ArrayList<>();
 
@@ -629,7 +636,14 @@ public final class FieldsBoardWriter implements BoardWriter {
                     && bodies.isEmpty()
                     && titles.isEmpty()
                     && links.isEmpty()
-                    && stage == null;
+                    && stage == null
+                    && closings.isEmpty();
+        }
+
+        /** Keeps a reason with an item as a comment; the item is read and checked unchanged. */
+        void closing(final String id, final ItemView item, final Writes.Reason reason) {
+            items.putIfAbsent(id, item);
+            closings.put(id, reason);
         }
 
         private String idOf(final ItemView item) {
@@ -730,8 +744,10 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         /**
          * Checks that no item changed since the board was read, then makes every call: bodies and
-         * open states first, field values next, the stage's comment last, so a body GitHub refuses
-         * leaves the state and the sums unwritten and the result can be handed in again.
+         * open states first, field values next, then the links and the comments keeping reasons,
+         * the stage's comment last, so a body GitHub refuses leaves the state and the sums
+         * unwritten and the result can be handed in again, and a reason is kept only with an item
+         * closed.
          */
         void write(final String token) {
             pace = new WritePace(clock, sleeper, token);
@@ -745,6 +761,14 @@ public final class FieldsBoardWriter implements BoardWriter {
             // the check and the write.
             final @Nullable Stage toComment =
                     planned == null || stageWritten(token, planned) ? null : planned;
+            // A reason kept by an earlier try of the same move is not written twice.
+            final Map<String, Writes.Reason> toClose = new LinkedHashMap<>();
+            closings.forEach(
+                    (id, reason) -> {
+                        if (!closingWritten(token, id, reason)) {
+                            toClose.put(id, reason);
+                        }
+                    });
             try {
                 unchanged(token);
             } catch (final StoreException e) {
@@ -836,6 +860,20 @@ public final class FieldsBoardWriter implements BoardWriter {
                     throw refusedCall(e, link.id(), from.repository(), written, token);
                 }
                 written.add(from.repository());
+            }
+            for (final Map.Entry<String, Writes.Reason> closing : toClose.entrySet()) {
+                final ItemView item = Objects.requireNonNull(items.get(closing.getKey()));
+                try {
+                    github.createIssueComment(
+                            token,
+                            current.config().project().owner(),
+                            item.repository(),
+                            item.number(),
+                            ClosingComment.write(closing.getValue()));
+                } catch (final RuntimeException e) {
+                    throw failed(e, item.repository(), written, token);
+                }
+                written.add(item.repository());
             }
             if (toComment != null) {
                 final ItemView item = Objects.requireNonNull(items.get(toComment.id()));
@@ -996,9 +1034,38 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
         }
 
+        /** Whether the comment keeping a reason stands on its item already, found by its marker. */
+        private boolean closingWritten(
+                final String token, final String id, final Writes.Reason reason) {
+            return holds(
+                    token,
+                    id,
+                    body -> ClosingComment.keeps(body, reason.state()),
+                    "it holds more comments than are read to find whether its reason stands");
+        }
+
         /** Whether the stage's comment stands on its issue already, found by its key. */
         private boolean stageWritten(final String token, final Stage written) {
-            final ItemView item = Objects.requireNonNull(items.get(written.id()));
+            return holds(
+                    token,
+                    written.id(),
+                    body -> {
+                        final StageComment.Read read =
+                                StageComment.read(new CommentView("comment", body, Instant.EPOCH))
+                                        .orElse(null);
+                        return read instanceof StageComment.Stage found
+                                && found.entry().key().equals(written.key());
+                    },
+                    "it holds more comments than are read to find whether its stage stands");
+        }
+
+        /** Whether one of an item's comments is found, reading at most the pages allowed. */
+        private boolean holds(
+                final String token,
+                final String id,
+                final java.util.function.Predicate<String> found,
+                final String tooMany) {
+            final ItemView item = Objects.requireNonNull(items.get(id));
             for (int page = 1; page <= MOST_COMMENT_PAGES; page++) {
                 final ProjectWrites.CommentsPage comments;
                 try {
@@ -1013,11 +1080,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     throw refusals.refusal(item.repository(), e, token);
                 }
                 for (final String body : comments.bodies()) {
-                    final StageComment.Read read =
-                            StageComment.read(new CommentView("comment", body, Instant.EPOCH))
-                                    .orElse(null);
-                    if (read instanceof StageComment.Stage found
-                            && found.entry().key().equals(written.key())) {
+                    if (found.test(body)) {
                         return true;
                     }
                 }
@@ -1025,9 +1088,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     return false;
                 }
             }
-            throw new StoreException.NotSavable(
-                    written.id(),
-                    "it holds more comments than are read to find whether its stage stands");
+            throw new StoreException.NotSavable(id, tooMany);
         }
 
         /**

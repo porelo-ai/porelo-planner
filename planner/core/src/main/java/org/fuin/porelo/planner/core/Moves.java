@@ -17,6 +17,7 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -28,6 +29,9 @@ public final class Moves {
     /** The closed state that is not completed work, as the stories index reads it. */
     private static final String REJECTED = "Rejected";
 
+    /** The most code points a move's reason holds. */
+    public static final int MOST_REASON = 280;
+
     private Moves() {}
 
     /**
@@ -38,8 +42,29 @@ public final class Moves {
      * @param to the state it moves to
      * @param follow for a story, whether it gives up its given state for the one its issues give,
      *     which {@code to} names as the window saw it
+     * @param reason the person's one sentence why the item is closed, trimmed, or null for none; a
+     *     blank one counts as none
      */
-    public record Move(boolean story, String id, String to, boolean follow) {
+    public record Move(
+            boolean story, String id, String to, boolean follow, @Nullable String reason) {
+
+        /** Trims the reason; a blank one is none. */
+        public Move {
+            reason = reason == null || reason.isBlank() ? null : reason.strip();
+        }
+
+        /**
+         * One move without a reason.
+         *
+         * @param story whether it moves a story rather than an issue
+         * @param id the story's or the issue's id
+         * @param to the state it moves to
+         * @param follow for a story, whether it gives up its given state for the one its issues
+         *     give
+         */
+        public Move(final boolean story, final String id, final String to, final boolean follow) {
+            this(story, id, to, follow, null);
+        }
 
         /**
          * One plain move.
@@ -49,7 +74,7 @@ public final class Moves {
          * @param to the state it moves to
          */
         public Move(final boolean story, final String id, final String to) {
-            this(story, id, to, false);
+            this(story, id, to, false, null);
         }
     }
 
@@ -87,12 +112,17 @@ public final class Moves {
      * @param stories each story's new stated state, by id
      * @param unstated the stories whose stated state goes, since their issues fit their target
      * @param moved the issues the batch moved, each once, as the window expects them in its answer
+     * @param issueReasons the reasons kept with the issues the batch closes, by id
+     * @param storyReasons the reasons kept with the stories the batch moves into a closed state, by
+     *     id
      */
     public record Planned(
             Map<String, String> issues,
             Map<String, String> stories,
             List<String> unstated,
-            List<String> moved) {
+            List<String> moved,
+            Map<String, Writes.Reason> issueReasons,
+            Map<String, Writes.Reason> storyReasons) {
 
         /** Copies the maps and lists and keeps their order. */
         public Planned {
@@ -100,6 +130,31 @@ public final class Moves {
             stories = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(stories));
             unstated = List.copyOf(unstated);
             moved = List.copyOf(moved);
+            issueReasons = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(issueReasons));
+            storyReasons = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(storyReasons));
+        }
+
+        /**
+         * Answers whether saving changes nothing: no state is written and no reason kept.
+         *
+         * @return whether there is nothing to save
+         */
+        public boolean none() {
+            return issues.isEmpty()
+                    && stories.isEmpty()
+                    && unstated.isEmpty()
+                    && issueReasons.isEmpty()
+                    && storyReasons.isEmpty();
+        }
+
+        /**
+         * Answers the writes that save the batch.
+         *
+         * @return the writes
+         */
+        public Writes writes() {
+            return new Writes(
+                    issues, stories, unstated, Map.of(), Map.of(), issueReasons, storyReasons);
         }
     }
 
@@ -301,6 +356,8 @@ public final class Moves {
         final Map<String, String> issues = new LinkedHashMap<>();
         final Set<String> moved = new LinkedHashSet<>();
         final Map<String, List<String>> along = new LinkedHashMap<>();
+        final Map<String, Writes.Reason> reasons = new LinkedHashMap<>();
+        final Map<String, Writes.Reason> storyReasons = new LinkedHashMap<>();
         // Story moves first, so an issue's own move in the same batch wins, as the window shows it.
         for (final Move move : moves) {
             if (move.story()) {
@@ -318,6 +375,15 @@ public final class Moves {
                     states.put(id, move.to());
                     issues.put(id, move.to());
                     moved.add(id);
+                    final String reason = move.reason();
+                    if (reason != null) {
+                        reasons.put(id, new Writes.Reason(move.to(), reason));
+                    }
+                }
+                final String reason = move.reason();
+                if (reason != null) {
+                    // Also when it stands there already: a save whose comment failed is sent again.
+                    storyReasons.put(move.id(), new Writes.Reason(move.to(), reason));
                 }
             }
         }
@@ -326,6 +392,12 @@ public final class Moves {
                 states.put(move.id(), move.to());
                 issues.put(move.id(), move.to());
                 moved.add(move.id());
+                // An issue's own move wins entirely, a story's reason too.
+                reasons.remove(move.id());
+                final String reason = move.reason();
+                if (reason != null) {
+                    reasons.put(move.id(), new Writes.Reason(move.to(), reason));
+                }
             }
         }
         for (final Move move : moves) {
@@ -380,8 +452,13 @@ public final class Moves {
                                 stories.remove(story.id());
                             }
                         });
+        // A carried issue whose head is not written is closed already, so it keeps no reason.
+        reasons.keySet().retainAll(issues.keySet());
         return new Plan(
-                new Planned(issues, stories, unstated, List.copyOf(moved)), states, along, misfits);
+                new Planned(issues, stories, unstated, List.copyOf(moved), reasons, storyReasons),
+                states,
+                along,
+                misfits);
     }
 
     private static void checkOne(
@@ -447,6 +524,53 @@ public final class Moves {
             final String reason = "The destination must be a configured waiting or closed state.";
             throw new Refused("StateNotAllowed", reason, item(move.id(), from, move.to(), reason));
         }
+        checkReason(board.workflow(), move, from);
+    }
+
+    /**
+     * A reason is one plain sentence, kept only with a move that closes its item: never on a move
+     * into an open state, on a story that follows its issues, or on an issue standing in its target
+     * already, so no reason is ever dropped unsaid.
+     */
+    private static void checkReason(final Workflow workflow, final Move move, final String from) {
+        final String given = move.reason();
+        if (given == null) {
+            return;
+        }
+        final String reason;
+        if (given.codePointCount(0, given.length()) > MOST_REASON) {
+            reason = "A reason holds at most " + MOST_REASON + " characters.";
+        } else if (given.codePoints().anyMatch(Moves::unshown)) {
+            reason =
+                    "A reason holds no control, line or paragraph separator, bidirectional control"
+                            + " or zero-width character.";
+        } else if (move.follow()) {
+            reason = "A story that follows its issues closes nothing, so it takes no reason.";
+        } else if (!workflow.closed().contains(move.to())) {
+            reason = "A reason is taken only with a move into a closed state.";
+        } else if (!move.story() && from.equals(move.to())) {
+            reason =
+                    "It is in that state already; a reason goes only with the move that closes it.";
+        } else {
+            return;
+        }
+        throw new Refused("MoveNotAllowed", reason, item(move.id(), from, move.to(), reason));
+    }
+
+    /**
+     * Whether a character is one a reason may not hold: a control character, a line or paragraph
+     * separator, a bidirectional control or a zero-width character, each of which hides or turns
+     * what a reader sees.
+     */
+    static boolean unshown(final int c) {
+        return Character.getType(c) == Character.CONTROL
+                || c == 0x2028
+                || c == 0x2029
+                || (c >= 0x200B && c <= 0x200F)
+                || (c >= 0x202A && c <= 0x202E)
+                || c == 0x2060
+                || (c >= 0x2066 && c <= 0x2069)
+                || c == 0xFEFF;
     }
 
     /**

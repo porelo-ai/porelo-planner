@@ -1060,7 +1060,10 @@ paths:
         issue of whose run has a task at work, or an issue such a task works - is refused (WorkRunning) unless it is
         confirmed; a confirmed one stops, after its digest matched and in the same step as its save,
         each run with tasks at work over what moves, as the story's Stop does, and answers those runs with the tasks
-        the window must end, so nothing is stopped that the preview did not show.
+        the window must end, so nothing is stopped that the preview did not show. A move's `reason` is not part of the
+        digest; on a store that keeps reasons (the workflow's `reasons`) it is written as a comment, after the item
+        is closed, on the story whose shown state the move makes its closed state and on each issue the move closes,
+        and once only, so the same move sent again after a save that failed in its comments writes what is missing.
       tags: [board]
       requestBody:
         required: true
@@ -2175,7 +2178,7 @@ components:
     Workflow:
       description: A project's workflow.
       type: object
-      required: [revision, states, phases, work, faults]
+      required: [revision, states, phases, work, faults, reasons]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2201,6 +2204,11 @@ components:
             not be read, in the planner's words. The rest of the board is answered.
           items:
             type: string
+        reasons:
+          type: boolean
+          description: >-
+            Whether the store keeps a move's `reason` with the item it closes; a window offers the reason only when
+            true and reads an answer without it as false.
     State:
       description: One state of the workflow.
       type: object
@@ -2270,7 +2278,7 @@ components:
         The whole board at one revision, as an event of the stream carries it - the workflow, the project's
         repositories and the stories.
       type: object
-      required: [revision, states, phases, work, faults, repositories, stories, open]
+      required: [revision, states, phases, work, faults, reasons, repositories, stories, open]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2303,6 +2311,11 @@ components:
             not be read, in the planner's words. The rest of the board is answered.
           items:
             type: string
+        reasons:
+          type: boolean
+          description: >-
+            Whether the store keeps a move's `reason` with the item it closes; a window offers the reason only when
+            true and reads an answer without it as false.
         stories:
           type: array
           description: Every story, without its description.
@@ -2539,6 +2552,18 @@ components:
             `to` names as the board's `derivedState` showed it. The move carries no issue and starts no work; it is
             refused when the story's state is not given, when the board does not hold every issue its head names, or
             when the issues give another state now.
+        reason:
+          type: string
+          maxLength: 280
+          description: >-
+            The person's one sentence why the item is closed: what was built, or why not. Taken only on a move into a
+            closed state and optional there, a blank one counting as none; a story's reason is given to each issue the
+            same move closes, while an issue's own move in the batch keeps its own reason or none. Trimmed, it holds at
+            most 280 code points and no control, line or paragraph separator, bidirectional control or zero-width
+            character; it is refused
+            (MoveNotAllowed, whose own `reason` parameter is the planner's words, not this text) on a move into a
+            state that is not closed, on a `follow` move, on an issue move whose issue stands in that state already,
+            and on a store that keeps no reasons, before anything is written.
     Moved:
       description: >-
         The board's revision after the save, every issue the batch moved, each once, and every run a confirmed save

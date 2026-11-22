@@ -41,7 +41,7 @@ class BoardFaultsTest {
                         List.of("porelo-store"),
                         List.of("ST3: a reference names no issue, and is left out"));
 
-        assertThat(BoardController.workflowOf(board).faults())
+        assertThat(BoardController.workflowOf(board, false).faults())
                 .as("the board's faults and the work rules' faults")
                 .containsExactly(
                         "ST3: a reference names no issue, and is left out",
@@ -189,7 +189,8 @@ class BoardFaultsTest {
         return BoardController.boardOf(
                 board,
                 new WorkRun.Snapshot(0, Map.of()),
-                states -> states.isEmpty() ? null : "Idea");
+                states -> states.isEmpty() ? null : "Idea",
+                false);
     }
 
     /** The mapper the app's Spring Boot sets up, which writes the stream's events. */

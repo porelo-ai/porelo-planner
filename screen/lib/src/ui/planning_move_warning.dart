@@ -42,6 +42,10 @@ class PlanningMoveWarningPanel extends StatelessWidget {
                 key: Key('planning-move-warning-again'),
               ),
             for (final warning in asked.warnings) ..._warning(warning, _closed(board)),
+            if (asked.asksReason) ...[
+              const SizedBox(height: Space.small),
+              PlanningMoveReason(question: asked, key: ValueKey(asked)),
+            ],
             if (buttons) ...[const SizedBox(height: Space.small), PlanningMoveButtons(board: board)],
           ],
         ),
@@ -89,6 +93,48 @@ class PlanningMoveWarningPanel extends StatelessWidget {
   };
 }
 
+/// The one-line field for the person's reason why the item is closed, which may stay empty; it counts characters as
+/// the planner does, after trimming.
+class PlanningMoveReason extends StatefulWidget {
+  /// Edits [question]'s reason.
+  const PlanningMoveReason({required this.question, super.key});
+
+  /// The move asked about.
+  final PlanningMoveQuestion question;
+
+  @override
+  State<PlanningMoveReason> createState() => _PlanningMoveReasonState();
+}
+
+class _PlanningMoveReasonState extends State<PlanningMoveReason> {
+  late final TextEditingController _text = TextEditingController(text: widget.question.reason.value);
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<String>(
+    valueListenable: widget.question.reason,
+    builder: (context, reason, _) {
+      final count = reason.trim().runes.length;
+      return TextField(
+        key: const Key('planning-move-reason'),
+        controller: _text,
+        maxLines: 1,
+        decoration: InputDecoration(
+          labelText: 'Why, in one sentence (optional): what was built, or why not',
+          counterText: '$count/$planningMostReason',
+          errorText: widget.question.reasonTooLong ? 'At most $planningMostReason characters.' : null,
+        ),
+        onChanged: (value) => widget.question.reason.value = value,
+      );
+    },
+  );
+}
+
 /// Confirm and Cancel of the move [PlanningBoard.question] holds; nothing when no move is asked about.
 class PlanningMoveButtons extends StatelessWidget {
   /// Answers [board]'s question.
@@ -105,10 +151,13 @@ class PlanningMoveButtons extends StatelessWidget {
     return Wrap(
       spacing: Space.small,
       children: [
-        FilledButton(
-          key: const Key('planning-move-confirm'),
-          onPressed: () => unawaited(board.confirmMove()),
-          child: Text(stops ? 'Stop the tasks and move' : 'Move'),
+        ValueListenableBuilder<String>(
+          valueListenable: asked.reason,
+          builder: (context, _, _) => FilledButton(
+            key: const Key('planning-move-confirm'),
+            onPressed: asked.reasonTooLong ? null : () => unawaited(board.confirmMove()),
+            child: Text(stops ? 'Stop the tasks and move' : 'Move'),
+          ),
         ),
         TextButton(key: const Key('planning-move-cancel'), onPressed: board.cancelMove, child: const Text('Cancel')),
       ],

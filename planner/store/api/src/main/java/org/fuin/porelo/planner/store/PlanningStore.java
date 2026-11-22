@@ -110,6 +110,16 @@ public interface PlanningStore {
     }
 
     /**
+     * Whether a save keeps a move's reason with the item it closes; a store that keeps none refuses
+     * a save carrying one before anything is written.
+     *
+     * @return true when {@link Writes#issueReasons()} and {@link Writes#storyReasons()} are kept
+     */
+    default boolean keepsReasons() {
+        return false;
+    }
+
+    /**
      * Adds a new issue against the revision the window shows, in its requested state when {@link
      * #createsInState()} is true and otherwise the first state, saved as a move is saved: written,
      * indexed and pushed, or not at all.
