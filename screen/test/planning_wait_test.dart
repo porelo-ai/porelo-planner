@@ -227,8 +227,10 @@ void main() {
 
     await tester.tap(find.byKey(const Key('planning-reload')));
     await tester.pump();
+    expect(find.byKey(const Key('planning-load-bar')), findsNothing, reason: 'a read of a moment shows nothing');
+    await tester.pump(const Duration(seconds: 1));
 
-    expect(find.byKey(const Key('planning-load-bar')), findsOneWidget, reason: 'the read shows over the board');
+    expect(find.byKey(const Key('planning-load-bar')), findsOneWidget, reason: 'a longer read shows over the board');
     expect(tester.widget<Text>(find.byKey(const Key('planning-waiting'))).data, 'Loading the planning…');
     final board = boards.sources.single;
     expect(board.fetching, isTrue);
@@ -277,7 +279,7 @@ void main() {
     await tester.tap(find.byKey(const Key('planning-reload')));
     backend.read.complete();
     await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byKey(const Key('planning-load-bar')), findsOneWidget);
 
     await tester.pump(PlanningBoard.fetchTold);

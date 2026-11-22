@@ -1028,18 +1028,27 @@ class _BoardViewState extends State<_BoardView> {
                       if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
                       ForgeAccessOffer(board: board, host: widget.host, provider: widget.machines[board] ?? ''),
                       if (board.snapshot != null || board.problem != null)
-                        TextButton.icon(
-                          key: const Key('planning-reload'),
-                          onPressed: board.saving || board.fetching || board.loading != null
-                              ? null
-                              : () => unawaited(board.reloadPlanning()),
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Reload planning'),
+                        Row(
+                          spacing: Space.wide,
+                          children: [
+                            TextButton.icon(
+                              key: const Key('planning-reload'),
+                              onPressed: board.saving || board.fetching || board.loading != null
+                                  ? null
+                                  : () => unawaited(board.reloadPlanning()),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reload planning'),
+                            ),
+                            // A Reload's read of the whole board, beside its button so the board below never moves,
+                            // and only once it takes longer than a moment.
+                            Expanded(
+                              child: _SlowProgress(
+                                active: board.fetching || board.loading != null,
+                                child: _loadProgress(board.loading, line: true),
+                              ),
+                            ),
+                          ],
                         ),
-                      // A Reload's read of the whole board, over the board already shown, which stays open to changes.
-                      if ((board.snapshot != null || board.problem != null) &&
-                          (board.fetching || board.loading != null))
-                        _loadProgress(board.loading),
                       PlanningMoveWarningPanel(key: _panel, board: board, buttons: false),
                       if (board.snapshot == null && board.problem == null)
                         switch (board.loading) {
@@ -1101,12 +1110,18 @@ class _BoardViewState extends State<_BoardView> {
   /// A failure above the board reads as one, in the theme's error colour behind an error icon.
   /// The planner's read of the board: a bar with the share done, moving without one until it knows how many entries
   /// there are, and one sentence how far it is.
-  Widget _loadProgress(PlanningLoad? load) => Column(
+  Widget _loadProgress(PlanningLoad? load, {bool line = false}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
     spacing: Space.small,
     children: [
       LinearProgressIndicator(key: const Key('planning-load-bar'), value: load?.done),
-      Text(load?.words ?? 'Loading the planning…', key: const Key('planning-waiting')),
+      Text(
+        load?.words ?? 'Loading the planning…',
+        key: const Key('planning-waiting'),
+        maxLines: line ? 1 : null,
+        overflow: line ? TextOverflow.ellipsis : null,
+      ),
     ],
   );
 
@@ -2186,4 +2201,59 @@ class _RememberedScroll extends ScrollController {
 
   @override
   double get initialScrollOffset => _offset();
+}
+
+/// Shows [child] only once [active] has lasted longer than a moment, so a quick read shows nothing.
+class _SlowProgress extends StatefulWidget {
+  const _SlowProgress({required this.active, required this.child});
+
+  /// Whether the read runs.
+  final bool active;
+
+  /// What shows once it runs long.
+  final Widget child;
+
+  @override
+  State<_SlowProgress> createState() => _SlowProgressState();
+}
+
+class _SlowProgressState extends State<_SlowProgress> {
+  /// How long a read runs before its progress shows.
+  static const _moment = Duration(seconds: 1);
+
+  Timer? _timer;
+  bool _slow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _follow();
+  }
+
+  @override
+  void didUpdateWidget(_SlowProgress old) {
+    super.didUpdateWidget(old);
+    if (old.active != widget.active) _follow();
+  }
+
+  void _follow() {
+    _timer?.cancel();
+    _timer = null;
+    if (!widget.active) {
+      _slow = false;
+      return;
+    }
+    _timer = Timer(_moment, () {
+      if (mounted) setState(() => _slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _slow && widget.active ? widget.child : const SizedBox.shrink();
 }
