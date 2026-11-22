@@ -23,11 +23,12 @@ import org.jspecify.annotations.Nullable;
  * What is still open of a story or a whole board: its issues per state, those blocked by an open
  * issue, the sizes and minutes of what is left to build, and what waits for the person's review.
  *
- * <p>An issue is left to build while it stands neither in a closed state nor in a review state, a
- * state a work rule's work ends in that is no working state itself. An issue left to build is
- * blocked while an issue it waits on stands on the board and is not closed; it then counts as
- * blocked, not under its state. An issue in a state the workflow lacks counts in no state, but in
- * every other figure.
+ * <p>An issue is left to build while it stands neither in a closed state nor in the review state:
+ * of the states a work rule's work ends in that are neither working nor closed, the one latest in
+ * the workflow, where the last work ends. An earlier work's end, such as an analysis's, waits for
+ * the person's next step and is left to build. An issue left to build is blocked while an issue it
+ * waits on stands on the board and is not closed; it then counts as blocked, not under its state.
+ * An issue in a state the workflow lacks counts in no state, but in every other figure.
  *
  * @param states each state of the workflow, in order, with the number of its issues that are not
  *     blocked
@@ -263,15 +264,24 @@ public record OpenWork(
         return left;
     }
 
-    /** The states a work rule's work ends in that are neither working nor closed. */
+    /**
+     * The review state, alone or none: of the states a work rule's work ends in that are neither
+     * working nor closed, the one latest in the workflow, as the window tells review too.
+     */
     private static Set<String> reviewStates(final Board board) {
-        final Set<String> review = new HashSet<>();
+        final Set<String> ends = new HashSet<>();
         for (final WorkRule rule : board.work().rules().values()) {
-            review.add(rule.done());
+            ends.add(rule.done());
         }
-        review.removeAll(board.work().rules().keySet());
-        review.removeAll(board.workflow().closed());
-        return review;
+        ends.removeAll(board.work().rules().keySet());
+        ends.removeAll(board.workflow().closed());
+        String last = null;
+        for (final String state : board.workflow().states()) {
+            if (ends.contains(state)) {
+                last = state;
+            }
+        }
+        return last == null ? Set.of() : Set.of(last);
     }
 
     private static boolean leftToBuild(

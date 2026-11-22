@@ -3052,8 +3052,9 @@ components:
     OpenWork:
       description: >-
         What is still open of a story or a board. An issue is left to build while it stands neither in a closed state
-        nor in a review state, a state a work rule's work ends in that is no working state itself. An issue left to
-        build is blocked while an issue it waits on stands on the board and is not closed; it then counts as blocked,
+        nor in the review state: of the states a work rule's work ends in that are neither working nor closed, the one
+        latest in the workflow, where the last work ends. An earlier work's end, such as an analysis's, is left to
+        build. An issue left to build is blocked while an issue it waits on stands on the board and is not closed; it then counts as blocked,
         not under its state.
       type: object
       required: [states, blocked, sizes, unsized, left, minutes, unestimated, review]
@@ -3101,7 +3102,7 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
-          description: The issues in a review state, which wait for the person.
+          description: The issues in the review state, which wait for the person.
     OpenCount:
       description: A state's or a size's name with its number of issues.
       type: object

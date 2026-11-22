@@ -57,18 +57,29 @@ class StoryIssueGroup {
   bool get foldedByDefault => kind == StoryGroupKind.closed;
 }
 
-/// The states finished work waits in for the person: one a work rule's work ends in that is neither a working state
-/// itself nor closed, as the planner counts review.
-Set<String> storyReviewStates(List<PlanState> states, List<PlanWorkRule> work) {
+/// The state finished work waits in for the person's review, the one rule the board, the story page and the planner
+/// count review by: of the states a work rule's work ends in that are neither a rule's own working state nor closed,
+/// the one latest in the workflow, where the last work ends; null when there is none. An earlier work's end, such as
+/// an analysis's or an estimate's, waits for the person's next step and is left to build, never review.
+String? storyReviewState(List<PlanState> states, List<PlanWorkRule> work) {
   final closed = {
     for (final state in states)
       if (state.kind == 'CLOSED') state.name,
   };
-  return {
+  final working = {for (final rule in work) rule.state};
+  final ends = {
     for (final rule in work)
-      if (rule.done.isNotEmpty) rule.done,
-  }.difference({for (final rule in work) rule.state}).difference(closed);
+      if (rule.done.isNotEmpty && !working.contains(rule.done) && !closed.contains(rule.done)) rule.done,
+  };
+  String? last;
+  for (final state in states) {
+    if (ends.contains(state.name)) last = state.name;
+  }
+  return last;
 }
+
+/// The states that wait for the person's review: the one [storyReviewState] names, or none.
+Set<String> storyReviewStates(List<PlanState> states, List<PlanWorkRule> work) => {?storyReviewState(states, work)};
 
 /// Groups [issues] by state: working, blocked, each waiting state, each review state, other, and each closed state,
 /// in workflow order and without empty groups.

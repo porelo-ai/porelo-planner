@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 import 'package:porelo_planning/src/story_groups.dart';
 
+import 'support/porelo_workflow.dart';
+
 PlanIssue _issue(String id, String state, {List<String> blockedBy = const []}) => PlanIssue.from({
   'id': id,
   'repository': 'repo',
@@ -141,5 +143,25 @@ void main() {
       StoryGroupKind.review: 1,
       StoryGroupKind.closed: 2,
     }, reason: 'the bar holds every counted issue by its group');
+  });
+
+  // Harm: the story page groups and counts an analyzed or estimated issue as waiting for review, though only the end
+  // of the last work is review and the board and the planner count it as left to build.
+  test('under Porelo\'s own rules an analyzed or estimated issue waits under its state and only Review is review', () {
+    final states = [for (final state in poreloStates) PlanState.from(state)];
+    final work = [for (final rule in poreloWork) PlanWorkRule.from(rule)];
+    final groups = groupStoryIssues(
+      issues: [_issue('A1', 'Analyzed'), _issue('A2', 'Estimated'), _issue('A3', 'Review')],
+      board: const [],
+      states: states,
+      work: work,
+    );
+    expect(_groupOf(groups), {'A1': 'waiting Analyzed', 'A2': 'waiting Estimated', 'A3': 'review Review'});
+    final figures = StoryHeadFigures(
+      PlanOpenWork.read(poreloOpen(states: {'Analyzed': 1, 'Estimated': 1, 'Review': 1}, left: 2, review: 1)),
+      states,
+      work,
+    );
+    expect(figures.bar, {StoryGroupKind.waiting: 2, StoryGroupKind.review: 1}, reason: 'the head counts as the page');
   });
 }

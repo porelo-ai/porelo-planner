@@ -107,6 +107,71 @@ class OpenWorkTest {
                 .containsExactly(new OpenWork.Count("M", 1));
     }
 
+    // An analysis's or an estimate's end counted as review would hide work still to build and ask
+    // the
+    // person to review what holds nothing to review; review is where the last work ends.
+    @Test
+    void underPorelosOwnRulesOnlyTheLastWorksEndIsReviewAndAnAnalysisEndIsLeftToBuild() {
+        // The states of porelo-project's workflow and the work rules a tracked project runs.
+        final Workflow workflow =
+                new Workflow(
+                        List.of(
+                                "Idea",
+                                "Accepted",
+                                "In analysis",
+                                "Analyzed",
+                                "Under estimation",
+                                "Estimated",
+                                "Backlog",
+                                "Implementing",
+                                "Reading",
+                                "Reworking",
+                                "Review",
+                                "Rework",
+                                "Finishing",
+                                "Finished",
+                                "Rejected"),
+                        List.of(),
+                        List.of("Finished", "Rejected"));
+        final Map<String, WorkRule> rules = new java.util.LinkedHashMap<>();
+        rules.put("In analysis", rule(List.of("Idea", "Accepted"), "Analyzed", null, null));
+        rules.put("Under estimation", rule(List.of("Analyzed"), "Estimated", null, null));
+        rules.put("Implementing", rule(List.of("Backlog", "Rework"), "Review", "Reading", null));
+        rules.put(
+                "Reading",
+                rule(List.of("Implementing", "Reworking", "Review"), "Review", null, "Reworking"));
+        rules.put("Reworking", rule(List.of("Reading"), "Review", "Reading", null));
+        issue("own#1", "Analyzed", "M", null, null);
+        issue("own#2", "Estimated", "S", null, null);
+        issue("own#3", "Review", "M", null, null);
+        final Board board =
+                new Board(
+                        new Revision("r1"),
+                        workflow,
+                        List.of(
+                                new Story(
+                                        "own#100",
+                                        "A story",
+                                        "Analyzed",
+                                        false,
+                                        "High",
+                                        null,
+                                        List.of("own#1", "own#2", "own#3"),
+                                        "",
+                                        null,
+                                        true)),
+                        List.copyOf(issues),
+                        new Work(rules, List.of()),
+                        List.of("own", "other"),
+                        List.of(),
+                        null);
+
+        final OpenWork open = new OpenWork.Counter(board).board();
+
+        assertThat(open.review()).as("only the issue in Review waits for review").isEqualTo(1);
+        assertThat(open.left()).as("the analyzed and the estimated issue are left").isEqualTo(2);
+    }
+
     // Minutes from the wrong source would promise a story sooner or later than its record says.
     @Test
     void minutesComeFromTheEstimateThenTheRepositoryMedianThenTheMedianOfEveryRepository() {
@@ -201,6 +266,22 @@ class OpenWorkTest {
                 List.of("own", "other"),
                 List.of(),
                 null);
+    }
+
+    private static WorkRule rule(
+            final List<String> from,
+            final String done,
+            final @Nullable String then,
+            final @Nullable String blocked) {
+        return new WorkRule(
+                from,
+                done,
+                then,
+                blocked,
+                WorkRule.Per.REPOSITORY,
+                List.of("UNATTENDED"),
+                "Work on {story}",
+                Map.of("codex", "gpt"));
     }
 
     private static WorkRule rule() {
