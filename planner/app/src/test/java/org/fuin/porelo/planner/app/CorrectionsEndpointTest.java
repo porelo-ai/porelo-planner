@@ -50,7 +50,10 @@ class CorrectionsEndpointTest {
 
     private ChangesRegistry changes;
 
-    /** ST1 in the state given with its warnings, holding AB01 in Backlog; ST2 names one outside. */
+    /**
+     * ST1 in the state given with its warnings, holding one issue in Backlog; ST2 names one
+     * outside.
+     */
     private static Board board(final String revision, final String state, final Warning... w) {
         return new Board(
                 new Revision(revision),
@@ -66,7 +69,7 @@ class CorrectionsEndpointTest {
                                         true,
                                         "High",
                                         null,
-                                        List.of("AB01"),
+                                        List.of("AB01"), // not-a-citation
                                         "",
                                         null)
                                 .withWarnings(List.of(w)),
@@ -76,7 +79,7 @@ class CorrectionsEndpointTest {
                                 .withWarnings(List.of(Warning.issueOutsideProject()))),
                 List.of(
                         new Issue(
-                                "AB01",
+                                "AB01", // not-a-citation
                                 "porelo-store",
                                 "An issue",
                                 "Backlog",
@@ -341,7 +344,7 @@ class CorrectionsEndpointTest {
                         plain.repositories());
         post(
                         "corrections/preview",
-                        "{\"revision\": \"r1\", \"issue\": \"AB01\", \"warning\":"
+                        "{\"revision\": \"r1\", \"issue\": \"AB01\", \"warning\":" // not-a-citation
                                 + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
@@ -398,7 +401,7 @@ class CorrectionsEndpointTest {
         post("corrections/preview", asked("r1", "Review") + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.warnings[0].kind").value("STORY_MISMATCH"))
-                .andExpect(jsonPath("$.warnings[0].issues[0].id").value("AB01"))
+                .andExpect(jsonPath("$.warnings[0].issues[0].id").value("AB01")) // not-a-citation
                 .andExpect(jsonPath("$.warnings[0].issues[0].from").value("Backlog"))
                 .andExpect(jsonPath("$.warnings[0].issues[0].to").value("Backlog"));
         post("corrections/preview", asked("r1", "Backlog") + "}")
