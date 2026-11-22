@@ -2,6 +2,9 @@ package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.DispatcherType;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.planner.store.git.PrivateFiles;
@@ -9,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.logging.LoggingSystem;
 import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -46,22 +50,123 @@ public class AccessConfiguration {
     }
 
     /**
+     * The platform's private files, shared by the start's beans; on Windows the directories they
+     * will ask for are checked in one PowerShell call ahead of them, since each call is slow.
+     *
+     * @param runtimeDirectory The account's runtime directory.
+     * @param logBase A base for the log directory instead of the platform's.
+     * @param stateBase A base for the state directory instead of the platform's.
+     * @param mode Present only in the mock mode, which makes none of these directories.
+     * @return The files.
+     */
+    @Bean
+    public PrivateFiles privateFiles(
+            @Value("${planner.runtime-directory:${XDG_RUNTIME_DIR:}}")
+                    final String runtimeDirectory,
+            @Value("${planner.log.base:}") final String logBase,
+            @Value("${planner.state.base:}") final String stateBase,
+            final ObjectProvider<MockMode> mode) {
+        final Map<String, String> environment = System.getenv();
+        final PrivateFiles files = PrivateFiles.of(environment);
+        if (!files.windows()) {
+            return files;
+        }
+        final List<PrivateFiles.Request> requests;
+        try {
+            requests =
+                    startRequests(
+                            files,
+                            environment,
+                            runtimeDirectory,
+                            logBase,
+                            stateBase,
+                            mode.getIfAvailable() != null);
+        } catch (final IllegalStateException e) {
+            // Each bean then fails on its own call, with its own words.
+            LOG.warn("The start's directories are checked one kind at a time: {}", e.getMessage());
+            return files;
+        }
+        files.prepare(requests);
+        return files;
+    }
+
+    /**
+     * Exactly the calls of {@link PrivateFiles#directories} the start's beans make, so a base given
+     * instead is checked on its own; none in the mock mode, which must not make the person's own
+     * directories.
+     *
+     * @param files The platform's files.
+     * @param environment The planner's environment.
+     * @param runtimeDirectory The runtime directory given, or empty.
+     * @param logBase The log base given, or empty.
+     * @param stateBase The state base given, or empty.
+     * @param mock Whether the planner runs in the mock mode.
+     * @return The calls.
+     */
+    static List<PrivateFiles.Request> startRequests(
+            final PrivateFiles files,
+            final Map<String, String> environment,
+            final String runtimeDirectory,
+            final String logBase,
+            final String stateBase,
+            final boolean mock) {
+        final List<PrivateFiles.Request> requests = new ArrayList<>();
+        if (mock) {
+            return requests;
+        }
+        if (runtimeDirectory.isBlank()) {
+            requests.add(request(files, environment, false, PrivateFiles.Kind.RUNTIME));
+        }
+        if (logBase.isBlank()) {
+            requests.add(request(files, environment, true, PrivateFiles.Kind.LOGS));
+        }
+        if (stateBase.isBlank()) {
+            requests.add(request(files, environment, true, PrivateFiles.Kind.STATE));
+        }
+        return requests;
+    }
+
+    private static PrivateFiles.Request request(
+            final PrivateFiles files,
+            final Map<String, String> environment,
+            final boolean create,
+            final PrivateFiles.Kind kind) {
+        return new PrivateFiles.Request(
+                files.base(kind, environment), create, kind, files.steps(kind));
+    }
+
+    /**
+     * Drops what the start checked ahead, once it has started, so no later call takes a check made
+     * at the start.
+     *
+     * @param files The start's files.
+     * @return The listener.
+     */
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> startChecksForgotten(
+            final PrivateFiles files) {
+        return event -> files.forget();
+    }
+
+    /**
      * The address file, its lock taken at once, so a second planner stops before it listens.
      *
      * @param runtimeDirectory The account's runtime directory.
      * @param mode Present only in the mock mode, which never writes where the person's window
      *     looks.
+     * @param files The start's files.
      * @return The address file, written once the server listens and deleted when the planner stops.
      */
     @Bean(destroyMethod = "close")
     public AddressFile addressFile(
             @Value("${planner.runtime-directory:${XDG_RUNTIME_DIR:}}")
                     final String runtimeDirectory,
-            final ObjectProvider<MockMode> mode) {
+            final ObjectProvider<MockMode> mode,
+            final PrivateFiles files) {
         if (mode.getIfAvailable() != null) {
             AddressFile.requireApartFromTheAccount(runtimeDirectory, Path.of("/run/user"));
         }
-        return AddressFile.open(runtimeDirectory);
+        return AddressFile.open(runtimeDirectory, Path.of("/run/user"), files);
     }
 
     /**
@@ -74,6 +179,7 @@ public class AccessConfiguration {
      * @param base A base for {@code porelo/logs} instead of the platform's, such as a test's own.
      * @param maxFileSize The size at which the file is rolled over.
      * @param history How many rolled-over files are kept.
+     * @param files The start's files.
      * @return The open log file.
      */
     @Bean(destroyMethod = "close")
@@ -82,11 +188,11 @@ public class AccessConfiguration {
             final ObjectProvider<MockMode> mode,
             @Value("${planner.log.base:}") final String base,
             @Value("${planner.log.max-file-size:10MB}") final DataSize maxFileSize,
-            @Value("${planner.log.max-history:3}") final int history) {
+            @Value("${planner.log.max-history:3}") final int history,
+            final PrivateFiles files) {
         if (mode.getIfAvailable() != null) {
             return LogFile.none();
         }
-        final PrivateFiles files = PrivateFiles.of(System.getenv());
         return LogFile.open(
                 LogFile.directory(files, System.getenv(), base),
                 files,
@@ -101,14 +207,15 @@ public class AccessConfiguration {
      * @param log The log file, open before its level is set.
      * @param mode Present only in the mock mode.
      * @param base A base for the state directory instead of the platform's, such as a test's own.
+     * @param files The start's files.
      * @return The level in force.
      */
     @Bean
     public LogLevel logLevel(
             final LogFile log,
             final ObjectProvider<MockMode> mode,
-            @Value("${planner.state.base:}") final String base) {
-        final PrivateFiles files = PrivateFiles.of(System.getenv());
+            @Value("${planner.state.base:}") final String base,
+            final PrivateFiles files) {
         final LoggingSystem logging = LoggingSystem.get(getClass().getClassLoader());
         if (mode.getIfAvailable() != null) {
             return LogLevel.inMemory(logging, files);

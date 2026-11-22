@@ -68,6 +68,38 @@ public interface PrivateFiles {
     Path directories(Path base, boolean create, Kind kind, List<String> steps);
 
     /**
+     * One call of {@link #directories}, asked for ahead of it.
+     *
+     * @param base the base
+     * @param create whether a missing base is made
+     * @param kind which of them
+     * @param steps the names below it
+     */
+    record Request(Path base, boolean create, Kind kind, List<String> steps) {
+
+        /** Keeps its own copy of the steps. */
+        public Request {
+            steps = List.copyOf(steps);
+        }
+    }
+
+    /**
+     * Checks several calls of {@link #directories} in one go ahead of them, where each check is
+     * slow; each call that passed then answers once without checking again, until {@link #forget}.
+     * A call that did not pass, or was not asked for, checks on its own as before.
+     *
+     * @param requests the calls to come
+     */
+    default void prepare(final List<Request> requests) {
+        // A check here is quick, so each call makes its own.
+    }
+
+    /** Drops what {@link #prepare} kept, so every later call checks anew. */
+    default void forget() {
+        // Nothing is kept here.
+    }
+
+    /**
      * The attributes a new file of the planner's own is made with, inside a directory of {@link
      * #directories}.
      *

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -14,15 +15,22 @@ import java.nio.file.attribute.FileAttribute;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,6 +109,9 @@ final class WindowsPrivateFiles implements PrivateFiles {
 
     private final Shell shell;
 
+    /** The deepest directory of each call {@link #prepare} checked and passed, until it is used. */
+    private final ConcurrentMap<Request, Path> passed = new ConcurrentHashMap<>();
+
     WindowsPrivateFiles(final Map<String, String> environment, final Shell shell) {
         this.environment = Map.copyOf(environment);
         this.shell = shell;
@@ -140,27 +151,141 @@ final class WindowsPrivateFiles implements PrivateFiles {
     @Override
     public Path directories(
             final Path base, final boolean create, final Kind kind, final List<String> steps) {
+        final Request request = new Request(base, create, kind, steps);
+        final Path kept = passed.remove(request);
+        if (kept != null) {
+            return kept;
+        }
+        try {
+            final Layout layout = lay(request);
+            final List<Path> asked = layout.asked();
+            final WindowsAccess access;
+            try {
+                access =
+                        WindowsAccess.parse(
+                                timed(
+                                        "the "
+                                                + kind.name().toLowerCase(Locale.ROOT)
+                                                + " directories",
+                                        () -> shell.run(lines(layout.made()), lines(asked))),
+                                asked.size());
+            } catch (final RuntimeException e) {
+                undo(layout.made());
+                throw e;
+            }
+            check(layout, access, asked::indexOf);
+            return layout.directory();
+        } catch (final IOException e) {
+            throw new UncheckedIOException(base + " cannot be used: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void prepare(final List<Request> requests) {
+        final List<Layout> layouts = new ArrayList<>();
+        for (final Request request : requests) {
+            try {
+                layouts.add(lay(request));
+            } catch (final IOException | RuntimeException e) {
+                LOG.warn(
+                        "The {} directories are checked on their own: {}",
+                        name(request),
+                        e.getMessage());
+            }
+        }
+        if (layouts.isEmpty()) {
+            return;
+        }
+        // Each path once: the kinds share the directories on their way.
+        final Map<Path, Integer> index = new LinkedHashMap<>();
+        final Set<Path> made = new LinkedHashSet<>();
+        for (final Layout layout : layouts) {
+            for (final Path path : layout.asked()) {
+                index.putIfAbsent(path, index.size());
+            }
+            made.addAll(layout.made());
+        }
+        final WindowsAccess access;
+        try {
+            access =
+                    WindowsAccess.parse(
+                            timed(
+                                    "the start's directories",
+                                    () -> shell.run(lines(made), lines(index.keySet()))),
+                            index.size());
+        } catch (final RuntimeException e) {
+            undo(new ArrayList<>(made));
+            LOG.warn("The start's directories are checked one kind at a time: {}", e.getMessage());
+            return;
+        }
+        for (final Layout layout : layouts) {
+            try {
+                check(layout, access, index::get);
+                passed.put(layout.request(), layout.directory());
+            } catch (final RuntimeException e) {
+                LOG.warn(
+                        "The {} directories are checked on their own: {}",
+                        name(layout.request()),
+                        e.getMessage());
+            }
+        }
+    }
+
+    @Override
+    public void forget() {
+        passed.clear();
+    }
+
+    private static String name(final Request request) {
+        return request.kind().name().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * A call's directories as Java finds and makes them, before Windows is asked about them.
+     *
+     * @param request the call
+     * @param above the base and every directory above it, the root first
+     * @param own the steps below the base
+     * @param made the steps made now, each below the one before
+     * @param directory the deepest step
+     */
+    private record Layout(
+            Request request, List<Path> above, List<Path> own, List<Path> made, Path directory) {
+
+        List<Path> asked() {
+            final List<Path> asked = new ArrayList<>(above);
+            asked.addAll(own);
+            return asked;
+        }
+    }
+
+    /**
+     * Checks a base's form, makes what is missing and tells the paths to ask about; a step made
+     * here is removed again when a later one fails, so none is left unprotected.
+     */
+    private static Layout lay(final Request request) throws IOException {
+        final Path base = request.base();
         if (!DRIVE_PATH.matcher(base.toString()).matches()
                 || !base.isAbsolute()
                 || !base.equals(base.normalize())) {
             throw new IllegalStateException(base + " is not a drive's path in its plain form");
         }
+        if (request.create() && !Files.exists(base, LinkOption.NOFOLLOW_LINKS)) {
+            Files.createDirectories(base);
+        }
+        final Path real = base.toRealPath();
+        if (!real.toString().equals(base.toString())) {
+            throw new IllegalStateException(base + " is reached through a link, as " + real);
+        }
+        final List<Path> above = new ArrayList<>();
+        for (Path dir = base; dir != null; dir = dir.getParent()) {
+            above.addFirst(dir);
+        }
+        final List<Path> own = new ArrayList<>();
+        final List<Path> made = new ArrayList<>();
+        Path directory = base;
         try {
-            if (create && !Files.exists(base, LinkOption.NOFOLLOW_LINKS)) {
-                Files.createDirectories(base);
-            }
-            final Path real = base.toRealPath();
-            if (!real.toString().equals(base.toString())) {
-                throw new IllegalStateException(base + " is reached through a link, as " + real);
-            }
-            final List<Path> above = new ArrayList<>();
-            for (Path dir = base; dir != null; dir = dir.getParent()) {
-                above.addFirst(dir);
-            }
-            final List<Path> own = new ArrayList<>();
-            final List<Path> made = new ArrayList<>();
-            Path directory = base;
-            for (final String step : steps) {
+            for (final String step : request.steps()) {
                 directory = directory.resolve(step);
                 own.add(directory);
                 try {
@@ -172,31 +297,54 @@ final class WindowsPrivateFiles implements PrivateFiles {
                     requirePlainDirectory(directory);
                 }
             }
-            final List<Path> asked = new ArrayList<>(above);
-            asked.addAll(own);
-            final WindowsAccess access =
-                    WindowsAccess.parse(
-                            timed(
-                                    "the " + kind.name().toLowerCase(Locale.ROOT) + " directories",
-                                    () -> shell.run(lines(made), lines(asked))),
-                            asked.size());
-            for (int i = 0; i < above.size(); i++) {
-                access.requireSafeAncestor(above.get(i), i);
+        } catch (final IOException | RuntimeException e) {
+            undo(made);
+            throw e;
+        }
+        return new Layout(request, above, own, made, directory);
+    }
+
+    /** Refuses a call's directories that are not the account's as its kind requires. */
+    private static void check(
+            final Layout layout, final WindowsAccess access, final ToIntFunction<Path> index) {
+        final List<Path> above = layout.above();
+        for (final Path path : above) {
+            access.requireSafeAncestor(path, index.applyAsInt(path));
+        }
+        // The base too, whatever is asked: an account that may add to %LOCALAPPDATA% could make
+        // the planner's directory first.
+        final Path base = above.getLast();
+        access.requireOwnersAlone(base, index.applyAsInt(base), true, false);
+        final List<Path> own = layout.own();
+        for (int i = 0; i < own.size(); i++) {
+            final Path path = own.get(i);
+            if (layout.request().kind() == Kind.LOGS && i < own.size() - 1) {
+                // Shared with other parts of Porelo: held only to the rules of a way there.
+                access.requireSafeAncestor(path, index.applyAsInt(path));
+            } else {
+                access.requireOwnersAlone(path, index.applyAsInt(path), true, true);
             }
-            // The base too, whatever is asked: an account that may add to %LOCALAPPDATA% could make
-            // the planner's directory first.
-            access.requireOwnersAlone(base, above.size() - 1, true, false);
-            for (int i = 0; i < own.size(); i++) {
-                if (kind == Kind.LOGS && i < own.size() - 1) {
-                    // Shared with other parts of Porelo: held only to the rules of a way there.
-                    access.requireSafeAncestor(own.get(i), above.size() + i);
-                } else {
-                    access.requireOwnersAlone(own.get(i), above.size() + i, true, true);
-                }
+        }
+    }
+
+    /**
+     * Removes the steps just made, the deepest first, when their protection was not set: one left
+     * would keep only what it inherited, and pass no check again. One not empty is left, and said.
+     * A second planner that found one there meanwhile then fails on what it writes in it, never on
+     * an unprotected directory.
+     */
+    private static void undo(final List<Path> made) {
+        for (final Path path : made.reversed()) {
+            try {
+                Files.delete(path);
+            } catch (final DirectoryNotEmptyException e) {
+                LOG.warn("{} was made but not protected, and is not empty: it stays", path);
+            } catch (final IOException e) {
+                LOG.warn(
+                        "{} was made but not protected, and cannot be removed: {}",
+                        path,
+                        e.getMessage());
             }
-            return directory;
-        } catch (final IOException e) {
-            throw new UncheckedIOException(base + " cannot be used: " + e.getMessage(), e);
         }
     }
 
@@ -256,7 +404,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
         return value;
     }
 
-    private static String lines(final List<Path> paths) {
+    private static String lines(final Collection<Path> paths) {
         final StringBuilder text = new StringBuilder();
         for (final Path path : paths) {
             text.append(path).append('\n');

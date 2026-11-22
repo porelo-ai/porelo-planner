@@ -1,0 +1,2 @@
+title: On Windows the planner checks its runtime, log and state directories in one PowerShell call when it starts, and a directory made but left unprotected by a failed call is removed so that the next call protects it.
+type: changed

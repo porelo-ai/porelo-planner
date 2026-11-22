@@ -54,6 +54,7 @@
         <!-- The JSON schema validator the build tools' stories tests are written against. -->
         <json-schema-validator.version>1.5.9</json-schema-validator.version>
         <archunit.version>1.4.2</archunit.version>
+        <jimfs.version>1.3.0</jimfs.version>
         <!-- porelo's version of its native-image checks; the build tools publish older copies at higher versions. -->
         <porelo.checks.version>0.5.1-SNAPSHOT</porelo.checks.version>
         <!-- Every surefire and failsafe fork is capped, so several agents' test runs fit the host's memory together. -->
@@ -112,6 +113,11 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.jimfs</groupId>
+                <artifactId>jimfs</artifactId>
+                <version>${jimfs.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
