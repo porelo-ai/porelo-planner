@@ -418,6 +418,10 @@ public final class IssueMapping {
             }
             blockedBy.add(blockerId);
         }
+        // A blocker GitHub counts but does not name is one the person's login cannot read.
+        for (int unseen = 0; unseen < item.unseenBlockers(); unseen++) {
+            waitsOn.add(Wait.unreadable());
+        }
         final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
         final Worker worker = workerOf(id, item, faults);
         final Risk risk = riskOf(id, item, faults);

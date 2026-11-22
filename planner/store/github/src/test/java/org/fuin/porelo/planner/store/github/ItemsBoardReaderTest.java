@@ -1925,6 +1925,39 @@ class ItemsBoardReaderTest {
                 plain.valuesPage());
     }
 
+    /**
+     * An issue of the library, under the story, blocked by the issues named and by as many more as
+     * {@code unseen} that GitHub counts but does not name.
+     */
+    private static ProjectItem hiding(
+            final int number, final int unseen, final IssueRef... blockers) {
+        final ProjectItem plain = waiting(number, blockers);
+        final BoardIssue issue = java.util.Objects.requireNonNull(plain.issue());
+        return new ProjectItem(
+                plain.id(),
+                false,
+                new BoardIssue(
+                        issue.id(),
+                        issue.databaseId(),
+                        issue.number(),
+                        issue.title(),
+                        issue.body(),
+                        issue.state(),
+                        issue.stateReason(),
+                        issue.updatedAt(),
+                        issue.repository(),
+                        issue.labels(),
+                        issue.parentId(),
+                        issue.subIssues(),
+                        new IssueRefs(
+                                List.of(blockers),
+                                new PageInfo(false, null),
+                                blockers.length + unseen),
+                        issue.labelsPage()),
+                plain.values(),
+                plain.valuesPage());
+    }
+
     /** An issue of another owner's repository as GitHub answers it by its id. */
     private static IssueOnBoard elsewhere(final IssueRef ref, final String state) {
         return new IssueOnBoard(
@@ -1977,6 +2010,108 @@ class ItemsBoardReaderTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("other-org/elsewhere#7", true),
                         org.assertj.core.groups.Tuple.tuple("other-org/private#8", null));
+    }
+
+    @Test
+    void aBlockerGitHubCountsButDoesNotNameIsAWaitOnSomethingNotReadableThatHoldsTheIssue() {
+        // Harm: GitHub leaves a blocker the person's token cannot read out of the names it lists,
+        // so the issue reads as free and work starts on it while that blocker is still open.
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), hiding(3, 1, FAR))
+                        .boardPage(elsewhere(FAR, "CLOSED"))
+                        .read();
+
+        final List<Wait> waits = snapshot.board().issue("example-lib#3").orElseThrow().waitsOn();
+        assertThat(waits)
+                .as("the named blocker done, the one not named a wait on something not readable")
+                .containsExactly(
+                        new Wait(
+                                "other-org/elsewhere#7",
+                                true,
+                                java.net.URI.create(
+                                        "https://github.com/other-org/elsewhere/issues/7")),
+                        Wait.unreadable());
+        assertThat(waits).as("the issue held back").anyMatch(Wait::holds);
+        assertThat(waits.get(1).spoken()).isEqualTo("something not readable");
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().blockedBy())
+                .as("no board blocker made up for it")
+                .isEmpty();
+    }
+
+    @Test
+    void aBlockerGitHubCountsButDoesNotNameGivesAnotherRevision() {
+        // Harm: a blocker added that the person cannot read is never told to the window, which
+        // still shows its issue free and saves against a board that no longer stands.
+        final Snapshot named =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), hiding(3, 0, FAR))
+                        .boardPage(elsewhere(FAR, "OPEN"))
+                        .read();
+        final Snapshot hidden =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), hiding(3, 1, FAR))
+                        .boardPage(elsewhere(FAR, "OPEN"))
+                        .read();
+
+        assertThat(hidden.board().revision())
+                .as("the revision once GitHub counts a blocker it does not name")
+                .isNotEqualTo(named.board().revision());
+    }
+
+    @Test
+    void aCopyKeepsABlockerGitHubCountsButDoesNotName() {
+        // Harm: a board shown at start from its copy offers the issue, its unreadable wait lost.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), hiding(3, 2, FAR))
+                        .boardPage(elsewhere(FAR, "CLOSED"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot read = reader.read(CONFIG);
+
+        final BoardCopy copy = reader.toCopy(read, ChangeCursor.NONE, List.of());
+        assertThat(copy).as("the copy").isNotNull();
+        final Snapshot loaded = reader.fromCopy(copy, CONFIG);
+
+        assertThat(loaded.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("both waits not readable kept from the copy")
+                .containsExactly(
+                        new Wait(
+                                "other-org/elsewhere#7",
+                                true,
+                                java.net.URI.create(
+                                        "https://github.com/other-org/elsewhere/issues/7")),
+                        Wait.unreadable(),
+                        Wait.unreadable());
+        assertThat(loaded.board().revision())
+                .as("the copy's board the one read")
+                .isEqualTo(read.board().revision());
+    }
+
+    @Test
+    void aStartOnAnIssueWithABlockerGitHubCountsButDoesNotNameReadsItAsNotRead() {
+        // Harm: a blocker the person cannot read, added after the board was read, is missed by the
+        // start, which then starts work over it.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR))
+                        .boardPage(elsewhere(FAR, "CLOSED"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+        github.boardPage(onBoard(hiding(3, 1, FAR)), elsewhere(FAR, "CLOSED"));
+
+        final BoardReader.StartRead read = reader.waitsOf(CONFIG, held, Set.of(LIB_3));
+
+        assertThat(read.unread()).as("the issue not known free").containsExactly(LIB_3);
+        assertThat(read.blockers().get(LIB_3))
+                .as("the blocker GitHub names still read")
+                .extracting(IssueRef::id)
+                .containsExactly("I_far_7");
     }
 
     @Test

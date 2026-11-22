@@ -595,7 +595,11 @@ public final class ItemsBoardReader implements BoardReader {
                 if (issueIds.contains(id)) {
                     if (issue != null && !issue.blockedBy().pageInfo().hasNextPage()) {
                         named.put(id, issue.blockedBy().nodes());
-                    } else {
+                    }
+                    // A blocker GitHub counts but does not name holds the start as one not read.
+                    if (issue == null
+                            || issue.blockedBy().pageInfo().hasNextPage()
+                            || unseen(issue.blockedBy()) > 0) {
                         unread.add(id);
                     }
                 }
@@ -1439,7 +1443,18 @@ public final class ItemsBoardReader implements BoardReader {
                 item.archived(),
                 issue.blockedBy().nodes().stream()
                         .map(ref -> new ItemView.Blocker(ref.id(), ref.repository(), ref.number()))
-                        .toList());
+                        .toList(),
+                unseen(issue.blockedBy()));
+    }
+
+    /**
+     * How many more issues GitHub counts in a whole first page than it names, as it leaves out one
+     * the person's login cannot read; none where more pages follow, as such an item is left out.
+     */
+    static int unseen(final GitHubGraphQl.IssueRefs refs) {
+        return Boolean.TRUE.equals(refs.pageInfo().hasNextPage())
+                ? 0
+                : Math.max(0, refs.totalCount() - refs.nodes().size());
     }
 
     /**
@@ -1578,7 +1593,9 @@ public final class ItemsBoardReader implements BoardReader {
         add(
                 digest,
                 refs.nodes().size()
-                        + (Boolean.TRUE.equals(refs.pageInfo().hasNextPage()) ? "+" : ""));
+                        + (Boolean.TRUE.equals(refs.pageInfo().hasNextPage()) ? "+" : "")
+                        + "/"
+                        + refs.totalCount());
         refs.nodes().forEach(ref -> add(digest, ref.id()));
     }
 

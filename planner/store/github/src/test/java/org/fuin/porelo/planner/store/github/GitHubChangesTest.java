@@ -617,4 +617,70 @@ class GitHubChangesTest {
 
         assertThat(changed.changed()).isEmpty();
     }
+
+    @Test
+    void aBlockerGraphQlCountsButDoesNotNameCountsAlikeInRestsCountSoNoItemIsNamedAtEveryLook() {
+        // Harm: an issue blocked by an issue the person cannot read is read again at every look,
+        // as the copy holds only the blockers GraphQL names against REST's count of all of them.
+        final GitHubGraphQl.PageInfo none = new GitHubGraphQl.PageInfo(false, null);
+        final GitHubGraphQl.BoardIssue open = boardIssue("I_PVTI_1");
+        // GraphQL names the blocker the person reads and counts the one it leaves out.
+        final GitHubGraphQl.IssueRefs blockers =
+                new GitHubGraphQl.IssueRefs(
+                        List.of(
+                                new GitHubGraphQl.IssueRef(
+                                        "I_open", 21L, 21, OWNER + "/example-project")),
+                        none,
+                        2);
+        final GitHubGraphQl.ProjectItem read =
+                new GitHubGraphQl.ProjectItem(
+                        "PVTI_1",
+                        false,
+                        new GitHubGraphQl.BoardIssue(
+                                open.id(),
+                                open.databaseId(),
+                                open.number(),
+                                open.title(),
+                                open.body(),
+                                open.state(),
+                                open.stateReason(),
+                                open.updatedAt(),
+                                open.repository(),
+                                open.labels(),
+                                open.parentId(),
+                                open.subIssues(),
+                                blockers,
+                                none),
+                        List.of(
+                                new GitHubGraphQl.ItemValue(
+                                        STATUS, "opt-idea", "Idea", null, null)),
+                        none);
+        final ProjectItemSummary listed =
+                new ProjectItemSummary(
+                        "PVTI_1",
+                        THEN,
+                        false,
+                        "Issue",
+                        new ProjectItemSummary.IssueSummary(
+                                "I_PVTI_1", OWNER + "/example-project", 1, THEN, "open", 0, 2),
+                        List.of(
+                                new ProjectItemSummary.ValueSummary(
+                                        STATUS_ID, "single_select", "opt-idea", null, null)));
+        final GitHub github = unchanged().page(null, "\"a2\"", "c2", listed, listed("PVTI_2"));
+
+        final TrackerChanges.Changed changed =
+                github.changes()
+                        .since(
+                                CONFIG,
+                                TOKEN,
+                                twoPages(),
+                                known(
+                                        BoardCopyMapping.tracked(read),
+                                        held("PVTI_2"),
+                                        held("PVTI_3")),
+                                FIELDS)
+                        .orElseThrow();
+
+        assertThat(changed.changed()).isEmpty();
+    }
 }

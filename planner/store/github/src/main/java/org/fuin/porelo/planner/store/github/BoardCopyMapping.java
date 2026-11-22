@@ -218,8 +218,8 @@ final class BoardCopyMapping {
                 // The board reads a missing answer as no more, as GitHub's own read does.
                 Boolean.TRUE.equals(page.hasNextPage()),
                 page.endCursor(),
-                // GitHub's board read gives no count; the links listed are all it is known by.
-                refs.nodes().size());
+                // GitHub's count, so a blocker it does not name is held as one not readable.
+                refs.totalCount());
     }
 
     private static GitHubGraphQl.IssueRefs refs(final TrackedItem.Links links) {
@@ -234,6 +234,7 @@ final class BoardCopyMapping {
                                                 link.number(),
                                                 link.repository()))
                         .toList(),
-                new GitHubGraphQl.PageInfo(links.more(), after));
+                new GitHubGraphQl.PageInfo(links.more(), after),
+                links.total());
     }
 }

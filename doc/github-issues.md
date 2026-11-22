@@ -103,7 +103,8 @@ stage records count them; a pause and a person's move are shown, not summed.
   fault, and the story it belongs to says that an issue of it is missing.
 - A blocker the project does not hold leaves its issue on the board, waiting on it: `waitsOn` names it as
   `owner/repository#number` with whether it is done and its link. A blocker the person's token cannot read is named
-  as a wait on something not readable, never as done.
+  as a wait on something not readable, never as done; so is each blocker GitHub counts but leaves out of the ones it
+  names, with no reference.
 - Work never starts on an issue while a blocker of it is open: a blocker on the board in an open state, a wait not
   done, or a wait whose state could not be read. A start reads the offered issues' waits once more and refuses on an
   open or unread one; a run already started goes on when a wait opens again.
