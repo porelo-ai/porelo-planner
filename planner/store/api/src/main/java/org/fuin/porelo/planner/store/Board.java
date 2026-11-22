@@ -250,6 +250,17 @@ public record Board(
     }
 
     /**
+     * Says why no work may be proposed or started on an item: what {@link #holdsWork(String)} says,
+     * and an item GitHub has closed under an open state, which a move or an edit may still name.
+     *
+     * @param id a story's or an issue's id
+     * @return the words of a refusal; empty when work may start on the item
+     */
+    public Optional<String> holdsStart(final String id) {
+        return held(id, Warning::holdsStart);
+    }
+
+    /**
      * Says why no move may name an item: what {@link #holdsWork(String)} says, but for a warning
      * about its state alone, its own or a parent's, since a move into a state of the workflow is
      * what sets that right.

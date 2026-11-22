@@ -13,7 +13,6 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
-import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Warning;
@@ -70,8 +69,6 @@ class IssueMappingTest {
         private boolean open = true;
         private boolean archived;
         private String body = SECRET_BODY;
-        private final List<CommentView> comments = new ArrayList<>();
-        private boolean commentsRead = true;
 
         private Item(final String repository, final int number) {
             this.repository = repository;
@@ -133,33 +130,8 @@ class IssueMappingTest {
             return this;
         }
 
-        private Item commentsNotRead() {
-            commentsRead = false;
-            return this;
-        }
-
         private Item body(final String text) {
             body = text;
-            return this;
-        }
-
-        private Item stage(final String key, final double minutes) {
-            final StageEntry entry =
-                    new StageEntry(
-                            key,
-                            "implement",
-                            "done",
-                            "agent",
-                            "claude-opus",
-                            "high",
-                            minutes,
-                            1,
-                            Map.of("claude_input_tokens", 100L, "claude_output_tokens", 20L));
-            comments.add(
-                    new CommentView(
-                            "IC_" + key,
-                            StageComment.write(entry, null),
-                            Instant.parse("2026-01-02T00:00:00Z")));
             return this;
         }
 
@@ -182,7 +154,6 @@ class IssueMappingTest {
                     parent,
                     subs,
                     blockers,
-                    commentsRead ? comments : null,
                     URI.create(
                             "https://github.com/example-org/" + repository + "/issues/" + number),
                     Instant.parse("2026-01-01T00:00:00Z"),
@@ -310,9 +281,10 @@ class IssueMappingTest {
                 .as("each item left out, named by its repository and number")
                 .containsExactly(
                         "Item elsewhere#9 lies outside the project's repositories and is left out",
-                        "Item Example-Lib#3 has no valid tracker reference and is left out",
-                        "example-project#1 has a sub-issue outside the project",
-                        "example-project#1 has a sub-issue outside the project");
+                        "Item Example-Lib#3 has no valid tracker reference and is left out");
+        assertThat(mapped.stories().get(0).warnings())
+                .as("the story warned once for its sub-issues outside the project")
+                .containsExactly(Warning.issueOutsideProject());
     }
 
     @Test
@@ -325,10 +297,13 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(story, outside);
 
         assertThat(mapped.faults())
-                .as("the foreign item and the story's sub-issue outside the project")
+                .as("the foreign item left out")
                 .containsExactly(
-                        "Item elsewhere#9 lies outside the project's repositories and is left out",
-                        "example-project#1 has a sub-issue outside the project");
+                        "Item elsewhere#9 lies outside the project's repositories and is left out");
+        assertThat(mapped.stories())
+                .as("the story warned on its card and not whole")
+                .extracting(Story::warnings, Story::issuesWhole)
+                .containsExactly(Tuple.tuple(List.of(Warning.issueOutsideProject()), false));
     }
 
     @Test
@@ -467,19 +442,34 @@ class IssueMappingTest {
     }
 
     @Test
-    void aStatusAgainstGitHubsOpenOrClosedStaysTheTruthAndIsNamed() {
-        // Harm: a finished issue reopened on GitHub silently counted as done, or as open, without a
-        // word.
+    void aStatusAgainstGitHubsOpenOrClosedStaysTheTruthAndIsWarnedOnTheItem() {
+        // Harm: a finished issue reopened on GitHub, or an issue a merge closed under an open
+        // state, counted by its state with no sign on its card that GitHub says otherwise.
         final Item reopened = new Item("example-lib", 1).field(FieldNames.STATUS, "Finished");
+        final Item closed = new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog").closed();
+        final Item unstated = new Item("example-lib", 3).closed();
+        final Item agreeing = new Item("example-lib", 4).field(FieldNames.STATUS, "Backlog");
 
-        final IssueMapping.Mapped mapped = read(reopened);
+        final IssueMapping.Mapped mapped = read(reopened, closed, unstated, agreeing);
 
-        assertThat(mapped.issues().get(0).state()).as("the Status").isEqualTo("Finished");
-        assertThat(mapped.faults())
-                .as("the disagreement named")
-                .singleElement()
-                .asString()
-                .contains("example-lib#1");
+        assertThat(mapped.issues())
+                .as("each by its Status, a disagreement warned without holding work")
+                .extracting(Issue::id, Issue::state, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple(
+                                "example-lib#1",
+                                "Finished",
+                                List.of(Warning.openUnderClosedState())),
+                        Tuple.tuple(
+                                "example-lib#2",
+                                "Backlog",
+                                List.of(Warning.closedUnderOpenState())),
+                        Tuple.tuple(
+                                "example-lib#3", "Idea", List.of(Warning.closedUnderOpenState())),
+                        Tuple.tuple("example-lib#4", "Backlog", List.of()));
+        assertThat(Warning.closedUnderOpenState().holdsWork()).as("work goes on").isFalse();
+        assertThat(Warning.openUnderClosedState().holdsWork()).as("work goes on").isFalse();
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -600,78 +590,37 @@ class IssueMappingTest {
                         Tuple.tuple("example-project#1", List.of("example-lib#3"), true),
                         Tuple.tuple("example-project#2", List.of("example-lib#3"), true),
                         Tuple.tuple("example-project#4", List.of("example-lib#3"), false));
-        assertThat(mapped.faults())
-                .as("an issue also needed that the board does not hold is named")
+        assertThat(mapped.stories())
+                .as("the story whose line names no issue the board shows is warned")
+                .extracting(Story::id, Story::warnings)
                 .containsExactly(
-                        "example-project#4 has a line under Also needs that names no issue of the"
-                                + " project");
+                        Tuple.tuple("example-project#1", List.of()),
+                        Tuple.tuple("example-project#2", List.of()),
+                        Tuple.tuple("example-project#4", List.of(Warning.alsoNeedsNotOnBoard())));
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
-    void aSumFieldEditedByHandIsShownAsItsCommentsSumAndWrittenAgain() {
-        // Harm: the velocity and the board read a hand edit instead of what the stages measured.
+    void aNumberFieldSetByHandIsShownAsGitHubHoldsIt() {
+        // Harm: a person's override of an issue's minutes replaced on the board by a sum of the
+        // stage comments, named as a fault and written back over at the next save.
         final Item edited =
                 new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
                         .field(FieldNames.MINUTES, "99")
-                        .field(FieldNames.STAGES, "2")
-                        .stage("t1/implement", 10)
-                        .stage("t2/implement", 5);
-        final Item kept =
-                new Item("example-lib", 4)
-                        .field(FieldNames.STATUS, "Idea")
-                        .field(FieldNames.MINUTES, "7")
-                        .field(FieldNames.VM_MINUTES, "1")
-                        .field(FieldNames.TOKENS, "120")
-                        .field(FieldNames.STAGES, "1")
-                        .stage("t3/implement", 7);
+                        .field(FieldNames.STAGES, "2");
 
-        final IssueMapping.Mapped mapped = read(edited, kept);
+        final IssueMapping.Mapped mapped = read(edited);
 
-        assertThat(mapped.sums().get("example-lib#3").minutes())
-                .as("the comments' sum, not the field")
-                .isEqualTo(15.0);
         assertThat(mapped.issues())
-                .as("the minutes the board counts are the comments' sum too")
-                .filteredOn(issue -> issue.id().equals("example-lib#3"))
-                .singleElement()
-                .extracting(Issue::minutes)
-                .isEqualTo(15.0);
-        assertThat(mapped.rewrite())
-                .as("only the issue whose fields disagree is written again")
-                .containsExactly("example-lib#3");
-        assertThat(mapped.faults())
-                .as("the disagreeing field is named")
-                .containsExactly(
-                        "example-lib#3 has a Minutes apart from its stage comments' sum, shown as"
-                                + " the sum",
-                        "example-lib#3 has a VM minutes apart from its stage comments' sum, shown"
-                                + " as the sum",
-                        "example-lib#3 has a Tokens apart from its stage comments' sum, shown as"
-                                + " the sum");
+                .as("the minutes as the field holds them, with no warning")
+                .extracting(Issue::minutes, Issue::warnings)
+                .containsExactly(Tuple.tuple(99.0, List.of()));
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
-    void anIssueWhoseCommentsWereNotReadShowsItsFieldsWithoutASumOrARewrite() {
-        // Harm: a board read that reads no comments takes every issue's fields for disagreeing
-        // with an empty sum, names a fault for each and writes them all to zero at the next save.
-        final Item unread =
-                new Item("example-lib", 3)
-                        .field(FieldNames.STATUS, "Idea")
-                        .field(FieldNames.MINUTES, "99")
-                        .field(FieldNames.STAGES, "2")
-                        .commentsNotRead();
-
-        final IssueMapping.Mapped mapped = read(unread);
-
-        assertThat(mapped.issues()).as("the issue is on the board").hasSize(1);
-        assertThat(mapped.sums()).as("no sum stands for comments not read").isEmpty();
-        assertThat(mapped.rewrite()).as("nothing is written again").isEmpty();
-        assertThat(mapped.faults()).as("its fields are no fault").isEmpty();
-    }
-
-    @Test
-    void aStoryBodyTooLongToReadIsAFaultNotABoardThatFailsToLoad() {
+    void aStoryBodyTooLongToReadIsWarnedNotABoardThatFailsToLoad() {
         // Harm: one story edited by hand on GitHub keeps every person from seeing the board.
         final Item story =
                 new Item("example-project", 1)
@@ -684,11 +633,10 @@ class IssueMappingTest {
                 .as("the story stays, its issues not known whole")
                 .extracting(Story::id, Story::issuesWhole)
                 .containsExactly(Tuple.tuple("example-project#1", false));
-        assertThat(mapped.faults())
-                .as("the body is named, not shown")
-                .containsExactly(
-                        "example-project#1 has a body too long to read its Also needs, shown"
-                                + " without it");
+        assertThat(mapped.stories().get(0).warnings())
+                .as("the story warned, its body not shown")
+                .containsExactly(Warning.bodyTooLong());
+        assertThat(mapped.faults()).as("no fault").isEmpty();
         assertThat(mapped.stories().get(0).description())
                 .as("the board holds no body beyond GitHub's bound")
                 .isEmpty();
@@ -708,10 +656,10 @@ class IssueMappingTest {
                 .as("the issue stays, without its body")
                 .extracting(Issue::id, Issue::text)
                 .containsExactly(Tuple.tuple("example-lib#3", ""));
-        assertThat(mapped.faults())
-                .as("the issue named, never its body's text")
-                .containsExactly(
-                        "example-lib#3 has a body longer than GitHub takes, shown without it");
+        assertThat(mapped.issues().get(0).warnings())
+                .as("the issue warned in fixed words, never its body's text")
+                .containsExactly(Warning.bodyTooLong());
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -738,7 +686,7 @@ class IssueMappingTest {
     }
 
     @Test
-    void aLineUnderAlsoNeedsThatNamesNoIssueOfTheProjectIsAFaultWithoutItsText() {
+    void aLineUnderAlsoNeedsThatNamesNoIssueOfTheProjectIsWarnedWithoutItsText() {
         // Harm: a story counted whole while a needed issue is unread, and a person's words in a
         // log.
         final Item shared = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
@@ -753,13 +701,10 @@ class IssueMappingTest {
                 .as("the issue named rightly is read, the story not whole")
                 .extracting(Story::issues, Story::issuesWhole)
                 .containsExactly(Tuple.tuple(List.of("example-lib#3"), false));
-        assertThat(mapped.faults())
-                .as("one fault per line, none repeating it")
-                .containsExactly(
-                        "example-project#1 has a line under Also needs that names no issue of the"
-                                + " project",
-                        "example-project#1 has a line under Also needs that names no issue of the"
-                                + " project");
+        assertThat(mapped.stories().get(0).warnings())
+                .as("warned once on the story, its fixed words repeating no line")
+                .containsExactly(Warning.alsoNeedsNotOnBoard());
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -801,8 +746,56 @@ class IssueMappingTest {
     }
 
     @Test
-    void aStoryWithASubIssueOutsideTheProjectOrNoPriorityIsNamed() {
-        // Harm: a story shown whole and in its place while GitHub holds it otherwise.
+    void aStoryUnderAnIssueOrWithAnUnknownSizeOrPriorityIsShownWarned() {
+        // Harm: a story a person put under an issue, or gave a Size or Priority the planner does
+        // not know, shown as if GitHub held it so, with no sign on its card.
+        final Item parent = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
+        final Item story =
+                new Item("example-project", 1)
+                        .story()
+                        .field(FieldNames.SIZE, "XXL")
+                        .field(FieldNames.PRIORITY, "Urgent");
+        story.parent = parent.node();
+
+        final IssueMapping.Mapped mapped = read(story, parent);
+
+        assertThat(mapped.stories())
+                .as("the story without a parent, a size or its priority, each warned")
+                .extracting(Story::size, Story::priority, Story::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                null,
+                                "Medium",
+                                List.of(
+                                        Warning.storyUnderIssue(),
+                                        Warning.unknownPriority(),
+                                        Warning.unknownSize())));
+        assertThat(Warning.storyUnderIssue().holdsWork()).as("work goes on").isFalse();
+        assertThat(mapped.faults()).as("no fault").isEmpty();
+    }
+
+    @Test
+    void anIssueWithASizeThePlannerDoesNotKnowIsShownWithoutOneAndWarned() {
+        // Harm: an issue's Size set by hand to an option the planner lacks shown as having no
+        // size, with no sign why on its card.
+        final Item issue =
+                new Item("example-lib", 3)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.SIZE, "XXL");
+
+        final IssueMapping.Mapped mapped = read(issue);
+
+        assertThat(mapped.issues())
+                .extracting(Issue::size, Issue::warnings)
+                .containsExactly(Tuple.tuple(null, List.of(Warning.unknownSize())));
+        assertThat(Warning.unknownSize().holdsWork()).as("work goes on").isFalse();
+        assertThat(mapped.faults()).as("no fault").isEmpty();
+    }
+
+    @Test
+    void aStoryWithASubIssueOutsideTheProjectOrNoPriorityIsWarned() {
+        // Harm: a story shown whole and in its place while GitHub holds it otherwise, with no
+        // sign on its card.
         final Item story =
                 new Item("example-project", 1)
                         .story()
@@ -815,11 +808,10 @@ class IssueMappingTest {
                 .as("shown as Medium and not whole")
                 .extracting(Story::priority, Story::issuesWhole)
                 .containsExactly(Tuple.tuple("Medium", false));
-        assertThat(mapped.faults())
-                .as("both are named")
-                .containsExactly(
-                        "example-project#1 has a sub-issue outside the project",
-                        "example-project#1 has no Priority, shown as Medium");
+        assertThat(mapped.stories().get(0).warnings())
+                .as("both warned")
+                .containsExactly(Warning.issueOutsideProject(), Warning.noPriority());
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -1267,24 +1259,51 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssuesEstimateAndMinutesAreReadFromTheirFieldsAndAnUnreadableOneIsNamed() {
+    void aStageSumFieldOutOfItsBoundsIsWarnedByNameThoughTheBoardShowsItNot() {
+        // Harm: a VM minutes, Tokens or Stages set by hand to what no stage can add to, with no
+        // sign on the card until a stage's save is refused over it.
+        final Item fine =
+                new Item("example-lib", 1)
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.VM_MINUTES, "3")
+                        .field(FieldNames.TOKENS, "300")
+                        .field(FieldNames.STAGES, "2");
+        final Item bad =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.VM_MINUTES, "-1")
+                        .field(FieldNames.TOKENS, "1.5")
+                        .field(FieldNames.STAGES, "1e300");
+
+        final IssueMapping.Mapped mapped = read(fine, bad);
+
+        assertThat(mapped.issues())
+                .as("each field out of its bounds warned by its name")
+                .extracting(Issue::id, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple("example-lib#1", List.of()),
+                        Tuple.tuple(
+                                "example-lib#2",
+                                List.of(
+                                        Warning.unreadableNumber(FieldNames.VM_MINUTES),
+                                        Warning.unreadableNumber(FieldNames.TOKENS),
+                                        Warning.unreadableNumber(FieldNames.STAGES))));
+    }
+
+    @Test
+    void anIssuesEstimateAndMinutesAreReadFromTheirFieldsAndAnUnreadableOneIsWarned() {
         // Harm: minutes left from another figure than GitHub holds, or a bad one taken silently.
         final Item story = new Item("example-project", 1).story();
         final Item estimated =
                 new Item("example-project", 2)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.ESTIMATE, "32.5")
                         .field(FieldNames.MINUTES, "12");
         final Item bad =
                 new Item("example-project", 3)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.ESTIMATE, SECRET_BODY);
-        final Item none =
-                new Item("example-project", 4)
-                        .commentsNotRead()
-                        .field(FieldNames.STATUS, "Backlog");
+        final Item none = new Item("example-project", 4).field(FieldNames.STATUS, "Backlog");
         story.sub(estimated).sub(bad).sub(none);
 
         final IssueMapping.Mapped mapped = read(story, estimated, bad, none);
@@ -1296,26 +1315,29 @@ class IssueMappingTest {
                         org.assertj.core.groups.Tuple.tuple("example-project#2", 32.5, 12.0),
                         org.assertj.core.groups.Tuple.tuple("example-project#3", null, null),
                         org.assertj.core.groups.Tuple.tuple("example-project#4", null, null));
-        assertThat(mapped.faults())
-                .as("the unreadable estimate named by its issue and field, never its value")
+        assertThat(mapped.issues())
+                .as("the unreadable estimate warned in fixed words, never its value")
+                .extracting(Issue::id, Issue::warnings)
                 .containsExactly(
-                        "example-project#3 has no number of minutes in its field Estimate, read as"
-                                + " none");
+                        Tuple.tuple("example-project#2", List.of()),
+                        Tuple.tuple(
+                                "example-project#3",
+                                List.of(Warning.unreadableNumber(FieldNames.ESTIMATE))),
+                        Tuple.tuple("example-project#4", List.of()));
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
-    void anEstimateOrMinutesOutOfRangeIsNamedAndReadAsNone() {
+    void anEstimateOrMinutesOutOfRangeIsWarnedAndReadAsNone() {
         // Harm: one huge figure on GitHub overflows the sums and fails every stories read.
         final Item story = new Item("example-project", 1).story();
         final Item huge =
                 new Item("example-project", 2)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.ESTIMATE, "1e308")
                         .field(FieldNames.MINUTES, "-3");
         final Item zero =
                 new Item("example-project", 3)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.ESTIMATE, "0");
         story.sub(huge).sub(zero);
@@ -1326,36 +1348,34 @@ class IssueMappingTest {
                 .as("no figure out of its range is taken")
                 .extracting(Issue::estimate, Issue::minutes)
                 .containsOnly(org.assertj.core.groups.Tuple.tuple(null, null));
-        assertThat(mapped.faults())
-                .as("each named by its issue and field")
+        assertThat(mapped.issues())
+                .as("each field warned on its card, by its name")
+                .extracting(Issue::warnings)
                 .containsExactly(
-                        "example-project#2 has no number of minutes in its field Estimate, read as"
-                                + " none",
-                        "example-project#2 has no number of minutes in its field Minutes, read as"
-                                + " none",
-                        "example-project#3 has no number of minutes in its field Estimate, read as"
-                                + " none");
+                        List.of(
+                                Warning.unreadableNumber(FieldNames.ESTIMATE),
+                                Warning.unreadableNumber(FieldNames.MINUTES)),
+                        List.of(Warning.unreadableNumber(FieldNames.ESTIMATE)));
+        assertThat(Warning.unreadableNumber(FieldNames.MINUTES).holdsWork())
+                .as("work goes on")
+                .isFalse();
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
-    void anIssuesPriorityIsReadFromItsFieldAndAnUnknownOneIsNamedAndReadAsNone() {
+    void anIssuesPriorityIsReadFromItsFieldAndAnUnknownOneIsWarnedAndReadAsNone() {
         // Harm: a story's rank judged against a priority GitHub does not hold, or a bad one
         // taken silently.
         final Item story = new Item("example-project", 1).story();
         final Item high =
                 new Item("example-project", 2)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.PRIORITY, "High");
         final Item unknown =
                 new Item("example-project", 3)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.PRIORITY, SECRET_BODY);
-        final Item none =
-                new Item("example-project", 4)
-                        .commentsNotRead()
-                        .field(FieldNames.STATUS, "Backlog");
+        final Item none = new Item("example-project", 4).field(FieldNames.STATUS, "Backlog");
         story.sub(high).sub(unknown).sub(none);
 
         final IssueMapping.Mapped mapped = read(story, high, unknown, none);
@@ -1367,11 +1387,14 @@ class IssueMappingTest {
                         Tuple.tuple("example-project#2", "High"),
                         Tuple.tuple("example-project#3", null),
                         Tuple.tuple("example-project#4", null));
-        assertThat(mapped.faults())
-                .as("the unknown priority named by its issue and field, never its value")
+        assertThat(mapped.issues())
+                .as("the unknown priority warned in fixed words, never its value; none is no sign")
+                .extracting(Issue::id, Issue::warnings)
                 .containsExactly(
-                        "example-project#3 has a Priority the planner does not know, shown as"
-                                + " none");
+                        Tuple.tuple("example-project#2", List.of()),
+                        Tuple.tuple("example-project#3", List.of(Warning.unknownPriority())),
+                        Tuple.tuple("example-project#4", List.of()));
+        assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -1381,17 +1404,14 @@ class IssueMappingTest {
         final Item story = new Item("example-project", 1).story();
         final Item worker =
                 new Item("example-project", 2)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.WORKER, SECRET_TITLE);
         final Item risk =
                 new Item("example-project", 3)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.RISK, "Harm");
         final Item known =
                 new Item("example-project", 4)
-                        .commentsNotRead()
                         .field(FieldNames.STATUS, "Backlog")
                         .field(FieldNames.WORKER, "Manual")
                         .field(FieldNames.RISK, "harm");
@@ -1432,7 +1452,6 @@ class IssueMappingTest {
                         .field(FieldNames.PRIORITY, "Low")
                         .field(FieldNames.MINUTES, "10")
                         .field(FieldNames.STAGES, "1")
-                        .stage("t1/implement", 10)
                         .sub(part);
 
         final IssueMapping.Mapped mapped = read(parent, part);

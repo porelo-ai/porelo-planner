@@ -1431,7 +1431,6 @@ public final class ItemsBoardReader implements BoardReader {
                 issue.parentId(),
                 issue.subIssues().nodes().stream().map(GitHubGraphQl.IssueRef::id).toList(),
                 issue.blockedBy().nodes().stream().map(GitHubGraphQl.IssueRef::id).toList(),
-                null,
                 URI.create(
                         config.forge()
                                 + "/"

@@ -27,8 +27,6 @@ import org.jspecify.annotations.Nullable;
  * @param parentIssueId the node id of its GitHub parent issue, or null
  * @param subIssueIds the node ids of its GitHub sub-issues, in GitHub's order
  * @param blockedByIds the node ids of the issues it is blocked by
- * @param comments its comments, oldest first, or null when they were not read, as the board read
- *     reads none
  * @param link where a person reads it
  * @param updatedAt when GitHub last changed it
  * @param archived whether the item is archived in the project
@@ -53,7 +51,6 @@ public record ItemView(
         @Nullable String parentIssueId,
         List<String> subIssueIds,
         List<String> blockedByIds,
-        @Nullable List<CommentView> comments,
         URI link,
         Instant updatedAt,
         boolean archived,
@@ -76,7 +73,6 @@ public record ItemView(
         labels = List.copyOf(labels);
         subIssueIds = List.copyOf(subIssueIds);
         blockedByIds = List.copyOf(blockedByIds);
-        comments = comments == null ? null : List.copyOf(comments);
         blockers = List.copyOf(blockers);
         if (unseenBlockers < 0) {
             throw new IllegalArgumentException("An item counts no blockers below none");
@@ -99,7 +95,6 @@ public record ItemView(
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues
      * @param blockedByIds the node ids of the issues it is blocked by
-     * @param comments its comments, or null when they were not read
      * @param link where a person reads it
      * @param updatedAt when GitHub last changed it
      * @param archived whether the item is archived in the project
@@ -119,7 +114,6 @@ public record ItemView(
             final @Nullable String parentIssueId,
             final List<String> subIssueIds,
             final List<String> blockedByIds,
-            final @Nullable List<CommentView> comments,
             final URI link,
             final Instant updatedAt,
             final boolean archived,
@@ -138,7 +132,6 @@ public record ItemView(
                 parentIssueId,
                 subIssueIds,
                 blockedByIds,
-                comments,
                 link,
                 updatedAt,
                 archived,
@@ -163,7 +156,6 @@ public record ItemView(
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues
      * @param blockedByIds the node ids of the issues it is blocked by
-     * @param comments its comments, or null when they were not read
      * @param link where a person reads it
      * @param updatedAt when GitHub last changed it
      * @param archived whether the item is archived in the project
@@ -184,7 +176,6 @@ public record ItemView(
             final @Nullable String parentIssueId,
             final List<String> subIssueIds,
             final List<String> blockedByIds,
-            final @Nullable List<CommentView> comments,
             final URI link,
             final Instant updatedAt,
             final boolean archived,
@@ -204,7 +195,6 @@ public record ItemView(
                 parentIssueId,
                 subIssueIds,
                 blockedByIds,
-                comments,
                 link,
                 updatedAt,
                 archived,
@@ -234,7 +224,6 @@ public record ItemView(
                 parentIssueId,
                 subIssueIds,
                 blockedByIds,
-                comments,
                 link,
                 updatedAt,
                 archived,
@@ -259,7 +248,6 @@ public record ItemView(
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues
      * @param blockedByIds the node ids of the issues it is blocked by
-     * @param comments its comments, or null when they were not read
      * @param link where a person reads it
      * @param updatedAt when GitHub last changed it
      * @param archived whether the item is archived in the project
@@ -278,7 +266,6 @@ public record ItemView(
             final @Nullable String parentIssueId,
             final List<String> subIssueIds,
             final List<String> blockedByIds,
-            final @Nullable List<CommentView> comments,
             final URI link,
             final Instant updatedAt,
             final boolean archived) {
@@ -296,7 +283,6 @@ public record ItemView(
                 parentIssueId,
                 subIssueIds,
                 blockedByIds,
-                comments,
                 link,
                 updatedAt,
                 archived,

@@ -3332,13 +3332,13 @@ components:
           type: [string, 'null']
           description: >-
             The issue's priority, Highest to Lowest; absent when the store holds none, or one outside them, which the
-            board's faults then name.
+            issue's warnings then name.
         minutesLeft:
           type: [number, 'null']
           minimum: 0
           description: >-
             For an issue left to build, the minutes expected of it less those its work took so far, never below zero;
-            what it took is the sum of its stage comments where they were read, else its Minutes field. Expected is
+            what it took is its Minutes field as the store holds it. Expected is
             its estimate; without one, the median minutes of the finished issues of its size in its
             repository; without those, that median over every repository. Null when it is not left to build or
             nothing gives an expectation.
@@ -3438,8 +3438,9 @@ components:
             An open name of what is wrong; a window shows a kind it does not know as any other. Known kinds are
             StateOutsideWorkflow, NoState, NoPriority, IdTwice, ParentOutsideProject, BlockerOutsideProject,
             IssueOutsideProject, WrongParent, BodyNotSectioned, StoryOutsideOwnRepository, ParentInOtherRepository,
-            BlockedByStory, ParentCircle, SubIssueOfSubIssue, PastOnePage, DependsOnUnplaced, UnknownWorker and
-            UnknownRisk.
+            BlockedByStory, ParentCircle, SubIssueOfSubIssue, PastOnePage, DependsOnUnplaced, UnknownWorker,
+            UnknownRisk, StoryUnderIssue, AlsoNeedsNotOnBoard, BodyTooLong, UnknownSize, UnknownPriority,
+            UnreadableNumber, ClosedUnderOpenState and OpenUnderClosedState.
         text:
           type: string
           description: One fixed sentence saying what is wrong, for a tooltip; it never repeats a person's words.

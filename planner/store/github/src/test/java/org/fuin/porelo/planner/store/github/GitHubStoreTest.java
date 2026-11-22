@@ -233,7 +233,6 @@ class GitHubStoreTest {
                         null,
                         List.of(),
                         List.of(),
-                        null,
                         URI.create("https://github.com/example-org/example-project/issues/1"),
                         java.time.Instant.EPOCH,
                         false);

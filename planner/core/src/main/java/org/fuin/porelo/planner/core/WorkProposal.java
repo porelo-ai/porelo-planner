@@ -565,7 +565,7 @@ public record WorkProposal(
         final List<Issue> free = new ArrayList<>();
         for (final Issue issue : open) {
             final java.util.Optional<String> reason =
-                    board.holdsWork(issue.id())
+                    board.holdsStart(issue.id())
                             .or(
                                     () ->
                                             openBlockers(board, issue).isEmpty()

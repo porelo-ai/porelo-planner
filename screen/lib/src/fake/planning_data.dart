@@ -2305,7 +2305,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "blockedBy": [],
           "waitsOn": [],
           "link": "https://example.org/issues/B871",
-          "title": "An issue without a priority",
+          "title": "An issue whose priority the planner does not know",
           "size": "S",
           "rounds": 0,
           "roundsMost": 2,
@@ -2320,8 +2320,8 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "subAgents": [],
           "warnings": [
             {
-              "kind": "NoPriority",
-              "text": "It has no priority, so it is sorted as Medium.",
+              "kind": "UnknownPriority",
+              "text": "Its priority is none the planner knows, so it is sorted as Medium.",
               "holds": false
             }
           ]
@@ -2703,6 +2703,145 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "blockedBy": [],
           "waitsOn": [],
           "link": "https://example.org/issues/B884",
+          "title": "An issue whose text is longer than GitHub takes",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "BodyTooLong",
+              "text": "Its text is longer than GitHub takes, so it is shown without it."
+            }
+          ]
+        },
+        {
+          "id": "B885",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B885",
+          "title": "An issue whose size the planner does not know",
+          "size": null,
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "UnknownSize",
+              "text": "Its size is none the planner knows, so it is shown without one."
+            }
+          ]
+        },
+        {
+          "id": "B886",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B886",
+          "title": "An issue whose number field holds no number",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "UnreadableNumber",
+              "text": "Its field Minutes holds no number in the range the planner reads, so the board counts it as none and saves no stage over it."
+            }
+          ]
+        },
+        {
+          "id": "B887",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B887",
+          "title": "An issue closed on GitHub under an open state",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "ClosedUnderOpenState",
+              "text": "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it."
+            }
+          ]
+        },
+        {
+          "id": "B888",
+          "repository": "porelo",
+          "state": "Finished",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B888",
+          "title": "An issue open on GitHub under a closed state",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "OpenUnderClosedState",
+              "text": "It is open on GitHub while its state is a closed one; the board goes by its state."
+            }
+          ]
+        },
+        {
+          "id": "B889",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B889",
           "title": "An issue whose worker the planner does not know",
           "size": "S",
           "priority": "Medium",
@@ -2725,12 +2864,12 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           ]
         },
         {
-          "id": "B885",
+          "id": "B890",
           "repository": "porelo",
           "state": "Backlog",
           "blockedBy": [],
           "waitsOn": [],
-          "link": "https://example.org/issues/B885",
+          "link": "https://example.org/issues/B890",
           "title": "An issue whose risk the planner does not know",
           "size": "S",
           "priority": "Medium",
@@ -2753,13 +2892,13 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           ]
         },
         {
-          "id": "B884.1",
+          "id": "B889.1",
           "repository": "porelo",
           "state": "Backlog",
           "blockedBy": [],
           "waitsOn": [],
-          "parent": "B884",
-          "link": "https://example.org/issues/B884.1",
+          "parent": "B889",
+          "link": "https://example.org/issues/B889.1",
           "title": "A part held with its parent, whose worker the planner does not know",
           "size": "S",
           "priority": "Medium",
@@ -2814,6 +2953,31 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "kind": "IssueOutsideProject",
           "text": "It names an issue that is no issue of the project's repositories, which is not shown.",
           "holds": false
+        }
+      ]
+    },
+    {
+      "id": "ST299",
+      "stateGiven": true,
+      "title": "A story edited by hand where the planner cannot follow",
+      "state": "Idea",
+      "priority": "Medium",
+      "link": "https://example.org/stories/ST299",
+      "issues": [],
+      "description": "",
+      "work": null,
+      "warnings": [
+        {
+          "kind": "StoryUnderIssue",
+          "text": "It stands under an issue, which a story never does, so it is shown without it."
+        },
+        {
+          "kind": "AlsoNeedsNotOnBoard",
+          "text": "A line under Also needs names no issue the board shows, so it is shown without it."
+        },
+        {
+          "kind": "NoPriority",
+          "text": "It has no priority, so it is sorted as Medium."
         }
       ]
     }

@@ -209,7 +209,6 @@ class UnlistedAddTest {
                         null,
                         List.of(),
                         List.of(),
-                        null,
                         URI.create(
                                 "https://github.com/"
                                         + OWNER
@@ -278,7 +277,6 @@ class UnlistedAddTest {
                 item.parentIssueId(),
                 item.subIssueIds(),
                 List.of(nodeId),
-                item.comments(),
                 item.link(),
                 item.updatedAt(),
                 item.archived(),

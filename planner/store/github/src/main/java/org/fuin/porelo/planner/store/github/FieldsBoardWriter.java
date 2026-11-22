@@ -44,6 +44,14 @@ public final class FieldsBoardWriter implements BoardWriter {
     /** The most pages of an issue's comments read to find whether its stage was written. */
     static final int MOST_COMMENT_PAGES = 20;
 
+    /** The number fields a stage's figures are added to. */
+    private static final List<String> SUMMED =
+            List.of(
+                    FieldNames.MINUTES,
+                    FieldNames.VM_MINUTES,
+                    FieldNames.TOKENS,
+                    FieldNames.STAGES);
+
     private final ProjectWrites github;
 
     private final TokenSource tokens;
@@ -719,6 +727,12 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         private @Nullable Stage stage;
 
+        /**
+         * Why a stage's figure cannot be added to a field, by the field's name; raised only where
+         * the save would write that field.
+         */
+        private final Map<String, StoreException.NotSavable> stageRefused = new LinkedHashMap<>();
+
         /** The reasons to keep as comments, by item, after every other change but the stage. */
         private final Map<String, Writes.Reason> closings = new LinkedHashMap<>();
 
@@ -744,7 +758,23 @@ public final class FieldsBoardWriter implements BoardWriter {
             final boolean closed = workflow.closed().contains(state);
             // The first closed state is done; any later one, such as Rejected, is not planned.
             final boolean notPlanned = closed && workflow.closed().indexOf(state) > 0;
-            if (closed == item.open() || (closed && otherReason(item.stateReason(), notPlanned))) {
+            // An issue GitHub has closed under an open state stays closed on a move to another open
+            // one, so no close is undone unseen; a move out of any other state reopens it. Without
+            // a Status, a story stands in the state its issues give it and an issue in the
+            // workflow's first state, as the board reads them.
+            final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
+            final String before =
+                    status.isEmpty()
+                            ? current.board()
+                                    .story(id)
+                                    .map(org.fuin.porelo.planner.store.Story::state)
+                                    .orElse(workflow.states().get(0))
+                            : status;
+            final boolean openBefore =
+                    workflow.states().contains(before) && !workflow.closed().contains(before);
+            final boolean reopens = !closed && !item.open() && !openBefore;
+            if ((closed && (item.open() || otherReason(item.stateReason(), notPlanned)))
+                    || reopens) {
                 openings.put(id, new ProjectWrites.Opening(!closed, notPlanned));
             } else {
                 openings.remove(id);
@@ -891,16 +921,29 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         /**
          * Adds a stage: its comment, which names the number fields as they stand, and its figures
-         * added to them; a field without a value counts as 0.
+         * added to them; a field without a value counts as 0. A field the board reads as none, and
+         * a sum past a field's bound, are held as refusals, never written over.
          */
         void stage(final String id, final ItemView item, final StageEntry entry) {
+            final Map<String, Double> bases = new LinkedHashMap<>();
+            if (StageComment.summed(entry)) {
+                for (final String field : SUMMED) {
+                    try {
+                        bases.put(field, base(id, item, field));
+                    } catch (final StoreException.NotSavable e) {
+                        stageRefused.put(field, e);
+                    }
+                }
+            }
+            // With a field the board reads as none the comment is never written, so it needs no
+            // base.
             final StageComment.Base base =
-                    StageComment.summed(entry)
+                    bases.size() == SUMMED.size()
                             ? new StageComment.Base(
-                                    base(id, item, FieldNames.MINUTES),
-                                    base(id, item, FieldNames.VM_MINUTES),
-                                    base(id, item, FieldNames.TOKENS),
-                                    base(id, item, FieldNames.STAGES))
+                                    Objects.requireNonNull(bases.get(FieldNames.MINUTES)),
+                                    Objects.requireNonNull(bases.get(FieldNames.VM_MINUTES)),
+                                    Objects.requireNonNull(bases.get(FieldNames.TOKENS)),
+                                    Objects.requireNonNull(bases.get(FieldNames.STAGES)))
                             : null;
             final String comment;
             try {
@@ -910,13 +953,37 @@ public final class FieldsBoardWriter implements BoardWriter {
                         id, "its stage cannot be written as a comment: " + e.getMessage());
             }
             items.putIfAbsent(id, item);
-            if (base != null) {
-                number(id, item, FieldNames.MINUTES, base.minutes() + entry.minutes());
-                number(id, item, FieldNames.VM_MINUTES, base.vmMinutes() + entry.vmMinutes());
-                number(id, item, FieldNames.TOKENS, base.tokens() + StageComment.newTokens(entry));
-                number(id, item, FieldNames.STAGES, base.stages() + 1);
+            added(id, item, bases, FieldNames.MINUTES, entry.minutes());
+            added(id, item, bases, FieldNames.VM_MINUTES, entry.vmMinutes());
+            added(id, item, bases, FieldNames.TOKENS, StageComment.newTokens(entry));
+            added(id, item, bases, FieldNames.STAGES, 1);
+            stage = new Stage(id, entry.key(), comment, Map.copyOf(bases));
+        }
+
+        /**
+         * Adds a stage's figure to a field's base; a sum past the field's bound is held as a
+         * refusal, never written.
+         */
+        private void added(
+                final String id,
+                final ItemView item,
+                final Map<String, Double> bases,
+                final String field,
+                final double figure) {
+            final Double base = bases.get(field);
+            if (base == null) {
+                return;
             }
-            stage = new Stage(id, entry.key(), comment, base);
+            final double sum = base + figure;
+            if (IssueMapping.inBounds(field, sum)) {
+                number(id, item, field, sum);
+            } else {
+                stageRefused.put(
+                        field,
+                        new StoreException.NotSavable(
+                                id,
+                                "its field " + field + " would pass its bound with this stage"));
+            }
         }
 
         private double base(final String id, final ItemView item, final String field) {
@@ -924,15 +991,13 @@ public final class FieldsBoardWriter implements BoardWriter {
             if (given.isEmpty()) {
                 return 0;
             }
-            try {
-                final double value = Double.parseDouble(given);
-                if (Double.isFinite(value)) {
-                    return value;
-                }
-            } catch (final NumberFormatException e) {
-                // Named below, as a value that is no number.
+            // A value the board reads as none is never added to nor written over: fail closed.
+            final Double value = IssueMapping.bounded(field, given);
+            if (value == null) {
+                throw new StoreException.NotSavable(
+                        id, "its field " + field + " holds no number in range");
             }
-            throw new StoreException.NotSavable(id, "its field " + field + " holds no number");
+            return value;
         }
 
         private String fieldId(final String id, final String field) {
@@ -973,6 +1038,9 @@ public final class FieldsBoardWriter implements BoardWriter {
             final StageComment.@Nullable Stage found =
                     planned == null ? null : stageWritten(token, planned);
             final @Nullable Stage toComment = planned == null || found != null ? null : planned;
+            if (planned != null) {
+                refuseStage(planned, found);
+            }
             // A reason kept by an earlier try of the same move is not written twice.
             final Map<String, Writes.Reason> toClose = new LinkedHashMap<>();
             closings.forEach(
@@ -1113,30 +1181,46 @@ public final class FieldsBoardWriter implements BoardWriter {
         private boolean added(
                 final String fieldId, final Stage planned, final StageComment.Stage found) {
             final StageComment.@Nullable Base before = found.base();
-            final StageComment.@Nullable Base now = planned.base();
             if (!summedField(fieldId)) {
                 return false;
             }
-            if (before == null || now == null) {
+            if (before == null) {
                 return true;
             }
             final Map<String, String> ids = current.config().fieldIds();
+            final String field;
             final double was;
-            final double is;
             if (fieldId.equals(ids.get(FieldNames.MINUTES))) {
+                field = FieldNames.MINUTES;
                 was = before.minutes();
-                is = now.minutes();
             } else if (fieldId.equals(ids.get(FieldNames.VM_MINUTES))) {
+                field = FieldNames.VM_MINUTES;
                 was = before.vmMinutes();
-                is = now.vmMinutes();
             } else if (fieldId.equals(ids.get(FieldNames.TOKENS))) {
+                field = FieldNames.TOKENS;
                 was = before.tokens();
-                is = now.tokens();
             } else {
+                field = FieldNames.STAGES;
                 was = before.stages();
-                is = now.stages();
             }
-            return Double.compare(was, is) != 0;
+            // A field the board reads as none no longer stands at the base the comment names.
+            final Double is = planned.bases().get(field);
+            return is == null || Double.compare(was, is) != 0;
+        }
+
+        /**
+         * Raises a stage's held refusal where the save would write its field: any one when the
+         * comment is to be written; with the comment standing, one whose field still waits for its
+         * sum, so a stage handed in again is never refused over a field it leaves as it is.
+         */
+        private void refuseStage(final Stage planned, final StageComment.@Nullable Stage found) {
+            for (final Map.Entry<String, StoreException.NotSavable> refusal :
+                    stageRefused.entrySet()) {
+                final String fieldId = current.config().fieldIds().get(refusal.getKey());
+                if (found == null || fieldId == null || !added(fieldId, planned, found)) {
+                    throw refusal.getValue();
+                }
+            }
         }
 
         /** Writes an issue's title, text or open state, once more after a passing failure. */
@@ -1239,12 +1323,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         }
 
         private boolean summedField(final String fieldId) {
-            for (final String field :
-                    List.of(
-                            FieldNames.MINUTES,
-                            FieldNames.VM_MINUTES,
-                            FieldNames.TOKENS,
-                            FieldNames.STAGES)) {
+            for (final String field : SUMMED) {
                 if (fieldId.equals(current.config().fieldIds().get(field))) {
                     return true;
                 }
@@ -1418,9 +1497,10 @@ public final class FieldsBoardWriter implements BoardWriter {
      * @param id the issue's id
      * @param key the stage's key
      * @param comment the comment's text
-     * @param base the number fields its figures are added to, or null for a stage not summed
+     * @param bases the number fields its figures are added to, by name: none for a stage not
+     *     summed, and none for a field the board reads as none
      */
-    private record Stage(String id, String key, String comment, StageComment.@Nullable Base base) {}
+    private record Stage(String id, String key, String comment, Map<String, Double> bases) {}
 
     /**
      * What a person's change to an item shows in: its field values, its parent, its sub-issues, its

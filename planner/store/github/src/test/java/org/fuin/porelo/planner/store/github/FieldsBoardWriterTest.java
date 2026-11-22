@@ -128,7 +128,6 @@ class FieldsBoardWriterTest {
                 null,
                 List.of(),
                 List.of(),
-                null,
                 URI.create("https://github.com/" + OWNER + "/" + repository + "/issues/" + number),
                 Instant.EPOCH,
                 false);
@@ -809,6 +808,102 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void anIssueGitHubClosedUnderAnOpenStateStaysClosedOnAMoveToAnotherOpenState() {
+        // Harm: an issue a merge or a person closed while its state was open reopened by the
+        // planner on the next move, a stage result's included, with nobody asking for it.
+        final ItemView closed = item("PL1", "example-project", 1, false, "", state("Backlog"));
+        final ItemView unstated = item("PL2", "example-project", 2, false, "", Map.of());
+        final GitHub github = new GitHub().holding(closed, unstated);
+
+        github.writer()
+                .save(
+                        snapshot(closed, unstated),
+                        SHOWN,
+                        new Writes(ordered("PL1", "Idea", "PL2", "Backlog"), Map.of(), List.of()));
+
+        assertThat(github.mutations)
+                .as("both Status values written")
+                .containsExactly(
+                        List.of(
+                                FieldValue.option("PVTI_PL1", "F_Status", "O_Idea"),
+                                FieldValue.option("PVTI_PL2", "F_Status", "O_Backlog")));
+        assertThat(github.updates).as("neither reopened").isEmpty();
+    }
+
+    @Test
+    void aClosedStoryWithoutAStatusWhoseIssuesAreFinishedIsReopenedWhenMovedBackToWork() {
+        // Harm: a story a person takes up again, closed on GitHub and shown Finished by its
+        // issues, left closed while it is in work, because its empty Status was read as the
+        // workflow's first state.
+        final ItemView open = storyItem("ST1", 10, List.of("I_PL1"));
+        final ItemView closed =
+                new ItemView(
+                        open.itemId(),
+                        open.issueId(),
+                        open.repository(),
+                        open.number(),
+                        open.title(),
+                        open.body(),
+                        false,
+                        "completed",
+                        open.fields(),
+                        open.labels(),
+                        open.parentIssueId(),
+                        open.subIssueIds(),
+                        open.blockedByIds(),
+                        open.link(),
+                        open.updatedAt(),
+                        open.archived());
+        final ItemView done = item("PL1", "example-project", 1, false, "", state("Finished"));
+        final GitHub github = new GitHub().holding(closed, done);
+        final Snapshot current =
+                new Snapshot(
+                        new Board(
+                                SHOWN,
+                                WORKFLOW,
+                                List.of(
+                                        new Story(
+                                                "ST1",
+                                                closed.title(),
+                                                "Finished",
+                                                false,
+                                                "High",
+                                                null,
+                                                List.of("PL1"),
+                                                "",
+                                                closed.link())),
+                                List.of(issue(done)),
+                                new Work(Map.of(), List.of()),
+                                CONFIG.repositories()),
+                        Map.of("ST1", closed, "PL1", done),
+                        CONFIG);
+
+        github.writer()
+                .save(current, SHOWN, new Writes(Map.of(), Map.of("ST1", "Backlog"), List.of()));
+
+        assertThat(github.updates)
+                .as("reopened, as it is moved out of the state it was shown in")
+                .containsExactly("example-project#10 Opening[open=true, notPlanned=false]");
+    }
+
+    @Test
+    void aStageResultOnAnIssueGitHubClosedLeavesItClosed() {
+        // Harm: a run's stage result on an issue a merge closed while it was in work reopens
+        // the issue nobody asked to reopen.
+        final ItemView closed = item("PL1", "example-project", 1, false, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(closed);
+
+        github.writer().saveResult(snapshot(closed), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.mutations.get(0))
+                .as("its next state written")
+                .contains(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"));
+        assertThat(github.updates)
+                .as("its body written, never reopened")
+                .containsExactly("example-project#1 null");
+    }
+
+    @Test
     void aStoryFinishedOverRejectedIssuesOnlyOrNoneIsSavedWhole() {
         // Harm: a story's Finished that the preview passed failing in the store afterwards, so
         // the person's confirmed move is never saved.
@@ -857,7 +952,6 @@ class FieldsBoardWriterTest {
                         null,
                         subIssueIds,
                         List.of(),
-                        null,
                         URI.create(
                                 "https://github.com/"
                                         + OWNER
@@ -1090,6 +1184,100 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void aStageOverASummedFieldOutOfRangeOrWithoutANumberIsRefusedNamingFieldAndIssue() {
+        // Harm: a stage's figures added to a value the board cannot read and shows as none, or
+        // summed past what the board reads, so a person's entry is written over with a sum
+        // nobody can trust.
+        final List<Map.Entry<String, String>> bad =
+                List.of(
+                        Map.entry(FieldNames.MINUTES, "-5"),
+                        Map.entry(FieldNames.MINUTES, "1e9"),
+                        Map.entry(FieldNames.MINUTES, "9999999"),
+                        Map.entry(FieldNames.VM_MINUTES, "-1"),
+                        Map.entry(FieldNames.VM_MINUTES, "9999999"),
+                        Map.entry(FieldNames.STAGES, "-1"),
+                        Map.entry(FieldNames.STAGES, "1.5"),
+                        Map.entry(FieldNames.TOKENS, "1.5"),
+                        Map.entry(FieldNames.TOKENS, "1e300"),
+                        Map.entry(FieldNames.TOKENS, "NaN"));
+        for (final Map.Entry<String, String> value : bad) {
+            final String field = value.getKey();
+            final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+            fields.put(field, value.getValue());
+            final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+            final GitHub github = new GitHub().holding(one);
+
+            assertThatThrownBy(
+                            () ->
+                                    github.writer()
+                                            .saveResult(
+                                                    snapshot(one),
+                                                    analysis(),
+                                                    stage("task-1:2", "implement")))
+                    .as("a %s of %s", field, value.getValue())
+                    .isInstanceOfSatisfying(
+                            StoreException.NotSavable.class,
+                            refusal ->
+                                    assertThat(refusal.subject())
+                                            .as("the issue named")
+                                            .isEqualTo("PL1"))
+                    .hasMessageContaining(field);
+            assertThat(github.mutations).as("nothing written over %s", field).isEmpty();
+            assertThat(github.comments).as("no comment for %s", field).isEmpty();
+        }
+    }
+
+    @Test
+    void aStageWhoseCommentStandsIsNotRefusedOverABadFieldItWouldNotWrite() {
+        // Harm: a result handed in again after a save cut off before its sums refused whole
+        // because a person set one field by hand since, though the save leaves that field as it
+        // is, so the other fields never get the stage.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "-5");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github = new GitHub().holding(one);
+        github.standing.add(
+                StageComment.write(
+                        stage("task-1:2", "implement"), new StageComment.Base(10, 0, 0, 0)));
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.comments).as("no stage comment written").isEmpty();
+        assertThat(github.values.get("PVTI_PL1"))
+                .as(
+                        "the fields still at the comment's base take the stage, the one set by hand not")
+                .doesNotContainKey("F_Minutes")
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 1.5))
+                .containsEntry("F_Tokens", FieldValue.number("PVTI_PL1", "F_Tokens", 300))
+                .containsEntry("F_Stages", FieldValue.number("PVTI_PL1", "F_Stages", 1));
+    }
+
+    @Test
+    void aStageWhoseCommentStandsIsRefusedOverASumPastItsBoundItWouldStillWrite() {
+        // Harm: a result handed in again writing a sum past the bound the board reads, to a
+        // field still waiting for the stage, which the board then counts as none.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "9999999");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github = new GitHub().holding(one);
+        github.standing.add(
+                StageComment.write(
+                        stage("task-1:2", "implement"), new StageComment.Base(9_999_999, 0, 0, 0)));
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining(FieldNames.MINUTES);
+        assertThat(github.mutations).as("nothing written").isEmpty();
+        assertThat(github.comments).as("no stage comment written").isEmpty();
+    }
+
+    @Test
     void aStageWhoseCommentStandsAlreadyIsNeitherWrittenNorAddedAgain() {
         // Harm: a stage handed in twice counted twice in the issue's sums and shown twice.
         final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
@@ -1146,7 +1334,6 @@ class FieldsBoardWriterTest {
                 one.parentIssueId(),
                 one.subIssueIds(),
                 one.blockedByIds(),
-                one.comments(),
                 one.link(),
                 one.updatedAt(),
                 one.archived());
@@ -1615,7 +1802,6 @@ class FieldsBoardWriterTest {
                 item.parentIssueId(),
                 item.subIssueIds(),
                 item.blockedByIds(),
-                item.comments(),
                 item.link(),
                 item.updatedAt(),
                 item.archived());
@@ -2421,7 +2607,6 @@ class FieldsBoardWriterTest {
                                                 parent,
                                                 List.of(),
                                                 List.of(),
-                                                null,
                                                 URI.create(
                                                         "https://github.com/"
                                                                 + OWNER

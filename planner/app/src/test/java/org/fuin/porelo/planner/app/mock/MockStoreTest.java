@@ -805,10 +805,14 @@ class MockStoreTest {
             for (final java.lang.reflect.Method method :
                     org.fuin.porelo.planner.store.Warning.class.getMethods()) {
                 if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
-                        && method.getParameterCount() == 0
                         && method.getReturnType()
                                 .equals(org.fuin.porelo.planner.store.Warning.class)) {
-                    made.add((org.fuin.porelo.planner.store.Warning) method.invoke(null));
+                    // A warning naming a field is made as the mock names it, for Minutes.
+                    made.add(
+                            (org.fuin.porelo.planner.store.Warning)
+                                    (method.getParameterCount() == 0
+                                            ? method.invoke(null)
+                                            : method.invoke(null, "Minutes")));
                 }
             }
             for (final java.lang.reflect.Field field :

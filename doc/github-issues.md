@@ -70,29 +70,43 @@ the same move sent again after a comment that failed writes only what is missing
 sentence after a reopen is written again. The Git store keeps no reason, and a preview or save that carries one
 there is refused before anything is written.
 
-The comments are the course of the work and the number fields its sums. A stage's save adds its minutes, VM minutes,
-new tokens and one stage to the fields as the board read them, in the same call as its state, and refuses the save,
-naming the issue, when GitHub's value changed since. Its comment is written before the fields and names, as `base`,
-the four fields as they stood before the stage was added to them. A field without a value counts as 0, and a value a
-person set stays the base later stages add to; the planner never sums the comments again. A stage whose comment,
-found by its key, already stands is not written again, and its figures are added only to a field that still stands
-at the comment's base, so a result handed in again after a save cut off between the comment and the fields counts
-the stage once; with a comment that names no base, none is added again. A summed field that no longer stands at the
-base when the result is handed in again counts the stage as added there, so a person's edit of it between the two
-tries, or another stage of the issue saved in between, is kept and the stage's figure for that field is not
-added. Only an agent's stages of the measured kinds
-are added, as the Markdown store's stage records count them; a pause and a person's move are shown, not summed.
+The comments are the course of the work, the record a person reads; the board never reads them, and shows the number
+fields as GitHub holds them. A stage's save adds its minutes, VM minutes, new tokens and one stage to the fields as the
+board read them, in the same call as its state, and refuses the save, naming the issue, when GitHub's value changed
+since. Its comment is written before the fields and names, as `base`, the four fields as they stood before the stage
+was added to them. A field without a value counts as 0, and a value a person set stays the base later stages add to,
+with no warning; the planner never sums the comments. A field the board reads as none, or a sum that would pass the
+field's bound, is never written: the save is refused, naming the issue and the field. The bounds are one rule for the
+board and the save: `Minutes` and `VM minutes` from 0 to 10,000,000, `Tokens` and `Stages` whole numbers from 0. A
+stage whose comment, found by its key, already stands is not written again, and its figures are added only to a field
+that still stands at the comment's base, so a result handed in again after a save cut off between the comment and the
+fields counts the stage once; with a comment that names no base, none is added again. A summed field that no longer
+stands at the base when the result is handed in again counts the stage as added there, so a person's edit of it
+between the two tries, or another stage of the issue saved in between, is kept and the stage's figure for that field
+is not added; such a field, one the board reads as none too, does not refuse the save. Only an agent's stages of the
+measured kinds are added, as the Markdown store's stage records count them; a pause and a person's move are shown, not
+summed.
 
 ## States and ids
 
-- `Status` is the truth. A closed state (Finished, Rejected) also closes the GitHub issue as completed or not
-  planned, and reopening sets the state back; an issue whose open or closed state disagrees with its `Status` is
-  shown with its `Status` and named as a fault.
+- `Status` is the truth: a board item's state never comes from GitHub's open or closed. A move into a closed state
+  (Finished, Rejected) also closes the GitHub issue as completed or not planned, and a move out of a closed state or
+  of one the workflow lacks reopens it; a story without a `Status` counts as standing in the state its issues give
+  it. An issue whose open or closed state disagrees with its `Status` is shown with its `Status` and warned.
+  - One GitHub has closed under an open state is neither proposed nor started; a move or an edit may still name it,
+    so a move into a closed state sets it right. A move from one open state to another, a stage result's included,
+    leaves it closed, so a close by a person or a merge is never undone unseen.
+  - One GitHub has open under a closed state holds nothing: it counts as done, and the issues it blocks may start.
 - A story whose `Status` is empty follows its issues in states of the workflow; a set `Status` is given. When its
   issues all stand outside the workflow, or those inside it are all closed while another stands outside it, it
   takes no state, warned `NoState`, as the Git store reads it.
 - An issue's `Priority` is read as the board's priority of it; an empty one is none, and one outside Highest to
-  Lowest is none too and named as a fault. The board names, as on any store, each breach of the stories' rules: an
+  Lowest is none too, warned, and sorted as Medium. A story without a `Priority`, or with one outside them, is shown
+  as Medium and warned.
+- Shown with a warning that holds no work: a story under an issue, without it; a story's line under *Also needs* that
+  names no issue the board shows; a story's sub-issue outside the project; a body longer than GitHub takes, without
+  it; a `Size` the planner does not know, as none; and a number field that holds no number in its range, as none,
+  the warning naming the field. The board names, as on any store, each breach of the stories' rules: an
   open issue past the first state in no story, a story ranked below its open issues, a story with no issue and no
   given state, and a given state its issues do not fit. A breach leaves nothing out and holds no move back.
 - An item is known by its tracker reference alone, its repository and GitHub's number, and no field holds another

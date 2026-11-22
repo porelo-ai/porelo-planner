@@ -74,7 +74,6 @@ class GitHubStoreWaitsTest {
                         null,
                         List.of(),
                         List.of("I_far_7"),
-                        null,
                         URI.create("https://github.com/example-org/example-lib/issues/3"),
                         Instant.EPOCH,
                         false,

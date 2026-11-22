@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,7 +23,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The comment that holds one stage of an issue: the marker line, one line of words for a person,
  * and the stage's figures as a JSON block, with the number fields as they stood before the stage
- * was added to them; and the sums an issue's stage comments add up to.
+ * was added to them. The comments are the course of the work a person reads; the board never reads
+ * them, and its number fields are what GitHub holds.
  */
 public final class StageComment {
 
@@ -45,7 +45,7 @@ public final class StageComment {
                     "agy_input_tokens",
                     "agy_output_tokens");
 
-    /** The one actor whose stages are summed. */
+    /** The one actor whose stages add to an issue's number fields. */
     private static final String AGENT = "agent";
 
     /** The JSON fields, in the order they are written. */
@@ -146,25 +146,6 @@ public final class StageComment {
      * @param fault what is wrong, in fixed words naming the comment, never its text
      */
     public record Broken(String fault) implements Read {}
-
-    /**
-     * What an issue's stage comments add up to. The last estimate is no part of it: a stage comment
-     * holds a stage's own minutes, not the minutes an estimate gave.
-     *
-     * @param minutes the summed stages' wall minutes
-     * @param vmMinutes the minutes they waited on a machine
-     * @param tokens the new tokens they spent: input, output and cache write
-     * @param stages how many stages were summed
-     * @param faults the broken stage comments, each in fixed words
-     */
-    public record Sums(
-            double minutes, double vmMinutes, long tokens, int stages, List<String> faults) {
-
-        /** Copies the faults. */
-        public Sums {
-            faults = List.copyOf(faults);
-        }
-    }
 
     /**
      * Writes a stage as its comment.
@@ -269,44 +250,9 @@ public final class StageComment {
     }
 
     /**
-     * Adds up an issue's stage comments: a closed agent stage of the measured kinds counts, once
-     * per key, the first comment of a key the one counted; any other stage is not summed, and a
-     * broken stage comment is named as a fault and left out.
-     *
-     * @param comments the issue's comments, oldest first
-     * @return their sums
+     * Whether a stage adds to an issue's number fields: an agent's, of a measured kind; every stage
+     * comment is closed.
      */
-    public static Sums sums(final List<CommentView> comments) {
-        double minutes = 0;
-        double vmMinutes = 0;
-        long tokens = 0;
-        int stages = 0;
-        final List<String> faults = new ArrayList<>();
-        final Set<String> keys = new HashSet<>();
-        for (final CommentView comment : comments) {
-            final Read read = read(comment).orElse(null);
-            if (read instanceof Broken broken) {
-                faults.add(broken.fault());
-            } else if (read instanceof Stage stage
-                    && keys.add(stage.entry().key())
-                    && summed(stage.entry())) {
-                final long added;
-                try {
-                    added = Math.addExact(tokens, newTokens(stage.entry()));
-                } catch (final ArithmeticException e) {
-                    faults.add(broken(comment, "makes the token sum overflow").fault());
-                    continue;
-                }
-                tokens = added;
-                minutes += stage.entry().minutes();
-                vmMinutes += stage.entry().vmMinutes();
-                stages++;
-            }
-        }
-        return new Sums(minutes, vmMinutes, tokens, stages, faults);
-    }
-
-    /** Whether a stage counts: an agent's, of a measured kind; every stage comment is closed. */
     static boolean summed(final StageEntry entry) {
         return AGENT.equals(entry.actor()) && StageEntry.MEASURED.contains(entry.stage());
     }
@@ -328,7 +274,7 @@ public final class StageComment {
                 (NODE_ID.matcher(id).matches() ? "The stage comment " + id : "A stage comment")
                         + " "
                         + what
-                        + "; it is left out of the sums");
+                        + "; it is not read as a stage");
     }
 
     /** The stage a JSON block holds, or null when a field or a value is not one a stage has. */
@@ -416,7 +362,7 @@ public final class StageComment {
         return tokens;
     }
 
-    /** Refuses a value the comment's shape or the sums cannot carry. */
+    /** Refuses a value the comment's shape or the number fields cannot carry. */
     private static void checked(final StageEntry entry) {
         final @Nullable String model = entry.model();
         final @Nullable String effort = entry.effort();

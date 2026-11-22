@@ -3,7 +3,6 @@ package org.fuin.porelo.planner.store.github;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -53,28 +52,17 @@ public final class IssueMapping {
      * @param stories the stories, by priority and then rank
      * @param issues the issues, by priority and then rank
      * @param faults one fixed sentence per item left out or shown other than GitHub holds it
-     * @param sums each issue's stage comments' sums, by its id, which the board shows over its
-     *     number fields; an issue whose comments were not read has none
-     * @param rewrite the issues whose number fields disagree with their sums, which the next save
-     *     of each writes again
      * @param outside the node ids of the sub-issues a story was named to have outside the project,
      *     each once
      */
     public record Mapped(
-            List<Story> stories,
-            List<Issue> issues,
-            List<String> faults,
-            Map<String, StageComment.Sums> sums,
-            List<String> rewrite,
-            List<String> outside) {
+            List<Story> stories, List<Issue> issues, List<String> faults, List<String> outside) {
 
-        /** Copies the lists and the map. */
+        /** Copies the lists. */
         public Mapped {
             stories = List.copyOf(stories);
             issues = List.copyOf(issues);
             faults = List.copyOf(faults);
-            sums = Collections.unmodifiableMap(new LinkedHashMap<>(sums));
-            rewrite = List.copyOf(rewrite);
             outside = List.copyOf(outside);
         }
     }
@@ -188,9 +176,6 @@ public final class IssueMapping {
             final String id = Objects.requireNonNull(context.idOf.get(item.issueId()));
             final boolean twice = context.twice.contains(item.issueId());
             if (context.storyOf(item)) {
-                if (item.parentIssueId() != null) {
-                    faults.add(id + " is a story under another issue, shown without it");
-                }
                 if (twice) {
                     twiceStoryItems.add(item);
                 } else {
@@ -242,29 +227,6 @@ public final class IssueMapping {
                                         cutDangling(entry.getKey(), id -> !placed.contains(id)),
                                         workflow),
                                 entry.getValue()));
-        final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
-        final List<String> rewrite = new ArrayList<>();
-        for (final String id : issues.keySet()) {
-            final ItemView item = Objects.requireNonNull(issueItems.get(id));
-            final List<CommentView> comments = item.comments();
-            if (comments == null) {
-                // Comments not read have no sum: the board shows the number fields as GitHub holds
-                // them, and the check runs when the issue is saved, over its own comments.
-                continue;
-            }
-            final StageComment.Sums sum = StageComment.sums(comments);
-            sum.faults().forEach(fault -> faults.add(id + ": " + fault));
-            sums.put(id, sum);
-            if (checkSums(id, item, sum, faults)) {
-                rewrite.add(id);
-            }
-            // The board shows the comments' sum over a field that disagrees, so its minutes do too;
-            // an issue no stage was measured for and no field names has none.
-            if (sum.stages() > 0 || issues.get(id).minutes() != null) {
-                issues.put(id, withMinutes(issues.get(id), sum.minutes()));
-            }
-        }
-
         for (final String id : issues.keySet()) {
             final ItemView item = Objects.requireNonNull(issueItems.get(id));
             unclearBody(item).ifPresent(repair -> faults.add(where(item) + repair));
@@ -333,7 +295,7 @@ public final class IssueMapping {
                         .sorted(Comparator.comparing(Map.Entry::getValue, order))
                         .map(Map.Entry::getKey)
                         .toList();
-        return new Mapped(sortedStories, sortedIssues, faults, sums, rewrite, List.copyOf(outside));
+        return new Mapped(sortedStories, sortedIssues, faults, List.copyOf(outside));
     }
 
     /**
@@ -453,11 +415,13 @@ public final class IssueMapping {
         final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
         // An issue without a Status stands in the workflow's first state; none is written for it.
         final String state = status.isEmpty() ? workflow.states().get(0) : status;
-        // An issue outside the workflow has no open state to check against it.
-        if (!status.isEmpty() && workflow.states().contains(state)) {
-            checkOpen(id, item, state, workflow, faults);
-        }
         List<Warning> warnings = new ArrayList<>();
+        // An issue outside the workflow has no open state to check against it.
+        if (workflow.states().contains(state)) {
+            for (final Warning open : openAgainst(item, state, workflow)) {
+                warnings = withAdded(warnings, open);
+            }
+        }
         String parent = null;
         if (item.parentIssueId() != null) {
             final ItemView parentItem = context.byIssueId.get(item.parentIssueId());
@@ -517,7 +481,22 @@ public final class IssueMapping {
         for (int unseen = 0; unseen < item.unseenBlockers(); unseen++) {
             waitsOn.add(Wait.unreadable());
         }
-        final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
+        final List<Warning> found = new ArrayList<>();
+        final String size = choice(item, FieldNames.SIZE, SIZES, Warning.unknownSize(), found);
+        final String priority =
+                choice(
+                        item,
+                        FieldNames.PRIORITY,
+                        Story.PRIORITIES,
+                        Warning.unknownPriority(),
+                        found);
+        final Double estimate = figure(item, FieldNames.ESTIMATE, found);
+        final Double minutes = figure(item, FieldNames.MINUTES, found);
+        // The board shows none of the stage sums but Minutes; each is still warned, as no stage
+        // is saved over it.
+        figure(item, FieldNames.VM_MINUTES, found);
+        figure(item, FieldNames.TOKENS, found);
+        figure(item, FieldNames.STAGES, found);
         final Worker worker = workerOf(item);
         if (worker == null) {
             warnings = withAdded(warnings, Warning.unknownWorker());
@@ -529,8 +508,11 @@ public final class IssueMapping {
         String body = item.body();
         if (body.length() > BodySections.LONGEST) {
             // The board holds what GitHub takes; the text itself is a person's and not repeated.
-            faults.add(id + " has a body longer than GitHub takes, shown without it");
+            found.add(Warning.bodyTooLong());
             body = "";
+        }
+        for (final Warning warning : found) {
+            warnings = withAdded(warnings, warning);
         }
         return new Issue(
                 id,
@@ -546,9 +528,9 @@ public final class IssueMapping {
                 // sets it.
                 worker == null ? Worker.AGENT : worker,
                 risk == null ? Risk.HARM : risk,
-                figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
-                figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
-                choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults),
+                estimate,
+                minutes,
+                priority,
                 warnings,
                 waitsOn);
     }
@@ -595,52 +577,59 @@ public final class IssueMapping {
     /** The most minutes an issue's work is read as having taken, its stages together. */
     static final double MOST_TAKEN = 10_000_000;
 
+    /** The largest whole number a GitHub number field holds exactly. */
+    static final double MOST_WHOLE = 9_007_199_254_740_991d;
+
     /**
-     * A number field's minutes between {@code least} and {@code most}, or null when it is empty;
-     * any other value is named as a fault and read as none, so no figure overflows a sum.
+     * An item's number field within its bounds, or null when it is empty; any other value is
+     * warned, naming the field, and read as none, so no figure overflows a sum.
      */
     private static @Nullable Double figure(
-            final String id,
-            final ItemView item,
-            final String field,
-            final double least,
-            final double most,
-            final List<String> faults) {
+            final ItemView item, final String field, final List<Warning> found) {
         final String given = item.fields().getOrDefault(field, "").strip();
         if (given.isEmpty()) {
             return null;
         }
-        try {
-            final double value = Double.parseDouble(given);
-            if (value >= least && value <= most) {
-                return value;
-            }
-        } catch (final NumberFormatException e) {
-            // Named below like any other value that is no number of minutes.
+        final Double value = bounded(field, given);
+        if (value == null) {
+            found.add(Warning.unreadableNumber(field));
         }
-        faults.add(id + " has no number of minutes in its field " + field + ", read as none");
-        return null;
+        return value;
     }
 
-    /** The issue with the minutes its stage comments sum to, within the most read. */
-    private static Issue withMinutes(final Issue issue, final double minutes) {
-        return new Issue(
-                issue.id(),
-                issue.repository(),
-                issue.title(),
-                issue.state(),
-                issue.size(),
-                issue.blockedBy(),
-                issue.parent(),
-                issue.link(),
-                issue.text(),
-                issue.worker(),
-                issue.risk(),
-                issue.estimate(),
-                minutes >= 0 && minutes <= MOST_TAKEN ? minutes : issue.minutes(),
-                issue.priority(),
-                issue.warnings(),
-                issue.waitsOn());
+    /**
+     * A number field's value when it lies within the field's bounds, or null: no number, or one out
+     * of range. The one rule the board reads by and a stage's save adds by.
+     *
+     * @param field the field's name
+     * @param given the field's value as GitHub holds it, not empty
+     * @return the value, or null when it is none in range
+     */
+    static @Nullable Double bounded(final String field, final String given) {
+        try {
+            final double value = Double.parseDouble(given);
+            return inBounds(field, value) ? value : null;
+        } catch (final NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether a value lies within a number field's bounds: an estimate from 1 minute, minutes from
+     * 0, each up to its most; tokens and stages whole, from 0.
+     *
+     * @param field the field's name
+     * @param value the value
+     * @return true when the board reads it
+     */
+    static boolean inBounds(final String field, final double value) {
+        return switch (field) {
+            case FieldNames.ESTIMATE -> value >= 1 && value <= Fields.MOST_ESTIMATE;
+            case FieldNames.MINUTES, FieldNames.VM_MINUTES -> value >= 0 && value <= MOST_TAKEN;
+            case FieldNames.TOKENS, FieldNames.STAGES ->
+                    value >= 0 && value <= MOST_WHOLE && value == Math.rint(value);
+            default -> false;
+        };
     }
 
     private static Story story(
@@ -656,7 +645,11 @@ public final class IssueMapping {
             final List<String> faults,
             final Set<String> outside) {
         final List<String> own = new ArrayList<>();
+        final List<Warning> warnings = new ArrayList<>();
         boolean whole = true;
+        if (item.parentIssueId() != null) {
+            warnings.add(Warning.storyUnderIssue());
+        }
         for (final String subIssueId : item.subIssueIds()) {
             final String subId = idOf.get(subIssueId);
             if (subId != null && (issues.containsKey(subId) || twiceIds.contains(subId))) {
@@ -665,7 +658,9 @@ public final class IssueMapping {
                 }
             } else {
                 if (subId == null) {
-                    faults.add(id + " has a sub-issue outside the project");
+                    if (!warnings.contains(Warning.issueOutsideProject())) {
+                        warnings.add(Warning.issueOutsideProject());
+                    }
                     outside.add(subIssueId);
                 }
                 whole = false;
@@ -676,7 +671,7 @@ public final class IssueMapping {
         try {
             also = BodySections.read(body).section(ALSO_NEEDS).orElse("");
         } catch (final IllegalArgumentException e) {
-            faults.add(id + " has a body too long to read its Also needs, shown without it");
+            warnings.add(Warning.bodyTooLong());
             also = "";
             body = "";
             whole = false;
@@ -691,27 +686,21 @@ public final class IssueMapping {
             final String named = repository + "#" + (matcher.matches() ? matcher.group(2) : "");
             final String neededId =
                     repositories.contains(repository) && idOf.containsValue(named) ? named : null;
-            if (neededId == null) {
-                // The line is a person's words, so the fault does not repeat it.
-                faults.add(id + " has a line under Also needs that names no issue of the project");
-                whole = false;
-            } else if (issues.containsKey(neededId)) {
+            if (neededId != null && issues.containsKey(neededId)) {
                 if (!own.contains(neededId)) {
                     own.add(neededId);
                 }
             } else {
-                faults.add(
-                        id
-                                + " also needs "
-                                + neededId
-                                + ", which the board does not show as one issue");
+                // The line is a person's words, so the warning does not repeat it.
+                if (!warnings.contains(Warning.alsoNeedsNotOnBoard())) {
+                    warnings.add(Warning.alsoNeedsNotOnBoard());
+                }
                 whole = false;
             }
         }
         final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
         final String state;
         final boolean given = !status.isEmpty();
-        final List<Warning> warnings = new ArrayList<>();
         if (pastPage.contains(item.itemId())) {
             warnings.add(Warning.pastOnePage());
             whole = false;
@@ -726,7 +715,7 @@ public final class IssueMapping {
         if (given) {
             state = status;
             if (workflow.states().contains(status)) {
-                checkOpen(id, item, state, workflow, faults);
+                warnings.addAll(openAgainst(item, state, workflow));
             } else {
                 // Shown in a column of its own state, its issues with it.
                 warnings.add(Warning.stateOutsideWorkflow());
@@ -758,14 +747,11 @@ public final class IssueMapping {
         }
         String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
         if (!Story.PRIORITIES.contains(priority)) {
-            faults.add(
-                    id
-                            + (priority.isEmpty()
-                                    ? " has no Priority, shown as Medium"
-                                    : " has a Priority outside Highest to Lowest, shown as Medium"));
+            // A story sorts by its priority, so one without is told; an issue need have none.
+            warnings.add(priority.isEmpty() ? Warning.noPriority() : Warning.unknownPriority());
             priority = "Medium";
         }
-        final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
+        final String size = choice(item, FieldNames.SIZE, SIZES, Warning.unknownSize(), warnings);
         return new Story(
                         id,
                         item.title(),
@@ -778,43 +764,6 @@ public final class IssueMapping {
                         item.link(),
                         whole)
                 .withWarnings(warnings);
-    }
-
-    /**
-     * Names each number field that disagrees with its stage comments' sum, a missing one counted as
-     * none.
-     *
-     * @return whether any disagrees
-     */
-    private static boolean checkSums(
-            final String id,
-            final ItemView item,
-            final StageComment.Sums sum,
-            final List<String> faults) {
-        boolean apart = false;
-        final Map<String, Double> wanted = new LinkedHashMap<>();
-        wanted.put(FieldNames.MINUTES, sum.minutes());
-        wanted.put(FieldNames.VM_MINUTES, sum.vmMinutes());
-        wanted.put(FieldNames.TOKENS, (double) sum.tokens());
-        wanted.put(FieldNames.STAGES, (double) sum.stages());
-        for (final Map.Entry<String, Double> field : wanted.entrySet()) {
-            final String given = item.fields().getOrDefault(field.getKey(), "").strip();
-            double value;
-            try {
-                value = given.isEmpty() ? 0 : Double.parseDouble(given);
-            } catch (final NumberFormatException e) {
-                value = Double.NaN;
-            }
-            if (Math.abs(value - field.getValue()) > 1e-6 || Double.isNaN(value)) {
-                faults.add(
-                        id
-                                + " has a "
-                                + field.getKey()
-                                + " apart from its stage comments' sum, shown as the sum");
-                apart = true;
-            }
-        }
-        return apart;
     }
 
     /**
@@ -922,37 +871,32 @@ public final class IssueMapping {
     }
 
     /**
-     * Names an item whose open or closed state disagrees with its {@code Status}, which stays the
-     * truth.
+     * Warns an item whose open or closed state on GitHub disagrees with its {@code Status}, which
+     * stays the truth; none when they agree.
      */
-    private static void checkOpen(
-            final String id,
-            final ItemView item,
-            final String state,
-            final Workflow workflow,
-            final List<String> faults) {
-        if (item.open() == workflow.closed().contains(state)) {
-            faults.add(
-                    id
-                            + " is "
-                            + (item.open() ? "open" : "closed")
-                            + " on GitHub against its Status "
-                            + state);
+    private static List<Warning> openAgainst(
+            final ItemView item, final String state, final Workflow workflow) {
+        final boolean closedState = workflow.closed().contains(state);
+        if (item.open() == closedState) {
+            return List.of(
+                    item.open() ? Warning.openUnderClosedState() : Warning.closedUnderOpenState());
         }
+        return List.of();
     }
 
+    /** An option the planner knows, or null: an unknown one is warned with {@code unknown}. */
     private static @Nullable String choice(
-            final String id,
             final ItemView item,
             final String field,
             final List<String> allowed,
-            final List<String> faults) {
+            final Warning unknown,
+            final List<Warning> found) {
         final String value = item.fields().getOrDefault(field, "");
         if (value.isEmpty()) {
             return null;
         }
         if (!allowed.contains(value)) {
-            faults.add(id + " has a " + field + " the planner does not know, shown as none");
+            found.add(unknown);
             return null;
         }
         return value;

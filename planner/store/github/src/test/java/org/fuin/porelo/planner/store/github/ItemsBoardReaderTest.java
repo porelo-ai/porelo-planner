@@ -887,9 +887,6 @@ class ItemsBoardReaderTest {
                 .as("the number fields as text")
                 .containsEntry(FieldNames.RANK, "3")
                 .containsEntry(FieldNames.MINUTES, "12.5");
-        assertThat(snapshot.items().get("example-lib#3").comments())
-                .as("comments are not read on the board")
-                .isNull();
         assertThat(snapshot.config().fieldIds())
                 .as("the field ids of both pages")
                 .containsEntry(FieldNames.STATUS, "F_status")
@@ -996,6 +993,51 @@ class ItemsBoardReaderTest {
                 .extracting(Story::id)
                 .containsExactly("example-project#1");
         assertThat(snapshot.board().faults()).as("a draft is no fault").isEmpty();
+    }
+
+    @Test
+    void anIssueGitHubClosedUnderAnOpenStateIsReadIntoTheBoardWarnedAndHeldFromStart() {
+        // Harm: an issue a person closed as not planned while it stood in Backlog read as open
+        // work, with no sign on its card, and proposed for a start.
+        final ProjectItem open = libIssue(3, refs(false));
+        final GitHubGraphQl.BoardIssue was = open.issue();
+        final ProjectItem closed =
+                new ProjectItem(
+                        open.id(),
+                        open.archived(),
+                        new GitHubGraphQl.BoardIssue(
+                                was.id(),
+                                was.databaseId(),
+                                was.number(),
+                                was.title(),
+                                was.body(),
+                                "CLOSED",
+                                "NOT_PLANNED",
+                                was.updatedAt(),
+                                was.repository(),
+                                was.labels(),
+                                was.parentId(),
+                                was.subIssues(),
+                                was.blockedBy(),
+                                was.labelsPage()),
+                        open.values(),
+                        open.valuesPage());
+
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), closed)
+                        .read();
+
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow())
+                .as("in its Status, warned")
+                .extracting(Issue::state, Issue::warnings)
+                .containsExactly(
+                        "Backlog",
+                        List.of(org.fuin.porelo.planner.store.Warning.closedUnderOpenState()));
+        assertThat(snapshot.board().holdsStart("example-lib#3")).as("no start").isPresent();
+        assertThat(snapshot.board().holdsMove("example-lib#3")).as("a move").isEmpty();
+        assertThat(snapshot.board().faults()).as("no fault").isEmpty();
     }
 
     @Test
@@ -1892,7 +1934,7 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void aSubIssueWhoseOwnProjectItemsNameNoProjectIsAFaultWithoutAReadAgain() {
+    void aSubIssueWhoseOwnProjectItemsNameNoProjectIsWarnedWithoutAReadAgain() {
         // Harm: an issue really outside the project hides from the person, or holds every board
         // read for seconds and spends the person's rate limit on reads again.
         final GitHub github =
@@ -1903,9 +1945,9 @@ class ItemsBoardReaderTest {
 
         final Board board = github.read().board();
 
-        assertThat(board.faults())
-                .as("the sub-issue outside the project named")
-                .containsExactly("example-project#1 has a sub-issue outside the project");
+        assertThat(board.story("example-project#1").orElseThrow().warnings())
+                .as("the sub-issue outside the project warned on its story")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.issueOutsideProject());
         assertThat(github.calls)
                 .as("no read again of the list")
                 .containsExactly(
@@ -1916,7 +1958,7 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void aSubIssueTheItemListStillLacksAfterTheLastReadAgainIsAFault() {
+    void aSubIssueTheItemListStillLacksAfterTheLastReadAgainIsWarnedOnItsStory() {
         // Harm: a board read that waits on GitHub's list without end, or shows a story as whole
         // while an issue of it is missing.
         final GitHub github =
@@ -1930,9 +1972,9 @@ class ItemsBoardReaderTest {
 
         final Board board = github.read().board();
 
-        assertThat(board.faults())
-                .as("the sub-issue still missing named")
-                .containsExactly("example-project#1 has a sub-issue outside the project");
+        assertThat(board.story("example-project#1").orElseThrow().warnings())
+                .as("the sub-issue still missing warned on its story")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.issueOutsideProject());
         assertThat(github.calls.stream().filter(call -> call.startsWith("projectItems")))
                 .as("the list read once and then as often as the bound allows")
                 .hasSize(1 + ItemsBoardReader.MOST_REREADS);
@@ -1985,9 +2027,9 @@ class ItemsBoardReaderTest {
 
         final Board board = github.read().board();
 
-        assertThat(board.faults())
-                .as("the sub-issue named outside the project")
-                .contains("example-project#1 has a sub-issue outside the project");
+        assertThat(board.story("example-project#1").orElseThrow().warnings())
+                .as("the story warned for its sub-issue outside the project")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.issueOutsideProject());
         assertThat(github.calls)
                 .as("only the fields and the items")
                 .containsExactly("projectFields after null", "projectItems after null");

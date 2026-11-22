@@ -110,7 +110,6 @@ class FieldsBoardWriterEditsTest {
                         parent == null ? null : node(parent),
                         subIssues.stream().map(FieldsBoardWriterEditsTest::node).toList(),
                         blockedBy.stream().map(FieldsBoardWriterEditsTest::node).toList(),
-                        null,
                         URI.create(
                                 "https://github.com/"
                                         + OWNER
@@ -447,7 +446,6 @@ class FieldsBoardWriterEditsTest {
                 item.parentIssueId(),
                 item.subIssueIds(),
                 item.blockedByIds(),
-                item.comments(),
                 item.link(),
                 item.updatedAt(),
                 item.archived());

@@ -39,7 +39,17 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
         /** Who works it. */
         WORKER,
         /** How much harm its change can do. */
-        RISK
+        RISK,
+        /** The issue a story stands under, which no story does on the board. */
+        STORY_PARENT,
+        /** Its size. */
+        SIZE,
+        /** Its number fields. */
+        FIGURES,
+        /** That GitHub has it open while its state is a closed one. */
+        OPEN,
+        /** That GitHub has it closed while its state is an open one. */
+        CLOSED
     }
 
     /**
@@ -55,6 +65,15 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
                     Concern.KIND,
                     Concern.WORKER,
                     Concern.RISK);
+
+    /**
+     * What a warning that holds back only the start of work is about: an item GitHub has closed,
+     * which a move into a closed state sets right.
+     */
+    private static final Set<Concern> HOLDING_START = EnumSet.of(Concern.CLOSED);
+
+    /** A field's name a warning may name: the planner's own word, never a person's text. */
+    private static final Pattern FIELD = Pattern.compile("[A-Z][A-Za-z ]{0,39}");
 
     /** Checks the kind's spelling and copies the concerns. */
     public Warning {
@@ -79,6 +98,17 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
      */
     public boolean holdsWork() {
         return concerns.stream().anyMatch(HOLDING::contains);
+    }
+
+    /**
+     * Whether no work is proposed or started on an item with this warning: what {@link
+     * #holdsWork()} holds, and an item GitHub has closed under an open state, which a move or an
+     * edit may still name.
+     *
+     * @return true when it holds back the start of work
+     */
+    public boolean holdsStart() {
+        return holdsWork() || concerns.stream().anyMatch(HOLDING_START::contains);
     }
 
     /**
@@ -143,6 +173,30 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
 
     /** The kind of an issue whose risk is none the planner knows. */
     public static final String UNKNOWN_RISK = "UnknownRisk";
+
+    /** The kind of a story standing under an issue. */
+    public static final String STORY_UNDER_ISSUE = "StoryUnderIssue";
+
+    /** The kind of a story with a line under Also needs that names no issue the board shows. */
+    public static final String ALSO_NEEDS_NOT_ON_BOARD = "AlsoNeedsNotOnBoard";
+
+    /** The kind of an item whose text is longer than GitHub takes. */
+    public static final String BODY_TOO_LONG = "BodyTooLong";
+
+    /** The kind of an item whose size is none the planner knows. */
+    public static final String UNKNOWN_SIZE = "UnknownSize";
+
+    /** The kind of an item whose priority is none the planner knows. */
+    public static final String UNKNOWN_PRIORITY = "UnknownPriority";
+
+    /** The kind of an issue with a number field that holds no number in the range it reads. */
+    public static final String UNREADABLE_NUMBER = "UnreadableNumber";
+
+    /** The kind of an item GitHub has closed while its state is an open one. */
+    public static final String CLOSED_UNDER_OPEN_STATE = "ClosedUnderOpenState";
+
+    /** The kind of an item GitHub has open while its state is a closed one. */
+    public static final String OPEN_UNDER_CLOSED_STATE = "OpenUnderClosedState";
 
     /**
      * An item whose state is none of the workflow's; the board shows it in a column of its own.
@@ -370,6 +424,116 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
                 "Its risk is none the planner knows, so no work starts on it until one it knows is"
                         + " set.",
                 Set.of(Concern.RISK));
+    }
+
+    /**
+     * A story standing under an issue, shown without it.
+     *
+     * @return the warning
+     */
+    public static Warning storyUnderIssue() {
+        return new Warning(
+                STORY_UNDER_ISSUE,
+                "It stands under an issue, which a story never does, so it is shown without it.",
+                Set.of(Concern.STORY_PARENT));
+    }
+
+    /**
+     * A story with a line under Also needs that names no issue the board shows, shown without it.
+     *
+     * @return the warning
+     */
+    public static Warning alsoNeedsNotOnBoard() {
+        return new Warning(
+                ALSO_NEEDS_NOT_ON_BOARD,
+                "A line under Also needs names no issue the board shows, so it is shown without"
+                        + " it.",
+                Set.of(Concern.ISSUES));
+    }
+
+    /**
+     * An item whose text is longer than GitHub takes, shown without it.
+     *
+     * @return the warning
+     */
+    public static Warning bodyTooLong() {
+        return new Warning(
+                BODY_TOO_LONG,
+                "Its text is longer than GitHub takes, so it is shown without it.",
+                Set.of(Concern.TEXT));
+    }
+
+    /**
+     * An item whose size is none the planner knows, shown without one.
+     *
+     * @return the warning
+     */
+    public static Warning unknownSize() {
+        return new Warning(
+                UNKNOWN_SIZE,
+                "Its size is none the planner knows, so it is shown without one.",
+                Set.of(Concern.SIZE));
+    }
+
+    /**
+     * An item whose priority is none the planner knows, sorted as Medium.
+     *
+     * @return the warning
+     */
+    public static Warning unknownPriority() {
+        return new Warning(
+                UNKNOWN_PRIORITY,
+                "Its priority is none the planner knows, so it is sorted as Medium.",
+                Set.of(Concern.PRIORITY));
+    }
+
+    /**
+     * An issue with a number field that holds no number in the range the planner reads: the board
+     * counts it as none, and no stage is saved over it.
+     *
+     * @param field the field's name, as the planner names it
+     * @return the warning
+     * @throws IllegalArgumentException when the name is no plain field name
+     */
+    public static Warning unreadableNumber(final String field) {
+        if (!FIELD.matcher(field).matches()) {
+            throw new IllegalArgumentException("Not a field's name, " + field.length() + " chars");
+        }
+        return new Warning(
+                UNREADABLE_NUMBER,
+                "Its field "
+                        + field
+                        + " holds no number in the range the planner reads, so the board counts it"
+                        + " as none and saves no stage over it.",
+                Set.of(Concern.FIGURES));
+    }
+
+    /**
+     * An item GitHub has closed while its state is an open one; the state counts, no work is
+     * proposed or started on it, and the planner reopens it only on a move out of a closed state.
+     *
+     * @return the warning
+     */
+    public static Warning closedUnderOpenState() {
+        return new Warning(
+                CLOSED_UNDER_OPEN_STATE,
+                "It is closed on GitHub while its state is an open one, so no work starts on it;"
+                        + " the board goes by its state, and only a move out of a closed state"
+                        + " reopens it.",
+                Set.of(Concern.CLOSED));
+    }
+
+    /**
+     * An item GitHub has open while its state is a closed one; the state counts.
+     *
+     * @return the warning
+     */
+    public static Warning openUnderClosedState() {
+        return new Warning(
+                OPEN_UNDER_CLOSED_STATE,
+                "It is open on GitHub while its state is a closed one; the board goes by its"
+                        + " state.",
+                Set.of(Concern.OPEN));
     }
 
     /**
