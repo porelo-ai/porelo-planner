@@ -916,6 +916,9 @@ public final class GitStore implements PlanningStore {
                     || !moved.containsKey(path)
                     || issue == null
                     || issue.state().equals(write.getValue())
+                    // A move that repairs a state the workflow lacks has no state it leaves that
+                    // a record can name; its head and index carry the repair.
+                    || !workflow.states().contains(issue.state())
                     || !StageRecords.recorded(id)) {
                 continue;
             }
@@ -1655,6 +1658,7 @@ public final class GitStore implements PlanningStore {
         final List<String> ids = new ArrayList<>();
         final List<String> states = new ArrayList<>();
         boolean dropped = false;
+        boolean outside = false;
         for (final String reference : story.issues()) {
             final int hash = reference.indexOf('#');
             final List<Issue> found = issues.getOrDefault(reference, List.of());
@@ -1670,6 +1674,8 @@ public final class GitStore implements PlanningStore {
             for (final Issue issue : found) {
                 if (workflow.states().contains(issue.state())) {
                     states.add(issue.state());
+                } else {
+                    outside = true;
                 }
             }
         }
@@ -1686,8 +1692,9 @@ public final class GitStore implements PlanningStore {
             if (!workflow.states().contains(stated)) {
                 warnings.add(Warning.stateOutsideWorkflow());
             }
-        } else if (states.isEmpty()) {
-            // Its issues give no state the workflow knows, and it states none.
+        } else if (states.isEmpty() || outside && states.stream().allMatch(workflow::closed)) {
+            // Its issues give no state the workflow knows, and it states none; or the ones that
+            // do are all closed while another stands outside the workflow, which counts as open.
             state = "";
             warnings.add(Warning.noState());
         } else {

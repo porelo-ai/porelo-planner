@@ -8,7 +8,8 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 - **It reads the planning store:** the stories of the project repository and the issues, with their sub-issues, of
   each repository, in the states of the project's workflow.
 - **It writes state changes straight to the store**, committed and pushed with the person's own Git login, and keeps
-  the stories index as the project's tools write it.
+  the stories index as the project's tools write it. A move of an issue from a state the workflow lacks, which
+  repairs it, adds no move to its stage record in `stats/`, since a record names only states of the workflow.
 - **It answers the open issues that are no items of a GitHub-tracked project**, as one made by hand on GitHub is, in
   the board's `unlisted`, which the window shows apart from the board; the Git store and the mock mode answer it
   empty.

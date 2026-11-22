@@ -721,16 +721,24 @@ public final class IssueMapping {
                 warnings.add(Warning.stateOutsideWorkflow());
             }
         } else {
-            final String followed =
-                    states.storyState(
-                            // Only an issue in a state of the workflow tells the story's.
-                            own.stream()
-                                    .map(issues::get)
-                                    .filter(Objects::nonNull)
-                                    .map(Issue::state)
-                                    .filter(workflow.states()::contains)
-                                    .toList());
-            state = followed != null ? followed : workflow.states().get(0);
+            final List<String> held =
+                    own.stream()
+                            .map(issues::get)
+                            .filter(Objects::nonNull)
+                            .map(Issue::state)
+                            .toList();
+            // Only an issue in a state of the workflow tells the story's.
+            final List<String> known = held.stream().filter(workflow.states()::contains).toList();
+            final boolean inDoubt = known.size() < held.size();
+            if (inDoubt && known.stream().allMatch(workflow.closed()::contains)) {
+                // Its issues give no state the workflow knows, or only closed ones while another
+                // stands outside the workflow, which counts as open: as the Git store says it.
+                state = "";
+                warnings.add(Warning.noState());
+            } else {
+                final String followed = states.storyState(known);
+                state = followed != null ? followed : workflow.states().get(0);
+            }
         }
         String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
         if (!Story.PRIORITIES.contains(priority)) {
@@ -857,8 +865,9 @@ public final class IssueMapping {
     }
 
     /**
-     * Cuts each link of a board issue to an issue the board does not place - one listed apart, or
-     * one of the project's items the board does not show, such as an archived one - and warns it.
+     * Cuts each link of a board issue to an issue the board does not place - one of the project's
+     * items the board does not show, such as an archived one, or one whose id names two items - and
+     * warns it.
      *
      * @param issues the board's issues, changed in place
      * @param gone whether the board does not place the issue of an id

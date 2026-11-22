@@ -22,7 +22,7 @@ class _Source extends MockPlanningSource {
   Object? editFailure;
   bool previewChangesOnce = false;
   bool takeOutOnPreviewChange = false;
-  bool outsideTimesOut = false;
+  bool b902TimesOut = false;
   int previews = 0;
   int boardReads = 0;
   Object? boardReadFailure;
@@ -38,7 +38,7 @@ class _Source extends MockPlanningSource {
   @override
   Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) {
     previews++;
-    if (outsideTimesOut && moves.any((move) => move.id == 'B902')) {
+    if (b902TimesOut && moves.any((move) => move.id == 'B902')) {
       return Future.value(
         PlanningMovePreview.from({
           'revision': revision,
@@ -78,7 +78,7 @@ class _Source extends MockPlanningSource {
       };
       throw const PlanningRefusal('PreviewChanged');
     }
-    if (outsideTimesOut && moves.any((move) => move.id == 'B902')) {
+    if (b902TimesOut && moves.any((move) => move.id == 'B902')) {
       throw const PlanningRefusal('TimedOut');
     }
     return super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
@@ -173,11 +173,11 @@ void main() {
   test('an issue in no story outside the workflow is moved from its own state and waits for the list', () async {
     final (source, board) = await _opened();
     final data = source.board('demo');
-    source.push('demo', {...data, 'revision': 'outside'});
+    source.push('demo', {...data, 'revision': 'unknown-state'});
     await _turn();
     source.reads.last.complete(
       PlanIssueList.from({
-        'revision': 'outside',
+        'revision': 'unknown-state',
         'issues': [
           _looseIssue(),
           {..._looseIssue(), 'id': 'B902', 'state': 'Accepted'},
@@ -185,7 +185,7 @@ void main() {
       }),
     );
     await _turn();
-    source.outsideTimesOut = true;
+    source.b902TimesOut = true;
     await board.moveIssue('B902', 'Backlog');
     expect(board.pendingIssues['B902']!.from, 'Accepted', reason: 'moved from the state it stands in');
     expect(board.pendingIssues['B902']!.inNoStory, isTrue);

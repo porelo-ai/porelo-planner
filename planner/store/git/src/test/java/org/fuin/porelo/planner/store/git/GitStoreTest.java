@@ -342,6 +342,36 @@ class GitStoreTest {
     }
 
     @Test
+    void aStoryIsNeverFinishedByItsIssuesWhileOneOfThemStandsOutsideTheWorkflow() {
+        // Harm: a story shows as finished over an issue in doubt, which a person's own move to
+        // Finished is refused for, or shows one state here and another on a GitHub board.
+        final Board board =
+                store(
+                                List.of(
+                                        story("ST1", null, "store#XY1", "store#XY3"),
+                                        story("ST2", null, "store#XY1", "store#XY2")),
+                                List.of(
+                                        issue("XY1", "store", "Parked"),
+                                        issue("XY2", "store", "Backlog"),
+                                        issue("XY3", "store", "Finished")),
+                                List.of())
+                        .board();
+
+        assertThat(board.stories())
+                .as("no state its issues give while one is in doubt, an open one still told")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::id,
+                        org.fuin.porelo.planner.store.Story::state,
+                        org.fuin.porelo.planner.store.Story::warnings)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "ST1",
+                                "",
+                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
+                        org.assertj.core.groups.Tuple.tuple("ST2", "Backlog", List.of()));
+    }
+
+    @Test
     void aDroppedSaveThatAddedAStoryWithoutATitleNamesTheStory() {
         // Prevents a story added as ST<n>.md and dropped by a push from being told by a path
         // instead of the story the person planned, so the person can tell what is lost.

@@ -829,6 +829,39 @@ class WorkProposalTest {
     }
 
     @Test
+    void anIssueBlockedByOneOutsideTheWorkflowIsHeldAsWaitingOnIt() {
+        // Harm: an issue whose blocker a person set to a state the workflow lacks is worked, as
+        // if that blocker were done.
+        final WorkProposal proposal =
+                WorkProposal.propose(
+                        waiting(
+                                warned(
+                                        board(WorkRule.Per.REPOSITORY),
+                                        Map.of("AA1", Warning.stateOutsideWorkflow()),
+                                        Map.of("AA1", "Parked")),
+                                "BB1",
+                                List.of("AA1"),
+                                List.of()),
+                        "ST1",
+                        "Building");
+
+        assertThat(proposal.repositories())
+                .as("only the sub-issue is worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1.1")));
+        assertThat(proposal.held())
+                .as("the blocker held with its warning, the blocked issue as waiting on it")
+                .extracting(WorkProposal.Held::issue)
+                .contains("AA1", "BB1");
+        assertThat(proposal.held())
+                .filteredOn(held -> held.issue().equals("BB1"))
+                .singleElement()
+                .extracting(WorkProposal.Held::reason)
+                .asString()
+                .contains("BB1 waits on AA1");
+    }
+
+    @Test
     void anIssueCarryingAnyKindTheGitHubStoreWarnsWithIsHeldWhileTheOthersAreProposed() {
         // Harm: work starts on an issue a person edited by hand into what the board cannot hold -
         // a story label in another repository, a cut parent or blocker, an item read in part.

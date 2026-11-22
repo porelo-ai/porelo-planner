@@ -32,12 +32,13 @@ Future<PlanningBoards> _show(
   List<Map<String, dynamic>> stories, {
   List<Map<String, dynamic>> issues = const [],
   String phase = 'Work',
+  MockPlanningSource? source,
 }) async {
   tester.view
     ..physicalSize = const Size(2400, 2000)
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final backend = MockPlanningSource()
+  final backend = (source ?? MockPlanningSource())
     ..boards['demo'] = {
       'states': [
         {'name': 'Ready', 'kind': 'WAITING'},
@@ -279,6 +280,44 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  // Harm: an issue in no story whose state the workflow lacks can be seen but not moved, so a person repairs it only
+  // on the tracker.
+  testWidgets('an issue in no story in a state the workflow lacks is moved from its column into the workflow', (
+    tester,
+  ) async {
+    final backend = MockPlanningSource();
+    final boards = await _show(
+      tester,
+      [
+        {'id': 'S1', 'title': 'Ready one', 'state': 'Ready', 'priority': 'High', 'issues': <Object>[]},
+      ],
+      issues: [
+        _issue('I9', 'Parked', warnings: [_warning('StateOutsideWorkflow', _outside, holds: true)]),
+      ],
+      source: backend,
+    );
+    await tester.tap(find.byKey(const Key('planning-no-story-expand Parked')));
+    await settle(tester);
+    expect(
+      boards.selected!.noStory.single.warnings.single.kind,
+      'StateOutsideWorkflow',
+      reason: 'the issue carries its warning',
+    );
+
+    await tester.tap(find.byKey(const Key('planning-no-story-menu I9')));
+    await settle(tester);
+    await tester.tap(find.text('Move to…').last);
+    await settle(tester);
+    expect(find.byKey(const Key('planning-move-to I9 Building')), findsNothing, reason: 'only work enters it');
+    await tester.tap(find.byKey(const Key('planning-move-to I9 Ready')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await settle(tester);
+
+    expect(backend.moveCalls.single['moves'], [
+      {'issue': 'I9', 'to': 'Ready'},
+    ]);
   });
 
   // Harm: a phase whose name is the key a column at the board's end once took shares that column's scroll, so a

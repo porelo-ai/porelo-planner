@@ -9,7 +9,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.assertj.core.groups.Tuple;
+import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
@@ -1041,6 +1043,67 @@ class IssueMappingTest {
                 .extracting(Story::issues)
                 .isEqualTo(List.of("example-lib#2", "example-lib#4"));
         assertThat(mapped.faults()).as("nothing left out").isEmpty();
+    }
+
+    @Test
+    void aCopyOfAnIdNamedTwiceWhoseStatusIsOutsideTheWorkflowLeavesTheBoardReadable() {
+        // Harm: one copy of a twice-named issue set to a Status the workflow lacks makes the
+        // whole board unreadable, so no story or issue of the project is shown.
+        final Item somewhere = new Item("example-lib", 2).field(FieldNames.STATUS, "Somewhere");
+        final Item idea = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
+
+        final IssueMapping.Mapped mapped = read(somewhere, idea);
+
+        assertThat(mapped.issues())
+                .as("both copies, the one outside the workflow warned for that too")
+                .extracting(Issue::state, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple(
+                                "Somewhere",
+                                List.of(Warning.idTwice(), Warning.stateOutsideWorkflow())),
+                        Tuple.tuple("Idea", List.of(Warning.idTwice())));
+        assertThat(
+                        new Board(
+                                        new Revision("r"),
+                                        WORKFLOW,
+                                        mapped.stories(),
+                                        mapped.issues(),
+                                        new Work(Map.of(), List.of()),
+                                        CONFIG.repositories(),
+                                        mapped.faults(),
+                                        "example-org")
+                                .issues())
+                .as("the board built")
+                .hasSize(2);
+    }
+
+    @Test
+    void aStoryIsNeverFinishedByItsIssuesWhileOneOfThemStandsOutsideTheWorkflow() {
+        // Harm: a story shows as finished over an issue in doubt, which a person's own move to
+        // Finished is refused for, or one whose issues all stand outside the workflow shows in
+        // the first state here and as having none on a Git board.
+        final Item finishing = new Item("example-project", 1).story();
+        final Item done = new Item("example-lib", 2).field(FieldNames.STATUS, "Finished");
+        final Item accepted = new Item("example-lib", 3).field(FieldNames.STATUS, "Accepted");
+        finishing.sub(done).sub(accepted);
+        final Item lost = new Item("example-project", 4).story();
+        final Item parked = new Item("example-lib", 5).field(FieldNames.STATUS, "Parked");
+        lost.sub(parked);
+        final Item open = new Item("example-project", 6).story();
+        final Item backlog = new Item("example-lib", 7).field(FieldNames.STATUS, "Backlog");
+        final Item elsewhere = new Item("example-lib", 8).field(FieldNames.STATUS, "Accepted");
+        open.sub(backlog).sub(elsewhere);
+
+        final IssueMapping.Mapped mapped =
+                read(finishing, done, accepted, lost, parked, open, backlog, elsewhere);
+
+        assertThat(mapped.stories())
+                .as("no state its issues give while one is in doubt, an open one still told")
+                .extracting(Story::id, Story::state, Story::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-project#1", "", List.of(Warning.noState())),
+                        Tuple.tuple("example-project#4", "", List.of(Warning.noState())),
+                        Tuple.tuple("example-project#6", "Backlog", List.of()));
     }
 
     @Test

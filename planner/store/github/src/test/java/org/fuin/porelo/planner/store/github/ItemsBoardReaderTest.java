@@ -1412,11 +1412,10 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void aCopyOfOneReferenceOutsideTheWorkflowAndBlockedByAnIssueListedApartLeavesTheBoardRead() {
+    void aCopyOfOneReferenceOutsideTheWorkflowAndBlockedByAnotherOutsideItLeavesTheBoardRead() {
         // Harm: two items of one reference, one of them in a Status the workflow lacks, take the
-        // whole board down for everyone; or a copy keeps a link to an issue the board does not
-        // hold.
-        final ProjectItem apart =
+        // whole board down for everyone; or a copy loses its link to a blocker the board holds.
+        final ProjectItem parked =
                 new ProjectItem(
                         "PVTI_lib_5",
                         false,
@@ -1441,11 +1440,15 @@ class ItemsBoardReaderTest {
                 new GitHub()
                         .fieldsPage(FIELDS, null)
                         .itemsPage(
-                                null, story("High", LIB_3), libIssue(3, refs(false)), onHold, apart)
+                                null,
+                                story("High", LIB_3),
+                                libIssue(3, refs(false)),
+                                onHold,
+                                parked)
                         .read();
 
         assertThat(snapshot.board().issues())
-                .as("both copies, the one on hold warned for its state and its cut blocker too")
+                .as("both copies and the blocker, each outside the workflow warned for it")
                 .extracting(
                         Issue::id, Issue::state, Issue::blockedBy, i -> Set.copyOf(i.warnings()))
                 .containsExactly(
@@ -1457,13 +1460,18 @@ class ItemsBoardReaderTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "example-lib#3",
                                 "On hold",
-                                List.of(),
+                                List.of("example-lib#5"),
                                 Set.of(
                                         org.fuin.porelo.planner.store.Warning.idTwice(),
                                         org.fuin.porelo.planner.store.Warning
-                                                .stateOutsideWorkflow(),
+                                                .stateOutsideWorkflow())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "example-lib#5",
+                                "Parked",
+                                List.of(),
+                                Set.of(
                                         org.fuin.porelo.planner.store.Warning
-                                                .dependsOnUnplaced())));
+                                                .stateOutsideWorkflow())));
         assertThat(snapshot.board().holdsWork("example-lib#3"))
                 .as("neither copy worked")
                 .isPresent();

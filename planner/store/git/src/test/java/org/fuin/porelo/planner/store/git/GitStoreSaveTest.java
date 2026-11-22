@@ -672,6 +672,34 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aMoveOfAnIssueOutsideTheWorkflowIntoItIsSavedAndRepairsIt() throws Exception {
+        // Harm: the move that repairs an issue a person set to a state the workflow lacks is
+        // refused, because its stage record cannot name the state it leaves.
+        repositories.repository(OWN, Map.of("issues/AB03-Parked.md", issue("AB03", "Parked")));
+        final GitStore store = store();
+        final Board board = store.board();
+
+        final Board saved =
+                store.save(
+                        board.revision(), writes(Map.of("AB03", "Backlog"), Map.of(), List.of()));
+
+        assertThat(saved.issue("AB03").orElseThrow())
+                .as("in the state it was moved to, no longer warned")
+                .extracting(
+                        org.fuin.porelo.planner.store.Issue::state,
+                        org.fuin.porelo.planner.store.Issue::warnings)
+                .containsExactly("Backlog", List.of());
+        assertThat(read(OWN, "issues/README.md"))
+                .as("its row back in the index")
+                .contains("<a id=\"ab03\">");
+        assertThat(names(OWN, head(OWN)))
+                .as(
+                        "its head and the index written, no move recorded from a state the workflow lacks")
+                .contains("issues/README.md")
+                .doesNotContain("stats/AB03.jsonl");
+    }
+
+    @Test
     void aStoryWithoutAStateTheBoardCanTellIsGivenTheStateItIsMovedTo() throws Exception {
         // Written as an empty state, the move would leave the story without one still, and a
         // head the index refuses.

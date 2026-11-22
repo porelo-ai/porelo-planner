@@ -88,7 +88,9 @@ are added, as the Markdown store's stage records count them; a pause and a perso
 - `Status` is the truth. A closed state (Finished, Rejected) also closes the GitHub issue as completed or not
   planned, and reopening sets the state back; an issue whose open or closed state disagrees with its `Status` is
   shown with its `Status` and named as a fault.
-- A story whose `Status` is empty follows its issues; a set `Status` is given.
+- A story whose `Status` is empty follows its issues in states of the workflow; a set `Status` is given. When its
+  issues all stand outside the workflow, or those inside it are all closed while another stands outside it, it
+  takes no state, warned `NoState`, as the Git store reads it.
 - An issue's `Priority` is read as the board's priority of it; an empty one is none, and one outside Highest to
   Lowest is none too and named as a fault. The board names, as on any store, each breach of the stories' rules: an
   open issue past the first state in no story, a story ranked below its open issues, a story with no issue and no
