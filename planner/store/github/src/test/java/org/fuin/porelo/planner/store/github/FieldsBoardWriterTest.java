@@ -1790,11 +1790,28 @@ class FieldsBoardWriterTest {
 
     @Test
     void anIssueAlikeThatStoodOnTheBoardBeforeIsNotTakenAsTheOneMadeWithoutAnswer() {
-        // Harm: the person's earlier issue of the same words taken as the new one, so the new
-        // one GitHub made stands beside it off the project.
+        // Harm: the person's earlier, finished issue of the same words taken as the new one, so
+        // the new one GitHub made stands beside it off the project.
         final GitHub github = new GitHub().creating("unanswered");
         github.make("example-lib", "A new thing", WRITTEN, List.of());
-        final ItemView earlier = item("LB9", "example-lib", 100, true, WRITTEN, state("Idea"));
+        final ItemView earlier =
+                item(
+                        "LB9",
+                        "example-lib",
+                        100,
+                        true,
+                        WRITTEN,
+                        Map.of(
+                                FieldNames.STATUS,
+                                "Idea",
+                                FieldNames.SIZE,
+                                "S",
+                                FieldNames.WORKER,
+                                "Agent",
+                                FieldNames.PRIORITY,
+                                "Medium",
+                                FieldNames.RANK,
+                                "1"));
 
         final String reference =
                 github.writer()
@@ -2208,6 +2225,91 @@ class FieldsBoardWriterTest {
                         "F_Status",
                         FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Backlog"));
         assertThat(github.subIssues).as("the existing story link is retained").hasSize(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "Idea"})
+    void aCreateInNoStoryCutOffAfterItsProjectAddIsFinishedOnARetryNotMadeTwice(
+            final String automatic) {
+        // Harm: a retry of a create in no story, cut off once its issue stood on the project,
+        // makes a second issue and leaves the first on the board without its values.
+        final GitHub github = new GitHub();
+        final NewIssue issue = newIssue("example-lib", "A new thing");
+        github.answering(
+                values -> {
+                    throw GitHubExceptions.refused(422, "fields refused");
+                });
+
+        assertThatThrownBy(() -> github.writer().createIssue(snapshot(), SHOWN, issue))
+                .as("the first try stops after the project add, before the values")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining("fields refused");
+        assertThat(github.added)
+                .as("the first try added the issue to the project")
+                .containsExactly("I_example-lib_100");
+
+        final String reference =
+                github.writer()
+                        .createIssue(
+                                snapshot(
+                                        onTheProject(
+                                                github, automatic.isEmpty() ? null : automatic)),
+                                SHOWN,
+                                issue);
+
+        assertThat(reference).as("the retry finishes the first issue").isEqualTo("example-lib#100");
+        assertThat(held(github)).as("no second issue").containsExactly("example-lib#100");
+        assertThat(github.added)
+                .as("the issue added to the project once")
+                .containsExactly("I_example-lib_100");
+        assertThat(github.values.get("PVTI_I_example-lib_100"))
+                .as("the values the first try left out")
+                .containsKeys("F_Status", "F_Size", "F_Worker", "F_Priority", "F_Rank");
+    }
+
+    @Test
+    void aWholeIssueAlikeInNoStoryIsThePersonsOwnAndANewOneIsMade() {
+        // Harm: the person's finished issue in no story taken by a new create of the same words,
+        // the new issue never made and the old one's values written over.
+        final GitHub github = new GitHub();
+        final NewIssue issue = newIssue("example-lib", "A new thing");
+        github.writer().createIssue(snapshot(), SHOWN, issue);
+        final int before = github.mutations.size();
+
+        final String reference =
+                github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+
+        assertThat(reference).as("a new issue made").isEqualTo("example-lib#101");
+        assertThat(github.mutations.subList(before, github.mutations.size()))
+                .as("nothing written to the person's own issue")
+                .allSatisfy(
+                        values ->
+                                assertThat(values)
+                                        .noneSatisfy(
+                                                value ->
+                                                        assertThat(value.itemId())
+                                                                .isEqualTo(
+                                                                        "PVTI_I_example-lib_100")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"F_Size,F_Worker,F_Rank", "F_Size"})
+    void anIssueAlikeInNoStoryHoldingSomeValuesIsThePersonsOwn(final String cleared) {
+        // Harm: the person's own issue of the same words, partly filled in or with a value cleared,
+        // taken by a new create, which then writes its values and rank over the person's.
+        final GitHub github = new GitHub();
+        final NewIssue issue = newIssue("example-lib", "A new thing");
+        github.writer().createIssue(snapshot(), SHOWN, issue);
+        for (final String field : cleared.split(",")) {
+            github.values.get("PVTI_I_example-lib_100").remove(field);
+        }
+
+        final String reference =
+                github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+
+        assertThat(reference)
+                .as("a new issue made beside the person's")
+                .isEqualTo("example-lib#101");
     }
 
     @Test

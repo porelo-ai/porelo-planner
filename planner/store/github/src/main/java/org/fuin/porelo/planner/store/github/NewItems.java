@@ -32,9 +32,10 @@ import org.jspecify.annotations.Nullable;
  * finishes it: the person's open issue of the same title and body made within {@link
  * #TRIED_AGAIN_WITHIN} is taken as the one an earlier try made, never made twice: a story only
  * while an issue planned under it has none alike hanging under it with all its values, an issue
- * only under the story it is planned under or off the project under no story. A taken item gets its
- * place, its requested Status and the values it lacks, keeping its other values; several alike stop
- * the write, naming them. The calls go at the pace of a {@link WritePace}.
+ * only under the story it is planned under, off the project under no story, or, planned under no
+ * story, on the project under none holding no planned value but an automatic first Status. A taken
+ * item gets its place, its requested Status and the values it lacks, keeping its other values;
+ * several alike stop the write, naming them. The calls go at the pace of a {@link WritePace}.
  */
 final class NewItems {
 
@@ -393,7 +394,7 @@ final class NewItems {
             final boolean left =
                     planned.labels.contains(IssueMapping.STORY_LABEL)
                             ? cutOff(issue.issue().nodeId(), under)
-                            : leftUnder(issue, item, parent);
+                            : leftUnder(issue, item, parent, planned);
             if (!made.contains(planned.repository + "#" + number)
                     && left
                     && issue.title().equals(planned.title)
@@ -448,18 +449,37 @@ final class NewItems {
 
     /**
      * Whether an issue alike was left by an earlier try of this write: it hangs under the story it
-     * is planned under, or it stands off the project under no story, as a try cut off before it
-     * added the issue leaves it. One on the project alone or under another story is the person's
+     * is planned under, it stands off the project under no story, as a try cut off before it added
+     * the issue leaves it, or, planned under no story, it stands on the project under none holding
+     * no planned value but an automatic first Status, as a try cut off before its values leaves it.
+     * One on the project holding any other planned value, or under another story, is the person's
      * own.
      */
-    private static boolean leftUnder(
+    private boolean leftUnder(
             final ProjectWrites.Found issue,
             final @Nullable ItemView item,
-            final @Nullable Parent parent) {
+            final @Nullable Parent parent,
+            final Planned planned) {
         if (item == null) {
             return !issue.underParent();
         }
-        return parent != null && parent.nodeId().equals(item.parentIssueId());
+        if (parent == null) {
+            // A try writes its values in one batch, so a cut-off one leaves none but an automatic
+            // first Status; an item holding any other is the person's own.
+            final String first = current.config().workflow().states().get(0);
+            return item.parentIssueId() == null
+                    && planned.values.stream()
+                            .noneMatch(
+                                    v ->
+                                            holds(item, v.field())
+                                                    && !(v.field().equals(FieldNames.STATUS)
+                                                            && first.equals(
+                                                                    item.fields()
+                                                                            .get(
+                                                                                    FieldNames
+                                                                                            .STATUS))));
+        }
+        return parent.nodeId().equals(item.parentIssueId());
     }
 
     /** The person's open issues of a repository made since a moment, every page read. */
