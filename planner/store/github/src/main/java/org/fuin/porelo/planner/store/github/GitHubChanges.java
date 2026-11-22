@@ -169,6 +169,28 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
             final ChangeCursor cursor,
             final Map<String, TrackedItem> known,
             final @Nullable Map<String, Long> restFieldIds) {
+        return since(config, token, cursor, known, restFieldIds, listedSoFar -> {});
+    }
+
+    /**
+     * Answers what changed since the cursor, as {@link #since(ProjectConfig, String, ChangeCursor,
+     * Map, Map)} does, telling after each page how many items the list showed so far.
+     *
+     * @param config the project as GitHub was read for the board, with its node id
+     * @param token the person's token, never logged
+     * @param cursor where the last look stands
+     * @param known the items the copy holds, by item id
+     * @param restFieldIds the numeric ids of the fields whose values are compared, or null
+     * @param pageRead told the items listed so far after each page, a page answered 304 included
+     * @return what changed, or empty when GitHub cannot tell
+     */
+    public Optional<Changed> since(
+            final ProjectConfig config,
+            final String token,
+            final ChangeCursor cursor,
+            final Map<String, TrackedItem> known,
+            final @Nullable Map<String, Long> restFieldIds,
+            final java.util.function.IntConsumer pageRead) {
         listed = Map.of();
         if (restFieldIds == null || restFieldIds.size() > GitHubClient.MAX_FIELDS) {
             // A value of a field not named would change unseen; only a whole read tells.
@@ -184,7 +206,7 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
                     }
                 });
         try {
-            return Optional.ofNullable(look(config, token, cursor, known, restFieldIds));
+            return Optional.ofNullable(look(config, token, cursor, known, restFieldIds, pageRead));
         } catch (final GitHubException e) {
             if (e.rateLimited()) {
                 throw e;
@@ -203,7 +225,8 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
             final String token,
             final ChangeCursor cursor,
             final Map<String, TrackedItem> known,
-            final Map<String, Long> restFieldIds) {
+            final Map<String, Long> restFieldIds,
+            final java.util.function.IntConsumer pageRead) {
         final long started = System.nanoTime();
         final String owner = config.project().owner();
         final int number = config.project().number();
@@ -290,6 +313,7 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
                                 place, answer.etag(), page.items().size() >= PAGE_SIZE, ids));
                 next = page.after();
             }
+            pageRead.accept(listed.size());
             if (next == null) {
                 break;
             }

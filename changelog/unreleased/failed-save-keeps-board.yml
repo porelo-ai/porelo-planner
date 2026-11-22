@@ -1,0 +1,2 @@
+title: A save that fails or comes back stale keeps the planner's board and reads again only what it touched, and the planner tells a look for changes, what it has listed and its wait behind a save apart from a whole read.
+type: fixed

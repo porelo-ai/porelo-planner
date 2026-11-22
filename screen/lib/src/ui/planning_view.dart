@@ -1043,19 +1043,25 @@ class _BoardViewState extends State<_BoardView> {
                           children: [
                             TextButton.icon(
                               key: const Key('planning-reload'),
-                              onPressed: board.saving || board.fetching || board.loading != null
-                                  ? null
-                                  : () => unawaited(board.reloadPlanning()),
+                              onPressed: board.reloadHeld ? null : () => unawaited(board.reloadPlanning()),
                               icon: const Icon(Icons.refresh),
                               label: const Text('Reload planning'),
                             ),
                             // A Reload's read of the whole board, beside its button so the board below never moves,
                             // and only once it takes longer than a moment.
                             Expanded(
-                              child: _SlowProgress(
-                                active: board.fetching || board.loading != null,
-                                child: _loadProgress(board.loading, line: true),
-                              ),
+                              child: board.lookingLive && !board.fetching
+                                  // A look for changes on a live board: a line, no bar, so it never reads as a load.
+                                  ? Text(
+                                      board.loading!.words,
+                                      key: const Key('planning-look'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : _SlowProgress(
+                                      active: board.fetching || board.loading != null,
+                                      child: _loadProgress(board.loading, line: true),
+                                    ),
                             ),
                           ],
                         ),
@@ -2103,9 +2109,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           if (widget.board.problem != null || !widget.board.live)
             TextButton.icon(
               key: const Key('planning-reload'),
-              onPressed: widget.board.saving || widget.board.fetching || widget.board.loading != null
-                  ? null
-                  : () => unawaited(widget.board.reloadPlanning()),
+              onPressed: widget.board.reloadHeld ? null : () => unawaited(widget.board.reloadPlanning()),
               icon: const Icon(Icons.refresh),
               label: const Text('Reload planning'),
             ),

@@ -273,8 +273,10 @@ class GitHubStoreCopyTest {
     }
 
     @Test
-    void aFailedSaveRemovesTheCopy() {
-        // Harm: a board from before a save that failed halfway shown again at the next start.
+    void aSaveFailingBeforeAnyWriteKeepsTheCopy() {
+        // Harm: a save GitHub refused before writing anything removes the copy, so the next start
+        // waits for a whole read of the project. A save that failed halfway reads again what it
+        // touched, or forgets the board and its copy where that read fails.
         heldBefore();
         final GitHubStore store =
                 store(
@@ -300,7 +302,7 @@ class GitHubStoreCopyTest {
                 .isInstanceOf(StoreException.class);
         assertThat(copies().read(PROJECT, CONFIG.commit()))
                 .as("the copy after the failed save")
-                .isEmpty();
+                .isPresent();
     }
 
     @Test

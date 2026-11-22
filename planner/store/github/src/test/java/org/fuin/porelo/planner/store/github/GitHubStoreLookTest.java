@@ -164,6 +164,9 @@ class GitHubStoreLookTest {
         /** Run as the list is asked, before it answers. */
         private Runnable onList = () -> {};
 
+        /** Run as the whole read asks for the items, before they are answered. */
+        private Runnable onItems = () -> {};
+
         /** Whether a page of the list was answered. */
         private final AtomicBoolean answered = new AtomicBoolean();
 
@@ -210,6 +213,7 @@ class GitHubStoreLookTest {
         public GitHubGraphQl.ProjectItems projectItems(
                 final String token, final String owner, final int number, final String after) {
             calls.add("projectItems");
+            onItems.run();
             final List<GitHubGraphQl.ProjectItem> items = lateRead != null ? lateRead : items();
             return new GitHubGraphQl.ProjectItems(items, NONE, COST, items.size());
         }
@@ -687,6 +691,122 @@ class GitHubStoreLookTest {
         assertThat(story(store.refresh()).title())
                 .as("the title after a whole read whose list lags")
                 .isEqualTo("Saved");
+    }
+
+    @Test
+    void aLookWaitingBehindSavesTellsWhatItListedAndThatItWaitsUntilTheLastSaveEnds()
+            throws Exception {
+        // Harm: a look that waits for a save, as long as GitHub's 502s make it, shows "0 of all"
+        // as a whole read, or stops saying it waits when the first of two saves in a row ends.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final CountDownLatch firstIn = new CountDownLatch(1);
+        final CountDownLatch firstOut = new CountDownLatch(1);
+        final CountDownLatch secondIn = new CountDownLatch(1);
+        final CountDownLatch secondOut = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicInteger saves =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final GitHubStore store =
+                store(
+                        github,
+                        new AtomicReference<>(
+                                writes -> {
+                                    final boolean first = saves.incrementAndGet() == 1;
+                                    (first ? firstIn : secondIn).countDown();
+                                    try {
+                                        assertThat(
+                                                        (first ? firstOut : secondOut)
+                                                                .await(5, TimeUnit.SECONDS))
+                                                .isTrue();
+                                    } catch (final InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                        throw new IllegalStateException(e);
+                                    }
+                                }));
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        github.answered.set(false);
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread first = new Thread(() -> run(() -> save(store), failed), "first saver");
+        first.start();
+        assertThat(firstIn.await(5, TimeUnit.SECONDS)).as("the first save under way").isTrue();
+        final Thread second = new Thread(() -> run(() -> save(store), failed), "second saver");
+        second.start();
+        // The second save queued for the lock first, so it takes the lock when the first ends.
+        final long queued = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (second.getState() != Thread.State.TIMED_WAITING) {
+            assertThat(System.nanoTime()).as("the second save waiting").isLessThan(queued);
+            Thread.onSpinWait();
+        }
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        final long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!(github.answered.get() && poller.getState() == Thread.State.TIMED_WAITING)) {
+            assertThat(System.nanoTime()).as("the look waiting for the save").isLessThan(until);
+            Thread.onSpinWait();
+        }
+        final org.fuin.porelo.planner.store.ReadProgress waiting = store.reading().orElseThrow();
+        firstOut.countDown();
+        assertThat(secondIn.await(5, TimeUnit.SECONDS)).as("the second save under way").isTrue();
+        final org.fuin.porelo.planner.store.ReadProgress stillWaiting =
+                store.reading().orElseThrow();
+        secondOut.countDown();
+        first.join(5000);
+        second.join(5000);
+        poller.join(5000);
+
+        assertThat(failed.get()).as("a failure of a save or the poll").isNull();
+        assertThat(waiting.kind())
+                .as("a look, not a whole read")
+                .isEqualTo(org.fuin.porelo.planner.store.ReadProgress.Kind.LOOK);
+        assertThat(waiting.read()).as("the items the look's list showed").isEqualTo(2);
+        assertThat(waiting.waitsFor()).as("what it waits for").isEqualTo("save");
+        assertThat(stillWaiting.waitsFor())
+                .as("what it waits for while the second save runs")
+                .isEqualTo("save");
+        assertThat(store.reading()).as("after the look").isEmpty();
+    }
+
+    @Test
+    void aWholeReadIsToldOverALookRunningBesideIt() throws Exception {
+        // Harm: a Reload's whole read is shown as the look beside it, so its count stands still.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        store.refresh();
+        store.poll();
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        github.onList =
+                () -> {
+                    looking.countDown();
+                    try {
+                        assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                };
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look under way").isTrue();
+        final AtomicReference<org.fuin.porelo.planner.store.ReadProgress.@Nullable Kind> told =
+                new AtomicReference<>();
+        github.onItems =
+                () -> told.set(store.reading().map(progress -> progress.kind()).orElse(null));
+        try {
+            store.refresh();
+        } finally {
+            release.countDown();
+            poller.join(5000);
+        }
+
+        assertThat(told.get())
+                .as("the read told while both run")
+                .isEqualTo(org.fuin.porelo.planner.store.ReadProgress.Kind.WHOLE);
     }
 
     private static void run(

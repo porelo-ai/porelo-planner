@@ -158,7 +158,16 @@ class PlanningWatch extends StreamView<PlanningSnapshot> {
 /// How far the planner's read of a board is, as its stream tells it while it reads.
 class PlanningLoad {
   /// Takes what the planner told; [since] and [readAt] are instants, [read] and [total] counts of items.
-  const PlanningLoad({required this.since, this.lastRead = '', this.read, this.total, this.readAt, this.place});
+  const PlanningLoad({
+    required this.since,
+    this.lastRead = '',
+    this.read,
+    this.total,
+    this.readAt,
+    this.place,
+    this.look = false,
+    this.waitsFor,
+  });
 
   /// Reads one `load` event's data; null where it is not a read under way.
   static PlanningLoad? from(Object? json) {
@@ -177,6 +186,9 @@ class PlanningLoad {
         final String from when _placeName.hasMatch(from) => from,
         _ => null,
       },
+      // A kind or a wait this window does not know is taken as a whole read that waits for nothing.
+      look: json['kind'] == 'look',
+      waitsFor: json['waitsFor'] == 'save' ? 'save' : null,
     );
   }
 
@@ -199,6 +211,12 @@ class PlanningLoad {
   /// Where the planner reads from, in its words ("GitHub"), where it said so.
   final String? place;
 
+  /// Whether the planner only looks at the board's item list for what changed, not reads the board whole.
+  final bool look;
+
+  /// What the read waits for now, `save` while a save of the planner holds the project; null while it reads.
+  final String? waitsFor;
+
   /// The share of the read done, from 0 to 1, where the planner told how many items it expects; null where not yet.
   double? get done => switch ((read, total)) {
     (final read?, final total?) when total > 0 => (read / total).clamp(0, 1).toDouble(),
@@ -207,10 +225,12 @@ class PlanningLoad {
 
   /// The read in one sentence for a person: how many entries of how many, once the planner told the total.
   String get words {
-    final head = place == null ? 'Loading the planning' : 'Loading the planning from $place';
+    final what = look ? 'Looking for changes' : 'Loading the planning';
+    final head = place == null ? what : '$what ${look ? 'on' : 'from'} $place';
+    final wait = waitsFor == 'save' ? ', waiting for a save to finish' : '';
     return switch ((read, total)) {
-      (final read?, final total?) when total > 0 => '$head: ${_grouped(read)} of ${_grouped(total)} entries',
-      _ => '$head…',
+      (final read?, final total?) when total > 0 => '$head: ${_grouped(read)} of ${_grouped(total)} entries$wait',
+      _ => wait.isEmpty ? '$head…' : '$head$wait…',
     };
   }
 

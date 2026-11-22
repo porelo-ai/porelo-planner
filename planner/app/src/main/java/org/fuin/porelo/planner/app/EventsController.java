@@ -168,6 +168,13 @@ public class EventsController {
         data.put("total", progress.map(ReadProgress::total).orElse(null));
         data.put("lastRead", progress.map(ReadProgress::lastRead).orElse(null));
         progress.map(ReadProgress::from).ifPresent(from -> data.put("from", from));
+        data.put(
+                "kind",
+                progress.map(ReadProgress::kind)
+                        .orElse(ReadProgress.Kind.WHOLE)
+                        .name()
+                        .toLowerCase(java.util.Locale.ROOT));
+        progress.map(ReadProgress::waitsFor).ifPresent(what -> data.put("waitsFor", what));
         emitter.send(SseEmitter.event().name("load").data(data, MediaType.APPLICATION_JSON));
     }
 

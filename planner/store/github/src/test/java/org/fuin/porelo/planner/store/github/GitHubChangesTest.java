@@ -267,6 +267,18 @@ class GitHubChangesTest {
     }
 
     @Test
+    void aLookTellsTheItemsListedAfterEachPageAPage304AnsweredIncluded() {
+        // Harm: a look of about 16 pages shows "0 of all" for its whole run.
+        final GitHub github =
+                unchanged().page(null, "\"a2\"", "c2", listed("PVTI_1"), listed("PVTI_2"));
+        final List<Integer> told = new ArrayList<>();
+
+        github.changes().since(CONFIG, TOKEN, twoPages(), KNOWN, FIELDS, told::add).orElseThrow();
+
+        assertThat(told).as("the items listed after each page").containsExactly(2, 3);
+    }
+
+    @Test
     void aFieldValueChangedOnGitHubNamesExactlyThatItem() {
         // Harm: a status moved on GitHub never shows on a board started from its copy.
         final GitHub github =

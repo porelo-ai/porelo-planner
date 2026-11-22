@@ -204,7 +204,12 @@ paths:
         reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
         current board first. An unknown project is refused before the stream starts. While the store reads the whole
         board, event `load` tells the read's progress at least every 5 s, its `data` `{"state": "reading", "since",
-        "read", "total", "lastRead", "from"}`. A read ends with its `board`, with `load` `{"state": "done"}` when it
+        "read", "total", "lastRead", "from", "kind", "waitsFor"}`. `kind` is `whole` (also when it is absent) for a
+        read of the whole board, item by item, or `look` for a look at the board's item list for what changed since
+        the board held, which counts the items its list showed. `waitsFor` is `save` while the read waits for a save
+        of the planner to end, and absent while it reads. A reader ignores a `kind` or `waitsFor` it does not know:
+        an unknown `kind` counts as `whole`, an unknown `waitsFor` as absent. A read ends with its `board`, with
+        `load` `{"state": "done"}` when it
         changed nothing, or with `load` `{"state": "failed", "problem", "failure", "parameters"}`: before the first
         board this ends the stream, after it the stream stays and the board held stands.
       tags: [board]

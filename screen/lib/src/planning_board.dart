@@ -219,6 +219,13 @@ class PlanningBoard extends ChangeNotifier {
   /// Whether a Reload's read of the whole board runs at the planner; a change made meanwhile is saved at once.
   bool fetching = false;
 
+  /// Whether the planner only looks for changes on a live board: told as a line, never as a read of the board.
+  bool get lookingLive => live && loading?.look == true;
+
+  /// Whether Reload waits: a save, a Reload or the planner's read of the board runs; a look on a live board does not
+  /// hold it.
+  bool get reloadHeld => saving || fetching || loading != null && !lookingLive;
+
   /// How long a Reload's bar stands after the planner answered, until its watch tells the read behind the answer.
   @visibleForTesting
   static Duration fetchTold = const Duration(seconds: 10);
@@ -450,8 +457,9 @@ class PlanningBoard extends ChangeNotifier {
       void read() {
         if (!current() || loading == progress?.value) return;
         loading = progress?.value;
-        // The read behind a Reload is told now: its bar is the watch's from here.
-        _endFetch();
+        // The read behind a Reload is told now: its bar is the watch's from here. A look the Reload may wait behind
+        // is not that read.
+        if (loading?.look != true) _endFetch();
         notifyListeners();
       }
 

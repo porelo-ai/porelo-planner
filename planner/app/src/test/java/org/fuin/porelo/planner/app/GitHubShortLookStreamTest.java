@@ -57,7 +57,8 @@ class GitHubShortLookStreamTest {
     @Test
     void aLookOfASecondRightAfterTheFirstBoardIsToldAtOnceAndEndsDone() throws Exception {
         // Harm: a look shorter than the stream's five-second step is never told, so the window's
-        // bar shows no look; or one told late never ends with done.
+        // bar shows no look; or one told late never ends with done; or a look waiting for a save
+        // is told as a whole read that stands still.
         final GitHubStore store =
                 new GitHubStore(
                         CONFIG,
@@ -89,7 +90,9 @@ class GitHubShortLookStreamTest {
                                                                 0,
                                                                 1,
                                                                 null,
-                                                                "GitHub"))
+                                                                "GitHub",
+                                                                ReadProgress.Kind.LOOK,
+                                                                ReadProgress.SAVE))
                                                 : Optional.empty();
                                     }
                                 },
@@ -126,6 +129,9 @@ class GitHubShortLookStreamTest {
                     Duration.ofSeconds(1),
                     "the look told at once",
                     events);
+            assertThat(text(events))
+                    .as("the look told as a look that waits for a save")
+                    .contains("\"kind\":\"look\"", "\"waitsFor\":\"save\"");
             within(
                     () -> text(events).contains("\"state\":\"done\""),
                     Duration.ofSeconds(10),
