@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
@@ -96,6 +99,52 @@ Map<String, dynamic> _board() => {
   ],
   'open': _open(states: {'Backlog': 3, 'Implementing': 2}, blocked: 1, left: 7, review: 3, minutes: 220),
 };
+
+/// A board of [count] stories, each with something left, the first the least.
+Map<String, dynamic> _many(int count) => _board()
+  ..['stories'] = [
+    for (var n = 1; n <= count; n++) _story('MANY$n', _open(states: {'Backlog': 1}, left: 1, minutes: n * 10)),
+  ];
+
+/// The planner's reads of stories, each held until it is let go, counting how many run at once.
+class _HeldReads {
+  final List<Completer<void>> waiting = [];
+  int running = 0;
+  int most = 0;
+  int reads = 0;
+
+  Future<PlanStoryDetail> read(String project, String story) async {
+    reads++;
+    running++;
+    most = max(most, running);
+    final gate = Completer<void>();
+    waiting.add(gate);
+    await gate.future;
+    running--;
+    return PlanStoryDetail.from({
+      'story': {
+        'id': story,
+        'title': 'Story $story',
+        'state': 'Backlog',
+        'description': 'Story $story holds this.',
+        'descriptionFormat': 'MARKDOWN',
+        'issues': <Object>[],
+      },
+      'revision': 'r1',
+    });
+  }
+
+  /// Lets every read waiting now go, but the last [kept].
+  Future<void> letGo(WidgetTester tester, {int kept = 0}) async {
+    final going = waiting.sublist(0, waiting.length - kept);
+    waiting.removeRange(0, going.length);
+    for (final gate in going) {
+      gate.complete();
+    }
+    await tester.pump();
+    await tester.pump();
+  }
+}
 
 Future<(MockPlanningSource, TestHost)> _show(WidgetTester tester, {void Function(MockPlanningSource)? setUp}) async {
   tester.view
@@ -296,6 +345,51 @@ void main() {
     await tester.pumpAndSettle();
     expect(_listed(tester), ['BIG', 'NONE', 'NOTIME', 'REVIEW', 'SMALL'], reason: 'every story again, by story');
     expect(find.byKey(const Key('planning-open-work-search')), findsNothing, reason: 'the filter is closed');
+  });
+
+  // Harm: a planner flooded by forty reads at once when Open work opens.
+  testWidgets('the descriptions are read at most eight at a time, all forty of them', (tester) async {
+    final held = _HeldReads();
+    await _show(
+      tester,
+      setUp: (source) => source
+        ..boards['demo'] = _many(45)
+        ..readStory = held.read,
+    );
+    for (var round = 0; round < 20 && held.waiting.isNotEmpty; round++) {
+      await held.letGo(tester);
+    }
+    await tester.pumpAndSettle();
+    expect(held.most, 8, reason: 'eight at once and never more');
+    expect(held.reads, 40, reason: 'the first forty rows are read, the rest not');
+    expect(_text(tester, 'planning-open-work-holds MANY45'), 'Story MANY45 holds this.', reason: 'the most left first');
+  });
+
+  // Harm: the column filling row by row, slowly enough to watch, so the person reads a list that is still moving.
+  testWidgets('no row shows what it holds while another is still read', (tester) async {
+    final held = _HeldReads();
+    await _show(
+      tester,
+      setUp: (source) => source
+        ..boards['demo'] = _many(10)
+        ..readStory = held.read,
+    );
+    await held.letGo(tester);
+    expect(held.waiting, hasLength(8), reason: 'after the first, eight at once');
+    await held.letGo(tester, kept: 1);
+    await held.letGo(tester, kept: 1);
+    expect(held.waiting, hasLength(1), reason: 'one read still under way');
+    for (var n = 1; n <= 10; n++) {
+      expect(_text(tester, 'planning-open-work-holds MANY$n'), isEmpty, reason: 'MANY$n waits for the others');
+    }
+    expect(find.text('What it holds · Reading…'), findsOneWidget, reason: 'the column says it is read');
+
+    await held.letGo(tester);
+    await tester.pumpAndSettle();
+    for (var n = 1; n <= 10; n++) {
+      expect(_text(tester, 'planning-open-work-holds MANY$n'), 'Story MANY$n holds this.');
+    }
+    expect(find.text('What it holds'), findsOneWidget, reason: 'read whole');
   });
 
   // Harm: a planner that refuses every read asked once per story, each waiting its time, or a refusal shown as what

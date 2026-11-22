@@ -145,43 +145,60 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
   /// The revision the failed reads were made at; a later one asks them again.
   String? _failedAt;
 
+  /// Whether a batch of descriptions is being read; until all of it is in, the column shows none.
   bool _reading = false;
 
-  /// Reads the descriptions not yet read of the listed stories, one at a time, so a long list does not flood the
-  /// planner.
+  /// The most descriptions read at once, so a long list does not flood the planner.
+  static const _atOnce = 8;
+
+  /// Reads the descriptions not yet read of the listed stories: the first alone, so a planner that refuses is asked
+  /// once, then the rest at most [_atOnce] at a time. The column shows them once all are in, never a part of them.
   Future<void> _readHolds(List<String> stories) async {
-    _reading = true;
-    try {
-      for (final id in stories) {
-        if (!mounted || board.disposed || _asked.contains(id)) continue;
-        _asked.add(id);
-        String? holds;
-        String? problem;
-        try {
-          final reply = await board.backend.getStory(board.project, id);
-          final story = reply.story;
-          if (story == null || story.id != id) throw const FormatException('The planner did not return the story.');
-          holds = planningFirstParagraph(story.description, story.descriptionFormat);
-        } catch (error) {
-          problem = planningFailureWords(error);
-          _failedAt = board.snapshot?.revision;
-        }
-        if (!mounted) return;
-        setState(() {
-          if (holds != null) {
-            _holds[id] = holds;
-            _unread.remove(id);
-          } else {
-            _unread[id] = problem!;
-          }
-        });
-        // A planner that refuses one read is asked no more until the board changes.
-        if (problem != null) return;
+    final batch = [
+      for (final id in stories)
+        if (!_asked.contains(id)) id,
+    ];
+    if (batch.isEmpty || !mounted || board.disposed) return;
+    setState(() => _reading = true);
+    final read = <String, String>{};
+    final refused = <String, String>{};
+    Future<void> readOne(String id) async {
+      _asked.add(id);
+      try {
+        final reply = await board.backend.getStory(board.project, id);
+        final story = reply.story;
+        if (story == null || story.id != id) throw const FormatException('The planner did not return the story.');
+        read[id] = planningFirstParagraph(story.description, story.descriptionFormat);
+      } catch (error) {
+        refused[id] = planningFailureWords(error);
+        _failedAt = board.snapshot?.revision;
       }
+    }
+
+    var next = 1;
+    Future<void> readOn() async {
+      while (refused.isEmpty && next < batch.length && mounted && !board.disposed) {
+        await readOne(batch[next++]);
+      }
+    }
+
+    try {
+      await readOne(batch.first);
+      await Future.wait([for (var reader = 0; reader < _atOnce; reader++) readOn()]);
     } finally {
-      _reading = false;
-      // Stories listed while these were read are asked for on this build.
-      if (mounted) setState(() {});
+      // A planner that refuses one read is asked no more until the board changes; the stories not reached are asked
+      // for then.
+      _asked.removeAll(batch.skip(next));
+      if (mounted) {
+        setState(() {
+          _reading = false;
+          _holds.addAll(read);
+          for (final id in read.keys) {
+            _unread.remove(id);
+          }
+          _unread.addAll(refused);
+        });
+      }
     }
   }
 
@@ -374,7 +391,7 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
           cell('Now', _Width.now),
           // Over its values, which stand to the right.
           cell('Left', _Width.left, align: TextAlign.end),
-          cell('What it holds', null),
+          cell(_reading ? 'What it holds · Reading…' : 'What it holds', null),
         ],
       ),
     );
@@ -393,9 +410,9 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
         : '≈ ${planningMinutes(minutes)}${open.unestimated > 0 ? '+' : ''}';
     final holds = _holds[story.id];
     final unread = _unread[story.id];
-    final hint = unread ?? holds ?? '';
+    final hint = _reading ? '' : unread ?? holds ?? '';
     final holdsText = Text(
-      holds ?? (unread != null ? 'Not read' : (_asked.contains(story.id) ? '…' : '')),
+      _reading ? '' : holds ?? (unread != null ? 'Not read' : ''),
       key: Key('planning-open-work-holds ${story.id}'),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
