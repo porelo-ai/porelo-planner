@@ -176,11 +176,51 @@ class PlanningStartHooks {
   final PlanningWizards? wizards;
 }
 
-/// Where the screen stands: the board, a story, or one of its issues, on the provider that supplied it.
+/// Which list the planning screen shows of a project: its board, or its stories by what is left of them.
+enum PlanningView {
+  /// The board, its stories by state in columns.
+  board,
+
+  /// The stories by what is left to build of them.
+  openWork,
+}
+
+/// Which stories the board shows by their open work; each value keeps the stories with at least one issue of it.
+///
+/// A state group gathers the workflow's states by what they mean, since a workflow names its states itself; a group
+/// the workflow has no state for cannot be used, and the screen then falls back to no filter.
+enum PlanningFilter {
+  /// Stories with issues left to build.
+  openWork,
+
+  /// Stories with issues being built, in a working state of building.
+  implementing,
+
+  /// Stories with issues in analysis or estimation.
+  analysis,
+
+  /// Stories with issues an open issue blocks.
+  blocked,
+
+  /// Stories with issues waiting for the person's review, as the work rules define review.
+  review,
+
+  /// Stories with issues in the backlog.
+  backlog,
+
+  /// Stories with estimated issues.
+  estimated,
+
+  /// Stories with issues that are ideas.
+  idea,
+}
+
+/// Where the screen stands: the board, a story, or one of its issues, on the provider that supplied it, with the
+/// view and the board's filter it was reached from.
 @immutable
 class PlanningPlace {
-  /// Takes the place; all absent is the board of the chosen project.
-  const PlanningPlace({this.project, this.source, this.story, this.issue});
+  /// Takes the place; all absent is the board of the chosen project, unfiltered.
+  const PlanningPlace({this.project, this.source, this.story, this.issue, this.view = PlanningView.board, this.filter});
 
   /// The project's name.
   final String? project;
@@ -188,11 +228,34 @@ class PlanningPlace {
   /// The provider's name supplying a story or issue.
   final String? source;
 
-  /// The story opened, or null for the board.
+  /// The story opened, or null for the view.
   final String? story;
 
   /// The issue opened under [story], or null for the story itself.
   final String? issue;
+
+  /// The view shown; on a story or an issue, the view it was opened from, to which the way back returns.
+  final PlanningView view;
+
+  /// The board's filter, or null to show every story; kept on a story or an issue for the way back.
+  final PlanningFilter? filter;
+
+  /// This place with the fields given changed; a nullable field is given as a function, so it can be cleared.
+  PlanningPlace copyWith({
+    ValueGetter<String?>? project,
+    ValueGetter<String?>? source,
+    ValueGetter<String?>? story,
+    ValueGetter<String?>? issue,
+    PlanningView? view,
+    ValueGetter<PlanningFilter?>? filter,
+  }) => PlanningPlace(
+    project: project == null ? this.project : project(),
+    source: source == null ? this.source : source(),
+    story: story == null ? this.story : story(),
+    issue: issue == null ? this.issue : issue(),
+    view: view ?? this.view,
+    filter: filter == null ? this.filter : filter(),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -200,13 +263,17 @@ class PlanningPlace {
       other.project == project &&
       other.source == source &&
       other.story == story &&
-      other.issue == issue;
+      other.issue == issue &&
+      other.view == view &&
+      other.filter == filter;
 
   @override
-  int get hashCode => Object.hash(project, source, story, issue);
+  int get hashCode => Object.hash(project, source, story, issue, view, filter);
 
   @override
-  String toString() => 'PlanningPlace(project: $project, source: $source, story: $story, issue: $issue)';
+  String toString() =>
+      'PlanningPlace(project: $project, source: $source, story: $story, issue: $issue, view: ${view.name}, '
+      'filter: ${filter?.name})';
 }
 
 /// What the window does for the screen: where it stands, how it moves and what it opens.

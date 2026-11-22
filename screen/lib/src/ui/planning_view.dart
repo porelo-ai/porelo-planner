@@ -13,12 +13,15 @@ import '../planning_detail.dart';
 import '../story_work.dart';
 import '../story_work_order.dart';
 import 'actions.dart';
+import 'board_filter.dart';
 import 'new_issue_dialog.dart';
+import 'open_work_figures.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
 import 'planning_issue_row.dart';
 import 'planning_no_story_card.dart';
+import 'planning_open_work.dart';
 import 'planning_story_view.dart';
 import 'story_work_wizard.dart';
 import 'style.dart';
@@ -148,7 +151,7 @@ class PlanningScreen extends StatelessWidget {
               children: [
                 TextButton(
                   key: const Key('planning-crumb 0'),
-                  onPressed: () => host.go(const PlanningPlace()),
+                  onPressed: () => host.go(PlanningPlace(view: place.view, filter: place.filter)),
                   child: const Text('Planning'),
                 ),
                 ?pageButton,
@@ -165,35 +168,67 @@ class PlanningScreen extends StatelessWidget {
       }
       void open(PlanningBoard owner, String story, [String? issue]) =>
           openPlanningAction(boards, host, owner, story, issue: issue).run();
+      // Another project keeps the view and filter, as the window's history keeps them.
+      void select(String project) {
+        boards.select(project);
+        final selected = boards.selected;
+        host.go(
+          PlanningPlace(
+            project: project,
+            source: selected == null ? null : boards.sourceOf(selected),
+            view: host.place.view,
+            filter: host.place.filter,
+          ),
+        );
+      }
+
       return Stack(
         fit: StackFit.expand,
         children: [
           Offstage(
             offstage: place.story != null,
-            child: _BoardView(
-              key: ObjectKey(board),
-              // Kept mounted under a detail page, the board leaves the window's widgets to that page, built once.
-              pageButton: place.story == null ? pageButton : null,
-              pageNote: place.story == null ? pageNote : null,
-              board: board,
-              host: host,
-              projects: boards.projects,
-              select: (project) {
-                boards.select(project);
-                final selected = boards.selected;
-                host.go(PlanningPlace(project: project, source: selected == null ? null : boards.sourceOf(selected)));
-              },
-              providerProblems: boards.problemsFor(board),
-              onNeedsYou: host.openNeedsYou,
-              onStarted: taskChanges.started,
-              startTask: startTask,
-              agents: agents,
-              wizards: wizards,
-              unavailableMachines: boards.unavailableMachinesOf(board),
-              machines: boards.machinesOf(board),
-              onStory: (story) => open(board, story),
-              onIssue: (story, issue) => open(board, story, issue),
-            ),
+            child: switch (place.view) {
+              PlanningView.board => _BoardView(
+                key: ObjectKey(board),
+                // Kept mounted under a detail page, the board leaves the window's widgets to that page, built once.
+                pageButton: place.story == null ? pageButton : null,
+                pageNote: place.story == null ? pageNote : null,
+                board: board,
+                host: host,
+                filter: place.filter,
+                projects: boards.projects,
+                select: select,
+                providerProblems: boards.problemsFor(board),
+                onNeedsYou: host.openNeedsYou,
+                onStarted: taskChanges.started,
+                startTask: startTask,
+                agents: agents,
+                wizards: wizards,
+                unavailableMachines: boards.unavailableMachinesOf(board),
+                machines: boards.machinesOf(board),
+                onStory: (story) => open(board, story),
+                onIssue: (story, issue) => open(board, story, issue),
+              ),
+              PlanningView.openWork => PlanningOpenWorkView(
+                key: ObjectKey(board),
+                pageButton: place.story == null ? pageButton : null,
+                pageNote: place.story == null ? pageNote : null,
+                board: board,
+                host: host,
+                projects: boards.projects,
+                select: select,
+                providerProblems: boards.problemsFor(board),
+                onNeedsYou: host.openNeedsYou,
+                onStarted: taskChanges.started,
+                startTask: startTask,
+                agents: agents,
+                wizards: wizards,
+                unavailableMachines: boards.unavailableMachinesOf(board),
+                machines: boards.machinesOf(board),
+                onStory: (story) => open(board, story),
+                onIssue: (story, issue) => open(board, story, issue),
+              ),
+            },
           ),
           if (place.story != null && detailBoard != null)
             _PlanningDetailView(
@@ -209,7 +244,14 @@ class PlanningScreen extends StatelessWidget {
               board: detailBoard,
               story: place.story!,
               issue: place.issue,
-              onBoard: () => host.go(PlanningPlace(project: detailBoard.project, source: boards.sourceOf(detailBoard))),
+              onBoard: () => host.go(
+                PlanningPlace(
+                  project: detailBoard.project,
+                  source: boards.sourceOf(detailBoard),
+                  view: place.view,
+                  filter: place.filter,
+                ),
+              ),
               onParent: () => open(detailBoard, place.story!),
               onStory: (story) => open(detailBoard, story),
               onIssue: (issue) => open(detailBoard, place.story!, issue),
@@ -230,6 +272,7 @@ class _BoardView extends StatefulWidget {
     required this.pageNote,
     required this.board,
     required this.host,
+    required this.filter,
     required this.projects,
     required this.select,
     required this.providerProblems,
@@ -248,6 +291,9 @@ class _BoardView extends StatefulWidget {
   final Widget? pageNote;
   final PlanningBoard board;
   final PlanningHost host;
+
+  /// The filter the place asks for, or null for every story.
+  final PlanningFilter? filter;
   final List<String> projects;
   final ValueChanged<String> select;
   final List<String> providerProblems;
@@ -320,14 +366,14 @@ class _BoardViewState extends State<_BoardView> {
       final folded = board.preferences.foldedPhases.contains(phase.name);
       final shown = [
         for (final state in board.statesIn(phase))
-          if (folded || !board.preferences.foldedStates.contains(state.name)) ...board.cards(state.name),
+          if (folded || !board.preferences.foldedStates.contains(state.name)) ..._shown(state.name),
       ];
       final index = shown.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
       if (index < 0) continue;
       _reveal(_phaseId(at), folded, shown, index, generation);
       return;
     }
-    final unplaced = board.unplaced;
+    final unplaced = _shownUnplaced();
     final index = unplaced.indexWhere((story) => story.issues.any((issue) => found.contains(issue.id)));
     if (index >= 0) {
       _reveal('', false, unplaced, index, generation);
@@ -422,6 +468,380 @@ class _BoardViewState extends State<_BoardView> {
     super.dispose();
   }
 
+  /// The workflow's filters, read anew with each build of the board.
+  PlanningBoardFilter _filters = PlanningBoardFilter(const [], const {});
+
+  /// The filter the board can use of the one the place asks for, or null.
+  PlanningFilter? _chosen;
+
+  /// Whether the board's figures say what is open now.
+  bool _known = false;
+
+  /// Whether the planner counts open work at all: it sent figures, or a move made the figures it sent stale until the
+  /// next read; a planner that counts none gets no filter row, summary or card figures.
+  bool _offered = false;
+
+  /// The filter applied to the cards: none while the figures are stale, so no story is kept or hidden by them.
+  PlanningFilter? get _applied => _known ? _chosen : null;
+
+  /// The filter last reported back as unusable, so it is reported once.
+  PlanningFilter? _fellBack;
+
+  /// Each state's cards under the applied filter, with the cards and filter they were taken from.
+  final Map<String, (List<PlanStory>, PlanningFilter?, List<PlanStory>)> _filtered = {};
+
+  /// The cards of the state [name] the applied filter keeps.
+  List<PlanStory> _shown(String name) {
+    final cards = board.cards(name);
+    final applied = _applied;
+    if (applied == null) return cards;
+    final kept = _filtered[name];
+    if (kept != null && identical(kept.$1, cards) && kept.$2 == applied) return kept.$3;
+    final shown = [
+      for (final story in cards)
+        if (_filters.keeps(story, applied)) story,
+    ];
+    _filtered[name] = (cards, applied, shown);
+    return shown;
+  }
+
+  /// The stories outside the reported workflow the applied filter keeps.
+  List<PlanStory> _shownUnplaced() => [
+    for (final story in board.unplaced)
+      if (_filters.keeps(story, _applied)) story,
+  ];
+
+  /// Whether the card of issues in no story stands in the state [name]: under a filter only in the states it keeps,
+  /// since those issues have no story whose figures could match.
+  bool _noStoryShown(String name) => _applied == null || _filters.states(_applied!).contains(name);
+
+  /// Every story the board shows under its priority filter and search, before the open-work filter.
+  List<PlanStory> _listed() {
+    final placed = {for (final phase in board.phases) ...phase.states};
+    final names = <String>{};
+    return [
+      for (final state in board.states)
+        if (placed.contains(state.name) && names.add(state.name)) ...board.cards(state.name),
+      ...board.unplaced,
+    ];
+  }
+
+  /// Takes the place's filter for this board; one the workflow cannot use falls back to none, reported to the host.
+  void _readFilter() {
+    _filters = PlanningBoardFilter(board.states, planningReviewStates(board.snapshot));
+    final snapshot = board.snapshot;
+    _offered =
+        snapshot != null &&
+        (snapshot.open != null ||
+            snapshot.stories.any((story) => story.open != null) ||
+            // A saved move leaves the figures null until the next read; the row stays, reading unknown.
+            _offered);
+    _known = _offered && planningFiguresKnown(board) && snapshot?.open != null;
+    final asked = widget.filter;
+    if (asked == null || board.snapshot?.statesReported != true || _filters.usable(asked)) {
+      _chosen = asked;
+      _fellBack = null;
+      return;
+    }
+    _chosen = null;
+    if (_fellBack == asked) return;
+    _fellBack = asked;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final host = widget.host;
+      if (mounted && host.place.filter == asked) host.go(host.place.copyWith(filter: () => null));
+    });
+  }
+
+  void _pick(PlanningFilter? filter) {
+    final host = widget.host;
+    if (host.place.filter != filter) host.go(host.place.copyWith(filter: () => filter));
+  }
+
+  /// The row of filters, each with the stories it keeps; while the figures are stale no count is told.
+  Widget _filterRow(BuildContext context) {
+    final listed = _listed();
+    final counts = _filters.counts(listed);
+    final unknown = listed.where((story) => story.open == null).length;
+    String count(PlanningFilterCount? count) => !_known || count == null
+        ? '?'
+        : count.partial
+        ? '${count.stories}+'
+        : '${count.stories}';
+    String hint(PlanningFilter filter, PlanningFilterCount? count) {
+      final states = _filters.states(filter);
+      final what = switch (filter) {
+        PlanningFilter.openWork => 'issues left to build',
+        PlanningFilter.blocked => 'issues an open issue blocks',
+        PlanningFilter.review => 'issues waiting for your review',
+        _ => 'issues in ${states.map(_line).join(', ')}',
+      };
+      final stories = !_known || count == null
+          ? 'not known now'
+          : '${count.stories} ${count.stories == 1 ? 'story' : 'stories'}'
+                '${count.partial ? ', and ${count.unknown} whose open work is not known' : ''}';
+      return 'Stories with $what: $stories';
+    }
+
+    Widget chip(PlanningFilter? filter, String label, String number, String tooltip) {
+      final selected = _chosen == filter;
+      final kind = switch (filter) {
+        null || PlanningFilter.openWork => null,
+        PlanningFilter.blocked => PlanningStateKind.blocked,
+        PlanningFilter.review => PlanningStateKind.review,
+        PlanningFilter.implementing => PlanningStateKind.implementing,
+        PlanningFilter.analysis => PlanningStateKind.analysis,
+        PlanningFilter.backlog => PlanningStateKind.backlog,
+        PlanningFilter.estimated => PlanningStateKind.estimated,
+        PlanningFilter.idea => PlanningStateKind.idea,
+      };
+      return Tooltip(
+        message: tooltip,
+        child: FilterChip(
+          key: Key('planning-filter ${filter?.name ?? 'all'}'),
+          selected: selected,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          avatar: kind == null ? null : PlanningStateIcon(kind, size: PlanningStyle.rowIcon),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: Space.tight,
+            children: [
+              Text(label),
+              Text(
+                number,
+                key: Key('planning-filter-count ${filter?.name ?? 'all'}'),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ],
+          ),
+          onSelected: (on) => _pick(on ? filter : null),
+        ),
+      );
+    }
+
+    return Wrap(
+      key: const Key('planning-filters'),
+      spacing: Space.small,
+      runSpacing: Space.small,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Text('Show stories with'),
+        chip(null, 'All', '${listed.length}', 'Every story: ${listed.length}'),
+        for (final filter in _filters.filters)
+          chip(
+            filter,
+            switch (filter) {
+              PlanningFilter.openWork => 'Open work',
+              PlanningFilter.review => 'Needs your review',
+              PlanningFilter.blocked => 'Blocked',
+              PlanningFilter.implementing => 'Implementing',
+              PlanningFilter.analysis => 'In analysis',
+              PlanningFilter.backlog => 'Backlog',
+              PlanningFilter.estimated => 'Estimated',
+              PlanningFilter.idea => 'Idea',
+            },
+            count(counts[filter]),
+            hint(filter, counts[filter]),
+          ),
+        if (_known && unknown > 0)
+          Text(
+            'The open work of $unknown ${unknown == 1 ? 'story is' : 'stories are'} not known.',
+            key: const Key('planning-filter-partial'),
+          ),
+        if (!_known && widget.filter != null)
+          const Text(
+            'The open work is not known now, so every story is shown until the planner says it again.',
+            key: Key('planning-filter-stale'),
+          ),
+      ],
+    );
+  }
+
+  /// The board's open work as the planner counted it, over every story and issue; unknown while stale.
+  Widget _summary(BuildContext context) {
+    final shown = [
+      for (final story in _listed())
+        if (_filters.keeps(story, _applied)) story,
+    ].length;
+    final open = _known ? board.snapshot?.open : null;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    String figure(int? count) => count == null ? '?' : '$count';
+    final time = open != null && open.left == 0
+        ? 'nothing left'
+        : open == null || open.minutes == null
+        ? 'time left unknown'
+        : open.unestimated > 0
+        ? 'at least ${planningMinutes(open.minutes)} left by velocity, '
+              '${open.unestimated} ${open.unestimated == 1 ? 'issue' : 'issues'} without an estimate'
+        : 'about ${planningMinutes(open.minutes)} left by velocity';
+    Widget part(String key, String number, String words, {Color? color}) => Text.rich(
+      key: Key('planning-summary $key'),
+      TextSpan(
+        children: [
+          TextSpan(
+            text: number,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          TextSpan(text: ' $words'),
+        ],
+      ),
+      style: TextStyle(color: color),
+    );
+    return Container(
+      key: const Key('planning-summary'),
+      padding: const EdgeInsets.symmetric(horizontal: Space.wide, vertical: Space.normal),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(PlanningStyle.radiusMedium),
+      ),
+      child: Wrap(
+        spacing: Space.wide * 1.5,
+        runSpacing: Space.small,
+        children: [
+          part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown'),
+          part('left', figure(open?.left), 'issues still to build'),
+          Text(time, key: const Key('planning-summary time')),
+          part(
+            'review',
+            figure(open?.review),
+            'wait for your review',
+            color: planningStateColor(PlanningStateKind.review, colors),
+          ),
+          part(
+            'blocked',
+            figure(open?.blocked),
+            'blocked',
+            color: planningStateColor(PlanningStateKind.blocked, colors),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A card's open work from the story's own figures: its state bar, a badge per open state and what is left.
+  Widget _openWork(BuildContext context, PlanStory story) {
+    final open = _known ? story.open : null;
+    final theme = Theme.of(context);
+    if (open == null) {
+      return Text(
+        'Open work not known now',
+        key: Key('planning-card-open ${story.id}'),
+        style: theme.textTheme.bodySmall,
+      );
+    }
+    final colors = theme.colorScheme;
+    final review = _filters.review;
+    // Each kind with its issues and the states they stand in, in the design's order.
+    final parts = <PlanningStateKind, (int, List<String>)>{};
+    void add(PlanningStateKind kind, int issues, String state) {
+      if (issues <= 0) return;
+      final (count, states) = parts[kind] ?? (0, <String>[]);
+      parts[kind] = (count + issues, [...states, state]);
+    }
+
+    for (final MapEntry(key: name, value: issues) in open.states.entries) {
+      final state = board.state(name);
+      add(state == null ? PlanningStateKind.other : planningStateKind(state, review), issues, name);
+    }
+    add(PlanningStateKind.blocked, open.blocked, 'Blocked');
+    const order = [
+      PlanningStateKind.implementing,
+      PlanningStateKind.blocked,
+      PlanningStateKind.review,
+      PlanningStateKind.backlog,
+      PlanningStateKind.estimated,
+      PlanningStateKind.analysis,
+      PlanningStateKind.idea,
+      PlanningStateKind.other,
+      PlanningStateKind.done,
+      PlanningStateKind.rejected,
+    ];
+    final shown = [
+      for (final kind in order)
+        if (parts[kind] case final part?) (kind, part.$1, part.$2),
+    ];
+    String said((PlanningStateKind, int, List<String>) part) => '${part.$2} ${part.$3.map(_line).join(', ')}';
+    final sizes = planningSizes(open);
+    final rest = open.left == 0
+        ? ''
+        : open.minutes == null
+        ? 'time unknown'
+        : '≈ ${planningMinutes(open.minutes)}${open.unestimated > 0 ? '+' : ''}';
+    return Column(
+      key: Key('planning-card-open ${story.id}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.small,
+      children: [
+        if (shown.isNotEmpty)
+          Semantics(
+            label: shown.map(said).join(', '),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(Space.tight),
+              child: SizedBox(
+                height: Space.small,
+                child: Row(
+                  children: [
+                    for (final part in shown)
+                      Expanded(
+                        flex: part.$2,
+                        child: ColoredBox(color: planningStateColor(part.$1, colors)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        Wrap(
+          spacing: Space.tight,
+          runSpacing: Space.tight,
+          children: [
+            for (final part in shown)
+              if (part.$1 != PlanningStateKind.done && part.$1 != PlanningStateKind.rejected)
+                Tooltip(
+                  message: said(part),
+                  child: Container(
+                    key: Key('planning-card-badge ${story.id} ${part.$1.name}'),
+                    padding: const EdgeInsets.symmetric(horizontal: Space.small - 2, vertical: 2),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: planningStateColor(part.$1, colors).withValues(alpha: 0.4)),
+                      borderRadius: BorderRadius.circular(Space.normal),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: Space.tight,
+                      children: [
+                        PlanningStateIcon(part.$1),
+                        Text(
+                          '${part.$2}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: planningStateColor(part.$1, colors),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                open.left == 0 ? 'Nothing left to build' : '${open.left} open${sizes.isEmpty ? '' : ' · $sizes'}',
+                key: Key('planning-card-left ${story.id}'),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            Text(rest, key: Key('planning-card-time ${story.id}'), style: theme.textTheme.labelMedium),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, room) => _board(context, room.maxHeight));
 
@@ -456,6 +876,7 @@ class _BoardViewState extends State<_BoardView> {
       }
       final theme = Theme.of(context);
       _showAsked();
+      _readFilter();
       return Padding(
         key: const Key('planning-board'),
         padding: const EdgeInsets.all(Space.wide),
@@ -569,6 +990,12 @@ class _BoardViewState extends State<_BoardView> {
                         ],
                       ),
                       if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
+                      if (_offered) ...[
+                        const SizedBox(height: Space.normal),
+                        _filterRow(context),
+                        const SizedBox(height: Space.normal),
+                        _summary(context),
+                      ],
                       for (final problem in widget.providerProblems) _failure(problem, theme),
                       if (board.catchingUp)
                         const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
@@ -654,7 +1081,7 @@ class _BoardViewState extends State<_BoardView> {
                               children: [
                                 for (final (at, phase) in board.phases.indexed)
                                   if (board.statesIn(phase).isNotEmpty) _phase(context, at),
-                                if (board.unplaced.isNotEmpty) _unplaced(context),
+                                if (_shownUnplaced().isNotEmpty) _unplaced(context),
                                 if (board.outside.isNotEmpty) _outside(context),
                               ],
                             ),
@@ -732,7 +1159,7 @@ class _BoardViewState extends State<_BoardView> {
     final id = _phaseId(at);
     final folded = board.preferences.foldedPhases.contains(phase.name);
     final states = board.statesIn(phase);
-    final count = states.fold<int>(0, (count, state) => count + board.cards(state.name).length);
+    final count = states.fold<int>(0, (count, state) => count + _shown(state.name).length);
     final controller = _phaseScroll(id, remember: phase.name, folded: folded);
     return Container(
       key: Key('planning-phase $id'),
@@ -763,6 +1190,7 @@ class _BoardViewState extends State<_BoardView> {
                 ],
               ),
             ),
+            if (_applied != null && count == 0) const SliverToBoxAdapter(child: Text('No story matches the filter.')),
             for (final state in states) _state(context, state, phaseFolded: folded),
           ],
         ),
@@ -772,7 +1200,7 @@ class _BoardViewState extends State<_BoardView> {
 
   /// The stories whose state the workflow does not report, in a column of their own that takes no drop.
   Widget _unplaced(BuildContext context) {
-    final stories = board.unplaced;
+    final stories = _shownUnplaced();
     return SizedBox(
       width: PlanningStyle.column,
       child: CustomScrollView(
@@ -890,7 +1318,7 @@ class _BoardViewState extends State<_BoardView> {
 
   /// A state as slivers: its heading, then its cards built as they come into view, on the state's own colour.
   Widget _state(BuildContext context, PlanState state, {required bool phaseFolded}) {
-    final cards = board.cards(state.name);
+    final cards = _shown(state.name);
     // Only the column's chevron narrows its boxes to tiles; a box's own chevron folds it to its heading.
     final folded = !phaseFolded && board.preferences.foldedStates.contains(state.name);
     final raised = folded ? cards.where(_needsYou).length : 0;
@@ -975,7 +1403,7 @@ class _BoardViewState extends State<_BoardView> {
                         _dropOn(state, phaseFolded ? _tile(context, cards[index]) : _card(context, cards[index])),
                   ),
                 ),
-              if (!folded && board.noStoryIn(state.name).isNotEmpty)
+              if (!folded && _noStoryShown(state.name) && board.noStoryIn(state.name).isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: Space.tight),
@@ -1289,6 +1717,8 @@ class _BoardViewState extends State<_BoardView> {
       board.priorityUnavailable(story.id),
       board.saving,
       board.live,
+      _known,
+      _offered,
       _startUnavailable(story),
       board.startHold(story)?.attention,
       _stopUnavailable(story),
@@ -1348,7 +1778,11 @@ class _BoardViewState extends State<_BoardView> {
                     ),
                   ],
                 ),
-                if (!cardFolded) ...[const SizedBox(height: Space.small), Text(_line(story.title))],
+                if (!cardFolded) ...[
+                  const SizedBox(height: Space.small),
+                  Text(_line(story.title)),
+                  if (_offered) ...[const SizedBox(height: Space.small), _openWork(context, story)],
+                ],
                 if (board.pending.containsKey(story.id)) const Text('Saving…'),
                 if (board.pendingPriorities[story.id] case final priority?)
                   Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),

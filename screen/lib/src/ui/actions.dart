@@ -55,7 +55,7 @@ class PlanningWayOn {
   final VoidCallback run;
 }
 
-/// Opens a planning destination on the provider that supplied it.
+/// Opens a planning destination on the provider that supplied it, keeping the view and filter the screen shows.
 PlanningAction openPlanningAction(
   PlanningBoards boards,
   PlanningHost host,
@@ -66,7 +66,15 @@ PlanningAction openPlanningAction(
   id: 'planning.open/${boards.sourceOf(board)}/${board.project}/$story${issue == null ? '' : '/$issue'}',
   label: issue == null ? 'Open story $story' : 'Open issue $issue',
   unavailable: board.disposed ? 'The planning source is no longer watched.' : null,
-  run: () => host.go(PlanningPlace(project: board.project, source: boards.sourceOf(board), story: story, issue: issue)),
+  // The view and filter it was opened from stay with it, so the way back returns to them.
+  run: () => host.go(
+    host.place.copyWith(
+      project: () => board.project,
+      source: () => boards.sourceOf(board),
+      story: () => story,
+      issue: () => issue,
+    ),
+  ),
 );
 
 /// Moves an issue at once: previewed, then saved, or asked about first when the preview warns; against the board's
