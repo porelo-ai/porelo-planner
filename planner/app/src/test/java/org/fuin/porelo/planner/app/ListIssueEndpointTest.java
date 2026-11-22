@@ -68,7 +68,6 @@ class ListIssueEndpointTest {
                 List.of("porelo-lib"),
                 List.of(),
                 "porelo-ai",
-                List.of(),
                 offering
                         ? List.of(
                                 new UnlistedIssue(

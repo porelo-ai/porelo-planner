@@ -1440,7 +1440,8 @@ public final class FieldsBoardWriter implements BoardWriter {
             String body) {
 
         static Seen of(final ItemView item) {
-            // An item whose lists run past one page is compared by the page read; the board holds it back, warned.
+            // An item whose lists run past one page is compared by the page read; the board holds
+            // it back, warned.
             return new Seen(
                     item.fields(),
                     item.parentIssueId(),

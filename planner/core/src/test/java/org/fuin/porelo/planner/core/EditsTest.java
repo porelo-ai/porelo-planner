@@ -526,7 +526,6 @@ class EditsTest {
                         List.of("porelo-store"),
                         List.of(),
                         "porelo-ai",
-                        List.of(),
                         List.of(made));
 
         assertThat(Edits.unlisted(offering, "r1", "porelo-store#7"))

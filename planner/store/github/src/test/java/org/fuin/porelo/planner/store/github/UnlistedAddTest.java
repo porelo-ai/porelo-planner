@@ -326,7 +326,6 @@ class UnlistedAddTest {
                         CONFIG.repositories(),
                         List.of(),
                         OWNER,
-                        List.of(),
                         offer),
                 byId,
                 CONFIG,
