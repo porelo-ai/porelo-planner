@@ -215,9 +215,8 @@ next read. A person who adds the same issue on GitHub between the planner's read
 writes over; that moment is the one left. An issue GitHub no longer gives is refused as no longer offered, and the
 board is read whole, so the offer drops it at once. The Git store adds none and answers the add as not offered.
 
-A look reads an item again when its own `updatedAt` or its issue's moved. An issue whose type alone changed on GitHub
-is seen at the next whole read if GitHub does not move its `updatedAt`; a save on it meanwhile is refused as stale,
-since the read right before the write sees the type.
+A look reads an item again when its own `updatedAt` or its issue's moved. GitHub moves an issue's `updatedAt` when its
+type is set, changed or cleared, so the next look sees a story made or unmade by its type.
 
 A call that makes an issue is never sent twice blindly. When it goes without an answer, the planner reads the
 open issues the person made in that repository from a minute before the call on, pull requests, closed issues and
