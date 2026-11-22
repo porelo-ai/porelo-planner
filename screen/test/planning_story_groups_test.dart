@@ -8,13 +8,19 @@ import 'package:porelo_planning/src/story_groups.dart';
 
 import 'support/story_work_support.dart';
 
-Map<String, dynamic> _issue(String id, String state, {List<String> blockedBy = const []}) => {
+Map<String, dynamic> _issue(
+  String id,
+  String state, {
+  List<String> blockedBy = const [],
+  List<Map<String, dynamic>> waitsOn = const [],
+}) => {
   'id': id,
   'repository': 'repo',
   'title': 'Issue $id',
   'state': state,
   'size': 'S',
   'blockedBy': blockedBy,
+  'waitsOn': waitsOn,
   'link': 'https://example.org/issues/$id',
   'worker': 'MANUAL',
   'atWork': false,
@@ -42,7 +48,7 @@ final _count = {
 };
 
 /// Story ST1 with one issue blocked by an issue of story ST2 and one in review; [open] is ST1's count, if any.
-Map<String, dynamic> _board({Map<String, dynamic>? open}) => {
+Map<String, dynamic> _board({Map<String, dynamic>? open, List<Map<String, dynamic>> waitsOn = const []}) => {
   'states': [
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Implementing', 'kind': 'WORKING'},
@@ -72,7 +78,7 @@ Map<String, dynamic> _board({Map<String, dynamic>? open}) => {
       'link': 'https://example.org/stories/ST1',
       'issues': [
         _issue('PL1', 'Backlog', blockedBy: ['PL9']),
-        _issue('PL2', 'Review'),
+        _issue('PL2', 'Review', waitsOn: waitsOn),
       ],
       'open': ?open,
     },
@@ -100,7 +106,12 @@ Future<(MockPlanningSource, PlanningBoard)> _open(WidgetTester tester, Map<Strin
   return (source, board);
 }
 
-Future<void> _show(WidgetTester tester, PlanningBoard board, {ValueChanged<String>? onIssue}) async {
+Future<void> _show(
+  WidgetTester tester,
+  PlanningBoard board, {
+  ValueChanged<String>? onIssue,
+  Future<void> Function(Uri)? openLink,
+}) async {
   tester.view
     ..physicalSize = const Size(1280, 2000)
     ..devicePixelRatio = 1;
@@ -118,7 +129,7 @@ Future<void> _show(WidgetTester tester, PlanningBoard board, {ValueChanged<Strin
               onIssue: onIssue ?? (_) {},
               onTask: (_) {},
               taskUnavailable: (_) => null,
-              openLink: (_) async {},
+              openLink: openLink ?? (_) async {},
             ),
           ),
         ),
@@ -173,7 +184,7 @@ void main() {
     expect(find.byKey(const Key('planning-issue-group blocked Blocked')), findsOneWidget, reason: 'PL9 is open');
     expect(find.byKey(const Key('planning-issue-group waiting Backlog')), findsNothing, reason: 'PL1 is blocked');
     expect(find.byKey(const Key('planning-issue-group review Review')), findsOneWidget, reason: 'PL2 waits for review');
-    expect(find.textContaining('PL9'), findsOneWidget, reason: 'the row names what it waits on');
+    expect(find.byTooltip('Waits on PL9 (Implementing)'), findsOneWidget, reason: 'the row names what it waits on');
 
     await tester.tap(find.byKey(const Key('planning-issue PL1')));
     expect(opened, ['PL1'], reason: 'the row opens its issue');
@@ -190,5 +201,43 @@ void main() {
     await settle(tester);
 
     expect(_figure(tester, 'planning-story-left'), storyFigureUnknown, reason: 'the board is not live');
+  });
+
+  // Harm: a wait's icon hands the person's browser an address of another scheme, a file or a script, that the
+  // planner reported as the waited issue's link.
+  testWidgets('a wait\'s icon opens its HTTPS link in the browser and no link of another scheme', (tester) async {
+    final (_, board) = await _open(
+      tester,
+      _board(
+        open: _count,
+        waitsOn: [
+          {'reference': 'other/web#1', 'done': false, 'link': 'https://example.org/other/web/1'},
+          {'reference': 'other/file#2', 'done': false, 'link': 'file:///etc/passwd'},
+          {'reference': 'other/script#3', 'done': false, 'link': 'javascript:alert(1)'},
+          {'reference': 'other/none#4', 'done': null, 'link': null},
+        ],
+      ),
+    );
+    final opened = <Uri>[];
+    await _show(tester, board, openLink: (link) async => opened.add(link));
+
+    expect(find.byTooltip('Waits on other/file#2 (open)'), findsOneWidget, reason: 'the hover names it and its state');
+    expect(find.byTooltip('Waits on other/none#4 (not read)'), findsOneWidget);
+    for (final key in [
+      'planning-wait PL1 PL9',
+      'planning-wait PL2 other/web#1',
+      'planning-wait PL2 other/file#2',
+      'planning-wait PL2 other/script#3',
+      'planning-wait PL2 other/none#4',
+    ]) {
+      await tester.tap(find.byKey(Key(key)));
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await settle(tester);
+    }
+
+    expect(opened, [
+      Uri.parse('https://example.org/issues/PL9'),
+      Uri.parse('https://example.org/other/web/1'),
+    ], reason: 'only the HTTPS links reach the browser');
   });
 }

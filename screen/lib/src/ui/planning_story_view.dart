@@ -11,6 +11,7 @@ import '../planning_board.dart';
 import '../planning_detail.dart';
 import '../story_groups.dart';
 import '../story_work.dart';
+import 'actions.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_text.dart';
 import 'planning_move_warning.dart';
@@ -314,61 +315,108 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
         ),
       ),
       if (!folded)
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            dataRowMaxHeight: double.infinity,
-            columns: [
-              for (final label in ['Issue', 'Title', 'Repository', 'Size', 'Left', 'Who', 'Waits on / next'])
-                DataColumn(label: Text(label)),
-            ],
-            rows: [for (final row in group.rows) _row(context, group, row)],
-          ),
+        // Every group's table takes the same widths from the same room, so no column moves between groups.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final widths = _columnWidths(constraints.maxWidth);
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                dataRowMaxHeight: double.infinity,
+                horizontalMargin: _tableMargin,
+                columnSpacing: _columnSpacing,
+                columns: [
+                  for (final (index, label) in _columns.indexed) DataColumn(label: _cell(widths[index], Text(label))),
+                ],
+                rows: [for (final row in group.rows) _row(context, group, row, widths)],
+              ),
+            );
+          },
         ),
     ];
   }
 
-  DataRow _row(BuildContext context, StoryIssueGroup group, StoryIssueRow row) {
+  static const _columns = ['Issue', 'Title', 'Repository', 'Size', 'Left', 'Who', 'Waits on / next'];
+
+  /// The fixed widths of the columns; the title's, null here, takes what room is left.
+  static const _fixedWidths = <double?>[180, null, 160, 48, 72, 112, 176];
+
+  static const double _titleWidth = 240;
+  static const double _tableMargin = Space.normal;
+  static const double _columnSpacing = Space.wide;
+
+  /// Each column's width in [room]: the fixed ones as they are, the title at least its least width.
+  static List<double> _columnWidths(double room) {
+    final fixed = _fixedWidths.whereType<double>().fold<double>(0, (sum, width) => sum + width);
+    final spacing = 2 * _tableMargin + (_columns.length - 1) * _columnSpacing;
+    final title = room.isFinite ? (room - fixed - spacing).clamp(_titleWidth, double.infinity) : _titleWidth;
+    return [for (final width in _fixedWidths) width ?? title];
+  }
+
+  /// A cell's content at its column's width, so a long text wraps inside it instead of widening the column.
+  static Widget _cell(double width, Widget child) => SizedBox(
+    width: width,
+    child: Align(alignment: AlignmentDirectional.centerStart, child: child),
+  );
+
+  DataRow _row(BuildContext context, StoryIssueGroup group, StoryIssueRow row, List<double> widths) {
     final issue = row.issue;
-    final waits = switch (group.kind) {
-      StoryGroupKind.blocked =>
-        'Waits on ${[for (final blocker in row.blockers) '${planningShown(blocker.id, multiline: false)} (${planningValue(blocker.state)})'].join(', ')}',
-      StoryGroupKind.review => 'Your review',
-      _ => '',
-    };
-    return DataRow(
-      cells: [
-        DataCell(
-          TextButton(
-            key: Key('planning-issue ${issue.id}'),
-            onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
-            child: Text(planningValue(issue.id)),
-          ),
+    final error = Theme.of(context).colorScheme.error;
+    final waits = [
+      for (final blocker in row.blockers)
+        _waitMark(issue.id, blocker.id, planningValue(blocker.state), blocker.link, error),
+      if (issue.waitsOnReported)
+        for (final wait in issue.waitsHolding)
+          _waitMark(issue.id, wait.spoken, wait.stateSpoken, wait.link ?? '', error),
+    ];
+    final cells = <Widget>[
+      TextButton(
+        key: Key('planning-issue ${issue.id}'),
+        onPressed: issue.id.isEmpty ? null : () => onIssue(issue.id),
+        child: Text(planningValue(issue.id)),
+      ),
+      Text(planningValue(issue.title)),
+      Text(planningValue(issue.repository)),
+      Text(planningValue(issue.size)),
+      Text(issue.minutesLeft == null ? '—' : storyMinutesText(issue.minutesLeft!)),
+      Text(row.runAgent == null ? planningWorker(issue.worker) : planningShown(row.runAgent!, multiline: false)),
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (waits.isNotEmpty) Wrap(children: waits),
+          if (group.kind == StoryGroupKind.review) const Text('Your review'),
+          _issueState(context, issue),
+        ],
+      ),
+    ];
+    return DataRow(cells: [for (final (index, cell) in cells.indexed) DataCell(_cell(widths[index], cell))]);
+  }
+
+  /// A wait of [issue] on [waited], as an icon: its tooltip names [waited] and its [state], and a click opens [link]
+  /// in the browser, an HTTPS link only; without one it is the tooltip alone.
+  Widget _waitMark(String issue, String waited, String state, String link, Color color) {
+    final open = planningWebAction(
+      'Open $waited in browser',
+      link,
+      openLink,
+      onError: detail.board.reportActionProblem,
+    );
+    return Tooltip(
+      message: 'Waits on ${planningShown(waited, multiline: false)} (${planningShown(state, multiline: false)})',
+      child: IconButton(
+        key: Key('planning-wait $issue $waited'),
+        onPressed: open.available ? open.run : null,
+        icon: const Icon(Icons.hourglass_top, size: PlanningStyle.rowIcon),
+        color: color,
+        disabledColor: color,
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          minimumSize: const Size.square(PlanningStyle.denseButton),
+          fixedSize: const Size.square(PlanningStyle.denseButton),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        DataCell(Text(planningValue(issue.title))),
-        DataCell(Text(planningValue(issue.repository))),
-        DataCell(Text(planningValue(issue.size))),
-        DataCell(Text(issue.minutesLeft == null ? '—' : storyMinutesText(issue.minutesLeft!))),
-        DataCell(
-          Text(row.runAgent == null ? planningWorker(issue.worker) : planningShown(row.runAgent!, multiline: false)),
-        ),
-        DataCell(
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (waits.isNotEmpty)
-                Text(
-                  waits,
-                  style: group.kind == StoryGroupKind.blocked
-                      ? TextStyle(color: Theme.of(context).colorScheme.error)
-                      : null,
-                ),
-              _issueState(context, issue),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -563,7 +611,8 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(planningValue(issue.state)),
+            // A long state name wraps inside its column's width.
+            Flexible(child: Text(planningValue(issue.state))),
             const Icon(Icons.expand_more, size: PlanningStyle.rowIcon),
           ],
         ),
