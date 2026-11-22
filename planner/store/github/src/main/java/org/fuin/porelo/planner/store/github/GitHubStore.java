@@ -890,7 +890,8 @@ public final class GitHubStore implements PlanningStore {
                                             base.fieldFaults(),
                                             base.fieldNames(),
                                             base.restFieldIds(),
-                                            base.waits());
+                                            base.waits(),
+                                            base.unlisted());
                             final Set<String> items = new LinkedHashSet<>(changed.changed());
                             final Set<String> issues = new LinkedHashSet<>(added.values());
                             issues.addAll(HeldSaves.issuesOf(base, items));

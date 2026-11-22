@@ -108,6 +108,36 @@ public final class RepositoryIssues {
 
     private final Map<String, Held> held = new HashMap<>();
 
+    /**
+     * The repository the last read did not reach, where the next starts; null after a whole one.
+     */
+    private @Nullable String nextFirst;
+
+    /**
+     * The words of the fault of a read that spent its budget, before the repositories it names; the
+     * board's revision takes them without the names, so a slow GitHub alone changes no revision.
+     */
+    static final String BUDGET_SPENT =
+            "The issues outside the project were not all read within "
+                    + DEADLINE.toSeconds()
+                    + " s and "
+                    + MOST_PAGES
+                    + " pages; the list last read is shown for ";
+
+    /** The deadline of the read met while a page was asked, after one failed on the way. */
+    static final class OutOfTime extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+
+        /** Makes the failure. */
+        OutOfTime() {
+            super(
+                    "GitHub did not give the open issues' lists within "
+                            + DEADLINE.toSeconds()
+                            + " s");
+        }
+    }
+
     /** Makes the list with nothing held. */
     RepositoryIssues() {
         // Each repository is held from its first read on.
@@ -135,19 +165,31 @@ public final class RepositoryIssues {
      * page asks for; once the pages or the time are spent, the repository being read and those
      * after it keep what was held of them, named in one fault.
      *
+     * <p>A read starts at the repository the last one did not reach, so a large repository never
+     * keeps those after it unread.
+     *
      * @param repositories the project's repositories, in their order
      * @param fetch asks GitHub for a page
      * @param clock tells the time the deadline is measured by
+     * @param token the token the pages are asked with, kept out of every word logged
      * @return the read
      */
     synchronized Read read(
-            final List<String> repositories, final Fetch fetch, final InstantSource clock) {
+            final List<String> repositories,
+            final Fetch fetch,
+            final InstantSource clock,
+            final String token) {
         final Instant until = clock.instant().plus(DEADLINE);
         final List<String> faults = new ArrayList<>();
         final List<String> notRead = new ArrayList<>();
         int requests = 0;
         int unchanged = 0;
-        for (final String repository : repositories) {
+        final List<String> order = new ArrayList<>(repositories);
+        final int from = order.indexOf(nextFirst);
+        if (from > 0) {
+            java.util.Collections.rotate(order, -from);
+        }
+        for (final String repository : order) {
             if (!notRead.isEmpty()) {
                 notRead.add(repository);
                 continue;
@@ -168,16 +210,25 @@ public final class RepositoryIssues {
                 final Conditional<Page<Issue>> answer;
                 try {
                     answer = fetch.page(repository, page, old == null ? null : old.etag());
+                } catch (final OutOfTime e) {
+                    // A read sent once more after a failure on the way met the deadline.
+                    notRead.add(repository);
+                    break;
                 } catch (final GitHubException e) {
                     if (!refusedFor(e)) {
                         throw e;
                     }
                     LOG.warn(
-                            "GitHub refused the issue list of {} (HTTP {}); the list last read of"
-                                    + " it is kept",
+                            "GitHub refused the issue list of {} (HTTP {}): {}; the list last read"
+                                    + " of it is kept",
                             repository,
-                            e.status());
-                    faults.add(refusal(repository, e.status()));
+                            e.status(),
+                            Scrubbed.text(String.valueOf(e.getMessage()), List.of(token)));
+                    faults.add(
+                            refusal(
+                                    repository,
+                                    e.status(),
+                                    ForgeAccessRefusals.right(e.acceptedPermissions())));
                     break;
                 }
                 requests++;
@@ -209,14 +260,9 @@ public final class RepositoryIssues {
                 held.put(repository, new Held(pages, List.copyOf(issues.values())));
             }
         }
+        nextFirst = notRead.isEmpty() ? null : notRead.get(0);
         if (!notRead.isEmpty()) {
-            faults.add(
-                    "The issues outside the project were not all read within "
-                            + DEADLINE.toSeconds()
-                            + " s and "
-                            + MOST_PAGES
-                            + " pages; the list last read is shown for "
-                            + String.join(", ", notRead));
+            faults.add(BUDGET_SPENT + String.join(", ", notRead));
         }
         final List<Snapshot.Unlisted> issues = new ArrayList<>();
         for (final String repository : repositories) {
@@ -276,11 +322,13 @@ public final class RepositoryIssues {
                         || e.status() == 410);
     }
 
-    private static String refusal(final String repository, final int status) {
+    private static String refusal(
+            final String repository, final int status, final @Nullable String right) {
         return "GitHub refused the list of the issues of "
                 + repository
                 + " (HTTP "
                 + status
+                + (right == null ? "" : "; the token needs " + right)
                 + "); the list last read of it is shown";
     }
 }

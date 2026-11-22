@@ -294,6 +294,40 @@ class IssuesEndpointTest {
     }
 
     @Test
+    void anIssueOutsideTheProjectNeverStandsInForTheIssueJustAdded() throws Exception {
+        // Harm: an add into a later state fails with a server error once the repository holds a
+        // hand-made issue, as the check names the issue it judges by that issue's reference.
+        createsInState = true;
+        final Board empty = board("r1");
+        current =
+                new Board(
+                        empty.revision(),
+                        empty.workflow(),
+                        List.of(),
+                        List.of(),
+                        empty.work(),
+                        empty.repositories(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of(
+                                new org.fuin.porelo.planner.store.UnlistedIssue(
+                                        "porelo-other#1",
+                                        "porelo-other",
+                                        "By hand",
+                                        org.fuin.porelo.planner.store.UnlistedIssue.Kind.ISSUE,
+                                        java.net.URI.create(
+                                                "https://github.com/a/porelo-other/issues/1"))));
+
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                                + " \"revision\": \"r1\", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
+                .andExpect(status().isCreated());
+
+        assertThat(added).as("the issue added").hasSize(1);
+    }
+
+    @Test
     void aDefaultInitialStateNeedsNoMoveCheck() throws Exception {
         // Harm: a new check blocks ordinary creation because unrelated work rules have faults.
         createsInState = true;

@@ -351,6 +351,14 @@ class GitHubStoreLookTest {
     /** The store over the GitHub given, its save doing what the test sets on GitHub. */
     private GitHubStore store(
             final GitHub github, final AtomicReference<Consumer<ProjectWrites>> save) {
+        return store(github, save, null);
+    }
+
+    /** The store over the GitHub given, reading the repositories' open issues from the pages. */
+    private GitHubStore store(
+            final GitHub github,
+            final AtomicReference<Consumer<ProjectWrites>> save,
+            final RepositoryIssues.@Nullable Pages openIssues) {
         final StoryStates states = issueStates -> issueStates.isEmpty() ? null : "Idea";
         final ItemsBoardReader reader =
                 new ItemsBoardReader(
@@ -360,7 +368,8 @@ class GitHubStoreLookTest {
                         states,
                         () -> DATE,
                         ItemsBoardReader.DEADLINE,
-                        length -> {});
+                        length -> {},
+                        openIssues);
         final Touched touched = new Touched();
         final ProjectWrites recorded = touched.recording(writes());
         final BoardWriter writer =
@@ -515,6 +524,52 @@ class GitHubStoreLookTest {
                 .filteredOn(item -> item.id().equals("PVTI_2"))
                 .extracting(TrackedItem::updatedAt)
                 .containsExactly(LATER);
+    }
+
+    @Test
+    void aLookThatReadsAChangedItemKeepsTheIssuesOutsideTheProject() {
+        // Harm: every look that names an item empties the list of the issues made outside the
+        // project, on the board and in its copy, and tells the window of a change that is none.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final OpenIssues open =
+                new OpenIssues()
+                        .holds(
+                                "example-project",
+                                List.of(
+                                        OpenIssues.issue(
+                                                "I_9",
+                                                "example-project",
+                                                9,
+                                                "By hand",
+                                                null,
+                                                false,
+                                                List.of())));
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}), open);
+        store.refresh();
+        store.poll();
+
+        other.note = "changed";
+        other.itemAt = LATER;
+        github.calls.clear();
+        final Board looked = store.poll();
+
+        assertThat(github.calls).as("GitHub's reads").contains("issueBoard of [I_2]");
+        assertThat(looked.unlisted())
+                .as("the issues outside the project after the look")
+                .extracting(org.fuin.porelo.planner.store.UnlistedIssue::id)
+                .containsExactly("example-project#9");
+        assertThat(copy().unlisted())
+                .as("the issues outside the project in the copy")
+                .extracting(org.fuin.porelo.planner.store.cache.TrackedUnlisted::id)
+                .containsExactly("I_9");
+        assertThat(looked.revision())
+                .as("the look's revision, as a whole read of the same board gives it")
+                .isEqualTo(
+                        store(github, new AtomicReference<>(writes -> {}), open)
+                                .refresh()
+                                .revision());
     }
 
     @Test

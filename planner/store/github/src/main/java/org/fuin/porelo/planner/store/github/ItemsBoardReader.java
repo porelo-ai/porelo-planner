@@ -388,7 +388,9 @@ public final class ItemsBoardReader implements BoardReader {
         if (pages == null) {
             return List.of();
         }
-        final Call call = new Call(config, token, clock.instant().plus(deadline));
+        // The lists' own deadline: a read sent once more never runs into the project's.
+        final Call call =
+                new Call(config, token, clock.instant().plus(RepositoryIssues.DEADLINE), true);
         final String owner = config.project().owner();
         final RepositoryIssues.Read read =
                 unlisted.read(
@@ -398,7 +400,8 @@ public final class ItemsBoardReader implements BoardReader {
                                         "the open issues of " + repository,
                                         () -> pages.page(token, owner, repository, page, etag),
                                         true),
-                        clock);
+                        clock,
+                        token);
         LOG.info(
                 "Read the open issues of {} repositories in {} requests, {} of them answered"
                         + " unchanged",
@@ -1177,14 +1180,29 @@ public final class ItemsBoardReader implements BoardReader {
 
         private final Instant until;
 
+        /** Whether it reads the repositories' issue lists, whose deadline ends only their read. */
+        private final boolean lists;
+
         Call(final ProjectConfig config, final String token, final Instant until) {
+            this(config, token, until, false);
+        }
+
+        Call(
+                final ProjectConfig config,
+                final String token,
+                final Instant until,
+                final boolean lists) {
             this.config = config;
             this.token = token;
             this.until = until;
+            this.lists = lists;
         }
 
         /** Refuses the read once its deadline has passed. */
         void inTime() {
+            if (lists && clock.instant().isAfter(until)) {
+                throw new RepositoryIssues.OutOfTime();
+            }
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(
                         config.own(),
@@ -1226,7 +1244,9 @@ public final class ItemsBoardReader implements BoardReader {
                     inTime();
                     return read.get();
                 }
-            } catch (final StoreException | UnsupportedOperationException e) {
+            } catch (final StoreException
+                    | UnsupportedOperationException
+                    | RepositoryIssues.OutOfTime e) {
                 throw e;
             } catch (final GitHubException e) {
                 if (repositoryRefusals && RepositoryIssues.refusedFor(e)) {
@@ -1491,7 +1511,16 @@ public final class ItemsBoardReader implements BoardReader {
         }
         add(digest, commit);
         // The faults follow GitHub's order of the items, which may shift between two reads.
-        add(digest, faults.stream().sorted().toList());
+        add(
+                digest,
+                faults.stream()
+                        .map(
+                                fault ->
+                                        fault.startsWith(RepositoryIssues.BUDGET_SPENT)
+                                                ? RepositoryIssues.BUDGET_SPENT
+                                                : fault)
+                        .sorted()
+                        .toList());
         final Map<String, GitHubGraphQl.ProjectItem> sorted = new TreeMap<>();
         items.forEach(item -> sorted.put(item.id(), item));
         add(digest, Integer.toString(sorted.size()));

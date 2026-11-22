@@ -71,30 +71,6 @@ public record Snapshot(
     }
 
     /**
-     * Makes a snapshot that holds no list of its repositories' issues.
-     *
-     * @param board the board
-     * @param items every item read, by its Porelo id
-     * @param config what it was read with, the field and option ids included
-     * @param raw every project item as GitHub gave it, by its node id in GitHub's order
-     * @param fieldFaults the faults of the project's fields, which a read in part keeps
-     * @param fieldNames the fields' names by their ids
-     * @param restFieldIds the fields' numeric ids by their ids
-     * @param waits the issues the items' issues are blocked by that are no items of the project
-     */
-    public Snapshot(
-            final Board board,
-            final Map<String, ItemView> items,
-            final ProjectConfig config,
-            final Map<String, GitHubGraphQl.ProjectItem> raw,
-            final List<String> fieldFaults,
-            final Map<String, String> fieldNames,
-            final Map<String, Long> restFieldIds,
-            final Map<String, Waited> waits) {
-        this(board, items, config, raw, fieldFaults, fieldNames, restFieldIds, waits, List.of());
-    }
-
-    /**
      * Makes a snapshot whose items' issues wait on no issue outside the project.
      *
      * @param board the board
@@ -113,7 +89,7 @@ public record Snapshot(
             final List<String> fieldFaults,
             final Map<String, String> fieldNames,
             final Map<String, Long> restFieldIds) {
-        this(board, items, config, raw, fieldFaults, fieldNames, restFieldIds, Map.of());
+        this(board, items, config, raw, fieldFaults, fieldNames, restFieldIds, Map.of(), List.of());
     }
 
     /**

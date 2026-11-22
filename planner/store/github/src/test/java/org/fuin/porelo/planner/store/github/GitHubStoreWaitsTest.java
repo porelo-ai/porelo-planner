@@ -103,7 +103,8 @@ class GitHubStoreWaitsTest {
                 List.of(),
                 Map.of(),
                 Map.of(),
-                Map.of("I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, done)));
+                Map.of("I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, done)),
+                List.of());
     }
 
     /** A probe that sees no change of the project, and a change of the waits when told. */

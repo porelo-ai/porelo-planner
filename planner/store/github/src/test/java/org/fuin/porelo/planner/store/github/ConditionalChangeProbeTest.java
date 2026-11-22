@@ -1032,7 +1032,8 @@ class ConditionalChangeProbeTest {
                 plain.fieldFaults(),
                 plain.fieldNames(),
                 plain.restFieldIds(),
-                waits);
+                waits,
+                plain.unlisted());
     }
 
     @Test

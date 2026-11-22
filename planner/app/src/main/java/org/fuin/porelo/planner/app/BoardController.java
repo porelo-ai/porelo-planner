@@ -560,6 +560,7 @@ public class BoardController {
         board.issues().forEach(i -> taken.add(i.id()));
         board.outside().forEach(i -> taken.add(i.id()));
         board.stories().forEach(s -> taken.add(s.id()));
+        board.unlisted().forEach(i -> taken.add(i.id()));
         int number = 1;
         while (taken.contains(issue.repository() + "#" + number)) {
             number++;

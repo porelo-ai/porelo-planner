@@ -424,6 +424,46 @@ class ItemsBoardReaderUnlistedTest {
     }
 
     @Test
+    void aFailureOnTheWayPastTheListsDeadlineIsNotSentAgainAndLeavesTheProjectItsRead() {
+        // Harm: a failed page sent once more after the lists' deadline holds the board, or fails
+        // the project's own read.
+        pages.holds(LIB, List.of(open(LIB, 6)));
+        pages.fails(OWN, page -> OpenIssues.refused(502));
+        pages.perAsk = RepositoryIssues.DEADLINE.plusSeconds(5);
+
+        final Board board = reader().read(CONFIG).board();
+
+        assertThat(pages.asksOf(OWN)).as("the asks of the failing page").hasSize(1);
+        assertThat(board.story(OWN + "#1")).as("the project's story").isPresent();
+        assertThat(board.faults())
+                .as("the one fault of the budget")
+                .singleElement()
+                .asString()
+                .contains(OWN, LIB);
+    }
+
+    @Test
+    void aSlowGitHubAloneChangesNoRevision() {
+        // Harm: every slow read tells the window of a change and refuses its next write as
+        // stale, as the repositories the budget did not reach differ from read to read.
+        pages.holds(OWN, List.of(open(OWN, 5)));
+        pages.holds(LIB, List.of(open(LIB, 6)));
+        final ItemsBoardReader reader = reader();
+        reader.read(CONFIG);
+        pages.perAsk = RepositoryIssues.DEADLINE.plusSeconds(5);
+
+        final Board first = reader.read(CONFIG).board();
+        final Board second = reader.read(CONFIG).board();
+
+        assertThat(first.faults())
+                .as("the faults of the two slow reads")
+                .isNotEqualTo(second.faults());
+        assertThat(second.revision())
+                .as("the revision of the second slow read")
+                .isEqualTo(first.revision());
+    }
+
+    @Test
     void aNewIssueOrANewTitleOutsideTheProjectChangesTheRevision() {
         // Harm: the window never hears of a hand-made issue, or writes over a board it holds
         // stale.

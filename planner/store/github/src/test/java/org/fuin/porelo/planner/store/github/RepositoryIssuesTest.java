@@ -10,6 +10,8 @@ import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class RepositoryIssuesTest {
 
@@ -22,7 +24,7 @@ class RepositoryIssuesTest {
     private final RepositoryIssues issues = new RepositoryIssues();
 
     private RepositoryIssues.Read read(final String... repositories) {
-        return issues.read(List.of(repositories), github.fetch(), github.clock());
+        return issues.read(List.of(repositories), github.fetch(), github.clock(), "a-token");
     }
 
     private static List<String> numbers(final RepositoryIssues.Read read) {
@@ -152,7 +154,14 @@ class RepositoryIssuesTest {
         github.holds(OWN, OpenIssues.numbered(OWN, 1, 2));
         github.holds(LIB, List.of(OpenIssues.issue(LIB, 9, "Secret plan", null)));
         read(OWN, LIB);
-        github.fails(LIB, page -> OpenIssues.refused(403));
+        github.fails(
+                LIB,
+                page ->
+                        org.fuin.porelo.forge.github.GitHubRefusals.answered(
+                                403,
+                                "Resource not accessible by personal access token",
+                                false,
+                                "issues=read"));
 
         final RepositoryIssues.Read again = read(OWN, LIB);
 
@@ -163,8 +172,53 @@ class RepositoryIssuesTest {
                 .as("the fault naming the repository and GitHub's answer, never a title")
                 .singleElement()
                 .asString()
-                .contains(LIB, "403")
+                .contains(LIB, "403", "Issues")
                 .doesNotContain("Secret plan");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {301, 410})
+    void aMovedRepositoryOrOneWithoutIssuesKeepsItsListAndIsNamedAlone(final int status) {
+        // Harm: a repository moved, or one whose issues were turned off, empties its list or
+        // fails the board.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 2));
+        github.holds(LIB, List.of(OpenIssues.issue(LIB, 9, "Secret plan", null)));
+        read(OWN, LIB);
+        github.fails(LIB, page -> OpenIssues.refused(status));
+
+        final RepositoryIssues.Read again = read(OWN, LIB);
+
+        assertThat(numbers(again))
+                .as("the lists")
+                .containsExactly(OWN + "#1", OWN + "#2", LIB + "#9");
+        assertThat(again.faults())
+                .as("the fault naming the repository and GitHub's status")
+                .singleElement()
+                .asString()
+                .contains(LIB, Integer.toString(status));
+    }
+
+    @Test
+    void aRepositoryTheLastReadDidNotReachIsReadFirst() {
+        // Harm: a large repository keeps those after it unread at every read, so their issues
+        // made by hand are never shown.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * 30));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 100 * 30));
+        final RepositoryIssues.Read first = read(OWN, LIB);
+        assertThat(numbers(first)).as("the lists of the first read").hasSize(3000);
+
+        final RepositoryIssues.Read second = read(OWN, LIB);
+
+        assertThat(numbers(second))
+                .as("the lists of the second read, the second repository's among them")
+                .hasSize(6000)
+                .contains(LIB + "#3000");
+        assertThat(second.faults())
+                .as("the fault of the second read, naming the repository it did not reach")
+                .singleElement()
+                .asString()
+                .contains(OWN)
+                .doesNotContain(LIB);
     }
 
     @Test
