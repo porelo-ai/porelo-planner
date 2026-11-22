@@ -667,13 +667,13 @@ class _BoardViewState extends State<_BoardView> {
 
   /// The board's open work as the planner counted it, over every story and issue; unknown while stale.
   Widget _summary(BuildContext context) {
-    final listed = [
+    final shown = [
       for (final story in _listed())
         if (_filters.keeps(story, _applied)) story,
-    ];
-    final shown = listed.length;
+    ].length;
+    // Over the whole board, as the window's count beside Needs you and the other figures here.
     final review = _filters.storyReview;
-    final reviewed = review == null ? 0 : listed.where((story) => story.state == review).length;
+    final reviewed = review == null ? null : board.stories.where((story) => story.state == review).length;
     final open = _known ? board.snapshot?.open : null;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -716,7 +716,7 @@ class _BoardViewState extends State<_BoardView> {
           Text(time, key: const Key('planning-summary time')),
           part(
             'review',
-            _known ? '$reviewed' : '?',
+            _known && reviewed != null ? '$reviewed' : '?',
             reviewed == 1 ? 'story waits for your review' : 'stories wait for your review',
             color: planningStateColor(PlanningStateKind.review, colors),
           ),
@@ -1487,12 +1487,13 @@ class _BoardViewState extends State<_BoardView> {
     );
   }
 
-  /// A story in a folded phase: its priority, id, size and marks on one line.
   /// An id as a folded column shows it: its number from `#` on, or the whole id where it has none.
   static String _folded(String id) {
     final at = id.lastIndexOf('#');
     return at > 0 && at < id.length - 1 ? id.substring(at) : id;
   }
+
+  /// A story in a folded phase: its priority, id, size and marks on one line.
 
   Widget _tile(BuildContext context, PlanStory story) => Padding(
     padding: const EdgeInsets.only(bottom: Space.tight),

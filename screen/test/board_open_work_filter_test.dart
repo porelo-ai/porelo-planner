@@ -146,6 +146,12 @@ void main() {
     expect(filter.review, {'Approval'}, reason: 'the state the rule\'s work ends in');
     expect(filter.storyReview, 'Approval', reason: 'the story waits there for review');
     expect(filter.matches(stories['SR']!, PlanningFilter.review), isTrue, reason: 'the story stands in Approval');
+    final unread = PlanStory.from(_story('SY', 'Approval', null));
+    expect(filter.keeps(unread, PlanningFilter.review), isTrue, reason: 'its state alone says it waits for review');
+    expect(filter.counts([unread])[PlanningFilter.review]?.stories, 1, reason: 'counted without its figures');
+    expect(filter.counts([unread])[PlanningFilter.review]?.partial, isFalse, reason: 'the count is exact');
+    final ruleless = PlanningBoardFilter(snapshot.states, const {});
+    expect(ruleless.usable(PlanningFilter.review), isFalse, reason: 'a workflow without work has no review state');
     final building = PlanStory.from(_story('SX', 'Implementing', _open(states: {'Approval': 2}, review: 2)));
     expect(
       filter.matches(building, PlanningFilter.review),

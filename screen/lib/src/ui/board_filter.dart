@@ -49,7 +49,8 @@ class PlanningBoardFilter {
   }
 
   /// Whether the board can use [filter]: a state group needs a state of the workflow in it.
-  bool usable(PlanningFilter filter) => _group(filter) == null || states(filter).isNotEmpty;
+  bool usable(PlanningFilter filter) =>
+      filter == PlanningFilter.review ? storyReview != null : _group(filter) == null || states(filter).isNotEmpty;
 
   /// The filters the board can use, in the order the filter row shows them.
   List<PlanningFilter> get filters => [
@@ -59,13 +60,14 @@ class PlanningBoardFilter {
 
   /// Whether [story] has an issue [filter] keeps, from the planner's figures; null when its figures are unknown.
   bool? matches(PlanStory story, PlanningFilter filter) {
+    // Only a story as a whole is reviewed, so the filter keeps the stories standing in the review state, which
+    // needs no figures.
+    if (filter == PlanningFilter.review) return storyReview != null && story.state == storyReview;
     final open = story.open;
     if (open == null) return null;
     return switch (filter) {
       PlanningFilter.openWork => open.left > 0,
       PlanningFilter.blocked => open.blocked > 0,
-      // Only a story as a whole is reviewed, so the filter keeps the stories standing in the review state.
-      PlanningFilter.review => storyReview != null && story.state == storyReview,
       _ => states(filter).any((state) => (open.states[state] ?? 0) > 0),
     };
   }
@@ -84,7 +86,10 @@ class PlanningBoardFilter {
     final unknown = listed.where((story) => story.open == null).length;
     return {
       for (final filter in filters)
-        filter: PlanningFilterCount(listed.where((story) => matches(story, filter) == true).length, unknown),
+        filter: PlanningFilterCount(
+          listed.where((story) => matches(story, filter) == true).length,
+          filter == PlanningFilter.review ? 0 : unknown,
+        ),
     };
   }
 }

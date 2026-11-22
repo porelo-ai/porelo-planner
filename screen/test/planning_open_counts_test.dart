@@ -75,6 +75,27 @@ void main() {
     expect(PlanOpenWork.read(_open(review: 1, left: 2, minutes: null))!.minutes, isNull, reason: 'no minutes known');
   });
 
+  // Harm: Needs you promising reviews for issues in review under a story still being built, though only a story as
+  // a whole can be tested.
+  test('the window counts the stories standing in review, never the issues in review', () async {
+    final building = {
+      ..._board(_open(review: 2, left: 3)),
+      'stories': [
+        {'id': 'B1', 'title': 'A story', 'state': 'Building', 'priority': 'High', 'issues': <Object>[]},
+        {'id': 'R1', 'title': 'A story', 'state': 'Review', 'priority': 'High', 'issues': <Object>[]},
+      ],
+    };
+    final local = MockPlanningSource()..boards['alpha'] = building;
+    final boards = PlanningBoards(FakePlanningClient([provider('local', local, project: 'alpha')]));
+    addTearDown(() async {
+      boards.dispose();
+      await local.end();
+    });
+    await pumpEventQueue();
+
+    expect(boards.review.value, 1, reason: 'R1 alone stands in review; the two issues in review do not count');
+  });
+
   // Harm: a wrong Needs you or Open work count, one project counted twice from two machines, or a partial or old sum
   // shown as the whole.
   test('the boards add up each project once and stay unknown while any project is not known or not live', () async {
