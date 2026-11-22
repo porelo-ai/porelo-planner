@@ -77,6 +77,12 @@ final class LoggedStore implements PlanningStore {
         return store.save(revision, writes);
     }
 
+    /** Whether an issue's requested state is written during its creation. */
+    @Override
+    public boolean createsInState() {
+        return store.createsInState();
+    }
+
     @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         return store.createIssue(revision, issue);

@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
@@ -93,6 +94,8 @@ class GitHubStoreHeldTest {
 
         private final List<String> calls = new ArrayList<>();
 
+        private final List<String> issueReads = new ArrayList<>();
+
         /** The story's title and time as an issue read by id gives them. */
         private String title = "One";
 
@@ -108,27 +111,53 @@ class GitHubStoreHeldTest {
 
         private boolean secondListed;
 
+        private boolean recentIssues;
+
         @Override
         public GitHubGraphQl.ProjectFields projectFields(
                 final String token, final String owner, final int number, final String after) {
             calls.add("projectFields");
+            final List<GitHubGraphQl.ProjectField> fields = new ArrayList<>();
+            fields.add(
+                    new GitHubGraphQl.ProjectField(
+                            "F_status",
+                            FieldNames.STATUS,
+                            "SINGLE_SELECT",
+                            List.of(
+                                    new GitHubGraphQl.FieldOption("O_idea", "Idea", "GRAY", ""),
+                                    new GitHubGraphQl.FieldOption(
+                                            "O_finished", "Finished", "GRAY", "")),
+                            11L));
+            if (recentIssues) {
+                final Map<String, List<String>> options =
+                        Map.of(
+                                FieldNames.WORKER, List.of("Agent", "Manual"),
+                                FieldNames.SIZE, IssueMapping.SIZES,
+                                FieldNames.PRIORITY, Story.PRIORITIES);
+                options.forEach(
+                        (name, values) ->
+                                fields.add(
+                                        new GitHubGraphQl.ProjectField(
+                                                "F_" + name,
+                                                name,
+                                                "SINGLE_SELECT",
+                                                values.stream()
+                                                        .map(
+                                                                value ->
+                                                                        new GitHubGraphQl
+                                                                                .FieldOption(
+                                                                                "O_" + value,
+                                                                                value,
+                                                                                "GRAY",
+                                                                                ""))
+                                                        .toList(),
+                                                12L)));
+                fields.add(
+                        new GitHubGraphQl.ProjectField(
+                                "F_rank", FieldNames.RANK, "NUMBER", List.of(), 13L));
+            }
             return new GitHubGraphQl.ProjectFields(
-                    "PVT_7",
-                    "Plan",
-                    Instant.EPOCH,
-                    List.of(
-                            new GitHubGraphQl.ProjectField(
-                                    "F_status",
-                                    FieldNames.STATUS,
-                                    "SINGLE_SELECT",
-                                    List.of(
-                                            new GitHubGraphQl.FieldOption(
-                                                    "O_idea", "Idea", "GRAY", ""),
-                                            new GitHubGraphQl.FieldOption(
-                                                    "O_finished", "Finished", "GRAY", "")),
-                                    11L)),
-                    NONE,
-                    COST);
+                    "PVT_7", "Plan", Instant.EPOCH, fields, NONE, COST);
         }
 
         @Override
@@ -140,6 +169,10 @@ class GitHubStoreHeldTest {
             if (second && secondListed) {
                 items.add(issue2());
             }
+            if (recentIssues) {
+                items.add(item("PVTI_3", "I_3", 3, "Recent three", BEFORE, List.of()));
+                items.add(item("PVTI_4", "I_4", 4, "Recent four", BEFORE, List.of()));
+            }
             return new GitHubGraphQl.ProjectItems(items, NONE, COST, items.size());
         }
 
@@ -147,10 +180,29 @@ class GitHubStoreHeldTest {
         public GitHubGraphQl.IssueBoard issueBoard(
                 final String token, final List<String> issueIds, final String projectId) {
             calls.add("issueBoard of " + issueIds);
+            issueReads.addAll(issueIds);
             final List<GitHubGraphQl.@Nullable IssueOnBoard> on = new ArrayList<>();
             for (final String id : issueIds) {
                 final GitHubGraphQl.ProjectItem item =
-                        "I_1".equals(id) ? story(title, updatedAt) : second ? issue2() : null;
+                        "I_1".equals(id)
+                                ? story(title, updatedAt)
+                                : "I_3".equals(id)
+                                        ? item(
+                                                "PVTI_3",
+                                                "I_3",
+                                                3,
+                                                "Recent three",
+                                                BEFORE,
+                                                List.of())
+                                        : "I_4".equals(id)
+                                                ? item(
+                                                        "PVTI_4",
+                                                        "I_4",
+                                                        4,
+                                                        "Recent four",
+                                                        BEFORE,
+                                                        List.of())
+                                                : second ? issue2() : null;
                 on.add(
                         item == null
                                 ? null
@@ -200,15 +252,45 @@ class GitHubStoreHeldTest {
     }
 
     /** GitHub's writes as a save sends them: each does nothing but is recorded as touched. */
-    private static ProjectWrites writes() {
+    private static ProjectWrites writes(final GitHub github) {
         return (ProjectWrites)
                 Proxy.newProxyInstance(
                         ProjectWrites.class.getClassLoader(),
                         new Class<?>[] {ProjectWrites.class},
                         (proxy, method, args) ->
-                                method.getName().equals("createIssue")
-                                        ? new ProjectWrites.Created("I_2", 12L, 2, List.of())
-                                        : null);
+                                switch (method.getName()) {
+                                    case "createIssue" -> {
+                                        github.second = true;
+                                        yield new ProjectWrites.Created("I_2", 12L, 2, List.of());
+                                    }
+                                    case "issuesCreatedSince" ->
+                                            new ProjectWrites.FoundPage(
+                                                    List.of(
+                                                            new ProjectWrites.Found(
+                                                                    new ProjectWrites.Created(
+                                                                            "I_3", 13L, 3,
+                                                                            List.of()),
+                                                                    "Recent three",
+                                                                    "A body"),
+                                                            new ProjectWrites.Found(
+                                                                    new ProjectWrites.Created(
+                                                                            "I_4", 14L, 4,
+                                                                            List.of()),
+                                                                    "Recent four",
+                                                                    "A body")),
+                                                    false);
+                                    case "addProjectItems" ->
+                                            new Batch<>(List.of(Batch.Outcome.of("PVTI_2")), null);
+                                    case "setFieldValues" -> {
+                                        final List<?> values = (List<?>) args[2];
+                                        yield new Batch<>(
+                                                values.stream()
+                                                        .map(value -> Batch.Outcome.of("PVTI_2"))
+                                                        .toList(),
+                                                null);
+                                    }
+                                    default -> null;
+                                });
     }
 
     private BoardCopies copies() {
@@ -217,7 +299,11 @@ class GitHubStoreHeldTest {
 
     /** A writer that retitles the story, or makes a second issue, on the GitHub given. */
     private static BoardWriter writer(final GitHub github, final Touched touched) {
-        final ProjectWrites recorded = touched.recording(writes());
+        final ProjectWrites recorded = touched.recording(writes(github));
+        if (github.recentIssues) {
+            return new FieldsBoardWriter(
+                    recorded, origin -> TOKEN, AccessRefusals.DEFAULT, () -> SAVED, duration -> {});
+        }
         return new BoardWriter() {
             @Override
             public void save(
@@ -231,6 +317,9 @@ class GitHubStoreHeldTest {
             public String createIssue(
                     final Snapshot current, final Revision revision, final NewIssue issue) {
                 recorded.createIssue(TOKEN, OWNER, "example-project", "Two", "", List.of());
+                if (issue.story() != null) {
+                    recorded.addSubIssue(TOKEN, OWNER, "example-project", 1, 12L);
+                }
                 github.second = true;
                 return "example-project#2";
             }
@@ -291,6 +380,43 @@ class GitHubStoreHeldTest {
         return (config, token, cursor, known) ->
                 Optional.of(
                         new TrackerChanges.Changed(Set.of(), Set.of(), Set.of(), next.remove(0)));
+    }
+
+    @Test
+    void aCreateReadsOnlyItsNewIssueAndStoryEvenWhenThePersonFiledOtherIssuesToday() {
+        // Harm: each create grows slower with every issue the person filed that day.
+        final GitHub github = new GitHub();
+        github.recentIssues = true;
+        final GitHubStore store = store(github, TrackerChanges.NONE);
+        final Board board = store.refresh();
+        assertThat(board.issues()).as("the other recent issues already on the board").hasSize(2);
+        github.calls.clear();
+
+        final NewIssue.Added added =
+                store.createIssue(
+                        board.revision(),
+                        new NewIssue(
+                                "example-project",
+                                "Two",
+                                "A body",
+                                null,
+                                Worker.AGENT,
+                                null,
+                                null,
+                                "example-project#1"));
+
+        assertThat(github.calls).as("the reads by id after the save").hasSize(1);
+        assertThat(github.issueReads)
+                .as("only the new issue and its story are read")
+                .containsExactlyInAnyOrder("I_1", "I_2");
+        assertThat(added.board().issues())
+                .as("the new issue beside the unchanged recent issues")
+                .extracting(org.fuin.porelo.planner.store.Issue::id)
+                .containsExactlyInAnyOrder(
+                        "example-project#2", "example-project#3", "example-project#4");
+        assertThat(heldInCopy())
+                .as("only this save held while GitHub's list lags")
+                .containsExactlyInAnyOrder("PVTI_1", "PVTI_2");
     }
 
     @Test

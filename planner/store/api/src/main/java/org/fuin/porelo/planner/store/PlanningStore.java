@@ -101,8 +101,18 @@ public interface PlanningStore {
     }
 
     /**
-     * Adds a new issue in state Idea against the revision the window shows, saved as a move is
-     * saved: written, indexed and pushed, or not at all.
+     * Whether a create writes the requested initial state in the same save as the new issue.
+     *
+     * @return true when the store honors {@link NewIssue#state()} during creation
+     */
+    default boolean createsInState() {
+        return false;
+    }
+
+    /**
+     * Adds a new issue against the revision the window shows, in its requested state when {@link
+     * #createsInState()} is true and otherwise the first state, saved as a move is saved: written,
+     * indexed and pushed, or not at all.
      *
      * @param revision the revision the window showed when the person wrote it
      * @param issue what the person wrote

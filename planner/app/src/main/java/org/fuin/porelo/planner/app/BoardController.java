@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -52,6 +53,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -344,7 +346,7 @@ public class BoardController {
     }
 
     /**
-     * Adds an idea as a new issue in state Idea, saved as a move is saved.
+     * Adds an issue with its requested placement, saved as a move is saved.
      *
      * @param project the project's name
      * @param request the request, whose body is the new issue
@@ -401,6 +403,15 @@ public class BoardController {
         if (story != null && board.story(story).isEmpty()) {
             throw NewIssues.refused("story", "The story is no story of the project.");
         }
+        final String state = body.state();
+        // Refused on every store before anything is made, so no answer ever repeats it.
+        if (state != null && !board.workflow().states().contains(state)) {
+            throw notAnInitialState(board);
+        }
+        final boolean createsInState = store.createsInState();
+        if (createsInState) {
+            checkInitialState(board, issue, story, state, body.confirm(), store);
+        }
         final NewIssue.Added added =
                 store.createIssue(
                         board.revision(),
@@ -412,15 +423,16 @@ public class BoardController {
                                 issue.worker(),
                                 issue.task(),
                                 priority,
-                                story));
+                                story,
+                                createsInState ? state : null));
         LOG.info(
                 "Added issue {} to project {} as revision {}",
                 LogText.of(added.id()),
                 LogText.of(name),
                 LogText.of(added.board().revision().value()));
-        final String state = body.state();
         final Board made = added.board();
-        if (state == null
+        if (createsInState
+                || state == null
                 || made.issue(added.id()).map(Issue::state).filter(state::equals).isPresent()) {
             return added;
         }
@@ -457,6 +469,110 @@ public class BoardController {
                 LogText.of(state),
                 LogText.of(moved.revision().value()));
         return new NewIssue.Added(added.id(), moved);
+    }
+
+    private static Moves.Refused notAnInitialState(final Board board) {
+        final String reason = "A new issue must start in an open state of the workflow.";
+        return new Moves.Refused(
+                "StateNotAllowed",
+                reason,
+                Map.of(
+                        "item",
+                        "",
+                        "from",
+                        board.workflow().states().get(0),
+                        "to",
+                        "",
+                        "reason",
+                        reason));
+    }
+
+    private static void checkInitialState(
+            final Board board,
+            final NewIssue issue,
+            final @Nullable String storyId,
+            final @Nullable String state,
+            final boolean confirm,
+            final PlanningStore store) {
+        final String first = board.workflow().states().get(0);
+        if (state == null) {
+            return;
+        }
+        if (board.workflow().closed().contains(state)) {
+            throw notAnInitialState(board);
+        }
+        if (first.equals(state)) {
+            return;
+        }
+        // A valid id absent from all board items lets the move rules judge an issue not saved yet.
+        final java.util.Set<String> taken = new java.util.HashSet<>();
+        board.issues().forEach(i -> taken.add(i.id()));
+        board.outside().forEach(i -> taken.add(i.id()));
+        board.stories().forEach(s -> taken.add(s.id()));
+        int number = 1;
+        while (taken.contains(issue.repository() + "#" + number)) {
+            number++;
+        }
+        final String placeholder = issue.repository() + "#" + number;
+        final List<Issue> issues = new ArrayList<>(board.issues());
+        issues.add(
+                new Issue(
+                        placeholder,
+                        issue.repository(),
+                        issue.title(),
+                        first,
+                        issue.size(),
+                        List.of(),
+                        null,
+                        null,
+                        "",
+                        issue.worker(),
+                        Risk.ORDINARY));
+        final List<Story> stories =
+                board.stories().stream()
+                        .map(
+                                story -> {
+                                    if (!story.id().equals(storyId)) {
+                                        return story;
+                                    }
+                                    final List<String> under = new ArrayList<>(story.issues());
+                                    under.add(placeholder);
+                                    return new Story(
+                                            story.id(),
+                                            story.title(),
+                                            story.state(),
+                                            story.stateGiven(),
+                                            story.priority(),
+                                            story.size(),
+                                            under,
+                                            story.description(),
+                                            story.link(),
+                                            story.issuesWhole());
+                                })
+                        .toList();
+        final Board withNew =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        stories,
+                        issues,
+                        board.work(),
+                        board.repositories(),
+                        board.faults(),
+                        board.owner(),
+                        board.outside());
+        try {
+            Moves.check(
+                    withNew,
+                    List.of(new Moves.Move(false, placeholder, state)),
+                    confirm,
+                    store::storyState);
+        } catch (final Moves.Refused refused) {
+            final Map<String, String> parameters = new LinkedHashMap<>(refused.parameters());
+            parameters.put("item", "");
+            throw new Moves.Refused(
+                    refused.name(), String.valueOf(refused.getMessage()), parameters);
+        }
     }
 
     /**

@@ -1147,11 +1147,17 @@ paths:
       operationId: createIssue
       summary: Add an idea as a new issue
       description: >-
-        Writes a new issue in state Idea into the named repository of the project, saved as a move is saved: its file
-        with the next free number of the repository's first issue prefix, the repository's issue index rewritten, one
-        commit in the planner's own clone, pushed after the answer under the person's own Git login, or nothing at
-        all. A number an index row still holds is never
-        given again. The changes stream announces the new board as it does after any save.
+        Writes a new issue into the named repository of the project, saved as a move is saved. The Git store writes
+        its file in the first state with the next free number of the repository's first issue prefix, rewrites the
+        repository's issue index and commits in the planner's own clone, pushed after the answer under the person's
+        own Git login. A number an index row still holds is never given again. On every store, a state the workflow
+        lacks is refused with StateNotAllowed (422) before anything is created, and is never repeated. For a GitHub
+        store, the requested state and fields are written in the create's single save, with one revision, and the
+        state is checked as a move is before anything is created: a closed state is refused with StateNotAllowed
+        (422), a state entered only by work with EnteredOnlyByWork (422), and other move checks answer 422 with the
+        move's refusal, never PartlySaved; the item parameter is empty because no issue exists yet. A store without
+        creation in a state keeps the create followed by a move, whose failure is PartlySaved. The changes stream
+        announces the new board as it does after any save.
       tags: [board]
       requestBody:
         required: true
@@ -1161,7 +1167,7 @@ paths:
               $ref: '#/components/schemas/NewIssueRequest'
       responses:
         '201':
-          description: The issue is written and committed in the planner's own clone; its push follows.
+          description: The issue and its placement are saved; the answer names the resulting board revision.
           content:
             application/json:
               schema:
@@ -1854,9 +1860,12 @@ components:
     IssueRefused:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 65536 bytes (field
-        empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker or revision), or the
-        store cannot write it in its repository, such as a repository whose issues give no prefix (field empty). What
-        was sent is never repeated.
+        empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, revision, task,
+        priority, story or confirm), or the store cannot write it in its repository, such as a repository whose
+        issues give no prefix (field empty). A GitHub create's initial placement is refused before creation with
+        StateNotAllowed for an unknown or closed state, EnteredOnlyByWork for an agent entering a working state, or
+        MoveNotAllowed for another move refusal; item is empty. A state the workflow lacks is refused with
+        StateNotAllowed on every store before anything is created. What was sent is never repeated.
       content:
         application/problem+json:
           schema:
@@ -2583,8 +2592,9 @@ components:
             - $ref: '#/components/schemas/StoryId'
         state:
           description: >-
-            The state the new issue is moved to in the same save, as a move of it is checked; the workflow's first
-            state when it is left out. A move refused after the issue was made is answered as partly saved.
+            The requested initial state, or the workflow's first state when left out. The GitHub store checks the
+            placement before creating anything and writes it in the create's single save; closed states are refused.
+            Other stores create in the first state and then move, answering PartlySaved if that move fails.
           type: string
           minLength: 1
           maxLength: 100

@@ -182,17 +182,19 @@ public final class Touched {
             }
 
             @Override
+            public void issueTaken(final String nodeId) {
+                issue(nodeId);
+                writes.issueTaken(nodeId);
+            }
+
+            @Override
             public FoundPage issuesCreatedSince(
                     final String token,
                     final String owner,
                     final String repository,
                     final Instant since,
                     final int page) {
-                final FoundPage found =
-                        writes.issuesCreatedSince(token, owner, repository, since, page);
-                // An issue a save made before it failed is taken up as this save's.
-                found.issues().forEach(f -> issue(f.issue().nodeId()));
-                return found;
+                return writes.issuesCreatedSince(token, owner, repository, since, page);
             }
 
             @Override

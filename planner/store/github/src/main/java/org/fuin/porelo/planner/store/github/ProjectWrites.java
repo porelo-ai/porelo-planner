@@ -224,6 +224,13 @@ public interface ProjectWrites {
     void removeBlockedBy(String token, String owner, String repository, int number, long blockerId);
 
     /**
+     * Records the one existing issue selected to finish a cut-off creation, without writing it.
+     *
+     * @param nodeId the selected issue's node id
+     */
+    default void issueTaken(final String nodeId) {}
+
+    /**
      * Reads a page of the open issues the token's owner made in a repository at or after a moment,
      * pull requests left out; an issue the person closed is never taken for one made.
      *

@@ -3,8 +3,7 @@ package org.fuin.porelo.planner.store;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An idea a person adds through the planner: a new issue in state Idea of one repository, its
- * number given by the store.
+ * An issue a person adds through the planner in one repository, its number given by the store.
  *
  * @param repository the name of the project's repository it belongs to
  * @param title its title, one line
@@ -14,6 +13,7 @@ import org.jspecify.annotations.Nullable;
  * @param task the Porelo task that proposed it, or null when none did
  * @param priority its priority, or null for the store's own
  * @param story the story it is hung into last, or null for none
+ * @param state its initial state for a store that creates in a state, or null for the first state
  */
 public record NewIssue(
         String repository,
@@ -23,7 +23,8 @@ public record NewIssue(
         Worker worker,
         @Nullable String task,
         @Nullable String priority,
-        @Nullable String story) {
+        @Nullable String story,
+        @Nullable String state) {
 
     /**
      * Checks the repository's name, so no store resolves a path from an unchecked one, and the
@@ -37,6 +38,30 @@ public record NewIssue(
         if (story != null) {
             Ids.story(story);
         }
+    }
+
+    /**
+     * A new issue in the workflow's first state.
+     *
+     * @param repository the repository it belongs to
+     * @param title its title
+     * @param mustBeTrue what must be true
+     * @param size its size, or null when unknown
+     * @param worker who works it
+     * @param task the task that proposed it, or null
+     * @param priority its priority, or null for the store's own
+     * @param story its story, or null for none
+     */
+    public NewIssue(
+            final String repository,
+            final String title,
+            final String mustBeTrue,
+            final @Nullable String size,
+            final Worker worker,
+            final @Nullable String task,
+            final @Nullable String priority,
+            final @Nullable String story) {
+        this(repository, title, mustBeTrue, size, worker, task, priority, story, null);
     }
 
     /**

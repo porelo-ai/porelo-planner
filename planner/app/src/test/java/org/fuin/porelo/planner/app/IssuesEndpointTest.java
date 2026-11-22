@@ -13,17 +13,23 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.planner.core.Changes;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -40,6 +46,10 @@ class IssuesEndpointTest {
 
     private Board current = board("r1");
 
+    private boolean createsInState;
+
+    private final List<Writes> moves = new ArrayList<>();
+
     private MockMvc mvc;
 
     private ChangesRegistry changes;
@@ -47,10 +57,25 @@ class IssuesEndpointTest {
     private static Board board(final String revision) {
         return new Board(
                 new Revision(revision),
-                new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
+                new Workflow(
+                        List.of("Idea", "Working", "Backlog", "Finished"),
+                        List.of(),
+                        List.of("Finished")),
                 List.of(),
                 List.of(),
-                new Work(Map.of(), List.of()),
+                new Work(
+                        Map.of(
+                                "Working",
+                                new WorkRule(
+                                        List.of("Idea"),
+                                        "Backlog",
+                                        null,
+                                        null,
+                                        WorkRule.Per.REPOSITORY,
+                                        List.of("build"),
+                                        "Build",
+                                        Map.of("agent", "model"))),
+                        List.of()),
                 List.of("porelo-store", "porelo-other"));
     }
 
@@ -69,13 +94,31 @@ class IssuesEndpointTest {
                     }
 
                     @Override
+                    public boolean createsInState() {
+                        return createsInState;
+                    }
+
+                    @Override
+                    public Board save(final Revision revision, final Writes writes) {
+                        moves.add(writes);
+                        current = withIssue("r3", writes.issues().get("CD03"), Worker.AGENT);
+                        return current;
+                    }
+
+                    @Override
                     public NewIssue.Added createIssue(
                             final Revision revision, final NewIssue issue) {
                         if (failure != null) {
                             throw failure;
                         }
                         added.add(issue);
-                        current = IssuesEndpointTest.board("r2");
+                        current =
+                                withIssue(
+                                        "r2",
+                                        createsInState && issue.state() != null
+                                                ? issue.state()
+                                                : "Idea",
+                                        issue.worker());
                         return new NewIssue.Added("CD03", current);
                     }
                 };
@@ -96,6 +139,203 @@ class IssuesEndpointTest {
     @AfterEach
     void close() {
         changes.close();
+    }
+
+    private static Board withIssue(final String revision, final String state, final Worker worker) {
+        final Board empty = board(revision);
+        return new Board(
+                empty.revision(),
+                empty.workflow(),
+                List.of(),
+                List.of(
+                        new Issue(
+                                "CD03",
+                                "porelo-other",
+                                "T",
+                                state,
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "W",
+                                worker,
+                                Risk.ORDINARY)),
+                empty.work(),
+                empty.repositories());
+    }
+
+    @Test
+    void aStoreThatCreatesInAStatePlacesTheIssueInOneSave() throws Exception {
+        // Harm: two revisions and an issue left half placed when a second save fails.
+        createsInState = true;
+
+        issueInState("Backlog")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(added)
+                .as("the state handed to the single create")
+                .extracting(NewIssue::state)
+                .containsExactly("Backlog");
+        assertThat(moves).as("no second save after creation").isEmpty();
+        assertThat(current.issue("CD03").orElseThrow().state())
+                .as("the saved placement")
+                .isEqualTo("Backlog");
+    }
+
+    @Test
+    void aStoreWithoutCreationInAStateStillCreatesThenMoves() throws Exception {
+        // Harm: a store without the capability silently leaves the issue in its first state.
+        issueInState("Backlog")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.revision").value("r3"));
+
+        assertThat(added)
+                .as("one create in the default state")
+                .extracting(NewIssue::state)
+                .containsExactly((String) null);
+        assertThat(moves).as("the placement saved after creation").hasSize(1);
+        assertThat(current.issue("CD03").orElseThrow().state())
+                .as("the moved issue")
+                .isEqualTo("Backlog");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Working", "Finished", "token123secret"})
+    void aForbiddenInitialStateIsRefusedBeforeAnythingIsCreated(final String state)
+            throws Exception {
+        // Harm: a refused placement leaves a newly made issue in the wrong state or leaks input.
+        createsInState = true;
+        final String answer =
+                issueInState(state)
+                        .andExpect(status().isUnprocessableContent())
+                        .andExpect(
+                                jsonPath("$.type")
+                                        .value(
+                                                "urn:porelo-planner:"
+                                                        + (state.equals("Working")
+                                                                ? "EnteredOnlyByWork"
+                                                                : "StateNotAllowed")))
+                        .andExpect(jsonPath("$.parameters.item").value(""))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(answer)
+                .as("no synthetic id or unconfigured caller text in the refusal")
+                .doesNotContain("porelo-other#1", "token123secret");
+        assertThat(added).as("no issue created for any refused placement").isEmpty();
+        assertThat(moves).as("no placement saved for any refused issue").isEmpty();
+    }
+
+    @Test
+    void aStateTheWorkflowLacksIsRefusedBeforeCreationOnAStoreWithoutCreationInAState()
+            throws Exception {
+        // Harm: an issue made and left half placed, and the caller's text repeated in the answer.
+        createsInState = false;
+        final String answer =
+                issueInState("token123secret")
+                        .andExpect(status().isUnprocessableContent())
+                        .andExpect(jsonPath("$.type").value("urn:porelo-planner:StateNotAllowed"))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(answer).as("the caller's state in the refusal").doesNotContain("token123secret");
+        assertThat(added).as("no issue created for a state the workflow lacks").isEmpty();
+    }
+
+    @Test
+    void anExplicitClosedFirstStateIsRefusedBeforeCreation() throws Exception {
+        // Harm: a closed first state bypasses the move refusal and produces the wrong contract
+        // answer.
+        createsInState = true;
+        final Board empty = board("r1");
+        current =
+                new Board(
+                        empty.revision(),
+                        new Workflow(List.of("Finished", "Idea"), List.of(), List.of("Finished")),
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of()),
+                        empty.repositories());
+
+        issueInState("Finished")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StateNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value(""));
+
+        assertThat(added).as("no closed issue created").isEmpty();
+        assertThat(moves).as("no move saved").isEmpty();
+    }
+
+    @Test
+    void aPersonMayCreateAnIssueInAWorkingStateInOneSave() throws Exception {
+        // Harm: initial placement takes away a person's right to work an issue by hand.
+        createsInState = true;
+
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                                + " \"revision\": \"r1\", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(current.issue("CD03").orElseThrow().state())
+                .as("the person's saved placement")
+                .isEqualTo("Working");
+        assertThat(moves).as("no move after creation").isEmpty();
+    }
+
+    @Test
+    void aDefaultInitialStateNeedsNoMoveCheck() throws Exception {
+        // Harm: a new check blocks ordinary creation because unrelated work rules have faults.
+        createsInState = true;
+        final Board empty = board("r1");
+        current =
+                new Board(
+                        empty.revision(),
+                        empty.workflow(),
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of("An unrelated work rule is unreadable")),
+                        empty.repositories());
+
+        issueInState("Idea").andExpect(status().isCreated());
+        current =
+                new Board(
+                        empty.revision(),
+                        empty.workflow(),
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of("An unrelated work rule is unreadable")),
+                        empty.repositories());
+        issue(
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
+                                + " \"revision\": \"r1\"}")
+                .andExpect(status().isCreated());
+
+        assertThat(added).as("both explicit and omitted first-state creates succeed").hasSize(2);
+        assertThat(moves).as("neither create saves a move").isEmpty();
+    }
+
+    @Test
+    void aConfirmMemberOfTheWrongTypeIsRefusedBeforeCreation() throws Exception {
+        // Harm: malformed confirmation is accepted as consent or silently changes the request.
+        for (final String confirm : List.of("null", "1", "\"true\"", "{}", "[]")) {
+            refused(
+                    "{\"repository\": \"porelo-other\", \"title\": \"T\","
+                            + " \"mustBeTrue\": \"W\", \"revision\": \"r1\", \"confirm\": "
+                            + confirm
+                            + "}",
+                    "confirm");
+        }
+        assertThat(added).as("no malformed confirmation creates an issue").isEmpty();
+    }
+
+    private ResultActions issueInState(final String state) throws Exception {
+        return issue(
+                "{\"repository\": \"porelo-other\", \"title\": \"T\","
+                        + " \"mustBeTrue\": \"W\", \"revision\": \"r1\", \"state\": \""
+                        + state
+                        + "\"}");
     }
 
     @Test

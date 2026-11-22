@@ -33,8 +33,8 @@ import org.jspecify.annotations.Nullable;
  * #TRIED_AGAIN_WITHIN} is taken as the one an earlier try made, never made twice: a story only
  * while an issue planned under it has none alike hanging under it with all its values, an issue
  * only under the story it is planned under or off the project under no story. A taken item gets its
- * place and the values it lacks and keeps every value it holds; several alike stop the write,
- * naming them. The calls go at the pace of a {@link WritePace}.
+ * place, its requested Status and the values it lacks, keeping its other values; several alike stop
+ * the write, naming them. The calls go at the pace of a {@link WritePace}.
  */
 final class NewItems {
 
@@ -158,9 +158,9 @@ final class NewItems {
     }
 
     /**
-     * Plans a new issue in the workflow's first state: its body says what must be true and which
-     * task proposed it, as the Git store's file does, and it takes the rank after the last issue of
-     * its priority.
+     * Plans a new issue in its requested state, or the workflow's first: its body says what must be
+     * true and which task proposed it, as the Git store's file does, and it takes the rank after
+     * the last issue of its priority.
      *
      * @param issue what the person wrote
      * @param priority its priority, which its rank follows
@@ -176,7 +176,14 @@ final class NewItems {
         line(issue.title(), "the title of a new issue");
         final String body = issueBody(issue);
         final List<Value> values = new ArrayList<>();
-        values.add(option(FieldNames.STATUS, current.config().workflow().states().get(0)));
+        final String asked = issue.state();
+        final String state = asked == null ? current.config().workflow().states().get(0) : asked;
+        if (!current.config().workflow().states().contains(state)
+                || current.config().workflow().closed().contains(state)) {
+            throw new StoreException.NotSavable(
+                    "", "a new issue starts in an open state of the workflow");
+        }
+        values.add(option(FieldNames.STATUS, state));
         final String size = issue.size();
         if (size != null) {
             values.add(option(FieldNames.SIZE, size));
@@ -324,7 +331,11 @@ final class NewItems {
             addToProject(token, projectId, List.of(planned));
         }
         if (parent != null
-                && !(standing != null && parent.nodeId().equals(standing.parentIssueId()))) {
+                && standing != null
+                && parent.nodeId().equals(standing.parentIssueId())) {
+            // Its story's item may not list it yet, so the story is read again as after a link.
+            github.issueTaken(parent.nodeId());
+        } else if (parent != null) {
             try {
                 // Made again after a lost answer: a link GitHub made is refused then, so the
                 // write stops partly saved and the next try finds it linked.
@@ -393,6 +404,8 @@ final class NewItems {
         if (same.isEmpty()) {
             return null;
         }
+        // Each alike is an earlier try's work a failure here must still have read again.
+        same.forEach(f -> github.issueTaken(f.issue().nodeId()));
         if (same.size() > 1) {
             same.forEach(f -> made.add(planned.repository + "#" + f.issue().number()));
             written.add(planned.repository);
@@ -524,8 +537,24 @@ final class NewItems {
     }
 
     /**
-     * Writes the values an item lacks: an item the board holds keeps every value it has, and its
-     * Status when it is one of the workflow's.
+     * Whether a taken item still stands in the workflow's first state with other planned values
+     * missing, as a project's automation leaves an item a cut-off try added; a Status a person
+     * chose on a whole item is never written over.
+     */
+    private boolean automaticFirst(final ItemView standing, final Planned planned) {
+        final String first = current.config().workflow().states().get(0);
+        return first.equals(standing.fields().get(FieldNames.STATUS))
+                && planned.values.stream()
+                        .anyMatch(
+                                v ->
+                                        !v.field().equals(FieldNames.STATUS)
+                                                && !holds(standing, v.field()));
+    }
+
+    /**
+     * Writes the values an item lacks, and the requested Status over a project's automatic first
+     * one; a taken item keeps its other values so a retry does not move its rank or discard a
+     * person's fields.
      */
     private void setValues(
             final String token,
@@ -535,7 +564,10 @@ final class NewItems {
         final List<GitHubGraphQl.FieldValue> values = new ArrayList<>();
         final String itemId = Objects.requireNonNull(planned.itemId);
         for (final Value value : planned.values) {
-            if (standing == null || !holds(standing, value.field())) {
+            if (standing == null
+                    || !holds(standing, value.field())
+                    || value.field().equals(FieldNames.STATUS)
+                            && automaticFirst(standing, planned)) {
                 values.add(value.make().apply(itemId));
             }
         }
@@ -596,6 +628,9 @@ final class NewItems {
             }
         }
         final List<ProjectWrites.Found> found = madeSince(token, planned, since);
+        // Each alike may be the unanswered call's issue, which a failure here must still read
+        // again.
+        found.forEach(f -> github.issueTaken(f.issue().nodeId()));
         if (found.size() == 1) {
             return found.get(0).issue();
         }

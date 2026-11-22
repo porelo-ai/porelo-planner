@@ -566,6 +566,9 @@ public final class WorkRequests {
         if (!ISSUE_MEMBERS.containsAll(body.propertyNames())) {
             throw NewIssues.refused("", "The body is no new issue.");
         }
+        if (body.has("confirm") && !body.get("confirm").isBoolean()) {
+            throw NewIssues.refused("confirm", "The member confirm is no boolean.");
+        }
         return new IssueRequest(
                 member(body, "repository"),
                 member(body, "title"),
@@ -577,9 +580,7 @@ public final class WorkRequests {
                 member(body, "priority"),
                 member(body, "story"),
                 member(body, "state"),
-                body.has("confirm")
-                        && body.get("confirm").isBoolean()
-                        && body.get("confirm").asBoolean());
+                body.has("confirm") && body.get("confirm").asBoolean());
     }
 
     /**

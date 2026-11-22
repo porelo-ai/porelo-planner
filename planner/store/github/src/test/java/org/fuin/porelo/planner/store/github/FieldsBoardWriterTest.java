@@ -42,6 +42,8 @@ import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class FieldsBoardWriterTest {
 
@@ -324,8 +326,12 @@ class FieldsBoardWriterTest {
         }
 
         FieldsBoardWriter writer() {
+            return writer(this);
+        }
+
+        FieldsBoardWriter writer(final ProjectWrites writes) {
             return new FieldsBoardWriter(
-                    this,
+                    writes,
                     origin -> TOKEN,
                     new ForgeAccessRefusals(URI.create("https://github.com")),
                     () -> NOW,
@@ -2098,6 +2104,184 @@ class FieldsBoardWriterTest {
                         .createIssue(snapshot(), SHOWN, newIssue("example-lib", "A new thing"));
 
         assertThat(reference).as("a new issue made").isEqualTo("example-lib#101");
+    }
+
+    @Test
+    void aCreateWritesTheRequestedStatusInItsFirstFieldWrite() {
+        // Harm: a second save leaves a newly created issue half placed and gives two revisions.
+        final GitHub github = new GitHub();
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        null,
+                        "Backlog");
+
+        github.writer().createIssue(snapshot(), SHOWN, issue);
+
+        assertThat(github.mutations).as("one field write for the issue").hasSize(1);
+        assertThat(github.mutations.get(0))
+                .as("the requested Status is the first value written")
+                .first()
+                .isEqualTo(FieldValue.option("PVTI_I_example-lib_100", "F_Status", "O_Backlog"));
+        assertThat(held(github)).as("one issue made").containsExactly("example-lib#100");
+    }
+
+    @Test
+    void aCreateSentAgainAfterItsIssueWasMovedKeepsThePersonsMove() {
+        // Harm: a create sent again puts an issue the person has since moved back where it began.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.added.add("I_example-project_100");
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        "example-project#100",
+                        "Backlog");
+        final String first =
+                github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+        final String item = "PVTI_I_" + first.replace('#', '_');
+        github.values.get(item).put("F_Status", FieldValue.option(item, "F_Status", "O_Analysis"));
+
+        final String again =
+                github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+
+        assertThat(again).as("the create sent again takes the same issue").isEqualTo(first);
+        assertThat(github.values.get(item))
+                .as("the Status the person chose since")
+                .containsEntry("F_Status", FieldValue.option(item, "F_Status", "O_Analysis"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "Idea"})
+    void aCutOffCreateRetriedInAStateFinishesTheSameIssueDespiteAnAutomaticFirstStatus(
+            final String automatic) {
+        // Harm: a retry duplicates an issue or preserves an automation's first state over its
+        // requested placement.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.added.add("I_example-project_100");
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        "example-project#100",
+                        "Backlog");
+        github.answering(
+                values -> {
+                    throw GitHubExceptions.refused(422, "fields refused");
+                });
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createIssue(
+                                                snapshot(onTheProject(github, null)), SHOWN, issue))
+                .as("the first try stops after creation and linking, before fields")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining("fields refused");
+        final Snapshot left =
+                snapshot(onTheProject(github, automatic.isEmpty() ? null : automatic));
+        final String reference = github.writer().createIssue(left, SHOWN, issue);
+
+        assertThat(reference).as("the retry finishes the first issue").isEqualTo("example-lib#101");
+        assertThat(held(github)).as("no second issue after retry").hasSize(2);
+        assertThat(github.values.get("PVTI_I_example-lib_101"))
+                .as("the requested Status replaces any automatic first Status")
+                .containsEntry(
+                        "F_Status",
+                        FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Backlog"));
+        assertThat(github.subIssues).as("the existing story link is retained").hasSize(1);
+    }
+
+    @Test
+    void aCreateRetriedAfterLinkingTouchesItsStoryAndTheTakenIssue() {
+        // Harm: the story stays without its new issue until a whole read when GitHub's sub-issue
+        // list lags the link.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", List.of(IssueMapping.STORY_LABEL));
+        github.added.add("I_example-project_100");
+        final Touched touched = new Touched();
+        final FieldsBoardWriter writer = github.writer(touched.recording(github));
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        "example-project#100");
+        github.answering(
+                values -> {
+                    throw GitHubExceptions.refused(422, "fields refused");
+                });
+
+        assertThatThrownBy(
+                        () ->
+                                writer.createIssue(
+                                        snapshot(onTheProject(github, null)), SHOWN, issue))
+                .as("the first try stops after linking and before field values")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining("fields refused");
+        assertThat(github.subIssues)
+                .as("the first try already linked the new issue")
+                .containsExactly("example-project#100 < 9101");
+        assertThat(github.values)
+                .as("the first try left the issue without field values")
+                .doesNotContainKey("PVTI_I_example-lib_101");
+        touched.clear();
+
+        final String reference =
+                writer.createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+
+        assertThat(reference).as("the retry takes the linked issue").isEqualTo("example-lib#101");
+        assertThat(touched.ids().issues())
+                .as("both the story and its taken issue must be read again after the retry")
+                .containsExactlyInAnyOrder("I_example-project_100", "I_example-lib_101");
+        assertThat(github.subIssues)
+                .as("the retry retains the existing link")
+                .containsExactly("example-project#100 < 9101");
+    }
+
+    @Test
+    void twoAlikesFoundAfterAnUnansweredCreateAreBothTouchedWhenTheWriteStops() {
+        // Harm: issues an earlier try made are left off the board by a whole read in flight.
+        final GitHub github = new GitHub().creating("twice-unanswered");
+        final Touched touched = new Touched();
+        final FieldsBoardWriter writer = github.writer(touched.recording(github));
+
+        assertThatThrownBy(
+                        () ->
+                                writer.createIssue(
+                                        snapshot(), SHOWN, newIssue("example-lib", "A new thing")))
+                .as("two alikes found after the unanswered create stop the write partly saved")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining("example-lib#100, example-lib#101");
+
+        assertThat(touched.ids().issues())
+                .as("both possible results of the unanswered create must be read again")
+                .containsExactlyInAnyOrder("I_example-lib_100", "I_example-lib_101");
+        assertThat(github.calls)
+                .as("the alikes are found after the unanswered call, not before it")
+                .containsExactly("issuesCreatedSince", "createIssue", "issuesCreatedSince");
     }
 
     @Test

@@ -454,6 +454,12 @@ public final class GitHubStore implements PlanningStore {
                         .board());
     }
 
+    /** Whether an issue's requested state is written during its creation. */
+    @Override
+    public boolean createsInState() {
+        return true;
+    }
+
     @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
         final String[] id = new String[1];
