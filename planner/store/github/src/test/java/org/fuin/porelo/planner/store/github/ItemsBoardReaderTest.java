@@ -2348,9 +2348,9 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void anItemWithASecondPageOfBlockersCountsNoneUnseenAndIsLeftOutWithItsFault() {
+    void anItemWithASecondPageOfBlockersCountsNoneUnseenAndIsShownHeldPastOnePage() {
         // Harm: an item cut at one page of blockers is shown with waits not readable for the
-        // blockers on the pages after, as though it were whole.
+        // blockers on the pages after, as though it were whole, or not held.
         final IssueRefs more = new IssueRefs(List.of(FAR), new PageInfo(true, "more"), 150);
         final Snapshot snapshot =
                 new GitHub()
@@ -2361,12 +2361,10 @@ class ItemsBoardReaderTest {
                         .read();
 
         assertThat(ItemsBoardReader.unseen(more)).as("none counted unseen").isZero();
-        assertThat(snapshot.board().issue("example-lib#3")).as("the issue left out").isEmpty();
-        assertThat(snapshot.board().faults())
-                .as("the one fault naming it")
-                .containsExactly(
-                        "Item example-org/example-lib#3 has more sub-issues or blockers than one"
-                                + " page carries and is left out; its story is not whole");
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().warnings())
+                .as("the issue shown, held as read past one page")
+                .containsExactly(org.fuin.porelo.planner.store.Warning.pastOnePage());
+        assertThat(snapshot.board().faults()).as("no fault beside the warning").isEmpty();
     }
 
     @Test
