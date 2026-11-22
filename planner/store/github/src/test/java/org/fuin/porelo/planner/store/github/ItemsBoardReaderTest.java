@@ -2087,4 +2087,51 @@ class ItemsBoardReaderTest {
                 .extracting(Wait::done)
                 .containsExactly(false, null);
     }
+
+    @Test
+    void aBlockerWhoseStateGitHubNamesNeitherOpenNorClosedIsNotKnownDone() {
+        // Harm: a state GitHub adds, or none, read as closed, so work starts over an open blocker.
+        final Snapshot snapshot =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), waiting(3, FAR, HIDDEN))
+                        .boardPage(elsewhere(FAR, "MERGED"), elsewhere(HIDDEN, "CLOSED"))
+                        .read();
+
+        assertThat(snapshot.board().issue("example-lib#3").orElseThrow().waitsOn())
+                .as("only the closed one done")
+                .extracting(Wait::done)
+                .containsExactly(null, true);
+    }
+
+    @Test
+    void aStartReadsTheIssuesOwnBlockersAndItsKnownWaitsInOneCall() {
+        // Harm: a blocker added within one look is missed by the start; or the start pays a call
+        // for each thing it checks.
+        final ProjectItem three = waiting(3, FAR);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), three)
+                        .boardPage(elsewhere(FAR, "OPEN"));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+        final ProjectItem now = waiting(3, FAR, HIDDEN);
+        github.boardPage(onBoard(now), elsewhere(FAR, "CLOSED"));
+
+        final BoardReader.StartRead read = reader.waitsOf(CONFIG, held, Set.of(LIB_3));
+
+        assertThat(github.issueBatches)
+                .as("the board's read, then one call for the issue and its known wait")
+                .containsExactly(List.of("I_far_7"), List.of(LIB_3, "I_far_7"));
+        assertThat(read.blockers().get(LIB_3))
+                .as("the issue's blockers as GitHub names them now")
+                .extracting(IssueRef::id)
+                .containsExactly("I_far_7", "I_far_8");
+        assertThat(read.waits())
+                .as("the known wait read, the new one not known done")
+                .containsEntry("I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, true))
+                .containsEntry("I_far_8", new Snapshot.Waited("other-org/private", 8, null));
+        assertThat(read.unread()).as("nothing unread").isEmpty();
+    }
 }

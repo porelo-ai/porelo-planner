@@ -58,12 +58,31 @@ class WorkRunTest {
                         List.of(
                                 new org.fuin.porelo.planner.store.Wait(
                                         "other-org/elsewhere#7", true, null)));
-        f.order();
-        f.store.waitsNow = Map.of(issue, List.of(org.fuin.porelo.planner.store.Wait.unreadable()));
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String before = f.store.board().issue(issue).orElseThrow().state();
+        // The wait opens again on the board and at GitHub while the task is on its way.
+        final List<org.fuin.porelo.planner.store.Wait> reopened =
+                List.of(org.fuin.porelo.planner.store.Wait.unreadable());
+        f.store.waitsNow = Map.of(issue, reopened);
+        f.store.current =
+                new Board(
+                        f.store.current.revision(),
+                        f.store.current.workflow(),
+                        f.store.current.stories(),
+                        f.store.current.issues().stream()
+                                .map(i -> i.id().equals(issue) ? i.withWaits(reopened) : i)
+                                .toList(),
+                        f.store.current.work(),
+                        f.store.current.repositories());
+
+        f.start(offer);
 
         final WorkRun.Run started = f.run.work("ST1");
         assertThat(started).as("the run started while the wait was done").isNotNull();
         assertThat(started.stopped()).as("not stopped by a wait that opened since").isFalse();
+        assertThat(f.store.board().issue(issue).orElseThrow().state())
+                .as("the task's start lands and moves its issue on")
+                .isNotEqualTo(before);
     }
 
     @Test

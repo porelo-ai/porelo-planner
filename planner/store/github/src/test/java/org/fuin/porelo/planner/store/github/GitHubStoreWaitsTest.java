@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
@@ -117,8 +118,12 @@ class GitHubStoreWaitsTest {
             return true;
         }
 
+        /** What runs while the probe asks, such as a read that replaces the board meanwhile. */
+        private volatile Runnable meanwhile = () -> {};
+
         @Override
         public boolean waitsChanged(final Snapshot current) {
+            meanwhile.run();
             return waitsChanged.get();
         }
 
@@ -150,11 +155,16 @@ class GitHubStoreWaitsTest {
             return board("waits-" + waitReads.get(), true);
         }
 
+        /** The blockers GitHub names now for the issues, or null for a reader that reads none. */
+        private volatile Map<String, List<GitHubGraphQl.IssueRef>> blockersNow = Map.of();
+
+        private volatile Set<String> unread = Set.of();
+
         @Override
-        public Map<String, Snapshot.Waited> waitsOf(
+        public StartRead waitsOf(
                 final ProjectConfig config, final Snapshot held, final Set<String> issueIds) {
             assertThat(issueIds).as("the issues whose waits are read").containsExactly("I_lib_3");
-            return now;
+            return new StartRead(blockersNow, unread, now);
         }
     }
 
@@ -208,5 +218,60 @@ class GitHubStoreWaitsTest {
                         Map.entry(
                                 "example-lib#3",
                                 List.of(new Wait("other-org/elsewhere#7", null, FAR_LINK))));
+    }
+
+    @Test
+    void aStartSeesABlockerAddedSinceTheBoardWasReadAndOneWhoseBlockersItCannotRead() {
+        // Harm: a blocker a person added in another repository within one look is missed, and
+        // work starts on an issue that waits on it.
+        final Reader reader = new Reader();
+        final GitHubStore store = store(reader, new Probe());
+        store.refresh();
+        reader.now =
+                Map.of(
+                        "I_far_7", new Snapshot.Waited("other-org/elsewhere", 7, true),
+                        "I_new_9", new Snapshot.Waited("other-org/new", 9, null));
+        reader.blockersNow =
+                Map.of(
+                        "I_lib_3",
+                        List.of(
+                                new GitHubGraphQl.IssueRef(
+                                        "I_far_7", 70L, 7, "other-org/elsewhere"),
+                                new GitHubGraphQl.IssueRef("I_new_9", 90L, 9, "other-org/new")));
+
+        assertThat(store.waitsNow(List.of("example-lib#3")).get("example-lib#3"))
+                .as("the known wait done, the new one not known done")
+                .extracting(Wait::reference, Wait::done)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("other-org/elsewhere#7", true),
+                        org.assertj.core.groups.Tuple.tuple("other-org/new#9", null));
+
+        reader.blockersNow = Map.of();
+        reader.unread = Set.of("I_lib_3");
+        assertThat(store.waitsNow(List.of("example-lib#3")).get("example-lib#3"))
+                .as("an issue whose blockers could not be read whole")
+                .contains(Wait.unreadable());
+    }
+
+    @Test
+    void aChangeOfTheWaitsSeenWhileTheBoardWasReplacedIsNotTakenAsRead() {
+        // Harm: a look that skipped reading the waits tells the probe it read them, so the change
+        // it saw is lost and a closed blocker never frees its issue.
+        final Reader reader = new Reader();
+        final Probe probe = new Probe();
+        final GitHubStore store = store(reader, probe);
+        store.refresh();
+        store.poll();
+        probe.waitsChanged.set(true);
+        probe.meanwhile =
+                () -> {
+                    probe.meanwhile = () -> {};
+                    store.refresh();
+                };
+
+        store.poll();
+
+        assertThat(reader.waitReads.get()).as("the waits not read on a replaced board").isZero();
+        assertThat(probe.waitsRead.get()).as("the probe not told they were read").isZero();
     }
 }

@@ -258,6 +258,12 @@ public record WorkProposal(
         if (issues.isEmpty() && !agents(open).isEmpty()) {
             throw WorkRefusal.notAllowed(story.state(), to, standing(agents(open), to, rule));
         }
+        if (issues.isEmpty() && !held.isEmpty()) {
+            // Work never starts over what a hand edit or an open blocker leaves in doubt; the
+            // person sees why, before the issues a person works.
+            throw WorkRefusal.notAllowed(
+                    story.state(), to, String.join(" ", held.stream().map(Held::reason).toList()));
+        }
         if (issues.isEmpty() && !manual.isEmpty()) {
             throw WorkRefusal.notAllowed(
                     story.state(),
@@ -265,11 +271,6 @@ public record WorkProposal(
                     "A person works every open issue of the story: "
                             + String.join(", ", manual)
                             + ".");
-        }
-        if (issues.isEmpty() && !held.isEmpty()) {
-            // Work never starts over what a hand edit left in doubt; the person sees why.
-            throw WorkRefusal.notAllowed(
-                    story.state(), to, String.join(" ", held.stream().map(Held::reason).toList()));
         }
         if (issues.isEmpty() && rule.then() != null) {
             throw WorkRefusal.notAllowed(story.state(), to, "A reading needs an open issue.");

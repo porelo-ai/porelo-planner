@@ -447,11 +447,13 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     @Override
-    public Map<String, Snapshot.Waited> waitsOf(
+    public StartRead waitsOf(
             final ProjectConfig config, final Snapshot held, final Set<String> issueIds) {
         final Map<String, GitHubGraphQl.IssueRef> blockers = offBoard(held.raw(), held.config());
         final Map<String, GitHubGraphQl.IssueRef> wanted = new LinkedHashMap<>();
+        final Set<String> onBoard = new HashSet<>();
         for (final ItemView item : held.items().values()) {
+            onBoard.add(item.issueId());
             if (issueIds.contains(item.issueId())) {
                 for (final String blocker : item.blockedByIds()) {
                     final GitHubGraphQl.IssueRef ref = blockers.get(blocker);
@@ -461,12 +463,59 @@ public final class ItemsBoardReader implements BoardReader {
                 }
             }
         }
-        if (wanted.isEmpty()) {
-            return Map.of();
+        final List<String> asked = new ArrayList<>(new java.util.TreeSet<>(issueIds));
+        wanted.keySet().stream().filter(id -> !issueIds.contains(id)).forEach(asked::add);
+        if (asked.isEmpty()) {
+            return new StartRead(Map.of(), Set.of(), Map.of());
         }
         final Call call =
                 new Call(config, tokens.token(config.forge()), clock.instant().plus(deadline));
-        return readWaits(call, held.config(), wanted);
+        final ProjectConfig read = held.config();
+        final Map<String, List<GitHubGraphQl.IssueRef>> named = new LinkedHashMap<>();
+        final Set<String> unread = new HashSet<>();
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>();
+        // The issues and their known waits in one call, a hundred to a call.
+        for (int from = 0; from < asked.size(); from += GitHubGraphQl.MAX_ISSUES) {
+            final List<String> chunk =
+                    asked.subList(from, Math.min(asked.size(), from + GitHubGraphQl.MAX_ISSUES));
+            final GitHubGraphQl.IssueBoard answer =
+                    call.of(
+                            "the issues a start offers and what they wait on",
+                            () -> queries.issueBoard(call.token, chunk, read.projectId()));
+            for (int at = 0; at < chunk.size(); at++) {
+                final String id = chunk.get(at);
+                final GitHubGraphQl.IssueOnBoard on =
+                        at < answer.issues().size() ? answer.issues().get(at) : null;
+                final GitHubGraphQl.BoardIssue answered = on == null ? null : on.issue();
+                final GitHubGraphQl.BoardIssue issue =
+                        answered != null && answered.id().equals(id) ? answered : null;
+                if (issueIds.contains(id)) {
+                    if (issue != null && !issue.blockedBy().pageInfo().hasNextPage()) {
+                        named.put(id, issue.blockedBy().nodes());
+                    } else {
+                        unread.add(id);
+                    }
+                }
+                final GitHubGraphQl.IssueRef ref = wanted.get(id);
+                if (ref != null) {
+                    waits.put(
+                            id,
+                            issue != null
+                                    ? new Snapshot.Waited(
+                                            issue.repository(), issue.number(), done(issue.state()))
+                                    : new Snapshot.Waited(ref.repository(), ref.number(), null));
+                }
+            }
+        }
+        // A blocker added since the board was read is not known done until a look reads it.
+        for (final List<GitHubGraphQl.IssueRef> refs : named.values()) {
+            for (final GitHubGraphQl.IssueRef ref : refs) {
+                if (!onBoard.contains(ref.id()) && !waits.containsKey(ref.id())) {
+                    waits.put(ref.id(), new Snapshot.Waited(ref.repository(), ref.number(), null));
+                }
+            }
+        }
+        return new StartRead(named, unread, waits);
     }
 
     /**
@@ -525,6 +574,14 @@ public final class ItemsBoardReader implements BoardReader {
      * nothing for, as for an issue the person's token cannot read, is held with no state, so it
      * holds its issue back.
      */
+    /** Done only when GitHub says closed; open, none or a state it names anew is not known done. */
+    private static @Nullable Boolean done(final @Nullable String state) {
+        if ("CLOSED".equals(state)) {
+            return Boolean.TRUE;
+        }
+        return "OPEN".equals(state) ? Boolean.FALSE : null;
+    }
+
     private Map<String, Snapshot.Waited> readWaits(
             final Call call,
             final ProjectConfig read,
@@ -549,9 +606,7 @@ public final class ItemsBoardReader implements BoardReader {
                         issue == null || !issue.id().equals(chunk.get(at))
                                 ? new Snapshot.Waited(ref.repository(), ref.number(), null)
                                 : new Snapshot.Waited(
-                                        issue.repository(),
-                                        issue.number(),
-                                        !"OPEN".equals(issue.state())));
+                                        issue.repository(), issue.number(), done(issue.state())));
             }
         }
         return waits;

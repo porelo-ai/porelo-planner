@@ -1038,6 +1038,7 @@ class ConditionalChangeProbeTest {
         assertThat(probe.waitsChanged(board)).as("the first answer, with no tag").isTrue();
         probe.waitsRead();
         assertThat(probe.waitsChanged(board)).as("answered 304").isFalse();
+        nanos.addAndGet(ConditionalChangeProbe.WAITS_EVERY.toNanos());
         waited.tags.put("other-org/elsewhere", "\"e-2\"");
         assertThat(probe.waitsChanged(board)).as("changed there").isTrue();
         assertThat(probe.waitsChanged(board))
@@ -1092,5 +1093,22 @@ class ConditionalChangeProbeTest {
         assertThat(waited.asked)
                 .as("asked once, then again after the whole read")
                 .containsExactly("other-org/private null", "other-org/private null");
+    }
+
+    @Test
+    void aChangedRepositoryIsTakenAtMostOnceAMinute() {
+        // Harm: a repository whose issues change all the time has every look read the waits
+        // again and spends the person's rate limit.
+        final WaitedRepositories waited = new WaitedRepositories();
+        waited.tags.put("other-org/busy", "\"b-1\"");
+        final ConditionalChangeProbe probe = probe(waited);
+        final Snapshot board = waitingOn("other-org/busy");
+        assertThat(probe.waitsChanged(board)).as("the first look").isTrue();
+        probe.waitsRead();
+
+        waited.tags.put("other-org/busy", "\"b-2\"");
+        assertThat(probe.waitsChanged(board)).as("changed within the minute").isFalse();
+        nanos.addAndGet(ConditionalChangeProbe.WAITS_EVERY.toNanos());
+        assertThat(probe.waitsChanged(board)).as("the same change once the minute passed").isTrue();
     }
 }

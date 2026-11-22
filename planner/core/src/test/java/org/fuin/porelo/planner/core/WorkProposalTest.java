@@ -927,6 +927,89 @@ class WorkProposalTest {
                                         + " nor moved until one id is changed."));
     }
 
+    @Test
+    void aReadingOfTheStoryHoldsAnIssueThatWaits() {
+        // Harm: a reading the story's own Start picks reads an issue whose blocker is open.
+        final Board waits =
+                reading(
+                        waiting(
+                                with(
+                                        board(WorkRule.Per.REPOSITORY),
+                                        Map.of(
+                                                "AA1",
+                                                "Finished",
+                                                "AA1.1",
+                                                "Finished",
+                                                "BB1",
+                                                "Review",
+                                                "CC1",
+                                                "Finished")),
+                                "BB1",
+                                List.of(),
+                                far(false)));
+        final Board review =
+                new Board(
+                        waits.revision(),
+                        waits.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Review",
+                                        true,
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA1.1", "BB1", "CC1"),
+                                        "",
+                                        null)),
+                        waits.issues(),
+                        waits.work(),
+                        waits.repositories());
+
+        assertThatThrownBy(() -> WorkProposal.propose(review, "ST1", "Reading"))
+                .as("the reading the story picks")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("BB1 waits on other-org/elsewhere#7");
+    }
+
+    @Test
+    void aStoryWhoseOtherIssuesAPersonWorksIsRefusedNamingTheHeldOne() {
+        // Harm: the refusal names only the person's issues, hiding the wait that holds the rest.
+        Board board = waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of(), far(false));
+        board =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues().stream()
+                                .map(
+                                        i ->
+                                                i.id().equals("BB1")
+                                                        ? i
+                                                        : new Issue(
+                                                                i.id(),
+                                                                i.repository(),
+                                                                i.title(),
+                                                                i.state(),
+                                                                i.size(),
+                                                                i.blockedBy(),
+                                                                i.parent(),
+                                                                i.link(),
+                                                                i.text(),
+                                                                org.fuin.porelo.planner.store.Worker
+                                                                        .MANUAL,
+                                                                i.risk()))
+                                .toList(),
+                        board.work(),
+                        board.repositories());
+        final Board manual = board;
+
+        assertThatThrownBy(() -> WorkProposal.propose(manual, "ST1", "Building"))
+                .as("nothing an agent may start")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("BB1 waits on other-org/elsewhere#7");
+    }
+
     /** The board with one issue's blockers on the board and waits outside it set. */
     static Board waiting(
             final Board board,

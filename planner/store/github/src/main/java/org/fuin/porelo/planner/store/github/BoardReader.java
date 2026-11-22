@@ -69,18 +69,44 @@ public interface BoardReader {
     }
 
     /**
-     * Reads now the state of the issues the issues named wait on that are no items of the board, as
-     * a start reads them before it offers work on them.
+     * What a start reads now of the issues it offers: their own blockers, and the state of those
+     * that are no items of the board.
+     *
+     * @param blockers each issue's blockers as GitHub names them now, by the issue's node id; an
+     *     issue not read now is absent
+     * @param unread the node ids of the issues asked for whose blockers could not be read whole
+     * @param waits the state of the blockers that are no items of the board, by their node ids; one
+     *     whose state was not read is not known done
+     */
+    record StartRead(
+            java.util.Map<
+                            String,
+                            java.util.List<org.fuin.porelo.forge.github.GitHubGraphQl.IssueRef>>
+                    blockers,
+            java.util.Set<String> unread,
+            java.util.Map<String, Snapshot.Waited> waits) {
+
+        /** Copies the collections. */
+        public StartRead {
+            blockers = java.util.Map.copyOf(blockers);
+            unread = java.util.Set.copyOf(unread);
+            waits = java.util.Map.copyOf(waits);
+        }
+    }
+
+    /**
+     * Reads now, in one small call for up to a hundred issues, the blockers of the issues named and
+     * the state of those that are no items of the board, as a start reads them before it offers
+     * work on them: a blocker added or reopened since the board was read is seen.
      *
      * @param config what to read with, as the project's files name it now
      * @param held the snapshot that names the waits
-     * @param issueIds the node ids of the issues whose waits are read
-     * @return the waits read, by the node ids of the issues waited on; a reader that cannot read
-     *     them answers the snapshot's
+     * @param issueIds the node ids of the issues whose blockers are read
+     * @return what was read; a reader that cannot read them answers the snapshot's waits alone
      */
-    default java.util.Map<String, Snapshot.Waited> waitsOf(
+    default StartRead waitsOf(
             final ProjectConfig config, final Snapshot held, final java.util.Set<String> issueIds) {
-        return held.waits();
+        return new StartRead(java.util.Map.of(), java.util.Set.of(), held.waits());
     }
 
     /**

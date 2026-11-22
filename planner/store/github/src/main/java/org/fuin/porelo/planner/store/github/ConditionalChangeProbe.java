@@ -307,7 +307,8 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
                 waitTags.putAll(seen);
             }
         }
-        return changed;
+        // A change is taken at most once each minute too; the tags seen wait for the read after it.
+        return changed && waitsDue();
     }
 
     @Override

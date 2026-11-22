@@ -2919,11 +2919,9 @@ public final class WorkRun {
         final List<Issue> waiting = new ArrayList<>();
         for (final String id : offered) {
             final Issue issue = board.issue(id).orElseThrow();
-            final List<Wait> waits = now.get(id);
-            if (waits == null) {
-                // An issue the tracker named no waits for is judged by what the board holds.
-                continue;
-            }
+            final List<Wait> named = now.get(id);
+            // An issue the tracker named no waits for is judged by what the board holds.
+            final List<Wait> waits = named == null ? issue.waitsOn() : named;
             if (waits.stream().anyMatch(Wait::holds)) {
                 waiting.add(issue.withWaits(waits));
             }

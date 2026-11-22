@@ -168,6 +168,8 @@ public record OpenWork(
                     waiting++;
                 }
                 final boolean building = leftToBuild(board, review, issue);
+                // An issue whose wait opened again counts as blocked even while a run works it:
+                // the run goes on, but nothing more of it may start until the wait is done.
                 if (building
                         && (issue.blockedBy().stream().anyMatch(open::contains)
                                 || issue.waitsOn().stream().anyMatch(Wait::holds))) {

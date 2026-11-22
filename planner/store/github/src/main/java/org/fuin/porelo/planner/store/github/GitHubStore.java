@@ -477,7 +477,7 @@ public final class GitHubStore implements PlanningStore {
                 named.put(id, item);
             }
         }
-        final Map<String, Snapshot.Waited> read;
+        final BoardReader.StartRead read;
         try {
             read =
                     parts.reader()
@@ -490,14 +490,49 @@ public final class GitHubStore implements PlanningStore {
         } catch (final RuntimeException e) {
             throw refused(e);
         }
+        final Map<String, String> boardIds = new LinkedHashMap<>();
+        held.items().forEach((id, item) -> boardIds.put(item.issueId(), id));
+        final java.net.URI forge = held.config().forge();
         final Map<String, List<Wait>> waits = new LinkedHashMap<>();
         for (final Map.Entry<String, ItemView> each : named.entrySet()) {
+            final ItemView item = each.getValue();
             final List<Wait> fresh = new ArrayList<>();
-            for (final String blocker : each.getValue().blockedByIds()) {
-                if (held.waits().containsKey(blocker)) {
-                    fresh.add(
-                            IssueMapping.wait(
-                                    each.getValue(), blocker, read, held.config().forge()));
+            final List<org.fuin.porelo.forge.github.GitHubGraphQl.IssueRef> now =
+                    read.blockers().get(item.issueId());
+            if (read.unread().contains(item.issueId())) {
+                // Its blockers could not be read whole, so it is not known free.
+                fresh.add(Wait.unreadable());
+            }
+            if (now == null) {
+                for (final String blocker : item.blockedByIds()) {
+                    if (held.waits().containsKey(blocker)) {
+                        fresh.add(IssueMapping.wait(item, blocker, read.waits(), forge));
+                    }
+                }
+            } else {
+                for (final org.fuin.porelo.forge.github.GitHubGraphQl.IssueRef ref : now) {
+                    final String boardId = boardIds.get(ref.id());
+                    final org.fuin.porelo.planner.store.Issue blocking =
+                            boardId == null ? null : held.board().issue(boardId).orElse(null);
+                    if (blocking == null) {
+                        fresh.add(IssueMapping.wait(item, ref.id(), read.waits(), forge));
+                    } else if (!item.blockedByIds().contains(ref.id())) {
+                        // A blocker of the board added since the board was read, judged by it.
+                        fresh.add(
+                                IssueMapping.wait(
+                                        item,
+                                        ref.id(),
+                                        Map.of(
+                                                ref.id(),
+                                                new Snapshot.Waited(
+                                                        ref.repository(),
+                                                        ref.number(),
+                                                        held.board()
+                                                                .workflow()
+                                                                .closed()
+                                                                .contains(blocking.state()))),
+                                        forge));
+                    }
                 }
             }
             // A wait the board holds that the read named none for, such as one not readable, stays.
@@ -694,21 +729,26 @@ public final class GitHubStore implements PlanningStore {
         } catch (final RuntimeException e) {
             throw refused(e);
         }
+        final boolean[] reread = new boolean[1];
         final Snapshot read =
                 locked(
                         () -> {
                             final Snapshot base = snapshot;
                             if (base == null || base != board) {
-                                // A save or a read replaced the board meanwhile, with its waits.
+                                // A save or a read replaced the board meanwhile: the change the
+                                // probe saw stays unread until a look reads the waits again.
                                 return base == null ? board : base;
                             }
                             final Snapshot fresh = parts.reader().rewait(now, base);
+                            reread[0] = true;
                             if (fresh != base) {
                                 hold(fresh, false);
                             }
                             return fresh;
                         });
-        parts.probe().waitsRead();
+        if (reread[0]) {
+            parts.probe().waitsRead();
+        }
         return read;
     }
 
