@@ -152,7 +152,7 @@ class PlanningScreen extends StatelessWidget {
                 TextButton(
                   key: const Key('planning-crumb 0'),
                   onPressed: () => host.go(PlanningPlace(view: place.view, filter: place.filter)),
-                  child: const Text('Planning'),
+                  child: const Text('Board'),
                 ),
                 ?pageButton,
               ],
@@ -910,7 +910,7 @@ class _BoardViewState extends State<_BoardView> {
                       Row(
                         spacing: Space.small,
                         children: [
-                          Text('Planning', style: theme.textTheme.headlineSmall),
+                          Text('Board', style: theme.textTheme.headlineSmall),
                           ?widget.pageButton,
                         ],
                       ),
@@ -2064,7 +2064,7 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              TextButton(key: const Key('planning-crumb 0'), onPressed: widget.onBoard, child: const Text('Planning')),
+              TextButton(key: const Key('planning-crumb 0'), onPressed: widget.onBoard, child: const Text('Board')),
               if (widget.story.isNotEmpty) ...[
                 const Text('›'),
                 TextButton(
