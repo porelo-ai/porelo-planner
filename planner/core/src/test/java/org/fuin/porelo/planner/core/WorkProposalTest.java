@@ -866,33 +866,26 @@ class WorkProposalTest {
     void anIssueBlockedByOneOutsideTheWorkflowIsHeldAsWaitingOnIt() {
         // Harm: an issue whose blocker a person set to a state the workflow lacks is worked, as
         // if that blocker were done.
-        final WorkProposal proposal =
-                WorkProposal.propose(
-                        waiting(
-                                warned(
-                                        board(WorkRule.Per.REPOSITORY),
-                                        Map.of("AA1", Warning.stateOutsideWorkflow()),
-                                        Map.of("AA1", "Parked")),
-                                "BB1",
-                                List.of("AA1"),
-                                List.of()),
-                        "ST1",
-                        "Building");
-
-        assertThat(proposal.repositories())
-                .as("only the sub-issue is worked")
-                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1.1")));
-        assertThat(proposal.held())
-                .as("the blocker held with its warning, the blocked issue as waiting on it")
-                .extracting(WorkProposal.Held::issue)
-                .contains("AA1", "BB1");
-        assertThat(proposal.held())
-                .filteredOn(held -> held.issue().equals("BB1"))
-                .singleElement()
-                .extracting(WorkProposal.Held::reason)
-                .asString()
-                .contains("BB1 waits on AA1");
+        // Its sub-issue stands under a held parent and is held too, so nothing is left to start.
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        waiting(
+                                                warned(
+                                                        board(WorkRule.Per.REPOSITORY),
+                                                        Map.of(
+                                                                "AA1",
+                                                                Warning.stateOutsideWorkflow()),
+                                                        Map.of("AA1", "Parked")),
+                                                "BB1",
+                                                List.of("AA1"),
+                                                List.of()),
+                                        "ST1",
+                                        "Building"))
+                .as("the blocker held, its sub-issue under it, the blocked issue as waiting on it")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1.1: it stands under AA1")
+                .hasMessageContaining("BB1 waits on AA1");
     }
 
     @Test
