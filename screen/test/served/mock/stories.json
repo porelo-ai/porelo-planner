@@ -4094,7 +4094,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "UnknownWorker",
-        "text" : "Its worker is none the planner knows, so no work starts on it until one it knows is set."
+        "text" : "Its worker is none the planner knows, so no work starts on it until one it knows is set.",
+        "holds" : true
       } ]
     }, {
       "id" : "B885",
@@ -4116,7 +4117,8 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "UnknownRisk",
-        "text" : "Its risk is none the planner knows, so no work starts on it until one it knows is set."
+        "text" : "Its risk is none the planner knows, so no work starts on it until one it knows is set.",
+        "holds" : true
       } ]
     }, {
       "id" : "B884.1",
