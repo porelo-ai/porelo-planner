@@ -4074,6 +4074,50 @@
         "text" : "An issue it stands under or waits on is not placed on the board, so it is shown without that link.",
         "holds" : true
       } ]
+    }, {
+      "id" : "B884",
+      "repository" : "porelo",
+      "title" : "An issue whose worker the planner does not know",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B884",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "UnknownWorker",
+        "text" : "Its worker is none the planner knows, so no work starts on it until one it knows is set."
+      } ]
+    }, {
+      "id" : "B885",
+      "repository" : "porelo",
+      "title" : "An issue whose risk the planner does not know",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : null,
+      "link" : "https://example.org/issues/B885",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ {
+        "kind" : "UnknownRisk",
+        "text" : "Its risk is none the planner knows, so no work starts on it until one it knows is set."
+      } ]
     } ],
     "work" : null,
     "open" : null,
@@ -4190,7 +4234,7 @@
       "issues" : 1
     }, {
       "name" : "Backlog",
-      "issues" : 38
+      "issues" : 40
     }, {
       "name" : "Implementing",
       "issues" : 10
@@ -4222,7 +4266,7 @@
       "issues" : 1
     }, {
       "name" : "S",
-      "issues" : 22
+      "issues" : 24
     }, {
       "name" : "M",
       "issues" : 35
@@ -4231,9 +4275,9 @@
       "issues" : 2
     } ],
     "unsized" : 0,
-    "left" : 60,
+    "left" : 62,
     "minutes" : null,
-    "unestimated" : 60,
+    "unestimated" : 62,
     "review" : 16
   }
 }

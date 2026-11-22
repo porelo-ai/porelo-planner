@@ -35,12 +35,26 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
         /** Its text. */
         TEXT,
         /** What it is: a story or an issue. */
-        KIND
+        KIND,
+        /** Who works it. */
+        WORKER,
+        /** How much harm its change can do. */
+        RISK
     }
 
-    /** What a warning that holds work back is about: the state, parent, waits, id or kind. */
+    /**
+     * What a warning that holds work back is about: the state, parent, waits, id, kind, worker or
+     * risk.
+     */
     private static final Set<Concern> HOLDING =
-            EnumSet.of(Concern.STATE, Concern.PARENT, Concern.BLOCKERS, Concern.ID, Concern.KIND);
+            EnumSet.of(
+                    Concern.STATE,
+                    Concern.PARENT,
+                    Concern.BLOCKERS,
+                    Concern.ID,
+                    Concern.KIND,
+                    Concern.WORKER,
+                    Concern.RISK);
 
     /** Checks the kind's spelling and copies the concerns. */
     public Warning {
@@ -58,8 +72,8 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
 
     /**
      * Whether work never starts on an item with this warning, nor a move or an edit, since it is
-     * about the item's state, parent, waits, id or kind, which a hand edit could otherwise slip
-     * past a work rule.
+     * about the item's state, parent, waits, id, kind, worker or risk, which a hand edit could
+     * otherwise slip past a work rule or a careful gate.
      *
      * @return true when it holds the item back
      */
@@ -123,6 +137,12 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
 
     /** The kind of an issue whose parent or blocker the board cannot place. */
     public static final String DEPENDS_ON_UNPLACED = "DependsOnUnplaced";
+
+    /** The kind of an issue whose worker is none the planner knows. */
+    public static final String UNKNOWN_WORKER = "UnknownWorker";
+
+    /** The kind of an issue whose risk is none the planner knows. */
+    public static final String UNKNOWN_RISK = "UnknownRisk";
 
     /**
      * An item whose state is none of the workflow's; the board shows it in a column of its own.
@@ -322,6 +342,34 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
                 "An issue it stands under or waits on is not placed on the board, so it is shown"
                         + " without that link.",
                 Set.of(Concern.PARENT, Concern.BLOCKERS));
+    }
+
+    /**
+     * An issue whose worker is none the planner knows, shown as an agent's and held, so no agent
+     * starts on what a person may have meant to work.
+     *
+     * @return the warning
+     */
+    public static Warning unknownWorker() {
+        return new Warning(
+                UNKNOWN_WORKER,
+                "Its worker is none the planner knows, so no work starts on it until one it knows is"
+                        + " set.",
+                Set.of(Concern.WORKER));
+    }
+
+    /**
+     * An issue whose risk is none the planner knows, shown as ordinary and held, so no task starts
+     * on it with less care than was meant.
+     *
+     * @return the warning
+     */
+    public static Warning unknownRisk() {
+        return new Warning(
+                UNKNOWN_RISK,
+                "Its risk is none the planner knows, so no work starts on it until one it knows is"
+                        + " set.",
+                Set.of(Concern.RISK));
     }
 
     /**

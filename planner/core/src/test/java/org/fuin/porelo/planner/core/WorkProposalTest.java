@@ -805,8 +805,9 @@ class WorkProposalTest {
     }
 
     @Test
-    void anIssueInAStateOutsideTheWorkflowIsHeldAndItsSiblingsStillChosen() {
-        // A state the workflow does not know must never count as the least advanced one.
+    void anIssueInAStateOutsideTheWorkflowIsHeldWithItsSubIssuesAndItsSiblingsStillChosen() {
+        // A state the workflow does not know must never count as the least advanced one, and work
+        // under a parent a person stopped by hand must not start while the parent stays stopped.
         final WorkProposal proposal =
                 WorkProposal.propose(
                         warned(
@@ -816,16 +817,45 @@ class WorkProposalTest {
                         "ST1",
                         "Building");
         assertThat(proposal.repositories())
-                .as("the sub-issue and the other repository's issue in Backlog are worked")
+                .as("only the other repository's issue in Backlog is worked")
                 .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
-                .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1.1")),
-                        org.assertj.core.groups.Tuple.tuple("beta", List.of("BB1")));
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("beta", List.of("BB1")));
         assertThat(proposal.held())
-                .as("the issue in doubt is held")
+                .as("the issue in doubt is held, and its sub-issue with the parent's words")
                 .containsExactly(
                         new WorkProposal.Held(
-                                "AA1", "AA1: " + Warning.stateOutsideWorkflow().text()));
+                                "AA1", "AA1: " + Warning.stateOutsideWorkflow().text()),
+                        new WorkProposal.Held(
+                                "AA1.1",
+                                "AA1.1: it stands under AA1, which is held back. AA1: "
+                                        + Warning.stateOutsideWorkflow().text()));
+    }
+
+    @Test
+    void anIssueWhoseWorkerOrRiskThePlannerDoesNotKnowIsHeldWithItsWarning() {
+        // An issue a person meant to work, or meant to be worked with care, must not reach an
+        // agent as an ordinary agent's issue because its field holds a value the planner lacks.
+        final WorkProposal proposal =
+                WorkProposal.propose(
+                        warned(
+                                board(WorkRule.Per.REPOSITORY),
+                                Map.of(
+                                        "BB1",
+                                        Warning.unknownWorker(),
+                                        "AA1.1",
+                                        Warning.unknownRisk()),
+                                Map.of()),
+                        "ST1",
+                        "Building");
+        assertThat(proposal.repositories())
+                .as("only the parent whose own fields are known is worked")
+                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1")));
+        assertThat(proposal.held())
+                .as("each named with its warning")
+                .containsExactlyInAnyOrder(
+                        new WorkProposal.Held("AA1.1", "AA1.1: " + Warning.unknownRisk().text()),
+                        new WorkProposal.Held("BB1", "BB1: " + Warning.unknownWorker().text()));
     }
 
     @Test

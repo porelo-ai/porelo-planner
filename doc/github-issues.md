@@ -125,6 +125,12 @@ are added, as the Markdown store's stage records count them; a pause and a perso
   be reordered.
 - An item with more sub-issues, blockers, labels or field values than one page of GitHub's answer carries is shown
   as far as it was read, warned, and its story says that an issue of it may be missing.
+- An issue whose `Worker` or `Risk` is an option the planner does not know is shown as an agent's and ordinary,
+  warned, and held: no work starts on it until a person sets an option the planner knows.
+- Every issue under a held issue, at any depth, is held with it; a parent whose `Status` alone is outside the
+  workflow still lets its sub-issues be moved, as it may be moved itself.
+- A story the board cannot show whole - an issue of it outside the project or left out, an `Also needs` line that
+  names nothing, or one read past one page - is never moved to a completed state; it may still be rejected.
 - An issue without a `Status` stands in the workflow's first state, unwarned; no save writes its `Status` until it is
   moved. An issue or a story whose `Status` is outside the workflow is shown in that state under its story, or with
   its issues, warned `StateOutsideWorkflow`, and warned for any other fault besides; no work starts on it, and a move

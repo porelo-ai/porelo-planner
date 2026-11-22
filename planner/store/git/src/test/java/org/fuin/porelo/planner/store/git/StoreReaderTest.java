@@ -11,6 +11,7 @@ import java.util.Optional;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.git.stories.Story;
@@ -428,8 +429,9 @@ class StoreReaderTest {
     }
 
     @Test
-    void aWorkerOtherThanAgentOrManualIsAFaultNamingTheFileAndLeavesTheIssueOut() {
-        // A worker misspelled and read as either would start or hold work nobody chose.
+    void aWorkerOtherThanAgentOrManualIsShownAsAnAgentsWarnedAndNoFault() {
+        // A worker misspelled and read as either would start or hold work nobody chose; left out,
+        // the issue would vanish from the board for one wrong word.
         final Tree tree = new Tree();
         tree.files.put("issues/XY01-One.md", worked(issue("XY01", "Idea"), "agent"));
         tree.files.put("issues/XY02-Two.md", worked(issue("XY02", "Idea"), "Robot"));
@@ -437,25 +439,16 @@ class StoreReaderTest {
 
         final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
 
+        assertThat(part.faults()).as("nothing left out").isEmpty();
         assertThat(part.issues())
-                .as("only the issue whose head the schema takes")
-                .extracting(Issue::id)
-                .containsExactly("XY03");
-        assertThat(part.faults())
-                .as("each faulty head named with its file and its worker")
-                .hasSize(2)
-                .anySatisfy(
-                        fault ->
-                                assertThat(fault)
-                                        .as("the first")
-                                        .startsWith("porelo-other: issues/XY01-One.md: ")
-                                        .contains("/worker"))
-                .anySatisfy(
-                        fault ->
-                                assertThat(fault)
-                                        .as("the second")
-                                        .startsWith("porelo-other: issues/XY02-Two.md: ")
-                                        .contains("/worker"));
+                .as("each issue shown, an unknown worker as an agent's and warned")
+                .extracting(Issue::id, Issue::worker, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY01", Worker.AGENT, List.of(Warning.unknownWorker())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY02", Worker.AGENT, List.of(Warning.unknownWorker())),
+                        org.assertj.core.groups.Tuple.tuple("XY03", Worker.AGENT, List.of()));
     }
 
     @Test
@@ -517,8 +510,9 @@ class StoreReaderTest {
     }
 
     @Test
-    void aRiskOtherThanTheThreeSpellingsIsAFaultNamingTheFileAndLeavesTheIssueOut() {
-        // A risk misspelled and read as ordinary would hide harm the head meant to name.
+    void aRiskOtherThanTheThreeSpellingsIsShownAsOrdinaryWarnedAndNoFault() {
+        // A risk misspelled and read as ordinary would hide harm the head meant to name; left out,
+        // the issue would vanish from the board for one wrong word.
         final Tree tree = new Tree();
         tree.files.put("issues/XY01-One.md", risked(issue("XY01", "Idea"), "Harm"));
         tree.files.put("issues/XY02-Two.md", risked(issue("XY02", "Idea"), "high"));
@@ -526,25 +520,16 @@ class StoreReaderTest {
 
         final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
 
+        assertThat(part.faults()).as("nothing left out").isEmpty();
         assertThat(part.issues())
-                .as("only the issue whose head the schema takes")
-                .extracting(Issue::id)
-                .containsExactly("XY03");
-        assertThat(part.faults())
-                .as("each faulty head named with its file and its risk")
-                .hasSize(2)
-                .anySatisfy(
-                        fault ->
-                                assertThat(fault)
-                                        .as("the first")
-                                        .startsWith("porelo-other: issues/XY01-One.md: ")
-                                        .contains("/risk"))
-                .anySatisfy(
-                        fault ->
-                                assertThat(fault)
-                                        .as("the second")
-                                        .startsWith("porelo-other: issues/XY02-Two.md: ")
-                                        .contains("/risk"));
+                .as("each issue shown, an unknown risk as ordinary and warned")
+                .extracting(Issue::id, Issue::risk, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY01", Risk.ORDINARY, List.of(Warning.unknownRisk())),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "XY02", Risk.ORDINARY, List.of(Warning.unknownRisk())),
+                        org.assertj.core.groups.Tuple.tuple("XY03", Risk.ORDINARY, List.of()));
     }
 
     @Test

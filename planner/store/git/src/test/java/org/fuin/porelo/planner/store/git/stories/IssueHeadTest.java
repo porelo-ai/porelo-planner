@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.git.stories;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -80,5 +81,46 @@ class IssueHeadTest {
         assertThat(IssueHead.read(head.file("Body.\n"), WORKFLOW))
                 .as("the written head reads back as itself")
                 .isEqualTo(head);
+    }
+
+    @Test
+    void onlyTheBoardReadsAWorkerOrRiskTheSchemaDoesNotName() {
+        // A commit check or index command that took an unknown worker or risk would let it into
+        // the repository; the board that refused it would leave the issue out for one wrong word.
+        final IssueHead head =
+                new IssueHead(
+                        "XY07",
+                        "Served",
+                        "Idea",
+                        "S",
+                        "Medium",
+                        1,
+                        List.of(),
+                        "Something.",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "Robot",
+                        "extreme");
+        final String file = head.file("Body.\n");
+
+        assertThatThrownBy(() -> IssueHead.read(file, WORKFLOW))
+                .as("the strict read refuses both")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/worker")
+                .hasMessageContaining("/risk");
+        assertThat(IssueHead.readForBoard(file, WORKFLOW))
+                .as("the board's read takes both as they stand")
+                .isEqualTo(head);
+        assertThatThrownBy(
+                        () ->
+                                IssueHead.readForBoard(
+                                        file.replace("\"worker\": \"Robot\"", "\"worker\": 7"),
+                                        WORKFLOW))
+                .as("a worker that is no text at all stays refused")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/worker");
     }
 }

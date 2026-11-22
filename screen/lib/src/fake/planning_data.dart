@@ -2695,6 +2695,62 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
               "text": "An issue it stands under or waits on is not placed on the board, so it is shown without that link."
             }
           ]
+        },
+        {
+          "id": "B884",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B884",
+          "title": "An issue whose worker the planner does not know",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "UnknownWorker",
+              "text": "Its worker is none the planner knows, so no work starts on it until one it knows is set."
+            }
+          ]
+        },
+        {
+          "id": "B885",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "link": "https://example.org/issues/B885",
+          "title": "An issue whose risk the planner does not know",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": [
+            {
+              "kind": "UnknownRisk",
+              "text": "Its risk is none the planner knows, so no work starts on it until one it knows is set."
+            }
+          ]
         }
       ],
       "description": "",

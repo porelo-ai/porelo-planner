@@ -515,8 +515,14 @@ public final class IssueMapping {
             waitsOn.add(Wait.unreadable());
         }
         final String size = choice(id, item, FieldNames.SIZE, SIZES, faults);
-        final Worker worker = workerOf(id, item, faults);
-        final Risk risk = riskOf(id, item, faults);
+        final Worker worker = workerOf(item);
+        if (worker == null) {
+            warnings = withAdded(warnings, Warning.unknownWorker());
+        }
+        final Risk risk = riskOf(item);
+        if (risk == null) {
+            warnings = withAdded(warnings, Warning.unknownRisk());
+        }
         String body = item.body();
         if (body.length() > BodySections.LONGEST) {
             // The board holds what GitHub takes; the text itself is a person's and not repeated.
@@ -533,8 +539,9 @@ public final class IssueMapping {
                 parent,
                 item.link(),
                 body,
-                worker,
-                risk,
+                // Shown as an agent's and ordinary, held by its warning until a person sets it.
+                worker == null ? Worker.AGENT : worker,
+                risk == null ? Risk.ORDINARY : risk,
                 figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
                 figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
                 choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults),
@@ -942,16 +949,13 @@ public final class IssueMapping {
         return value;
     }
 
-    private static Worker workerOf(
-            final String id, final ItemView item, final List<String> faults) {
+    /** The Worker the item names, an agent when it names none, or null for one unknown. */
+    private static @Nullable Worker workerOf(final ItemView item) {
         final String value = item.fields().getOrDefault(FieldNames.WORKER, "");
         return switch (value) {
             case "", "Agent" -> Worker.AGENT;
             case "Manual" -> Worker.MANUAL;
-            default -> {
-                faults.add(id + " has a Worker the planner does not know, shown as Agent");
-                yield Worker.AGENT;
-            }
+            default -> null;
         };
     }
 
@@ -959,7 +963,8 @@ public final class IssueMapping {
         return worker == Worker.MANUAL ? "Manual" : "Agent";
     }
 
-    private static Risk riskOf(final String id, final ItemView item, final List<String> faults) {
+    /** The Risk the item names, ordinary when it names none, or null for one unknown. */
+    private static @Nullable Risk riskOf(final ItemView item) {
         final String value = item.fields().getOrDefault(FieldNames.RISK, "");
         if (value.isEmpty()) {
             return Risk.ORDINARY;
@@ -967,8 +972,7 @@ public final class IssueMapping {
         try {
             return Risk.of(value);
         } catch (final IllegalArgumentException e) {
-            faults.add(id + " has a Risk the planner does not know, shown as ordinary");
-            return Risk.ORDINARY;
+            return null;
         }
     }
 

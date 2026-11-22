@@ -652,7 +652,8 @@ public final class Moves {
 
     /**
      * A story is completed only once each of its issues stands closed or in the state the last work
-     * of the rules leads to, where finished work waits for the person's test.
+     * of the rules leads to, where finished work waits for the person's test; one whose store could
+     * not name every issue of it never is, since an issue left out may still be open.
      */
     private static void checkCompleted(
             final Board board,
@@ -660,6 +661,12 @@ public final class Moves {
             final String to,
             final Map<String, String> states,
             final boolean afterMoves) {
+        if (!story.issuesWhole()) {
+            final String reason =
+                    "Not every issue of it is on the board, so whether all are done cannot be told.";
+            throw new Refused(
+                    "MoveNotAllowed", reason, item(story.id(), story.state(), to, reason));
+        }
         // An issue in doubt counts as open: finishing over it would close work no one can see. One
         // held by its state alone is judged once the batch's own moves are known, in the state
         // a move of the batch gives it; without one it stays in doubt.

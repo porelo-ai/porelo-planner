@@ -238,9 +238,9 @@ public record Board(
     }
 
     /**
-     * Says why no work, move or edit may start on an item: its id names two items, or it carries a
-     * warning about its state, parent, waits or id. The one check every route to work or a change
-     * passes.
+     * Says why no work, move or edit may start on an item: its id names two items, it carries a
+     * warning that holds work back, or a parent above it is held so. The one check every route to
+     * work or a change passes.
      *
      * @param id a story's or an issue's id
      * @return the words of a refusal; empty when nothing holds the item back
@@ -251,7 +251,8 @@ public record Board(
 
     /**
      * Says why no move may name an item: what {@link #holdsWork(String)} says, but for a warning
-     * about its state alone, since a move into a state of the workflow is what sets that right.
+     * about its state alone, its own or a parent's, since a move into a state of the workflow is
+     * what sets that right.
      *
      * @param id a story's or an issue's id
      * @return the words of a refusal; empty when the item may be moved
@@ -266,6 +267,31 @@ public record Board(
 
     private Optional<String> held(
             final String id, final java.util.function.Predicate<Warning> holds) {
+        final Optional<String> own = heldItself(id, holds);
+        if (own.isPresent()) {
+            return own;
+        }
+        // Work under a parent a person stopped, or the board cannot place, is stopped with it.
+        final Set<String> seen = new HashSet<>(Set.of(id));
+        String parent = parentOf(id);
+        while (parent != null && seen.add(parent)) {
+            final Optional<String> above = heldItself(parent, holds);
+            if (above.isPresent()) {
+                return Optional.of(
+                        id
+                                + ": it stands under "
+                                + parent
+                                + ", which is held back. "
+                                + above.get());
+            }
+            parent = parentOf(parent);
+        }
+        return Optional.empty();
+    }
+
+    /** Why the item itself is held back, by its id or its own warnings. */
+    private Optional<String> heldItself(
+            final String id, final java.util.function.Predicate<Warning> holds) {
         final Optional<String> twice = twice(id);
         if (twice.isPresent()) {
             return twice;
@@ -279,6 +305,12 @@ public record Board(
         return texts.isEmpty()
                 ? Optional.empty()
                 : Optional.of(id + ": " + String.join(" ", texts));
+    }
+
+    /** The parent of the one issue of an id, or null for a story, an id on two issues or none. */
+    private @Nullable String parentOf(final String id) {
+        final List<Issue> found = copies(id);
+        return found.size() == 1 ? found.getFirst().parent() : null;
     }
 
     private List<Issue> copies(final String id) {

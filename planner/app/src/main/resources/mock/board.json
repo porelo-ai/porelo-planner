@@ -778,7 +778,7 @@
       "warnings": [],
       "priority": "Medium",
       "size": null,
-      "issues": ["B870", "B871", "B872", "B873", "B874", "B875", "B876", "B877", "B878", "B879", "B880", "B881", "B882", "B883"],
+      "issues": ["B870", "B871", "B872", "B873", "B874", "B875", "B876", "B877", "B878", "B879", "B880", "B881", "B882", "B883", "B884", "B885"],
       "description": "Each issue carries one warning of its own kind.",
       "link": "https://example.org/stories/ST296"
     },
@@ -2329,6 +2329,42 @@
       "minutes": null,
       "priority": "Medium",
       "warnings": [{"kind": "DependsOnUnplaced", "text": "An issue it stands under or waits on is not placed on the board, so it is shown without that link.", "concerns": ["PARENT", "BLOCKERS"]}]
+    },
+    {
+      "id": "B884",
+      "repository": "porelo",
+      "title": "An issue whose worker the planner does not know",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "waitsOn": [],
+      "parent": null,
+      "link": "https://example.org/issues/B884",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "UnknownWorker", "text": "Its worker is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["WORKER"]}]
+    },
+    {
+      "id": "B885",
+      "repository": "porelo",
+      "title": "An issue whose risk the planner does not know",
+      "state": "Backlog",
+      "size": "S",
+      "blockedBy": [],
+      "waitsOn": [],
+      "parent": null,
+      "link": "https://example.org/issues/B885",
+      "text": "**What must be true.** The work meets the issue description.\n",
+      "worker": "AGENT",
+      "risk": "ORDINARY",
+      "estimate": null,
+      "minutes": null,
+      "priority": "Medium",
+      "warnings": [{"kind": "UnknownRisk", "text": "Its risk is none the planner knows, so no work starts on it until one it knows is set.", "concerns": ["RISK"]}]
     }
   ]
 }

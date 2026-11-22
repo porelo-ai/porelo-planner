@@ -27,9 +27,10 @@ import org.jspecify.annotations.Nullable;
  * @param severity a defect's severity, else null
  * @param kind what the work is, else null
  * @param openQuestions the questions waiting on the operator, else null
- * @param worker who works it, {@code Agent} or {@code Manual}, else null, read as {@code Agent}
+ * @param worker who works it, {@code Agent} or {@code Manual}, else null, read as {@code Agent};
+ *     any other only as the board reads a head, for it to warn about
  * @param risk how much harm its change can do, {@code harm}, {@code ordinary} or {@code small},
- *     else null, read as {@code ordinary}
+ *     else null, read as {@code ordinary}; any other only as the board reads a head
  */
 public record IssueHead(
         String id,
@@ -134,10 +135,10 @@ public record IssueHead(
     }
 
     /**
-     * Reads the head of an issue's text as the board shows it: a state the workflow does not know
-     * is read as it stands, for the board to warn about, while every other fault refuses the head
-     * as {@link #read(String, Workflow)} does. The commit check and the index commands never read
-     * this way.
+     * Reads the head of an issue's text as the board shows it: a state the workflow does not know,
+     * and a worker or a risk the schema does not name, are read as they stand, for the board to
+     * warn about, while every other fault refuses the head as {@link #read(String, Workflow)} does.
+     * The commit check and the index commands never read this way.
      *
      * @param text the issue file's text
      * @param workflow the project's states
@@ -249,7 +250,8 @@ public record IssueHead(
 
     /**
      * Reads and checks a head, adding each fault without the file's name; with {@code anyState} a
-     * state the workflow does not know is no fault.
+     * state the workflow does not know, and a worker or risk the schema does not name, are no
+     * fault.
      *
      * @return the head, or null when it could not be read or a fault was found
      */
@@ -280,6 +282,15 @@ public record IssueHead(
             return null;
         }
         final List<String> errors = IssueSchema.faults(data);
+        if (anyState) {
+            // A worker or risk the schema does not name is read as it stands, for the board to
+            // warn.
+            for (final String field : List.of("worker", "risk")) {
+                if (data.path(field).isTextual()) {
+                    errors.removeIf(error -> error.startsWith("/" + field + ": "));
+                }
+            }
+        }
         if (!anyState && data.path("state").isTextual()) {
             try {
                 workflow.order(data.path("state").asText());

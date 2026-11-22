@@ -395,4 +395,73 @@ class BoardTest {
                 .as("a move into the workflow sets the state right")
                 .isEmpty();
     }
+
+    /** An issue of the planner's repository named by its reference, under the given parent. */
+    private static Issue under(final int number, final Integer parent, final Warning... warnings) {
+        return new Issue(
+                        "porelo-planner#" + number,
+                        "porelo-planner",
+                        "An issue",
+                        "Idea",
+                        "S",
+                        List.of(),
+                        parent == null ? null : "porelo-planner#" + parent,
+                        null,
+                        "Text")
+                .withWarnings(List.of(warnings));
+    }
+
+    @Test
+    void anIssueUnderAHeldParentIsHeldAtAnyDepthAndMovedOnlyAsTheParentsWarningAllows() {
+        // Work under a parent a person stopped, or one the board cannot place, must not start on
+        // its sub-issues; a parent's state alone must not hold the move that is the person's own.
+        final Board board =
+                board(
+                        List.of(),
+                        List.of(
+                                under(1, null, Warning.parentOutsideProject()),
+                                under(2, 1),
+                                under(3, 2),
+                                issue("XY04", "Parked")
+                                        .withWarnings(List.of(Warning.stateOutsideWorkflow())),
+                                new Issue(
+                                        "XY04.1",
+                                        "porelo-planner",
+                                        "A part",
+                                        "Idea",
+                                        "S",
+                                        List.of(),
+                                        "XY04",
+                                        null,
+                                        "Text"),
+                                under(5, null)));
+        final String parent = "porelo-planner#1: " + Warning.parentOutsideProject().text();
+        assertThat(board.holdsWork("porelo-planner#2"))
+                .as("a sub-issue of a held parent, naming the parent's words")
+                .contains(
+                        "porelo-planner#2: it stands under porelo-planner#1, which is held back. "
+                                + parent);
+        assertThat(board.holdsWork("porelo-planner#3"))
+                .as("and one below it")
+                .contains(
+                        "porelo-planner#3: it stands under porelo-planner#1, which is held back. "
+                                + parent);
+        assertThat(board.holdsMove("porelo-planner#2"))
+                .as("whose parent no move sets right")
+                .isPresent();
+        assertThat(board.holdsWork("XY04.1"))
+                .as("a sub-issue of a parent in a state outside the workflow")
+                .contains(
+                        "XY04.1: it stands under XY04, which is held back. XY04: "
+                                + Warning.stateOutsideWorkflow().text());
+        assertThat(board.holdsMove("XY04.1")).as("may still be moved, as its parent may").isEmpty();
+        assertThat(board.holdsWork("porelo-planner#5")).as("an issue under nothing").isEmpty();
+    }
+
+    @Test
+    void parentsThatLeadBackToAnIssueEndTheWalkAndHoldNothingByThemselves() {
+        // A circle a race left on the tracker must not hang every route that asks what is held.
+        final Board board = board(List.of(), List.of(under(1, 2), under(2, 1)));
+        assertThat(board.holdsWork("porelo-planner#1")).as("neither warned").isEmpty();
+    }
 }

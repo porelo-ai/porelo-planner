@@ -1109,6 +1109,53 @@ class MovesTest {
     }
 
     @Test
+    void aStoryWhoseIssuesTheStoreCouldNotAllNameIsNotFinishedButMayStillBeRejected() {
+        // Harm: a story finished while an issue of it that the board does not show is still open,
+        // its known issues all done.
+        final Story partial =
+                new Story(
+                                "ST1",
+                                "A story",
+                                "Review",
+                                false,
+                                "High",
+                                null,
+                                List.of("PL1"),
+                                "",
+                                null,
+                                false)
+                        .withWarnings(List.of(Warning.issueOutsideProject()));
+        final Board board = warnedBoard(partial, issue("PL1", "Review", null));
+        assertThatThrownBy(
+                        () ->
+                                Moves.check(
+                                        board,
+                                        List.of(story("ST1", "Finished")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS))
+                .as("the story stays open")
+                .isInstanceOf(Moves.Refused.class)
+                .hasMessage(
+                        "Not every issue of it is on the board, so whether all are done cannot be"
+                                + " told.")
+                .satisfies(
+                        error ->
+                                assertThat(((Moves.Refused) error).name())
+                                        .isEqualTo("MoveNotAllowed"));
+        assertThat(
+                        Moves.check(
+                                        board,
+                                        List.of(story("ST1", "Rejected")),
+                                        false,
+                                        DERIVE,
+                                        NO_RUNS)
+                                .issues())
+                .as("rejecting it finishes nothing and is still the person's to do")
+                .containsExactly(entry("PL1", "Rejected"));
+    }
+
+    @Test
     void aStoryMoveCarriesItsIssueInAKnownStateAndLeavesTheOneInDoubt() {
         // A state the workflow does not know must never count as the earliest one.
         final Board board =

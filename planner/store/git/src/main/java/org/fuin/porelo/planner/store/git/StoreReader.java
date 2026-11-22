@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueIndex;
@@ -400,6 +401,20 @@ public final class StoreReader implements PartReader {
         if (head == null) {
             throw new IllegalArgumentException("it has no JSON head");
         }
+        final List<Warning> warnings = new ArrayList<>();
+        Worker worker = worker(head.worker());
+        if (worker == null) {
+            // Shown as an agent's and held until a person names a worker the planner knows.
+            warnings.add(Warning.unknownWorker());
+            worker = Worker.AGENT;
+        }
+        Risk risk;
+        try {
+            risk = head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk());
+        } catch (final IllegalArgumentException e) {
+            warnings.add(Warning.unknownRisk());
+            risk = Risk.ORDINARY;
+        }
         return new Issue(
                 head.id(),
                 repository,
@@ -410,27 +425,27 @@ public final class StoreReader implements PartReader {
                 head.parent(),
                 null,
                 text,
-                worker(head.worker()),
-                head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk()),
+                worker,
+                risk,
                 null,
                 null,
                 // The head's schema takes only these; any other is read as none.
                 org.fuin.porelo.planner.store.Story.PRIORITIES.contains(head.priority())
                         ? head.priority()
                         : null,
-                List.of(),
+                warnings,
                 List.of());
     }
 
-    /** The worker a head names; the schema took only these spellings, or none. */
-    private static Worker worker(final @Nullable String worker) {
+    /** The worker a head names, an agent when it names none, or null for any other spelling. */
+    private static @Nullable Worker worker(final @Nullable String worker) {
         if (worker == null || worker.equals("Agent")) {
             return Worker.AGENT;
         }
         if (worker.equals("Manual")) {
             return Worker.MANUAL;
         }
-        throw new IllegalArgumentException("/worker: " + worker + " is no worker");
+        return null;
     }
 
     private String text(final String repository, final String commit, final String file) {

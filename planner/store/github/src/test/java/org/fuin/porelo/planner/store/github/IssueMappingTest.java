@@ -1319,6 +1319,49 @@ class IssueMappingTest {
     }
 
     @Test
+    void anUnknownWorkerOrRiskIsWarnedOnItsIssueAndNamedNowhereElse() {
+        // Harm: an issue a person gave a Worker or Risk the planner does not know is proposed to
+        // an agent under ordinary care, with nothing on its card to say so.
+        final Item story = new Item("example-project", 1).story();
+        final Item worker =
+                new Item("example-project", 2)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.WORKER, SECRET_TITLE);
+        final Item risk =
+                new Item("example-project", 3)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.RISK, "Harm");
+        final Item known =
+                new Item("example-project", 4)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.WORKER, "Manual")
+                        .field(FieldNames.RISK, "harm");
+        story.sub(worker).sub(risk).sub(known);
+
+        final IssueMapping.Mapped mapped = read(story, worker, risk, known);
+
+        assertThat(mapped.issues())
+                .as("each issue shown, an unknown value as an agent's and ordinary, and warned")
+                .extracting(Issue::id, Issue::worker, Issue::risk, Issue::warnings)
+                .containsExactly(
+                        Tuple.tuple(
+                                "example-project#2",
+                                Worker.AGENT,
+                                Risk.ORDINARY,
+                                List.of(Warning.unknownWorker())),
+                        Tuple.tuple(
+                                "example-project#3",
+                                Worker.AGENT,
+                                Risk.ORDINARY,
+                                List.of(Warning.unknownRisk())),
+                        Tuple.tuple("example-project#4", Worker.MANUAL, Risk.HARM, List.of()));
+        assertThat(mapped.faults()).as("the item carries it, not the project").isEmpty();
+    }
+
+    @Test
     void anIssuesPriorityStaysThroughItsStagesSumAndItsParentsWorker() {
         // Harm: a priority dropped on the way, so a story is judged against issues without one.
         final Item part =
