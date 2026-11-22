@@ -2962,7 +2962,8 @@ public final class WorkRun {
                                                 i.worker(),
                                                 i.risk(),
                                                 i.estimate(),
-                                                i.minutes()))
+                                                i.minutes(),
+                                                i.priority()))
                         .toList(),
                 board.work(),
                 board.repositories(),

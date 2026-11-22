@@ -444,6 +444,42 @@ class MockStoreTest {
     }
 
     @Test
+    void anIssuesPrioritySetByHandStaysThroughASizeWriteAndAMove() {
+        // Harm: the window's mock shows a story's rank against a priority a later edit dropped.
+        final Board prioritized =
+                store.setFields(
+                        FIRST,
+                        "B542",
+                        new org.fuin.porelo.planner.store.Fields(
+                                java.util.Set.of(
+                                        org.fuin.porelo.planner.store.Fields.Field.PRIORITY),
+                                null,
+                                null,
+                                "Low",
+                                null));
+        assertThat(prioritized.issue("B542").orElseThrow().priority())
+                .as("the priority set on the board")
+                .isEqualTo("Low");
+
+        final Board sized =
+                store.setFields(
+                        prioritized.revision(),
+                        "B542",
+                        new org.fuin.porelo.planner.store.Fields(
+                                java.util.Set.of(org.fuin.porelo.planner.store.Fields.Field.SIZE),
+                                "XL",
+                                null,
+                                null,
+                                null));
+        final Board moved = store.save(sized.revision(), moves(Map.of("B542", "Review")));
+
+        assertThat(moved.issue("B542").orElseThrow())
+                .as("moved and sized, its priority kept")
+                .extracting(Issue::state, Issue::size, Issue::priority)
+                .containsExactly("Review", "XL", "Low");
+    }
+
+    @Test
     void eachEditByHandIsAnsweredWithANewRevisionHoldingItAndAStaleOneChangesNothing() {
         // A mock that answered an edit without holding it would let the window's tests of a kept
         // board pass, and one that took an old revision would let a lost edit pass.

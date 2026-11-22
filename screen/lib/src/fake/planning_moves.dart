@@ -175,6 +175,8 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   }
   settleStoryStates(board);
   board['revision'] = '${source['revision']}:moved';
+  // The fake does not judge the stories' rules, so a change shows none of the breaches it named.
+  board.remove('rules');
   board['moved'] = moved;
   board['storyMisfits'] = storyMisfits;
   return board;
@@ -332,6 +334,8 @@ Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id,
     each['worker'] = worker;
   }
   board['revision'] = '${source['revision']}:worker';
+  // The fake does not judge the stories' rules, so a change shows none of the breaches it named.
+  board.remove('rules');
   return board;
 }
 
@@ -441,6 +445,8 @@ Map<String, dynamic> applyPlanningStoryIssues(
   ];
   settleStoryStates(board);
   board['revision'] = '$revision:issues';
+  // The fake does not judge the stories' rules, so a change shows none of the breaches it named.
+  board.remove('rules');
   return board;
 }
 

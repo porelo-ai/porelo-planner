@@ -213,3 +213,11 @@ Widget? planningGivenMark(PlanStory story, {ValueChanged<String>? onFollow}) {
     },
   );
 }
+
+/// The mark of an item breaking the stories' rules, its words in the tooltip; null when it breaks none.
+Widget? planningRuleMark(List<String> words, {Key? key}) => words.isEmpty
+    ? null
+    : Tooltip(
+        message: planningShown(words.join('\n')),
+        child: Icon(Icons.rule, key: key, size: PlanningStyle.rowIcon),
+      );

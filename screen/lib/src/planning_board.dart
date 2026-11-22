@@ -1455,6 +1455,15 @@ class PlanningBoard extends ChangeNotifier {
   /// The issues the board left out because their Status is none of the workflow's states, by id.
   List<PlanOutsideIssue> get outside => snapshot?.outside ?? const [];
 
+  /// Each breach of the stories' rules the last whole board named; only shown, it holds no move back.
+  List<PlanRuleBreach> get rules => snapshot?.rules ?? const [];
+
+  /// The words of each breach of the stories' rules naming [item]; empty when it breaks none.
+  List<String> rulesOf(String item) => [
+    for (final breach in rules)
+      if (breach.item == item) breach.words,
+  ];
+
   /// Moves an issue outside the workflow into its state [to], which repairs it; the planner judges it as any issue's
   /// move. [revision] is the board's when the choice was offered.
   Future<void> moveOutside(String id, String to, {String? revision}) async {
@@ -1662,8 +1671,13 @@ class PlanningBoard extends ChangeNotifier {
     deferred?.$3();
   }
 
-  void _accept(PlanningSnapshot reply, {required int order, bool reconcile = true}) {
+  void _accept(PlanningSnapshot accepted, {required int order, bool reconcile = true}) {
     if (order <= _snapshotOrder) return;
+    final prior = snapshot;
+    // A read of the story list names no breaches; at the revision a whole board named them for, they still stand.
+    final reply = !accepted.rulesReported && prior != null && prior.rulesReported && prior.revision == accepted.revision
+        ? PlanningSnapshot.ruledBy(accepted, prior)
+        : accepted;
     snapshot = reply;
     _readingNoStory = _readNoStory(reply, _generation, reconcile: reconcile);
     // A story gone from the board loses its fold, so one saved anew under its id starts open.

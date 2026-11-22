@@ -525,6 +525,24 @@ class PlanOutsideIssue {
   final String link;
 }
 
+/// One breach of the stories' rules a whole board names: shown to the person, never holding a move back.
+class PlanRuleBreach {
+  /// Reads the fields the planner reports.
+  PlanRuleBreach.from(Map<String, dynamic> map)
+    : item = _planText(map, 'item'),
+      rule = _planText(map, 'rule'),
+      words = _planText(map, 'words');
+
+  /// The story's or the issue's id.
+  final String item;
+
+  /// The rule broken, as the planner names it.
+  final String rule;
+
+  /// The breach in the planner's words.
+  final String words;
+}
+
 /// A workflow or a whole board reply; absent fields stay empty.
 class PlanningSnapshot {
   /// Applies destinations explicitly confirmed by the save answer.
@@ -545,6 +563,9 @@ class PlanningSnapshot {
        ],
        repositories = source.repositories,
        repositoriesReported = source.repositoriesReported,
+       // A save may mend or break a rule; none is shown until the next whole board names them anew.
+       rules = const [],
+       rulesReported = false,
        statesReported = source.statesReported,
        phasesReported = source.phasesReported,
        storiesReported = source.storiesReported,
@@ -560,6 +581,11 @@ class PlanningSnapshot {
     : work = _planList(map['work'], PlanWorkRule.from),
       faults = _planStrings(map['faults']),
       outside = _planList(map['outside'], PlanOutsideIssue.from),
+      rules = [
+        for (final breach in _planList(map['rules'], PlanRuleBreach.from))
+          if (breach.item.isNotEmpty && breach.words.isNotEmpty) breach,
+      ],
+      rulesReported = map['rules'] is List,
       repositories = _planStrings(map['repositories']),
       repositoriesReported = _planStringsReported(map['repositories']),
       states = _planList(map['states'], PlanState.from),
@@ -579,6 +605,9 @@ class PlanningSnapshot {
       outside = board.statesReported ? board.outside : workflow.outside,
       repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
       repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
+      // Only a whole board names the breaches; a story list read beside the workflow names none.
+      rules = board.rules,
+      rulesReported = board.rulesReported,
       states = workflow.states,
       phases = workflow.phases,
       stories = board.stories,
@@ -587,6 +616,24 @@ class PlanningSnapshot {
       phasesReported = workflow.phasesReported,
       storiesReported = board.storiesReported,
       open = board.open;
+
+  /// [source] with the breaches a whole board named at its revision, since the breaches follow from the board alone.
+  PlanningSnapshot.ruledBy(PlanningSnapshot source, PlanningSnapshot whole)
+    : work = source.work,
+      faults = source.faults,
+      outside = source.outside,
+      repositories = source.repositories,
+      repositoriesReported = source.repositoriesReported,
+      rules = whole.rules,
+      rulesReported = whole.rulesReported,
+      states = source.states,
+      phases = source.phases,
+      stories = source.stories,
+      revision = source.revision,
+      statesReported = source.statesReported,
+      phasesReported = source.phasesReported,
+      storiesReported = source.storiesReported,
+      open = source.open;
 
   /// The work reported by the daemon.
   final List<PlanWorkRule> work;
@@ -600,6 +647,12 @@ class PlanningSnapshot {
 
   /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
   final List<String> repositories;
+
+  /// Each breach of the stories' rules the whole board named; empty when it named none or this is no whole board.
+  final List<PlanRuleBreach> rules;
+
+  /// Whether a whole board named the breaches, so [rules] says what this revision breaks.
+  final bool rulesReported;
 
   /// Whether the planner sent the repository list, which a streamed whole board must carry.
   final bool repositoriesReported;

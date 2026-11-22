@@ -119,6 +119,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "title": "Planning work in no story",
       "state": "Backlog",
       "size": "S",
+      "priority": "Medium",
       "blockedBy": [],
       "parent": null,
       "link": "https://example.org/issues/B900",
@@ -170,6 +171,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PJ74",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -190,6 +192,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/FC03",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -210,6 +213,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/FC09",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -230,6 +234,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/FC10",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -250,6 +255,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/FC11",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -270,6 +276,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/FC13",
           "title": "Planning work",
           "size": "M",
+          "priority": "Medium",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -401,6 +408,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PJ58",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -452,6 +460,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/SI05",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -501,6 +510,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Implementing",
           "title": "The host tool as a module of porelo",
           "size": "M",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/B540",
           "rounds": 0,
@@ -537,6 +547,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Implementing",
           "title": "The host tool reads the organization and a task by its signature",
           "size": "L",
+          "priority": "Highest",
           "blockedBy": [
             "B540"
           ],
@@ -558,6 +569,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B542",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -578,6 +590,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B543",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -598,6 +611,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B544",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -618,6 +632,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B545",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -638,6 +653,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B546",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -658,6 +674,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B547",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -678,6 +695,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B548",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -698,6 +716,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B549",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -718,6 +737,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B550",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -738,6 +758,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B551",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -758,6 +779,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B552",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -778,6 +800,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO156",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -798,6 +821,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO157",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -816,6 +840,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "The host tool's module builds in the porelo build",
           "size": "S",
+          "priority": "Highest",
           "blockedBy": [],
           "parent": "B540",
           "link": "https://example.org/issues/B540.1",
@@ -846,6 +871,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "A move runs without a terminal for a rehearsal",
           "size": "M",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/B553",
           "rounds": 0,
@@ -866,6 +892,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "A forge token’s reach checked against what a move needs",
           "size": "S",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/B554",
           "rounds": 0,
@@ -886,6 +913,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "A move driven through the window against a rented host",
           "size": "M",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/F444",
           "rounds": 0,
@@ -906,6 +934,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "What a rehearsal cannot drive in the window, stood in for",
           "size": "S",
+          "priority": "Highest",
           "blockedBy": [
             "F444"
           ],
@@ -928,6 +957,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "A move rehearsed on a rented server",
           "size": "L",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/HO158",
           "rounds": 0,
@@ -948,6 +978,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "A test person signs in through the gate unattended",
           "size": "S",
+          "priority": "Highest",
           "blockedBy": [],
           "link": "https://example.org/issues/MX89",
           "rounds": 0,
@@ -968,6 +999,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "The room’s scenarios are rehearsed on a host",
           "size": "S",
+          "priority": "Highest",
           "blockedBy": [
             "MX89"
           ],
@@ -990,6 +1022,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "state": "Backlog",
           "title": "The rehearsal says a wake was answered",
           "size": "XS",
+          "priority": "Highest",
           "blockedBy": [
             "MX89"
           ],
@@ -1035,6 +1068,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/MX24",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1055,6 +1089,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/MX36",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1075,6 +1110,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/MX39",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1095,6 +1131,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO07",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1115,6 +1152,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B231",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1156,6 +1194,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/IJ14",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1231,6 +1270,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT35",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1251,6 +1291,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT36",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1271,6 +1312,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT38",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1291,6 +1333,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT43",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1311,6 +1354,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT44",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1331,6 +1375,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT45",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1351,6 +1396,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT46",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1426,6 +1472,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PI43",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1446,6 +1493,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/OM44",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1466,6 +1514,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/CC45",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1486,6 +1535,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PI39",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1506,6 +1556,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/OM36",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1526,6 +1577,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/CC39",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1601,6 +1653,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PJ106",
           "title": "Planning work",
           "size": "M",
+          "priority": "High",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1730,6 +1783,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT42",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1750,6 +1804,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT39",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1770,6 +1825,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO52",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1790,6 +1846,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/SL36",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1810,6 +1867,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT40",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1830,6 +1888,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT41",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1850,6 +1909,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO53",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1881,6 +1941,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/SL35",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1912,6 +1973,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/B306",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1943,6 +2005,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/HO12",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1963,6 +2026,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT24",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -1983,6 +2047,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/BT25",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -2016,6 +2081,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/SL37",
           "title": "Planning work",
           "size": "S",
+          "priority": "Low",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -2036,6 +2102,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/SL38",
           "title": "Planning work",
           "size": "S",
+          "priority": "Low",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -2087,6 +2154,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/PJ62",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -2107,6 +2175,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "link": "https://example.org/issues/GH18",
           "title": "Planning work",
           "size": "M",
+          "priority": "Highest",
           "rounds": 0,
           "roundsMost": 2,
           "atWork": false,
@@ -2287,7 +2356,119 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       }
     }
   ],
-  "faults": []
+  "faults": [],
+  "rules": [
+    {
+      "item": "ST294",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST294 has no issue and no given state."
+    },
+    {
+      "item": "ST21",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST21 has no issue and no given state."
+    },
+    {
+      "item": "ST11",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST11 has no issue and no given state."
+    },
+    {
+      "item": "ST13",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST13 has no issue and no given state."
+    },
+    {
+      "item": "ST28",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST28 has no issue and no given state."
+    },
+    {
+      "item": "ST87",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST87 has no issue and no given state."
+    },
+    {
+      "item": "ST182",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST182 has no issue and no given state."
+    },
+    {
+      "item": "ST114",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST114 has no issue and no given state."
+    },
+    {
+      "item": "ST111",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST111 has no issue and no given state."
+    },
+    {
+      "item": "ST144",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST144 has no issue and no given state."
+    },
+    {
+      "item": "ST39",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST39 has no issue and no given state."
+    },
+    {
+      "item": "ST35",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST35 has no issue and no given state."
+    },
+    {
+      "item": "ST106",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST106 has no issue and no given state."
+    },
+    {
+      "item": "ST198",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST198 has no issue and no given state."
+    },
+    {
+      "item": "ST293",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST293 has no issue and no given state."
+    },
+    {
+      "item": "ST6",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST6 has no issue and no given state."
+    },
+    {
+      "item": "ST193",
+      "rule": "StoryPriorityBelowIssue",
+      "words": "ST193 has a lower priority than its open issue PJ106."
+    },
+    {
+      "item": "ST127",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST127 has no issue and no given state."
+    },
+    {
+      "item": "ST295",
+      "rule": "StoryStateMisfit",
+      "words": "ST295 has a given state its issues SL38 do not fit."
+    },
+    {
+      "item": "ST264",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST264 has no issue and no given state."
+    },
+    {
+      "item": "ST268",
+      "rule": "StoryWithoutIssueOrState",
+      "words": "ST268 has no issue and no given state."
+    },
+    {
+      "item": "B900",
+      "rule": "IssueInNoStory",
+      "words": "B900 stands past the workflow's first state in no story."
+    }
+  ]
 }
 ''') as Map<String, dynamic>;
 
@@ -2357,6 +2538,6 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   if (board['open'] case final Map<String, dynamic> open) 'open': open,
   if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
   // A planner's event is a whole board, so the screen takes changed rules from it.
-  for (final part in const ['states', 'phases', 'work', 'faults', 'outside'])
+  for (final part in const ['states', 'phases', 'work', 'faults', 'outside', 'rules'])
     if (board[part] case final List<dynamic> value) part: value,
 };

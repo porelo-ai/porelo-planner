@@ -320,7 +320,8 @@ public final class MockStore implements PlanningStore {
                                     issue.worker(),
                                     issue.risk(),
                                     issue.estimate(),
-                                    issue.minutes()));
+                                    issue.minutes(),
+                                    issue.priority()));
         }
         final Board sized =
                 new Board(
@@ -336,8 +337,8 @@ public final class MockStore implements PlanningStore {
     }
 
     /**
-     * Sets an issue's fields in memory: its size on the board, its estimate, priority and rank kept
-     * beside it, since the board shows none of them.
+     * Sets an issue's fields in memory: its size, estimate and priority on the board, and all but
+     * its size kept beside it with its rank.
      */
     @Override
     public synchronized Board setFields(
@@ -373,7 +374,8 @@ public final class MockStore implements PlanningStore {
             issues.add(
                     known.id().equals(issue)
                                     && (fields.named().contains(Fields.Field.SIZE)
-                                            || fields.named().contains(Fields.Field.ESTIMATE))
+                                            || fields.named().contains(Fields.Field.ESTIMATE)
+                                            || fields.named().contains(Fields.Field.PRIORITY))
                             ? new Issue(
                                     known.id(),
                                     known.repository(),
@@ -391,7 +393,10 @@ public final class MockStore implements PlanningStore {
                                     fields.named().contains(Fields.Field.ESTIMATE)
                                             ? estimate(fields.estimateMinutes())
                                             : known.estimate(),
-                                    known.minutes())
+                                    known.minutes(),
+                                    fields.named().contains(Fields.Field.PRIORITY)
+                                            ? fields.priority()
+                                            : known.priority())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -458,7 +463,8 @@ public final class MockStore implements PlanningStore {
                                     known.worker(),
                                     known.risk(),
                                     known.estimate(),
-                                    known.minutes())
+                                    known.minutes(),
+                                    known.priority())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -527,7 +533,8 @@ public final class MockStore implements PlanningStore {
                                     known.worker(),
                                     known.risk(),
                                     known.estimate(),
-                                    known.minutes())
+                                    known.minutes(),
+                                    known.priority())
                             : known);
         }
         current = saved(withItems(board, stories, issues), NOTHING);
@@ -664,7 +671,10 @@ public final class MockStore implements PlanningStore {
                             null,
                             "**What must be true.** " + issue.mustBeTrue() + "\n",
                             issue.worker(),
-                            Risk.ORDINARY));
+                            Risk.ORDINARY,
+                            null,
+                            null,
+                            issue.priority()));
         }
         int story = 0;
         for (final Story known : board.stories()) {
@@ -808,7 +818,8 @@ public final class MockStore implements PlanningStore {
                             writes.workers().getOrDefault(issue.id(), issue.worker()),
                             issue.risk(),
                             issue.estimate(),
-                            issue.minutes()));
+                            issue.minutes(),
+                            issue.priority()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {

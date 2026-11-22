@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../planning_board.dart';
+import 'planning_detail_widgets.dart';
 import 'planning_issue_row.dart';
 import 'style.dart';
 
@@ -78,6 +79,9 @@ class PlanningNoStoryCard extends StatelessWidget {
                 children: [
                   Icon(open ? Icons.expand_more : Icons.chevron_right, size: PlanningStyle.mark),
                   const Expanded(child: Text('No story')),
+                  ?planningRuleMark([
+                    for (final issue in issues) ...board.rulesOf(issue.id),
+                  ], key: Key('planning-no-story-rule $state')),
                   Text('${issues.length} ${issues.length == 1 ? 'issue' : 'issues'}'),
                 ],
               ),

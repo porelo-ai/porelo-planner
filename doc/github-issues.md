@@ -70,6 +70,10 @@ stage records count them; a pause and a person's move are shown, not summed.
   planned, and reopening sets the state back; an issue whose open or closed state disagrees with its `Status` is
   shown with its `Status` and named as a fault.
 - A story whose `Status` is empty follows its issues; a set `Status` is given.
+- An issue's `Priority` is read as the board's priority of it; an empty one is none, and one outside Highest to
+  Lowest is none too and named as a fault. The board names, as on any store, each breach of the stories' rules: an
+  open issue past the first state in no story, a story ranked below its open issues, a story with no issue and no
+  given state, and a given state its issues do not fit. A breach leaves nothing out and holds no move back.
 - An item is known by its tracker reference alone, its repository and GitHub's number, and no field holds another
   id. An old id, of an item carried over from Markdown, is matched to nothing: old commits, velocity rows and task
   records stay under it.

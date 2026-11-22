@@ -1,11 +1,8 @@
 package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -29,6 +26,7 @@ import org.fuin.porelo.planner.app.answers.Phase;
 import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.PrioritySaved;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
+import org.fuin.porelo.planner.app.answers.RuleBreach;
 import org.fuin.porelo.planner.app.answers.StageResultReply;
 import org.fuin.porelo.planner.app.answers.State;
 import org.fuin.porelo.planner.app.answers.StoppedRun;
@@ -50,6 +48,7 @@ import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.OpenWork;
 import org.fuin.porelo.planner.core.Priorities;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.StoryRules;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.core.WorkRun;
@@ -837,7 +836,16 @@ public class BoardController {
                         .map(story -> story(board, story, snapshot, derive, counter))
                         .toList(),
                 board.outside().stream().map(BoardController::outsideIssue).toList(),
-                open(counter.board()));
+                open(counter.board()),
+                StoryRules.of(board, derive).stream()
+                        .map(
+                                breach ->
+                                        new RuleBreach(
+                                                breach.item(),
+                                                RuleBreach.RuleEnum.fromValue(
+                                                        breach.rule().spelled()),
+                                                breach.words()))
+                        .toList());
     }
 
     /** Maps an issue the board left out of its workflow, which the window offers to move. */
@@ -975,7 +983,7 @@ public class BoardController {
         return projects.work(name)
                 .view(
                         (board, snapshot) -> {
-                            final Set<String> assigned = issuesInStories(board);
+                            final Set<String> assigned = StoryRules.inStories(board);
                             final Map<String, Double> minutes = OpenWork.minutesLeft(board);
                             return new IssueList(
                                     board.revision().value(),
@@ -996,39 +1004,6 @@ public class BoardController {
                                                                     minutes))
                                             .toList());
                         });
-    }
-
-    private static Set<String> issuesInStories(final Board board) {
-        final Map<String, List<String>> children = new HashMap<>();
-        for (final Issue issue : board.issues()) {
-            child(children, issue.parent(), issue.id());
-        }
-        final Set<String> assigned = new HashSet<>();
-        final ArrayDeque<String> pending = new ArrayDeque<>();
-        for (final Story story : board.stories()) {
-            for (final String id : story.issues()) {
-                if (assigned.add(id)) {
-                    pending.add(id);
-                }
-            }
-        }
-        while (!pending.isEmpty()) {
-            for (final String id : children.getOrDefault(pending.remove(), List.of())) {
-                if (assigned.add(id)) {
-                    pending.add(id);
-                }
-            }
-        }
-        return assigned;
-    }
-
-    private static void child(
-            final Map<String, List<String>> children,
-            final @Nullable String parent,
-            final String id) {
-        if (parent != null) {
-            children.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(id);
-        }
     }
 
     /**
@@ -1083,6 +1058,7 @@ public class BoardController {
                         issue.title(),
                         issue.state(),
                         issue.size(),
+                        issue.priority(),
                         view.minutesLeft(),
                         issue.blockedBy(),
                         issue.parent(),

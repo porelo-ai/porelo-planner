@@ -402,7 +402,8 @@ public final class IssueMapping {
                 worker,
                 risk,
                 figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
-                figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults));
+                figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
+                choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults));
     }
 
     /** The most minutes an issue's work is read as having taken, its stages together. */
@@ -450,7 +451,8 @@ public final class IssueMapping {
                 issue.worker(),
                 issue.risk(),
                 issue.estimate(),
-                minutes >= 0 && minutes <= MOST_TAKEN ? minutes : issue.minutes());
+                minutes >= 0 && minutes <= MOST_TAKEN ? minutes : issue.minutes(),
+                issue.priority());
     }
 
     /** The longest Status a fault names, as a plain option name of a single-select field. */
@@ -635,7 +637,8 @@ public final class IssueMapping {
                             parent.worker(),
                             Risk.highest(List.of(issue.risk(), parent.risk())),
                             issue.estimate(),
-                            issue.minutes()));
+                            issue.minutes(),
+                            issue.priority()));
         }
     }
 

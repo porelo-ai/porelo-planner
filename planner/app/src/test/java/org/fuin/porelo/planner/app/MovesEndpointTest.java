@@ -391,6 +391,58 @@ class MovesEndpointTest {
                 .andExpect(jsonPath("$.parameters.revision").value("r1"));
     }
 
+    @Test
+    void aStoryBreakingTheStoriesRulesIsPreviewedAndSavedAsAnyOther() throws Exception {
+        // Harm: a breach that is only to be shown holds back or warns a move the person chose.
+        current = ranked(board("r1", "Backlog"), "Lowest", "Highest");
+        final String body =
+                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
+                        + " \"Review\"}]}";
+
+        preview(body).andExpect(status().isOk()).andExpect(jsonPath("$.warnings").isEmpty());
+        moves(body).andExpect(status().isOk()).andExpect(jsonPath("$.moved[0]").value("AB01"));
+
+        assertThat(saved).as("the move saved as any other").hasSize(1);
+        assertThat(saved.get(0).issues()).containsExactly(Map.entry("AB01", "Review"));
+    }
+
+    /** The board with its story's priority and its issue's, the story ranked as given. */
+    private static Board ranked(final Board board, final String story, final String issue) {
+        final Story held = board.stories().get(0);
+        final Issue own = board.issues().get(0);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                List.of(
+                        new Story(
+                                held.id(),
+                                held.title(),
+                                held.state(),
+                                held.stateGiven(),
+                                story,
+                                held.size(),
+                                held.issues(),
+                                held.description(),
+                                held.link())),
+                List.of(
+                        new Issue(
+                                own.id(),
+                                own.repository(),
+                                own.title(),
+                                own.state(),
+                                own.size(),
+                                own.blockedBy(),
+                                own.parent(),
+                                own.link(),
+                                own.text(),
+                                own.worker(),
+                                own.risk(),
+                                own.estimate(),
+                                own.minutes(),
+                                issue)),
+                board.work());
+    }
+
     /** Posts a batch as the window does: its preview first, then the save with its digest. */
     private ResultActions moves(final String body) throws Exception {
         final String preview = preview(body).andReturn().getResponse().getContentAsString();

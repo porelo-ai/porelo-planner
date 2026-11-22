@@ -7,12 +7,15 @@ import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
@@ -107,6 +110,79 @@ class BoardFaultsTest {
         assertThat(mapper().valueToTree(boardOf(git)).path("outside").toString())
                 .as("a Git-kept board's, sent empty")
                 .isEqualTo("[]");
+    }
+
+    @Test
+    void theBoardEventCarriesEachBreachOfTheStoriesRulesAndTheIssuesPriorities() {
+        // Harm: a story breaking the stories' rules on a GitHub board is never seen in the
+        // window, or a priority the rules read never reaches it.
+        final Workflow workflow =
+                new Workflow(
+                        List.of("Idea", "Backlog", "Finished"),
+                        List.of(new Workflow.Phase("All", List.of("Idea", "Backlog", "Finished"))),
+                        List.of("Finished"));
+        final Story empty =
+                new Story("ST1", "A story", "Idea", false, "High", null, List.of(), "", null);
+        final Story low =
+                new Story(
+                        "ST2",
+                        "A story",
+                        "Backlog",
+                        false,
+                        "Low",
+                        null,
+                        List.of("porelo-store#1"),
+                        "",
+                        null);
+        final Issue urgent = issue("porelo-store#1", "Highest");
+        final Board board =
+                new Board(
+                        new Revision("a".repeat(64)),
+                        workflow,
+                        List.of(empty, low),
+                        List.of(urgent, issue("porelo-store#2", null)),
+                        new Work(Map.of(), List.of()),
+                        List.of("porelo-store"));
+
+        final JsonNode event = mapper().valueToTree(boardOf(board));
+
+        assertThat(event.path("rules").toString())
+                .as("each breach with its item, its rule and the planner's words")
+                .isEqualTo(
+                        "[{\"item\":\"ST1\",\"rule\":\"StoryWithoutIssueOrState\","
+                                + "\"words\":\"ST1 has no issue and no given state.\"},"
+                                + "{\"item\":\"ST2\",\"rule\":\"StoryPriorityBelowIssue\","
+                                + "\"words\":\"ST2 has a lower priority than its open issue"
+                                + " porelo-store#1.\"},"
+                                + "{\"item\":\"porelo-store#2\",\"rule\":\"IssueInNoStory\","
+                                + "\"words\":\"porelo-store#2 stands past the workflow's first state in"
+                                + " no story.\"}]");
+        assertThat(
+                        mapper().valueToTree(
+                                        WorkAnswers.issue(
+                                                board, urgent, new WorkRun.Snapshot(0, Map.of())))
+                                .path("priority")
+                                .asString())
+                .as("the issue's priority as the board answers it")
+                .isEqualTo("Highest");
+    }
+
+    private static Issue issue(final String id, final @Nullable String priority) {
+        return new Issue(
+                id,
+                "porelo-store",
+                "An issue",
+                "Backlog",
+                "S",
+                List.of(),
+                null,
+                null,
+                "",
+                Worker.AGENT,
+                Risk.ORDINARY,
+                null,
+                null,
+                priority);
     }
 
     private static org.fuin.porelo.planner.app.answers.Board boardOf(final Board board) {

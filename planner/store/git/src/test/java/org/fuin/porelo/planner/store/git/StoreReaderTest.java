@@ -504,6 +504,39 @@ class StoreReaderTest {
         return last(text, "risk", risk);
     }
 
+    @Test
+    void anIssueReadsThePriorityItsHeadNamesAndASettledRowNone() {
+        // Harm: a story judged against a priority its issue's head does not hold, or one lost
+        // when a sub-issue is worked as its parent.
+        final Tree tree = new Tree();
+        tree.files.put(
+                "issues/README.md",
+                """
+                # Issues
+
+                ## Finished
+
+                | # | Title | What was built |
+                |---|---|---|
+                | <a id="xy03"></a>XY03 | Done Long Ago | It was built. |
+                """);
+        tree.files.put(
+                "issues/XY01-One.md",
+                worked(issue("XY01", "Idea"), "Manual").replace("\"Medium\"", "\"Highest\""));
+        tree.files.put("issues/XY01.1-Part.md", sub("XY01.1", "XY01"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+
+        assertThat(part.faults()).as("nothing left out").isEmpty();
+        assertThat(part.issues())
+                .as("each issue's priority, the part worked as its parent with its own")
+                .extracting(Issue::id, Issue::worker, Issue::priority)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("XY01", Worker.MANUAL, "Highest"),
+                        org.assertj.core.groups.Tuple.tuple("XY01.1", Worker.MANUAL, "Medium"),
+                        org.assertj.core.groups.Tuple.tuple("XY03", Worker.AGENT, null));
+    }
+
     /** The issue's head with a worker as its last member. */
     private static String worked(final String text, final String worker) {
         return last(text, "worker", worker);

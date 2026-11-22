@@ -431,7 +431,10 @@ class IssueMappingTest {
                         URI.create("https://github.com/example-org/example-lib/issues/1"),
                         SECRET_BODY,
                         Worker.MANUAL,
-                        Risk.SMALL);
+                        Risk.SMALL,
+                        null,
+                        null,
+                        "Low");
         final Item item = new Item("example-lib", 1);
         IssueMapping.fields(issue, "Low", 4).forEach(item::field);
 
@@ -1001,5 +1004,69 @@ class IssueMappingTest {
                                 + " none",
                         "example-project#3 has no number of minutes in its field Estimate, read as"
                                 + " none");
+    }
+
+    @Test
+    void anIssuesPriorityIsReadFromItsFieldAndAnUnknownOneIsNamedAndReadAsNone() {
+        // Harm: a story's rank judged against a priority GitHub does not hold, or a bad one
+        // taken silently.
+        final Item story = new Item("example-project", 1).story();
+        final Item high =
+                new Item("example-project", 2)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.PRIORITY, "High");
+        final Item unknown =
+                new Item("example-project", 3)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog")
+                        .field(FieldNames.PRIORITY, SECRET_BODY);
+        final Item none =
+                new Item("example-project", 4)
+                        .commentsNotRead()
+                        .field(FieldNames.STATUS, "Backlog");
+        story.sub(high).sub(unknown).sub(none);
+
+        final IssueMapping.Mapped mapped = read(story, high, unknown, none);
+
+        assertThat(mapped.issues())
+                .as("each issue's priority")
+                .extracting(Issue::id, Issue::priority)
+                .containsExactly(
+                        Tuple.tuple("example-project#2", "High"),
+                        Tuple.tuple("example-project#3", null),
+                        Tuple.tuple("example-project#4", null));
+        assertThat(mapped.faults())
+                .as("the unknown priority named by its issue and field, never its value")
+                .containsExactly(
+                        "example-project#3 has a Priority the planner does not know, shown as"
+                                + " none");
+    }
+
+    @Test
+    void anIssuesPriorityStaysThroughItsStagesSumAndItsParentsWorker() {
+        // Harm: a priority dropped on the way, so a story is judged against issues without one.
+        final Item part =
+                new Item("example-lib", 4)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.PRIORITY, "Highest");
+        final Item parent =
+                new Item("example-lib", 3)
+                        .field(FieldNames.STATUS, "Idea")
+                        .field(FieldNames.WORKER, "Manual")
+                        .field(FieldNames.PRIORITY, "Low")
+                        .field(FieldNames.MINUTES, "10")
+                        .field(FieldNames.STAGES, "1")
+                        .stage("t1/implement", 10)
+                        .sub(part);
+
+        final IssueMapping.Mapped mapped = read(parent, part);
+
+        assertThat(mapped.issues())
+                .as("the summed parent and its part, worked as the parent, each with its own")
+                .extracting(Issue::id, Issue::minutes, Issue::worker, Issue::priority)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#3", 10.0, Worker.MANUAL, "Low"),
+                        Tuple.tuple("example-lib#4", null, Worker.MANUAL, "Highest"));
     }
 }

@@ -2321,6 +2321,36 @@ components:
           description: What is still open of the whole board, as the story list answers it.
           allOf:
             - $ref: '#/components/schemas/OpenWork'
+        rules:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          description: >-
+            Every breach of the stories' rules on this board, the stories' in the board's order and then the issues',
+            the same rules whichever store keeps the project. Unlike `faults`, a breach leaves nothing out, and it is
+            only shown: no move, preview or save reads it, and none is refused or warned for it. Only the whole board
+            carries it; a window that reads none shows none.
+          items:
+            $ref: '#/components/schemas/RuleBreach'
+
+    RuleBreach:
+      description: >-
+        One breach of the stories' rules. IssueInNoStory - an issue that is not closed stands in a state past the
+        workflow's first and in no story, directly or under a parent. StoryPriorityBelowIssue - a story's priority is
+        below the highest priority of its open issues, its sub-issues included; an issue without a priority is not
+        ranked. StoryWithoutIssueOrState - a story whose issues are all known has none and no given state.
+        StoryStateMisfit - a story's given state does not fit its issues, as its `misfits` name them.
+      type: object
+      required: [item, rule, words]
+      properties:
+        item:
+          description: The story's or the issue's id.
+          type: string
+        rule:
+          type: string
+          enum: [IssueInNoStory, StoryPriorityBelowIssue, StoryWithoutIssueOrState, StoryStateMisfit]
+        words:
+          type: string
+          description: The breach in the planner's fixed words, naming items only by their ids.
 
     OutsideIssue:
       description: An issue the board left out because its Status is none of the workflow's states.
@@ -3129,6 +3159,12 @@ components:
         size:
           type: [string, 'null']
           description: The issue's size, or null when it has none.
+        priority:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: [string, 'null']
+          description: >-
+            The issue's priority, Highest to Lowest; absent when the store holds none, or one outside them, which the
+            board's faults then name.
         minutesLeft:
           type: [number, 'null']
           minimum: 0

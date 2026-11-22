@@ -242,7 +242,10 @@ public final class StoreReader implements PartReader {
                             Risk.highest(
                                     List.of(
                                             issue.risk(),
-                                            risks.getOrDefault(parent, issue.risk())))));
+                                            risks.getOrDefault(parent, issue.risk()))),
+                            issue.estimate(),
+                            issue.minutes(),
+                            issue.priority()));
         }
         return issues;
     }
@@ -438,7 +441,13 @@ public final class StoreReader implements PartReader {
                 null,
                 text,
                 worker(head.worker()),
-                head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk()));
+                head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk()),
+                null,
+                null,
+                // The head's schema takes only these; any other is read as none.
+                org.fuin.porelo.planner.store.Story.PRIORITIES.contains(head.priority())
+                        ? head.priority()
+                        : null);
     }
 
     /** The worker a head names; the schema took only these spellings, or none. */

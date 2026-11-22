@@ -290,6 +290,7 @@ public final class WorkAnswers {
                 issue.title(),
                 issue.state(),
                 issue.size(),
+                issue.priority(),
                 decimal(minutes.get(issue.id())),
                 issue.blockedBy(),
                 issue.parent(),

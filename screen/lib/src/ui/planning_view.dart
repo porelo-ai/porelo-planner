@@ -315,6 +315,7 @@ class _BoardViewState extends State<_BoardView> {
   late final _search = TextEditingController(text: board.preferences.search);
   Key _project = UniqueKey();
   bool _faultsOpen = false;
+  bool _rulesOpen = false;
   PlanningBoard get board => widget.board;
 
   /// Each phase's own vertical scroll, by phase name, starting where the person left it.
@@ -1015,6 +1016,7 @@ class _BoardViewState extends State<_BoardView> {
                           padding: const EdgeInsets.symmetric(vertical: Space.small),
                           child: _problem(problem, theme),
                         ),
+                      if (board.rules.isNotEmpty) _rules(theme),
                       if (board.noStoryProblem case final problem?)
                         _failure('Issues in no story: $problem', theme, key: const Key('planning-no-story-error')),
                       if (board.readProblem case final problem?)
@@ -1148,6 +1150,43 @@ class _BoardViewState extends State<_BoardView> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
             child: SingleChildScrollView(child: full),
+          ),
+      ],
+    );
+  }
+
+  /// The breaches of the stories' rules above the board: one is said whole, several take one line until the person
+  /// opens them. They are no failure, so they are not in the error colour.
+  Widget _rules(ThemeData theme) {
+    final rules = board.rules;
+    final words = [for (final breach in rules) planningShown(breach.words, multiline: false)];
+    final colour = theme.colorScheme.tertiary;
+    Widget line(String text, {Key? key}) => Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.rule, size: PlanningStyle.mark, color: colour),
+        const SizedBox(width: Space.small),
+        Flexible(child: Text(text, key: key)),
+      ],
+    );
+    if (words.length == 1) return line(words.single, key: const Key('planning-rules'));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          key: const Key('planning-rules'),
+          onTap: () => setState(() => _rulesOpen = !_rulesOpen),
+          child: line('${words.length} breaches of the stories’ rules — ${_rulesOpen ? 'hide' : 'show'}'),
+        ),
+        if (_rulesOpen)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [for (final (at, text) in words.indexed) Text(text, key: Key('planning-rule-line $at'))],
+              ),
+            ),
           ),
       ],
     );
@@ -1715,6 +1754,7 @@ class _BoardViewState extends State<_BoardView> {
       board.snapshot?.revision,
       board.pendingPriorities[story.id],
       board.priorityUnavailable(story.id),
+      board.rulesOf(story.id).join('\n'),
       board.saving,
       board.live,
       _known,
@@ -1767,6 +1807,7 @@ class _BoardViewState extends State<_BoardView> {
                     Text(_line(story.id), style: theme.textTheme.labelMedium),
                     _priority(context, story.priority ?? ''),
                     ?planningGivenMark(story, onFollow: (to) => unawaited(board.followIssues(story.id, to))),
+                    ?planningRuleMark(board.rulesOf(story.id), key: Key('planning-rule ${story.id}')),
                     ?_size(context, story.size, key: 'planning-size ${story.id}'),
                     _menu(story),
                     IconButton(
