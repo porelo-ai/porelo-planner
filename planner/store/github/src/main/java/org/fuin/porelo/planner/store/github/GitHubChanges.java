@@ -204,6 +204,7 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
             final ChangeCursor cursor,
             final Map<String, TrackedItem> known,
             final Map<String, Long> restFieldIds) {
+        final long started = System.nanoTime();
         final String owner = config.project().owner();
         final int number = config.project().number();
         final Map<Long, String> named = new LinkedHashMap<>();
@@ -224,6 +225,9 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
         for (int at = 0; ; at++) {
             if (at >= ItemsBoardReader.MOST_PAGES) {
                 // The whole read refuses such a project; the look does not stand for it.
+                LOG.info(
+                        "GitHub's item list has too many pages for a look, after {} ms",
+                        since(started));
                 return null;
             }
             final @Nullable String place = after;
@@ -307,6 +311,9 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
         if (!missing.isEmpty()) {
             if (config.projectId().isBlank()) {
                 // Without the project's id no missing item can be asked after by its issue.
+                LOG.info(
+                        "A look cannot ask after missing items without the project's id, after {} ms",
+                        since(started));
                 return null;
             }
             gone.addAll(goneOf(config, token, missing));
@@ -317,11 +324,13 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
         issues.keySet().retainAll(kept);
         this.listed = Map.copyOf(shown);
         LOG.info(
-                "GitHub's item list showed {} changed, {} new and {} gone items in {} pages",
+                "GitHub's item list showed {} changed, {} new and {} gone items in {} pages, in {}"
+                        + " ms",
                 changed.size(),
                 added.size(),
                 gone.size(),
-                now.size());
+                now.size(),
+                since(started));
         return new Changed(changed, added, gone, new ChangeCursor(dated ? asOf : null, now));
     }
 
@@ -426,5 +435,9 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
         return Objects.equals(option, held.optionId())
                 && Objects.equals(text, held.text())
                 && Objects.equals(number, held.number());
+    }
+
+    private static long since(final long started) {
+        return (System.nanoTime() - started) / 1_000_000L;
     }
 }

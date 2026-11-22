@@ -317,13 +317,16 @@ public final class GitHubStore implements PlanningStore {
             if (snapshot != null) {
                 return snapshot;
             }
+            final long began = System.nanoTime();
             final ProjectConfig now = configNow();
+            final long configured = System.nanoTime();
             final BoardCopy copy =
                     copies.read(BoardCopyMapping.project(now), now.commit()).orElse(null);
             if (copy == null) {
                 return null;
             }
             final Snapshot loaded = parts.reader().fromCopy(copy, now);
+            final long taken = System.nanoTime();
             if (loaded == null) {
                 LOG.info("The board's copy is not of the project as its files name it now");
                 return null;
@@ -343,9 +346,13 @@ public final class GitHubStore implements PlanningStore {
                 }
             }
             LOG.info(
-                    "Took the board from its copy of {} items held at {}; GitHub is read next",
+                    "Took the board from its copy of {} items held at {} in {} ms ({} ms the"
+                            + " project's files, {} ms the copy); GitHub is read next",
                     copy.items().size(),
-                    copy.takenAt());
+                    copy.takenAt(),
+                    millis(began, taken),
+                    millis(began, configured),
+                    millis(configured, taken));
             return loaded;
         } catch (final RuntimeException e) {
             // The copy only spares a whole read: one that cannot be used leaves the read to do.
@@ -372,7 +379,30 @@ public final class GitHubStore implements PlanningStore {
         } catch (final RuntimeException e) {
             throw refused(e);
         }
-        return served(wholeBesideSaves(now, true).board());
+        final WholeRead why = snapshot == null ? WholeRead.FIRST : WholeRead.RELOAD;
+        return served(wholeBesideSaves(now, true, why).board());
+    }
+
+    /** Why the board is read whole, named in the log so a read after the first can be explained. */
+    private enum WholeRead {
+        FIRST("no board is held yet"),
+        CONFIG("the project's files changed"),
+        UNTOLD("the change look gave no answer"),
+        UNLISTED("the change check saw a change the item list does not show"),
+        PROBED("the change check saw a change"),
+        RELOAD("a read anew was asked for"),
+        RESULT("a stage result names an issue the board does not hold"),
+        WRITTEN("a write completed with no board held");
+
+        private final String words;
+
+        WholeRead(final String words) {
+            this.words = words;
+        }
+    }
+
+    private static long millis(final long from, final long to) {
+        return (to - from) / 1_000_000L;
     }
 
     /**
@@ -563,7 +593,8 @@ public final class GitHubStore implements PlanningStore {
         try {
             now = configNow();
             if (current == null || !current.config().commit().equals(now.commit())) {
-                return wholeBesideSaves(now, true);
+                return wholeBesideSaves(
+                        now, true, current == null ? WholeRead.FIRST : WholeRead.CONFIG);
             }
             if (fromCopy || parts.changes() != TrackerChanges.NONE) {
                 final Looked looked = lookBesideSaves(now, current);
@@ -579,19 +610,19 @@ public final class GitHubStore implements PlanningStore {
                     // repositories it lacks changes only the probe's answer, and is read whole.
                     return parts.probe().unchanged(looked.board())
                             ? looked.board()
-                            : wholeBesideSaves(now, false);
+                            : wholeBesideSaves(now, false, WholeRead.UNLISTED);
                 }
                 // A tracker that cannot tell what changed has the board read whole, never the probe
                 // alone: within its wait after a save, the probe takes another's change for the
                 // save's own.
-                return wholeBesideSaves(now, true);
+                return wholeBesideSaves(now, true, WholeRead.UNTOLD);
             }
             same = parts.probe().unchanged(current);
         } catch (final RuntimeException e) {
             throw refused(e);
         }
         // The probe saw the change and keeps its tags for the board this read gives.
-        return same ? current : wholeBesideSaves(now, false);
+        return same ? current : wholeBesideSaves(now, false, WholeRead.PROBED);
     }
 
     /** The items of a board, as the copy holds them, by their ids, the saves held laid over. */
@@ -893,8 +924,10 @@ public final class GitHubStore implements PlanningStore {
      * @param now what the project is read with
      * @param whole whether the probe forgets what it learned and takes this read's board after it,
      *     as a whole read outside the probe does
+     * @param why why the board is read whole
      */
-    private Snapshot wholeBesideSaves(final ProjectConfig now, final boolean whole) {
+    private Snapshot wholeBesideSaves(
+            final ProjectConfig now, final boolean whole, final WholeRead why) {
         final CompletableFuture<Snapshot> mine;
         final boolean began;
         synchronized (fold) {
@@ -911,11 +944,17 @@ public final class GitHubStore implements PlanningStore {
         if (!began) {
             return awaitRead(mine);
         }
+        final long started = System.nanoTime();
+        LOG.info("Reading the board whole: {}", why.words);
         try {
             if (whole) {
                 parts.probe().forget();
             }
             final Snapshot read = parts.reader().read(now);
+            LOG.info(
+                    "Read the board whole in {} ms: {}",
+                    millis(started, System.nanoTime()),
+                    why.words);
             final Snapshot fresh =
                     locked(
                             () -> {
@@ -992,13 +1031,13 @@ public final class GitHubStore implements PlanningStore {
         final ProjectConfig now = configNow();
         final Snapshot current = snapshot;
         if (current == null || !current.config().commit().equals(now.commit())) {
-            return readWhole(now);
+            return readWhole(now, current == null ? WholeRead.FIRST : WholeRead.CONFIG);
         }
         if (parts.probe().unchanged(current)) {
             return current;
         }
         // The probe saw the change and keeps its tags for the board this read gives.
-        final Snapshot fresh = keptHeld(now, parts.reader().read(now));
+        final Snapshot fresh = keptHeld(now, timedRead(now, WholeRead.PROBED));
         hold(fresh, true);
         return fresh;
     }
@@ -1007,12 +1046,21 @@ public final class GitHubStore implements PlanningStore {
      * Reads the whole project outside the probe, which forgets what it learned, so its next look
      * never takes tags from before this read for the board it gives.
      */
-    private Snapshot readWhole(final ProjectConfig now) {
+    private Snapshot readWhole(final ProjectConfig now, final WholeRead why) {
         parts.probe().forget();
-        final Snapshot fresh = keptHeld(now, parts.reader().read(now));
+        final Snapshot fresh = keptHeld(now, timedRead(now, why));
         hold(fresh, true);
         settle(fresh, false);
         return fresh;
+    }
+
+    private Snapshot timedRead(final ProjectConfig now, final WholeRead why) {
+        final long started = System.nanoTime();
+        LOG.info("Reading the board whole: {}", why.words);
+        final Snapshot read = parts.reader().read(now);
+        LOG.info(
+                "Read the board whole in {} ms: {}", millis(started, System.nanoTime()), why.words);
+        return read;
     }
 
     /**
@@ -1081,14 +1129,14 @@ public final class GitHubStore implements PlanningStore {
     private Snapshot withResultsIssues(final StageResult result) {
         final Snapshot held = snapshot;
         if (held == null) {
-            return readWhole(configNow());
+            return readWhole(configNow(), WholeRead.FIRST);
         }
         final Set<String> issues = new LinkedHashSet<>();
         for (final StageResult.ForIssue issue : result.issues()) {
             final ItemView item = held.items().get(issue.id());
             if (item == null) {
                 // An issue the board held does not know may be new on GitHub: read it all.
-                return readWhole(configNow());
+                return readWhole(configNow(), WholeRead.RESULT);
             }
             issues.add(item.issueId());
         }
@@ -1111,7 +1159,7 @@ public final class GitHubStore implements PlanningStore {
         try {
             final Snapshot held = snapshot;
             if (held == null) {
-                return readWhole(configNow());
+                return readWhole(configNow(), WholeRead.WRITTEN);
             }
             final Touched.Ids written = touched.ids();
             final Snapshot fresh = parts.reader().reread(configNow(), held, written);
