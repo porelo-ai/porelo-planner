@@ -124,7 +124,11 @@ String _text(WidgetTester tester, String key) {
 
 void main() {
   final snapshot = PlanningSnapshot.from(_board());
-  final filter = PlanningBoardFilter(snapshot.states, planningReviewStates(snapshot));
+  final filter = PlanningBoardFilter(
+    snapshot.states,
+    planningReviewStates(snapshot),
+    storyReview: planningStoryReviewState(snapshot),
+  );
   final stories = {for (final story in snapshot.stories) story.id: story};
 
   // Harm: a story whose only open work is blocked missing from Blocked, or counted under Backlog, so the person
@@ -136,9 +140,18 @@ void main() {
   });
 
   // Harm: Needs your review keeping the wrong stories on a workflow whose review state is not named Review.
-  test('Needs your review follows the figures and the work rules, never the name Review', () {
+  // Harm: a story counted as needing review for issues in review while the story itself is not, though only a
+  // story as a whole can be tested, so the count promises reviews that cannot be made.
+  test('Needs your review keeps the stories in the state the work rules end in, never by the name Review', () {
     expect(filter.review, {'Approval'}, reason: 'the state the rule\'s work ends in');
-    expect(filter.matches(stories['SR']!, PlanningFilter.review), isTrue, reason: 'two issues wait for review');
+    expect(filter.storyReview, 'Approval', reason: 'the story waits there for review');
+    expect(filter.matches(stories['SR']!, PlanningFilter.review), isTrue, reason: 'the story stands in Approval');
+    final building = PlanStory.from(_story('SX', 'Implementing', _open(states: {'Approval': 2}, review: 2)));
+    expect(
+      filter.matches(building, PlanningFilter.review),
+      isFalse,
+      reason: 'issues in review under a story still being built are no story to review',
+    );
     expect(filter.matches(stories['SR']!, PlanningFilter.openWork), isFalse, reason: 'review is not left to build');
     expect(filter.matches(stories['SI']!, PlanningFilter.review), isFalse, reason: 'nothing waits for review');
     expect(filter.matches(stories['SI']!, PlanningFilter.implementing), isTrue, reason: 'its issue is being built');
@@ -229,7 +242,7 @@ void main() {
   // Harm: the last figures shown as current once the board stopped answering, so a count reads as what is open now.
   testWidgets('a stale board tells no figure as known and filters no story by them', (tester) async {
     final (source, _) = await _show(tester, place: const PlanningPlace(filter: PlanningFilter.review));
-    expect(_text(tester, 'planning-summary review'), contains('2'), reason: 'the figures as read');
+    expect(_text(tester, 'planning-summary review'), contains('1'), reason: 'SR stands in review');
     expect(_text(tester, 'planning-card-left SR'), isNotEmpty, reason: 'a card tells its figures');
 
     source.fail(StateError('gone'));

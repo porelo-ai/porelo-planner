@@ -9,6 +9,7 @@ import 'hooks.dart';
 import 'run_attention.dart';
 import 'task_runs.dart';
 import 'story_work.dart';
+import 'ui/open_work_figures.dart';
 
 /// The priority limits offered above a board.
 enum PlanningPriority {
@@ -2277,9 +2278,9 @@ class PlanningBoards extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The issues waiting for the person's review over every project shown, each from the board its project is shown
-  /// from; null while any project's figures are not known or its board is not live, so a partial or old sum is never
-  /// shown as the whole.
+  /// The stories waiting for the person's review over every project shown, those standing in the state their
+  /// workflow's last work ends in, each from the board its project is shown from; null while any project's figures
+  /// are not known or its board is not live, so a partial or old sum is never shown as the whole.
   ValueListenable<int?> get review => _review;
 
   /// The issues left to build over every project shown, counted as [review] is.
@@ -2303,7 +2304,8 @@ class PlanningBoards extends ChangeNotifier {
         known = false;
         break;
       }
-      review += figures.review;
+      final waiting = planningStoryReviewState(board!.snapshot);
+      review += waiting == null ? 0 : board.stories.where((story) => story.state == waiting).length;
       left += figures.left;
     }
     _review.value = known ? review : null;

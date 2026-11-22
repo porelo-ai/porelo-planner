@@ -114,7 +114,7 @@ class FakePlanningSource implements PlanningSource {
 
   @override
   Future<PlanningSnapshot> planningWorkflow(String project) async =>
-      PlanningSnapshot.from({'states': board['states'], 'phases': board['phases']});
+      PlanningSnapshot.from({'states': board['states'], 'phases': board['phases'], 'work': ?board['work']});
 
   /// Thrown by the next story reads instead of answering, while set.
   Object? storiesFailure;

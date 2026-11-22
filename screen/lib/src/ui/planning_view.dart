@@ -529,7 +529,11 @@ class _BoardViewState extends State<_BoardView> {
 
   /// Takes the place's filter for this board; one the workflow cannot use falls back to none, reported to the host.
   void _readFilter() {
-    _filters = PlanningBoardFilter(board.states, planningReviewStates(board.snapshot));
+    _filters = PlanningBoardFilter(
+      board.states,
+      planningReviewStates(board.snapshot),
+      storyReview: planningStoryReviewState(board.snapshot),
+    );
     final snapshot = board.snapshot;
     _offered =
         snapshot != null &&
@@ -573,13 +577,16 @@ class _BoardViewState extends State<_BoardView> {
       final what = switch (filter) {
         PlanningFilter.openWork => 'issues left to build',
         PlanningFilter.blocked => 'issues an open issue blocks',
-        PlanningFilter.review => 'issues waiting for your review',
+        PlanningFilter.review => '',
         _ => 'issues in ${states.map(_line).join(', ')}',
       };
       final stories = !_known || count == null
           ? 'not known now'
           : '${count.stories} ${count.stories == 1 ? 'story' : 'stories'}'
                 '${count.partial ? ', and ${count.unknown} whose open work is not known' : ''}';
+      if (filter == PlanningFilter.review) {
+        return 'Stories in ${_line(_filters.storyReview ?? 'review')}, waiting for your review: $stories';
+      }
       return 'Stories with $what: $stories';
     }
 
@@ -660,10 +667,13 @@ class _BoardViewState extends State<_BoardView> {
 
   /// The board's open work as the planner counted it, over every story and issue; unknown while stale.
   Widget _summary(BuildContext context) {
-    final shown = [
+    final listed = [
       for (final story in _listed())
         if (_filters.keeps(story, _applied)) story,
-    ].length;
+    ];
+    final shown = listed.length;
+    final review = _filters.storyReview;
+    final reviewed = review == null ? 0 : listed.where((story) => story.state == review).length;
     final open = _known ? board.snapshot?.open : null;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -706,8 +716,8 @@ class _BoardViewState extends State<_BoardView> {
           Text(time, key: const Key('planning-summary time')),
           part(
             'review',
-            figure(open?.review),
-            'wait for your review',
+            _known ? '$reviewed' : '?',
+            reviewed == 1 ? 'story waits for your review' : 'stories wait for your review',
             color: planningStateColor(PlanningStateKind.review, colors),
           ),
           part(

@@ -14,8 +14,9 @@ PlanningStateKind? _group(PlanningFilter filter) => switch (filter) {
 
 /// The board's filters over one workflow: which it can use, which states each keeps, and which stories match.
 class PlanningBoardFilter {
-  /// Reads the workflow's [states] with [review] the states that wait for the person's review.
-  PlanningBoardFilter(List<PlanState> states, this.review)
+  /// Reads the workflow's [states] with [review] the states that wait for the person's review, and [storyReview]
+  /// the state a story waits in for it.
+  PlanningBoardFilter(List<PlanState> states, this.review, {this.storyReview})
     : _kinds = {for (final state in states) state.name: planningStateKind(state, review)},
       _closed = {
         for (final state in states)
@@ -24,6 +25,9 @@ class PlanningBoardFilter {
 
   /// The states that wait for the person's review.
   final Set<String> review;
+
+  /// The state a story waits in for the person's review, or null when the workflow has none.
+  final String? storyReview;
 
   final Map<String, PlanningStateKind> _kinds;
   final Set<String> _closed;
@@ -60,7 +64,8 @@ class PlanningBoardFilter {
     return switch (filter) {
       PlanningFilter.openWork => open.left > 0,
       PlanningFilter.blocked => open.blocked > 0,
-      PlanningFilter.review => open.review > 0,
+      // Only a story as a whole is reviewed, so the filter keeps the stories standing in the review state.
+      PlanningFilter.review => storyReview != null && story.state == storyReview,
       _ => states(filter).any((state) => (open.states[state] ?? 0) > 0),
     };
   }

@@ -64,6 +64,19 @@ Set<String> planningReviewStates(PlanningSnapshot? snapshot) {
   };
 }
 
+/// The state a story waits in for the person's review: of [planningReviewStates], the one latest in the workflow,
+/// where its last work ends; null when there is none. Only a story as a whole is reviewed, so only a story in this
+/// state needs the person's review.
+String? planningStoryReviewState(PlanningSnapshot? snapshot) {
+  if (snapshot == null) return null;
+  final review = planningReviewStates(snapshot);
+  String? last;
+  for (final state in snapshot.states) {
+    if (review.contains(state.name)) last = state.name;
+  }
+  return last;
+}
+
 /// What [state] means, with [review] the states that wait for the person's review; review and a closed kind go
 /// before a name, so a workflow that names its states differently is still placed where its kinds allow.
 PlanningStateKind planningStateKind(PlanState state, Set<String> review) {

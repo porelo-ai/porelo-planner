@@ -22,24 +22,43 @@ Map<String, dynamic> _open({required int review, required int left, Object? minu
   'review': review,
 };
 
+/// One work, from Backlog through Building to Review, where a story waits for the person's review.
+const _work = [
+  {
+    'state': 'Building',
+    'from': ['Backlog'],
+    'done': 'Review',
+    'per': 'story',
+    'modes': ['UNATTENDED'],
+    'order': 'Build {story}',
+    'models': {'codex': 'gpt'},
+  },
+];
+
+/// A board with as many stories in Review, where its work ends, as [open] says issues wait for review, since only
+/// a story as a whole needs the person's review.
 Map<String, dynamic> _board(Map<String, dynamic>? open) => {
   'revision': 'r1',
   'states': [
     {'name': 'Backlog', 'kind': 'WAITING'},
+    {'name': 'Building', 'kind': 'WORKING'},
     {'name': 'Review', 'kind': 'WAITING'},
     {'name': 'Finished', 'kind': 'CLOSED'},
   ],
   'phases': [
     {
       'name': 'All',
-      'states': ['Backlog', 'Review', 'Finished'],
+      'states': ['Backlog', 'Building', 'Review', 'Finished'],
     },
   ],
-  'work': <Object>[],
+  'work': _work,
   'faults': <Object>[],
   'repositories': ['repo'],
   'outside': <Object>[],
-  'stories': <Object>[],
+  'stories': [
+    for (var n = 0; n < ((open?['review'] as int?) ?? 0); n++)
+      {'id': 'R$n', 'title': 'A story', 'state': 'Review', 'priority': 'High', 'issues': <Object>[]},
+  ],
   'open': ?open,
 };
 
@@ -106,7 +125,8 @@ void main() {
 
   // Harm: a count lowered by a move before the planner said what the move changed.
   test('a move makes the counts unknown until the board read after its save', () async {
-    final source = _HeldSource({...smallBoard(), 'open': _open(review: 1, left: 2)});
+    // S2 of the small board stands in Review.
+    final source = _HeldSource({...smallBoard(), 'work': _work, 'open': _open(review: 1, left: 2)});
     final boards = PlanningBoards(FakePlanningClient([provider('local', source)]));
     addTearDown(boards.dispose);
     await pumpEventQueue();
