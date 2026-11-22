@@ -9,6 +9,7 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final states = (board['states'] as List).cast<Map<String, dynamic>>();
   final stories = (board['stories'] as List).cast<Map<String, dynamic>>();
+  _shareIssues(board);
   final batch = parameters['moves'];
   if (batch is! List) {
     refuse('MoveNotAllowed', {'item': '', 'from': '', 'to': '', 'reason': 'Moves must be a list.'});
@@ -124,7 +125,7 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       storyWrites.add(() {
         for (final item in least) {
           item['state'] = to;
-          moved.add(item['id'] as String);
+          if (!moved.contains(item['id'])) moved.add(item['id'] as String);
         }
         if (issues.isEmpty) story['state'] = to;
       });
@@ -166,7 +167,7 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
     } else {
       issueWrites.add(() {
         issue!['state'] = to;
-        moved.add(id);
+        if (!moved.contains(id)) moved.add(id);
       });
     }
   }
@@ -180,6 +181,22 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   board['moved'] = moved;
   board['storyMisfits'] = storyMisfits;
   return board;
+}
+
+/// Makes an issue two stories share, or one in no story that a story lists too, one issue on a decoded [board], as the
+/// planner holds it: every story's list points at the first copy of each issue, so a write to it is seen everywhere.
+void _shareIssues(Map<String, dynamic> board) {
+  final one = <Object?, Map<String, dynamic>>{};
+  for (final issue in (board['issues'] as List? ?? const []).whereType<Map<String, dynamic>>()) {
+    one.putIfAbsent(issue['id'], () => issue);
+  }
+  for (final story in (board['stories'] as List).whereType<Map<String, dynamic>>()) {
+    final issues = story['issues'];
+    if (issues is! List) continue;
+    for (var at = 0; at < issues.length; at++) {
+      if (issues[at] case final Map<String, dynamic> issue) issues[at] = one.putIfAbsent(issue['id'], () => issue);
+    }
+  }
 }
 
 /// The closed state that is not completed work.

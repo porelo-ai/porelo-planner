@@ -1152,6 +1152,66 @@ void main() {
     );
   });
 
+  /// Two stories that share one issue in Review, as two GitHub stories can hold one sub-issue.
+  Map<String, dynamic> sharing() {
+    final source = finishing('Review', done: 'Review', last: 'Review');
+    source['stories'] = [
+      for (final id in ['StoryOne', 'StoryTwo'])
+        {
+          'id': id,
+          'state': 'Review',
+          'issues': [
+            {'id': 'IssueShared', 'state': 'Review'},
+          ],
+        },
+    ];
+    return source;
+  }
+
+  // Harm: a window test that sees a shared issue previewed in its old state, or still open under the other story,
+  // after a story's finish moved it, which the planner shows moved everywhere.
+  test('a story finished over an issue it shares is previewed and saved with the issue finished everywhere', () {
+    final moves = {
+      'revision': 'finishing',
+      'moves': [
+        {'story': 'StoryOne', 'to': 'Finished'},
+      ],
+    };
+    final preview = previewPlanningMove(sharing(), moves);
+    expect((preview['issues'] as List<dynamic>).map((issue) => (issue['id'], issue['from'], issue['to'])), [
+      ('IssueShared', 'Review', 'Finished'),
+    ], reason: 'the shared issue previewed as moved');
+    final result = applyPlanningMove(sharing(), moves);
+    expect(
+      (result['stories'] as List<dynamic>).map(
+        (story) => ((story['issues'] as List<dynamic>).single as Map<String, dynamic>)['state'],
+      ),
+      ['Finished', 'Finished'],
+      reason: 'the one issue finished under both stories',
+    );
+  });
+
+  // Harm: a window test that passes a batch the planner refuses: a story finished over a shared issue that the same
+  // batch moves back to Ready.
+  test('a story finished over a shared issue the batch moves back to Ready is refused as the planner refuses it', () {
+    expect(
+      () => applyPlanningMove(sharing(), {
+        'revision': 'finishing',
+        'moves': [
+          {'story': 'StoryTwo', 'to': 'Finished'},
+          {'issue': 'IssueShared', 'to': 'Ready'},
+        ],
+        'confirm': true,
+      }),
+      throwsA(
+        isA<PlanningRefusal>()
+            .having((error) => error.name, 'refusal', 'MoveNotAllowed')
+            .having((error) => error.parameters['item'], 'the story', 'StoryTwo')
+            .having((error) => '${error.parameters['reason']}', 'the reopened issue', contains('IssueShared:Ready')),
+      ),
+    );
+  });
+
   // Prevents the window's tests finishing work under a rejected issue, which the planner refuses.
   for (final rejectedBeside in [false, true]) {
     test('the stand-in refuses a story finished over a Review sub-issue whose parent is rejected'
