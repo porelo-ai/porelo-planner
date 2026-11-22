@@ -1886,21 +1886,21 @@ class _BoardViewState extends State<_BoardView> {
                           Icon(open ? Icons.expand_more : Icons.chevron_right, size: PlanningStyle.mark),
                           Expanded(
                             child: Text(
-                              story.issues.isEmpty
+                              story.workIssues.isEmpty
                                   ? 'no issues yet'
-                                  : '${story.issues.length} ${story.issues.length == 1 ? 'issue' : 'issues'}',
+                                  : '${story.workIssues.length} ${story.workIssues.length == 1 ? 'issue' : 'issues'}',
                             ),
                           ),
-                          if (story.issues.isNotEmpty && story.completedIssues != null) ...[
+                          if (story.workIssues.isNotEmpty && story.completedIssues != null) ...[
                             SizedBox(
                               width: PlanningStyle.progress,
                               child: LinearProgressIndicator(
-                                value: story.completedIssues! / story.issues.length,
+                                value: story.completedIssues! / story.workIssues.length,
                                 semanticsLabel: 'Issues in Review or Finished',
                               ),
                             ),
                             const SizedBox(width: Space.tight),
-                            Text('${story.completedIssues}/${story.issues.length}'),
+                            Text('${story.completedIssues}/${story.workIssues.length}'),
                           ],
                         ],
                       ),

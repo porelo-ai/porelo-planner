@@ -488,7 +488,13 @@ class PlanStory {
     return last;
   }
 
-  /// The number in Review or Finished, when the list and every issue state were reported.
+  /// The issues that are part of the story's work: every one but those rejected, which nobody builds.
+  List<PlanIssue> get workIssues => [
+    for (final issue in issues)
+      if (issue.state != 'Rejected') issue,
+  ];
+
+  /// The number of [workIssues] in Review or Finished, when the list and every issue state were reported.
   int? get completedIssues => issuesReported && issues.every((issue) => issue.state.isNotEmpty)
       ? issues.where((issue) => issue.state == 'Review' || issue.state == 'Finished').length
       : null;
