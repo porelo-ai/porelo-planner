@@ -1,0 +1,2 @@
+title: "An issue whose Status is outside the workflow stays on the board under its story, warned StateOutsideWorkflow, instead of in a separate list, and a move into the workflow repairs it."
+type: changed

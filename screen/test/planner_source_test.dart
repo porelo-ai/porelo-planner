@@ -1508,37 +1508,29 @@ void main() {
     expect((await read).repositories, ['porelo-project', 'porelo-other'], reason: 'read in the planner\'s order');
   });
 
-  // Harm: an issue outside the workflow is dropped unseen, or one named as no issue is moved by that name.
-  test(
-    'a streamed board\'s issues outside the workflow are read, and one that is no issue id ends the watch',
-    () async {
-      final (planner, source) = await _started();
-      final streams = _Streams(planner, first: false);
-      Map<String, Object?> outside(String id) => {
-        'outside': [
-          {
-            'id': id,
-            'repository': 'porelo-project',
-            'title': 'Lost',
-            'status': 'Accepted',
-            'story': 'porelo-project#1',
-          },
-        ],
-      };
-      final bad = source.watchStories('demo').first;
-      await _until(() => streams.opened.isNotEmpty, 'the stream');
-      streams.opened.last.add(_event('r1', more: outside('../x#1')));
-      expect((await _refusal(bad)).name, 'BadAnswer');
-
-      final read = source.watchStories('demo').first;
-      await _until(() => streams.opened.length > 1, 'the second stream');
-      streams.opened.last.add(_event('r1', more: outside('porelo-project#7')));
-      final board = await read;
-      expect(board.outside.single.id, 'porelo-project#7');
-      expect(board.outside.single.status, 'Accepted');
-      expect(board.outside.single.story, 'porelo-project#1');
-    },
-  );
+  // Harm: an issue in a state outside the workflow is dropped from its story, or read in a state it does not hold.
+  test('a streamed board\'s issue in a state outside the workflow is read under its story in that state', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final read = source.watchStories('demo').first;
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    streams.opened.last.add(
+      _event(
+        'r1',
+        more: {
+          'stories': [
+            {
+              ..._story('porelo-project#1', 'Backlog'),
+              'issues': [_issue('porelo-project#7', 'Accepted')],
+            },
+          ],
+        },
+      ),
+    );
+    final issue = (await read).stories.single.issues.single;
+    expect(issue.id, 'porelo-project#7');
+    expect(issue.state, 'Accepted');
+  });
 
   // Harm: a board from a planner that sends no list of the issues outside the project is not read, a story made by
   // hand is shown as an issue, or one named into another repository is shown by that name.
@@ -1601,15 +1593,6 @@ void main() {
         'issues': [_issue('porelo-project#2', 'Backlog')],
       },
     ];
-    final outside = [
-      {
-        'id': 'porelo-project#7',
-        'repository': 'porelo-project',
-        'title': 'Lost',
-        'status': 'Accepted',
-        'story': 'porelo-project#1',
-      },
-    ];
     final boards = <String, Map<String, Object?>>{
       'named twice': {
         'unlisted': [unlisted('porelo-project#9'), unlisted('porelo-project#9')],
@@ -1622,11 +1605,6 @@ void main() {
         'stories': stories,
         'unlisted': [unlisted('porelo-project#2')],
       },
-      'an issue outside the workflow': {
-        'stories': stories,
-        'outside': outside,
-        'unlisted': [unlisted('porelo-project#7')],
-      },
     };
     final read = source.watchStories('demo').first;
     await _until(() => streams.opened.isNotEmpty, 'the stream');
@@ -1635,7 +1613,6 @@ void main() {
         'r1',
         more: {
           'stories': stories,
-          'outside': outside,
           'unlisted': [unlisted('porelo-project#9')],
         },
       ),

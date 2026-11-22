@@ -45,7 +45,6 @@ final _rows = planningOpenWork(
     'work': <Object>[],
     'faults': <Object>[],
     'repositories': ['repo'],
-    'outside': <Object>[],
     'stories': [
       _story('porelo-store#12', 'Answer the window', _open(left: 4, minutes: 200), priority: 'Medium'),
       _story('ST3', 'build the list', _open(left: 1, minutes: 20), priority: 'High'),

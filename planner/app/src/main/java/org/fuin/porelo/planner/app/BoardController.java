@@ -57,7 +57,6 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
@@ -559,7 +558,6 @@ public class BoardController {
         // A valid id absent from all board items lets the move rules judge an issue not saved yet.
         final java.util.Set<String> taken = new java.util.HashSet<>();
         board.issues().forEach(i -> taken.add(i.id()));
-        board.outside().forEach(i -> taken.add(i.id()));
         board.stories().forEach(s -> taken.add(s.id()));
         board.unlisted().forEach(i -> taken.add(i.id()));
         int number = 1;
@@ -614,7 +612,6 @@ public class BoardController {
                         board.repositories(),
                         board.faults(),
                         board.owner(),
-                        board.outside(),
                         board.unlisted());
         try {
             Moves.check(
@@ -889,7 +886,6 @@ public class BoardController {
                 board.stories().stream()
                         .map(story -> story(board, story, snapshot, derive, counter))
                         .toList(),
-                board.outside().stream().map(BoardController::outsideIssue).toList(),
                 board.unlisted().stream().map(BoardController::unlistedIssue).toList(),
                 open(counter.board()),
                 StoryRules.of(board, derive).stream()
@@ -901,18 +897,6 @@ public class BoardController {
                                                         breach.rule().spelled()),
                                                 breach.words()))
                         .toList());
-    }
-
-    /** Maps an issue the board left out of its workflow, which the window offers to move. */
-    private static org.fuin.porelo.planner.app.answers.OutsideIssue outsideIssue(
-            final OutsideIssue issue) {
-        return new org.fuin.porelo.planner.app.answers.OutsideIssue(
-                issue.id(),
-                issue.repository(),
-                issue.title(),
-                issue.status(),
-                issue.story(),
-                issue.link());
     }
 
     /** Maps an open issue that is no item of the project, which the window only shows. */

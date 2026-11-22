@@ -2334,20 +2334,11 @@ components:
           description: Every story, without its description.
           items:
             $ref: '#/components/schemas/Story'
-        outside:
-          type: array
-          description: >-
-            The issues left out of the board because their Status is none of the workflow's states, each named in
-            `faults` too. Each may be moved into a state of the workflow as a board issue is; once moved, it stands
-            on the board again, under its story. Empty when there are none; a store without a tracker answers it
-            empty.
-          items:
-            $ref: '#/components/schemas/OutsideIssue'
         unlisted:
           type: array
           description: >-
             The open issues of the project's repositories that are no items of the project, as one made by hand on
-            the tracker is, in the order of the repositories. None of them is on the board or in `outside`. Empty
+            the tracker is, in the order of the repositories. None of them is on the board. Empty
             when there are none; a store without a tracker answers it empty, and a window reads an answer without it
             as empty.
           items:
@@ -2386,31 +2377,6 @@ components:
         words:
           type: string
           description: The breach in the planner's fixed words, naming items only by their ids.
-
-    OutsideIssue:
-      description: An issue the board left out because its Status is none of the workflow's states.
-      type: object
-      required: [id, repository, title, status]
-      properties:
-        id:
-          $ref: '#/components/schemas/IssueId'
-        repository:
-          $ref: '#/components/schemas/Name'
-        title:
-          type: string
-        status:
-          type: string
-          description: The Status the tracker holds for it, as it holds it; empty when it holds none.
-        story:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          description: The story it stands under, when the board holds that story.
-          allOf:
-            - $ref: '#/components/schemas/StoryId'
-        link:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          type: string
-          format: uri
-          description: The issue on the tracker.
 
     UnlistedIssue:
       description: >-
@@ -2583,10 +2549,9 @@ components:
           $ref: '#/components/schemas/StoryId'
         issue:
           description: >-
-            An issue of the board, or one of the board's `outside` issues; an outside issue moves from no state, under
-            the same rules as a board issue (a working state only for an issue a person works or one no run in this
-            planner's record works), and its preview
-            names no state it leaves.
+            An issue of the board. One warned StateOutsideWorkflow moves from the state it stands in into a state of
+            the workflow, which repairs it, under the same rules as any issue (a working state only for an issue a
+            person works or one no run in this planner's record works).
           allOf:
             - $ref: '#/components/schemas/IssueId'
         to:

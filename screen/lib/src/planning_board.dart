@@ -347,13 +347,12 @@ class PlanningBoard extends ChangeNotifier {
       return _drainQueue();
     }
     final shown = next.shown;
-    final outsideMove = shown.from.isEmpty;
     final now = _stateOfKey(snapshot!, next.key);
     // An issue in no story is judged once its list is read at the board's revision.
-    if (!outsideMove && now == null && shown.isIssue && _noStory?.revision != snapshot!.revision) return;
+    if (now == null && shown.isIssue && _noStory?.revision != snapshot!.revision) return;
     _queue.removeAt(0);
     _pending[next.key] = shown;
-    final moved = outsideMove ? !outside.any((issue) => 'issue ${issue.id}' == next.key) : now != shown.from;
+    final moved = now != shown.from;
     if (moved) {
       // Never saved from a state the person did not see.
       _addProblem(
@@ -1728,9 +1727,6 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
-  /// The issues the board left out because their Status is none of the workflow's states, by id.
-  List<PlanOutsideIssue> get outside => snapshot?.outside ?? const [];
-
   /// The open issues of the project's repositories that are no items of the project, which the screen only shows.
   List<PlanUnlistedIssue> get unlisted => snapshot?.unlisted ?? const [];
 
@@ -1742,25 +1738,6 @@ class PlanningBoard extends ChangeNotifier {
     for (final breach in rules)
       if (breach.item == item) breach.words,
   ];
-
-  /// Moves an issue outside the workflow into its state [to], which repairs it; the planner judges it as any issue's
-  /// move. [revision] is the board's when the choice was offered.
-  Future<void> moveOutside(String id, String to, {String? revision}) async {
-    if (_disposed || _oneAtATime(id, queues: true)) return;
-    if (!takesMoves || snapshot!.revision.isEmpty) {
-      return refuseMove(id, 'the board is not live and complete.');
-    }
-    if (!outside.any((issue) => issue.id == id)) return refuseMove(id, 'it is no longer outside the workflow.');
-    if (!{'WAITING', 'WORKING', 'CLOSED'}.contains(state(to)?.kind)) {
-      return refuseMove(id, '$to is not a state of the board.');
-    }
-    await _moveNow(
-      'issue $id',
-      PlanningIssueMove(id, to),
-      PendingPlanningMove('', to, isIssue: true),
-      revision: revision,
-    );
-  }
 
   /// Says why a move of [id] was not made, where the board and the story's page show it.
   void refuseMove(String id, String why) {

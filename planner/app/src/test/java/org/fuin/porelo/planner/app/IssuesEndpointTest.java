@@ -309,7 +309,6 @@ class IssuesEndpointTest {
                         empty.repositories(),
                         List.of(),
                         null,
-                        List.of(),
                         List.of(
                                 new org.fuin.porelo.planner.store.UnlistedIssue(
                                         "porelo-other#1",

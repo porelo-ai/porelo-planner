@@ -74,7 +74,6 @@ Map<String, dynamic> _board() => {
   ],
   'faults': <Object>[],
   'repositories': ['repo'],
-  'outside': <Object>[],
   'stories': [
     _story(
       'SMALL',

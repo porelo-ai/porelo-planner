@@ -98,7 +98,7 @@ are added, as the Markdown store's stage records count them; a pause and a perso
   records stay under it.
 - An issue labeled `story` is a story; every other issue of the project is an issue.
 - An open issue of a repository `project.yml` names that is no item of the project, as one made by hand on GitHub is,
-  is answered in the board's `unlisted`, apart from the stories and from `outside`, and the window shows it under
+  is answered in the board's `unlisted`, apart from the stories, and the window shows it under
   "Issues not on the project", its title as plain text and its link, built from its repository and number, opened
   only when it is HTTPS. It is a story when its issue type is `Story` and it is in the project's own repository, and
   an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, at most
@@ -110,8 +110,8 @@ are added, as the Markdown store's stage records count them; a pause and a perso
   under it. Most are warned so that no work, move or edit starts on them: an item labeled `story` outside the
   project's own repository is an issue; a parent outside the project, a parent in another repository, a parent whose
   parents lead back to the issue, and a parent that is a sub-issue itself are cut; a story as a blocker is dropped;
-  and a link to an issue the board does not place - an archived one GitHub has open, an archived parent, one listed
-  apart, or one whose id names two items - is cut. A story under another issue is shown without that parent and
+  and a link to an issue the board does not place - an archived one GitHub has open, an archived parent, or one
+  whose id names two items - is cut. A story under another issue is shown without that parent and
   named as a fault only.
 - A blocker GitHub has closed and archived, as its own "Auto-archive items" workflow does with finished work, is a
   wait that is done, as a closed blocker outside the project is.
@@ -124,9 +124,9 @@ are added, as the Markdown store's stage records count them; a pause and a perso
 - An item with more sub-issues, blockers, labels or field values than one page of GitHub's answer carries is shown
   as far as it was read, warned, and its story says that an issue of it may be missing.
 - An issue without a `Status` stands in the workflow's first state, unwarned; no save writes its `Status` until it is
-  moved. An issue whose `Status` alone is outside the workflow is listed apart, for a move back into a state of the
-  board; one with a warning besides stays on the board, warned for both. A story whose `Status` is outside the
-  workflow is shown in that state, warned, with its issues.
+  moved. An issue or a story whose `Status` is outside the workflow is shown in that state under its story, or with
+  its issues, warned `StateOutsideWorkflow`, and warned for any other fault besides; no work starts on it, and a move
+  into a state of the workflow repairs it.
 - The board's revision is made of the items as GitHub holds them, whether their labels or field values lie past one
   page among them, and of the faults, never of the warnings, which follow from the items alone.
 - A blocker the project does not hold leaves its issue on the board, waiting on it: `waitsOn` names it as
@@ -163,7 +163,7 @@ A save sets values and never creates a field or replaces its options.
 
 GitHub gives every option a new id when a field's options are set, and clears every item's value of that field. So
 the planner never sets the `Status` options: they are the workflow's states as the person set them on the project,
-and an item whose `Status` is an option the workflow does not have is warned or listed apart. A stage's
+and an item whose `Status` is an option the workflow does not have is warned. A stage's
 result overwrites the sections of the body its kind writes and no other byte.
 
 A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the

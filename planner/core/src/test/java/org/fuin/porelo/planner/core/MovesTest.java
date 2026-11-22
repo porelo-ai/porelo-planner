@@ -4,12 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
@@ -842,7 +843,7 @@ class MovesTest {
     }
 
     @Test
-    void anIssueOutsideTheWorkflowMovesIntoItFromNoStateUnderTheRulesOfABoardIssue() {
+    void anIssueOutsideTheWorkflowMovesIntoItFromItsOwnStateUnderTheRulesOfABoardIssue() {
         // Harm: an issue whose Status a person set outside the workflow can never be moved back,
         // or comes back in a working state no task works.
         final Board outside =
@@ -865,9 +866,9 @@ class MovesTest {
                         (issues, stories) -> List.of(),
                         NO_RUNS);
         assertThat(preview.issues())
-                .as("the preview moves it from no state")
+                .as("the preview moves it from the state it stands in")
                 .containsExactly(
-                        new MovePreview.MovedIssue("PL7", "porelo-planner", "", "Backlog"));
+                        new MovePreview.MovedIssue("PL7", "porelo-planner", "Accepted", "Backlog"));
         assertThat(Moves.stories(outside, List.of(issue("PL7", "Backlog"))))
                 .as("its story's running work is the work it moves under")
                 .containsExactly("ST1");
@@ -891,7 +892,7 @@ class MovesTest {
                 .as("a person's issue moved into a working state by hand")
                 .containsExactly(entry("PL8", "Building"));
         assertThat(refused(outside, List.of(issue("PL9", "Backlog"))).name())
-                .as("an id neither on the board nor outside it")
+                .as("an id not on the board")
                 .isEqualTo("NoSuchIssue");
     }
 
@@ -942,7 +943,12 @@ class MovesTest {
                         outside("PL3.1", null, "PL3", Worker.AGENT));
 
         final Moves.Refused finished =
-                refused(outside, List.of(story("ST3", "Finished"), issue("PL7", "Idea")));
+                refused(
+                        outside,
+                        List.of(
+                                story("ST3", "Finished"),
+                                issue("PL7", "Idea"),
+                                issue("PL3.1", "Finished")));
         assertThat(finished.name()).as("its issue brought back open").isEqualTo("MoveNotAllowed");
         assertThat(finished.getMessage()).as("the issue named").contains("PL7:Idea");
         // Its parent kept in Review by its own move, so only the story's finish can refuse it.
@@ -951,6 +957,7 @@ class MovesTest {
                         outside,
                         List.of(
                                 story("ST3", "Finished"),
+                                issue("PL7", "Finished"),
                                 issue("PL3", "Review"),
                                 issue("PL3.1", "Idea")));
         assertThat(sub.name()).as("a sub-issue brought back open").isEqualTo("MoveNotAllowed");
@@ -958,38 +965,91 @@ class MovesTest {
         assertThat(refused(outside, List.of(story("ST3", "Backlog"), issue("PL7", "Idea"))).name())
                 .as("a story stated where its issue brought back does not fit")
                 .isEqualTo("StoryStateMismatch");
+        final Moves.Refused left = refused(outside, List.of(story("ST3", "Finished")));
+        assertThat(left.name())
+                .as("an issue left outside the workflow holds its story's finish back")
+                .isEqualTo("MoveNotAllowed");
+        assertThat(left.getMessage())
+                .as("named with its warning")
+                .isEqualTo("PL7: " + Warning.stateOutsideWorkflow().text());
         assertThat(
                         Moves.check(
                                         outside,
-                                        List.of(story("ST3", "Finished")),
+                                        List.of(
+                                                story("ST3", "Finished"),
+                                                issue("PL7", "Finished"),
+                                                issue("PL3.1", "Finished")),
                                         false,
                                         DERIVE,
                                         NO_RUNS)
                                 .issues())
-                .as("an issue left outside is not judged")
-                .containsExactly(entry("PL3", "Finished"));
+                .as("finished with its issues the same batch moves into the workflow")
+                .containsEntry("PL7", "Finished")
+                .containsEntry("PL3.1", "Finished");
     }
 
-    private static Board withOutside(final Board board, final OutsideIssue... outside) {
+    /** An issue a person set to a Status the workflow lacks, and the story it stands under. */
+    private record Outside(Issue issue, @Nullable String story) {}
+
+    /** The board with each issue outside the workflow on it, warned, under its story. */
+    private static Board withOutside(final Board board, final Outside... outside) {
+        final List<Issue> issues = new ArrayList<>(board.issues());
+        final List<Story> stories = new ArrayList<>();
+        for (final Outside each : outside) {
+            issues.add(each.issue());
+        }
+        for (final Story story : board.stories()) {
+            final List<String> under = new ArrayList<>(story.issues());
+            for (final Outside each : outside) {
+                if (story.id().equals(each.story())) {
+                    under.add(each.issue().id());
+                }
+            }
+            stories.add(
+                    new Story(
+                            story.id(),
+                            story.title(),
+                            story.state(),
+                            story.stateGiven(),
+                            story.priority(),
+                            story.size(),
+                            under,
+                            story.description(),
+                            story.link(),
+                            story.issuesWhole(),
+                            story.warnings()));
+        }
         return new Board(
                 board.revision(),
                 board.workflow(),
-                board.stories(),
-                board.issues(),
+                stories,
+                issues,
                 board.work(),
                 board.repositories(),
                 List.of(),
-                null,
-                List.of(outside));
+                null);
     }
 
-    private static OutsideIssue outside(
+    private static Outside outside(
             final String id,
             final @Nullable String story,
             final @Nullable String parent,
             final Worker worker) {
-        return new OutsideIssue(
-                id, "porelo-planner", "An issue", "Accepted", story, parent, null, worker);
+        return new Outside(
+                new Issue(
+                                id,
+                                "porelo-planner",
+                                "An issue",
+                                "Accepted",
+                                null,
+                                List.of(),
+                                parent,
+                                null,
+                                "",
+                                worker,
+                                Risk.ORDINARY)
+                        .withWarnings(List.of(Warning.stateOutsideWorkflow())),
+                story);
     }
 
     private Moves.Refused refused(final List<Moves.Move> moves, final boolean confirm) {

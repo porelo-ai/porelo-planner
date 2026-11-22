@@ -836,7 +836,6 @@ public final class ItemsBoardReader implements BoardReader {
                         read.repositories(),
                         allFaults,
                         read.project().owner(),
-                        mapped.outsideWorkflow(),
                         unlistedIssues);
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         for (final ItemView view : current.views()) {
@@ -884,7 +883,6 @@ public final class ItemsBoardReader implements BoardReader {
         final Set<String> taken = new HashSet<>();
         mapped.stories().forEach(story -> taken.add(story.id()));
         mapped.issues().forEach(issue -> taken.add(issue.id()));
-        mapped.outsideWorkflow().forEach(issue -> taken.add(issue.id()));
         final Set<String> nodes = new HashSet<>();
         final List<UnlistedIssue> unlisted = new ArrayList<>();
         for (final Snapshot.Unlisted issue : repositoryIssues) {

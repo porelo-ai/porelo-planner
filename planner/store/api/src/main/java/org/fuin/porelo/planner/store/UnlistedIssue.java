@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * An open issue of one of the project's repositories that is no item of the project, as one made by
- * hand on the forge is; it is neither on the board nor outside its workflow.
+ * hand on the forge is; it is not on the board.
  *
  * @param id its tracker reference
  * @param repository the name of the repository that holds it

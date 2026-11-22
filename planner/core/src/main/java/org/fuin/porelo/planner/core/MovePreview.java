@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -313,12 +312,7 @@ public record MovePreview(
 
     private static MovedIssue moved(
             final Board board, final String id, final Map<String, String> after) {
-        final Issue issue = board.issue(id).orElse(null);
-        if (issue == null) {
-            // An issue left out of the workflow moves from no state.
-            final OutsideIssue outside = board.outsideIssue(id).orElseThrow();
-            return new MovedIssue(id, outside.repository(), "", after.getOrDefault(id, ""));
-        }
+        final Issue issue = board.issue(id).orElseThrow();
         return new MovedIssue(
                 id, issue.repository(), issue.state(), after.getOrDefault(id, issue.state()));
     }

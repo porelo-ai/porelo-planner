@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import org.assertj.core.groups.Tuple;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
@@ -37,10 +38,10 @@ import org.fuin.porelo.forge.github.GitHubGraphQl.ProjectItems;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -1932,9 +1933,9 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void anIssueWithAStatusTheWorkflowLacksIsReadOutsideTheBoardAndOnItOnceMovedIntoIt() {
-        // Harm: an issue whose Status a person set outside the workflow vanishes from the window
-        // with no way to move it back, or shows on the board and outside it at once.
+    void anIssueWithAStatusTheWorkflowLacksStandsUnderItsStoryWarnedUntilMovedIntoIt() {
+        // Harm: an issue whose Status a person set outside the workflow leaves its story for a
+        // list apart, or stays warned once moved into the workflow.
         final ProjectItem accepted =
                 new ProjectItem(
                         "PVTI_lib_3",
@@ -1955,24 +1956,19 @@ class ItemsBoardReaderTest {
                         .read()
                         .board();
 
-        assertThat(before.issues()).as("not on the board").isEmpty();
-        assertThat(before.outside())
-                .as("listed outside it, under its story")
+        assertThat(before.issues())
+                .as("on the board in its own state, warned")
+                .extracting(Issue::id, Issue::state, Issue::worker, Issue::warnings)
                 .containsExactly(
-                        new OutsideIssue(
+                        Tuple.tuple(
                                 "example-lib#3",
-                                "example-lib",
-                                "A title",
                                 "Accepted",
-                                "example-project#1",
-                                null,
-                                URI.create("https://github.com/" + OWNER + "/example-lib/issues/3"),
-                                Worker.MANUAL));
-        assertThat(before.faults())
-                .as("named with how a person repairs it")
-                .contains(
-                        "example-lib#3 has the Status Accepted, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it");
+                                Worker.MANUAL,
+                                List.of(Warning.stateOutsideWorkflow())));
+        assertThat(before.stories().get(0).issues())
+                .as("under its story")
+                .containsExactly("example-lib#3");
+        assertThat(before.faults()).as("not left out").isEmpty();
 
         final ProjectItem moved =
                 new ProjectItem(
@@ -1991,10 +1987,9 @@ class ItemsBoardReaderTest {
         assertThat(after.issue("example-lib#3").map(Issue::state))
                 .as("on the board in the state it was moved to")
                 .contains("Backlog");
-        assertThat(after.stories().get(0).issues())
-                .as("under its story again")
-                .containsExactly("example-lib#3");
-        assertThat(after.outside()).as("no longer outside").isEmpty();
+        assertThat(after.issue("example-lib#3").map(Issue::warnings))
+                .as("no longer warned")
+                .contains(List.of());
     }
 
     @Test

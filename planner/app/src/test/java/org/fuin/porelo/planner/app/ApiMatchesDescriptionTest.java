@@ -67,8 +67,6 @@ class ApiMatchesDescriptionTest {
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
                     Map.entry(
-                            "OutsideIssue", org.fuin.porelo.planner.app.answers.OutsideIssue.class),
-                    Map.entry(
                             "UnlistedIssue",
                             org.fuin.porelo.planner.app.answers.UnlistedIssue.class),
                     Map.entry("RuleBreach", org.fuin.porelo.planner.app.answers.RuleBreach.class),

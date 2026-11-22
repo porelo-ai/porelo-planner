@@ -202,7 +202,6 @@ class BoardTest {
                 List.of("porelo-planner"),
                 List.of(),
                 "porelo-ai",
-                List.of(),
                 unlisted);
     }
 

@@ -86,6 +86,6 @@ final class HeldBoards {
                 repositories,
                 board.faults(),
                 board.owner(),
-                board.outside());
+                board.unlisted());
     }
 }

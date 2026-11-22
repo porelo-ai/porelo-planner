@@ -93,7 +93,6 @@ class GitHubUnlistedStreamTest {
                                                                 config.repositories(),
                                                                 List.of(),
                                                                 "example-org",
-                                                                List.of(),
                                                                 List.of(
                                                                         new UnlistedIssue(
                                                                                 "porelo-other#3",

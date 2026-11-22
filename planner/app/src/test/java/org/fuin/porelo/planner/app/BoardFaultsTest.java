@@ -8,11 +8,11 @@ import java.util.Map;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.UnlistedIssue;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -50,9 +50,9 @@ class BoardFaultsTest {
     }
 
     @Test
-    void theBoardEventCarriesTheIssuesLeftOutOfTheWorkflowAndAGitBoardNone() {
-        // Harm: the window never hears of an issue outside the workflow, so it offers no move
-        // that brings it back, or reads a missing list as an old planner's answer.
+    void theBoardEventCarriesAnIssueOutsideTheWorkflowUnderItsStoryWarnedAndNoListApart() {
+        // Harm: the window shows an issue outside the workflow apart from its story, or not at
+        // all, so its story is judged and shown without it.
         final Workflow workflow =
                 new Workflow(
                         List.of("Idea", "Finished"),
@@ -66,51 +66,43 @@ class BoardFaultsTest {
                         false,
                         "High",
                         null,
-                        List.of(),
+                        List.of("porelo-store#2"),
                         "",
                         null);
+        final Issue accepted =
+                new Issue(
+                                "porelo-store#2",
+                                "porelo-store",
+                                "An issue",
+                                "Accepted",
+                                null,
+                                List.of(),
+                                null,
+                                URI.create("https://github.com/example-org/porelo-store/issues/2"),
+                                "")
+                        .withWarnings(List.of(Warning.stateOutsideWorkflow()));
         final Board tracked =
                 new Board(
                         new Revision("a".repeat(64)),
                         workflow,
                         List.of(story),
-                        List.of(),
+                        List.of(accepted),
                         new Work(Map.of(), List.of()),
                         List.of("porelo-store"),
                         List.of(),
-                        "example-org",
-                        List.of(
-                                new OutsideIssue(
-                                        "porelo-store#2",
-                                        "porelo-store",
-                                        "An issue",
-                                        "Accepted",
-                                        "porelo-store#1",
-                                        null,
-                                        URI.create(
-                                                "https://github.com/example-org/porelo-store/issues/2"),
-                                        Worker.AGENT)));
-        final Board git =
-                new Board(
-                        new Revision("b".repeat(64)),
-                        workflow,
-                        List.of(),
-                        List.of(),
-                        new Work(Map.of(), List.of()),
-                        List.of("porelo-store"));
+                        "example-org");
 
         final JsonNode event = mapper().valueToTree(boardOf(tracked));
 
-        assertThat(event.path("outside").toString())
-                .as("the issue outside the workflow as the event's data carries it")
-                .isEqualTo(
-                        "[{\"id\":\"porelo-store#2\",\"repository\":\"porelo-store\","
-                                + "\"title\":\"An issue\",\"status\":\"Accepted\","
-                                + "\"story\":\"porelo-store#1\",\"link\":"
-                                + "\"https://github.com/example-org/porelo-store/issues/2\"}]");
-        assertThat(mapper().valueToTree(boardOf(git)).path("outside").toString())
-                .as("a Git-kept board's, sent empty")
-                .isEqualTo("[]");
+        assertThat(event.has("outside")).as("no list apart").isFalse();
+        final JsonNode issue = event.path("stories").path(0).path("issues").path(0);
+        assertThat(issue.path("id").asText())
+                .as("the issue under its story")
+                .isEqualTo("porelo-store#2");
+        assertThat(issue.path("state").asText()).as("in its own state").isEqualTo("Accepted");
+        assertThat(issue.path("warnings").path(0).path("kind").asText())
+                .as("warned")
+                .isEqualTo("StateOutsideWorkflow");
     }
 
     @Test
@@ -132,7 +124,6 @@ class BoardFaultsTest {
                         List.of("porelo-store", "porelo-other"),
                         List.of(),
                         "example-org",
-                        List.of(),
                         List.of(
                                 new UnlistedIssue(
                                         "porelo-store#4",

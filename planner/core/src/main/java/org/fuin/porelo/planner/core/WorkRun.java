@@ -3009,7 +3009,6 @@ public final class WorkRun {
                 board.repositories(),
                 board.faults(),
                 board.owner(),
-                board.outside(),
                 board.unlisted());
     }
 

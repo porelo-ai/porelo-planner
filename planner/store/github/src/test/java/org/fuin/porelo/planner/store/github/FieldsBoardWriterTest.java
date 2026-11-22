@@ -30,12 +30,12 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -3210,21 +3210,14 @@ class FieldsBoardWriterTest {
                                 SHOWN,
                                 WORKFLOW,
                                 List.of(),
-                                List.of(),
+                                List.of(
+                                        issue(accepted)
+                                                .withWarnings(
+                                                        List.of(Warning.stateOutsideWorkflow()))),
                                 new Work(Map.of(), List.of()),
                                 CONFIG.repositories(),
                                 List.of(),
-                                null,
-                                List.of(
-                                        new OutsideIssue(
-                                                "PL1",
-                                                "example-project",
-                                                accepted.title(),
-                                                "Accepted",
-                                                null,
-                                                null,
-                                                accepted.link(),
-                                                Worker.AGENT))),
+                                null),
                         Map.of("PL1", accepted),
                         CONFIG);
 
@@ -3247,7 +3240,7 @@ class FieldsBoardWriterTest {
                                                         Map.of("PL9", "Backlog"),
                                                         Map.of(),
                                                         List.of())))
-                .as("an issue neither on the board nor outside it")
+                .as("an issue not on the board")
                 .isInstanceOf(StoreException.NoSuchIssue.class);
     }
 }

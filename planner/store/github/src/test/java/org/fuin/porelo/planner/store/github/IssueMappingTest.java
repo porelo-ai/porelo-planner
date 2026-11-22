@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import org.assertj.core.groups.Tuple;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.Story;
@@ -406,11 +405,13 @@ class IssueMappingTest {
                 .containsExactlyInAnyOrder(
                         Tuple.tuple("example-lib#4", "Idea", null, List.of(), List.of()),
                         Tuple.tuple(
-                                "example-lib#7",
-                                "Idea",
+                                "example-lib#6",
+                                "Somewhere",
                                 null,
                                 List.of(),
-                                List.of(Warning.dependsOnUnplaced())),
+                                List.of(Warning.stateOutsideWorkflow())),
+                        Tuple.tuple(
+                                "example-lib#7", "Idea", null, List.of("example-lib#6"), List.of()),
                         Tuple.tuple(
                                 "example-project#8",
                                 "Idea",
@@ -429,15 +430,7 @@ class IssueMappingTest {
                                 null,
                                 List.of(),
                                 List.of(Warning.idTwice())));
-        assertThat(mapped.outsideWorkflow())
-                .as("the issue whose Status alone is outside the workflow, listed apart")
-                .extracting(OutsideIssue::id)
-                .containsExactly("example-lib#6");
-        assertThat(mapped.faults())
-                .as("only the issue listed apart is named")
-                .containsExactly(
-                        "example-lib#6 has the Status Somewhere, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it");
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
         assertThat(mapped.stories().get(0).issuesWhole())
                 .as("the story holds every issue it names")
                 .isTrue();
@@ -536,24 +529,21 @@ class IssueMappingTest {
                         .field(FieldNames.SIZE, SECRET_BODY);
         final Item accepted = new Item("example-lib", 5).field(FieldNames.STATUS, "Accepted");
 
-        final List<String> faults = read(bad, tooLong, badWorker, badSize, accepted).faults();
+        final IssueMapping.Mapped mapped = read(bad, tooLong, badWorker, badSize, accepted);
+        final List<String> faults = mapped.faults();
 
         assertThat(String.join("\n", faults))
                 .as("the faults' words")
                 .doesNotContain(SECRET_TITLE)
                 .doesNotContain(SECRET_BODY);
         assertThat(faults)
-                .as("a Status that is no plain option name, named without it")
-                .contains(
-                        "example-lib#1 has a Status the workflow does not hold; move it into a"
-                                + " state of the board to repair it",
-                        "example-lib#3 has a Status the workflow does not hold; move it into a"
-                                + " state of the board to repair it");
-        assertThat(faults)
-                .as("a plain option name named")
-                .contains(
-                        "example-lib#5 has the Status Accepted, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it");
+                .as("a Status outside the workflow is no fault, whatever it holds")
+                .noneMatch(fault -> fault.contains("Status"));
+        assertThat(mapped.issues())
+                .as("each issue whose Status is outside the workflow warned instead")
+                .filteredOn(issue -> issue.warnings().contains(Warning.stateOutsideWorkflow()))
+                .extracting(Issue::id)
+                .containsExactlyInAnyOrder("example-lib#1", "example-lib#3", "example-lib#5");
     }
 
     @Test
@@ -1020,9 +1010,9 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssueWhoseStatusTheWorkflowDoesNotHoldIsListedOutsideTheBoardToBeMovedBack() {
-        // Harm: an issue a person set to a Status the workflow lacks vanishes from the window, and
-        // no move can bring it back.
+    void anIssueWhoseStatusTheWorkflowDoesNotHoldStandsUnderItsStoryWarned() {
+        // Harm: an issue a person set to a Status the workflow lacks leaves its story for a list
+        // of its own, so the story is judged without it and the window shows it apart.
         final Item story = new Item("example-project", 1).story();
         final Item accepted =
                 new Item("example-lib", 2)
@@ -1035,28 +1025,22 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(story, accepted, none, fine);
 
         assertThat(mapped.issues())
-                .as("the issues in a state of the workflow, one without a Status in its first")
-                .extracting(Issue::id, Issue::state, Issue::warnings)
+                .as("every issue on the board, one without a Status in the first state")
+                .extracting(Issue::id, Issue::state, Issue::worker, Issue::warnings)
                 .containsExactlyInAnyOrder(
-                        Tuple.tuple("example-lib#3", "Idea", List.of()),
-                        Tuple.tuple("example-lib#4", "Idea", List.of()));
-        assertThat(mapped.outsideWorkflow())
-                .as("each issue left out of the workflow, with what the window shows of it")
-                .containsExactlyInAnyOrder(
-                        new OutsideIssue(
+                        Tuple.tuple(
                                 "example-lib#2",
-                                "example-lib",
-                                SECRET_TITLE,
                                 "Accepted",
-                                "example-project#1",
-                                null,
-                                URI.create("https://github.com/example-org/example-lib/issues/2"),
-                                Worker.MANUAL));
-        assertThat(mapped.faults())
-                .as("named with how a person repairs it")
-                .containsExactly(
-                        "example-lib#2 has the Status Accepted, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it");
+                                Worker.MANUAL,
+                                List.of(Warning.stateOutsideWorkflow())),
+                        Tuple.tuple("example-lib#3", "Idea", Worker.AGENT, List.of()),
+                        Tuple.tuple("example-lib#4", "Idea", Worker.AGENT, List.of()));
+        assertThat(mapped.stories())
+                .as("the issue under its story")
+                .singleElement()
+                .extracting(Story::issues)
+                .isEqualTo(List.of("example-lib#2", "example-lib#4"));
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test
@@ -1073,11 +1057,11 @@ class IssueMappingTest {
                         .field(FieldNames.WORKER, "Manual");
         parent.sub(sub);
 
-        assertThat(read(parent, sub).outsideWorkflow())
+        assertThat(read(parent, sub).issues())
                 .as("the sub-issue under its parent, with its parent's worker")
                 .filteredOn(issue -> issue.id().equals("example-lib#2"))
                 .singleElement()
-                .extracting(OutsideIssue::parent, OutsideIssue::worker)
+                .extracting(Issue::parent, Issue::worker)
                 .containsExactly("example-lib#1", Worker.AGENT);
     }
 
@@ -1105,7 +1089,7 @@ class IssueMappingTest {
     }
 
     @Test
-    void anIssueOutsideTheWorkflowWithAWarningStandsOnTheBoardWarnedForBoth() {
+    void anIssueOutsideTheWorkflowStandsOnTheBoardWarnedForItAndForEachOtherFault() {
         // Harm: an issue outside the workflow that the board cannot hold for another reason too
         // is hidden; or it is offered for a move back that the next read refuses again.
         final Item story = new Item("example-project", 10).story();
@@ -1157,17 +1141,10 @@ class IssueMappingTest {
                         Tuple.tuple(
                                 "example-lib#6", List.of(Warning.subIssueOfSubIssue(), outside)),
                         Tuple.tuple("example-lib#7", List.of(Warning.blockedByStory())),
+                        Tuple.tuple("example-lib#8", List.of(outside)),
                         Tuple.tuple(
                                 "example-lib#9", List.of(Warning.parentOutsideProject(), outside)));
-        assertThat(mapped.outsideWorkflow())
-                .as("the issue whose Status alone is outside the workflow, listed apart")
-                .extracting(OutsideIssue::id)
-                .containsExactly("example-lib#8");
-        assertThat(mapped.faults())
-                .as("only that one named")
-                .containsExactly(
-                        "example-lib#8 has the Status Accepted, which the workflow does not hold;"
-                                + " move it into a state of the board to repair it");
+        assertThat(mapped.faults()).as("nothing left out").isEmpty();
     }
 
     @Test

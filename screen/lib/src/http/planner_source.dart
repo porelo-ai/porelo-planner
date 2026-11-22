@@ -1689,23 +1689,9 @@ class _Watch {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner streamed a board that cannot be read: $error');
       }
       if (!snapshot.complete) throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed an incomplete board');
-      if (snapshot.outside.any(
-        (issue) =>
-            !HttpPlanningSource._issueId.hasMatch(issue.id) ||
-            !HttpPlanningSource._name.hasMatch(issue.repository) ||
-            (issue.story.isNotEmpty && !HttpPlanningSource._storyId.hasMatch(issue.story)) ||
-            snapshot.stories.any((story) => story.issues.any((each) => each.id == issue.id)),
-      )) {
-        throw const PlanningRefusal(
-          'BadAnswer',
-          {},
-          'the planner streamed an issue outside the workflow it cannot name',
-        );
-      }
       // An issue outside the project is named once, and by no id the board holds otherwise.
       final held = {
         for (final story in snapshot.stories) ...[story.id, for (final issue in story.issues) issue.id],
-        for (final issue in snapshot.outside) issue.id,
       };
       final named = <String>{};
       if (snapshot.unlisted.any(

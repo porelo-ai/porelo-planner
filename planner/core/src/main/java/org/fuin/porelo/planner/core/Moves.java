@@ -12,7 +12,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -262,8 +261,7 @@ public final class Moves {
                 affected.add(move.id());
                 continue;
             }
-            final Story story =
-                    board.story(move.id()).map(found -> story(board, found)).orElse(null);
+            final Story story = board.story(move.id()).orElse(null);
             if (story == null) {
                 continue;
             }
@@ -303,10 +301,7 @@ public final class Moves {
                 id = parentOf(board, id);
             }
             board.stories().stream()
-                    .filter(
-                            story ->
-                                    story(board, story).issues().stream()
-                                            .anyMatch(lineage::contains))
+                    .filter(story -> story.issues().stream().anyMatch(lineage::contains))
                     .forEach(story -> stories.add(story.id()));
         }
         return stories;
@@ -424,7 +419,7 @@ public final class Moves {
         checkParents(board, workflow, states, moved);
         for (final Move move : moves) {
             if (move.story() && !move.follow() && completed(workflow, move.to())) {
-                checkCompleted(board, story(board, move.id()), move.to(), states);
+                checkCompleted(board, story(board, move.id()), move.to(), states, true);
             }
         }
         final Map<String, String> stories = new LinkedHashMap<>();
@@ -510,24 +505,16 @@ public final class Moves {
                                                     Map.of("story", move.id())))
                             .state();
         } else {
-            final Optional<Issue> issue = board.issue(move.id());
-            if (issue.isPresent()) {
-                from = issue.get().state();
-                manual = issue.get().worker() == Worker.MANUAL;
-            } else {
-                // An issue left out of the workflow moves into it from no state, as a board
-                // issue would.
-                final OutsideIssue outside =
-                        board.outsideIssue(move.id())
-                                .orElseThrow(
-                                        () ->
-                                                new Refused(
-                                                        "NoSuchIssue",
-                                                        "There is no issue " + move.id() + ".",
-                                                        Map.of("issue", move.id())));
-                from = "";
-                manual = outside.worker() == Worker.MANUAL;
-            }
+            final Issue issue =
+                    board.issue(move.id())
+                            .orElseThrow(
+                                    () ->
+                                            new Refused(
+                                                    "NoSuchIssue",
+                                                    "There is no issue " + move.id() + ".",
+                                                    Map.of("issue", move.id())));
+            from = issue.state();
+            manual = issue.worker() == Worker.MANUAL;
         }
         // A story that follows its issues takes their state, a working one too, without starting
         // work.
@@ -630,8 +617,6 @@ public final class Moves {
             final Set<String> moved) {
         final Map<String, @Nullable String> parents = new LinkedHashMap<>();
         board.issues().forEach(issue -> parents.put(issue.id(), issue.parent()));
-        // A moved issue left out of the workflow stands under its parent once it is saved.
-        board.outside().forEach(issue -> parents.put(issue.id(), issue.parent()));
         for (final Map.Entry<String, @Nullable String> sub : parents.entrySet()) {
             final String parent = sub.getValue();
             final String state = states.get(sub.getKey());
@@ -673,11 +658,15 @@ public final class Moves {
             final Board board,
             final Story story,
             final String to,
-            final Map<String, String> states) {
-        // An issue in doubt counts as open: finishing over it would close work no one can see.
+            final Map<String, String> states,
+            final boolean afterMoves) {
+        // An issue in doubt counts as open: finishing over it would close work no one can see. One
+        // held by its state alone is judged once the batch's own moves are known, in the state
+        // a move of the batch gives it; without one it stays in doubt.
         for (final String id : withSubIssues(board, story.issues())) {
             final Optional<String> held = board.holdsWork(id);
-            if (held.isPresent()) {
+            final boolean stateAlone = board.holdsMove(id).isEmpty();
+            if (held.isPresent() && !(stateAlone && (!afterMoves || states.containsKey(id)))) {
                 throw new Refused(
                         "MoveNotAllowed",
                         held.get(),
@@ -716,7 +705,7 @@ public final class Moves {
             final String to,
             final Map<String, String> onBoard,
             final Map<String, String> states) {
-        checkCompleted(board, story, to, onBoard);
+        checkCompleted(board, story, to, onBoard, false);
         final Optional<String> done = lastDone(board);
         if (done.isEmpty()) {
             return List.of();
@@ -772,8 +761,6 @@ public final class Moves {
         final Set<String> all = new LinkedHashSet<>(issues);
         final Map<String, @Nullable String> parents = new LinkedHashMap<>();
         board.issues().forEach(each -> parents.put(each.id(), each.parent()));
-        // A sub-issue outside the workflow counts once a move gives it a state.
-        board.outside().forEach(each -> parents.put(each.id(), each.parent()));
         boolean grew = true;
         while (grew) {
             grew = false;
@@ -787,13 +774,9 @@ public final class Moves {
         return List.copyOf(all);
     }
 
-    /** An issue's parent, on the board or outside its workflow. */
+    /** An issue's parent on the board. */
     private static @Nullable String parentOf(final Board board, final String id) {
-        final Optional<Issue> issue = board.issue(id);
-        if (issue.isPresent()) {
-            return issue.get().parent();
-        }
-        return board.outsideIssue(id).map(OutsideIssue::parent).orElse(null);
+        return board.issue(id).map(Issue::parent).orElse(null);
     }
 
     /** A story's issues in the earliest state, among the open ones while any is open. */
@@ -832,39 +815,9 @@ public final class Moves {
                 parameters);
     }
 
-    /**
-     * A story with the issues outside the workflow that stand under it, which a batch judges as its
-     * issues once a move gives them a state; one without a state is not known to the checks.
-     */
+    /** A story the batch names, which its first check found on the board. */
     private static Story story(final Board board, final String id) {
-        return story(board, board.story(id).orElseThrow());
-    }
-
-    /** A story with the issues outside the workflow that stand under it. */
-    private static Story story(final Board board, final Story story) {
-        final String id = story.id();
-        final List<String> under =
-                board.outside().stream()
-                        .filter(issue -> id.equals(issue.story()))
-                        .map(OutsideIssue::id)
-                        .toList();
-        if (under.isEmpty()) {
-            return story;
-        }
-        final List<String> issues = new ArrayList<>(story.issues());
-        issues.addAll(under);
-        return new Story(
-                story.id(),
-                story.title(),
-                story.state(),
-                story.stateGiven(),
-                story.priority(),
-                story.size(),
-                issues,
-                story.description(),
-                story.link(),
-                story.issuesWhole(),
-                story.warnings());
+        return board.story(id).orElseThrow();
     }
 
     /**

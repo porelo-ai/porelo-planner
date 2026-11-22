@@ -153,9 +153,6 @@ Map<String, dynamic> _wide() {
         'worker': 'AGENT',
       },
     ],
-    'outside': [
-      {'id': 'repo#902', 'repository': 'repo', 'title': 'Work outside', 'status': 'Parked', 'story': ''},
-    ],
   };
 }
 
@@ -624,14 +621,6 @@ void main() {
       final (source, board) = await _downBoard(data: _wide());
       await _reloadHeld(source, board);
       await board.moveIssue('I1', 'Review');
-      expect(source.saves.single.$3, 'r1', reason: 'saved against the revision shown');
-      source.refreshHeld!.complete();
-    });
-
-    test('a move of an issue outside the workflow', () async {
-      final (source, board) = await _downBoard(data: _wide());
-      await _reloadHeld(source, board);
-      await board.moveOutside('repo#902', 'Backlog');
       expect(source.saves.single.$3, 'r1', reason: 'saved against the revision shown');
       source.refreshHeld!.complete();
     });

@@ -19,7 +19,6 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
@@ -57,8 +56,6 @@ public final class IssueMapping {
      *     of each writes again
      * @param outside the node ids of the sub-issues a story was named to have outside the project,
      *     each once
-     * @param outsideWorkflow the issues left out because their Status is none of the workflow's
-     *     states, by priority and then rank
      */
     public record Mapped(
             List<Story> stories,
@@ -66,8 +63,7 @@ public final class IssueMapping {
             List<String> faults,
             Map<String, StageComment.Sums> sums,
             List<String> rewrite,
-            List<String> outside,
-            List<OutsideIssue> outsideWorkflow) {
+            List<String> outside) {
 
         /** Copies the lists and the map. */
         public Mapped {
@@ -77,7 +73,6 @@ public final class IssueMapping {
             sums = Collections.unmodifiableMap(new LinkedHashMap<>(sums));
             rewrite = List.copyOf(rewrite);
             outside = List.copyOf(outside);
-            outsideWorkflow = List.copyOf(outsideWorkflow);
         }
     }
 
@@ -225,21 +220,14 @@ public final class IssueMapping {
         final Set<String> shown = Set.copyOf(issues.keySet());
         cutDangling(issues, id -> !shown.contains(id));
         workedAsParents(issues);
-        final Map<String, Issue> unplaced = new LinkedHashMap<>();
         for (final String id : List.copyOf(issues.keySet())) {
             final Issue issue = Objects.requireNonNull(issues.get(id));
             if (workflow.states().contains(issue.state())) {
                 continue;
             }
-            if (issue.warnings().isEmpty()) {
-                // Its Status alone is outside the workflow: listed apart, for a move back.
-                unplaced.put(id, Objects.requireNonNull(issues.remove(id)));
-            } else {
-                issues.put(id, outsideWorkflow(issue, workflow));
-            }
+            // Shown in its own state, warned, under its story; a move into the workflow repairs it.
+            issues.put(id, outsideWorkflow(issue, workflow));
         }
-        // A board issue never hangs on one listed apart: that link is cut and warned.
-        cutDangling(issues, unplaced::containsKey);
         // A copy of an id named twice takes the same steps: it stands under no issue and none
         // under it, so no circle or deeper chain runs through it, but its state and its links are
         // warned and cut as any issue's are.
@@ -251,7 +239,6 @@ public final class IssueMapping {
                                         cutDangling(entry.getKey(), id -> !placed.contains(id)),
                                         workflow),
                                 entry.getValue()));
-        unplaced.values().forEach(issue -> faults.add(outsideFault(issue.id(), issue.state())));
         final Map<String, StageComment.Sums> sums = new LinkedHashMap<>();
         final List<String> rewrite = new ArrayList<>();
         for (final String id : issues.keySet()) {
@@ -343,19 +330,7 @@ public final class IssueMapping {
                         .sorted(Comparator.comparing(Map.Entry::getValue, order))
                         .map(Map.Entry::getKey)
                         .toList();
-        final List<OutsideIssue> outsideWorkflow =
-                unplaced.values().stream()
-                        .sorted(Comparator.comparing(i -> issueItems.get(i.id()), order))
-                        .map(issue -> outsideIssue(issue, issueItems, sortedStories, context))
-                        .toList();
-        return new Mapped(
-                sortedStories,
-                sortedIssues,
-                faults,
-                sums,
-                rewrite,
-                List.copyOf(outside),
-                outsideWorkflow);
+        return new Mapped(sortedStories, sortedIssues, faults, sums, rewrite, List.copyOf(outside));
     }
 
     /**
@@ -423,39 +398,6 @@ public final class IssueMapping {
         final List<Warning> more = new ArrayList<>(warnings);
         more.add(warning);
         return more;
-    }
-
-    /**
-     * An issue left out because its Status is none of the workflow's, with the story or the issue
-     * the board holds that it stands under, so a move into the workflow is judged as its place
-     * there will be.
-     */
-    private static OutsideIssue outsideIssue(
-            final Issue issue,
-            final Map<String, ItemView> issueItems,
-            final List<Story> stories,
-            final Context context) {
-        final ItemView item = Objects.requireNonNull(issueItems.get(issue.id()));
-        final ItemView parentItem =
-                item.parentIssueId() == null ? null : context.byIssueId.get(item.parentIssueId());
-        final String storyId =
-                parentItem != null && context.storyOf(parentItem)
-                        ? context.idOf.get(parentItem.issueId())
-                        : null;
-        final String story =
-                storyId != null && stories.stream().anyMatch(s -> s.id().equals(storyId))
-                        ? storyId
-                        : null;
-        // Its parent and worker are those the board issue would have, a parent outside too.
-        return new OutsideIssue(
-                issue.id(),
-                issue.repository(),
-                issue.title(),
-                issue.state(),
-                story,
-                issue.parent(),
-                issue.link(),
-                issue.worker());
     }
 
     /**
@@ -688,37 +630,6 @@ public final class IssueMapping {
                 issue.priority(),
                 issue.warnings(),
                 issue.waitsOn());
-    }
-
-    /** The longest Status a fault names, as a plain option name of a single-select field. */
-    private static final int LONGEST_NAMED_STATUS = 100;
-
-    /**
-     * Names an issue left out of the workflow and how a person brings it back; a Status that is no
-     * plain option name is a person's text and not repeated.
-     */
-    private static String outsideFault(final String id, final String status) {
-        final String what;
-        if (status.isEmpty()) {
-            what = id + " has no Status";
-        } else if (plainName(status)) {
-            what = id + " has the Status " + status + ", which the workflow does not hold";
-        } else {
-            what = id + " has a Status the workflow does not hold";
-        }
-        return what + "; move it into a state of the board to repair it";
-    }
-
-    /** Whether a text is short and on one line, without a control or line-breaking character. */
-    private static boolean plainName(final String text) {
-        return text.codePointCount(0, text.length()) <= LONGEST_NAMED_STATUS
-                && text.codePoints()
-                        .noneMatch(
-                                c ->
-                                        Character.isISOControl(c)
-                                                || Character.getType(c) == Character.LINE_SEPARATOR
-                                                || Character.getType(c)
-                                                        == Character.PARAGRAPH_SEPARATOR);
     }
 
     private static Story story(

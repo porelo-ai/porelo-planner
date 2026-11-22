@@ -22,7 +22,6 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
@@ -761,17 +760,7 @@ class BoardReadsTest {
                 base.work(),
                 List.of("porelo-store", "porelo-other"),
                 List.of(),
-                null,
-                List.of(
-                        new OutsideIssue(
-                                "porelo-store#5",
-                                "porelo-store",
-                                "Outside",
-                                "Paused",
-                                null,
-                                null,
-                                null,
-                                Worker.AGENT)));
+                null);
     }
 
     private static Issue unassignedIssue(

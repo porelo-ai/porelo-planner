@@ -168,31 +168,30 @@ void main() {
     expect(board.noStoryIn('Backlog').map((issue) => issue.id), ['B900', 'B901']);
   });
 
-  // Harm: a repaired outside issue releases its unanswered move before its standalone destination is known.
-  test('an unanswered outside move waits for the standalone list after the issue returns to the workflow', () async {
+  // Harm: an issue in no story in a state outside the workflow cannot be moved into it, or its unanswered move is
+  // released before the list in no story shows where it stands.
+  test('an issue in no story outside the workflow is moved from its own state and waits for the list', () async {
     final (source, board) = await _opened();
     final data = source.board('demo');
-    source.push('demo', {
-      ...data,
-      'revision': 'outside',
-      'outside': [
-        {'id': 'B902', 'repository': 'porelo', 'title': 'Outside work', 'status': '', 'story': ''},
-      ],
-    });
+    source.push('demo', {...data, 'revision': 'outside'});
     await _turn();
     source.reads.last.complete(
       PlanIssueList.from({
         'revision': 'outside',
-        'issues': [_looseIssue()],
+        'issues': [
+          _looseIssue(),
+          {..._looseIssue(), 'id': 'B902', 'state': 'Accepted'},
+        ],
       }),
     );
     await _turn();
     source.outsideTimesOut = true;
-    await board.moveOutside('B902', 'Backlog');
-    expect(board.pendingIssues['B902']!.inNoStory, isFalse);
-    source.push('demo', {...data, 'revision': 'returned', 'outside': <Object>[]});
+    await board.moveIssue('B902', 'Backlog');
+    expect(board.pendingIssues['B902']!.from, 'Accepted', reason: 'moved from the state it stands in');
+    expect(board.pendingIssues['B902']!.inNoStory, isTrue);
+    source.push('demo', {...data, 'revision': 'returned'});
     await _turn();
-    expect(board.pendingIssues, contains('B902'), reason: 'the issue may now be outside every story');
+    expect(board.pendingIssues, contains('B902'), reason: 'its place is known only from the list');
     source.reads.last.complete(
       PlanIssueList.from({
         'revision': 'returned',

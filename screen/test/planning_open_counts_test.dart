@@ -54,7 +54,6 @@ Map<String, dynamic> _board(Map<String, dynamic>? open) => {
   'work': _work,
   'faults': <Object>[],
   'repositories': ['repo'],
-  'outside': <Object>[],
   'stories': [
     for (var n = 0; n < ((open?['review'] as int?) ?? 0); n++)
       {'id': 'R$n', 'title': 'A story', 'state': 'Review', 'priority': 'High', 'issues': <Object>[]},

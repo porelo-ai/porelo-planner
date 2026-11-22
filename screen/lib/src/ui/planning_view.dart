@@ -1135,7 +1135,6 @@ class _BoardViewState extends State<_BoardView> {
                                   if (board.statesIn(phase).isNotEmpty) _phase(context, at),
                                 for (final column in _unplacedColumns())
                                   _unplaced(context, column.state, column.stories),
-                                if (board.outside.isNotEmpty) _outside(context),
                                 if (board.unlisted.isNotEmpty) _unlisted(context),
                               ],
                             ),
@@ -1339,64 +1338,6 @@ class _BoardViewState extends State<_BoardView> {
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  /// The issues whose Status lies outside the workflow, each with a move into a state of the board that repairs it.
-  Widget _outside(BuildContext context) {
-    final issues = board.outside;
-    final into = [
-      for (final state in board.states)
-        if ({'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind)) state.name,
-    ];
-    return SizedBox(
-      key: const Key('planning-outside'),
-      width: PlanningStyle.column,
-      child: CustomScrollView(
-        slivers: [
-          const SliverToBoxAdapter(child: Text('Issues outside the workflow')),
-          SliverList.builder(
-            itemCount: issues.length,
-            itemBuilder: (context, index) {
-              final issue = issues[index];
-              final held = !board.takesMoves || board.waitsOnItsSave('issue ${issue.id}');
-              return Card(
-                key: Key('planning-outside ${issue.id}'),
-                child: Padding(
-                  padding: const EdgeInsets.all(Space.small),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text('${_line(issue.id)}  ${_line(issue.title)}')),
-                          PopupMenuButton<String>(
-                            key: Key('planning-outside-move ${issue.id}'),
-                            tooltip: held ? 'Saving…' : 'Move ${_line(issue.id)} into the workflow',
-                            enabled: !held && into.isNotEmpty,
-                            icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
-                            onSelected: (to) => board.moveOutside(issue.id, to, revision: board.snapshot?.revision),
-                            itemBuilder: (context) => [
-                              for (final state in into)
-                                PopupMenuItem<String>(
-                                  key: ValueKey<String>('planning-outside-to ${issue.id} $state'),
-                                  value: state,
-                                  child: Text('Move to ${_line(state)}'),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      Text(issue.status.isEmpty ? 'No Status' : 'Status: ${_line(issue.status)}'),
-                      if (issue.story.isNotEmpty) Text('Story: ${_line(issue.story)}'),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
       ),
     );
   }
