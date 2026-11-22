@@ -856,6 +856,10 @@ class WorkProposalTest {
                 .containsExactlyInAnyOrder(
                         new WorkProposal.Held("AA1.1", "AA1.1: " + Warning.unknownRisk().text()),
                         new WorkProposal.Held("BB1", "BB1: " + Warning.unknownWorker().text()));
+        // Harm: the parent's task run with less care than the person meant for a part of it.
+        assertThat(proposal.repositories().getFirst().main().basis())
+                .as("the parent's task chosen at the most care, for its part held over its risk")
+                .isEqualTo("Building, risk harm");
     }
 
     @Test

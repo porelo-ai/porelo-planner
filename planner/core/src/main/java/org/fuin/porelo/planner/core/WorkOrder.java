@@ -443,6 +443,7 @@ public record WorkOrder(
                 Choice.of(
                         to,
                         rule,
+                        board,
                         source.issues().stream().map(id -> board.issue(id).orElseThrow()).toList()),
                 choice.main().agent(),
                 choice.main().model());
@@ -494,7 +495,11 @@ public record WorkOrder(
                 offered(
                         story,
                         to,
-                        Choice.of(to, rule, List.of(board.issue(original.issue()).orElseThrow())),
+                        Choice.of(
+                                to,
+                                rule,
+                                board,
+                                List.of(board.issue(original.issue()).orElseThrow())),
                         helper.agent(),
                         helper.model());
             }

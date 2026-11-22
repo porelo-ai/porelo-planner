@@ -1699,7 +1699,10 @@ public final class GitStore implements PlanningStore {
             warnings.add(Warning.noState());
         } else {
             // With issues the rule reads only their states, never the stated one.
-            state = java.util.Objects.requireNonNull(workflow.storyState(null, states));
+            final String derived =
+                    java.util.Objects.requireNonNull(workflow.storyState(null, states));
+            // An issue it lacks may be open, so it never follows the issues shown into a close.
+            state = dropped && workflow.closed(derived) ? lastOpen(workflow, derived) : derived;
         }
         return new Story(
                 story.id(),
@@ -1713,6 +1716,19 @@ public final class GitStore implements PlanningStore {
                 null,
                 !dropped,
                 warnings);
+    }
+
+    /** The workflow's last state that is not closed, or {@code otherwise} when every one is. */
+    private static String lastOpen(
+            final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
+            final String otherwise) {
+        final List<String> states = workflow.states();
+        for (int i = states.size() - 1; i >= 0; i--) {
+            if (!workflow.closed(states.get(i))) {
+                return states.get(i);
+            }
+        }
+        return otherwise;
     }
 
     private static <T> T of(final Map<String, T> map, final String repository) {

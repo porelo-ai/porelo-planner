@@ -297,7 +297,7 @@ public record WorkProposal(
             for (final Issue issue : group.getValue()) {
                 final String brief = brief(issue, story, to);
                 if (!reading && issue.parent() != null && story.issues().contains(issue.parent())) {
-                    final Choice own = Choice.of(to, rule, List.of(issue));
+                    final Choice own = Choice.of(to, rule, board, List.of(issue));
                     helpers.add(
                             new Assignment(
                                     group.getKey() + "/" + issue.id() + "/BUILDER",
@@ -315,7 +315,7 @@ public record WorkProposal(
             }
             // A careful choice for one issue of the repository is never lost to a lighter beside
             // it.
-            final Choice chosen = Choice.of(to, rule, group.getValue());
+            final Choice chosen = Choice.of(to, rule, board, group.getValue());
             final Main main =
                     new Main(
                             "main",

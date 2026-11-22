@@ -412,8 +412,9 @@ public final class StoreReader implements PartReader {
         try {
             risk = head.risk() == null ? Risk.ORDINARY : Risk.of(head.risk());
         } catch (final IllegalArgumentException e) {
+            // Read at the highest care, so the parent it raises is never worked with less.
             warnings.add(Warning.unknownRisk());
-            risk = Risk.ORDINARY;
+            risk = Risk.HARM;
         }
         return new Issue(
                 head.id(),

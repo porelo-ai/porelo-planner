@@ -1,11 +1,17 @@
 package org.fuin.porelo.planner.core;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
@@ -43,6 +49,47 @@ public record Choice(
     public static Choice of(
             final String state, final WorkRule rule, final Collection<Issue> issues) {
         return of(state, rule, Risk.highest(issues.stream().map(Issue::risk).toList()));
+    }
+
+    /**
+     * Chooses for a task of a rule over some issues of a board, as {@link #of(String, WorkRule,
+     * Collection)} does, but at the highest risk when an issue under one of them is held for a risk
+     * the store could not read: work under a parent is never given less care than a person may have
+     * meant for a part of it.
+     *
+     * @param state the working state the rule stands for
+     * @param rule the rule
+     * @param board the board the issues stand on
+     * @param issues the issues the task works; none is ordinary
+     * @return the choice
+     */
+    public static Choice of(
+            final String state,
+            final WorkRule rule,
+            final Board board,
+            final Collection<Issue> issues) {
+        final List<Risk> risks = new ArrayList<>(issues.stream().map(Issue::risk).toList());
+        final Set<String> ids = new HashSet<>(issues.stream().map(Issue::id).toList());
+        for (final Issue part : board.issues()) {
+            if (part.warnings().stream().anyMatch(w -> w.concerns().contains(Warning.Concern.RISK))
+                    && under(board, part, ids)) {
+                risks.add(Risk.HARM);
+            }
+        }
+        return of(state, rule, Risk.highest(risks));
+    }
+
+    /** Whether one of the ids is a parent above the issue, its parents read up to a circle. */
+    private static boolean under(final Board board, final Issue part, final Set<String> ids) {
+        final Set<String> seen = new HashSet<>();
+        String parent = part.parent();
+        while (parent != null && seen.add(parent)) {
+            if (ids.contains(parent)) {
+                return true;
+            }
+            parent = board.issue(parent).map(Issue::parent).orElse(null);
+        }
+        return false;
     }
 
     /**

@@ -795,6 +795,34 @@ class IssueMappingTest {
     }
 
     @Test
+    void aStoryNotWholeNeverFollowsTheIssuesShownIntoAClose() {
+        // Harm: a story without a Status shown Finished, its work done, while an issue of it the
+        // board cannot see is still open.
+        final Item partial =
+                new Item("example-project", 1)
+                        .story()
+                        .field(FieldNames.PRIORITY, "High")
+                        .subNode("I_elsewhere_9");
+        final Item done =
+                new Item("example-project", 2).field(FieldNames.STATUS, "Finished").closed();
+        partial.sub(done);
+        final Item whole =
+                new Item("example-project", 3).story().field(FieldNames.PRIORITY, "High");
+        final Item alsoDone =
+                new Item("example-project", 4).field(FieldNames.STATUS, "Finished").closed();
+        whole.sub(alsoDone);
+
+        final IssueMapping.Mapped mapped = read(partial, done, whole, alsoDone);
+
+        assertThat(mapped.stories())
+                .as("the story not whole in the workflow's last open state, the whole one finished")
+                .extracting(Story::id, Story::issuesWhole, Story::state)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-project#1", false, "Implementing"),
+                        Tuple.tuple("example-project#3", true, "Finished"));
+    }
+
+    @Test
     void theBoardIsOrderedByThePriorityAndRankWrittenToTheFields() {
         // Harm: work started in another order than the person set, after a priority or rank is
         // saved.
@@ -1344,7 +1372,8 @@ class IssueMappingTest {
         final IssueMapping.Mapped mapped = read(story, worker, risk, known);
 
         assertThat(mapped.issues())
-                .as("each issue shown, an unknown value as an agent's and ordinary, and warned")
+                .as(
+                        "each issue shown, an unknown worker as an agent's, an unknown risk at the most care, and warned")
                 .extracting(Issue::id, Issue::worker, Issue::risk, Issue::warnings)
                 .containsExactly(
                         Tuple.tuple(
@@ -1355,7 +1384,7 @@ class IssueMappingTest {
                         Tuple.tuple(
                                 "example-project#3",
                                 Worker.AGENT,
-                                Risk.ORDINARY,
+                                Risk.HARM,
                                 List.of(Warning.unknownRisk())),
                         Tuple.tuple("example-project#4", Worker.MANUAL, Risk.HARM, List.of()));
         assertThat(mapped.faults()).as("the item carries it, not the project").isEmpty();

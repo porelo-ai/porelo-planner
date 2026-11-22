@@ -4259,6 +4259,25 @@
         "kind" : "UnknownRisk",
         "text" : "Its risk is none the planner knows, so no work starts on it until one it knows is set."
       } ]
+    }, {
+      "id" : "B884.1",
+      "repository" : "porelo",
+      "title" : "A part held with its parent, whose worker the planner does not know",
+      "state" : "Backlog",
+      "size" : "S",
+      "priority" : "Medium",
+      "minutesLeft" : null,
+      "blockedBy" : [ ],
+      "waitsOn" : [ ],
+      "parent" : "B884",
+      "link" : "https://example.org/issues/B884.1",
+      "worker" : "AGENT",
+      "atWork" : false,
+      "needsYou" : false,
+      "readingStopped" : false,
+      "noRunHere" : false,
+      "attention" : "NONE",
+      "warnings" : [ ]
     } ],
     "work" : null,
     "open" : null,
@@ -4376,7 +4395,7 @@
       "issues" : 1
     }, {
       "name" : "Backlog",
-      "issues" : 40
+      "issues" : 41
     }, {
       "name" : "Implementing",
       "issues" : 10
@@ -4408,7 +4427,7 @@
       "issues" : 1
     }, {
       "name" : "S",
-      "issues" : 24
+      "issues" : 25
     }, {
       "name" : "M",
       "issues" : 35
@@ -4417,9 +4436,9 @@
       "issues" : 2
     } ],
     "unsized" : 0,
-    "left" : 62,
+    "left" : 63,
     "minutes" : null,
-    "unestimated" : 62,
+    "unestimated" : 63,
     "review" : 16
   },
   "rules" : [ {

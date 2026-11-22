@@ -621,7 +621,7 @@ public final class NextStep {
             final String role,
             final Build built,
             final @Nullable Chosen effort) {
-        final Choice choice = Choice.of(state, rule, List.of(issue));
+        final Choice choice = Choice.of(state, rule, board, List.of(issue));
         final Settings settings = Settings.of(rule, choice, chosen);
         final Story story =
                 board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));

@@ -269,6 +269,30 @@ class GitStoreTest {
     }
 
     @Test
+    void aStoryNotWholeNeverFollowsTheIssuesShownIntoAClose() {
+        // Harm: a story without a stated state shown Finished, its work done, while an issue it
+        // names that the board cannot read may still be open.
+        final Board board =
+                store(
+                                List.of(
+                                        story("ST1", null, "store#XY1", "store#ZZ9"),
+                                        story("ST2", null, "store#XY1")),
+                                List.of(issue("XY1", "store", "Finished")),
+                                List.of())
+                        .board();
+
+        assertThat(board.stories())
+                .as("the story not whole in the workflow's last open state, the whole one finished")
+                .extracting(
+                        org.fuin.porelo.planner.store.Story::id,
+                        org.fuin.porelo.planner.store.Story::issuesWhole,
+                        org.fuin.porelo.planner.store.Story::state)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ST1", false, "Backlog"),
+                        org.assertj.core.groups.Tuple.tuple("ST2", true, "Finished"));
+    }
+
+    @Test
     void aStoryTheBoardCannotFullyReadIsShownWithWhyAndItsStateFromItsKnownIssues() {
         // A story left out of the board takes its issues' context away from the person; one that
         // took a state from an issue in doubt would stand in a column no one chose.

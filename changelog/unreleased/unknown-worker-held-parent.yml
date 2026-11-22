@@ -1,2 +1,2 @@
-title: An issue whose Worker or Risk the planner does not know is shown warned and held, the sub-issues of a held issue are held with it, and a story the board cannot show whole is never finished.
+title: An issue whose Worker or Risk the planner does not know is shown warned and held, an unknown Risk counting as the most care for the work above it, the sub-issues of a held issue are held with it, and a story the board cannot show whole is never finished, by a move or by following its issues.
 type: changed

@@ -359,8 +359,8 @@ public record Warning(String kind, String text, Set<Concern> concerns) {
     }
 
     /**
-     * An issue whose risk is none the planner knows, shown as ordinary and held, so no task starts
-     * on it with less care than was meant.
+     * An issue whose risk is none the planner knows, read as the highest and held, so no task
+     * starts on it, or on the work above it, with less care than was meant.
      *
      * @return the warning
      */

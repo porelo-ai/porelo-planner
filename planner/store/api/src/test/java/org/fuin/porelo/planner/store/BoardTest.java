@@ -459,9 +459,53 @@ class BoardTest {
     }
 
     @Test
-    void parentsThatLeadBackToAnIssueEndTheWalkAndHoldNothingByThemselves() {
-        // A circle a race left on the tracker must not hang every route that asks what is held.
+    // In a thread of its own, so a walk that never ends fails the test instead of hanging it.
+    @org.junit.jupiter.api.Timeout(
+            value = 10,
+            threadMode = org.junit.jupiter.api.Timeout.ThreadMode.SEPARATE_THREAD)
+    void parentsThatLeadBackToAnIssueEndTheWalkAndStillFindAHeldMember() {
+        // A circle a race left on the tracker must not hang every route that asks what is held,
+        // nor hide a held issue in it.
         final Board board = board(List.of(), List.of(under(1, 2), under(2, 1)));
         assertThat(board.holdsWork("porelo-planner#1")).as("neither warned").isEmpty();
+        final Board held =
+                board(List.of(), List.of(under(1, 2), under(2, 1, Warning.parentOutsideProject())));
+        assertThat(held.holdsWork("porelo-planner#1"))
+                .as("the held member above it is named")
+                .contains(
+                        "porelo-planner#1: it stands under porelo-planner#2, which is held back."
+                                + " porelo-planner#2: "
+                                + Warning.parentOutsideProject().text());
+    }
+
+    @Test
+    void aSubIssueOutsideTheWorkflowUnderAParentHeldForMoreThanItsStateIsNotMoved() {
+        // Harm: a sub-issue repaired by a move into the workflow while its parent stays held for
+        // its risk, so its work goes on under a parent the person has not set right.
+        final Board board =
+                board(
+                        List.of(),
+                        List.of(
+                                under(1, null, Warning.unknownRisk()),
+                                new Issue(
+                                                "porelo-planner#2",
+                                                "porelo-planner",
+                                                "A part",
+                                                "Parked",
+                                                "S",
+                                                List.of(),
+                                                "porelo-planner#1",
+                                                null,
+                                                "Text")
+                                        .withWarnings(List.of(Warning.stateOutsideWorkflow()))));
+        assertThat(board.holdsWork("porelo-planner#2"))
+                .as("held for its own state first")
+                .contains("porelo-planner#2: " + Warning.stateOutsideWorkflow().text());
+        assertThat(board.holdsMove("porelo-planner#2"))
+                .as("its move refused in the parent's words")
+                .contains(
+                        "porelo-planner#2: it stands under porelo-planner#1, which is held back."
+                                + " porelo-planner#1: "
+                                + Warning.unknownRisk().text());
     }
 }

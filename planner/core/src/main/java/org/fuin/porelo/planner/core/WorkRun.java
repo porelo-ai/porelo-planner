@@ -2466,7 +2466,7 @@ public final class WorkRun {
         if (chosen == null) {
             return null;
         }
-        return NextStep.Settings.of(rule, Choice.of(blocked, rule, List.of(issue)), chosen);
+        return NextStep.Settings.of(rule, Choice.of(blocked, rule, board, List.of(issue)), chosen);
     }
 
     private NextStep.Result next(

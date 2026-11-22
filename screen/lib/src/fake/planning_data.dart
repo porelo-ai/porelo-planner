@@ -2751,6 +2751,30 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
               "text": "Its risk is none the planner knows, so no work starts on it until one it knows is set."
             }
           ]
+        },
+        {
+          "id": "B884.1",
+          "repository": "porelo",
+          "state": "Backlog",
+          "blockedBy": [],
+          "waitsOn": [],
+          "parent": "B884",
+          "link": "https://example.org/issues/B884.1",
+          "title": "A part held with its parent, whose worker the planner does not know",
+          "size": "S",
+          "priority": "Medium",
+          "rounds": 0,
+          "roundsMost": 2,
+          "atWork": false,
+          "needsYou": false,
+          "readingStopped": false,
+          "noRunHere": false,
+          "attention": "NONE",
+          "worker": "AGENT",
+          "findings": [],
+          "whatMustBeTrue": "The work meets the issue description.",
+          "subAgents": [],
+          "warnings": []
         }
       ],
       "description": "",

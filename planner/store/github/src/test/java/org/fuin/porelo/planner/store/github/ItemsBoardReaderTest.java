@@ -2525,4 +2525,50 @@ class ItemsBoardReaderTest {
                 .containsEntry("I_far_8", new Snapshot.Waited("other-org/private", 8, null));
         assertThat(read.unread()).as("nothing unread").isEmpty();
     }
+
+    @Test
+    void theWorkUnderAParentWithAWorkerThePlannerDoesNotKnowIsHeldOnTheBoardRead() {
+        // Harm: a sub-issue of a parent a person gave a Worker the planner does not know is
+        // started by an agent, because the board read lost the warning or the link to the parent.
+        final String lib4 = node(OWNER + "/example-lib", 4);
+        final ProjectItem parent =
+                new ProjectItem(
+                        "PVTI_lib_3",
+                        false,
+                        issue(
+                                OWNER + "/example-lib",
+                                3,
+                                List.of(),
+                                node(OWNER + "/example-project", 1),
+                                refs(false, lib4)),
+                        List.of(option("F_status", "Backlog"), option("F_worker", "Person")),
+                        info(null));
+        final ProjectItem part =
+                new ProjectItem(
+                        "PVTI_lib_4",
+                        false,
+                        issue(OWNER + "/example-lib", 4, List.of(), LIB_3, refs(false)),
+                        List.of(option("F_status", "Backlog")),
+                        info(null));
+
+        final Board board =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), parent, part)
+                        .read()
+                        .board();
+
+        assertThat(board.issue("example-lib#4").orElseThrow().parent())
+                .as("the part stands under its parent")
+                .isEqualTo("example-lib#3");
+        assertThat(board.holdsWork("example-lib#3"))
+                .as("the parent is held for its worker")
+                .contains("example-lib#3: " + Warning.unknownWorker().text());
+        assertThat(board.holdsWork("example-lib#4"))
+                .as("and the part with it, in the parent's words")
+                .contains(
+                        "example-lib#4: it stands under example-lib#3, which is held back."
+                                + " example-lib#3: "
+                                + Warning.unknownWorker().text());
+    }
 }

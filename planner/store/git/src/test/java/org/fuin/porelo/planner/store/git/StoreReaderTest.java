@@ -452,6 +452,34 @@ class StoreReaderTest {
     }
 
     @Test
+    void theWorkUnderAParentWithAWorkerThePlannerDoesNotKnowIsHeldOnTheBoardItGives() {
+        // Harm: a sub-issue of a parent whose head names a worker the planner does not know is
+        // started by an agent, because the read lost the warning or the link to the parent.
+        final Tree tree = new Tree();
+        tree.files.put("issues/XY01-One.md", worked(issue("XY01", "Idea"), "Robot"));
+        tree.files.put("issues/XY01.1-Part.md", sub("XY01.1", "XY01"));
+
+        final Part part = new StoreReader(tree, 100).read(OTHER, "c1", Workflow.read(WORKFLOW));
+        final org.fuin.porelo.planner.store.Board board =
+                new org.fuin.porelo.planner.store.Board(
+                        new org.fuin.porelo.planner.store.Revision("r1"),
+                        new org.fuin.porelo.planner.store.Workflow(
+                                List.of("Idea", "Finished", "Rejected"),
+                                List.of(),
+                                List.of("Finished", "Rejected")),
+                        List.of(),
+                        part.issues(),
+                        new org.fuin.porelo.planner.store.Work(Map.of(), List.of()),
+                        List.of("porelo-other"));
+
+        assertThat(board.holdsWork("XY01.1"))
+                .as("the part is held with its parent, in the parent's words")
+                .contains(
+                        "XY01.1: it stands under XY01, which is held back. XY01: "
+                                + Warning.unknownWorker().text());
+    }
+
+    @Test
     void aSubIssueIsWorkedAsItsParentIsWhateverItsOwnHeadSays() {
         // A sub-issue worked otherwise than its parent would let an agent into a person's work.
         final Tree tree = new Tree();
@@ -510,7 +538,7 @@ class StoreReaderTest {
     }
 
     @Test
-    void aRiskOtherThanTheThreeSpellingsIsShownAsOrdinaryWarnedAndNoFault() {
+    void aRiskOtherThanTheThreeSpellingsIsShownAtTheMostCareWarnedAndNoFault() {
         // A risk misspelled and read as ordinary would hide harm the head meant to name; left out,
         // the issue would vanish from the board for one wrong word.
         final Tree tree = new Tree();
@@ -522,13 +550,13 @@ class StoreReaderTest {
 
         assertThat(part.faults()).as("nothing left out").isEmpty();
         assertThat(part.issues())
-                .as("each issue shown, an unknown risk as ordinary and warned")
+                .as("each issue shown, an unknown risk at the most care and warned")
                 .extracting(Issue::id, Issue::risk, Issue::warnings)
                 .containsExactlyInAnyOrder(
                         org.assertj.core.groups.Tuple.tuple(
-                                "XY01", Risk.ORDINARY, List.of(Warning.unknownRisk())),
+                                "XY01", Risk.HARM, List.of(Warning.unknownRisk())),
                         org.assertj.core.groups.Tuple.tuple(
-                                "XY02", Risk.ORDINARY, List.of(Warning.unknownRisk())),
+                                "XY02", Risk.HARM, List.of(Warning.unknownRisk())),
                         org.assertj.core.groups.Tuple.tuple("XY03", Risk.ORDINARY, List.of()));
     }
 

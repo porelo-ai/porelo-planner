@@ -3314,9 +3314,10 @@ components:
     ItemWarning:
       description: >-
         What a store could not read in a story or an issue it still shows. A warning about the item's state, parent,
-        blockers, id, kind, worker or risk holds it back, and every issue under it: no work starts on it, no edit
-        changes it or adds it to a story or as a blocker or takes it out, and no move names it, but for a move out of a
-        state the workflow does not know, which sets it right.
+        blockers, id, kind, worker or risk holds it back, and every issue under it at any depth: no work starts on
+        them, no edit changes them or adds them to a story or as a blocker or takes them out, and no move names them. A
+        warning about the state alone still lets the item move, since a move into a state of the workflow sets it right,
+        and lets each issue under it move too.
       type: object
       required: [kind, text, holds]
       properties:
@@ -3347,7 +3348,9 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          description: Why, in the words of its warnings, of its id that names two issues, or of the blockers it waits on.
+          description: >-
+            Why, in the words of its warnings, of its id that names two issues, of the blockers it waits on, or of a
+            held parent above it, named as "it stands under" the parent followed by the parent's own reason.
     Wait:
       description: An issue an issue of the board waits on that the board does not hold.
       type: object

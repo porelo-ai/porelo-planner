@@ -539,9 +539,10 @@ public final class IssueMapping {
                 parent,
                 item.link(),
                 body,
-                // Shown as an agent's and ordinary, held by its warning until a person sets it.
+                // Shown as an agent's and at the highest care, held by its warning until a person
+                // sets it.
                 worker == null ? Worker.AGENT : worker,
-                risk == null ? Risk.ORDINARY : risk,
+                risk == null ? Risk.HARM : risk,
                 figure(id, item, FieldNames.ESTIMATE, 1, Fields.MOST_ESTIMATE, faults),
                 figure(id, item, FieldNames.MINUTES, 0, MOST_TAKEN, faults),
                 choice(id, item, FieldNames.PRIORITY, Story.PRIORITIES, faults),
@@ -744,7 +745,12 @@ public final class IssueMapping {
                 warnings.add(Warning.noState());
             } else {
                 final String followed = states.storyState(known);
-                state = followed != null ? followed : workflow.states().get(0);
+                final String derived = followed != null ? followed : workflow.states().get(0);
+                // An issue it lacks may be open, so it never follows the issues shown into a close.
+                state =
+                        !whole && workflow.closed().contains(derived)
+                                ? lastOpen(workflow.states(), workflow.closed()::contains, derived)
+                                : derived;
             }
         }
         String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
@@ -950,6 +956,22 @@ public final class IssueMapping {
     }
 
     /** The Worker the item names, an agent when it names none, or null for one unknown. */
+    /**
+     * The workflow's last state that is not closed, or {@code otherwise} for a workflow of closed
+     * states alone.
+     */
+    static String lastOpen(
+            final List<String> states,
+            final java.util.function.Predicate<String> closed,
+            final String otherwise) {
+        for (int i = states.size() - 1; i >= 0; i--) {
+            if (!closed.test(states.get(i))) {
+                return states.get(i);
+            }
+        }
+        return otherwise;
+    }
+
     private static @Nullable Worker workerOf(final ItemView item) {
         final String value = item.fields().getOrDefault(FieldNames.WORKER, "");
         return switch (value) {
