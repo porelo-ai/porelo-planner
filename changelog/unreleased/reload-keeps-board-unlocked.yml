@@ -1,2 +1,2 @@
-title: A Reload or a save no longer locks the planning board: cards can still be moved, and the counts known before stay shown until the planner's next read replaces them.
+title: A Reload or a save no longer locks the planning board, so cards can still be moved, and the counts known before stay shown until the planner's next read replaces them.
 type: fixed
