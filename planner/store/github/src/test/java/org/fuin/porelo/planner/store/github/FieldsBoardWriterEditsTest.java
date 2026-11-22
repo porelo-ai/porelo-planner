@@ -706,6 +706,32 @@ class FieldsBoardWriterEditsTest {
     }
 
     @Test
+    void anItemRetypedOnGitHubSinceTheReadIsStaleAndNothingIsWritten() {
+        // Harm: a save planned on an item went ahead after a person gave it another issue type on
+        // GitHub, as a story made a bug, so the save wrote to what the board no longer maps so.
+        final ItemView read = text(one, "Title of " + ONE, BODY);
+        final GitHub github = github().holding(read.typed("Bug"));
+
+        final StoreException.StaleRevision stale =
+                catchThrowableOfType(
+                        StoreException.StaleRevision.class,
+                        () ->
+                                github.writer()
+                                        .setText(
+                                                texts(read),
+                                                SHOWN,
+                                                ONE,
+                                                edit(
+                                                        "A new title",
+                                                        TextEdit.Part.PLAN,
+                                                        "- New plan.")));
+
+        assertThat(stale).as("an edit over a retyped item").isNotNull();
+        assertThat(stale.changed()).as("the item named").isEqualTo(ONE);
+        assertThat(github.calls).as("only the read").containsExactly("issueBoard");
+    }
+
+    @Test
     void anEditAgainstAnOldRevisionWritesNothingAndReadsNothing() {
         // An edit planned on an old board would write over what someone saved since.
         final GitHub github = github();

@@ -253,7 +253,7 @@ class ItemsBoardReaderUnlistedTest {
     }
 
     @Test
-    void onlyTheTypeStoryInTheOwnRepositoryMarksAStory() {
+    void onlyTheTypeStoryInTheOwnRepositoryMarksAStoryAndOneElsewhereIsNotOffered() {
         // Harm: a story offered as an issue, or an issue as a story, against the issue type.
         pages.holds(
                 OWN,
@@ -275,8 +275,16 @@ class ItemsBoardReaderUnlistedTest {
                         org.assertj.core.groups.Tuple.tuple(OWN + "#12", UnlistedIssue.Kind.ISSUE),
                         org.assertj.core.groups.Tuple.tuple(OWN + "#13", UnlistedIssue.Kind.ISSUE),
                         org.assertj.core.groups.Tuple.tuple(OWN + "#14", UnlistedIssue.Kind.ISSUE),
-                        org.assertj.core.groups.Tuple.tuple(OWN + "#15", UnlistedIssue.Kind.ISSUE),
-                        org.assertj.core.groups.Tuple.tuple(LIB + "#16", UnlistedIssue.Kind.ISSUE));
+                        org.assertj.core.groups.Tuple.tuple(OWN + "#15", UnlistedIssue.Kind.ISSUE));
+        // Harm: a story of another repository was offered as an issue whose Add is always refused,
+        // while the board leaves such a story out with a fault.
+        assertThat(board.faults())
+                .as("the story of another repository, left out")
+                .contains(
+                        "The open issue "
+                                + LIB
+                                + "#16 outside the project is a story outside the project's own"
+                                + " repository and is left out");
     }
 
     @Test
@@ -341,6 +349,31 @@ class ItemsBoardReaderUnlistedTest {
                 .as("a fault for each odd entry, never its title")
                 .hasSize(3)
                 .noneMatch(fault -> fault.contains("Secret plan"));
+    }
+
+    @Test
+    void aCopysAuthorOfNoLoginsFormAndAnUnknownAssociationAreLeftOutAndTheIssueStaysOffered() {
+        // Harm: a copy on disk holding a text that is no login, or an association GitHub never
+        // gives, failed the board at every start, or reached the window as the issue's author.
+        final ItemsBoardReader first = reader();
+        final BoardCopy copy =
+                withUnlisted(
+                        first.toCopy(first.read(CONFIG), ChangeCursor.NONE, List.of()),
+                        new TrackedUnlisted(
+                                "I_odd", LIB, 9, "Made by hand", null, "<b>x</b>", "ADMIN"));
+
+        final Snapshot loaded = reader().fromCopy(copy, CONFIG);
+
+        assertThat(loaded).as("the board from the copy").isNotNull();
+        assertThat(loaded.board().unlisted())
+                .as("the issue offered without either")
+                .singleElement()
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.id()).isEqualTo(LIB + "#9");
+                            assertThat(issue.author()).as("the author").isNull();
+                            assertThat(issue.authorAssociation()).as("the association").isNull();
+                        });
     }
 
     @Test

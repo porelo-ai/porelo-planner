@@ -358,12 +358,12 @@ class MockPlanningSource implements PlanningSource {
   final listCalls = <Map<String, String>>[];
 
   @override
-  Future<String> listIssue(String project, String issue, String revision) async {
+  Future<String> addUnlistedIssue(String project, String issue, String revision) async {
     listCalls.add({'project': project, 'issue': issue, 'revision': revision});
     if (moveGate case final gate?) await gate.future;
     if (moveFailure case final failure?) throw failure;
     final current = board(project);
-    final next = applyPlanningListIssue(current, issue, revision);
+    final next = applyPlanningAddUnlisted(current, issue, revision);
     push(project, next);
     return next['revision'] as String;
   }

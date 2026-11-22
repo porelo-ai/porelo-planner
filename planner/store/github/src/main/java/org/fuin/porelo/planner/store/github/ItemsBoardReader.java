@@ -910,15 +910,22 @@ public final class ItemsBoardReader implements BoardReader {
                                 + " is left out");
                 continue;
             }
+            final boolean story = IssueMapping.STORY_TYPE.equals(issue.type());
+            if (story && !repository.equals(read.own())) {
+                // The board leaves such a story out once added, so it is not offered either.
+                faults.add(
+                        "The open issue "
+                                + id
+                                + " outside the project is a story outside the project's own"
+                                + " repository and is left out");
+                continue;
+            }
             unlisted.add(
                     new UnlistedIssue(
                             id,
                             repository,
                             issue.title(),
-                            IssueMapping.STORY_TYPE.equals(issue.type())
-                                            && repository.equals(read.own())
-                                    ? UnlistedIssue.Kind.STORY
-                                    : UnlistedIssue.Kind.ISSUE,
+                            story ? UnlistedIssue.Kind.STORY : UnlistedIssue.Kind.ISSUE,
                             URI.create(
                                     read.forge()
                                             + "/"
@@ -1576,7 +1583,8 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, Integer.toString(wait.getValue().number()));
             addNullable(digest, String.valueOf(wait.getValue().closed()));
         }
-        // An issue made outside the project, or a new title of one, is told to the window too.
+        // An issue made outside the project, or a new title or author of one, is told to the window
+        // too.
         final Map<String, UnlistedIssue> sortedUnlisted = new TreeMap<>();
         unlisted.forEach(issue -> sortedUnlisted.put(issue.id(), issue));
         add(digest, Integer.toString(sortedUnlisted.size()));
@@ -1584,6 +1592,8 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, issue.id());
             add(digest, issue.title());
             add(digest, issue.kind().name());
+            addNullable(digest, issue.author());
+            addNullable(digest, issue.authorAssociation());
         }
         return new Revision(HexFormat.of().formatHex(digest.digest()));
     }

@@ -566,7 +566,16 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   // A tracker's reference alone, as an issue made outside the project is named.
   static final _trackerId = RegExp(r'^(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
   static final _login = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$');
-  static final _association = RegExp(r'^[A-Z][A-Z_]{0,63}$');
+  static const _associations = {
+    'OWNER',
+    'MEMBER',
+    'COLLABORATOR',
+    'CONTRIBUTOR',
+    'FIRST_TIME_CONTRIBUTOR',
+    'FIRST_TIMER',
+    'MANNEQUIN',
+    'NONE',
+  };
 
   /// Closes the connections it holds; calls after it fail.
   void close() => _link.close();
@@ -632,7 +641,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<String> listIssue(String project, String issue, String revision) async {
+  Future<String> addUnlistedIssue(String project, String issue, String revision) async {
     final answer = await _write(
       project,
       ['items'],
@@ -1716,7 +1725,7 @@ class _Watch {
             held.contains(issue.id) ||
             !named.add(issue.id) ||
             issue.author.isNotEmpty && !HttpPlanningSource._login.hasMatch(issue.author) ||
-            issue.authorAssociation.isNotEmpty && !HttpPlanningSource._association.hasMatch(issue.authorAssociation),
+            issue.authorAssociation.isNotEmpty && !HttpPlanningSource._associations.contains(issue.authorAssociation),
       )) {
         throw const PlanningRefusal(
           'BadAnswer',

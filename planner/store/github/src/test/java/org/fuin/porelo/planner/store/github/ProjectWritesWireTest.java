@@ -75,7 +75,8 @@ class ProjectWritesWireTest {
 
     @Test
     void titleBodyAndStateWritesLeaveLabelsAndAssigneesUntouched() throws IOException {
-        // Harm: a partial update clears a story's label or assignment without the person's intent.
+        // Harm: a partial update clears an issue's labels or assignment without the person's
+        // intent.
         final RecordingHttp http = new RecordingHttp();
         final GitHubClient rest = new GitHubClient(BASE, http);
         final ProjectWrites writes = ProjectWrites.over(new GitHubGraphQl(BASE, http), rest);
@@ -153,6 +154,38 @@ class ProjectWritesWireTest {
                 .isEqualTo(new Asked("GET", PATH, ""));
     }
 
+    @Test
+    void aStoryIsMadeWithTheIssueTypeStoryAndNoLabelAndItsTypeIsReadBack() throws IOException {
+        // Harm: the type sent in another place of the request, or a regenerated client's new
+        // component before it, makes every idea's story untyped, and its write stops partly saved.
+        final RecordingHttp http = new RecordingHttp();
+        http.answer =
+                ISSUE.replace(
+                        "\"milestone\": null,",
+                        "\"type\": {\"id\": 3, \"node_id\": \"IT_3\", \"name\": \"Story\","
+                                + " \"description\": \"A story\", \"color\": \"green\","
+                                + " \"created_at\": \"2026-01-01T00:00:00Z\","
+                                + " \"updated_at\": \"2026-01-01T00:00:00Z\","
+                                + " \"is_enabled\": true}, \"milestone\": null,");
+        final ProjectWrites writes =
+                ProjectWrites.over(new GitHubGraphQl(BASE, http), new GitHubClient(BASE, http));
+
+        final ProjectWrites.Created made =
+                writes.createIssue(
+                        TOKEN, "example-org", "example-lib", "A story", "Text.", "Story");
+
+        final Asked asked = http.asked.getLast();
+        assertThat(asked.method()).as("the create method").isEqualTo("POST");
+        assertThat(asked.path())
+                .as("the create path")
+                .isEqualTo("/repos/example-org/example-lib/issues");
+        final JsonNode body = new ObjectMapper().readTree(asked.body());
+        assertThat(body.path("type").asText()).as("the issue type sent").isEqualTo("Story");
+        assertThat(body.has("labels")).as("no label sent").isFalse();
+        assertThat(made.type()).as("the type read back").isEqualTo("Story");
+        assertThat(made.number()).as("the number read back").isEqualTo(7);
+    }
+
     private record Asked(String method, String path, String body) {}
 
     private record Reply<T>(HttpRequest request, T body) implements HttpResponse<T> {
@@ -190,6 +223,9 @@ class ProjectWritesWireTest {
 
     private static final class RecordingHttp extends HttpClient {
         private final List<Asked> asked = new ArrayList<>();
+
+        /** The issue every call is answered with. */
+        private String answer = ISSUE;
 
         @Override
         public <T> HttpResponse<T> send(
@@ -256,7 +292,7 @@ class ProjectWritesWireTest {
                         @Override
                         public void cancel() {}
                     });
-            subscriber.onNext(List.of(ByteBuffer.wrap(ISSUE.getBytes(StandardCharsets.UTF_8))));
+            subscriber.onNext(List.of(ByteBuffer.wrap(answer.getBytes(StandardCharsets.UTF_8))));
             subscriber.onComplete();
             return new Reply<>(request, subscriber.getBody().toCompletableFuture().join());
         }

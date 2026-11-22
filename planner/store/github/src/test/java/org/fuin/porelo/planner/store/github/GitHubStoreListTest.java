@@ -63,6 +63,9 @@ class GitHubStoreListTest {
 
     private final OpenIssues pages = new OpenIssues();
 
+    /** Whether GitHub no longer gives the offered issue, as after a delete. */
+    private boolean gone;
+
     /** The project's items: a story of the own repository and an issue of the other. */
     private final List<GitHubGraphQl.ProjectItem> items =
             new ArrayList<>(
@@ -114,7 +117,7 @@ class GitHubStoreListTest {
                 on.add(
                         new GitHubGraphQl.IssueOnBoard(
                                 item.issue(), item.id(), item.values(), LAST));
-            } else if (MADE.equals(id)) {
+            } else if (MADE.equals(id) && !gone) {
                 on.add(
                         new GitHubGraphQl.IssueOnBoard(
                                 issue(LIB, 6, "Made by hand", null), null, List.of(), LAST));
@@ -296,7 +299,7 @@ class GitHubStoreListTest {
         final Board before = store.board();
         assertThat(offered(before)).as("offered before").containsExactly(LIB + "#6");
 
-        final Board after = store.listIssue(before.revision(), LIB + "#6");
+        final Board after = store.addUnlistedIssue(before.revision(), LIB + "#6");
 
         assertThat(after.issue(LIB + "#6"))
                 .as("the added issue on the board")
@@ -318,9 +321,25 @@ class GitHubStoreListTest {
         items.set(1, item("PVTI_2", issue(LIB, 2, "Retitled on GitHub", null)));
         store.refresh();
 
-        assertThatThrownBy(() -> store.listIssue(before.revision(), LIB + "#6"))
+        assertThatThrownBy(() -> store.addUnlistedIssue(before.revision(), LIB + "#6"))
                 .as("an add against the board before the look")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(calls).as("no call").isEmpty();
+    }
+
+    @Test
+    void anIssueTheTrackerNoLongerGivesLeavesTheOfferAtOnce() {
+        // Harm: the add was refused as no longer offered, yet the board kept offering the issue
+        // with an Add that is refused at every click until the next whole read.
+        final GitHubStore store = store();
+        final Board before = store.board();
+        gone = true;
+        pages.holds(LIB, List.of());
+
+        assertThatThrownBy(() -> store.addUnlistedIssue(before.revision(), LIB + "#6"))
+                .as("an add of an issue the tracker no longer gives")
+                .isInstanceOf(StoreException.NoSuchIssue.class);
+        assertThat(offered(store.board())).as("offered after the refusal").isEmpty();
+        assertThat(calls).as("only the read").containsExactly("issueBoard");
     }
 }

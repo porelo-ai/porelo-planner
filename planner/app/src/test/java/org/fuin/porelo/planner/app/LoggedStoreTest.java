@@ -81,13 +81,13 @@ class LoggedStoreTest {
                     }
 
                     @Override
-                    public boolean listsIssues() {
+                    public boolean addsUnlistedIssues() {
                         reached.add("lists");
                         return true;
                     }
 
                     @Override
-                    public Board listIssue(final Revision revision, final String issue) {
+                    public Board addUnlistedIssue(final Revision revision, final String issue) {
                         reached.add("list " + issue);
                         return BOARD;
                     }
@@ -105,8 +105,8 @@ class LoggedStoreTest {
                 "ST1",
                 new TextEdit(TextEdit.Kind.STORY, "A title", Map.of(), Set.of()));
         store.comment("AB1", "A comment.");
-        assertThat(store.listsIssues()).as("the wrapped store's add").isTrue();
-        store.listIssue(BOARD.revision(), "porelo-lib#7");
+        assertThat(store.addsUnlistedIssues()).as("the wrapped store's add").isTrue();
+        store.addUnlistedIssue(BOARD.revision(), "porelo-lib#7");
 
         assertThat(reached)
                 .as("the edits the wrapped store was given")

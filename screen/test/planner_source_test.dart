@@ -1862,14 +1862,14 @@ void main() {
   test('an add of an issue made outside the project sends its reference and the revision, and no alias', () async {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/items'] = () => _Reply(200, {'revision': 'r2'});
-    expect(await source.listIssue('demo', 'porelo-lib#7', 'r1'), 'r2');
+    expect(await source.addUnlistedIssue('demo', 'porelo-lib#7', 'r1'), 'r2');
     final call = planner.calls.last;
     expect(call.method, 'POST');
     expect(call.target, '/projects/demo/items');
     expect(jsonDecode(call.body), {'issue': 'porelo-lib#7', 'revision': 'r1'});
 
     final calls = planner.calls.length;
-    await expectLater(source.listIssue('demo', 'PL4', 'r1'), throwsA(isA<PlanningRefusal>()));
+    await expectLater(source.addUnlistedIssue('demo', 'PL4', 'r1'), throwsA(isA<PlanningRefusal>()));
     expect(planner.calls, hasLength(calls), reason: 'an alias is refused before it is sent');
   });
 

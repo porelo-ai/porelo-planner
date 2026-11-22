@@ -418,7 +418,7 @@ List<Map<String, dynamic>> _leastAdvanced(List<Map<String, dynamic>> states, Lis
 
 /// Adds an issue the board offers as made outside the project, on a copy: it leaves the offer and stands in no story
 /// in the first state, as the planner adds it.
-Map<String, dynamic> applyPlanningListIssue(Map<String, dynamic> source, String issue, String revision) {
+Map<String, dynamic> applyPlanningAddUnlisted(Map<String, dynamic> source, String issue, String revision) {
   if (revision != source['revision']) throw mockRefusal('StaleRevision', {'revision': source['revision']});
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final offer = (board['unlisted'] as List? ?? const []).cast<Map<String, dynamic>>();
@@ -429,17 +429,27 @@ Map<String, dynamic> applyPlanningListIssue(Map<String, dynamic> source, String 
     for (final each in offer)
       if (each['id'] != issue) each,
   ];
-  board['issues'] = [
-    ...(board['issues'] as List? ?? const []),
-    {
+  if (offered['kind'] == 'story') {
+    // A story gets no state of its own: it follows its issues, of which it has none yet.
+    (board['stories'] as List).add({
       'id': issue,
-      'repository': offered['repository'],
       'title': offered['title'],
       'state': first,
-      'worker': 'MANUAL',
-      'blockedBy': <String>[],
-    },
-  ];
+      'issues': <Map<String, dynamic>>[],
+    });
+  } else {
+    board['issues'] = [
+      ...(board['issues'] as List? ?? const []),
+      {
+        'id': issue,
+        'repository': offered['repository'],
+        'title': offered['title'],
+        'state': first,
+        'worker': 'MANUAL',
+        'blockedBy': <String>[],
+      },
+    ];
+  }
   board['revision'] = '$revision:listed';
   board.remove('rules');
   return board;

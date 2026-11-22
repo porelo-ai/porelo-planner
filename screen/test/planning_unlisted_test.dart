@@ -298,4 +298,33 @@ void main() {
       startsWith('own#4 may stand on the project outside the workflow, without its state: '),
     );
   });
+
+  // Harm: a story whose add was cut off after the add is said to stand outside the workflow without its state, which
+  // a story never has, or the screen's mock adds a story as an issue with a worker.
+  testWidgets('an offered story is added as a story, and partly saved it is said to lack its priority and rank', (
+    tester,
+  ) async {
+    final backend = await _showBoard(tester, TestHost(), unlisted: [_issue('own#4', 'A story by hand', kind: 'story')]);
+
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#4')));
+    await settle(tester);
+
+    final stories = (backend.boards['checkout']!['stories'] as List).cast<Map<String, dynamic>>();
+    expect(stories.map((story) => story['id']), contains('own#4'), reason: 'the story stands among the stories');
+    expect(backend.boards['checkout']!['issues'], anyOf(isNull, isEmpty), reason: 'and is no issue');
+
+    final data = backend.boards['checkout']!;
+    data['unlisted'] = [_issue('own#5', 'Another story', kind: 'story')];
+    data['revision'] = 'later';
+    backend.push('checkout', data);
+    await settle(tester);
+    backend.moveFailure = const PlanningRefusal('PartlySaved', {}, 'partly saved');
+    await tester.tap(find.byKey(const Key('planning-unlisted-add own#5')));
+    await settle(tester);
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('planning-move-error'))).data,
+      startsWith('own#5 may stand on the project without its priority and rank: '),
+    );
+  });
 }

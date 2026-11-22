@@ -249,13 +249,14 @@ public class BoardEdits {
      *     does not offer or the tracker no longer holds, {@code EditNotAllowed} for one the board
      *     could not hold once added
      */
-    public String listIssue(final String project, final String issue, final String revision) {
+    public String addUnlistedIssue(
+            final String project, final String issue, final String revision) {
         try {
             return projects.work(project)
                     .alone(
                             () -> {
                                 final PlanningStore store = projects.store(project);
-                                if (!store.listsIssues()) {
+                                if (!store.addsUnlistedIssues()) {
                                     throw new UnsupportedOperationException(
                                             PlanningStore.NOT_OFFERED);
                                 }
@@ -264,7 +265,7 @@ public class BoardEdits {
                                 final String saved;
                                 try {
                                     saved =
-                                            store.listIssue(board.revision(), issue)
+                                            store.addUnlistedIssue(board.revision(), issue)
                                                     .revision()
                                                     .value();
                                 } catch (final StoreException.NoSuchIssue gone) {

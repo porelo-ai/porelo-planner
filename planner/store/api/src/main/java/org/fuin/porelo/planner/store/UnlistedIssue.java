@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store;
 
 import java.net.URI;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
@@ -36,8 +37,8 @@ public record UnlistedIssue(
             Pattern.compile("[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\\[bot])?");
 
     /** The ways an author can stand to a repository, as GitHub names them. */
-    public static final java.util.Set<String> ASSOCIATIONS =
-            java.util.Set.of(
+    public static final Set<String> ASSOCIATIONS =
+            Set.of(
                     "OWNER",
                     "MEMBER",
                     "COLLABORATOR",

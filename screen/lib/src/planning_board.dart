@@ -1731,7 +1731,7 @@ class PlanningBoard extends ChangeNotifier {
   String? listing;
 
   /// Adds an issue the board offers as made outside the project to the project, at the revision currently shown.
-  Future<void> listIssue(String issue, {String? revision}) async {
+  Future<void> addUnlistedIssue(String issue, {String? revision}) async {
     if (_disposed || _oneAtATime(issue)) return;
     if (actionBusy || listing != null) {
       moveProblem = 'Waiting for the planner before adding an issue.';
@@ -1749,6 +1749,7 @@ class PlanningBoard extends ChangeNotifier {
     final source = backend;
     final name = project;
     final at = snapshot!.revision;
+    final story = unlisted.firstWhere((each) => each.id == issue).story;
     _moveTurns++;
     saving = true;
     listing = issue;
@@ -1759,7 +1760,7 @@ class PlanningBoard extends ChangeNotifier {
     var refused = false;
     var readAfter = false;
     try {
-      await source.listIssue(name, issue, at);
+      await source.addUnlistedIssue(name, issue, at);
       if (!_sameBoard(source, name)) return;
       _savesLanded++;
       moveNotice = '$issue added to the project.';
@@ -1770,10 +1771,11 @@ class PlanningBoard extends ChangeNotifier {
       refused = true;
       final words = planningFailureWords(error);
       final refusedAs = error is PlanningRefusal ? error.name : null;
-      moveProblem = refusedAs == 'PartlySaved'
-          ? '$issue may stand on the project outside the workflow, without its state: '
-                '$words'
-          : '$issue was not added: $words';
+      moveProblem = refusedAs != 'PartlySaved'
+          ? '$issue was not added: $words'
+          : story
+          ? '$issue may stand on the project without its priority and rank: $words'
+          : '$issue may stand on the project outside the workflow, without its state: $words';
       // The planner streams the board whenever the add changed it or found it changed, so the offer shown follows that;
       // a read of the parts would carry no offer.
       _keepRefusal(error);

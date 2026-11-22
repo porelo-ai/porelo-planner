@@ -16,6 +16,7 @@ import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -93,6 +94,7 @@ class UnlistedAddTest {
         List<String> labels = List.of();
         List<GitHubGraphQl.IssueRef> blockers = List.of();
         boolean gone;
+        boolean moreBlockers;
         Function<List<String>, Batch<String>> add =
                 ids -> new Batch<>(List.of(Batch.Outcome.of("PVTI_added")), null);
         Function<List<GitHubGraphQl.FieldValue>, Batch<String>> set =
@@ -121,7 +123,12 @@ class UnlistedAddTest {
                                                 labels,
                                                 parentId,
                                                 new GitHubGraphQl.IssueRefs(List.of(), LAST),
-                                                new GitHubGraphQl.IssueRefs(blockers, LAST),
+                                                new GitHubGraphQl.IssueRefs(
+                                                        blockers,
+                                                        moreBlockers
+                                                                ? new GitHubGraphQl.PageInfo(
+                                                                        true, "next")
+                                                                : LAST),
                                                 LAST,
                                                 type),
                                         itemId,
@@ -232,6 +239,78 @@ class UnlistedAddTest {
             final List<UnlistedIssue> offer,
             final List<Snapshot.Unlisted> listed,
             final ItemView... items) {
+        final List<Issue> placed = new ArrayList<>();
+        for (final ItemView item : items) {
+            if (!IssueMapping.STORY_TYPE.equals(item.issueType())) {
+                placed.add(placed(item.repository() + "#" + item.number(), null));
+            }
+        }
+        return snapshot(offer, listed, placed, items);
+    }
+
+    /** An issue as the board places it, under the parent given. */
+    private static Issue placed(final String id, final @Nullable String parent) {
+        return new Issue(
+                id,
+                id.substring(0, id.indexOf('#')),
+                "On the board",
+                "Idea",
+                null,
+                List.of(),
+                parent,
+                null,
+                "");
+    }
+
+    /** The item given, blocked by the issue of the node id given. */
+    private static ItemView blockedBy(final ItemView item, final String nodeId) {
+        return new ItemView(
+                item.itemId(),
+                item.issueId(),
+                item.repository(),
+                item.number(),
+                item.title(),
+                item.body(),
+                item.open(),
+                item.stateReason(),
+                item.fields(),
+                item.labels(),
+                item.parentIssueId(),
+                item.subIssueIds(),
+                List.of(nodeId),
+                item.comments(),
+                item.link(),
+                item.updatedAt(),
+                item.archived(),
+                item.blockers(),
+                item.issueType());
+    }
+
+    /**
+     * A snapshot whose board offers what it names and places the issues given, its repositories'
+     * lists holding those and the issues given, and whose items are those given.
+     */
+    private static Snapshot snapshot(
+            final List<UnlistedIssue> offer,
+            final List<Snapshot.Unlisted> listed,
+            final List<Issue> placed,
+            final ItemView... items) {
+        final List<Story> stories = new ArrayList<>();
+        for (final ItemView item : items) {
+            if (IssueMapping.STORY_TYPE.equals(item.issueType())) {
+                stories.add(
+                        new Story(
+                                item.repository() + "#" + item.number(),
+                                "A story",
+                                "Idea",
+                                false,
+                                "Medium",
+                                null,
+                                List.of(),
+                                "",
+                                null));
+            }
+        }
         final Map<String, ItemView> byId = new LinkedHashMap<>();
         for (final ItemView item : items) {
             byId.put(item.repository() + "#" + item.number(), item);
@@ -240,8 +319,8 @@ class UnlistedAddTest {
                 new Board(
                         SHOWN,
                         WORKFLOW,
-                        List.of(),
-                        List.of(),
+                        stories,
+                        placed,
                         new Work(Map.of(), List.of()),
                         CONFIG.repositories(),
                         List.of(),
@@ -273,7 +352,7 @@ class UnlistedAddTest {
         final GitHub github = new GitHub();
         final ItemView ranked = item(LIB, 2, null);
 
-        github.writer().listIssue(offering(ranked), SHOWN, LIB + "#6");
+        github.writer().addUnlistedIssue(offering(ranked), SHOWN, LIB + "#6");
 
         assertThat(github.calls)
                 .as("read right before the write, then added and given its values")
@@ -297,7 +376,7 @@ class UnlistedAddTest {
         final GitHub github = new GitHub();
         github.labels = List.of("story");
 
-        github.writer().listIssue(offering(), SHOWN, LIB + "#6");
+        github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6");
 
         assertThat(github.written())
                 .as("an issue's first state")
@@ -317,7 +396,7 @@ class UnlistedAddTest {
                         List.of(new Snapshot.Unlisted("I_own_6", OWN, 6, "Made by hand", null)),
                         item(OWN, 1, IssueMapping.STORY_TYPE));
 
-        github.writer().listIssue(current, SHOWN, OWN + "#6");
+        github.writer().addUnlistedIssue(current, SHOWN, OWN + "#6");
 
         assertThat(github.written())
                 .as("a story's values: its priority and its rank among the stories")
@@ -333,7 +412,7 @@ class UnlistedAddTest {
         final GitHub github = new GitHub();
         github.type = IssueMapping.STORY_TYPE;
 
-        assertThatThrownBy(() -> github.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a story the board cannot hold")
                 .isInstanceOf(StoreException.NotSavable.class)
                 .hasMessageContaining("Story outside the project's own repository");
@@ -347,7 +426,7 @@ class UnlistedAddTest {
         final GitHub github = new GitHub();
         github.itemId = "PVTI_theirs";
 
-        assertThatThrownBy(() -> github.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an issue on the project already")
                 .isInstanceOfSatisfying(
                         StoreException.StaleRevision.class,
@@ -361,21 +440,21 @@ class UnlistedAddTest {
         // a transferred one that the board then leaves out of another repository.
         final GitHub gone = new GitHub();
         gone.gone = true;
-        assertThatThrownBy(() -> gone.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> gone.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an issue GitHub no longer holds")
                 .isInstanceOf(StoreException.NoSuchIssue.class);
         assertThat(gone.calls).as("only the read").containsExactly("issueBoard");
 
         final GitHub closed = new GitHub();
         closed.state = "CLOSED";
-        assertThatThrownBy(() -> closed.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> closed.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a closed issue")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(closed.calls).as("only the read").containsExactly("issueBoard");
 
         final GitHub moved = new GitHub();
         moved.repository = "another-org/" + LIB;
-        assertThatThrownBy(() -> moved.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> moved.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an issue moved to another repository")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(moved.calls).as("only the read").containsExactly("issueBoard");
@@ -394,7 +473,7 @@ class UnlistedAddTest {
                                 new Snapshot.Unlisted("I_lib_6", LIB, 6, "Made by hand", null),
                                 new Snapshot.Unlisted("I_lib_9", LIB, 9, "Its parent", null)));
 
-        assertThatThrownBy(() -> github.writer().listIssue(current, SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(current, SHOWN, LIB + "#6"))
                 .as("an issue under a parent outside the project")
                 .isInstanceOf(StoreException.NotSavable.class)
                 .hasMessage(
@@ -412,7 +491,8 @@ class UnlistedAddTest {
         assertThatThrownBy(
                         () ->
                                 github.writer()
-                                        .listIssue(offering(item(OWN, 3, null)), SHOWN, LIB + "#6"))
+                                        .addUnlistedIssue(
+                                                offering(item(OWN, 3, null)), SHOWN, LIB + "#6"))
                 .as("an issue under an issue of another repository")
                 .isInstanceOf(StoreException.NotSavable.class)
                 .hasMessageContaining("another repository");
@@ -430,7 +510,7 @@ class UnlistedAddTest {
         assertThatThrownBy(
                         () ->
                                 github.writer()
-                                        .listIssue(
+                                        .addUnlistedIssue(
                                                 offering(item(OWN, 1, IssueMapping.STORY_TYPE)),
                                                 SHOWN,
                                                 LIB + "#6"))
@@ -450,11 +530,14 @@ class UnlistedAddTest {
                         List.of(),
                         List.of(new Snapshot.Unlisted("I_lib_6", LIB, 6, "Made by hand", null)));
 
-        assertThatThrownBy(() -> github.writer().listIssue(moved, SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(moved, SHOWN, LIB + "#6"))
                 .as("an issue the board does not offer")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThatThrownBy(
-                        () -> github.writer().listIssue(offering(), new Revision("r0"), LIB + "#6"))
+                        () ->
+                                github.writer()
+                                        .addUnlistedIssue(
+                                                offering(), new Revision("r0"), LIB + "#6"))
                 .as("a revision the board no longer holds")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(github.calls).as("no call").isEmpty();
@@ -469,7 +552,7 @@ class UnlistedAddTest {
                 list -> {
                     throw GitHubExceptions.refused(502, "bad gateway");
                 };
-        assertThatThrownBy(() -> thrown.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> thrown.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a value write GitHub failed")
                 .isInstanceOfSatisfying(
                         StoreException.PartlySaved.class,
@@ -479,7 +562,7 @@ class UnlistedAddTest {
 
         final GitHub refused = new GitHub();
         refused.set = list -> new Batch<>(List.of(Batch.Outcome.refused("FORBIDDEN")), null);
-        assertThatThrownBy(() -> refused.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> refused.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a value GitHub refused")
                 .isInstanceOf(StoreException.PartlySaved.class);
     }
@@ -491,7 +574,7 @@ class UnlistedAddTest {
         final GitHub github = new GitHub();
         github.add = ids -> new Batch<>(List.of(Batch.Outcome.refused("FORBIDDEN")), null);
 
-        assertThatThrownBy(() -> github.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an add GitHub refused")
                 .isInstanceOf(StoreException.Unreadable.class)
                 .hasMessageContaining("did not add " + LIB + "#6");
@@ -510,9 +593,129 @@ class UnlistedAddTest {
                     throw GitHubExceptions.unanswered("timed out");
                 };
 
-        assertThatThrownBy(() -> github.writer().listIssue(offering(), SHOWN, LIB + "#6"))
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an add without an answer")
                 .isInstanceOf(StoreException.PartlySaved.class);
         assertThat(github.calls).as("no value written").doesNotContain("setFieldValues");
+    }
+
+    @Test
+    void anIssueUnderAParentOrBlockerTheBoardDoesNotPlaceIsRefusedBeforeAnyWrite() {
+        // Harm: the add was answered as saved, then the next read left the issue out for its parent
+        // being a sub-issue, or its parent or blocker standing off the board - archived, outside
+        // the
+        // workflow or left out - so the issue stood on the project in no list of the board.
+        final ItemView parent = item(LIB, 2, null);
+        final ItemView top = item(LIB, 1, null);
+
+        final GitHub deep = new GitHub();
+        deep.parentId = parent.issueId();
+        assertThatThrownBy(
+                        () ->
+                                deep.writer()
+                                        .addUnlistedIssue(
+                                                snapshot(
+                                                        List.of(offered(LIB, 6)),
+                                                        List.of(
+                                                                new Snapshot.Unlisted(
+                                                                        "I_lib_6",
+                                                                        LIB,
+                                                                        6,
+                                                                        "Made by hand",
+                                                                        null)),
+                                                        List.of(
+                                                                placed(LIB + "#1", null),
+                                                                placed(LIB + "#2", LIB + "#1")),
+                                                        top,
+                                                        parent),
+                                                SHOWN,
+                                                LIB + "#6"))
+                .as("an issue under a sub-issue")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("Its parent example-lib#2 is a sub-issue itself");
+        assertThat(deep.calls).as("only the read").containsExactly("issueBoard");
+
+        final GitHub off = new GitHub();
+        off.parentId = parent.issueId();
+        assertThatThrownBy(
+                        () ->
+                                off.writer()
+                                        .addUnlistedIssue(
+                                                snapshot(
+                                                        List.of(offered(LIB, 6)),
+                                                        List.of(
+                                                                new Snapshot.Unlisted(
+                                                                        "I_lib_6",
+                                                                        LIB,
+                                                                        6,
+                                                                        "Made by hand",
+                                                                        null)),
+                                                        List.of(),
+                                                        parent),
+                                                SHOWN,
+                                                LIB + "#6"))
+                .as("an issue under an item off the board")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("Its parent example-lib#2 is not on the board");
+        assertThat(off.calls).as("only the read").containsExactly("issueBoard");
+
+        final GitHub blocked = new GitHub();
+        blocked.blockers =
+                List.of(new GitHubGraphQl.IssueRef(parent.issueId(), 2L, 2, OWNER + "/" + LIB));
+        assertThatThrownBy(
+                        () ->
+                                blocked.writer()
+                                        .addUnlistedIssue(
+                                                snapshot(
+                                                        List.of(offered(LIB, 6)),
+                                                        List.of(
+                                                                new Snapshot.Unlisted(
+                                                                        "I_lib_6",
+                                                                        LIB,
+                                                                        6,
+                                                                        "Made by hand",
+                                                                        null)),
+                                                        List.of(),
+                                                        parent),
+                                                SHOWN,
+                                                LIB + "#6"))
+                .as("an issue blocked by an item off the board")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("Its blocker example-lib#2 is not on the board");
+        assertThat(blocked.calls).as("only the read").containsExactly("issueBoard");
+    }
+
+    @Test
+    void aStoryThatBlocksAnIssueOnTheBoardIsRefusedBeforeAnyWrite() {
+        // Harm: the story was added, then the next read left out the issue it blocks, a card at
+        // work
+        // that waited on it while the story stood outside the project.
+        final GitHub github = new GitHub();
+        github.type = IssueMapping.STORY_TYPE;
+        github.repository = OWNER + "/" + OWN;
+        final Snapshot current =
+                snapshot(
+                        List.of(offered(OWN, 6)),
+                        List.of(new Snapshot.Unlisted("I_own_6", OWN, 6, "Made by hand", null)),
+                        blockedBy(item(LIB, 3, null), "I_own_6"));
+
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(current, SHOWN, OWN + "#6"))
+                .as("a story blocking a board issue")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("It blocks example-lib#3");
+        assertThat(github.calls).as("only the read").containsExactly("issueBoard");
+    }
+
+    @Test
+    void anIssueWithMoreBlockersThanOneReadNamesIsRefused() {
+        // Harm: a blocker past the first page, a story or an item off the board, was never checked,
+        // and the add was answered as saved while the next read left the issue out.
+        final GitHub github = new GitHub();
+        github.moreBlockers = true;
+
+        assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
+                .as("blockers past one page")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.calls).as("only the read").containsExactly("issueBoard");
     }
 }

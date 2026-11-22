@@ -606,7 +606,7 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
-    public boolean listsIssues() {
+    public boolean addsUnlistedIssues() {
         return true;
     }
 
@@ -615,11 +615,18 @@ public final class GitHubStore implements PlanningStore {
      * again, then reads the board after it as after a made issue.
      */
     @Override
-    public Board listIssue(final Revision revision, final String issue) {
+    public Board addUnlistedIssue(final Revision revision, final String issue) {
         final Snapshot after =
                 writing(
                         () -> {
-                            parts.writer().listIssue(current(), revision, issue);
+                            try {
+                                parts.writer().addUnlistedIssue(current(), revision, issue);
+                            } catch (final StoreException.NoSuchIssue gone) {
+                                // The tracker no longer gives the issue: the board held still
+                                // offers it, so only a whole read shows the offer as it is.
+                                drop();
+                                throw gone;
+                            }
                             return readAfterMaking(List.of(issue));
                         });
         return served(after.board());

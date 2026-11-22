@@ -105,13 +105,13 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
-    public boolean listsIssues() {
-        return store.listsIssues();
+    public boolean addsUnlistedIssues() {
+        return store.addsUnlistedIssues();
     }
 
     @Override
-    public Board listIssue(final Revision revision, final String issue) {
-        return store.listIssue(revision, issue);
+    public Board addUnlistedIssue(final Revision revision, final String issue) {
+        return store.addUnlistedIssue(revision, issue);
     }
 
     @Override

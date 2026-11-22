@@ -206,7 +206,8 @@ public final class FieldsBoardWriter implements BoardWriter {
      * repository, or it is blocked by a story. Then it is added and given its values.
      */
     @Override
-    public void listIssue(final Snapshot current, final Revision revision, final String issue) {
+    public void addUnlistedIssue(
+            final Snapshot current, final Revision revision, final String issue) {
         fresh(current, revision);
         final String repository = Ids.repositoryOf(issue);
         final int number = Integer.parseInt(issue.substring(issue.lastIndexOf('#') + 1));
@@ -251,11 +252,9 @@ public final class FieldsBoardWriter implements BoardWriter {
                             + " board does not hold.");
         }
         checkParent(current, issue, repository, story, read.parentId());
-        for (final GitHubGraphQl.IssueRef blocker : read.blockedBy().nodes()) {
-            if (IssueMapping.isStory(itemOf(current, blocker.id()))) {
-                throw new StoreException.NotSavable(
-                        issue, "It is blocked by a story, which the board does not hold.");
-            }
+        checkBlockers(current, issue, read.blockedBy());
+        if (story) {
+            checkBlocksNoIssue(current, issue, offered.nodeId());
         }
         final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
         adding.list(
@@ -286,9 +285,63 @@ public final class FieldsBoardWriter implements BoardWriter {
         return null;
     }
 
+    /** An item's tracker reference. */
+    private static String reference(final ItemView item) {
+        return item.repository() + "#" + item.number();
+    }
+
+    /**
+     * Refuses an issue the board would leave out for what blocks it: a story, or an item the board
+     * does not place, as one archived, outside the workflow or itself left out. A blocker that is
+     * no item leaves the issue waiting on it, so it is taken.
+     */
+    private static void checkBlockers(
+            final Snapshot current, final String issue, final GitHubGraphQl.IssueRefs blockers) {
+        if (Boolean.TRUE.equals(blockers.pageInfo().hasNextPage())) {
+            throw new StoreException.NotSavable(
+                    issue, "It is blocked by more issues than one read names.");
+        }
+        for (final GitHubGraphQl.IssueRef blocker : blockers.nodes()) {
+            final ItemView item = itemOf(current, blocker.id());
+            if (item == null) {
+                continue;
+            }
+            if (IssueMapping.isStory(item)) {
+                throw new StoreException.NotSavable(
+                        issue, "It is blocked by a story, which the board does not hold.");
+            }
+            if (current.board().issue(reference(item)).isEmpty()) {
+                throw new StoreException.NotSavable(
+                        issue,
+                        "Its blocker "
+                                + reference(item)
+                                + " is not on the board; it is archived, outside the workflow or"
+                                + " left out. Repair it first.");
+            }
+        }
+    }
+
+    /**
+     * Refuses a story that blocks an item of the project: the board leaves an issue blocked by a
+     * story out, so the add would take that issue off the board.
+     */
+    private static void checkBlocksNoIssue(
+            final Snapshot current, final String issue, final String nodeId) {
+        for (final ItemView item : current.items().values()) {
+            if (item.blockedByIds().contains(nodeId)) {
+                throw new StoreException.NotSavable(
+                        issue,
+                        "It blocks "
+                                + reference(item)
+                                + ", which the board leaves out once a story blocks it.");
+            }
+        }
+    }
+
     /**
      * Refuses an issue the board would leave out for its parent: one under an issue that is no item
-     * of the project, or an issue under an issue of another repository.
+     * of the project, under a story or issue the board does not place, under a sub-issue, or an
+     * issue under an issue of another repository.
      */
     private static void checkParent(
             final Snapshot current,
@@ -309,6 +362,27 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
             throw new StoreException.NotSavable(
                     issue, "Add " + named + " to the project first; it is no item of it.");
+        }
+        final String named = reference(parent);
+        final boolean placed =
+                IssueMapping.isStory(parent)
+                        ? current.board().story(named).isPresent()
+                        : current.board().issue(named).isPresent();
+        if (!placed) {
+            throw new StoreException.NotSavable(
+                    issue,
+                    "Its parent "
+                            + named
+                            + " is not on the board; it is archived, outside the workflow or left"
+                            + " out. Repair it first.");
+        }
+        if (!IssueMapping.isStory(parent)
+                && current.board().issue(named).orElseThrow().parent() != null) {
+            throw new StoreException.NotSavable(
+                    issue,
+                    "Its parent "
+                            + named
+                            + " is a sub-issue itself, which the board does not hold.");
         }
         if (!story && !IssueMapping.isStory(parent) && !parent.repository().equals(repository)) {
             throw new StoreException.NotSavable(

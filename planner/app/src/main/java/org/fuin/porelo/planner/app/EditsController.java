@@ -106,7 +106,7 @@ public class EditsController {
      * @return the revision after the save
      */
     @PostMapping("/projects/{project}/items")
-    public EditSaved listIssue(
+    public EditSaved addUnlistedIssue(
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
         final EditRequests.ListRequest body = EditRequests.listed(request);
@@ -114,7 +114,7 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not add an issue made outside the project.",
-                        () -> edits.listIssue(name, body.issue(), body.revision())));
+                        () -> edits.addUnlistedIssue(name, body.issue(), body.revision())));
     }
 
     /**

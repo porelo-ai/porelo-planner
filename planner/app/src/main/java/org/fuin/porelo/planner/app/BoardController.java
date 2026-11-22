@@ -909,7 +909,10 @@ public class BoardController {
                 issue.kind() == UnlistedIssue.Kind.STORY ? "story" : "issue",
                 issue.link(),
                 issue.author(),
-                issue.authorAssociation());
+                issue.authorAssociation() == null
+                        ? null
+                        : org.fuin.porelo.planner.app.answers.UnlistedIssue.AuthorAssociationEnum
+                                .fromValue(issue.authorAssociation()));
     }
 
     /**

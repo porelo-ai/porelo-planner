@@ -1250,7 +1250,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/Project'
     post:
-      operationId: listIssue
+      operationId: addUnlistedIssue
       summary: Add an issue made outside the project
       description: >-
         Adds one open issue the board offers among its unlisted issues to the project, against the board at the given
@@ -2494,11 +2494,10 @@ components:
         authorAssociation:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: string
-          pattern: '^[A-Z][A-Z_]{0,63}$'
+          enum: [OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE]
           description: >-
-            How that account stands to the issue's repository, as the tracker names it, shown as plain text: OWNER,
-            MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN or NONE; left out when
-            the tracker named none of these; the window then shows none.
+            How that account stands to the issue's repository, as the tracker names it, shown as plain text; left out
+            when the tracker named none of these; the window then shows none.
 
     Moves:
       description: >-

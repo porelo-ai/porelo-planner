@@ -926,6 +926,39 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void aChangeOfTheIssueTypeAloneChangesTheRevision() {
+        // Harm: an issue retyped on GitHub, as a story made a bug, maps anew while the revision
+        // stays, so a window at that revision saves against a board that no longer holds it.
+        final Snapshot bug =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, typed("Bug")).read();
+        final Snapshot task =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, typed("Task")).read();
+
+        assertThat(task.board().issues())
+                .as("both map to the same issue")
+                .isEqualTo(bug.board().issues());
+        assertThat(task.board().revision())
+                .as("the same project with another issue type")
+                .isNotEqualTo(bug.board().revision());
+    }
+
+    private static ProjectItem typed(final String type) {
+        return new ProjectItem(
+                "PVTI_typed",
+                false,
+                issue(
+                        OWNER + "/example-project",
+                        7,
+                        List.of(),
+                        null,
+                        refs(false),
+                        refs(false),
+                        type),
+                List.of(option("F_status", "Backlog"), option("F_priority", "High")),
+                new GitHubGraphQl.PageInfo(false, null));
+    }
+
+    @Test
     void anItemArchivedOnGitHubChangesTheRevision() {
         // Harm: an item archived on GitHub is still offered for work, as the board kept looks
         // unchanged.

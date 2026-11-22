@@ -1404,7 +1404,7 @@ class _BoardViewState extends State<_BoardView> {
                           TextButton(
                             key: Key('planning-unlisted-add ${issue.id}'),
                             onPressed: board.takesMoves && !board.holdsMoves && !board.actionBusy
-                                ? () => unawaited(board.listIssue(issue.id, revision: board.snapshot?.revision))
+                                ? () => unawaited(board.addUnlistedIssue(issue.id, revision: board.snapshot?.revision))
                                 : null,
                             child: Text(board.listing == issue.id ? 'Adding…' : 'Add'),
                           ),

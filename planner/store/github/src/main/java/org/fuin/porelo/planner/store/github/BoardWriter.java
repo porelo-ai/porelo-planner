@@ -117,7 +117,8 @@ public interface BoardWriter {
      *     that revision or the issue changed on GitHub since it was read
      * @throws org.fuin.porelo.planner.store.StoreException.PartlySaved if only a part was saved
      */
-    default void listIssue(final Snapshot current, final Revision revision, final String issue) {
+    default void addUnlistedIssue(
+            final Snapshot current, final Revision revision, final String issue) {
         throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 

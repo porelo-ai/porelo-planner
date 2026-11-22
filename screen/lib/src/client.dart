@@ -305,7 +305,7 @@ abstract interface class PlanningSource {
 
   /// Adds an issue the board offers as made outside the project to the project, against the board at [revision];
   /// answers the board's revision after the save.
-  Future<String> listIssue(String project, String issue, String revision);
+  Future<String> addUnlistedIssue(String project, String issue, String revision);
 
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);

@@ -280,7 +280,7 @@ class FakePlanningSource implements PlanningSource {
       _notServed('SetStoryIssues');
 
   @override
-  Future<String> listIssue(String project, String issue, String revision) async => _notServed('ListIssue');
+  Future<String> addUnlistedIssue(String project, String issue, String revision) async => _notServed('ListIssue');
 
   @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');

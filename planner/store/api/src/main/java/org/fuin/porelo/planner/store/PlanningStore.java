@@ -155,9 +155,9 @@ public interface PlanningStore {
      * Whether the store adds an issue made outside the project to it, so a caller asks this before
      * it checks the issue against the board's offer: a store that offers none is refused as such.
      *
-     * @return true when {@link #listIssue} is offered
+     * @return true when {@link #addUnlistedIssue} is offered
      */
-    default boolean listsIssues() {
+    default boolean addsUnlistedIssues() {
         return false;
     }
 
@@ -177,7 +177,7 @@ public interface PlanningStore {
      * @throws StoreException.Busy if another save or a check holds the project too long
      * @throws StoreException.PartlySaved if a later call failed after an earlier one wrote
      */
-    default Board listIssue(final Revision revision, final String issue) {
+    default Board addUnlistedIssue(final Revision revision, final String issue) {
         throw new UnsupportedOperationException(NOT_OFFERED);
     }
 

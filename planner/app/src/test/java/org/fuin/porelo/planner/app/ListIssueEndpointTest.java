@@ -96,12 +96,12 @@ class ListIssueEndpointTest {
                     }
 
                     @Override
-                    public boolean listsIssues() {
+                    public boolean addsUnlistedIssues() {
                         return lists;
                     }
 
                     @Override
-                    public Board listIssue(final Revision revision, final String issue) {
+                    public Board addUnlistedIssue(final Revision revision, final String issue) {
                         if (failure != null) {
                             throw failure;
                         }
